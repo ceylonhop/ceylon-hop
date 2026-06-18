@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ceylon Hop — Shared rides &amp; private transfers across Sri Lanka</title>
+<meta name="description" content="Book a private AC car or van between any two points in Sri Lanka — your schedule, a fixed price. Share a seat on popular routes and pay a fraction. Rated 4.9 on Tripadvisor.">
+<link rel="canonical" href="https://ceylonhop.com/">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><circle cx='24' cy='24' r='24' fill='%230AB9B6'/><path d='M34 17a13 13 0 1 0 0 14' fill='none' stroke='%23fff' stroke-width='5.5' stroke-linecap='round'/><g stroke='%23fff' stroke-width='2.2' stroke-linecap='round'><line x1='24' y1='6' x2='24' y2='11'/><line x1='37' y1='9' x2='34.5' y2='13'/><line x1='42' y1='20' x2='38' y2='21.5'/><line x1='11' y1='9' x2='13.5' y2='13'/></g></svg>">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ceylon Hop — Anywhere in Sri Lanka, door to door">
+<meta property="og:description" content="Private AC transfers between any two points in Sri Lanka at a fixed price — or share a seat on popular routes. Rated 4.9 on Tripadvisor.">
+<meta property="og:site_name" content="Ceylon Hop">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<script src="datepicker.js"></script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94771986692","priceRange":"$$","aggregateRating":{"@type":"AggregateRating","ratingValue":"4.9","reviewCount":"600","bestRating":"5"}}</script>
+<style>
+  /* ---- Hero ---- */
+  .hero{position:relative;background:linear-gradient(160deg,#0d8f8c 0%, #0AB9B6 55%, #2aa9bf 100%);color:#fff;overflow:hidden;padding-top:74px;margin-top:-74px}
+  .hero::before{content:"";position:absolute;inset:0;background:
+     radial-gradient(60% 60% at 80% 10%, rgba(99,191,214,.5), transparent 70%),
+     radial-gradient(50% 50% at 10% 90%, rgba(8,120,118,.6), transparent 70%);}
+  .hero-grid{position:relative;display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center;min-height:clamp(520px,64vh,720px);padding-top:30px;padding-bottom:48px}
+  @media(max-width:920px){.hero-grid{grid-template-columns:1fr;text-align:left;min-height:0;gap:26px;padding-top:22px;padding-bottom:40px}}
+  .hero h1{color:#fff;font-weight:800}
+  .hero .lead{color:rgba(255,255,255,.92)}
+
+  /* ---- Immersive full-bleed photo hero ---- */
+  .hero-immersive{position:relative;color:#fff;overflow:hidden;background:#0a2826}
+  .hero-immersive::before{content:none}
+  .hero-immersive .hero-bg{position:absolute;inset:0;width:100%;height:100%;z-index:0;display:block;object-fit:cover}
+  /* graded scrim: bottom-left radial + faint teal wash — the photo reads graded, not dimmed */
+  .hero-immersive .hero-scrim{position:absolute;inset:0;z-index:1;background:
+     radial-gradient(115% 95% at 10% 80%, rgba(5,42,40,.9) 0%, rgba(6,58,55,.6) 36%, rgba(8,96,92,.22) 64%, rgba(8,96,92,0) 88%),
+     linear-gradient(0deg, rgba(5,40,38,.46) 0%, rgba(5,40,38,0) 30%),
+     linear-gradient(115deg, rgba(10,90,86,.32), rgba(13,143,140,.10))}
+  /* shared hero scaffolding — used by both the postcard and full-bleed variants */
+  .hero .hero-inner{position:relative;z-index:2;display:grid;grid-template-columns:1.1fr minmax(360px,430px);gap:50px;align-items:center;
+     min-height:clamp(560px,78vh,760px);padding-top:88px;padding-bottom:60px}
+  .hero .hero-copy{display:flex;flex-direction:column;align-items:flex-start;gap:18px;max-width:34rem}
+  .hero .hero-title{color:#fff;font-size:clamp(2.4rem,4.8vw,4rem);line-height:1.04;letter-spacing:-.015em;
+     text-shadow:0 2px 26px rgba(0,0,0,.32);margin:0;text-wrap:balance}
+  .hero .hero-sub{color:rgba(255,255,255,.94);max-width:44ch;font-size:1.1rem;line-height:1.55;
+     text-shadow:0 1px 14px rgba(0,0,0,.35);margin:0}
+  .hero .hero-card{width:100%;max-width:540px;background:rgba(255,255,255,.97);color:var(--ink);
+     border-radius:var(--r-lg);box-shadow:0 28px 64px -22px rgba(0,0,0,.55);padding:16px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+  .hero .hero-card .booker{background:transparent;box-shadow:none;padding:4px 0 0;margin:0;border:0;border-radius:0}
+  .hero .hero-card .booker select,.hero .hero-card .booker input{border:1.5px solid var(--line);background:var(--white)}
+  .hero .hero-note{display:flex;align-items:center;gap:.5rem;font-size:.84rem;font-weight:600;color:rgba(255,255,255,.92);text-shadow:0 1px 10px rgba(0,0,0,.35);margin:2px 0 0;white-space:nowrap}
+  .hero .hero-note svg{width:16px;height:16px;flex:none;color:#fff}
+  @media(max-width:1000px){
+    .hero .hero-inner{grid-template-columns:1fr;gap:26px;align-items:start}
+    .hero .hero-copy{max-width:none}
+  }
+  @media(max-width:600px){
+    .hero .hero-inner{min-height:0;padding:80px 0 36px;gap:12px}
+    .hero .hero-copy{gap:12px}
+    .hero .hero-title{font-size:clamp(1.9rem,8.5vw,2.5rem)}
+    .hero .hero-sub{font-size:.95rem;line-height:1.5}
+    .hero .hero-note{display:none}
+    .hero .hero-card{max-width:100%;padding:14px}
+  }
+
+  /* ---- Hero panel (left column on a solid card) ---- */
+  .hero-panel{background:var(--paper);color:var(--ink);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);padding:clamp(20px,2vw,30px);align-self:center}
+  .hero-panel h1{color:var(--ink);font-size:clamp(1.85rem,3.5vw,2.8rem);line-height:1.03;letter-spacing:-.02em}
+  .hero-panel .lead{color:var(--ink-soft)}
+  .hero-panel .hero-note{font-size:.82rem;color:var(--ink-soft);margin:14px 0 0;display:flex;align-items:center;gap:.5rem}
+  .hero-panel .hero-note svg{width:15px;height:15px;color:var(--teal-deep);flex:none}
+  @media(max-width:920px){.hero-panel{padding:24px}}
+  /* ---- Hero postcard (right) ---- */
+  .hero-map{position:relative;max-width:100%;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:12px}
+  .hero-map .pc{position:relative;aspect-ratio:1/1.02;border-radius:14px;overflow:hidden;background:
+     radial-gradient(120% 85% at 72% 8%, #dff5f1, transparent 58%),
+     radial-gradient(90% 70% at 12% 96%, #f7dca6, transparent 60%),
+     linear-gradient(158deg,#bfe9e7 0%, #a9dcd9 58%, #cfe9c6 100%)}
+  .hero-map .hero-photo{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .hero-map .route-doodle{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+  .hero-map .route-doodle path{fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-dasharray:2 11;opacity:.95;filter:drop-shadow(0 1px 2px rgba(0,0,0,.18))}
+  .hero-map .hero-stamp{position:absolute;top:-12px;right:14px;z-index:4}
+  .hero-map .float{position:absolute;z-index:3;background:var(--paper);color:var(--ink);border-radius:12px;box-shadow:var(--shadow);padding:.5rem .72rem;font-size:.8rem;font-weight:700;display:flex;align-items:center;gap:.45rem;white-space:nowrap}
+  .hero-map .float small{font-weight:500;color:var(--ink-soft);font-size:.7rem}
+  .float .dot{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 0 4px rgba(255,255,255,.6)}
+  /* desktop: full-bleed split — card on teal (left), photo fills the right edge-to-edge */
+  @media(min-width:921px){
+    .hero-grid{align-items:stretch;min-height:0;padding-top:0;padding-bottom:0;gap:46px;grid-template-columns:1fr .92fr}
+    .hero-panel{align-self:center;margin:30px 0}
+    .hero-map{background:none;box-shadow:none;padding:0;border-radius:0;margin:0 calc(50% - 50vw) 0 0}
+    .hero-map .pc{aspect-ratio:auto;height:100%;border-radius:0;min-height:480px}
+  }
+  @media(max-width:600px){
+    .hero-map{padding:8px;margin-top:2px;transform:none}
+    .hero-map .pc{aspect-ratio:16/10}
+    .hero-map .float{font-size:.72rem;padding:.4rem .56rem}
+    .hero-map .float small{display:none}
+    .hero-map .hero-stamp{top:-10px;right:10px;transform:scale(.85)}
+    /* trim the decorative pins to two so the postcard stays a slim footer */
+    .hero-map .float:nth-of-type(2){display:none}
+  }
+
+  /* ============================================================
+     Hero v2 — "postcard from Ceylon" composition (default)
+     ============================================================ */
+  .hero-postcard{display:none}
+  .hero.hero-pc{
+    color:var(--ink);
+    background:
+      radial-gradient(110% 92% at 88% -6%, var(--pc-teal), transparent 58%),
+      radial-gradient(90% 80% at -2% 106%, var(--pc-saffron), transparent 55%),
+      var(--cream);
+  }
+  .hero-pc::before{content:none}
+  .hero-pc .hero-scrim{display:none}
+  .hero-pc .hero-inner{
+    grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+    grid-template-areas:"copy photo" "card photo";
+    column-gap:64px;row-gap:24px;align-items:center;
+    min-height:0;padding-top:20px;padding-bottom:52px;
+  }
+  .hero-pc .hero-copy{grid-area:copy;align-self:end;max-width:none;gap:15px}
+  .hero-pc .hero-card{grid-area:card;align-self:start;border:1px solid var(--line);box-shadow:var(--shadow-lg)}
+  .hero-pc .hero-postcard{grid-area:photo;display:block;position:relative;--pc-rot:2.2deg;transform:rotate(var(--pc-rot))}
+  .hero-pc .hero-title{color:var(--ink);text-shadow:none}
+  .hero-pc .hero-sub{color:var(--ink-soft);text-shadow:none}
+  .hero-pc .hero-note{color:var(--ink-soft);text-shadow:none}
+  .hero-pc .hero-note svg{color:var(--teal-deep)}
+  .hero-pc .hero-badge{background:var(--paper);border-color:var(--line);color:var(--ink)}
+  .hero-pc .hero-badge:hover{background:#fff}
+  .hero-pc .hero-badge .hb-count{color:var(--ink-soft)}
+
+  /* hand-stitched underline on the headline's key word */
+  .hl-swash{position:relative}
+  .hl-swash::after{content:"";position:absolute;left:.02em;right:.05em;bottom:-.05em;height:.17em;pointer-events:none;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 16' preserveAspectRatio='none'%3E%3Cpath d='M4 11 C 58 4, 150 3, 216 9' fill='none' stroke='%23F9A429' stroke-width='5' stroke-linecap='round' stroke-dasharray='.5 12'/%3E%3C/svg%3E") no-repeat center/100% 100%}
+
+  /* the postcard itself */
+  .pc-frame{position:relative;background:#fff;border-radius:8px;padding:14px 14px 58px;
+    box-shadow:0 36px 80px -30px rgba(44,42,43,.42), 0 6px 18px rgba(44,42,43,.10)}
+  .pc-img{position:relative;aspect-ratio:1/1.02;border-radius:4px;overflow:hidden;background:linear-gradient(158deg,#bfe9e7,#cfe9c6)}
+  .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
+  .pc-img .route-doodle{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+  .pc-img .route-doodle path{fill:none;stroke:#fff;stroke-width:1.15;stroke-linecap:round;stroke-dasharray:.2 3.2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
+  .pc-img .route-doodle circle{fill:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
+  .pc-img .route-doodle .cb{fill:var(--saffron);stroke:#fff;stroke-width:.9}
+  .pc-cap{position:absolute;left:20px;bottom:13px;margin:0;font-family:var(--hand);font-weight:700;font-size:1.5rem;line-height:1;color:var(--ink);transform:rotate(-1.5deg)}
+  .pc-stamp{position:absolute;top:-13px;right:14px;transform:rotate(5deg)}
+  .postmark{position:absolute;top:-14px;right:78px;width:118px;height:auto;color:var(--ink);opacity:.3;pointer-events:none}
+  .pc-pin{position:absolute;z-index:4;left:-16px;bottom:78px;background:var(--paper);color:var(--ink);border-radius:12px;box-shadow:var(--shadow);
+    padding:.55rem .85rem;font-size:.82rem;font-weight:700;display:flex;align-items:center;gap:.5rem;white-space:nowrap;transform:rotate(-2deg)}
+  .pc-pin .dot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 0 3px rgba(249,164,41,.22)}
+  .pc-pin .pp-ar{color:var(--accent-deep);font-weight:600}
+  .pc-pin small{font-weight:700;color:var(--teal-deep);font-size:.8rem}
+  .pc-pin[hidden]{display:none}
+
+  @media(max-width:1000px){
+    .hero-pc .hero-inner{grid-template-columns:1fr;grid-template-areas:"copy" "card" "photo";row-gap:22px;padding-top:12px;padding-bottom:44px}
+    .hero-pc .hero-copy{align-self:auto}
+    .hero-pc .hero-card,.hero-pc .hero-postcard{max-width:560px}
+    .hero-pc .hero-postcard{--pc-rot:1.2deg;margin-top:6px}
+    .pc-img{aspect-ratio:16/10.5}
+  }
+  @media(max-width:600px){
+    .hero-pc .hero-inner{padding-top:10px}
+    .pc-frame{padding:10px 10px 46px}
+    .pc-cap{font-size:1.2rem;left:14px;bottom:12px}
+    .pc-stamp{transform:rotate(5deg) scale(.85);right:8px}
+    .postmark{right:62px;width:96px;top:-10px}
+    .pc-pin{left:-8px;bottom:62px;font-size:.74rem;padding:.45rem .65rem}
+    .pc-pin small{font-size:.72rem}
+  }
+
+  /* entrance choreography — auto-playing keyframes (fill:both) so the VISIBLE base
+     style is what shows whenever motion is off or scripts fail; when motion is on,
+     the animation plays once on load and HOLDS the end-state by wall-clock time, so
+     it never depends on a JS class toggle or a transition completing in a throttled
+     tab (which was leaving the hero blank). */
+  @media(prefers-reduced-motion:no-preference){
+    html.js .hero .hero-badge{animation:heroUp .6s .04s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero .hero-title{animation:heroUp .6s .12s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero .hero-sub{animation:heroUp .6s .2s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero .hero-note{animation:heroUp .6s .26s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero .hero-card{animation:heroUp .65s .32s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero-pc .hero-postcard{animation:pcIn .8s .42s cubic-bezier(.2,.7,.2,1) both}
+    html.js .hero-pc .pc-cap,html.js .hero-pc .pc-stamp,html.js .hero-pc .postmark{animation:heroFade .5s 1s ease both}
+    html.js .hero-pc .route-doodle .rd{animation:routeDraw 1s 1.1s ease both}
+  }
+  @keyframes heroUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @keyframes pcIn{from{opacity:0;transform:rotate(calc(var(--pc-rot,2.2deg) + 3.5deg)) translateY(28px)}to{opacity:1;transform:rotate(var(--pc-rot,2.2deg)) translateY(0)}}
+  @keyframes heroFade{from{opacity:0}to{opacity:1}}
+  @keyframes routeDraw{from{clip-path:inset(-8% 104% -8% -4%)}to{clip-path:inset(-8% -4% -8% -4%)}}
+
+  /* origin → destination grouped control */
+  /* stacked pick-up / drop-off with the swap button in a dedicated right rail
+     so it never collides with the selects' dropdown chevrons */
+  .od-group{position:relative;display:grid;gap:8px;padding-right:52px}
+  .od-group.has-stops{padding-right:0}
+  .od-group .swap{position:absolute;right:0;top:50%;transform:translateY(-50%);z-index:4;width:42px;height:42px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;box-shadow:var(--shadow-s);transition:transform .18s, border-color .15s}
+  .od-group.has-stops .swap{display:none}
+  .od-group .swap svg{width:17px;height:17px}
+  .od-group .swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.06)}
+  .od-group .swap:active{transform:translateY(-50%) rotate(180deg)}
+
+  /* ---- Booking widget ---- */
+  /* single-transfer vs multi-stop segmented toggle */
+  .bk-tabs{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--cream-deep);border-radius:12px;padding:4px;margin:0 0 4px}
+  .bk-tab{border:none;background:none;border-radius:9px;padding:.6rem .5rem;font-family:inherit;font-weight:700;font-size:.88rem;color:var(--ink-soft);cursor:pointer;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:.4rem;transition:background .15s,color .15s,box-shadow .15s}
+  .bk-tab svg{width:16px;height:16px;flex:none}
+  .bk-tab.active{background:var(--white);color:var(--ink);box-shadow:var(--shadow-s)}
+  .booker.mode-single #add-stop,.booker.mode-single #mid-stops{display:none}
+  .booker{background:var(--paper);color:var(--ink);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;margin-top:30px}
+  /* inside the hero panel the booker sits flush, separated by a hairline */
+  .hero-panel .booker{background:transparent;box-shadow:none;padding:14px 0 0;margin-top:12px;border-top:2px dashed var(--line);border-radius:0}
+  .hero-panel .booker select,.hero-panel .booker input{border:1.5px solid var(--line);background:var(--white)}
+  .booker .field{margin:0}
+  .booker .field.full,.booker .full{grid-column:1/-1}
+  .od-group .field>select{padding-right:34px}
+  .booker label{font-size:.7rem;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-soft)}
+  .booker select,.booker input{padding:.72rem .8rem;border-radius:10px;min-width:0}
+  .book-go{height:48px;grid-column:1/-1}
+  .book-go[disabled]{opacity:.5;cursor:not-allowed}
+  .book-go .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;display:inline-block;animation:bspin .7s linear infinite;margin-right:.2rem}
+  @keyframes bspin{to{transform:rotate(360deg)}}
+  .book-nudge{margin:8px 0 2px;font-size:1.25rem}
+  @media(max-width:430px){
+    .booker{grid-template-columns:1fr}
+    .hero-panel .booker{padding-top:16px}
+  }
+
+  /* trust strip */
+  .trust{background:var(--ink);color:#e9e6df}
+  .trust-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 0;flex-wrap:wrap;font-size:.9rem;font-weight:500}
+  .trust-row .item{display:flex;align-items:center;gap:.6rem;opacity:.92}
+  .trust-row svg{width:18px;height:18px;color:var(--teal);flex:none}
+  @media(max-width:760px){
+    .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:26px;padding:14px 0 16px;
+      scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .trust-row::-webkit-scrollbar{display:none}
+    .trust-row .item{flex:none;scroll-snap-align:start}
+    .trust-row .item:last-child{padding-right:18px}
+  }
+
+  /* value icons */
+  .val{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.7rem}
+  .val .ico{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;box-shadow:var(--shadow-s)}
+  .val .ico svg{width:28px;height:28px;color:#fff}
+  .val h3{font-size:1.15rem}
+  .val p{font-size:.92rem;color:var(--ink-soft);max-width:26ch}
+
+  /* route cards */
+  .rcard{display:flex;flex-direction:column;height:100%;transition:transform .2s, box-shadow .2s}
+  .rcard:hover{transform:translateY(-5px);box-shadow:var(--shadow-lg)}
+  .rcard .map-ph{aspect-ratio:16/11;border-radius:0}
+  .rcard .body{padding:20px 22px 24px;display:flex;flex-direction:column;flex:1}
+  .rcard h3{font-size:1.22rem;margin-bottom:.4rem}
+  .rcard p{font-size:.9rem;color:var(--ink-soft);flex:1}
+  .rcard .foot{display:flex;align-items:center;justify-content:space-between;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+  .rcard .price b{font-family:var(--display);font-size:1.4rem}
+
+  /* add-a-stop control + mid stops in hero search */
+  .add-stop{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;gap:.4rem;white-space:nowrap;
+    background:none;border:none;color:var(--accent-deep);font-weight:700;font-size:.86rem;
+    padding:2px 0;margin-top:-2px;cursor:pointer}
+  .add-stop svg{width:15px;height:15px}
+  .add-stop:hover{color:var(--teal-deep);text-decoration:underline}
+  #mid-stops{display:grid;gap:8px}
+  #mid-stops:empty{display:none}
+  .mid-stop{position:relative}
+  .mid-stop .rm{position:absolute;right:8px;bottom:7px;z-index:4;width:30px;height:30px;
+    border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);
+    display:grid;place-items:center;cursor:pointer}
+  .mid-stop .rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .mid-stop .rm svg{width:14px;height:14px}
+
+  /* hero booker */
+  .hero-card{scroll-margin-top:96px}
+
+  /* split feature */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
+  @media(max-width:860px){.split{grid-template-columns:1fr;gap:30px}}
+  .split .ph{aspect-ratio:4/3.2;border-radius:var(--r-lg)}
+  .feat-list{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:14px}
+  .feat-list li{display:flex;gap:.8rem;font-size:.98rem}
+  .feat-list .ck{flex:none;width:26px;height:26px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center}
+  .feat-list .ck svg{width:14px;height:14px}
+  .feat-list b{display:block}
+  .feat-list span small{color:var(--ink-soft);font-weight:400}
+
+  /* reviews */
+  .rev{display:flex;flex-direction:column;gap:14px;height:100%}
+  .rev p{font-size:1rem;line-height:1.55}
+  .rev .who{display:flex;align-items:center;gap:.7rem;margin-top:auto}
+  .rev .av{width:42px;height:42px;border-radius:50%}
+  .rev .who b{font-size:.9rem}.rev .who span{font-size:.8rem;color:var(--ink-soft)}
+
+  /* popular transfers — text-forward fixed-price cards */
+  .tcard{display:flex;flex-direction:column;gap:10px;padding:22px 24px;transition:transform .2s, box-shadow .2s}
+  .tcard:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+  .tcard .tc-route{font-family:var(--display);font-weight:700;font-size:1.28rem;line-height:1.25;display:flex;flex-wrap:wrap;gap:.3rem .5rem;align-items:baseline}
+  .tcard .tc-route .ar{color:var(--accent-deep);font-family:var(--body);font-weight:600;font-size:1rem}
+  .tcard .tc-meta{font-size:.85rem;color:var(--ink-soft)}
+  .tcard .tc-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
+  .tc-price{font-size:.85rem;color:var(--ink-soft)}
+  .tc-price b{font-family:var(--display);font-size:1.45rem;color:var(--ink)}
+  .tcard .tc-shared{font-size:.75rem;font-weight:700;color:var(--teal-deep);background:var(--pc-teal);padding:.3rem .65rem;border-radius:999px;white-space:nowrap}
+  .tc-go{font-size:.86rem;font-weight:700;color:var(--accent-deep);display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap}
+  .tc-go svg{width:15px;height:15px}
+
+  /* ready-made route templates */
+  .htour{display:flex;flex-direction:column;overflow:hidden;height:100%;transition:transform .2s, box-shadow .2s}
+  .htour:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+  .htour .ht-main{display:flex;flex-direction:column;gap:9px;padding:22px 24px;flex:1}
+  .htour .ht-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .htour .ht-days{font-size:.8rem;font-weight:700;color:var(--ink-soft);white-space:nowrap}
+  .htour h3{font-size:1.3rem;margin:0}
+  .htour .ht-route{font-size:.85rem;color:var(--ink-soft);margin:0;line-height:1.55}
+  .htour .ht-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;padding-top:14px;border-top:1px solid var(--line)}
+  .htour .ht-custom{display:flex;align-items:center;justify-content:center;gap:.45rem;font-size:.85rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);padding:.85rem 1rem;transition:background .15s}
+  .htour .ht-custom:hover{background:#d9efe7}
+  .htour .ht-custom svg{width:15px;height:15px}
+
+  /* blog */
+  .bcard .ph{aspect-ratio:16/10}
+  .bcard h3{font-size:1.08rem;margin:14px 0 .3rem;line-height:1.25}
+  .bcard .meta{font-size:.78rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em}
+  .bcard a.more{color:var(--accent-deep);font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:.3rem;margin-top:8px}
+  .bcard a.more svg,.bcard .more svg{width:16px;height:16px;flex:none}
+
+  /* founder note */
+  .founder-note{margin:22px 0 0;padding:18px 20px;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s)}
+  .founder-note .q{font-family:var(--display);font-style:italic;font-size:1.12rem;line-height:1.45;color:var(--ink);margin:0 0 .5rem}
+  .founder-note .sign{display:flex;align-items:center;gap:.6rem;font-size:.86rem;color:var(--ink-soft)}
+  .founder-note .sig{font-family:var(--hand);font-size:1.7rem;color:var(--accent-deep);line-height:.8}
+
+  /* pro hoppers (drivers) */
+  .hoppers-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:8px}
+  .hopper{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;height:100%}
+  .hopper .face{position:relative;aspect-ratio:4/3.4;background:linear-gradient(160deg,#bfe9e7,#cfe9c6)}
+  .hopper .face image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .hopper .face .yrs{position:absolute;bottom:10px;left:10px;z-index:2;background:var(--ink);color:#fff;font-size:.74rem;font-weight:700;padding:.3rem .6rem;border-radius:999px;white-space:nowrap}
+  .hopper .body{padding:18px 20px 20px;display:flex;flex-direction:column;flex:1}
+  .hopper .nm{font-family:var(--display);font-weight:700;font-size:1.2rem;display:flex;align-items:center;gap:.5rem}
+  .hopper .home{font-size:.8rem;color:var(--ink-soft);font-weight:600;margin:.15rem 0 .7rem;display:flex;align-items:center;gap:.35rem}
+  .hopper .home svg{width:13px;height:13px;color:var(--tomato)}
+  .hopper .say{font-style:italic;font-family:var(--display);font-size:1rem;line-height:1.45;color:var(--ink);margin:0 0 .9rem;flex:1}
+  .hopper .langs{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}
+  .hopper .langs span{font-size:.72rem;font-weight:600;color:var(--ink-soft);background:var(--cream-deep);padding:.25rem .55rem;border-radius:999px}
+
+  /* reviews — postcard style */
+  .rev{position:relative;display:flex;flex-direction:column;gap:12px;height:100%;padding:24px 24px 22px}
+  .rev .qmark{font-family:var(--display);font-weight:800;font-size:3.2rem;line-height:.6;color:var(--saffron);height:.5em}
+  .rev p{font-size:1rem;line-height:1.55;margin:0}
+  .rev .stars{margin-top:auto}
+  .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
+  .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:800;font-size:1.05rem;flex:none}
+  .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
+  .rev .post-stamp{position:absolute;top:16px;right:16px}
+
+  /* stronger, legible trust badge over the busy hero photo */
+  .hero .hero-badge{display:inline-flex;align-items:center;white-space:nowrap;gap:.5rem;background:rgba(10,38,36,.52);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);border:1px solid rgba(255,255,255,.28);color:#fff;font-size:.82rem;font-weight:600;padding:.5rem .85rem;border-radius:999px;text-shadow:none;transition:background .15s}
+  .hero .hero-badge:hover{background:rgba(10,38,36,.66)}
+  .hero .hero-badge .hb-star{color:#F9A429;font-size:.95rem}
+  .hero .hero-badge b{font-weight:800}
+  .hero .hero-badge .hb-count{color:rgba(255,255,255,.72);font-weight:500}
+  @media(max-width:600px){.hero .hero-badge .hb-count{display:none}}
+
+  /* inline booking validation + group note */
+  .hero-card .bk-error:not([hidden]){display:flex;align-items:center;gap:.45rem;margin:0;color:#7a1a0e;background:rgba(180,40,20,.12);border:1px solid rgba(236,58,36,.35);border-radius:9px;padding:.5rem .7rem;font-size:.84rem;font-weight:600}
+  .hero-card .bk-error::before{content:"!";display:grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#ec3a24;color:#fff;font-size:.72rem;font-weight:800;flex:none}
+  .hero-card .field-bad>select,.hero-card .field-bad .dp-btn{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.16)!important}
+  .hero-card .grp-note:not([hidden]){display:flex;align-items:flex-start;gap:.45rem;margin:0;font-size:.82rem;line-height:1.4;color:var(--ink-soft)}
+  .hero-card .grp-note svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--accent-deep)}
+</style>
+</head>
+<body data-page="home">
+<div data-header></div>
+
+<!-- HERO -->
+<section class="hero hero-pc" id="hero-sec" data-screen-label="Home hero">
+  <div class="hero-scrim"></div>
+  <div class="wrap hero-inner">
+    <div class="hero-copy">
+    <a class="hero-badge" href="https://www.tripadvisor.com/" target="_blank" rel="noopener" aria-label="Rated 4.9, Excellent, on Tripadvisor — 600+ reviews"><span class="hb-star" aria-hidden="true">★</span> <b>4.9</b> · Excellent on Tripadvisor <span class="hb-count">· 600+ reviews</span></a>
+    <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
+    <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
+      <p class="hero-note">
+
+Fixed prices · Free cancellation · No change fees</p>
+    </div>
+    <div class="hero-card" id="book">
+      <!-- ONE question: where from, where to — add stops if you like -->
+      <form class="booker mode-single" id="form-go" onsubmit="return goBook(event)">
+        <div class="bk-tabs" role="tablist" aria-label="Booking type">
+          <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
+          <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
+        </div>
+        <div class="od-group full" id="od-group">
+          <div class="field pickup-field"><label for="q-from">Pick-up</label>
+            <select id="q-from" required></select></div>
+          <button type="button" class="swap" id="swap" aria-label="Swap pick-up and drop-off" title="Swap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+          </button>
+          <div class="field dropoff-field"><label for="q-to" id="q-to-label">Drop-off</label>
+            <select id="q-to" required></select></div>
+          <div id="mid-stops"></div>
+        </div>
+        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
+        <p class="bk-error full" id="bk-error" role="alert" hidden></p>
+        <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
+      </form>
+      <datalist id="lk-places"></datalist>
+    </div>
+    <figure class="hero-postcard" id="hero-postcard">
+      <div class="pc-frame">
+        <div class="pc-img" id="pc-img">
+          <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
+          <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
+        </div>
+        <figcaption class="pc-cap">wish you were here? you can be&hellip;</figcaption>
+        <span class="stamp pc-stamp" style="--sc:var(--teal)"><b>LK</b>Sri&nbsp;Lanka</span>
+        <svg class="postmark" viewBox="0 0 132 70" aria-hidden="true" fill="none" stroke="currentColor"><circle cx="33" cy="35" r="26" stroke-width="2" stroke-dasharray="3 4"></circle><circle cx="33" cy="35" r="19" stroke-width="1.4" stroke-dasharray="2 5"></circle><path d="M66 22c10 3 18-3 28 0s18-3 28 0M66 35c10 3 18-3 28 0s18-3 28 0M66 48c10 3 18-3 28 0s18-3 28 0" stroke-width="2" stroke-linecap="round"></path></svg>
+        <div class="pc-pin" id="pc-pin" hidden></div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- TRUST -->
+<section class="trust">
+  <div class="wrap trust-row">
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Fixed daily schedules</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
+  </div>
+</section>
+
+<!-- WHAT IS -->
+<section class="section-tight" id="what">
+  <div class="wrap center">
+    <span class="eyebrow" style="justify-content:center">What is Ceylon Hop?</span>
+    <h2 style="max-width:26ch;margin:0 auto .55rem;font-size:clamp(1.6rem,2.8vw,2.3rem)">Private transfers across Sri Lanka &mdash; share a seat when it suits you</h2>
+    <p class="lead" style="margin:0 auto;max-width:50ch">Name your pickup and drop-off and we&rsquo;ll set you up with a private AC car or van, door to door &mdash; or grab a shared seat when we run your route.</p>
+    <div class="grid cols-3" style="margin-top:36px">
+      <div class="val reveal"><div class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 19h7a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h7"/></svg></div><h3>Any two points</h3><p>Airport to Ella, Kandy to the coast, hotel to hotel &mdash; just name your pickup and drop-off.</p></div>
+      <div class="val reveal"><div class="ico" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg></div><h3>Private &amp; door-to-door</h3><p>Your own vetted driver and AC vehicle. Leave when you want, stop where you like.</p></div>
+      <div class="val reveal"><div class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM7 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm10 7a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9.5 12.5l5 2.5M14.6 8.6l-5.2 2.6"/></svg></div><h3>Share &amp; save</h3><p>Travelling a popular route? Take a seat on our daily service and pay a fraction.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- POPULAR TRANSFERS -->
+<section class="section bg-postcard wash-edge" data-screen-label="Popular transfers">
+  <div class="wrap">
+    <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
+      <div><span class="eyebrow">Fixed prices, no haggling</span><h2>Popular transfers</h2></div>
+      <a href="plan.html" class="btn btn-ghost">Plan a multi-stop trip</a>
+    </div>
+    <div class="grid cols-3" id="home-transfers"></div>
+  </div>
+</section>
+
+<!-- NOT A TOUR -->
+<section class="section bg-green wash-edge">
+  <div class="wrap split">
+    <div class="rel">
+      <image-slot id="why-photo" style="display:block;width:100%;aspect-ratio:4/3.2" shape="rounded" radius="24" placeholder="Drop a photo — travelers at a viewpoint with backpacks"></image-slot>
+      <span class="sticker" style="position:absolute;bottom:-14px;left:24px;background:var(--ink)">Not a packaged tour</span>
+    </div>
+    <div>
+      <span class="eyebrow">Why hop with us</span>
+      <h2>Freedom of a backpacker, comfort of a private driver</h2>
+      <p class="lead">You&rsquo;re never tied to a group or someone else&rsquo;s schedule. Travel on your own terms in a private vehicle &mdash; and skip the confusing public buses and the pricey one-off taxi quotes.</p>
+      <ul class="feat-list">
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A private vehicle, door to door</b><small>Your own AC car or van, picking you up exactly where you are.</small></span></li>
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Or share &amp; save on popular routes</b><small>Daily shared seats on the island&rsquo;s busiest corridors &mdash; same comfort, split cost.</small></span></li>
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A local driver who knows the way</b><small>Friendly Pro&nbsp;Hoppers share the best food, stays and hidden gems.</small></span></li>
+      </ul>
+      <div class="founder-note">
+        <p class="q">“We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we’d trust with our own family.”</p>
+        <div class="sign"><span class="sig">Roshen</span> &mdash; Co-founder, Ceylon&nbsp;Hop</div>
+      </div>
+      <a href="why.html" class="btn btn-primary mt" style="margin-top:24px">See what makes us different</a>
+    </div>
+  </div>
+</section>
+
+<!-- READY-MADE ROUTES (tours as planner templates) -->
+<section class="section" data-screen-label="Ready-made routes">
+  <div class="wrap">
+    <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:12px">
+      <div><span class="eyebrow">Skip the planning</span><h2>Start from a ready-made route</h2></div>
+      <a href="tours.html" class="btn btn-ghost">See all tours</a>
+    </div>
+    <p class="lead" style="margin-bottom:34px">Our most-loved itineraries. Take one exactly as it is — or open it in the planner, swap stops, and make it yours.</p>
+    <div class="grid cols-3" id="home-tours"></div>
+  </div>
+</section>
+
+<!-- PRO HOPPERS -->
+<section class="section" data-screen-label="Pro Hoppers">
+  <div class="wrap">
+    <div class="hoppers-head">
+      <div>
+        <span class="eyebrow">The people behind the wheel</span>
+        <h2>Meet a few of your Pro&nbsp;Hoppers</h2>
+      </div>
+      <p class="hand-note saffron" style="max-width:18ch">real humans, not a call centre</p>
+    </div>
+    <p class="lead" style="margin-bottom:34px">Local drivers who grew up on these roads &mdash; they know the best roti stop, the quiet viewpoint, and exactly when to beat the tour buses to the train.</p>
+    <div class="grid cols-3" id="hoppers"></div>
+  </div>
+</section>
+<section class="section">
+  <div class="wrap">
+    <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
+      <div><span class="eyebrow">Loved by travelers</span><h2>4.9 on Tripadvisor &amp; Google</h2></div>
+      <a class="pill pill-saffron" href="https://www.tripadvisor.com/" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ 600+ happy hoppers ↗</a>
+    </div>
+    <div class="grid cols-3" id="reviews"></div>
+  </div>
+</section>
+
+<!-- BLOG -->
+<section class="section bg-postcard wash-edge">
+  <div class="wrap">
+    <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
+      <div><span class="eyebrow">Travel blog</span><h2>Your guide to everywhere</h2></div>
+      <a href="blog.html" class="btn btn-ghost">Read the blog</a>
+    </div>
+    <div class="grid cols-3" id="blog"></div>
+  </div>
+</section>
+
+<div data-footer></div>
+
+<script src="site.js"></script>
+<script src="tours-data.js"></script>
+<script src="transfers-data.js"></script>
+<script src="image-slot.js"></script>
+<script>
+  const __heroV=(window.__tweaks&&window.__tweaks.read().hero)||'postcard';
+  // The hero is the immersive full-bleed photo, so the nav sits on a dark image:
+  // detect the actual hero element rather than relying on a tweak default.
+  const __onDark = !!document.querySelector('.hero-immersive') || __heroV==='full-bleed';
+  initChrome({active:'', onDark:__onDark});
+
+  // append arrow to selected ghost/cta buttons
+  document.querySelectorAll('.btn').forEach(b=>{ if(/(Plan a multi-stop trip|See all tours|Read the blog|different)$/.test(b.textContent.trim())) b.insertAdjacentHTML('beforeend', ICON.arrow); });
+
+  // popular transfers — live fixed prices straight from the quote engine
+  const POP_TRANSFERS=[['cmb-airport','kandy'],['cmb-airport','sigiriya'],['cmb-airport','galle'],['kandy','ella'],['ella','mirissa'],['colombo','kandy']];
+  document.getElementById('home-transfers').innerHTML = POP_TRANSFERS.map(([f,t])=>{
+    const A=TRANSFERS.place(f), B=TRANSFERS.place(t);
+    const q=TRANSFERS.privateQuote(f,t);
+    const sh=TRANSFERS.sharedOption(f,t);
+    const u=new URLSearchParams({from:f,to:t}).toString();
+    return `<a class="card tcard reveal" href="search.html?${u}">
+      <div class="tc-route"><span>${A.name}</span><span class="ar">→</span><span>${B.name}</span></div>
+      <div class="tc-meta">${q.km} km · about ${q.duration} · private, door to door</div>
+      <div class="tc-foot">
+        <span class="tc-price">from <b>$${q.car}</b> fixed</span>
+        ${sh?`<span class="tc-shared">or shared seat $${sh.seat}</span>`:`<span class="tc-go">See prices ${ICON.arrow}</span>`}
+      </div></a>`;
+  }).join('');
+
+  // ready-made routes — tours doubling as planner templates
+  document.getElementById('home-tours').innerHTML = TOURS.slice(0,3).map(t=>{
+    const planUrl='plan.html?'+new URLSearchParams({stops:t.stops.join('|')}).toString();
+    return `<article class="card htour reveal">
+      <a class="ht-main" href="tour.html?id=${t.id}">
+        <div class="ht-top"><span class="pill pill-saffron">${t.tag}</span><span class="ht-days">${t.days} days · ${t.nights} nights</span></div>
+        <h3>${t.name}</h3>
+        <p class="ht-route">${t.stops.join(' → ')}</p>
+        <div class="ht-foot"><span class="tc-price">from <b>$${t.price}</b> whole trip</span><span class="tc-go">View tour ${ICON.arrow}</span></div>
+      </a>
+      <a class="ht-custom" href="${planUrl}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Open in the planner &amp; make it yours</a>
+    </article>`;
+  }).join('');
+
+  // pro hoppers (drivers)
+  const PIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>';
+  const hoppers=[
+    ['Dinesh P.','Kandy','11 yrs','“If you’re hungry, just say — I know a kottu place that’ll ruin every other kottu for you.”',['English','Sinhala','Tamil'],'lead'],
+    ['Nuwan R.','Ella','7 yrs','“I’ll stop at the viewpoints the buses speed past. Bring your camera and a little patience.”',['English','Sinhala']],
+    ['Suresh F.','Galle','9 yrs','“Coast roads are my home turf. Whales in the morning, sunset in Galle Fort — I’ll time it right.”',['English','Sinhala','German']]
+  ];
+  document.getElementById('hoppers').innerHTML = hoppers.map(([nm,home,yrs,say,langs,badge],i)=>`
+    <article class="card hopper reveal">
+      <div class="face">
+        <image-slot id="hopper-${i}" shape="rect" placeholder="Photo of ${nm}"></image-slot>
+        <span class="yrs">${yrs} driving</span>
+      </div>
+      <div class="body">
+        <div class="nm">${nm}${badge?` <span class="pill pill-saffron" style="font-size:.66rem;padding:.2rem .5rem">Lead driver</span>`:''}</div>
+        <div class="home">${PIN} Home base · ${home}</div>
+        <p class="say">${say}</p>
+        <div class="langs">${langs.map(l=>`<span>${l}</span>`).join('')}</div>
+      </div>
+    </article>`).join('');
+
+  // reviews
+  const STAR='<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
+  const AVC=['var(--teal)','var(--saffron)','var(--tomato)'];
+  const reviews=[
+    ['Maya','Germany','9-stop Island Loop','Honestly the easiest way to see Sri Lanka solo. Met three of my now-best travel friends in the van and the driver felt like a local big brother.'],
+    ['Tom & Elise','Australia','Private Galle transfer','We changed our plans twice and the team just sorted it on WhatsApp. AC van was spotless — and so much cheaper than the private quotes we got.'],
+    ['Priya','Canada','Ella → Arugam Bay','Booked the night before, confirmed in minutes. On time, comfy ride through the hills. We’re using Ceylon Hop for the whole trip now.']
+  ];
+  document.getElementById('reviews').innerHTML = reviews.map(([name,country,trip,txt],i)=>`
+    <div class="card rev reveal">
+      <div class="qmark">&ldquo;</div>
+      <p>${txt}</p>
+      <div class="stars">${STAR.repeat(5)}</div>
+      <div class="who"><div class="av" style="background:${AVC[i%3]}">${name[0]}</div><div><b>${name} · ${country}</b><br><span>${trip}</span></div></div>
+    </div>`).join('');
+
+  // blog
+  const posts=[
+    ['Why we started Ceylon Hop','Story · 4 min'],
+    ['The ultimate tuk-tuk guide to Sri Lanka','Guide · 6 min'],
+    ['Best time to visit Sri Lanka: month-by-month','Planning · 8 min']
+  ];
+  document.getElementById('blog').innerHTML = posts.map(([t,m],i)=>`
+    <a class="bcard reveal" href="blog.html">
+      <image-slot id="blog-post-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
+      <div class="meta" style="margin-top:14px">${m}</div>
+      <h3>${t}</h3>
+      <span class="more">Read more ${ICON.arrow}</span>
+    </a>`).join('');
+
+  initReveal();
+
+  // ---- unified booking search: A → B, with optional stops in between ----
+  (function(){
+    const T = window.TRANSFERS;
+    const groups = {};
+    T.PLACES.forEach(p=>{ (groups[p.area] = groups[p.area]||[]).push(p); });
+    const optsHtml = Object.keys(groups).map(area=>
+      `<optgroup label="${area}">`+groups[area].map(p=>`<option value="${p.id}">${p.name}</option>`).join('')+`</optgroup>`
+    ).join('');
+    const from=document.getElementById('q-from'), to=document.getElementById('q-to');
+    from.innerHTML = `<option value="" disabled selected>Where from?</option>`+optsHtml;
+    to.innerHTML   = `<option value="" disabled selected>Where to?</option>`+optsHtml;
+    // leave pick-up and drop-off empty on first paint — the traveler chooses both
+
+    // typeahead destinations for in-between stops
+    mountPlacesDatalist('lk-places', false);
+
+    const odGroup=document.getElementById('od-group');
+    const mids=document.getElementById('mid-stops');
+    const addStop=document.getElementById('add-stop');
+    const goBtn=document.getElementById('go-btn');
+    const form=document.getElementById('form-go');
+    const tabs=[...document.querySelectorAll('.bk-tab')];
+
+    // explicit single-transfer vs multi-stop mode (set by the toggle)
+    let bookMode='single';
+    function setMode(m){
+      bookMode = m==='multi' ? 'multi' : 'single';
+      form.classList.toggle('mode-multi', bookMode==='multi');
+      form.classList.toggle('mode-single', bookMode==='single');
+      tabs.forEach(b=>{ const on=b.dataset.mode===bookMode; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
+      if(bookMode==='single'){ mids.innerHTML=''; }       // a single transfer has no waypoints
+      else if(!midCount()){ addMid(); return; }            // multi: seed one stop row (addMid calls relabel+update)
+      relabel(); update();
+    }
+    tabs.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
+
+    function midValues(){ return [...mids.querySelectorAll('.mid-stop select')].map(s=>s.value).filter(Boolean).map(id=>{ const p=T.place(id); return p?p.name:id; }); }
+    function midCount(){ return mids.querySelectorAll('.mid-stop').length; }
+    const toLabel=document.getElementById('q-to-label');
+    function relabel(){
+      const rows=[...mids.querySelectorAll('.mid-stop')];
+      const n=rows.length;
+      odGroup.classList.toggle('has-stops', n>0);
+      // last field is always the final destination; everything before it is a numbered stop
+      if(toLabel) toLabel.textContent = n>0 ? 'Stop 2' : 'Drop-off';
+      rows.forEach((row,i)=>{
+        const last=i===n-1;
+        row.querySelector('label').textContent = last ? 'Drop-off' : ('Stop '+(i+3));
+        const ph=row.querySelector('select option[value=""]');
+        if(ph) ph.textContent = last ? 'Where to next?' : 'Add a place along the way…';
+      });
+    }
+    function addMid(val=''){
+      if(midCount()>=8) return;
+      const row=document.createElement('div');
+      row.className='field mid-stop';
+      // styled <select> to match the Pick-up / Drop-off controls (was a native datalist dropdown)
+      row.innerHTML=`<label>Stop</label><select class="mid-select" required aria-label="Stop">`+
+        `<option value="" disabled selected>Where to next?</option>`+optsHtml+`</select>`+
+        `<button type="button" class="rm" aria-label="Remove this stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+      const sel=row.querySelector('select');
+      if(val) sel.value=val;
+      sel.addEventListener('change',update);
+      row.querySelector('.rm').addEventListener('click',()=>{ row.remove(); relabel(); update(); });
+      mids.appendChild(row);
+      relabel(); update();
+      sel.focus();
+    }
+    addStop.addEventListener('click',()=>addMid());
+
+    document.getElementById('swap').addEventListener('click',()=>{
+      const a=from.value; from.value=to.value; to.value=a; update();
+    });
+    from.addEventListener('change',update);
+    to.addEventListener('change',update);
+
+    function band(total){ const lo=Math.floor(total/50)*50, hi=Math.ceil((total+1)/50)*50; return lo===hi?('~$'+lo):('$'+lo+'–'+hi); }
+
+    // a small route pin on the postcard (no price) reinforces the door-to-door promise
+    const pcPin=document.getElementById('pc-pin');
+    function update(){
+      const f=from.value, t=to.value;
+      const multi=bookMode==='multi';
+      goBtn.textContent = multi ? 'Plan this trip' : 'See prices & book';
+      // date & traveller count are collected later in the flow, so all we need up front is from + to
+      goBtn.disabled = !(f && t);
+      if(multi || !f || !t || f===t){ if(pcPin)pcPin.hidden=true; return; }
+      if(pcPin){
+        pcPin.innerHTML=`<span class="dot" style="background:var(--saffron)"></span>${T.place(f).name.replace(' (CMB)','')} <span class="pp-ar">→</span> ${T.place(t).name}`;
+        pcPin.hidden=false;
+      }
+    }
+    update();
+    window.__heroMidValues = midValues;
+    window.__heroMode = ()=>bookMode;
+  })();
+
+  // ---- hero variant (postcard | full-bleed) — tweakable, same photo slot in both ----
+  window.__heroVariant=function(v){
+    const sec=document.getElementById('hero-sec'); if(!sec) return;
+    const slot=document.getElementById('hero-photo'), pcImg=document.getElementById('pc-img'), nav=document.querySelector('.nav');
+    const full = v==='full-bleed';
+    sec.classList.toggle('hero-immersive', full);
+    sec.classList.toggle('hero-pc', !full);
+    slot.classList.toggle('hero-bg', full);
+    if(full){ if(slot.parentElement!==sec) sec.insertBefore(slot, sec.firstElementChild); }
+    else { if(slot.parentElement!==pcImg) pcImg.insertBefore(slot, pcImg.firstElementChild); }
+    if(nav) nav.classList.toggle('on-dark', full);
+    slot.style.transform='';
+  };
+  window.__heroVariant((window.__tweaks&&window.__tweaks.read().hero)||'postcard');
+
+  // hero entrance is pure CSS now (auto-playing keyframes with fill:both) — no JS
+  // reveal needed, so content is never dependent on a class toggle or a transition
+  // completing in a throttled tab.
+
+  // gentle parallax on the hero photo (both variants), reduced-motion aware
+  (function(){
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const sec=document.getElementById('hero-sec');
+    let tick=false;
+    window.addEventListener('scroll',function(){
+      if(tick) return; tick=true;
+      requestAnimationFrame(function(){
+        tick=false;
+        const y=window.scrollY, slot=document.getElementById('hero-photo');
+        if(!slot || y>820) return;
+        if(sec.classList.contains('hero-immersive')) slot.style.transform='translateY('+(y*.14)+'px) scale(1.07)';
+        else slot.style.transform='translateY('+(y*.05)+'px) scale(1.07)';
+      });
+    },{passive:true});
+  })();
+
+  window.goBook=function(e){
+    e.preventDefault();
+    const T=window.TRANSFERS;
+    const fromEl=document.getElementById('q-from'), toEl=document.getElementById('q-to');
+    const err=document.getElementById('bk-error');
+    const fromField=fromEl.closest('.field'), toField=toEl.closest('.field');
+    fromField.classList.remove('field-bad'); toField.classList.remove('field-bad'); err.hidden=true;
+    function fail(msg, field, el){ err.textContent=msg; err.hidden=false; if(field) field.classList.add('field-bad'); if(el) el.focus(); return false; }
+    const from=fromEl.value, to=toEl.value;
+    const extra=window.__heroMidValues();
+    if(!from) return fail('Choose where we’re picking you up.', fromField, fromEl);
+    if(!to) return fail('Where are you heading? Pick a drop-off.', toField, toEl);
+    if(from===to && !extra.length) return fail('Pick-up and drop-off are the same — choose two different places, or add a stop in between.', toField, toEl);
+    const btn=document.getElementById('go-btn');
+    const multi=(window.__heroMode?window.__heroMode():'single')==='multi';
+    if(multi){
+      // a trip with stops → open it in the planner; date & travellers are set there.
+      // stops extend the journey onward: pick-up → drop-off → each added stop.
+      const stops=[T.place(from).name, T.place(to).name, ...extra];
+      const p=new URLSearchParams({stops:stops.join('|')});
+      btn.disabled=true; btn.innerHTML='<span class="spin"></span> Opening your trip…';
+      window.location.href='plan.html?'+p.toString();
+    } else {
+      const p=new URLSearchParams({from,to});
+      btn.disabled=true; btn.innerHTML='<span class="spin"></span> Finding your prices…';
+      window.location.href='search.html?'+p.toString();
+    }
+    return false;
+  };
+</script>
+
+</body>
+</html>

@@ -1,0 +1,482 @@
+/* ============================================================
+   CEYLON HOP — Design System
+   "Postcard from Ceylon": editorial, playful, conversion-led
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap');
+
+:root{
+  /* Brand palette (from brand book) */
+  --blue:#63BFD6;        /* Bachelor Button — primary */
+  --teal:#0AB9B6;        /* Tiffany — brand/CTA */
+  --teal-deep:#08938f;
+  --saffron:#F9A429;     /* Saffron — warmth */
+  --tomato:#EC3A24;      /* Cherry Tomato — conversion CTA */
+  --ink:#2C2A2B;         /* Bristol Black-ish, slightly deeper for text */
+  --ink-soft:#6c6a6b;
+  --cream:#F4F2EA;       /* Marshmallow, a touch warmer */
+  --cream-deep:#EAE6D8;
+  --paper:#fffdf8;       /* card white, warm */
+  --white:#ffffff;
+  --line:#e7e3d6;
+
+  /* Accent driver (Tweakable) */
+  --accent:var(--teal);
+  --accent-deep:var(--teal-deep);
+  --cta:var(--tomato);
+
+  /* Postcard palette — the hero wash, softened into site-wide background tones.
+     These are the basis for section + page backgrounds, not just placeholders. */
+  --pc-teal:#e3f4ef;     /* soft tiffany */
+  --pc-sky:#e8f3f6;      /* soft bachelor-button */
+  --pc-green:#edf4e6;    /* soft tea-country green */
+  --pc-saffron:#fbf0d8;  /* soft saffron */
+  --pc-line:#dfe9dd;     /* hairline that reads on washes */
+
+  /* Type */
+  --display:'Newsreader', Georgia, 'Times New Roman', serif;
+  --body:'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --hand:'Caveat', 'Segoe Script', cursive;
+
+  /* Shape */
+  --r-sm:10px;
+  --r:16px;
+  --r-lg:24px;
+  --r-xl:34px;
+  --shadow-s:0 2px 8px rgba(44,42,43,.06);
+  --shadow:0 14px 40px -18px rgba(44,42,43,.30);
+  --shadow-lg:0 30px 70px -28px rgba(44,42,43,.42);
+  --maxw:1200px;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  font-family:var(--body);
+  color:var(--ink);
+  background:var(--cream);
+  font-size:16.5px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+/* Postcard wash on a fixed layer instead of background-attachment:fixed,
+   which causes repaint jank/stutter on iOS Safari. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(125% 70% at 88% -2%, var(--pc-teal), transparent 55%),
+    radial-gradient(95% 55% at -4% 102%, var(--pc-saffron), transparent 52%),
+    var(--cream);
+}
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+::selection{background:var(--saffron);color:var(--ink)}
+
+/* ---------- Typography ---------- */
+h1,h2,h3,h4{font-family:var(--display);font-weight:700;line-height:1.07;margin:0;letter-spacing:-.005em}
+h2{margin-bottom:.5rem}
+.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:800;line-height:1.0;letter-spacing:-.012em;margin-bottom:0}
+h1{font-size:clamp(2.2rem,5vw,3.8rem)}
+h2{font-size:clamp(1.9rem,3.6vw,3rem)}
+h3{font-size:clamp(1.3rem,2.2vw,1.7rem)}
+p{margin:0 0 1rem}
+.eyebrow{
+  font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent-deep);margin:0 0 .9rem;display:inline-flex;
+  align-items:center;gap:.5rem;
+}
+.eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
+.lead{font-size:1.14rem;color:var(--ink-soft);max-width:54ch;line-height:1.6}
+.hand{font-family:var(--hand);font-weight:600}
+.serif-ital{font-family:var(--display);font-style:italic;font-weight:500}
+
+/* ---------- Layout ---------- */
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.section{padding:clamp(56px,8vw,110px) 0}
+.section-tight{padding:clamp(40px,5vw,64px) 0}
+.center{text-align:center}
+.muted{color:var(--ink-soft)}
+.grid{display:grid;gap:24px}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:900px){.cols-3,.cols-4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.cols-2,.cols-3,.cols-4{grid-template-columns:1fr}}
+
+/* ---------- Buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:.55rem;
+  font-weight:600;font-size:.97rem;border:none;border-radius:999px;
+  padding:.9rem 1.6rem;transition:transform .15s ease, box-shadow .2s ease, background .2s;
+  white-space:nowrap;line-height:1;
+}
+.btn svg{width:18px;height:18px}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
+.btn-primary:hover{background:var(--accent-deep);transform:translateY(-2px)}
+.btn-cta{background:var(--cta);color:#fff;box-shadow:0 12px 26px -10px var(--cta)}
+.btn-cta:hover{filter:brightness(1.05);transform:translateY(-2px)}
+.btn-ink{background:var(--ink);color:#fff}
+.btn-ink:hover{background:#000;transform:translateY(-2px)}
+.btn-ghost{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-s);border:1px solid var(--line)}
+.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.btn-light{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
+.btn-light:hover{transform:translateY(-2px)}
+.btn-wa{background:#25D366;color:#fff}
+.btn-wa:hover{background:#1ebe5a;transform:translateY(-2px)}
+.btn-lg{padding:1.05rem 2rem;font-size:1.02rem}
+.btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
+.btn-block{width:100%}
+
+/* ---------- Pills / chips / badges ---------- */
+.pill{
+  display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600;
+  padding:.4rem .8rem;border-radius:999px;background:var(--cream-deep);color:var(--ink);white-space:nowrap;
+}
+.pill-teal{background:rgba(10,185,182,.14);color:var(--teal-deep)}
+.pill-blue{background:rgba(99,191,214,.18);color:#2d7e93}
+.pill-saffron{background:rgba(249,164,41,.18);color:#a96b04}
+.pill-tomato{background:rgba(236,58,36,.12);color:#bb2c1a}
+.pill-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.9}
+
+.sticker{
+  font-family:var(--body);font-weight:700;font-size:.78rem;letter-spacing:.02em;
+  padding:.45rem .85rem;border-radius:999px;color:#fff;background:var(--saffron);
+  display:inline-flex;align-items:center;gap:.4rem;transform:rotate(-3deg);
+  box-shadow:var(--shadow-s);white-space:nowrap;
+}
+
+/* ---------- Cards ---------- */
+.card{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.card-flat{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg)}
+.card-pad{padding:26px}
+
+/* ---------- Header ---------- */
+/* the sticky element is the injected wrapper (a direct child of <body>),
+   so the nav actually sticks — .nav itself inside it stays in normal flow */
+[data-header]{position:sticky;top:0;z-index:70}
+.nav{
+  position:relative;
+  -webkit-backdrop-filter:blur(16px) saturate(1.7);
+  backdrop-filter:blur(16px) saturate(1.7);
+  background:linear-gradient(180deg, rgba(255,253,248,.72), rgba(255,253,248,.55));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.06);
+  transition:background .35s, box-shadow .35s, color .35s;
+}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;height:74px}
+.nav.scrolled{
+  background:linear-gradient(180deg, rgba(255,253,248,.86), rgba(255,253,248,.72));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.08), 0 14px 34px -22px rgba(44,42,43,.35);
+}
+.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:800;font-size:1.5rem;letter-spacing:-.02em;white-space:nowrap}
+.brand .cmark{width:34px;height:34px;flex:none}
+.nav-links{display:flex;align-items:center;gap:26px;font-weight:500;font-size:.95rem}
+.nav-links a{position:relative;padding:.3rem 0;color:inherit;opacity:.92;white-space:nowrap}
+.nav-links a:hover{opacity:1}
+.nav-links a.active::after,.nav-links a:hover::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:2px;background:var(--accent);border-radius:2px}
+.nav-cta{display:flex;align-items:center;gap:14px}
+.nav-burger{display:none;background:none;border:none;padding:6px}
+.nav-burger span{display:block;width:24px;height:2px;background:currentColor;border-radius:2px;margin:5px 0;transition:.25s}
+/* nav on dark hero — smoked glass until you scroll */
+.nav.on-dark{color:#fff}
+.nav.on-dark .brand{color:#fff}
+.nav.on-dark:not(.scrolled){
+  background:linear-gradient(180deg, rgba(9,38,36,.46), rgba(9,38,36,.26));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 1px 0 rgba(255,255,255,.10);
+}
+.nav.on-dark.scrolled{color:var(--ink)}
+.nav.on-dark.scrolled .brand{color:var(--ink)}
+
+.mobile-menu{display:none;position:fixed;inset:74px 0 0;background:var(--cream);z-index:55;padding:30px 24px;flex-direction:column;gap:6px}
+.mobile-menu.open{display:flex}
+.mobile-menu a{font-family:var(--display);font-size:1.7rem;font-weight:700;padding:.5rem 0;border-bottom:1px solid var(--line)}
+@media(max-width:880px){
+  .nav-links{display:none}
+  .nav-cta .btn:not(.nav-burger){display:none}
+  .nav-burger{display:block}
+}
+
+/* ---------- Footer ---------- */
+.footer{background:var(--ink);color:#e9e6df}
+.footer a{color:#cfcbc2}
+.footer a:hover{color:#fff}
+.foot-cta{position:relative;color:#fff;text-align:center;overflow:hidden;padding:clamp(50px,7vw,90px) 0}
+.foot-cta .ph{position:absolute;inset:0;z-index:0}
+.foot-cta image-slot{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+.hero-banner image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+.foot-cta::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,40,38,.55),rgba(20,40,38,.78));z-index:1}
+.foot-cta .wrap{position:relative;z-index:2}
+.foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:34px;padding:64px 0 40px}
+@media(max-width:780px){.foot-grid{grid-template-columns:1fr 1fr}}
+.foot-grid h4{font-family:var(--body);font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:#9a968d;margin-bottom:1rem;font-weight:600}
+.foot-grid ul{list-style:none;margin:0;padding:0;display:grid;gap:.6rem;font-size:.93rem}
+.foot-bottom{border-top:1px solid rgba(255,255,255,.1);padding:22px 0;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;font-size:.85rem;color:#9a968d}
+.soc{display:flex;gap:12px}
+.soc a{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);transition:.2s}
+.soc a:hover{background:var(--accent);transform:translateY(-2px)}
+.soc svg{width:17px;height:17px}
+
+/* ---------- WhatsApp FAB ---------- */
+.wa-fab{
+  position:fixed;right:20px;bottom:20px;z-index:80;display:inline-flex;align-items:center;gap:.55rem;
+  background:#25D366;color:#fff;font-weight:600;padding:.85rem 1.2rem;border-radius:999px;
+  box-shadow:0 16px 36px -10px rgba(37,211,102,.7);transition:transform .2s;
+}
+.wa-fab:hover{transform:translateY(-3px)}
+.wa-fab svg{width:22px;height:22px}
+@media(max-width:560px){.wa-fab span{display:none}.wa-fab{padding:.95rem}}
+
+/* ---------- Breadcrumbs ---------- */
+.breadcrumbs{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem;padding-top:18px;padding-bottom:2px;font-size:.86rem}
+.breadcrumbs a{color:var(--ink-soft);text-decoration:none;font-weight:600;transition:color .15s}
+.breadcrumbs a:hover{color:var(--accent-deep)}
+.breadcrumbs .bc-sep{width:15px;height:15px;color:var(--ink-soft);opacity:.5;flex:none}
+.breadcrumbs .bc-cur{color:var(--ink);font-weight:700}
+.breadcrumbs.on-dark a,.breadcrumbs.on-dark .bc-cur{color:#fff}
+.breadcrumbs.on-dark a{opacity:.8}
+.breadcrumbs.on-dark .bc-sep{color:#fff;opacity:.5}
+@media(max-width:560px){.breadcrumbs{font-size:.8rem}}
+
+/* ---------- Placeholders ---------- */
+.ph{
+  position:relative;background:
+    repeating-linear-gradient(135deg, rgba(0,0,0,.035) 0 12px, transparent 12px 24px),
+    var(--ph-bg, var(--cream-deep));
+  display:grid;place-items:center;overflow:hidden;color:var(--ph-fg,#9a9488);
+}
+.ph-label{
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.7rem;letter-spacing:.08em;
+  text-transform:uppercase;border:1px dashed currentColor;padding:.4rem .7rem;border-radius:6px;
+  background:rgba(255,255,255,.5);text-align:center;max-width:80%;
+}
+.ph-photo{--ph-bg:#dcd6c6;--ph-fg:#857f72}
+.ph-teal{--ph-bg:#bfe9e7;--ph-fg:#3a8c89}
+.ph-saffron{--ph-bg:#f7dca6;--ph-fg:#9e7321}
+.ph-blue{--ph-bg:#cce8f0;--ph-fg:#4a8497}
+
+/* map illustration placeholder card */
+.map-ph{aspect-ratio:1/1.05;border-radius:var(--r);position:relative}
+.map-ph .ph-label{font-size:.66rem}
+
+/* ---------- Sunburst doodle ---------- */
+.sun{position:relative;display:inline-grid;place-items:center}
+.sun svg{position:absolute;inset:-30%;width:160%;height:160%;pointer-events:none}
+
+/* ---------- Reviews stars ---------- */
+.stars{display:inline-flex;gap:2px;color:var(--saffron)}
+.stars svg{width:16px;height:16px}
+
+/* ---------- Generic forms ---------- */
+.field{display:block;margin-bottom:16px}
+.field label{display:block;font-size:.82rem;font-weight:600;margin-bottom:.4rem;color:var(--ink)}
+.field input,.field select,.field textarea{
+  width:100%;padding:.85rem 1rem;border:1.5px solid var(--line);border-radius:var(--r-sm);
+  font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink);transition:border .15s, box-shadow .15s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+.field .hint{font-size:.78rem;color:var(--ink-soft);margin-top:.35rem}
+
+/* ---------- Custom select caret (consistent, premium chevron) ---------- */
+select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236c6a6b' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat:no-repeat;background-position:right .9rem center;background-size:15px;
+}
+select:not([multiple]){padding-right:2.4rem!important}
+.mid-stop select{background-position:right 2.9rem center;padding-right:3.8rem!important}
+
+/* ---------- Custom date picker ---------- */
+.dp{position:relative}
+.dp-btn{display:flex;align-items:center;gap:.6rem;width:100%;text-align:left;border:1.5px solid var(--line);background:var(--white);color:var(--ink);border-radius:10px;padding:.72rem .8rem;font-family:inherit;font-size:.95rem;line-height:1.2;transition:border .15s,box-shadow .15s}
+.dp-btn svg{width:17px;height:17px;color:var(--accent-deep);flex:none}
+.dp-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dp-btn.empty span{color:var(--ink-soft)}
+.dp-btn:hover{border-color:var(--accent)}
+.dp-btn:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+/* popover is portaled to <body> and fixed-positioned in JS, so it escapes
+   every ancestor stacking context / overflow clip and never hides under
+   later sections (e.g. the dark trust strip below the hero). */
+.dp-pop{position:fixed;z-index:1000;width:288px;max-width:92vw;background:var(--white);border:1px solid var(--line);border-radius:14px;box-shadow:0 22px 50px -16px rgba(20,40,38,.34);padding:14px}
+.dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.dp-head b{font-family:var(--display);font-size:1rem;white-space:nowrap}
+.dp-nav{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--white);color:var(--ink);font-size:1.15rem;line-height:1;display:grid;place-items:center}
+.dp-nav:disabled{opacity:.3}
+.dp-nav:hover:not(:disabled){border-color:var(--accent);color:var(--accent-deep)}
+.dp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.dp-dow{font-size:.66rem;color:var(--ink-soft);font-weight:700;padding:3px 0}
+.dp-day{aspect-ratio:1;border:none;background:none;border-radius:8px;font-family:inherit;font-size:.86rem;color:var(--ink);cursor:pointer;display:grid;place-items:center}
+.dp-day:hover:not(:disabled):not(.sel){background:var(--cream-deep)}
+.dp-day.off{color:#c9c4b6;cursor:default}
+.dp-day.sel{background:var(--accent);color:#fff;font-weight:700}
+
+/* ---------- Keyboard focus (visible only for keyboard users) ---------- */
+:focus-visible{outline:2px solid var(--accent-deep);outline-offset:2px;border-radius:5px}
+.btn:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+a:focus-visible{outline:2px solid var(--accent-deep);outline-offset:4px}
+.chip:focus-visible,.tab:focus-visible{outline:2px solid var(--accent-deep);outline-offset:2px}
+
+/* ---------- Utility ---------- */
+.flex{display:flex}
+.between{justify-content:space-between}
+.items-center{align-items:center}
+.gap-s{gap:8px}.gap{gap:16px}.gap-l{gap:28px}
+.wrap-w{flex-wrap:wrap}
+.mt-s{margin-top:8px}.mt{margin-top:20px}.mt-l{margin-top:40px}
+.mb0{margin-bottom:0}
+.rel{position:relative}
+.hide-mob{}
+@media(max-width:700px){.hide-mob{display:none!important}}
+/* Scroll-reveal is gated on html.js (set by tweaks.js in <head>) so that if
+   scripts fail, content is never permanently hidden. */
+html.js .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1)}
+html.js .reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){html.js .reveal{opacity:1;transform:none;transition:none}}
+
+/* ============================================================
+   MOBILE-FIRST HARDENING  ·  no overflow, real tap targets
+   ============================================================ */
+html,body{overflow-x:hidden;max-width:100%}
+html,body{overflow-x:clip} /* clip doesn't create a scroll container, so position:sticky keeps working */
+img,svg,video,iframe{max-width:100%}
+*{min-width:0}
+
+/* ---- tablet / small-laptop ---- */
+@media(max-width:760px){
+  .nav-inner{height:66px}
+}
+
+@media(max-width:600px){
+  .wrap{padding-left:18px;padding-right:18px}
+  .section{padding:clamp(44px,11vw,64px) 0}
+  .section-tight{padding:clamp(32px,8vw,46px) 0}
+  /* 16px inputs = no iOS auto-zoom; roomier hit areas */
+  .field input,.field select,.field textarea{font-size:16px;padding:.95rem 1rem}
+  .btn{padding:1rem 1.5rem;min-height:48px}
+  .btn-lg{padding:1.1rem 1.7rem}
+  .btn-sm{padding:.7rem 1.15rem;font-size:.9rem;min-height:42px}
+  .nav-burger{padding:11px;margin-right:-6px}
+  .nav-inner{height:62px}
+  .mobile-menu{inset:62px 0 0}
+  h2{font-size:clamp(1.7rem,7.5vw,2.15rem)}
+  .display{font-size:clamp(2.3rem,9vw,3rem)}
+  .lead{font-size:1.04rem}
+  .eyebrow{font-size:.7rem}
+  /* keep the book button on phones, just compact */
+  .nav-cta .btn:not(.nav-burger){display:none}
+
+  /* ---- consistent nav offset for EVERY page head (beats inline .hero etc.) ---- */
+  body .hero,
+  body .page-head,
+  body .tours-head,
+  body .hero-banner{margin-top:-62px}
+  body .hero{padding-top:62px}
+
+  /* ---- tame oversized teal/banner page heads on phones ---- */
+  body .page-head{padding:88px 0 40px}
+  body .tours-head{padding:96px 0 38px}
+  body .hero-banner{height:auto;min-height:248px;padding:92px 20px 40px}
+  body .hero-banner h1{font-size:clamp(1.9rem,8.5vw,2.6rem)}
+
+  /* ---- filter bars become a single horizontal scroll strip, not stacked rows ---- */
+  body .filters{top:62px;padding:11px 0}
+  body .filter-row{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+    margin:0 -18px;padding:2px 18px;scroll-snap-type:x proximity}
+  body .filter-row::-webkit-scrollbar{display:none}
+  body .filter-row .chip{flex:none;scroll-snap-align:start}
+  body .filter-row .count{display:none}
+
+  /* roomier tap targets for chips */
+  .chip{min-height:44px;display:inline-flex;align-items:center}
+
+  /* footer: tighten the 2-col grid on phones */
+  .foot-grid{gap:26px 24px;padding:48px 0 32px}
+  .foot-bottom{flex-direction:column;align-items:flex-start;gap:10px}
+}
+@media(max-width:430px){
+  .foot-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:380px){
+  .wrap{padding-left:15px;padding-right:15px}
+  body .filter-row{margin:0 -15px;padding:2px 15px}
+}
+
+/* ============================================================
+   AUTHENTICITY LAYER  ·  "postcard from Ceylon"
+   hand notes · postage stamps · ticket perforations · paper grain
+   ============================================================ */
+
+/* subtle warm paper grain over everything (kept behind chrome) */
+body::after{
+  content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.028;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:150px 150px;
+}
+.nav,.mobile-menu,.wa-fab{z-index:60}
+
+/* handwritten margin notes */
+.hand{font-family:var(--hand);font-weight:700}
+.hand-note{font-family:var(--hand);font-weight:700;color:var(--accent-deep);font-size:1.5rem;line-height:1.1;display:inline-flex;align-items:flex-end;gap:.35rem}
+.hand-note.tomato{color:var(--tomato)}
+.hand-note.saffron{color:#b9780a}
+.hand-arrow{width:34px;height:auto;flex:none;color:currentColor;transform:translateY(2px)}
+
+/* postage stamp badge */
+.stamp{
+  --sc:var(--saffron);
+  display:inline-grid;place-items:center;text-align:center;gap:2px;
+  font-family:var(--body);font-weight:700;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
+  color:#fff;background:var(--sc);padding:.6rem .7rem;line-height:1.1;
+  transform:rotate(-6deg);box-shadow:var(--shadow-s);
+  -webkit-mask:radial-gradient(circle 3px at center, transparent 96%, #000) ; /* fallback */
+  border:2px dashed rgba(255,255,255,.85);border-radius:3px;
+}
+.stamp b{font-family:var(--display);font-size:1.15rem;font-weight:800;letter-spacing:0}
+
+/* ticket / boarding-pass perforation edge */
+.ticket{position:relative;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.ticket::before,.ticket::after{content:"";position:absolute;width:22px;height:22px;background:var(--cream);border-radius:50%;top:50%;transform:translateY(-50%)}
+.ticket::before{left:-11px}
+.ticket::after{right:-11px}
+.ticket-dash{border:0;border-top:2px dashed var(--line);margin:0}
+
+/* a torn dashed travel line, used as a section flourish */
+.route-rule{display:flex;align-items:center;gap:.6rem;color:var(--accent);margin:0}
+.route-rule::before,.route-rule::after{content:"";height:0;border-top:2px dashed currentColor;flex:1;opacity:.5}
+.route-rule svg{width:20px;height:20px;flex:none}
+
+/* gentle tilt utility for stickers/photos to feel hand-placed */
+.tilt-l{transform:rotate(-2deg)}
+.tilt-r{transform:rotate(2deg)}
+
+/* ============================================================
+   POSTCARD PALETTE  ·  hero wash adopted site-wide
+   Soft, airy versions of the hero gradient used for section
+   and page backgrounds — the brand's background language.
+   ============================================================ */
+
+/* the soft postcard wash — an airy take on the hero gradient */
+.bg-postcard{
+  background:
+    radial-gradient(120% 92% at 86% -4%, var(--pc-teal), transparent 60%),
+    radial-gradient(95% 85% at 4% 104%, var(--pc-saffron), transparent 58%),
+    linear-gradient(162deg, #eaf6f2 0%, #e8f1ea 52%, #eef4e6 100%);
+}
+/* single-tint section washes — quieter, for rhythm between sections */
+.bg-teal{background:var(--pc-teal)}
+.bg-sky{background:var(--pc-sky)}
+.bg-green{background:var(--pc-green)}
+.bg-saffron{background:var(--pc-saffron)}
+
+/* a thin dashed travel rule used to separate washed sections */
+.wash-edge{position:relative}
+.wash-edge::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:repeating-linear-gradient(90deg,var(--pc-line) 0 9px,transparent 9px 18px)}
+
+/* cards sitting on a wash keep the warm paper fill but gain a hairline
+   so they don't float */
+.bg-postcard .card,.bg-teal .card,.bg-green .card,.bg-saffron .card,.bg-sky .card{
+  border:1px solid rgba(255,255,255,.6);
+}

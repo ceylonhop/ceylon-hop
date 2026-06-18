@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why Hop With Us — Ceylon Hop</title>
+<meta name="description" content="Not a packaged tour, not a haggle at the curb. Private door-to-door transfers anywhere in Sri Lanka at a fixed price — with local drivers you can trust.">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<meta property="og:title" content="Why hop with us — Ceylon Hop">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<style>
+  .hero-banner{position:relative;height:360px;margin-top:-74px;display:grid;place-items:center;color:#fff;text-align:center;overflow:hidden}
+  .hero-banner .hb-photo{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .hero-banner::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,40,38,.4),rgba(20,40,38,.62));pointer-events:none}
+  .hero-banner .inner{position:relative;z-index:2;padding-top:60px}
+  .hero-banner h1{color:#fff}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
+  @media(max-width:860px){.split{grid-template-columns:1fr;gap:30px}}
+  .diff-list{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:18px}
+  .diff-list li b{display:block;font-family:var(--display);font-size:1.15rem;margin-bottom:.2rem}
+  .diff-list li span{color:var(--ink-soft);font-size:.95rem}
+  .diff-list li{padding-left:22px;border-left:3px solid var(--accent)}
+  .step-card{background:var(--paper);border-radius:var(--r);padding:24px;box-shadow:var(--shadow-s);height:100%}
+  .step-card .num{font-family:var(--display);font-size:2rem;font-weight:800;color:var(--accent)}
+  .step-card h3{font-size:1.1rem;margin:.3rem 0}
+  .step-card p{font-size:.9rem;color:var(--ink-soft);margin:0}
+  .val{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.6rem}
+  .val .ico{width:70px;height:70px;border-radius:50%;display:grid;place-items:center}
+  .val .ico svg{width:30px;height:30px;color:#fff}
+  .val p{font-size:.9rem;color:var(--ink-soft);max-width:26ch}
+  .cta-band{background:linear-gradient(160deg,#0d8f8c,#0AB9B6);color:#fff;border-radius:var(--r-lg);padding:48px;text-align:center}
+  .cta-band h2{color:#fff;max-width:20ch;margin:0 auto .8rem}
+
+  /* price comparison — the anti-haggle proof */
+  .cmp{display:grid;gap:12px;margin-top:22px}
+  .cmp .row{display:flex;align-items:center;gap:14px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px}
+  .cmp .row.hop{border-color:rgba(10,185,182,.45);box-shadow:var(--shadow-s)}
+  .cmp .who{font-weight:700;font-size:.95rem;min-width:0;flex:1}
+  .cmp .who small{display:block;font-weight:500;color:var(--ink-soft);font-size:.8rem}
+  .cmp .amt{font-family:var(--display);font-weight:800;font-size:1.35rem;white-space:nowrap}
+  .cmp .row.bad .amt{color:var(--ink-soft);text-decoration:line-through wavy rgba(236,58,36,.55) 2px}
+  .cmp .row.hop .amt{color:var(--teal-deep)}
+  .cmp .tagp{font-size:.72rem;font-weight:700;color:var(--teal-deep);background:var(--pc-teal);padding:.3rem .65rem;border-radius:999px;white-space:nowrap}
+</style>
+</head>
+<body>
+<div data-header></div>
+
+<section class="hero-banner" data-screen-label="Why hero">
+  <image-slot id="why-hero" class="hb-photo" shape="rect" placeholder="Drop a photo — Ceylon Hop van on a coastal road"></image-slot>
+  <div class="inner">
+    <span class="sticker">Not a packaged tour</span>
+    <h1 class="display" style="font-size:clamp(2.2rem,5vw,3.8rem);margin-top:12px">Why hop with us</h1>
+  </div>
+</section>
+
+<!-- not a tour, not a haggle -->
+<section class="section">
+  <div class="wrap split">
+    <image-slot id="why-jetty" style="display:block;width:100%;aspect-ratio:4/3.4" shape="rounded" radius="24" placeholder="Drop a photo — two travelers on a wooden jetty over a lake"></image-slot>
+    <div>
+      <span class="eyebrow">A better way to get around</span>
+      <h2>Not a tour package. Not a haggle at the curb.</h2>
+      <p>If you&rsquo;ve travelled Sri Lanka before, you know the drill: confusing buses, taxi quotes that change with the weather, and tours that move at someone else&rsquo;s pace.</p>
+      <p class="mb0">Ceylon Hop is simpler. Name any two points on the island and you get a <b>fixed price</b> for a private AC car or van, door to door &mdash; before you commit to anything. Your schedule, your stops, your trip.</p>
+      <a href="index.html#book" class="btn btn-cta mt" style="margin-top:22px">Get a fixed price</a>
+    </div>
+  </div>
+</section>
+
+<!-- one ride or the whole island -->
+<section class="section" style="background:var(--cream-deep)">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow">The simple idea</span>
+      <h2>One ride, or the whole island</h2>
+      <p>Need a single transfer &mdash; airport to Kandy, Ella to the coast? Book it in two minutes at a fixed price.</p>
+      <p>Building a bigger trip? Add stops in our planner, set your nights at each, and we handle every leg between your hotels &mdash; one driver-quote for the whole route.</p>
+      <p class="mb0">And on the island&rsquo;s busiest corridors you can <b>share a seat</b> on our daily service and pay a fraction of the private price.</p>
+      <a href="plan.html" class="btn btn-primary mt" style="margin-top:22px">Plan a multi-stop trip</a>
+    </div>
+    <div>
+      <div class="cmp">
+        <div class="row bad"><div class="who">Curbside taxi quote<small>Colombo Airport → Kandy · "special price, my friend"</small></div><div class="amt" id="cmp-taxi">$120?</div></div>
+        <div class="row bad"><div class="who">Public bus + tuk-tuks<small>4–6 hours, three changes, bags on your lap</small></div><div class="amt">your day</div></div>
+        <div class="row hop"><div class="who">Ceylon Hop, private AC car<small id="cmp-meta">Door to door · about 3 h drive</small></div><div class="amt" id="cmp-car">$75 fixed</div><span class="tagp" id="cmp-seat">or shared seat $19</span></div>
+      </div>
+      <p class="hand-note saffron" style="margin:14px 6px 0">the price you see is the price you pay</p>
+    </div>
+  </div>
+</section>
+
+<!-- what makes us different -->
+<section class="section">
+  <div class="wrap split">
+    <image-slot id="why-driver" style="display:block;width:100%;aspect-ratio:4/4.6" shape="rounded" radius="24" placeholder="Drop a photo — a Pro Hopper driver with their vehicle"></image-slot>
+    <div>
+      <span class="eyebrow">The difference</span>
+      <h2>What makes Ceylon Hop different</h2>
+      <ul class="diff-list">
+        <li><b>Fixed prices, shown up front</b><span>You see your exact fare before you book &mdash; no meters, no haggling, no surprises at the door.</span></li>
+        <li><b>Door to door, on your schedule</b><span>We pick you up where you are and drop you where you&rsquo;re going. Leave when you want, stop where you like.</span></li>
+        <li><b>Drivers who know the island</b><span>Vetted local Pro Hoppers who share the best food stops, viewpoints and timing tricks along the way.</span></li>
+        <li><b>A real human on WhatsApp</b><span>Plans change. Message us and a planner sorts it &mdash; usually within minutes, 7 days a week.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- values -->
+<section class="section" style="background:var(--paper)">
+  <div class="wrap center">
+    <div class="grid cols-3">
+      <div class="val"><div class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div><h3>Flexible</h3><p>Change dates, times and stops up to the day before — free cancellation.</p></div>
+      <div class="val"><div class="ico" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg></div><h3>Safe</h3><p>Insured vehicles, trusted drivers and 7-day WhatsApp support.</p></div>
+      <div class="val"><div class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h3>Fair</h3><p>One honest fixed price — share a seat on popular routes to pay less.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- how it works -->
+<section class="section">
+  <div class="wrap">
+    <div class="center" style="margin-bottom:40px"><span class="eyebrow" style="justify-content:center">How it works</span><h2>Four simple steps</h2></div>
+    <div class="grid cols-4 steps-grid">
+      <div class="step-card"><div class="num">1</div><h3>Tell us where</h3><p>Pick-up, drop-off &mdash; any two points on the island. Add stops if you like.</p></div>
+      <div class="step-card"><div class="num">2</div><h3>See your fixed price</h3><p>Your exact fare appears instantly &mdash; private car, van, or a shared seat.</p></div>
+      <div class="step-card"><div class="num">3</div><h3>Book in minutes</h3><p>Pay securely online. A planner confirms your pickup on WhatsApp.</p></div>
+      <div class="step-card"><div class="num">4</div><h3>Your driver, your door</h3><p>An AC vehicle and a friendly Pro Hopper, exactly where and when you asked.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section-tight" style="padding-bottom:80px">
+  <div class="wrap">
+    <div class="cta-band">
+      <div class="sun" style="margin:0 auto 6px" id="cta-c"></div>
+      <h2>Ready to explore Sri Lanka the easy way?</h2>
+      <p style="color:rgba(255,255,255,.9);max-width:46ch;margin:0 auto 1.5rem">Get a fixed price for any route in seconds &mdash; or message us and we&rsquo;ll plan it together.</p>
+      <div class="flex gap" style="justify-content:center;flex-wrap:wrap">
+        <a href="index.html#book" class="btn btn-light btn-lg">Get a fixed price</a>
+        <a href="https://wa.me/94771986692" class="btn btn-wa btn-lg" id="cta-wa"></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div data-footer></div>
+
+<script src="site.js"></script>
+<script src="transfers-data.js"></script>
+<script src="image-slot.js"></script>
+<script>
+  initChrome({active:'why.html', footerCta:false, onDark:true});
+  document.getElementById('cta-c').innerHTML=cmark(56,'#fff');
+  document.getElementById('cta-wa').innerHTML=ICON.wa+' Chat with us';
+  document.querySelectorAll('.btn').forEach(b=>{if(/Get a fixed price$|Plan a multi-stop trip$/.test(b.textContent.trim()))b.insertAdjacentHTML('beforeend',' '+ICON.arrow);});
+  // live numbers from the same quote engine the booking flow uses
+  (function(){
+    const T=window.TRANSFERS; if(!T) return;
+    const q=T.privateQuote('cmb-airport','kandy');
+    const sh=T.sharedOption('cmb-airport','kandy');
+    document.getElementById('cmp-car').textContent='$'+q.car+' fixed';
+    document.getElementById('cmp-meta').textContent='Door to door · about '+q.duration+' drive';
+    document.getElementById('cmp-taxi').textContent='$'+Math.round(q.car*1.6/5)*5+'?';
+    const seatEl=document.getElementById('cmp-seat');
+    if(sh) seatEl.textContent='or shared seat $'+sh.seat; else seatEl.remove();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# OS / tooling cruft
+.DS_Store
+node_modules/

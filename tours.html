@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Packaged tours — Ceylon Hop</title>
+<meta name="description" content="Complete Sri Lanka tours, end-to-end private transport. One AC vehicle and a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<meta property="og:title" content="Complete Sri Lanka tours — Ceylon Hop">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<style>
+  /* themed, postcard hero rather than the flat teal page-head */
+  .tours-head{position:relative;margin-top:-74px;padding:130px 0 62px;overflow:hidden}
+  .tours-head .wash{position:absolute;inset:0;z-index:0;
+    background:
+      radial-gradient(120% 90% at 88% -10%, var(--pc-teal), transparent 58%),
+      radial-gradient(90% 80% at -6% 110%, var(--pc-saffron), transparent 54%),
+      linear-gradient(160deg,#e9f5f0,#e7f0e7 55%,#eef4e5)}
+  .tours-head .wrap{position:relative;z-index:1}
+  .tours-head .crumb{font-size:.84rem;color:var(--ink-soft)}
+  .tours-head .crumb a{color:var(--accent-deep)}
+  .tours-head h1{font-size:clamp(2.5rem,5.4vw,4.4rem);max-width:15ch;margin:.5rem 0 .7rem}
+  .tours-head .lead{max-width:56ch}
+  .head-flourish{position:absolute;top:150px;right:40px;z-index:1}
+  @media(max-width:980px){.head-flourish{display:none}}
+  .assure{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+  .assure .pill{background:var(--paper);box-shadow:var(--shadow-s);border:1px solid var(--line)}
+  .assure .pill svg{width:15px;height:15px;color:var(--teal-deep)}
+
+  /* filter bar (matches routes.html vocabulary) */
+  .filters{position:sticky;top:74px;z-index:40;background:rgba(244,242,234,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:14px 0}
+  .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .chip{background:var(--paper);border:1.5px solid var(--line);border-radius:999px;padding:.55rem 1.05rem;font-weight:600;font-size:.88rem;color:var(--ink);transition:.18s;white-space:nowrap}
+  .chip:hover{border-color:var(--accent)}
+  .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .filter-row .count{margin-left:auto;font-size:.86rem;color:var(--ink-soft);white-space:nowrap}
+
+  /* tour card */
+  .tour-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:30px}
+  @media(max-width:820px){.tour-grid{grid-template-columns:1fr}}
+  .tcard{display:flex;flex-direction:column;height:100%;text-align:left;transition:transform .2s, box-shadow .2s}
+  .tcard:hover{transform:translateY(-5px);box-shadow:var(--shadow-lg)}
+  .tcard .top{position:relative;aspect-ratio:16/10}
+  .tcard .top .ph{position:absolute;inset:0}
+  .tcard .top image-slot{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .tcard .sticker{position:absolute;top:14px;left:14px;z-index:2}
+  .tcard .daybadge{position:absolute;bottom:-18px;right:18px;z-index:3;background:var(--ink);color:#fff;
+    border-radius:14px;padding:.5rem .8rem;text-align:center;box-shadow:var(--shadow);line-height:1}
+  .tcard .daybadge b{font-family:var(--display);font-size:1.5rem;font-weight:800;display:block}
+  .tcard .daybadge span{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:#cdb}
+  .tcard .body{padding:24px 24px 24px;display:flex;flex-direction:column;flex:1}
+  .tcard .meta{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem}
+  .tcard h3{font-size:1.5rem;margin-bottom:.45rem;line-height:1.1}
+  .tcard .blurb{font-size:.93rem;color:var(--ink-soft);margin-bottom:1rem}
+  .tcard .hl{list-style:none;padding:0;margin:0 0 1.1rem;display:grid;gap:.5rem}
+  .tcard .hl li{display:flex;gap:.6rem;font-size:.9rem;line-height:1.35}
+  .tcard .hl .ck{flex:none;width:21px;height:21px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center;margin-top:1px}
+  .tcard .hl .ck svg{width:12px;height:12px}
+  .tcard .route{display:flex;align-items:center;flex-wrap:wrap;gap:.3rem .15rem;margin-bottom:1.1rem;font-size:.78rem;color:var(--ink-soft)}
+  .tcard .route .s{background:var(--cream-deep);padding:.2rem .5rem;border-radius:6px;white-space:nowrap}
+  .tcard .route .arr{opacity:.5;padding:0 .1rem}
+  .tcard .foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:16px;border-top:1px solid var(--line)}
+  .tcard .price{font-size:.78rem;color:var(--ink-soft);line-height:1.2}
+  .tcard .price b{font-family:var(--display);font-size:1.5rem;color:var(--ink);display:block;line-height:1}
+  .tcard .price small{font-size:.72rem}
+
+  /* custom / concierge strip */
+  .plan{background:var(--ink);color:#fff;border-radius:var(--r-lg);padding:40px;display:flex;align-items:center;justify-content:space-between;gap:28px;flex-wrap:wrap;position:relative;overflow:hidden}
+  .plan::after{content:"";position:absolute;inset:0;background:radial-gradient(60% 120% at 100% 0,rgba(10,185,182,.35),transparent 60%);pointer-events:none}
+  .plan .pl-l{position:relative;z-index:1;max-width:46ch}
+  .plan .eyebrow{color:#7fe3df}
+  .plan h3{color:#fff;font-size:1.7rem}
+  .plan p{color:rgba(255,255,255,.82);margin:0}
+  .plan .pl-r{position:relative;z-index:1}
+</style>
+</head>
+<body data-page="tours">
+<div data-header></div>
+
+<section class="tours-head" data-screen-label="Tours header">
+  <div class="wash"></div>
+  <span class="stamp head-flourish tilt-r"><b>10+</b>Day tours</span>
+  <div class="wrap">
+    <div class="crumb"><a href="index.html">Home</a> · Tours</div>
+    <span class="sticker" style="margin-top:14px">Full transport · you choose the hotels</span>
+    <h1 class="display">Complete tours, end&#8209;to&#8209;end transport</h1>
+    <p class="lead">Pick a ready-made route and we handle <b>every kilometre</b> &mdash; one private AC vehicle and a Pro Hopper chauffeur-guide who stays with you the whole trip, plus airport transfers, train seats and door-to-door pick-up at each stop. <b>You book your own hotels</b> &mdash; we send a hand-picked shortlist for every night, so you stay where you like, at your budget.</p>
+    <div class="assure">
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Private driver-guide, whole trip</span>
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> You book your own hotels (we shortlist)</span>
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> One price for the whole vehicle</span>
+    </div>
+  </div>
+</section>
+
+<div class="filters">
+  <div class="wrap filter-row" id="filter-row">
+    <button class="chip active" data-f="all">All tours</button>
+    <button class="chip" data-f="short">Under 6 days</button>
+    <button class="chip" data-f="classic">Classic</button>
+    <button class="chip" data-f="hills">Hill country</button>
+    <button class="chip" data-f="wildlife">Wildlife</button>
+    <button class="chip" data-f="culture">Culture</button>
+    <button class="chip" data-f="honeymoon">Honeymoon</button>
+    <span class="count" id="tcount"></span>
+  </div>
+</div>
+
+<section class="section-tight bg-green wash-edge">
+  <div class="wrap">
+    <div class="center"><span class="eyebrow" style="justify-content:center">How a Ceylon Hop tour works</span><h2 style="max-width:22ch;margin:.3rem auto 0">We drive every mile &mdash; you stay where you like</h2></div>
+    <div class="grid cols-3" style="margin-top:36px">
+      <div class="hiw">
+        <span class="hiw-n">1</span>
+        <h3>Pick a route &amp; your dates</h3>
+        <p>Choose a tour below, set your start date and how many of you are travelling. Tweak any day &mdash; add, drop or swap stops.</p>
+      </div>
+      <div class="hiw">
+        <span class="hiw-n">2</span>
+        <h3>Book your own hotels</h3>
+        <p>We send a hand-picked shortlist for every overnight stop &mdash; guesthouse to five-star. You book what suits your taste and budget, directly.</p>
+      </div>
+      <div class="hiw">
+        <span class="hiw-n">3</span>
+        <h3>We handle the road</h3>
+        <p>Your chauffeur-guide and AC vehicle do every transfer, door to door, the entire trip &mdash; one price for the whole vehicle, car or van.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="wrap">
+    <div class="tour-grid" id="tour-grid"></div>
+  </div>
+</section>
+
+<section class="section-tight">
+  <div class="wrap">
+    <div class="plan">
+      <div class="pl-l">
+        <span class="eyebrow">None of these quite right?</span>
+        <h3>Tell us your dates &mdash; we&rsquo;ll build your route.</h3>
+        <p>Mix any of these tours, add or drop days, travel at your own pace. Our Hop Concierge plans bespoke private transport itineraries over WhatsApp, free of charge &mdash; you still book the hotels you want.</p>
+      </div>
+      <div class="pl-r">
+        <a href="https://wa.me/94771986692?text=Hi%20Ceylon%20Hop!%20I'd%20like%20help%20planning%20a%20custom%20tour%20of%20Sri%20Lanka." class="btn btn-wa btn-lg" id="wa-plan"></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div data-footer></div>
+
+<script src="site.js"></script>
+<script src="image-slot.js"></script>
+<script src="tours-data.js"></script>
+<script>
+  initChrome({active:'tours.html'});
+  document.getElementById('wa-plan').innerHTML = ICON.wa + ' Plan with us';
+
+  const grid=document.getElementById('tour-grid');
+  const count=document.getElementById('tcount');
+  const themeLabel={classic:'Classic',grand:'Grand tour',hills:'Hill country',wildlife:'Wildlife',culture:'Culture',honeymoon:'Honeymoon'};
+
+  function route(stops){
+    return stops.map((s,i)=>`<span class="s">${s}</span>${i<stops.length-1?'<span class="arr">→</span>':''}`).join('');
+  }
+  function card(t){
+    const hl = t.highlights.map(h=>`<li><span class="ck">${ICON.check}</span><span>${h}</span></li>`).join('');
+    return `<a class="card tcard" href="tour.html?id=${t.id}" data-theme="${t.theme}" data-days="${t.days}">
+      <div class="top">
+        <image-slot id="tour-photo-${t.id}" shape="rect" placeholder="${String(t.photo).replace(/^PHOTO\s*—\s*/,'Drop a photo — ').replace(/"/g,'&quot;')}"></image-slot>
+        <span class="sticker">${t.tag}</span>
+        <div class="daybadge"><b>${t.days}</b><span>days</span></div>
+      </div>
+      <div class="body">
+        <div class="meta">
+          <span class="pill pill-teal pill-dot">${themeLabel[t.theme]}</span>
+          <span class="pill">${t.nights} nights</span>
+          <span class="pill">${t.pace} pace</span>
+        </div>
+        <h3>${t.name}</h3>
+        <p class="blurb">${t.blurb}</p>
+        <ul class="hl">${hl}</ul>
+        <div class="route">${route(t.stops)}</div>
+        <div class="foot">
+          <span class="price">from <b>$${t.price}</b><small>whole trip · private vehicle</small></span>
+          <span class="btn btn-primary btn-sm">View itinerary ${ICON.arrow}</span>
+        </div>
+      </div>
+    </a>`;
+  }
+
+  function render(filter){
+    let list = TOURS;
+    if(filter==='short') list = TOURS.filter(t=>t.days<6);
+    else if(filter!=='all') list = TOURS.filter(t=>t.theme===filter);
+    grid.innerHTML = list.map(card).join('');
+    count.textContent = `${list.length} tour${list.length!==1?'s':''}`;
+    initReveal();
+  }
+  render('all');
+
+  document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+    document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active');
+    render(c.dataset.f);
+  }));
+</script>
+</body>
+</html>

@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan your multi-stop trip — Ceylon Hop</title>
+<meta name="description" content="Build your Sri Lanka route stop by stop. Add the places you want to visit, set nights at each, and we plan the private door-to-door transfers between them.">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<meta property="og:title" content="Plan your multi-stop Sri Lanka trip — Ceylon Hop">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<script src="datepicker.js"></script>
+<style>
+  /* ---- plan hero ---- */
+  .plan-head{position:relative;margin-top:-74px;padding:116px 0 120px;overflow:hidden}
+  .plan-head::after{content:"";position:absolute;inset:0;z-index:0;background:
+    radial-gradient(120% 90% at 88% -10%, var(--pc-teal), transparent 58%),
+    radial-gradient(90% 80% at -6% 110%, var(--pc-saffron), transparent 54%),
+    linear-gradient(160deg,#e9f5f0,#e7f0e7 55%,#eef4e5)}
+  .plan-head .wrap{position:relative;z-index:1}
+  .plan-head .eyebrow{color:var(--accent-deep)}
+  .plan-head h1{color:var(--ink);font-size:clamp(2rem,4vw,2.9rem);margin:.3rem 0 .5rem;max-width:18ch}
+  .plan-head p{color:var(--ink-soft);max-width:54ch;font-size:1.05rem;margin:0}
+
+  /* ---- board layout ---- */
+  .board-wrap{margin-top:-78px;position:relative;z-index:2;padding-bottom:80px}
+  .board{display:grid;grid-template-columns:1fr 384px;gap:26px;align-items:start}
+  @media(max-width:980px){.board{grid-template-columns:1fr}}
+
+  .panel-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:24px}
+
+  /* trip-basics setup panel — a clean white card; the header + controls set it apart from
+     the transfer-leg cards (no heavy tint, which read as muddy) */
+  .setup-card{background:var(--white);border-color:var(--line)}
+  .setup-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .setup-head .sh-ic{width:36px;height:36px;border-radius:10px;background:var(--pc-teal);display:grid;place-items:center;flex:none;color:var(--accent-deep)}
+  .setup-head .sh-ic svg{width:19px;height:19px}
+  .setup-head b{display:block;font-family:var(--display);font-size:1.05rem;color:var(--ink);line-height:1.15}
+  .setup-head span{font-size:.8rem;color:var(--ink-soft)}
+  /* selected vehicle reads clearly: white pill + accent ring + accent label on the cream track */
+  .setup-card .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s)}
+  .setup-card .veh-btn.on b{color:var(--accent-deep)}
+
+  /* trip controls */
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
+  .controls .field label{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;display:block;margin-bottom:5px}
+  .controls input,.controls select{width:100%;padding:.7rem .8rem;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
+  .veh-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--cream-deep);border-radius:12px;padding:5px}
+  .veh-btn{border:none;background:none;border-radius:9px;padding:.55rem .4rem;cursor:pointer;text-align:center;font-family:inherit;transition:.15s}
+  .veh-btn b{display:block;font-size:.92rem}
+  .veh-btn small{font-size:.72rem;color:var(--ink-soft)}
+  .veh-btn.on{background:var(--white);box-shadow:var(--shadow-s)}
+  .veh-btn.on b{color:var(--accent-deep)}
+
+  .board-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:22px 2px 12px}
+  .board-h h2{font-size:1.3rem;margin:0}
+  .board-h span{font-size:.84rem;color:var(--ink-soft)}
+
+  /* itinerary rail */
+  .rail{position:relative}
+  .stop{position:relative;display:grid;grid-template-columns:22px 1fr;gap:14px;align-items:start}
+  .stop-node{display:flex;flex-direction:column;align-items:center;padding-top:20px}
+  .stop-node .pin{width:18px;height:18px;border-radius:50%;border:3px solid var(--accent-deep);background:var(--white);z-index:2;flex:none}
+  .stop.start .stop-node .pin{background:var(--teal-deep);border-color:var(--teal-deep)}
+  .stop.end .stop-node .pin{background:var(--tomato);border-color:var(--tomato)}
+  .stop-node .wire{width:2px;flex:1;background:repeating-linear-gradient(var(--accent) 0 5px,transparent 5px 11px);opacity:.5;margin-top:2px;min-height:14px}
+  .stop:last-of-type .stop-node .wire{display:none}
+
+  .stop-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:13px 14px 15px;margin-bottom:0;transition:box-shadow .15s,opacity .15s}
+  .stop-card.dragging{opacity:.55;box-shadow:var(--shadow)}
+  .stop.start .stop-card{border-color:color-mix(in srgb,var(--teal-deep) 35%,var(--line))}
+  .stop.end .stop-card{border-color:color-mix(in srgb,var(--tomato) 35%,var(--line))}
+  .stop-top{display:grid;grid-template-columns:18px 1fr auto;gap:9px;align-items:center}
+  .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
+  .drag:active{cursor:grabbing}
+  .drag svg{width:16px;height:16px}
+  .stop-badge{font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);
+    background:var(--pc-teal);border-radius:999px;padding:3px 10px;justify-self:start;white-space:nowrap}
+  .stop.start .stop-badge{color:var(--teal-deep);background:#e3f3ee}
+  .stop.end .stop-badge{color:var(--tomato);background:#fdeae4}
+  .stop-rm{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;flex:none}
+  .stop-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .stop-rm svg{width:12px;height:12px}
+  .stop-rm.hide{visibility:hidden}
+  .stop-name{width:100%;border:none;background:none;font-family:var(--display);font-weight:700;font-size:1.32rem;color:var(--ink);padding:4px 0 2px;margin:2px 0 0}
+  .stop-name:focus{outline:none;border-bottom:2px solid var(--accent)}
+  .stop-name::placeholder{color:var(--ink-soft);opacity:.6}
+
+  /* leg-style title: "Previous → [editable destination]" */
+  .leg-title{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px;margin-top:2px}
+  .leg-title .stop-name{width:auto;flex:1 1 7ch;min-width:7ch;margin:0;padding:2px 0}
+  .leg-title.origin-only .stop-name{flex:1 1 100%}
+  .leg-origin{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink-soft);flex:0 0 auto;white-space:nowrap}
+  .leg-arrow{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--accent);flex:none}
+
+  /* transfer detail folded into the leg card */
+  .card-transfer{display:flex;align-items:center;gap:.5rem;margin-top:8px;font-size:.8rem;color:var(--ink-soft)}
+  .card-transfer b{color:var(--ink);font-weight:700}
+  .card-transfer .ct-ico{width:22px;height:22px;border-radius:50%;background:var(--pc-teal);color:var(--accent-deep);display:grid;place-items:center;flex:none}
+  .card-transfer .ct-ico svg{width:13px;height:13px}
+
+  .stop-body{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:9px}
+  .date-lines{display:flex;flex-direction:column;gap:4px}
+  .dl-row{display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft);white-space:nowrap}
+  .dl-row b{color:var(--ink);font-weight:700}
+  .dl-muted{color:var(--ink-soft);font-weight:400}
+  .dl-dot{width:9px;height:9px;border-radius:50%;border:2px solid var(--accent);background:var(--white);flex:none}
+  .dl-dot.in{background:var(--accent);border-color:var(--accent)}
+  .dl-dot.out{background:var(--white);border-color:var(--ink-soft)}
+  .dl-dot.end{background:var(--tomato);border-color:var(--tomato)}
+  .stay-nights{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  .stay-nights .lbl{font-size:.72rem;color:var(--ink-soft);font-weight:600}
+  .stay-nights .ctrls{display:flex;align-items:center;gap:6px;background:var(--cream-deep);border-radius:999px;padding:3px}
+  .stay-nights .ctrls button{width:28px;height:28px;border-radius:50%;border:none;background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep);font-size:1.1rem;font-weight:700;cursor:pointer;display:grid;place-items:center;line-height:1}
+  .stay-nights .ctrls button:disabled{opacity:.35;cursor:default}
+  .stay-nights .ctrls b{min-width:30px;text-align:center;font-size:.86rem}
+
+  /* transfer connector between stays — dotted continuity + minimal label */
+  .leg-link{display:grid;grid-template-columns:22px 1fr;gap:14px;align-items:center;padding:3px 0}
+  .ll-rail{position:relative;display:flex;justify-content:center;align-self:stretch}
+  .ll-wire{width:2px;background:repeating-linear-gradient(var(--accent) 0 5px,transparent 5px 11px);opacity:.5}
+  .ll-ico{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;
+    background:var(--white);border:1.5px solid var(--pc-line);display:grid;place-items:center;color:var(--accent-deep)}
+  .ll-ico svg{width:14px;height:14px}
+  .ll-tx{font-size:.82rem;color:var(--ink-soft);padding:6px 0}
+  .ll-tx b{color:var(--ink);font-weight:700}
+  .ll-lead{font-weight:700;color:var(--ink)}
+  .ll-meta{display:block;font-size:.76rem;margin-top:1px}
+  .ll-meta b{color:var(--ink-soft);font-weight:700}
+
+  /* vehicle requirement note */
+  .veh-note{display:flex;gap:.45rem;align-items:flex-start;margin-top:8px;font-size:.8rem;line-height:1.4;color:var(--ink-soft)}
+  .veh-note svg{width:15px;height:15px;flex:none;margin-top:1px;color:var(--accent-deep)}
+  .veh-btn:disabled{opacity:.45;cursor:not-allowed}
+  .veh-btn .veh-lock{display:none}
+  .veh-btn:disabled .veh-lock{display:inline}
+
+  /* route map (built from each stop's coordinates) */
+  .trip-map{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:18px;
+    background:linear-gradient(170deg,#eaf4f1,#dfeee9)}
+  .trip-map svg{display:block;width:100%;height:auto}
+  .trip-map .tm-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--ink-soft);font-size:.82rem;padding:20px}
+  .tm-pin-label{font-family:var(--body);font-weight:700;font-size:6px;fill:var(--ink)}
+  .tm-pin-num{font-family:var(--body);font-weight:800;fill:#fff}
+
+  /* calm, de-emphasised price estimate (no jumping totals) */
+  .sum-estimate{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 4px;
+    padding:13px 15px;background:var(--cream-deep);border-radius:12px}
+  .sum-estimate .se-lbl{font-size:.82rem;color:var(--ink-soft);font-weight:600;line-height:1.3;flex:1 1 auto;min-width:0}
+  .sum-estimate .se-sub{display:block;font-weight:400;font-size:.72rem;color:var(--ink-soft)}
+  .sum-estimate .se-amt{font-family:var(--display);font-weight:700;font-size:1.25rem;color:var(--ink);white-space:nowrap;flex:none}
+
+  .add-stop-btn{display:inline-flex;align-items:center;gap:.5rem;margin:14px 0 0 36px;background:var(--white);border:1.5px dashed var(--accent);color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border-radius:999px;cursor:pointer;transition:.15s}
+  .add-stop-btn:hover{background:var(--pc-teal)}
+  .add-stop-btn svg{width:16px;height:16px}
+
+  .reorder-hint{font-size:.78rem;color:var(--ink-soft);margin:10px 0 0;display:flex;align-items:center;justify-content:center;gap:.4rem}
+  .reorder-hint svg{width:14px;height:14px;opacity:.6}
+
+  /* ---- itinerary rail ---- */
+  #rail{display:grid;gap:0}
+
+  /* ---- leg cards: each card is one private transfer ---- */
+  .leg{position:relative}
+  .leg-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:12px 14px 12px;transition:box-shadow .15s,opacity .15s,border-color .15s}
+  .leg-card.dragging{opacity:.55;box-shadow:var(--shadow)}
+  .leg-card.leg-bad{border-color:var(--tomato);box-shadow:0 0 0 3px rgba(236,58,36,.16)}
+  .leg-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .leg-badge{font-size:.67rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 11px;white-space:nowrap}
+  .leg-head .leg-rm{flex:none;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;flex:none}
+  .leg-head .leg-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .leg-head .leg-rm.hide{display:none}
+  .leg-head .leg-rm svg{width:12px;height:12px}
+  .leg-head .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
+  .leg-head .drag:active{cursor:grabbing}
+  .leg-head .drag svg{width:16px;height:16px}
+
+  .loc-row{display:grid;grid-template-columns:16px 1fr;gap:11px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:9px 13px;background:var(--white);transition:border .15s,box-shadow .15s}
+  .loc-row + .loc-row{margin-top:8px}
+  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .loc-row .pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
+  .loc-row .pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .loc-row label{display:block;font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
+  .loc-row input{width:100%;border:none;background:none;font-family:inherit;font-size:.97rem;color:var(--ink);padding:1px 0}
+  .loc-row input:focus{outline:none}
+
+  /* connected route block: pins + dotted rail link pick-up (top) → drop-off (bottom) */
+  .route-block{display:grid;grid-template-columns:16px 1fr;gap:13px;border:1.5px solid var(--line);border-radius:13px;padding:6px 16px;background:var(--white);transition:border .15s,box-shadow .15s}
+  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
+  .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
+  .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .rb-wire{flex:1;width:2px;min-height:22px;margin:4px 0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
+  .rb-fields{display:flex;flex-direction:column;min-width:0}
+  .rb-field{padding:9px 0}
+  .rb-field label{display:block;font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:2px}
+  /* leg pick-up/drop-off as styled selects (replaces the native datalist dropdown) */
+  .rb-field select,.loc-row select{width:100%;border:none;background:none;background-image:none;font-family:inherit;font-size:.98rem;color:var(--ink);padding:1px .3rem 1px 0!important;appearance:none;-webkit-appearance:none;cursor:pointer;text-overflow:ellipsis}
+  .rb-field select:focus,.loc-row select:focus{outline:none}
+  .rb-divider{position:relative;height:1px;background:var(--line)}
+  .rb-swap{position:absolute;right:-4px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-s);transition:transform .15s,border-color .15s}
+  .rb-swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
+  .rb-swap:active{transform:translateY(-50%) rotate(180deg)}
+  .rb-swap svg{width:15px;height:15px}
+
+  /* leg meta (distance · time · price) sits in the card header, using the spare space */
+  .leg-head-right{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0;justify-content:flex-end}
+  .leg-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:.82rem;color:var(--ink-soft);min-width:0}
+  .leg-meta .lm-dist b{color:var(--ink);font-weight:700}
+  .leg-meta .lm-sep{opacity:.4}
+  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:800;margin-left:.1rem}
+  .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);padding-left:.45rem;border-left:1px solid var(--pc-line);white-space:nowrap}
+  .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
+  @media(max-width:540px){.leg-meta .lm-src{display:none}}
+
+  .leg-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:11px}
+  .leg-date label{font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:5px}
+  .leg-date .opt{font-weight:500;text-transform:none;letter-spacing:0}
+  /* the branded date button inside a leg card sits flush */
+  .leg-date .dp-btn{padding:.55rem .75rem;font-size:.88rem}
+  .leg-dist{font-size:.84rem;color:var(--ink-soft);text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:0;flex:1 1 14ch}
+  .leg-dist .ld-km b{color:var(--ink);font-family:var(--display);font-weight:700;font-size:1.08rem}
+  .leg-dist .ld-price{font-weight:700;color:var(--teal-deep);font-size:.82rem}
+  .leg-dist .ld-by{font-size:.66rem;color:var(--ink-soft);display:inline-flex;align-items:center;gap:.3rem}
+  .leg-dist .ld-by svg{width:12px;height:12px;color:#4285F4}
+  .leg-dist .ld-empty{color:var(--ink-soft);font-style:italic;line-height:1.35;max-width:26ch}
+  @media(max-width:380px){.leg-dist{text-align:left;align-items:flex-start;flex-basis:100%}}
+
+  /* "then continue…" connector between legs */
+  .leg-gap{display:flex;align-items:center;gap:.6rem;padding:9px 4px;color:var(--ink-soft)}
+  .leg-gap .lg-line{flex:1;height:0;border-top:2px dashed var(--pc-line)}
+  .leg-gap .lg-tx{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;opacity:.8}
+
+  .leg-badge.stay{color:#a96b04;background:var(--pc-saffron)}
+  /* transfer / stay-put type switch */
+  .leg-type{display:inline-flex;background:var(--cream-deep);border-radius:999px;padding:3px;gap:2px}
+  .leg-type .lt-btn{border:none;background:none;border-radius:999px;padding:.32rem .7rem;font-family:inherit;font-size:.76rem;font-weight:700;color:var(--ink-soft);cursor:pointer;white-space:nowrap;transition:.15s}
+  .leg-type .lt-btn.on{background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep)}
+  .leg-card .pin.stay{border-color:#a96b04;background:#fff;border-radius:50%}
+  .is-stay .leg-card{border-color:color-mix(in srgb,var(--saffron) 32%,var(--line));background:#fffdf6}
+
+  /* stay card: nights stepper + clarifying note */
+  .stay-nights-ctrl{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+  .stay-nights-ctrl .lbl{font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft)}
+  .stay-nights-ctrl .ctrls{display:flex;align-items:center;gap:7px;background:var(--cream-deep);border-radius:999px;padding:3px}
+  .stay-nights-ctrl .ctrls button{width:28px;height:28px;border-radius:50%;border:none;background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep);font-size:1.1rem;font-weight:700;cursor:pointer;display:grid;place-items:center;line-height:1}
+  .stay-nights-ctrl .ctrls button:disabled{opacity:.35;cursor:default}
+  .stay-nights-ctrl .ctrls b{min-width:26px;text-align:center;font-size:.88rem}
+  .stay-note{display:flex;gap:.6rem;align-items:flex-start;margin-top:12px;padding:11px 13px;background:var(--pc-saffron);border:1px solid #efe2c2;border-radius:12px;font-size:.82rem;line-height:1.45;color:#7a5512}
+  .stay-note svg{width:17px;height:17px;flex:none;margin-top:1px;color:#c98a1a}
+  .stay-note b{color:var(--ink)}
+
+  /* add-row: two buttons side by side */
+  .add-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:18px 0 0}
+  .add-stop-btn.ghost{border-style:solid;border-color:var(--line);color:var(--ink-soft);background:var(--white)}
+  .add-stop-btn.ghost:hover{border-color:var(--saffron);background:var(--pc-saffron);color:#a96b04}
+  .add-stop-btn .as-sub{font-weight:600;opacity:.7}
+  @media(max-width:600px){.add-row{margin-left:0}.add-row .add-stop-btn{flex:1 1 100%;justify-content:center}}
+  .sum-route .rt-n{font-size:.72rem;font-weight:700;color:#a96b04}
+
+  /* ---- journey progress bar (shared 4-step view across planner + booking) ---- */
+  .journey{display:flex;align-items:center;gap:0;max-width:760px;margin:24px auto 4px;padding:0 16px;position:relative;z-index:3}
+  .jstep{display:flex;align-items:center;gap:.5rem;flex:none}
+  .jstep .jdot{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.8rem;background:var(--cream-deep);color:var(--ink-soft);border:2px solid transparent;transition:.18s}
+  .jstep .jlbl{font-size:.82rem;font-weight:600;color:var(--ink-soft);white-space:nowrap;transition:.18s}
+  .jstep.active .jdot{background:var(--accent);color:#fff}
+  .jstep.active .jlbl{color:var(--ink)}
+  .jstep.done .jdot{background:var(--teal-deep);color:#fff}
+  .jstep.done .jlbl{color:var(--ink)}
+  .jstep.jnav{cursor:pointer}
+  .jstep.jnav:hover .jdot{border-color:var(--accent)}
+  .jline{height:2px;flex:1;background:var(--cream-deep);margin:0 8px;min-width:14px}
+  .jline.done{background:var(--teal-deep)}
+  @media(max-width:760px){.jstep .jlbl{display:none}.jline{min-width:10px}}
+
+  /* ---- step 2: “When” dates ---- */
+  .dates-wrap{position:relative;z-index:2;padding:40px 0 90px}
+  .dates-wrap[hidden]{display:none}
+  .back-to-route{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;margin-bottom:18px}
+  .back-to-route:hover{color:var(--ink)}
+  .dates-head{max-width:640px;margin:0 0 26px}
+  .dates-head h2{margin:.3rem 0 .4rem}
+  .dates-head p{color:var(--ink-soft);margin:0}
+  .dates-list{display:grid;gap:10px;max-width:720px}
+  .date-row{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:14px 18px}
+  .date-row.stay{background:#fffdf6;border-color:color-mix(in srgb,var(--saffron) 32%,var(--line))}
+  .date-row.dragging{opacity:.55;box-shadow:var(--shadow)}
+  .date-row .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
+  .date-row .drag:active{cursor:grabbing}
+  .date-row .drag svg{width:16px;height:16px}
+  .date-row{position:relative}
+  .date-row-bumped{box-shadow:0 0 0 2px var(--accent),0 12px 26px -12px rgba(44,42,43,.3)!important}
+  .dr-info{display:flex;align-items:center;gap:12px;min-width:0}
+  .dr-badge{font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 11px;white-space:nowrap}
+  .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
+  .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;color:var(--ink);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+  .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
+  .dr-date{flex:none}
+  .dr-date .dp-btn{min-width:190px}
+  .dates-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;max-width:720px;margin-top:26px}
+  @media(max-width:560px){.date-row{align-items:stretch}.dr-date,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
+
+  /* ---- summary ---- */
+  .summary{position:sticky;top:90px}
+  .sum-head{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:800;font-size:1.2rem;margin:0 0 4px}
+  .sum-head svg{width:20px;height:20px;color:var(--accent-deep)}
+  .sum-dates{font-size:.86rem;color:var(--ink-soft);margin:0 0 16px}
+  .sum-stat{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:.92rem}
+  .sum-stat span{color:var(--ink-soft);flex:1 1 auto;min-width:0}
+  .sum-stat b{font-weight:700;flex:none;text-align:right;white-space:nowrap}
+  .sum-route{margin:14px 0;padding:13px 14px;background:var(--cream-deep);border-radius:12px;font-size:.85rem;line-height:1.5;color:var(--ink)}
+  .sum-route .hop{color:var(--ink-soft)}
+  .sum-total{display:flex;align-items:flex-end;justify-content:space-between;margin:16px 0 4px}
+  .sum-total .lbl{font-size:.82rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
+  .sum-total .amt{font-family:var(--display);font-weight:800;font-size:2rem;color:var(--ink);line-height:1}
+  .sum-total .amt small{font-size:.8rem;font-weight:600;color:var(--ink-soft)}
+  .sum-fine{font-size:.76rem;color:var(--ink-soft);margin:2px 0 0}
+
+  .hotels-note{display:flex;gap:.7rem;align-items:flex-start;margin:16px 0;padding:13px 14px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px}
+  .hotels-note svg{width:20px;height:20px;color:#c98a1a;flex:none;margin-top:1px}
+  .hotels-note b{display:block;font-size:.88rem;margin-bottom:2px}
+  .hotels-note p{margin:0;font-size:.8rem;color:var(--ink-soft);line-height:1.45}
+
+  .sum-cta{width:100%;justify-content:center;margin-top:4px}
+  .sum-cta.cta-disabled{opacity:.5;filter:saturate(.7)}
+  .route-incomplete-hint{display:flex;align-items:flex-start;gap:.45rem;margin:10px 2px 0;font-size:.82rem;line-height:1.4;color:var(--tomato);font-weight:600}
+  .route-incomplete-hint svg{width:15px;height:15px;flex:none;margin-top:2px}
+  .sum-wa{display:flex;align-items:center;gap:.7rem;margin-top:12px;padding:12px 14px;border:1.5px solid #25d36633;background:#25d3660d;border-radius:12px;text-decoration:none;color:var(--ink)}
+  .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center;flex:none}
+  .sum-wa .ic svg{width:18px;height:18px}
+  .sum-wa b{display:block;font-size:.85rem}
+  .sum-wa span{font-size:.76rem;color:var(--ink-soft)}
+
+  .incl{margin-top:18px}
+  .incl h4{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:0 0 9px}
+  .incl .row{display:flex;align-items:flex-start;gap:.55rem;font-size:.84rem;margin-bottom:7px}
+  .incl .row svg{width:15px;height:15px;flex:none;margin-top:2px}
+  .incl .yes svg{color:var(--teal-deep)}
+  .incl .no svg{color:#c0392b;opacity:.7}
+  .incl .no span{color:var(--ink-soft)}
+
+  @media(max-width:980px){
+    .summary{position:static;margin-top:24px}
+    .plan-head{padding-bottom:104px}
+  }
+  @media(max-width:600px){
+    .controls{grid-template-columns:1fr}
+    .stop-meta{margin-left:0}
+    .nights{margin-left:0;width:100%;justify-content:space-between}
+    .stop-name{font-size:1.06rem}
+    .add-stop-btn,.reorder-hint{margin-left:0}
+  }
+
+  /* ready-made route templates (tours → planner) */
+  .tpl-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:0 2px 16px}
+  .tpl-lbl{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);white-space:nowrap}
+  .tpl-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .tpl-chip{display:inline-flex;align-items:baseline;gap:.45rem;background:var(--white);border:1.5px solid var(--line);border-radius:999px;padding:.5rem .95rem;font-family:inherit;font-size:.86rem;font-weight:700;color:var(--ink);cursor:pointer;transition:border-color .15s, background .15s}
+  .tpl-chip small{font-weight:600;font-size:.72rem;color:var(--ink-soft)}
+  .tpl-chip:hover{border-color:var(--accent);background:var(--pc-teal)}
+
+  /* request modal */
+  .plan-modal{position:fixed;inset:0;z-index:200;background:rgba(20,30,28,.55);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
+  .plan-modal-card{background:var(--white);border-radius:var(--r-lg);box-shadow:0 30px 80px rgba(0,0,0,.3);padding:30px;max-width:440px;width:100%;max-height:90vh;overflow:auto}
+  .confirm-tick{width:58px;height:58px;border-radius:50%;background:var(--teal-deep);color:#fff;display:grid;place-items:center}
+  .confirm-tick svg{width:30px;height:30px}
+  #modal-summary{background:var(--cream-deep);border-radius:12px;padding:14px 16px;font-size:.86rem;line-height:1.6}
+  #modal-summary .mr{display:flex;justify-content:space-between;gap:10px}
+  #modal-summary .mr b{font-weight:700}
+</style>
+</head>
+<body data-page="plan">
+<div data-header></div>
+<div data-breadcrumbs></div>
+
+<div class="journey" id="journey" role="list" aria-label="Trip booking progress">
+  <div class="jstep active" data-j="1" role="listitem"><span class="jdot">1</span><span class="jlbl">Route</span></div>
+  <div class="jline"></div>
+  <div class="jstep" data-j="2" role="listitem"><span class="jdot">2</span><span class="jlbl">Dates</span></div>
+  <div class="jline"></div>
+  <div class="jstep" data-j="3" role="listitem"><span class="jdot">3</span><span class="jlbl">Service</span></div>
+  <div class="jline"></div>
+  <div class="jstep" data-j="4" role="listitem"><span class="jdot">4</span><span class="jlbl">Payment</span></div>
+</div>
+
+<section class="plan-head">
+  <div class="wrap">
+    <span class="eyebrow">Multi-stop trip planner</span>
+    <h1 class="display">Add the different legs of your trip, add dates next</h1>
+  </div>
+</section>
+
+<div class="board-wrap">
+  <div class="wrap board">
+    <!-- LEFT: builder -->
+    <div>
+      <div class="tpl-strip" id="tpl-strip" hidden>
+        <span class="tpl-lbl">Start from a ready-made route</span>
+        <div class="tpl-chips" id="tpl-chips"></div>
+      </div>
+      <div class="panel-card setup-card">
+        <div class="setup-head">
+          <span class="sh-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg></span>
+          <div><b>Trip basics</b><span>Set once — applies to every transfer</span></div>
+        </div>
+        <div class="controls">
+          <div class="field" style="grid-column:1/-1"><label for="pax">Travelers</label>
+            <select id="pax">
+              <option value="1">1 traveler</option><option value="2">2 travelers</option>
+              <option value="3">3 travelers</option><option value="4">4 travelers</option>
+              <option value="5">5 travelers</option><option value="6">6 travelers</option>
+            </select></div>
+          <div class="field" style="grid-column:1/-1"><label>Your vehicle</label>
+            <div class="veh-toggle" id="veh">
+              <button class="veh-btn on" data-veh="car"><b>Private AC car</b><small>Up to 3 · 2 bags</small></button>
+              <button class="veh-btn" data-veh="van"><b>Private AC van</b><small>Up to 6 · 6 bags</small></button>
+            </div>
+            <p class="veh-note" id="veh-note" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span id="veh-note-tx"></span></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="board-h">
+        <h2>Your transfers</h2>
+        <span id="stop-count"></span>
+      </div>
+
+      <div class="rail" id="rail"></div>
+
+      <div class="add-row">
+        <button class="add-stop-btn" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add another transfer</button>
+      </div>
+      <p class="reorder-hint"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg> Drag a card to reorder · Google fills in each distance automatically</p>
+    </div>
+
+    <!-- RIGHT: summary -->
+    <aside>
+      <div class="panel-card summary">
+        <div class="trip-map" id="trip-map"></div>
+        <div class="sum-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0M9 12l11 0M9 18l11 0M5 6h.01M5 12h.01M5 18h.01"/></svg> Trip summary</div>
+        <p class="sum-dates" id="sum-dates">—</p>
+
+        <div class="sum-stat"><span>Places</span><b id="st-stops">—</b></div>
+        <div class="sum-stat"><span>Nights car stays with you</span><b id="st-nights">—</b></div>
+        <div class="sum-stat"><span>Transfer legs</span><b id="st-legs">—</b></div>
+        <div class="sum-stat"><span>Total driving</span><b id="st-drive">—</b></div>
+
+        <div class="sum-route" id="sum-route">—</div>
+
+        <div class="sum-estimate" id="sum-estimate">
+          <span class="se-lbl">Indicative transfers <span class="se-sub">per vehicle, whole trip</span></span>
+          <span class="se-amt" id="sum-amt">~$—</span>
+        </div>
+        <p class="sum-fine" id="sum-fine">A guide only — we tailor and confirm your exact quote when you book. One private vehicle &amp; driver for every leg; fuel, tolls &amp; taxes included. You book your own hotels.</p>
+
+        <div class="hotels-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-5h6v5"/></svg>
+          <div><b>Hotels are your own</b><p>We’re a transfer service — you book the stays you love. We’ll have you at each hotel’s door, on your dates.</p></div>
+        </div>
+
+        <button class="btn btn-cta btn-lg sum-cta" id="request-btn">Next: add your dates</button>
+        <p class="route-incomplete-hint" id="route-incomplete-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Add a pick-up and drop-off to every leg to continue.</p>
+
+        <a class="sum-wa" id="sum-wa" href="https://wa.me/94771986692" target="_blank" rel="noopener">
+          <span class="ic"></span>
+          <span><b>Questions first?</b><span>Chat to a Hop planner on WhatsApp</span></span>
+        </a>
+
+        <div class="incl">
+          <h4>What’s included</h4>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Private AC vehicle + driver, all legs</div>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Door-to-door hotel pickups &amp; drop-offs</div>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Flexible departure times you choose</div>
+          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Hotels &amp; accommodation</span></div>
+          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Entrance tickets &amp; activities</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- STEP 2 · WHEN — add an optional date to each transfer / stay -->
+<div class="dates-wrap" id="dates-wrap" hidden>
+  <div class="wrap">
+    <button class="back-to-route" id="back-route"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Back to route</button>
+    <div class="dates-head">
+      <span class="eyebrow">Step 2 · When</span>
+      <h2>Add your dates</h2>
+      <p>Pop a date on any transfer — or leave them flexible and we’ll confirm with you on WhatsApp. Nothing here is required.</p>
+    </div>
+    <div class="dates-list" id="dates-list"></div>
+    <div class="dates-actions">
+      <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
+      <button class="btn btn-cta btn-lg" id="dates-continue">Continue to booking →</button>
+    </div>
+  </div>
+</div>
+<div class="plan-modal" id="modal" style="display:none">
+  <div class="plan-modal-card">
+    <div class="confirm-tick" style="margin:0 auto 14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 13 4 4L19 7"/></svg></div>
+    <h2 style="font-size:1.6rem;margin:0 0 .4rem;text-align:center">Itinerary sent!</h2>
+    <p style="text-align:center;color:var(--ink-soft);margin:0 0 18px">Our Hop planner has your route and dates. We’ll confirm exact pickup times and your final transfer quote on WhatsApp — usually within a few hours.</p>
+    <div id="modal-summary"></div>
+    <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+      <a class="btn btn-wa btn-lg" id="modal-wa" style="flex:1;justify-content:center">Continue on WhatsApp</a>
+      <button class="btn btn-ghost btn-lg" onclick="document.getElementById('modal').style.display='none'" style="flex:1;justify-content:center">Keep editing</button>
+    </div>
+  </div>
+</div>
+
+<div data-footer></div>
+
+<script src="site.js"></script>
+<script src="transfers-data.js"></script>
+<script src="tours-data.js"></script>
+<script src="plan.js"></script>
+</body>
+</html>

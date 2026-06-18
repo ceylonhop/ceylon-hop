@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — Ceylon Hop</title>
+<meta name="description" content="Ceylon Hop was started by two best friends who mapped every corner of Sri Lanka. Flexible, safe, affordable transfers with vetted local drivers.">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<meta property="og:title" content="About Ceylon Hop">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<style>
+  .hero-banner{position:relative;height:340px;margin-top:-74px;display:grid;place-items:center;color:#fff;text-align:center;overflow:hidden}
+  .hero-banner .ph{position:absolute;inset:0}
+  .hero-banner::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,40,38,.35),rgba(20,40,38,.6))}
+  .hero-banner .inner{position:relative;z-index:2;padding-top:60px}
+  .hero-banner h1{color:#fff}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:50px;align-items:center}
+  @media(max-width:860px){.split{grid-template-columns:1fr;gap:30px}}
+  .split .ph{aspect-ratio:4/3.2;border-radius:var(--r-lg)}
+  .gal4{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .gal4 .ph{aspect-ratio:4/3;border-radius:12px}
+  .val{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.6rem}
+  .val .ico{width:70px;height:70px;border-radius:50%;display:grid;place-items:center}
+  .val .ico svg{width:30px;height:30px;color:#fff}
+  .val p{font-size:.9rem;color:var(--ink-soft);max-width:26ch}
+  .team .ph{aspect-ratio:4/4.4;border-radius:var(--r)}
+  .team h4{font-family:var(--body);font-weight:700;font-size:.95rem;margin-top:14px}
+  .team span{font-size:.82rem;color:var(--ink-soft)}
+  .faq{max-width:760px;margin:0 auto}
+  .faq-item{border-bottom:1px solid var(--line)}
+  .faq-q{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:20px 0;cursor:pointer;font-weight:600;font-size:1.05rem}
+  .faq-q .pm{flex:none;width:26px;height:26px;border-radius:50%;background:var(--cream-deep);display:grid;place-items:center;font-size:1.2rem;transition:.2s}
+  .faq-item.open .pm{background:var(--accent);color:#fff;transform:rotate(45deg)}
+  .faq-a{display:none;padding:0 0 20px;color:var(--ink-soft);max-width:64ch}
+  .faq-item.open .faq-a{display:block}
+</style>
+</head>
+<body>
+<div data-header></div>
+
+<section class="hero-banner" data-screen-label="About hero">
+  <image-slot id="about-hero" shape="rect" placeholder="Drop a photo — founders on a Sri Lanka beach at golden hour"></image-slot>
+  <div class="inner">
+    <span class="sticker">Est. by two best friends</span>
+    <h1 class="display" style="font-size:clamp(2.4rem,5vw,4rem);margin-top:12px">About Ceylon Hop</h1>
+  </div>
+</section>
+
+<!-- story -->
+<section class="section">
+  <div class="wrap split">
+    <div class="gal4">
+      <image-slot id="about-gal-0" shape="rounded" radius="12" style="display:block;width:100%;aspect-ratio:4/3" placeholder="Drop a photo — Roshen &amp; Dasis, founders"></image-slot>
+      <image-slot id="about-gal-1" shape="rounded" radius="12" style="display:block;width:100%;aspect-ratio:4/3" placeholder="Drop a photo — early road trip"></image-slot>
+      <image-slot id="about-gal-2" shape="rounded" radius="12" style="display:block;width:100%;aspect-ratio:4/3" placeholder="Drop a photo — van on the road"></image-slot>
+      <image-slot id="about-gal-3" shape="rounded" radius="12" style="display:block;width:100%;aspect-ratio:4/3" placeholder="Drop a photo — tea country"></image-slot>
+    </div>
+    <div>
+      <span class="eyebrow">From best friends to travel guides</span>
+      <h2>We mapped every corner of this island &mdash; for fun, first.</h2>
+      <p>Hi, we&rsquo;re Roshen and Dasis, co-founders of Ceylon Hop. We&rsquo;ve been best friends for over 20 years, ever since school. Our shared love for travel has been the foundation of that friendship.</p>
+      <p>Over the years we organised countless trips for our friends &mdash; crafting experiences that were seamless, exciting and unforgettable. Looking back, it feels like we were always meant to do this. Ceylon Hop is here to help others explore Sri Lanka the way we love to: with adventure, joy and ease.</p>
+      <p class="mb0">Now, we can&rsquo;t wait to share that experience with you. Welcome aboard!</p>
+    </div>
+  </div>
+</section>
+
+<!-- why we started -->
+<section class="section" style="background:var(--paper)">
+  <div class="wrap split">
+    <div>
+      <span class="eyebrow">Why we started</span>
+      <h2>Getting around Sri Lanka shouldn&rsquo;t be the hard part.</h2>
+      <p>Figuring out transport here wasn&rsquo;t always easy. Public transport can be confusing, planning the perfect trip often felt overwhelming, and most options lacked the flexibility to explore at your own pace.</p>
+      <p class="mb0">We started Ceylon Hop because we&rsquo;ve been there &mdash; and we wanted to create a service that makes discovering Sri Lanka simple, flexible and stress-free.</p>
+    </div>
+    <image-slot id="about-train" shape="rounded" radius="24" style="display:block;width:100%;aspect-ratio:4/3.2" placeholder="Drop a photo — travelers looking out a train door"></image-slot>
+  </div>
+</section>
+
+<!-- values -->
+<section class="section">
+  <div class="wrap center">
+    <span class="eyebrow" style="justify-content:center">What we stand for</span>
+    <h2 style="margin-bottom:8px">Flexible. Safe. Affordable.</h2>
+    <div class="grid cols-3 mt-l" style="margin-top:48px">
+      <div class="val"><div class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div><h3>Flexible</h3><p>Change dates, times and stops up to the day before &mdash; your trip flexes with you.</p></div>
+      <div class="val"><div class="ico" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg></div><h3>Safe</h3><p>Experience Sri Lanka in comfort with insured vehicles and trusted drivers.</p></div>
+      <div class="val"><div class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><h3>Affordable</h3><p>Explore all of Sri Lanka without breaking the bank &mdash; adventures that keep your wallet happy.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- team -->
+<section class="section" style="background:var(--cream-deep)">
+  <div class="wrap center">
+    <span class="eyebrow" style="justify-content:center">Meet the team</span>
+    <h2>The people behind every journey</h2>
+    <div class="grid cols-3 mt-l" style="margin-top:46px;text-align:center" id="team"></div>
+  </div>
+</section>
+
+<!-- commitment -->
+<section class="section">
+  <div class="wrap split">
+    <image-slot id="about-tea" shape="rounded" radius="24" style="display:block;width:100%;aspect-ratio:4/3.2" placeholder="Drop a photo — tea pickers in the highlands"></image-slot>
+    <div>
+      <span class="eyebrow">Our commitment</span>
+      <h2>Travel that gives back</h2>
+      <p>For us, travel isn&rsquo;t just about seeing new places &mdash; it&rsquo;s about connection. We want Ceylon Hop to give back to the people and places that make it special.</p>
+      <ul class="hl" style="list-style:none;padding:0;display:grid;gap:14px;margin-top:18px">
+        <li style="display:flex;gap:.7rem"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center"><svg viewBox="0 0 24 24" width="13" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Eco-friendly practices</b> &mdash; reducing waste and promoting responsible tourism.</span></li>
+        <li style="display:flex;gap:.7rem"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center"><svg viewBox="0 0 24 24" width="13" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Community support</b> &mdash; partnering with local businesses and family-run stays.</span></li>
+        <li style="display:flex;gap:.7rem"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center"><svg viewBox="0 0 24 24" width="13" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Responsible travel</b> &mdash; leaving every place better than we found it.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- faq -->
+<section class="section" style="background:var(--paper)">
+  <div class="wrap">
+    <div class="center" style="margin-bottom:30px"><span class="eyebrow" style="justify-content:center">Good to know</span><h2>Frequently asked questions</h2></div>
+    <div class="faq" id="faq"></div>
+  </div>
+</section>
+
+<div data-footer></div>
+
+<script src="site.js"></script>
+<script src="image-slot.js"></script>
+<script>
+  initChrome({active:'about.html', onDark:true});
+  const team=[['Dasis K','Co-founder','ph-photo'],['Roshen W','Co-founder','ph-photo'],['Kaylab Hash B.','Head of Marketing','ph-photo']];
+  document.getElementById('team').innerHTML=team.map(([n,role],i)=>`
+    <div class="team"><image-slot id="about-team-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:4/4.4" placeholder="Drop a photo — ${n}"></image-slot><h4>${n}</h4><span>${role}</span></div>`).join('');
+
+  const faqs=[
+    ['What is the cancellation &amp; refund policy?','Free cancellation with a full refund up to 24 hours before any transfer or trip. Chauffeur-guide tours can be cancelled free up to 10 days before the start date — inside that window, our concierge will help you reschedule wherever possible.'],
+    ['Can I change my stops or how long I stay?','Absolutely — the route is yours. Set as many nights as you like at each stop in the planner, and add, drop or reorder stops any time before you travel with a quick WhatsApp message.'],
+    ['Are there any luggage restrictions?','One standard bag and one carry-on per traveler are included. Surfboards or oversized bags can be added during booking for a small fee so we reserve the right space.'],
+    ['How do I get picked up?','After you book, our team confirms your exact pickup point over WhatsApp &mdash; usually your hotel or a central café in town. You&rsquo;ll get the driver&rsquo;s details the evening before.'],
+    ['Are the vehicles air-conditioned?','Yes &mdash; every Ceylon Hop vehicle is a fully insured, air-conditioned and well-maintained car or van, never overcrowded.']
+  ];
+  document.getElementById('faq').innerHTML=faqs.map(([q,a])=>`
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">${q}<span class="pm">+</span></div><div class="faq-a">${a}</div></div>`).join('');
+</script>
+</body>
+</html>

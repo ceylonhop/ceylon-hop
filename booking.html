@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- stamp mode class before first paint so trip flows never flash the wrong panel -->
+<script>if(new URLSearchParams(location.search).get('mode')==='trip'){document.documentElement.classList.add('mode-trip');}</script>
+<title>Book your hop — Ceylon Hop</title>
+<meta name="description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, instant WhatsApp confirmation and a Pro Hopper driver.">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="site.css">
+<script src="tweaks.js"></script>
+<style>
+  body{background:transparent}
+  .bk-head{background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+  .bk-head .wrap{display:flex;align-items:center;justify-content:space-between;height:66px;gap:18px}
+  .bk-head .brand{font-size:1.3rem}
+  .bk-secure{font-size:.82rem;color:var(--ink-soft);display:flex;align-items:center;gap:.45rem}
+  .bk-secure svg{width:15px;height:15px;color:var(--teal-deep)}
+
+  /* progress */
+  .steps{display:flex;align-items:center;gap:0;max-width:680px;margin:30px auto 0;padding:0 16px}
+  .pstep{display:flex;align-items:center;gap:.55rem;flex:none}
+  .pstep .dot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:600;font-size:.82rem;background:var(--cream-deep);color:var(--ink-soft);border:2px solid transparent;transition:.2s}
+  .pstep .lbl{font-size:.84rem;font-weight:600;color:var(--ink-soft)}
+  .pstep.active .dot{background:var(--accent);color:#fff}
+  .pstep.active .lbl{color:var(--ink)}
+  .pstep.done .dot{background:var(--teal-deep);color:#fff}
+  .pline{height:2px;flex:1;background:var(--cream-deep);margin:0 8px;min-width:18px}
+  .pline.done{background:var(--teal-deep)}
+  @media(max-width:720px){.pstep .lbl{display:none}}
+  .pstep .lbl{white-space:nowrap}
+
+  .layout{display:grid;grid-template-columns:1fr 360px;gap:36px;align-items:start;max-width:980px;margin:36px auto 80px;padding:0 24px}
+  .layout > aside{position:sticky;top:90px;align-self:start}
+  @media(max-width:880px){.layout{grid-template-columns:1fr}.layout > aside{position:static}}
+
+  .stepcard{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:30px}
+  .stepcard h2{font-size:1.55rem;margin-bottom:.3rem}
+  .stepcard .sub{color:var(--ink-soft);margin-bottom:22px;font-size:.95rem}
+  .panel{display:none}.panel.active{display:block}
+
+  /* calendar */
+  .cal{border:1px solid var(--line);border-radius:var(--r);padding:16px;width:300px;max-width:100%;background:var(--white)}
+  @media(max-width:640px){.cal{width:100%}}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .cal-head b{font-family:var(--display);font-size:1.05rem;white-space:nowrap}
+  .cal-head button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:#fff}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+  .cal-grid .dow{font-size:.7rem;color:var(--ink-soft);font-weight:600;padding:4px 0}
+  .cal-day{aspect-ratio:1;border-radius:8px;display:grid;place-items:center;font-size:.85rem;cursor:pointer;border:1.5px solid transparent}
+  .cal-day:hover:not(.off):not(.sel){background:var(--cream-deep)}
+  .cal-day.off{color:#c9c4b6;cursor:default}
+  .cal-day.sel{background:var(--accent);color:#fff;font-weight:600}
+  .cal-day{position:relative}
+
+  /* STEP 1 — date stacked above its departures, so time slots get full width */
+  #s1grid{display:block}
+  .dep-col{margin-top:22px;border-top:1px dashed var(--line);padding-top:20px}
+  .dep-head{font-family:var(--display);font-size:1.18rem;font-weight:700;line-height:1.2;white-space:nowrap}
+  .dep-hint{font-size:.86rem;color:var(--ink-soft);margin:.25rem 0 14px}
+  .deps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  @media(max-width:560px){.deps{grid-template-columns:1fr}}
+  .dep{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;
+    border:1.5px solid var(--line);border-radius:14px;padding:13px 15px;cursor:pointer;
+    background:var(--white);transition:.15s;font:inherit;color:inherit}
+  .dep:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .dep.sel{border-color:var(--accent);background:rgba(10,185,182,.07);box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .dep .t{font-family:var(--display);font-weight:700;font-size:1.18rem;line-height:1}
+  .dep .note{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-deep)}
+  .dep .veh{font-size:.8rem;color:var(--ink-soft)}
+  .dep .pr{font-size:.84rem;font-weight:600;margin-top:3px}
+  .dep .pr.low{color:#bb2c1a}
+  .dep-empty{display:flex;gap:12px;align-items:center;color:var(--ink-soft);font-size:.9rem;
+    background:var(--pc-saffron);border:1px solid #efe2c2;border-radius:14px;padding:15px 18px}
+  .dep-empty svg{width:26px;height:26px;color:var(--saffron);flex:none}
+
+  /* STEP 1 — location-first address entry (maps-powered) */
+  .loc-block{display:grid;gap:12px;margin-bottom:6px}
+  .loc-field{display:grid;grid-template-columns:20px 1fr;gap:12px;align-items:start;
+    border:1.5px solid var(--line);border-radius:14px;padding:12px 15px;background:var(--white);transition:border .15s,box-shadow .15s}
+  .loc-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .loc-field .pin{width:14px;height:14px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;margin-top:6px}
+  .loc-field.to .pin{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .loc-field label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:1px}
+  .loc-field input{width:100%;border:none;background:none;font-family:inherit;font-size:1rem;color:var(--ink);padding:2px 0}
+  .loc-field input:focus{outline:none}
+  .loc-powered{display:flex;align-items:center;gap:.4rem;font-size:.76rem;color:var(--ink-soft);margin:2px 2px 0}
+  .loc-powered svg{width:14px;height:14px;color:var(--accent-deep)}
+
+  /* pickup/drop-off autocomplete */
+  .ac-wrap{position:relative}
+  .ac-menu{position:absolute;left:-15px;right:-15px;top:calc(100% + 8px);z-index:20;background:var(--white);
+    border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px -12px rgba(20,40,38,.28);
+    padding:5px;display:none;max-height:280px;overflow:auto}
+  .ac-menu.open{display:block}
+  .ac-item{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;cursor:pointer;font-size:.92rem;color:var(--ink)}
+  .ac-item:hover,.ac-item.active{background:var(--cream-deep)}
+  .ac-item .ac-ic{width:26px;height:26px;border-radius:50%;background:var(--pc-teal);color:var(--accent-deep);display:grid;place-items:center;flex:none}
+  .ac-item .ac-ic svg{width:14px;height:14px}
+  .ac-item .ac-tx{min-width:0;flex:1}
+  .ac-item .ac-tx b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ac-item .ac-tx small{color:var(--ink-soft);font-size:.76rem}
+  .ac-item.search .ac-ic{background:#eef1ff;color:#3b5bdb}
+  .ac-item.search .ac-tx b{font-weight:600}
+  .ac-gmap{display:flex;align-items:center;justify-content:flex-end;gap:.35rem;padding:6px 11px 3px;font-size:.7rem;color:var(--ink-soft)}
+  .ac-gmap b{font-weight:700;color:#4285F4}
+
+  /* route map on the Where step (shows once both ends resolve) */
+  .route-map{margin-top:14px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--white);
+    box-shadow:var(--shadow-s);animation:rmIn .3s ease}
+  @keyframes rmIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .rm-canvas{position:relative;background:linear-gradient(170deg,#eaf4f1,#dfeee9)}
+  .rm-canvas svg{display:block;width:100%;height:auto}
+  .rm-pin-label{font-family:var(--body);font-weight:700;font-size:6px;fill:var(--ink)}
+  .rm-pin-num{font-family:var(--body);font-weight:800;fill:#fff;font-size:7px}
+  .rm-bar{display:flex;align-items:center;gap:14px;padding:11px 15px;border-top:1px solid var(--line);flex-wrap:wrap}
+  .rm-bar .rm-route{display:flex;align-items:center;gap:.45rem;font-size:.86rem;font-weight:700;color:var(--ink);min-width:0}
+  .rm-bar .rm-route .ar{color:var(--ink-soft);font-weight:400}
+  .rm-bar .rm-route span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:13ch}
+  .rm-bar .rm-meta{margin-left:auto;display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--ink-soft)}
+  .rm-bar .rm-meta svg{width:15px;height:15px;color:var(--accent-deep)}
+  .rm-bar .rm-meta b{color:var(--ink);font-weight:700}
+  .loc-sep{display:flex;align-items:center;gap:10px;margin:18px 0;color:var(--ink-soft);font-size:.82rem;font-weight:600}
+  .loc-sep::before,.loc-sep::after{content:"";height:1px;background:var(--line);flex:1}
+
+  /* date/time gated until locations entered */
+  .when-locked{position:relative}
+  .when-locked .when-inner{filter:blur(2.5px);opacity:.45;pointer-events:none;user-select:none}
+  .when-lock-msg{display:none;position:absolute;inset:0;z-index:3;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    text-align:center;color:var(--ink-soft);font-size:.92rem;padding:20px}
+  .when-locked .when-lock-msg{display:flex}
+  .when-lock-msg svg{width:30px;height:30px;color:var(--accent-deep)}
+  .when-lock-msg b{color:var(--ink);font-size:1.02rem}
+
+  /* capacity note for luggage vs vehicle */
+  .cap-note{font-size:.82rem;line-height:1.4;padding:10px 13px;border-radius:10px;margin-top:2px;display:none}
+  .cap-note.show{display:block}
+  .cap-note.ok{background:#e7f6ec;border:1px solid #c9e8d2;color:#0c6b39}
+  .cap-note.warn{background:#fdeee9;border:1px solid #f4c9bb;color:#b13b22}
+  .cap-note .cap-switch{display:inline-flex;align-items:center;gap:.4rem;margin-top:9px;background:var(--ink);color:#fff;border:none;
+    border-radius:999px;padding:.5rem .95rem;font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;transition:.15s}
+  .cap-note .cap-switch:hover{background:var(--accent-deep)}
+  .cap-note .cap-switch svg{width:15px;height:15px}
+
+  /* subtle inline info note (replaces boxy callouts) */
+  .info-note{display:flex;gap:.6rem;align-items:flex-start;margin:16px 0 2px;font-size:.84rem;line-height:1.45;color:var(--ink-soft)}
+  .info-note svg{width:17px;height:17px;flex:none;margin-top:2px;color:var(--accent-deep)}
+  .info-note b{color:var(--ink);font-weight:700}
+
+  /* slim, un-boxed Tripadvisor trust line */
+  .trust-line{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;font-size:.86rem;color:var(--ink-soft);margin:-6px 0 18px}
+  .trust-line b{color:var(--ink);font-weight:700}
+  .trust-line .ta-stars{color:#34e0a1;letter-spacing:.05em;font-size:.95rem;-webkit-text-stroke:.5px #00684a}
+
+  /* flexible date/time banner + controls */
+  .flex-banner{display:flex;gap:11px;align-items:flex-start;background:var(--pc-teal);border:1px solid #bfe6df;
+    border-radius:12px;padding:12px 15px;margin-bottom:18px;font-size:.88rem;line-height:1.45;color:#0c5b57}
+  .flex-banner svg{width:20px;height:20px;color:var(--teal-deep);flex:none;margin-top:1px}
+  .when-grid{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:start}
+  @media(max-width:640px){.when-grid{grid-template-columns:1fr;gap:18px}}
+  .when-head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .flex-chk{display:inline-flex;align-items:center;gap:.45rem;font-size:.82rem;font-weight:600;color:var(--ink-soft);cursor:pointer;white-space:nowrap}
+  .flex-chk input{width:16px;height:16px;accent-color:var(--accent)}
+  .cal.dim{opacity:.4;pointer-events:none;filter:saturate(.4)}
+  .flex-pill{display:none;align-items:center;gap:.5rem;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;
+    padding:12px 14px;font-size:.86rem;color:#8a5a12;margin-top:10px}
+  .flex-pill.show{display:flex}
+  .flex-pill svg{width:18px;height:18px;color:#c98a1a;flex:none}
+  .time-select{width:100%;max-width:340px;padding:.8rem 1rem;border:1.5px solid var(--line);border-radius:12px;
+    font-family:inherit;font-size:1rem;background:var(--white);color:var(--ink)}
+  .single-dep-card{width:100%;max-width:340px;padding:.8rem 1rem;border:1.5px solid var(--line);border-radius:12px;
+    font-family:inherit;font-size:1rem;background:var(--white);color:var(--ink);
+    display:flex;align-items:center;gap:.5rem}
+  .time-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+
+  /* service-type chooser (private transfer vs chauffeur-guide) */
+  .svc-chooser{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
+  @media(max-width:560px){.svc-chooser{grid-template-columns:1fr}}
+  .svc{text-align:left;border:1.5px solid var(--line);border-radius:14px;padding:15px 16px;background:var(--white);cursor:pointer;transition:.15s;position:relative;display:flex;flex-direction:column}
+  .svc:hover{border-color:var(--accent)}
+  .svc.on{border-color:var(--accent);background:rgba(10,185,182,.06);box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .svc .svc-ico{width:34px;height:34px;border-radius:9px;background:var(--cream-deep);display:grid;place-items:center;color:var(--accent-deep);margin-bottom:9px}
+  .svc.on .svc-ico{background:var(--accent);color:#fff}
+  .svc .svc-ico svg{width:19px;height:19px}
+  .svc b{display:block;font-size:1rem}
+  .svc small{display:block;color:var(--ink-soft);font-size:.82rem;margin-top:3px;line-height:1.4}
+  .svc .svc-tag{display:inline-block;margin-top:auto;padding-top:10px;font-size:.74rem;font-weight:700;color:var(--accent-deep)}
+
+  /* itinerary route summary (trip mode) */
+  .trip-route{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:20px;background:var(--white)}
+  .trip-route .tr-stop{display:flex;align-items:center;gap:11px;font-size:.95rem;padding:2px 0}
+  .trip-route .tr-stop .dot{width:11px;height:11px;border-radius:50%;border:2px solid var(--accent-deep);background:#fff;flex:none}
+  .trip-route .tr-stop.first .dot{background:var(--teal-deep);border-color:var(--teal-deep)}
+  .trip-route .tr-stop.last .dot{background:var(--tomato);border-color:var(--tomato)}
+  .trip-route .tr-stop.last .tr-name{font-weight:700}
+  .trip-route .tr-stop.first .tr-name{font-weight:700}
+  .trip-route .tr-stop .tr-name{flex:1;min-width:0}
+  .trip-route .tr-stop .nt{font-size:.74rem;font-weight:700;color:#a96b04;background:var(--pc-saffron);border-radius:999px;padding:2px 9px;white-space:nowrap;flex:none}
+  /* wire between stops carries the leg's travel date */
+  .trip-route .tr-wire{display:flex;align-items:center;gap:10px;margin:2px 0 2px 4px;min-height:24px}
+  .trip-route .tr-wire .tw-line{width:2px;align-self:stretch;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5;flex:none;margin-left:3px}
+  .trip-route .tr-wire .tw-date{display:inline-flex;align-items:center;gap:.4rem;font-size:.8rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 11px}
+  .trip-route .tr-wire .tw-date svg{width:13px;height:13px}
+  .trip-route .tr-wire .tw-date.flex{font-weight:600;color:var(--ink-soft);background:var(--cream-deep)}
+  .trip-route .tr-foot{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .trip-route .tr-edit{display:inline-flex;align-items:center;gap:.4rem;font-size:.85rem;font-weight:700;color:var(--accent-deep);background:none;border:none;cursor:pointer;padding:0}
+  .trip-route .tr-edit:hover{text-decoration:underline}
+  .trip-route .tr-edit svg{width:14px;height:14px}
+
+  /* trip mode: vehicle confirmation (luggage stepper removed — max bags shown at car/van choice) */
+  .trip-veh-confirm{display:flex;align-items:center;gap:13px;border:1.5px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--pc-teal);margin-bottom:6px}
+  .trip-veh-confirm .tvc-ico{width:40px;height:40px;border-radius:10px;background:#fff;display:grid;place-items:center;color:var(--accent-deep);flex:none}
+  .trip-veh-confirm .tvc-ico svg{width:22px;height:22px}
+  .trip-veh-confirm .tvc-tx b{display:block;font-size:1rem}
+  .trip-veh-confirm .tvc-tx small{color:var(--ink-soft);font-size:.84rem}
+  /* chauffeur status — rendered INSIDE the itinerary card so it reads as one consolidated box */
+  .trip-route .cx-inline{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);font-size:.9rem}
+  .trip-route .cx-inline .cx-h{display:flex;align-items:center;gap:.5rem;font-weight:700}
+  .trip-route .cx-inline .cx-h svg{width:18px;height:18px;flex:none}
+  .trip-route .cx-inline.ok .cx-h{color:var(--accent-deep)}
+  .trip-route .cx-inline.warn .cx-h{color:#b13b22}
+  .trip-route .cx-inline p{margin:6px 0 0;color:var(--ink-soft);line-height:1.45}
+  .trip-route .cx-inline .cx-btn{margin-top:12px;background:var(--ink);color:#fff;border:none;border-radius:999px;padding:.6rem 1.1rem;font:inherit;font-weight:700;cursor:pointer}
+  .trip-route .cx-inline .cx-btn:hover{background:var(--accent-deep)}
+
+  /* shared-ride: read-only fixed-route card (shown on the “Your shared ride” step) */
+  .shared-route{border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:4px;background:var(--white);box-shadow:var(--shadow-s)}
+  .shared-route .sr-line{display:flex;align-items:flex-start;gap:13px}
+  .shared-route .sr-pin{width:13px;height:13px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none;margin-top:4px}
+  .shared-route .sr-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .shared-route .sr-lbl{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
+  .shared-route .sr-line b{font-size:1.05rem}
+  .shared-route .sr-wire{width:2px;height:16px;margin:1px 0 1px 5px;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5}
+  .shared-route .sr-foot{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+  .shared-route .sr-fact{display:inline-flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink-soft)}
+  .shared-route .sr-fact svg{width:17px;height:17px;color:var(--accent-deep);flex:none}
+  .shared-route .sr-fact b{color:var(--ink);font-weight:700}
+  .shared-route .sr-note{display:flex;align-items:flex-start;gap:.5rem;margin:14px 0 0;font-size:.84rem;line-height:1.45;color:var(--ink-soft)}
+  .shared-route .sr-note svg{width:15px;height:15px;color:var(--accent-deep);flex:none;margin-top:2px}
+
+  /* Tripadvisor trust signal */
+  .ta-trust{display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:10px 14px;border:1px solid #e4ead9;border-radius:12px;background:#fbfcf8}
+  .ta-trust .ta-owl{width:30px;height:30px;border-radius:50%;background:#000;display:grid;place-items:center;flex:none}
+  .ta-trust .ta-owl::before,.ta-trust .ta-owl::after{content:"";position:absolute}
+  .ta-trust .dots{display:flex;gap:3px}
+  .ta-trust .dots span{width:13px;height:13px;border-radius:50%;background:#34e0a1;border:2px solid #00684a;box-sizing:border-box}
+  .ta-trust .tx{font-size:.82rem;color:var(--ink-soft);line-height:1.35}
+  .ta-trust .tx b{color:var(--ink)}
+
+  /* concierge reach-out note */
+  .concierge{display:flex;gap:12px;align-items:flex-start;margin-top:18px;padding:14px 16px;border-radius:12px;background:var(--pc-saffron);border:1px solid #efe2c2}
+  .concierge svg{width:22px;height:22px;color:#c98a1a;flex:none;margin-top:1px}
+  .concierge b{display:block;font-size:.92rem;margin-bottom:2px}
+  .concierge p{margin:0;font-size:.83rem;color:var(--ink-soft);line-height:1.45}
+
+  /* deposit note in summary */
+  .s-deposit{font-size:.78rem;color:var(--ink-soft);margin-top:6px;line-height:1.4}
+  .s-deposit b{color:var(--accent-deep)}
+
+  /* PayHere redirect interstitial */
+  .ph-overlay{position:fixed;inset:0;z-index:300;background:rgba(20,30,28,.62);display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
+  .ph-overlay.show{display:flex}
+  .ph-card{background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.3);max-width:380px;width:100%;padding:32px;text-align:center}
+  .ph-logo{font-weight:800;font-size:1.3rem;color:#1b1b1b;letter-spacing:-.01em;margin-bottom:6px}
+  .ph-logo span{color:#0fa958}
+  .ph-sub{font-size:.84rem;color:#666;margin-bottom:22px}
+  .ph-spin{width:44px;height:44px;border-radius:50%;border:4px solid #e5e7eb;border-top-color:#0fa958;margin:0 auto 18px;animation:phspin 1s linear infinite}
+  @keyframes phspin{to{transform:rotate(360deg)}}
+  .ph-amt{font-family:var(--display);font-weight:800;font-size:1.8rem;color:#1b1b1b}
+  .ph-msg{font-size:.86rem;color:#444;margin-top:6px}
+  .ph-secure{font-size:.72rem;color:#999;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:.4rem}
+  .ph-secure svg{width:13px;height:13px}
+
+  .pay-summary-row{display:flex;justify-content:space-between;align-items:baseline;background:var(--cream-deep);border-radius:12px;padding:14px 16px;margin-bottom:18px}
+  .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft)}
+  .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem}
+  .pay-summary-row .amt{font-family:var(--display);font-weight:800;font-size:1.5rem}
+  .pay-summary-row .amt small{display:block;font-family:var(--body);font-weight:500;font-size:.72rem;color:var(--ink-soft);text-align:right}
+  .pay-choice{display:grid;gap:8px;margin-bottom:18px}
+  .pay-choice .pc-opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s}
+  .pay-choice .pc-opt.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .pay-choice .pc-opt input{margin-top:3px;accent-color:var(--accent)}
+  .pay-choice .pc-opt b{font-size:.92rem}
+  .pay-choice .pc-opt small{display:block;color:var(--ink-soft);font-size:.8rem;margin-top:1px}
+
+  /* steppers / addons */
+  .stepper{display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:12px}
+  .stepper .ctrls{display:flex;align-items:center;gap:16px}
+  .stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:1.15rem;color:var(--ink)}
+  .stepper button:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .addon{display:flex;align-items:center;gap:.8rem;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s}
+  .addon.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .addon .box{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
+  .addon.on .box{background:var(--accent);border-color:var(--accent)}
+  .addon .box svg{width:13px;height:13px;opacity:0}.addon.on .box svg{opacity:1}
+  .addon b{display:block;font-size:.95rem}.addon small{color:var(--ink-soft)}
+  .addon .pr{margin-left:auto;font-weight:600;white-space:nowrap}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:520px){.grid2{grid-template-columns:1fr}}
+
+  /* payment */
+  .card-input{border:1.5px solid var(--line);border-radius:12px;padding:4px}
+  .pay-methods{display:flex;gap:8px;margin-bottom:18px}
+  .pay-methods .pm{border:1.5px solid var(--line);border-radius:10px;padding:.6rem 1rem;font-weight:600;font-size:.85rem;display:flex;align-items:center;gap:.5rem;cursor:pointer}
+  .pay-methods .pm.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+
+  /* accepted cards */
+  .pay-cards{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-6px 0 14px}
+  .pay-cards .pc-label{font-size:.82rem;color:var(--ink-soft);font-weight:600}
+  .pay-cards .cards{display:flex;gap:6px;flex-wrap:wrap}
+  .card-badge{width:42px;height:28px;border:1px solid var(--line);border-radius:6px;background:#fff;display:grid;place-items:center;flex:none;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card-badge .visa{font:italic 800 11px/1 Georgia,'Times New Roman',serif;letter-spacing:.3px;color:#1a1f71}
+  .card-badge .mc{position:relative;width:26px;height:16px}
+  .card-badge .mc i{position:absolute;top:0;width:16px;height:16px;border-radius:50%}
+  .card-badge .mc i:first-child{left:0;background:#eb001b}
+  .card-badge .mc i:last-child{right:0;background:#f79e1b;mix-blend-mode:multiply}
+  .card-badge .amex{width:100%;height:100%;border-radius:5px;background:#1f72cd;display:grid;place-items:center}
+  .card-badge .amex span{font:800 7.5px/1 Arial,Helvetica,sans-serif;letter-spacing:.3px;color:#fff}
+  .card-badge.wide{width:auto;padding:0 8px}
+  .card-badge .disc{font:800 8px/1 Arial,Helvetica,sans-serif;letter-spacing:.2px;color:#2b2b2b;display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
+  .card-badge .disc::after{content:"";width:7px;height:7px;border-radius:50%;background:#f47216}
+  .card-badge .up{font:800 9px/1 Arial,Helvetica,sans-serif;letter-spacing:.1px;color:#0b4ea2;white-space:nowrap}
+  .card-badge .up b{color:#e21836}
+
+  .nav-btns{display:flex;justify-content:space-between;gap:12px;margin-top:26px}
+  .back-link{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.4rem}
+  .back-link:hover{color:var(--ink)}
+
+  /* summary */
+  .summary{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;max-height:calc(100vh - 110px);overflow-y:auto}
+  .summary .s-route{background:var(--pc-teal);padding:16px 20px}
+  .summary .s-route .pt{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.92rem;color:var(--ink)}
+  .summary .s-route .pin{width:11px;height:11px;border-radius:50%;border:2.5px solid var(--teal-deep);background:#fff;flex:none}
+  .summary .s-route .pt.to .pin{background:var(--saffron);border-color:var(--saffron)}
+  .summary .s-route .seg{height:16px;margin-left:4px;border-left:2px dashed var(--teal-deep);opacity:.45}
+  /* trip mode: sidebar route lists every stop with the leg's travel date (or flexible) */
+  .summary .s-route.s-trip{display:flex;flex-direction:column}
+  .summary .s-route.s-trip .st-stop{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.9rem;color:var(--ink);padding:1px 0}
+  .summary .s-route.s-trip .st-stop .pin{width:11px;height:11px;border-radius:50%;border:2.5px solid var(--teal-deep);background:#fff;flex:none}
+  .summary .s-route.s-trip .st-stop.last .pin{background:var(--saffron);border-color:var(--saffron)}
+  .summary .s-route.s-trip .st-leg{margin:2px 0 4px 21px}
+  .summary .s-route.s-trip .st-leg .ln{display:none}
+  .summary .s-route.s-trip .st-leg .dc{display:inline-block;font-size:.72rem;font-weight:700;color:var(--accent-deep);background:#fff;border-radius:999px;padding:2px 9px;white-space:nowrap}
+  .summary .s-route.s-trip .st-leg.flex .dc{font-weight:600;color:var(--ink-soft);background:rgba(255,255,255,.55)}
+  /* persistent WhatsApp help — visible in the sticky summary on every step */
+  .s-wa{display:flex;align-items:center;gap:12px;margin-top:16px;padding:12px 13px;border-radius:12px;
+    background:#e7f6ec;border:1px solid #c9e8d2;color:#0c6b39;text-decoration:none;transition:.15s}
+  .s-wa:hover{background:#dcf0e3}
+  .s-wa .ic{width:32px;height:32px;flex:none;display:grid;place-items:center;background:#25d366;border-radius:50%;color:#fff}
+  .s-wa .ic svg{width:18px;height:18px}
+  .s-wa .tx{font-size:.78rem;line-height:1.3}
+  .s-wa .tx b{display:block;font-size:.85rem;color:#0c6b39}
+  .summary .s-body{padding:20px}
+  .summary h3{font-size:1.1rem;line-height:1.2;margin-bottom:.3rem}
+  .s-row{display:flex;justify-content:space-between;font-size:.88rem;padding:.45rem 0;color:var(--ink-soft)}
+  .s-row b{color:var(--ink);font-weight:600}
+  .s-div{height:1px;background:var(--line);margin:8px 0}
+  .s-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}
+  .s-total b{font-family:var(--display);font-size:1.7rem}
+  .s-perks{margin-top:14px;display:grid;gap:6px;font-size:.78rem;color:var(--ink-soft)}
+  .s-perks div{display:flex;gap:.4rem;align-items:center}.s-perks svg{width:13px;height:13px;color:var(--teal-deep);flex:none}
+
+  /* ---- BOARDING PASS ---- */
+  .confirm-wrap{max-width:760px;margin:40px auto 90px;padding:0 24px;text-align:center}
+  .confirm-tick{width:84px;height:84px;border-radius:50%;background:var(--teal);display:grid;place-items:center;margin:0 auto 18px;box-shadow:0 14px 30px -10px var(--teal)}
+  .confirm-tick svg{width:42px;height:42px;color:#fff}
+  .pass{display:grid;grid-template-columns:1fr 230px;text-align:left;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);overflow:hidden;margin-top:30px;position:relative}
+  @media(max-width:640px){.pass{grid-template-columns:1fr}}
+  .pass-main{padding:26px 28px}
+  .pass-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .pass-brand{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:800;font-size:1.1rem;white-space:nowrap}
+  .pass-route{display:flex;align-items:center;gap:14px;margin:6px 0 20px}
+  .pass-route .pt{font-family:var(--display);font-weight:700;font-size:1.5rem;line-height:1}
+  .pass-route .pt small{display:block;font-family:var(--body);font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:4px}
+  .pass-route .dash{flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--accent) 0 6px,transparent 6px 12px);position:relative}
+  .pass-route .dash svg{position:absolute;right:-6px;top:-9px;width:20px;height:20px;color:var(--accent)}
+  .pass-info{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .pass-info .k{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+  .pass-info .v{font-weight:600;font-size:.95rem;margin-top:2px}
+  .pass-stub{background:var(--ink);color:#fff;padding:26px 22px;display:flex;flex-direction:column;justify-content:space-between;position:relative}
+  .pass-stub::before{content:"";position:absolute;left:-9px;top:0;bottom:0;width:18px;background:radial-gradient(circle at left,transparent 0 8px,var(--paper) 8px) repeat-y;background-size:18px 22px}
+  @media(max-width:640px){.pass-stub::before{left:0;right:0;top:-9px;bottom:auto;width:auto;height:18px;background:radial-gradient(circle at top,transparent 0 8px,var(--paper) 8px) repeat-x;background-size:22px 18px}}
+  .pass-stub .ref{font-family:ui-monospace,Menlo,monospace;font-size:1.05rem;letter-spacing:.15em;font-weight:600}
+  .barcode{height:46px;background:repeating-linear-gradient(90deg,#fff 0 2px,transparent 2px 4px,#fff 4px 5px,transparent 5px 9px);border-radius:3px;margin-top:14px}
+  .pass-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+
+  /* merged details + payment: divider, inline errors, clickable progress */
+  .pay-divider{height:0;border-top:2px dashed var(--line);margin:28px 0 22px}
+  .form-error{display:flex;align-items:center;gap:.45rem;margin:14px 0 0;color:#b13b22;background:#fdeee9;border:1px solid #f4c9bb;border-radius:10px;padding:.6rem .8rem;font-size:.86rem;font-weight:600}
+  .form-error[hidden]{display:none}
+  .form-error::before{content:"!";display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#ec3a24;color:#fff;font-size:.74rem;font-weight:800;flex:none}
+  .inp-bad{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.14)!important}
+  .pstep.clickable{cursor:pointer}
+  .pstep.clickable:hover .dot{border-color:var(--accent)}
+  /* merged When step: stack date over time so neither is cramped */
+  .when-grid{grid-template-columns:1fr;gap:22px}
+  .when-grid .when-time{border-top:1px dashed var(--line);padding-top:20px}
+  /* trip mode: panels 1 & 2 are handled by the planner — hide them before JS loads */
+  .mode-trip .panel[data-panel="1"],
+  .mode-trip .panel[data-panel="2"]{display:none!important}
+
+  .summary .s-row.editable{cursor:pointer}
+  .summary .s-row.editable:hover b{color:var(--accent-deep)}
+</style>
+</head>
+<body>
+<header class="bk-head">
+  <div class="wrap">
+    <a href="index.html" class="brand" id="bk-brand"></a>
+    <div class="bk-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Secure booking · SSL encrypted</div>
+  </div>
+</header>
+
+<!-- progress -->
+<div class="steps" id="psteps">
+  <div class="pstep active" data-s="1"><span class="dot">1</span><span class="lbl" id="lbl-s1">When</span></div>
+  <div class="pline"></div>
+  <div class="pstep" data-s="2"><span class="dot">2</span><span class="lbl" id="lbl-s2">Pick-up &amp; drop-off</span></div>
+  <div class="pline"></div>
+  <div class="pstep" data-s="3"><span class="dot">3</span><span class="lbl">Travelers</span></div>
+  <div class="pline"></div>
+  <div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Details &amp; payment</span></div>
+</div>
+
+<div class="layout" id="main-layout">
+  <!-- LEFT: steps -->
+  <div>
+    <!-- STEP 2 — WHERE -->
+    <div class="stepcard panel" data-panel="2">
+      <h2 id="s1-title">Where are we picking you up?</h2>
+      <p class="sub" id="s1-sub">Enter your exact pickup and drop-off — a hotel, address or landmark. We&rsquo;ll set your date &amp; time next.</p>
+
+      <!-- service chooser (multi-day trips only) -->
+      <div class="svc-chooser" id="svc-chooser" style="display:none">
+        <button type="button" class="svc on" data-svc="private" onclick="pickSvc('private')">
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg></span>
+          <b>I just want pick-up &amp; drop-off</b>
+          <small>A private car &amp; driver moves you from each stop to the next, door to door. You don&rsquo;t keep the car in between — it&rsquo;s a fresh transfer each leg.</small>
+          <span class="svc-tag" id="svc-private-tag"></span>
+        </button>
+        <button type="button" class="svc" data-svc="chauffeur" onclick="pickSvc('chauffeur')">
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg></span>
+          <b>Keep the car &amp; driver the whole trip</b>
+          <small>Your own car &amp; driver-guide stays with you start to finish — same friendly face every day, flexible stops and local tips along the way.</small>
+          <span class="svc-tag" id="svc-chauffeur-tag"></span>
+        </button>
+      </div>
+
+      <!-- itinerary route (multi-day trips only) -->
+      <div class="trip-route" id="trip-route" style="display:none"></div>
+
+      <!-- single-transfer locations -->
+      <div id="loc-wrap">
+        <div class="loc-block">
+          <div class="loc-field from"><span class="pin"></span>
+            <div class="ac-wrap"><label>Pickup location</label>
+              <input id="loc-from" autocomplete="off" placeholder="Hotel, address or place…">
+              <div class="ac-menu" id="ac-from"></div>
+            </div>
+          </div>
+          <div class="loc-field to"><span class="pin"></span>
+            <div class="ac-wrap"><label>Drop-off location</label>
+              <input id="loc-to" autocomplete="off" placeholder="Hotel, address or place…">
+              <div class="ac-menu" id="ac-to"></div>
+            </div>
+          </div>
+        </div>
+        <p class="loc-powered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg> Powered by maps — start typing to find your exact spot</p>
+        <div class="route-map" id="route-map" hidden>
+          <div class="rm-canvas" id="rm-canvas"></div>
+          <div class="rm-bar" id="rm-bar"></div>
+        </div>
+      </div>
+      <datalist id="lk-addr"></datalist>
+
+      <!-- how private transfers work (clarity) -->
+      <div class="info-note" id="pvt-note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <p id="pvt-note-tx"><b>It&rsquo;s a door-to-door pick-up &amp; drop-off.</b> A private transfer covers this one journey — we pick you up at your spot and drop you at your destination. On a multi-day trip each leg is booked fresh, so you may not have the exact same car or driver every day.</p>
+      </div>
+
+      <div class="nav-btns" id="nav1"><button type="button" class="back-link" onclick="goStep(1)">← Back</button><button class="btn btn-primary btn-lg" id="n1" disabled>Continue</button></div>
+    </div>
+
+    <!-- STEP 1 — WHEN (date + time) -->
+    <div class="stepcard panel active" data-panel="1">
+      <h2 id="s2-title">When do you want to hop?</h2>
+      <p class="sub" id="s2-sub">Pick your date and pick-up time — or leave either flexible and confirm with us later. You can change this any time before you travel.</p>
+      <div class="when-inner">
+        <div class="flex-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span id="flex-banner-tx"><b>Not sure of your timings yet?</b> No problem — book now and tell us your exact date &amp; time any time up to <b>12 hours before</b> departure.</span>
+        </div>
+        <div class="when-grid">
+          <div class="when-date">
+            <div class="when-head-row">
+              <span class="dep-head" id="date-label">Pick-up date</span>
+              <label class="flex-chk"><input type="checkbox" id="flex-date" onchange="toggleFlexDate()"> Decide later</label>
+            </div>
+            <div class="cal" id="cal"></div>
+            <div class="flex-pill" id="flex-date-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No date locked in — we&rsquo;ll confirm it with you nearer the time.</div>
+          </div>
+          <div class="when-time">
+            <div class="when-head-row">
+              <span class="dep-head" id="dep-label">Pick-up time</span>
+              <label class="flex-chk"><input type="checkbox" id="flex-time-chk" onchange="toggleFlexTime()"> Decide later</label>
+            </div>
+            <h2 id="s3-title" hidden></h2><p id="s3-sub" hidden></p>
+            <div class="dep-hint" id="dep-hint">Choose any time of day — we run on your schedule.</div>
+            <select id="dep-select" class="time-select" aria-label="Pick-up time" onchange="pickDepSel()"></select>
+            <div class="flex-pill" id="flex-time-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No time locked in — we&rsquo;ll confirm your pick-up time with you later.</div>
+          </div>
+        </div>
+      </div>
+      <div class="nav-btns"><button class="back-link" onclick="if(history.length>1){history.back()}else{location.href='index.html'}">← Back</button><button class="btn btn-primary btn-lg" id="n2" onclick="goStep(2)">Continue</button></div>
+    </div>
+
+    <!-- STEP 3 — TRAVELERS -->
+    <div class="stepcard panel" data-panel="3">
+      <h2>Who&rsquo;s hopping?</h2>
+      <p class="sub">Set your travelers and luggage, and add an extra if you need one.</p>
+      <div class="stepper" id="ad-step"><div><b>Adults</b><div class="muted" style="font-size:.75rem">Age 12+</div></div>
+        <div class="ctrls"><button onclick="step('ad',-1)">–</button><b id="ad-n">1</b><button onclick="step('ad',1)">+</button></div></div>
+      <div class="stepper" id="ch-step"><div><b>Children</b><div class="muted" style="font-size:.75rem">Age 2–11 · 40% off</div></div>
+        <div class="ctrls"><button onclick="step('ch',-1)">–</button><b id="ch-n">0</b><button onclick="step('ch',1)">+</button></div></div>
+      <div class="stepper"><div><b>Large bags</b><div class="muted" id="bag-cap" style="font-size:.75rem">—</div></div>
+        <div class="ctrls"><button onclick="step('bg',-1)">–</button><b id="bg-n">2</b><button onclick="step('bg',1)" id="bg-up">+</button></div></div>
+      <div class="cap-note" id="cap-note"></div>
+      <div id="extras-block">
+        <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
+        <div class="addon" data-addon="sightseeing" data-price="10" onclick="toggleAddon(this)"><span class="box"></span><div><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></div><span class="pr">+$10</span></div>
+      </div>
+      <div class="nav-btns"><button class="back-link" onclick="goStep(2)">← Back</button><button class="btn btn-primary btn-lg" id="n4" onclick="goStep(4)">Continue</button></div>
+    </div>
+
+    <!-- STEP 4 — DETAILS &amp; PAYMENT -->
+    <div class="stepcard panel" data-panel="4">
+      <h2>Your details</h2>
+      <p class="sub">The lead traveller&rsquo;s details — we&rsquo;ll send your confirmation and pickup info here, and contact this person about the booking.</p>
+      <div class="grid2">
+        <div class="field"><label for="f-first">First name</label><input id="f-first" autocomplete="given-name" placeholder="Maya"></div>
+        <div class="field"><label for="f-last">Last name</label><input id="f-last" autocomplete="family-name" placeholder="Fernández"></div>
+      </div>
+      <div class="field"><label for="f-email">Email</label><input id="f-email" type="email" autocomplete="email" inputmode="email" placeholder="maya@email.com"></div>
+      <div class="grid2">
+        <div class="field"><label for="f-wa">WhatsApp number</label><input id="f-wa" type="tel" autocomplete="tel" inputmode="tel" placeholder="+34 612 345 678"></div>
+        <div class="field"><label for="f-country">Country</label><select id="f-country"><option>Germany</option><option>Australia</option><option>United Kingdom</option><option>United States</option><option>Canada</option><option>France</option><option>Netherlands</option><option>Other</option></select></div>
+      </div>
+      <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
+      <p class="form-error" id="details-error" role="alert" hidden></p>
+
+      <div class="pay-divider"></div>
+
+      <h2 id="pay-title">Payment</h2>
+      <p class="sub" id="pay-sub">Pay securely to confirm. Free cancellation up to 24 hours before.</p>
+      <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>4.9/5</b> from 600+ travellers on Tripadvisor</p>
+      <div class="pay-summary-row" id="pay-due"></div>
+      <div class="pay-methods">
+        <div class="pm on" onclick="payMethod(this)"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card</div>
+        <div class="pm" onclick="payMethod(this)">Apple&nbsp;Pay</div>
+        <div class="pm" onclick="payMethod(this)">Google&nbsp;Pay</div>
+      </div>
+      <div class="pay-cards">
+        <span class="pc-label">We accept all major cards</span>
+        <div class="cards">
+          <span class="card-badge" title="Visa"><span class="visa">VISA</span></span>
+          <span class="card-badge" title="Mastercard"><span class="mc"><i></i><i></i></span></span>
+          <span class="card-badge" title="American Express"><span class="amex"><span>AMEX</span></span></span>
+          <span class="card-badge wide" title="Discover"><span class="disc">DISCOVER</span></span>
+          <span class="card-badge wide" title="UnionPay"><span class="up">Union<b>Pay</b></span></span>
+        </div>
+      </div>
+      <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
+      <label class="addon" style="cursor:pointer"><input type="checkbox" id="agree" style="width:auto"><span style="font-size:.85rem;color:var(--ink-soft)">I agree to the Terms &amp; cancellation policy and confirm my travel details are correct.</span></label>
+      <div class="concierge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
+        <div><b>A real person will reach out — fast</b><p>As soon as you book, our Ceylon Hop concierge team confirms your pickup details personally on WhatsApp. We&rsquo;re on during Sri&nbsp;Lanka hours (GMT+5:30, ~8am&ndash;9pm) — if you book overnight, you&rsquo;ll hear from us first thing.</p></div>
+      </div>
+      <div class="nav-btns"><button class="back-link" onclick="goStep(3)">← Back</button><button class="btn btn-cta btn-lg" id="pay-btn">Continue to secure payment →</button></div>
+      <p class="center muted" style="font-size:.76rem;margin-top:14px">🔒 Demo checkout — the PayHere step is simulated, no real payment is taken.</p>
+    </div>
+  </div>
+
+  <!-- RIGHT: summary -->
+  <aside>
+    <div class="summary" id="summary">
+      <div class="s-route" id="s-route">
+        <div class="pt from"><span class="pin"></span><span id="sum-from">—</span></div>
+        <div class="seg"></div>
+        <div class="pt to"><span class="pin"></span><span id="sum-to">—</span></div>
+      </div>
+      <div class="s-body">
+        <span class="pill pill-teal pill-dot" id="sum-type" style="margin-bottom:8px"></span>
+        <h3 id="sum-name"></h3>
+        <div class="s-row"><span>Date</span><b id="sum-date">—</b></div>
+        <div class="s-row"><span>Departure</span><b id="sum-time">—</b></div>
+        <div class="s-row"><span>Luggage</span><b id="sum-bags">—</b></div>
+        <div class="s-div"></div>
+        <div class="s-row"><span id="sum-adlabel">Adults</span><b id="sum-adamt"></b></div>
+        <div class="s-row" id="sum-chrow" style="display:none"><span id="sum-chlabel">Children</span><b id="sum-chamt"></b></div>
+        <div id="sum-addons"></div>
+        <div class="s-div"></div>
+        <div class="s-total"><span class="muted">Total</span><b id="sum-total"></b></div>
+        <div class="s-perks">
+          <div id="perk-cancel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Instant confirmation on WhatsApp</div>
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Pro Hopper guide on board</div>
+        </div>
+        <a class="s-wa" id="s-wa" href="https://wa.me/94771986692" target="_blank" rel="noopener">
+          <span class="ic"></span>
+          <span class="tx"><b>Questions about this trip?</b>Message us on WhatsApp — we usually reply in minutes.</span>
+        </a>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- CONFIRMATION (hidden until pay) -->
+<div class="confirm-wrap" id="confirm" style="display:none">
+  <div class="confirm-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 13 4 4L19 7"/></svg></div>
+  <span class="eyebrow" style="justify-content:center">You&rsquo;re all set</span>
+  <h1 style="font-size:clamp(2rem,4vw,2.8rem)">Your seat is booked!</h1>
+  <p class="lead" style="margin:8px auto 0">We&rsquo;ve sent your confirmation and pickup details. Our team will reach out on WhatsApp to lock in your exact pickup. See you on board 🌴</p>
+
+  <div class="concierge" style="max-width:560px;margin:22px auto 0;text-align:left">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
+    <div><b>Our concierge is already on it</b><p id="conf-concierge">A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You&rsquo;ll hear from us first thing in the morning.</p></div>
+  </div>
+
+  <div class="pass" id="pass">
+    <div class="pass-main">
+      <div class="pass-top">
+        <div class="pass-brand" id="pass-brand"></div>
+        <span class="pill pill-saffron" style="font-size:.72rem">Boarding pass</span>
+      </div>
+      <div class="pass-route">
+        <div class="pt" id="pass-from">—<small>From</small></div>
+        <div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        <div class="pt" id="pass-to" style="text-align:right">—<small>To</small></div>
+      </div>
+      <div class="pass-info">
+        <div><div class="k">Date</div><div class="v" id="pass-date">—</div></div>
+        <div><div class="k">Departs</div><div class="v" id="pass-time">—</div></div>
+        <div><div class="k">Travelers</div><div class="v" id="pass-pax">—</div></div>
+        <div><div class="k">Pickup</div><div class="v" id="pass-pickup">—</div></div>
+        <div><div class="k">Lead guest</div><div class="v" id="pass-name">—</div></div>
+        <div><div class="k">Paid</div><div class="v" id="pass-paid">—</div></div>
+      </div>
+    </div>
+    <div class="pass-stub">
+      <div>
+        <div style="font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:#bdbab2">Booking ref</div>
+        <div class="ref" id="pass-ref">—</div>
+      </div>
+      <div class="barcode"></div>
+    </div>
+  </div>
+
+  <div class="pass-actions">
+    <button class="btn btn-primary" onclick="window.print()">Download / print pass</button>
+    <a class="btn btn-wa" href="https://wa.me/94771986692" id="conf-wa"></a>
+    <a class="btn btn-ghost" href="index.html#book">Book another transfer</a>
+  </div>
+</div>
+
+<!-- PayHere redirect interstitial -->
+<div class="ph-overlay" id="ph-overlay">
+  <div class="ph-card">
+    <div class="ph-logo">Pay<span>Here</span></div>
+    <div class="ph-sub">Sri Lanka&rsquo;s trusted payment gateway</div>
+    <div class="ph-spin" id="ph-spin"></div>
+    <div class="ph-amt" id="ph-amt">$0</div>
+    <div class="ph-msg" id="ph-msg">Redirecting you to PayHere&hellip;</div>
+    <div class="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
+  </div>
+</div>
+
+<script src="site.js"></script>
+<script src="routes-data.js"></script>
+<script src="transfers-data.js"></script>
+<script src="booking.js"></script>
+</body>
+</html>
