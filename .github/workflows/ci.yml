@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  protect-ui:
+    name: protect frozen UI files
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: block changes to frozen front-end files
+        env:
+          ALLOW: ${{ contains(github.event.pull_request.labels.*.name, 'allow-ui-change') }}
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed="$(git diff --name-only "$base" "$head")"
+          echo "Changed files:"; echo "$changed"
+          frozen="$(echo "$changed" | grep -E '^([^/]+\.html|site\.css|favicon\.svg|image-slots\.state\.json|(booking|datepicker|image-slot|plan|routes-data|search|site|tours-data|transfers-data|tweaks)\.js)$' || true)"
+          if [ -n "$frozen" ] && [ "$ALLOW" != "true" ]; then
+            echo "::error::This PR changes frozen front-end files:"
+            echo "$frozen"
+            echo "The live site/UI is frozen. If this is intentional (e.g. the M7 wiring step),"
+            echo "add the 'allow-ui-change' label and get the code owner's review."
+            exit 1
+          fi
+          echo "OK: no frozen UI files changed (or change is explicitly allowed)."
+
+  api-check:
+    name: api typecheck / lint / test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ceylonhop_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/ceylonhop_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: run api checks if present
+        run: |
+          if [ -f api/package.json ]; then
+            cd api && npm ci && npm run check
+          else
+            echo "No api/ yet — skipping API checks."
+          fi

@@ -145,6 +145,13 @@ Any need to change a frozen contract → **stop and ask the human** + record an 
 - **ADRs** (`docs/adr/NNNN-*.md`) → a one-pager per non-trivial decision so choices
   aren't re-litigated months later.
 
+> **Status:** `.github/CODEOWNERS` and `.github/workflows/ci.yml` (with the frozen-UI
+> `protect-ui` guard + an ephemeral test Postgres) **already exist in the repo**. They
+> only *block merges* once **branch protection** is enabled on `main` — do that at
+> bootstrap (require the `ci` checks + code-owner review). The CI guard fails any PR that
+> touches frozen front-end files unless it carries the `allow-ui-change` label (used only
+> for the M7 wiring step).
+
 ---
 
 ## 7. Definition of Done (every PR — Reviewer + CI both check)
@@ -175,12 +182,13 @@ avoiding many tokens of wrong-direction work.
 ## 9. Bootstrapping order (do this before turning the loop loose)
 
 1. **Freeze** the spec + interfaces + schema decisions (largely done).
-2. **Stand up the guardrails first** — repo: `CODEOWNERS`, branch protection; CI:
-   typecheck/lint/test + changed-paths guard + architectural lint.
-3. **Hand-build the exemplar** — Steps 0.1 and 1.1–1.5 to an exemplary standard
-   (structure, test style, naming, error handling). This becomes the canonical pattern
-   every later step copies — agents follow a concrete in-repo example far better than
-   prose rules.
+2. **Guardrails before autonomy** — `CODEOWNERS` + the CI `protect-ui` guard already
+   exist; remaining: **enable branch protection** on `main` (require the `ci` checks +
+   code-owner review), and add architectural lint once `api/` exists.
+3. **Hand-build the exemplar (you + Claude, not an agent)** — Steps 0.1 and 1.1–1.5 to an
+   exemplary standard (structure, test style, naming, error handling). This becomes the
+   canonical pattern every later step copies — agents follow a concrete in-repo example
+   far better than prose rules.
 4. **Then** start the agent loop at the first un-built step, in calibration mode (L0).
 
 Guardrails and the exemplar exist *before* autonomy. That ordering is itself anti-drift.

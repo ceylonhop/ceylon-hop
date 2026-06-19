@@ -20,6 +20,9 @@ separate tool.
 - If a step feels ambiguous or needs out-of-scope changes, the agent **stops and asks** —
   it does not expand scope.
 - Steps are deliberately tiny. Resist merging two together; small steps are the point.
+- **Milestones (M-numbers) are the canonical execution order.** The spec's *phases* are
+  thematic groupings only; the phase↔milestone map lives in
+  [`backend-spec.md`](./backend-spec.md) §15.
 - **Every milestone ends with a human review gate.** The founder runs that milestone's
   human checkpoints + a quick end-to-end smoke test and signs off **before the next
   milestone begins**. The ✅ notes flag the launch-critical gates (M1, M6, M7), but the
@@ -162,9 +165,11 @@ return a created booking — no database, no external services.
 - **Build:** route validates body with `SingleTransferInput`, calls
   `quoteSingleTransfer`, creates a draft via `BookingRepo`, returns **201** with
   `{ id, reference, status, total, currency, ... }`. Invalid body → **400** with field
-  errors.
+  errors. **Accept an `Idempotency-Key` header** — a repeat with the same key returns the
+  **same** booking (200), never a duplicate draft.
 - **Tests:** valid body → 201 + correct shape + total matches stub; invalid body → 400
-  with error details.
+  with error details; **same `Idempotency-Key` twice → one booking (second call returns
+  it, no duplicate).**
 - **Human checkpoint:**
   ```
   curl -s -X POST localhost:8787/bookings/single \
@@ -314,8 +319,11 @@ return a created booking — no database, no external services.
 - **Goal:** start payment for a booking.
 - **Depends on:** 5.1, 3.2.
 - **Build:** create a `payment` row (`pending`, with `idempotency_key`), move booking to
-  `payment_pending`, return checkout params from the adapter.
-- **Tests:** returns params; payment row created; status moved; unknown booking → 404.
+  `payment_pending`, return checkout params from the adapter. **Assert the checkout amount
+  equals the booking's `amount_due_now`** (re-derived from the stored total + `pay_plan`);
+  reject on mismatch — never charge an amount that disagrees with the booking.
+- **Tests:** returns params; payment row created; status moved; unknown booking → 404;
+  **checkout amount == stored `amount_due_now`, and a tampered/mismatched amount → rejected.**
 - **Human checkpoint:** `POST /bookings/<id>/checkout` → JSON checkout params; Supabase
   shows a pending payment.
 - **Done when:** checkpoint passes; tests green.
@@ -456,6 +464,29 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
 - **M14 — Reminders, review requests, SLA timers.** Scheduled jobs + concierge SLA on
   SL hours.
 - **M15 — Reporting / CSV export.** Payments + bookings export until accounting lands.
+
+---
+
+## Hardening backlog (address before broad autonomy)
+
+Known gaps deferred from the v1 critique — fold into the relevant step or do as a small
+pass; don't let them block the first slices, but don't ship to production without them:
+
+- **Test quality, not just presence.** Each new test must *fail* if its behaviour is
+  reverted (negative check / light mutation). Consider a coverage floor in CI so "a test
+  exists" can't be gamed by an assertion-free test.
+- **Rollback policy.** Migrations are forward-only; document the revert procedure for a
+  bad merged step (and a migration-down where safe). The Reviewer checks this for
+  schema-touching steps.
+- **Reference-code uniqueness.** `CH-XXXXX` generated with a DB unique constraint +
+  retry-on-collision, not just random (Step 1.3 / 2.2).
+- **`updated_at` maintenance.** Maintained by a DB trigger (or ORM hook) and verified by
+  a test — not assumed.
+- **Auth migration path.** The interim `ADMIN_API_KEY` (Step 6.2) is replaced by Supabase
+  Auth + RBAC + row-level security in **M12**; don't bake the API-key assumption deep.
+- **Test isolation.** CI provisions an **ephemeral Postgres per run**
+  (`.github/workflows/ci.yml`), so parallel PRs don't stomp a shared test DB; locally use
+  `DATABASE_URL_TEST` and truncate between tests.
 
 ---
 

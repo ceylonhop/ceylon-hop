@@ -57,7 +57,8 @@ The front end (marketing site, search, planner, booking, tours) already exists a
 static site. This spec covers the **brain behind it**.
 
 **Goals**
-- Take real bookings and real payments end-to-end.
+- Take real bookings and real payments end-to-end (PayHere; v1 runs the flow on a
+  **stubbed** gateway first — see §0.1).
 - One authoritative pricing engine shared by site, ops, and receipts.
 - Operate the business: dispatch drivers/vehicles, manage shared-seat inventory,
   handle changes/cancellations/refunds.
@@ -193,6 +194,10 @@ as integer minor units + ISO currency code (never floats). Enums are Postgres en
   update on booking).
 - `payment` writes are **idempotent** on `idempotency_key` (webhook retries are safe).
 - Cancelling a booking releases held shared seats and frees assignments.
+- `POST /bookings` is **idempotent on a client `Idempotency-Key`** — a resubmit or retry
+  returns the existing booking, never a duplicate draft.
+- The amount sent to the payment provider **always equals the booking's stored
+  `amount_due_now`**; a mismatch is rejected (no silent over- or under-charge).
 
 ---
 
@@ -237,8 +242,9 @@ any non-terminal ─▶ cancelled ─▶ refunded            └─▶ no_show
 
 - **draft** — quote built, not yet submitted.
 - **payment_pending** — checkout opened; awaiting PayHere webhook.
-- **paid** — webhook confirmed (deposit or full). Triggers: confirmation WhatsApp +
-  email + e-ticket PDF + create `confirm_pickup` concierge task.
+- **paid** — webhook confirmed (deposit or full). Triggers (v1): confirmation **email**
+  + e-ticket PDF + create a `confirm_pickup` concierge task. *(WhatsApp is sent
+  **manually** in v1 — §0.2; auto-WhatsApp is a fast follow.)*
 - **awaiting_details** — "decide later" bookings; concierge collects exact date/time.
 - **confirmed** — concierge verified details **and** driver/vehicle assigned.
 - **in_progress / completed** — driver status updates; completion triggers review request.
@@ -275,9 +281,13 @@ Driver (authenticated, driver role):
 ## 9. Payments flow
 
 ### 9.1 Happy path
-1. Site calls `POST /bookings` → `draft`.
+*This is the **target** flow with real PayHere. In v1 the identical steps run against the
+**stubbed** adapter with a simulated webhook (§0.1).*
+
+1. Site calls `POST /bookings` (idempotent on a client `Idempotency-Key`) → `draft`.
 2. Site calls `POST /bookings/:id/checkout`; server **re-prices**, creates a `payment`
-   (`pending`, with `idempotency_key`), returns PayHere hosted-checkout params.
+   (`pending`, with `idempotency_key`), returns PayHere hosted-checkout params. **The
+   checkout amount always equals the booking's `amount_due_now`** — a mismatch is rejected.
 3. Customer pays on PayHere.
 4. PayHere calls `POST /webhooks/payhere`; server **verifies signature**, marks
    `payment` succeeded, advances booking to `paid`, fires notifications.
@@ -401,6 +411,19 @@ records/base and duplicates the data.
 | **2 Run operations** | Ops dashboard, drivers/vehicles, dispatch/assignment, **record** manual cancellations/refunds, shared-seat inventory + schedules, **authoritative pricing engine + `rate_card`** | Staff can assign a driver; refunds and prices are tracked in-system |
 | **3 Automate comms (fast follow)** | WhatsApp Business API + templates, reminders, concierge SLA timers, review requests, ops alerts | Confirmations/reminders auto-send on WhatsApp, no manual step |
 | **4 Scale & polish** | Driver app, reporting/analytics, accounting sync, seasonal pricing, multi-currency | — |
+
+**Phase ↔ build-plan milestone map.** The milestones in
+[`build-plan.md`](./build-plan.md) (M0, M1, …) are the **canonical execution order**;
+the phases above are thematic groupings, and one phase may span several milestones:
+
+| Phase | Milestones |
+|---|---|
+| 0 Foundations | M0 |
+| 1 End-to-end (stubbed payment) | M1–M6 |
+| 1.5 Real payments + live site | M5.5, M7 |
+| 2 Run operations | M8 (Maps), M9 (multi-stop), M10 (shared), M11 (pricing engine), M12 (ops dashboard) |
+| 3 Automate comms | M13 (WhatsApp), M14 (reminders/reviews) |
+| 4 Scale & polish | M15 (reporting), and beyond |
 
 ---
 

@@ -1,0 +1,17 @@
+# Frozen front-end / live site — changes require the owner's explicit review.
+# Takes effect once branch protection's "require review from Code Owners" is enabled
+# on `main` (see docs/agent-team.md §6). The CI `protect-ui` job is the always-on guard.
+/*.html                  @ceylonhop
+/site.css                @ceylonhop
+/favicon.svg             @ceylonhop
+/image-slots.state.json  @ceylonhop
+/booking.js              @ceylonhop
+/datepicker.js           @ceylonhop
+/image-slot.js           @ceylonhop
+/plan.js                 @ceylonhop
+/routes-data.js          @ceylonhop
+/search.js               @ceylonhop
+/site.js                 @ceylonhop
+/tours-data.js           @ceylonhop
+/transfers-data.js       @ceylonhop
+/tweaks.js               @ceylonhop
