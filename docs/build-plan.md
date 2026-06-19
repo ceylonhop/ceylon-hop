@@ -195,6 +195,10 @@ return a created booking — no database, no external services.
 - **Human checkpoint:** create a free Supabase project, put its connection string in
   `.env`, `npm run migrate` (no-op ok) connects without error.
 - **Done when:** test DB connects in CI and locally.
+- **Cost note:** the Supabase **free** tier is plenty for the entire build + dev/test
+  (500 MB DB ≈ decades of bookings at your volume). But the free tier has **no backups**
+  and pauses after 7 days idle — so when the **production** project goes live with real
+  bookings/payments, move it to **Pro (~$25/mo)** for daily backups + no auto-pause.
 
 ### Step 2.2 — `customers` + `bookings` (+ `transfer_request`) migration
 - **Goal:** schema for a persisted single-transfer booking.
