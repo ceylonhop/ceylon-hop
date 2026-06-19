@@ -20,7 +20,7 @@ changing the existing UI or functionality.**
 | No UI/functionality change | CI path-guard + `CODEOWNERS` lock the site files; backend lives only in `api/` |
 | Token-efficient | One step = one fresh, scoped context; retry cap; model tiering; no exploration |
 | Long-term view | Architecture frozen up front as spec + ADRs; interfaces pinned; vertical slices |
-| Minimal intervention | Humans gate at milestones only; everything else is automated gates |
+| Minimal intervention | Human signs off at **every** milestone; within a milestone, automated gates (CI + Reviewer) do the rest |
 
 The throughline: **push the burden off "trusting the agent" and onto structure that
 can't drift.**
@@ -91,8 +91,10 @@ typecheck · lint · all tests · **changed-paths guard** (fails if anything out
    opens a PR with the DoD checklist filled in.
 4. **CI** — automated gates run; red = back to Builder (max 2 attempts, then escalate).
 5. **Review** — Reviewer (fresh context) checks the DoD; bounces or approves.
-6. **Human gate** — only at milestone checkpoints (the ✅ gates after M1, M6, M7), the
-   founder runs the step's human checkpoint and confirms.
+6. **Human gate** — at the **end of every milestone**, the founder runs that milestone's
+   human checkpoint(s) + a quick end-to-end smoke test and signs off before the next
+   milestone starts. **This never relaxes.** (M1, M6, M7 are the heaviest, launch-critical
+   gates — but *every* milestone gets your sign-off.)
 7. **Merge** — squash-merge to `main`; deploy to staging (skeleton is live from day one).
 
 ---
@@ -119,10 +121,12 @@ Any need to change a frozen contract → **stop and ask the human** + record an 
 - **Model tiering** — strong models for Orchestrator/Reviewer and design-heavy steps;
   cheaper for mechanical ones.
 - **Retry cap** — a step that fails twice is **escalated**, never thrashed.
-- **Progressive autonomy ladder:**
-  - *L0 — calibration (M0–M1):* human approves every PR; prove the agents are reliable.
-  - *L1 — steady state (M2–M6):* Reviewer gates each step; human approves at sub-milestone.
-  - *L2 — proven (post-launch):* human approves at milestone gates only.
+- **Progressive autonomy ladder** — this governs **per-step** human involvement only.
+  The **end-of-milestone sign-off (§3) is always required**, at every milestone, at every
+  level:
+  - *L0 — calibration (M0–M1):* human approves **every** PR, to prove the agents are reliable.
+  - *L1 — steady state (M2 onward):* Reviewer + CI gate each step automatically; the human
+    surfaces at **every milestone boundary** and whenever an agent escalates.
 
 ---
 

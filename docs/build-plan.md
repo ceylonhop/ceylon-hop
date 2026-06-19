@@ -20,6 +20,10 @@ separate tool.
 - If a step feels ambiguous or needs out-of-scope changes, the agent **stops and asks** —
   it does not expand scope.
 - Steps are deliberately tiny. Resist merging two together; small steps are the point.
+- **Every milestone ends with a human review gate.** The founder runs that milestone's
+  human checkpoints + a quick end-to-end smoke test and signs off **before the next
+  milestone begins**. The ✅ notes flag the launch-critical gates (M1, M6, M7), but the
+  sign-off applies to *all* milestones, M0 through M13.
 
 ## Agent guardrails (read first)
 
