@@ -2,7 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryBookingRepo, type NewBooking } from './bookingRepo';
 
 const sample: NewBooking = {
-  input: { from: 'A', to: 'B', vehicleType: 'car', adults: 1, children: 0, bags: 0 },
+  input: {
+    from: 'A',
+    to: 'B',
+    vehicleType: 'car',
+    adults: 1,
+    children: 0,
+    bags: 0,
+    customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+  },
   total: 4000,
   currency: 'USD',
 };

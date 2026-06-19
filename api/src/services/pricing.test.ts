@@ -9,6 +9,7 @@ const base: SingleTransferInput = {
   adults: 1,
   children: 0,
   bags: 0,
+  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
 describe('quoteSingleTransfer (stub)', () => {

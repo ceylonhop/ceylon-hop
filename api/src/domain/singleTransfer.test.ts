@@ -8,6 +8,12 @@ const valid = {
   adults: 2,
   children: 0,
   bags: 2,
+  customer: {
+    name: 'Maya',
+    email: 'maya@example.com',
+    whatsapp: '+34600000000',
+    country: 'Spain',
+  },
 };
 
 describe('SingleTransferInput', () => {
@@ -15,10 +21,9 @@ describe('SingleTransferInput', () => {
     expect(SingleTransferInput.safeParse(valid).success).toBe(true);
   });
 
-  it('rejects empty or missing from/to', () => {
+  it('rejects empty from/to', () => {
     expect(SingleTransferInput.safeParse({ ...valid, from: '' }).success).toBe(false);
-    const noTo = { from: 'A', vehicleType: 'car', adults: 1, children: 0, bags: 0 };
-    expect(SingleTransferInput.safeParse(noTo).success).toBe(false);
+    expect(SingleTransferInput.safeParse({ ...valid, to: '' }).success).toBe(false);
   });
 
   it('rejects adults < 1', () => {
@@ -31,5 +36,15 @@ describe('SingleTransferInput', () => {
 
   it('rejects an unknown vehicleType', () => {
     expect(SingleTransferInput.safeParse({ ...valid, vehicleType: 'boat' }).success).toBe(false);
+  });
+
+  it('requires a customer with a valid email', () => {
+    expect(SingleTransferInput.safeParse({ ...valid, customer: undefined }).success).toBe(false);
+    expect(
+      SingleTransferInput.safeParse({
+        ...valid,
+        customer: { ...valid.customer, email: 'not-an-email' },
+      }).success,
+    ).toBe(false);
   });
 });
