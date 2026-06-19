@@ -88,7 +88,8 @@ _Status as of 2026-06-19 (mirrors merged work on `main`):_
 - [x] M6 Ops visibility (6.1–6.3) ✓
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
-- [ ] M9+ later milestones (outlined at the end)
+- [~] M9 Multi-stop trips — 9.1 schema ✓, 9.2 pricing stub ✓ (9.3 model + 9.4 endpoint + 9.5 persist + 9.6 smoke pending). _Built autonomously ahead of M7/M8, which need a UI edit / Google key._
+- [ ] M10+ later milestones (outlined at the end)
 
 > Known gaps: e-ticket PDF (4.3) not built; schema stores places as free text with no
 > `updated_at`/status DB-constraint; rotate the exposed dev DB password.
@@ -466,10 +467,14 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
 1.x-style steps when you reach it.
 
 - **M9 — Multi-stop trips + tour hand-off.** The natural extension of single transfer —
-  reuses the whole Phase-1 pipeline (persistence, stubbed payment, email, ops) and only
-  adds the itinerary shape. Persist `itinerary`/`leg`/`stay`; accept the planner/tour
-  payload (stops, nights, dates, service type: private vs chauffeur); price via stub.
-  No new concurrency.
+  reuses the whole Phase-1 pipeline (persistence, stubbed payment, email, ops). Sub-steps:
+  - **9.1** `TripInput` schema (stops, nights, dates, pax, vehicle, serviceType, customer).
+  - **9.2** `quoteTrip` stub pricing (per-leg private; per-day chauffeur).
+  - **9.3** Lift `customer` to the booking top level + add `mode`; `Booking` becomes a
+    `single | trip` shape (in-memory first; keep single-transfer green).
+  - **9.4** `POST /bookings/trip` (validate → quoteTrip → trip draft), in-memory.
+  - **9.5** Persist trips: `itinerary`/`leg`/`stay` tables + Postgres support + integration test.
+  - **9.6** Trip-aware confirmation email; extend the E2E smoke with a trip.
 - **M10 — Shared-seat bookings + inventory.** Built last of the three because it adds
   genuinely new mechanics: `corridor` + `shared_departure` with an **atomic seat-hold**
   (no oversell) plus a concurrency test that hammers the same departure. Reuses the
