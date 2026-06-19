@@ -285,6 +285,11 @@ return a created booking — no database, no external services.
 
 ## Milestone 5 — PayHere (fake first, then sandbox)
 
+> **Phase 1 is steps 5.1–5.4 only** — the whole flow runs on the **fake** adapter, with
+> a *simulated* webhook. **Phase 1 needs zero real PayHere wiring.** Step 5.5 (wiring the
+> real PayHere keys) is **Phase 1.5**, done only **after** the full pipeline is verified
+> end-to-end on the fake (post-M6).
+
 ### Step 5.1 — Payment adapter interface + fake
 - **Goal:** a swappable payment seam.
 - **Depends on:** 0.1.
@@ -327,7 +332,7 @@ return a created booking — no database, no external services.
   the confirmation to the customer's address.
 - **Done when:** email fires on paid; tests green.
 
-### Step 5.5 — Swap fake → real PayHere **sandbox**
+### Step 5.5 — Swap fake → real PayHere **sandbox**  *(Phase 1.5 — not Phase 1)*
 - **Goal:** a real (sandbox) payment drives the flow end-to-end.
 - **Depends on:** 5.4.
 - **Build:** `PayHerePaymentAdapter` using your **existing keys** (sandbox mode);
@@ -364,9 +369,11 @@ return a created booking — no database, no external services.
   valid key → list. **Checkpoint:** curl with the key → JSON list of bookings.
   **Depends on:** 2.3.
 
-> ✅ **Milestone 6 review:** a real (sandbox) payment now creates a paid booking, emails
-> the customer, files a concierge task, and shows up in Airtable + an admin list — your
-> team can run WhatsApp, dispatch and refunds manually from there.
+> ✅ **Milestone 6 review (end of Phase 1):** a **simulated** payment now creates a paid
+> booking, emails the customer, files a concierge task, and shows up in Airtable + an
+> admin list — all on the **stub**, no real PayHere yet. Your team can run WhatsApp,
+> dispatch and refunds manually from there. **Real PayHere (Step 5.5) comes next, in
+> Phase 1.5.**
 
 ---
 

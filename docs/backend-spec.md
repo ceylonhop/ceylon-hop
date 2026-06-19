@@ -14,9 +14,11 @@ services over bespoke infrastructure.
 Clarifications from the founder that **override** the relevant sections below. We are
 already an operating business; this backend formalises what is partly manual today.
 
-1. **PayHere is live.** We already take payments via PayHere **hosted checkout** and
-   hold API keys. The backend wires the **existing** credentials + notify/webhook — no
-   new gateway onboarding. (See §3.)
+1. **PayHere keys exist, but Phase 1 stubs it.** We already hold live PayHere
+   **hosted-checkout** API keys, so there's no gateway onboarding. But **Phase 1 builds
+   the whole flow against a fake/stub PayHere adapter** (fake checkout + simulated
+   webhook). **Wiring the real PayHere is a later, isolated step** (Phase 1.5), done
+   only after the end-to-end pipeline is proven on the stub. (See §3, §15.)
 2. **WhatsApp stays manual for now.** No WhatsApp Business API yet, so no automated
    WhatsApp. v1 automates **email only**; the concierge messages customers **by hand**.
    WhatsApp Business API automation is a **fast follow**. (See §10.)
@@ -34,10 +36,11 @@ already an operating business; this backend formalises what is partly manual tod
 6. **No accounting integration in v1.** No accounting platform in use yet; deferred /
    optional. (See §12.)
 
-**Net v1 (Phase 1) focus:** persist bookings + customer details → wire the existing
-PayHere hosted checkout + webhook to mark `paid` → send email confirmation + e-ticket →
-mirror bookings into Airtable so staff run concierge, dispatch and refunds manually.
-Pricing stubbed; WhatsApp manual.
+**Net v1 (Phase 1) focus:** persist bookings + customer details → drive the flow with a
+**stubbed** PayHere (fake checkout + simulated webhook) to reach `paid` → send email
+confirmation + e-ticket → mirror bookings into Airtable so staff run concierge, dispatch
+and refunds manually. **Pricing stubbed, PayHere stubbed, WhatsApp manual.** Real PayHere
+is a separate later step (Phase 1.5).
 
 ---
 
@@ -105,8 +108,10 @@ Treat the payment layer as an interface (see §9) so a second provider can slot 
 without touching booking logic.
 
 **Required PayHere capabilities used:** hosted checkout, server-to-server
-**webhook/notify URL**, refunds API (for free-cancellation), pre-auth or
-full-capture, and a sandbox for test mode.
+**webhook/notify URL**, and a sandbox for test mode. (Refunds are manual per §0.4.)
+
+**Phasing:** Phase 1 builds the flow against a **fake** PayHere adapter; wiring the real
+keys (sandbox → live) is a separate later step (Phase 1.5; build-plan step 5.5).
 
 ---
 
@@ -386,7 +391,8 @@ Phase 2 once the real process is known.
 | Phase | Deliverable | "Done when…" |
 |---|---|---|
 | **0 Foundations** | Supabase project, data model v1, staff auth, CI/CD, **stub** pricing module | The booking flow can create + persist a draft with a total |
-| **1 Take real money** | Booking persistence, wire **existing** PayHere keys + webhook, email confirm + e-ticket PDF, Airtable mirror, auto-create concierge task | A real card payment creates a `paid` booking, emails confirmation, and shows in Airtable |
+| **1 End-to-end (stubbed payment)** | Booking persistence, **stubbed** PayHere (fake checkout + simulated webhook), email confirm + e-ticket PDF, Airtable mirror, auto-create concierge task | A *simulated* payment creates a `paid` booking, emails confirmation, and shows in Airtable |
+| **1.5 Real payments** | Wire **existing** PayHere keys (sandbox → live) + webhook signature verification, behind the same adapter | A real sandbox PayHere payment creates a `paid` booking |
 | **2 Run operations** | Ops dashboard, drivers/vehicles, dispatch/assignment, **record** manual cancellations/refunds, shared-seat inventory + schedules, **authoritative pricing engine + `rate_card`** | Staff can assign a driver; refunds and prices are tracked in-system |
 | **3 Automate comms (fast follow)** | WhatsApp Business API + templates, reminders, concierge SLA timers, review requests, ops alerts | Confirmations/reminders auto-send on WhatsApp, no manual step |
 | **4 Scale & polish** | Driver app, reporting/analytics, accounting sync, seasonal pricing, multi-currency | — |
