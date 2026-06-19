@@ -94,4 +94,38 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     ).json();
     expect(adminList.some((x: { id: string }) => x.id === b.id)).toBe(true);
   });
+
+  it('runs the whole pipeline for a shared seat', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ adapter, email, conciergeTasks, adminApiKey: 'smoke-key' });
+
+    const shared = {
+      corridorId: 'cmb-ella',
+      date: '2026-07-20',
+      time: '07:30',
+      seats: 2,
+      customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+    };
+    const b = await (
+      await app.request('/bookings/shared', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(shared),
+      })
+    ).json();
+    expect(b.mode).toBe('shared');
+
+    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+
+    const paid = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(paid.status).toBe('paid');
+    expect(email.sent).toHaveLength(1);
+    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(1);
+  });
 });

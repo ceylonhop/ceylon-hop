@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique } from 'drizzle-orm/pg-core';
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -78,4 +78,43 @@ export const tripRequests = pgTable('trip_request', {
   stops: text('stops').array().notNull(),
   nights: integer('nights').array().notNull(),
   dates: text('dates').array(),
+});
+
+export const corridors = pgTable('corridor', {
+  id: text('id').primaryKey(),
+  fromPlace: text('from_place').notNull(),
+  toPlace: text('to_place').notNull(),
+  seatPrice: integer('seat_price').notNull(),
+  seatCapacity: integer('seat_capacity').notNull(),
+});
+
+// Inventory for the daily shared service. The unique (corridor,date,time) lets us
+// upsert the departure, and the atomic seat-hold updates seats_booked under a row lock.
+export const sharedDepartures = pgTable(
+  'shared_departure',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    corridorId: text('corridor_id')
+      .notNull()
+      .references(() => corridors.id),
+    date: text('date').notNull(),
+    time: text('time').notNull(),
+    seatsTotal: integer('seats_total').notNull(),
+    seatsBooked: integer('seats_booked').notNull().default(0),
+  },
+  (t) => [unique().on(t.corridorId, t.date, t.time)],
+);
+
+export const sharedRequests = pgTable('shared_request', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id')
+    .notNull()
+    .unique()
+    .references(() => bookings.id),
+  corridorId: text('corridor_id')
+    .notNull()
+    .references(() => corridors.id),
+  date: text('date').notNull(),
+  time: text('time').notNull(),
+  seats: integer('seats').notNull(),
 });

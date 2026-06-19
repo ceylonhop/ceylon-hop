@@ -29,7 +29,7 @@ export interface DepartureRepo {
   }): Promise<SharedDeparture | null>;
 }
 
-const DEFAULT_CORRIDORS: Corridor[] = [
+export const DEFAULT_CORRIDORS: Corridor[] = [
   { id: 'cmb-ella', fromPlace: 'Colombo Airport', toPlace: 'Ella', seatPrice: 3500, seatCapacity: 12 },
   { id: 'cmb-galle', fromPlace: 'Colombo Airport', toPlace: 'Galle', seatPrice: 3000, seatCapacity: 12 },
 ];

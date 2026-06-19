@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createDb } from './client';
+import { createDb, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
+import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -28,13 +29,18 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
   let tasks: PostgresConciergeTaskRepo;
+  let departures: PostgresDepartureRepo;
+  let sql: Sql;
 
   beforeAll(async () => {
-    const { db } = createDb(TEST_URL as string);
-    await migrate(db, { migrationsFolder: 'drizzle' });
-    bookings = new PostgresBookingRepo(db);
-    payments = new PostgresPaymentRepo(db);
-    tasks = new PostgresConciergeTaskRepo(db);
+    const conn = createDb(TEST_URL as string);
+    sql = conn.sql;
+    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    await seedCorridors(sql);
+    bookings = new PostgresBookingRepo(conn.db);
+    payments = new PostgresPaymentRepo(conn.db);
+    tasks = new PostgresConciergeTaskRepo(conn.db);
+    departures = new PostgresDepartureRepo(sql);
   });
 
   it('persists and reads back a booking with customer + transfer', async () => {
@@ -84,6 +90,47 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.input.serviceType).toBe('private');
     expect(got.input.customer.email).toBe('maya@example.com');
     expect(got.total).toBe(12000);
+  });
+
+  it('persists and reads back a shared booking', async () => {
+    const shared: NewBooking = {
+      mode: 'shared',
+      input: {
+        corridorId: 'cmb-ella',
+        date: '2026-07-20',
+        time: '07:30',
+        seats: 2,
+        customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 7000,
+      currency: 'USD',
+    };
+    const created = await bookings.create(shared);
+    const got = await bookings.get(created.id);
+    expect(got?.mode).toBe('shared');
+    if (got?.mode !== 'shared') throw new Error('expected a shared booking');
+    expect(got.input.corridorId).toBe('cmb-ella');
+    expect(got.input.seats).toBe(2);
+  });
+
+  it('holds seats atomically under real DB concurrency (no oversell)', async () => {
+    await sql`
+      insert into corridor (id, from_place, to_place, seat_price, seat_capacity)
+      values ('cap5', 'A', 'B', 1000, 5)
+      on conflict (id) do update set seat_capacity = 5`;
+    const date = `c-${Date.now()}`; // a fresh departure each run
+
+    const attempts = Array.from({ length: 20 }, () =>
+      departures.holdSeats({ corridorId: 'cap5', date, time: 't', seats: 1 }),
+    );
+    const held = (await Promise.all(attempts)).filter((r) => r !== null);
+    expect(held).toHaveLength(5); // exactly capacity, never more
+
+    const [row] = await sql<
+      { seats_booked: number; seats_total: number }[]
+    >`select seats_booked, seats_total from shared_departure where corridor_id = 'cap5' and date = ${date} and time = 't'`;
+    expect(row.seats_booked).toBe(5);
+    expect(row.seats_booked).toBeLessThanOrEqual(row.seats_total);
   });
 
   it('persists a payment and a concierge task', async () => {

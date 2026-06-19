@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests } from './schema';
+import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
@@ -51,6 +51,23 @@ export class PostgresBookingRepo implements BookingRepo {
         },
       };
     }
+    if (row.mode === 'shared') {
+      const [sr] = await this.db
+        .select()
+        .from(sharedRequests)
+        .where(eq(sharedRequests.bookingId, row.id));
+      return {
+        ...base,
+        mode: 'shared',
+        input: {
+          corridorId: sr.corridorId,
+          date: sr.date,
+          time: sr.time,
+          seats: sr.seats,
+          customer,
+        },
+      };
+    }
     const [t] = await this.db
       .select()
       .from(transferRequests)
@@ -76,9 +93,6 @@ export class PostgresBookingRepo implements BookingRepo {
     if (opts?.idempotencyKey) {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
-    }
-    if (b.mode === 'shared') {
-      throw new Error('shared persistence not implemented yet (M10.5)');
     }
     const c = b.input.customer;
     const row = await this.db.transaction(async (tx) => {
@@ -114,6 +128,15 @@ export class PostgresBookingRepo implements BookingRepo {
           stops: t.stops,
           nights: t.nights,
           dates: t.dates ?? null,
+        });
+      } else if (b.mode === 'shared') {
+        const t = b.input;
+        await tx.insert(sharedRequests).values({
+          bookingId: bk.id,
+          corridorId: t.corridorId,
+          date: t.date,
+          time: t.time,
+          seats: t.seats,
         });
       } else {
         const t = b.input;
