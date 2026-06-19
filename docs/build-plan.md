@@ -89,7 +89,8 @@ _Status as of 2026-06-19 (mirrors merged work on `main`):_
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
 - [x] M9 Multi-stop trips (9.1–9.6) ✓ — schema, pricing, booking model (single|trip), `POST /bookings/trip`, Postgres persistence (mode + trip_request), and the E2E smoke covers a trip. _Built ahead of M7/M8, which need a UI edit / Google key._
-- [ ] M10+ later milestones (outlined at the end)
+- [~] M10 Shared-seat bookings — 10.1 schema ✓, 10.2 pricing ✓, 10.3 inventory + atomic seat-hold (no oversell, concurrency-tested) ✓ (10.4 endpoint + 10.5 persist + 10.6 smoke pending). _Autonomous._
+- [ ] M11+ later milestones (outlined at the end)
 
 > Known gaps: e-ticket PDF (4.3) not built; schema stores places as free text with no
 > `updated_at`/status DB-constraint; rotate the exposed dev DB password.
@@ -475,10 +476,16 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   - **9.4** `POST /bookings/trip` (validate → quoteTrip → trip draft), in-memory.
   - **9.5** Persist trips: `itinerary`/`leg`/`stay` tables + Postgres support + integration test.
   - **9.6** Trip-aware confirmation email; extend the E2E smoke with a trip.
-- **M10 — Shared-seat bookings + inventory.** Built last of the three because it adds
-  genuinely new mechanics: `corridor` + `shared_departure` with an **atomic seat-hold**
-  (no oversell) plus a concurrency test that hammers the same departure. Reuses the
-  M1–M2 booking/persistence foundations for `mode=shared`.
+- **M10 — Shared-seat bookings + inventory.** New mechanic: fixed corridors/departures
+  with an **atomic seat-hold** (no oversell). Sub-steps:
+  - **10.1** `SharedInput` schema (corridor, date, time, seats, customer).
+  - **10.2** `quoteShared` stub (seats × corridor seat price).
+  - **10.3** Corridor + SharedDeparture (in-memory) with atomic `holdSeats` + concurrency test.
+  - **10.4** Add `shared` to the booking union; `POST /bookings/shared` (resolve corridor →
+    quote → hold seats → booking; **409 on oversell**), in-memory.
+  - **10.5** Persist: `corridor` + `shared_departure` tables + Postgres atomic hold
+    (`UPDATE … WHERE seats_booked + n <= seats_total`) + integration/concurrency test.
+  - **10.6** Extend the E2E smoke with a shared booking.
 - **M11 — Authoritative pricing engine + `rate_card`.** Replace the stub behind the same
   function signatures; parity test asserts site = booking = charge.
 - **M12 — Ops dashboard (custom UI).** Graduate from NocoDB/Retool to a bespoke staff

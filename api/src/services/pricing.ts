@@ -30,3 +30,11 @@ export function quoteTrip(input: TripInput): { currency: string; total: number }
   const perLeg = LEG_BASE_CENTS + (input.vehicleType === 'van' ? LEG_VAN_SURCHARGE_CENTS : 0);
   return { currency: 'USD', total: legs * perLeg };
 }
+
+// A shared seat is priced from the corridor's per-seat price × the number of seats.
+export function quoteShared(seats: number, seatPriceCents: number): {
+  currency: string;
+  total: number;
+} {
+  return { currency: 'USD', total: seats * seatPriceCents };
+}

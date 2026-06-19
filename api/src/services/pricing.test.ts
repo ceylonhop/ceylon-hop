@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteSingleTransfer, quoteTrip } from './pricing';
+import { quoteSingleTransfer, quoteTrip, quoteShared } from './pricing';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 
@@ -53,5 +53,11 @@ describe('quoteTrip (stub)', () => {
   it('prices chauffeur per day (nights + 1)', () => {
     // nights 1+2+0 = 3 -> 4 days × 5500
     expect(quoteTrip({ ...trip, serviceType: 'chauffeur' }).total).toBe(22000);
+  });
+});
+
+describe('quoteShared (stub)', () => {
+  it('prices seats × the corridor seat price', () => {
+    expect(quoteShared(3, 3500)).toEqual({ currency: 'USD', total: 10500 });
   });
 });
