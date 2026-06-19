@@ -1,0 +1,55 @@
+import { describe, it, expect } from 'vitest';
+import { createApp } from './app';
+import { FakePaymentAdapter } from './adapters/payments';
+import { FakeEmailAdapter } from './adapters/email';
+import { InMemoryConciergeTaskRepo } from './db/conciergeTaskRepo';
+
+// Standing end-to-end smoke for the whole stubbed pipeline. Re-run at every milestone
+// gate (npm run smoke); it grows as new booking types and the real PayHere land.
+const valid = {
+  from: 'Colombo Airport',
+  to: 'Ella',
+  vehicleType: 'van',
+  adults: 3,
+  children: 1,
+  bags: 4,
+  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+};
+
+describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
+  it('runs the whole stubbed pipeline', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const adminApiKey = 'smoke-key';
+    const app = createApp({ adapter, email, conciergeTasks, adminApiKey });
+
+    const b = await (
+      await app.request('/bookings/single', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(valid),
+      })
+    ).json();
+    expect(b.status).toBe('draft');
+
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(checkout.status).toBe(200);
+
+    const wh = await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    expect(wh.status).toBe(200);
+
+    const paid = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(paid.status).toBe('paid');
+    expect(email.sent).toHaveLength(1);
+    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(1);
+
+    const adminList = await (
+      await app.request('/admin/bookings?status=paid', { headers: { 'x-admin-key': adminApiKey } })
+    ).json();
+    expect(adminList.some((x: { id: string }) => x.id === b.id)).toBe(true);
+  });
+});

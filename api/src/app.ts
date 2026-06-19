@@ -1,29 +1,36 @@
 import { Hono } from 'hono';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
+import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
+import { adminRoutes } from './routes/admin';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
+  conciergeTasks?: ConciergeTaskRepo;
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
+  adminApiKey?: string;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
+  const adminApiKey = deps.adminApiKey ?? process.env.ADMIN_API_KEY ?? '';
 
   const app = new Hono();
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter }));
-  app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email }));
+  app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
+  app.route('/admin', adminRoutes({ bookings, adminApiKey }));
   return app;
 }
 

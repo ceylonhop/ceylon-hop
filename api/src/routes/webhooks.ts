@@ -3,6 +3,7 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { EmailAdapter } from '../adapters/email';
+import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { sendBookingConfirmation } from '../services/notifications';
 
 export function webhookRoutes(deps: {
@@ -10,8 +11,9 @@ export function webhookRoutes(deps: {
   payments: PaymentRepo;
   adapter: PaymentAdapter;
   email: EmailAdapter;
+  conciergeTasks: ConciergeTaskRepo;
 }) {
-  const { bookings, payments, adapter, email } = deps;
+  const { bookings, payments, adapter, email, conciergeTasks } = deps;
   const r = new Hono();
 
   // 5.3 — payment webhook. Verifies signature, reconciles the amount, marks the payment
@@ -36,6 +38,7 @@ export function webhookRoutes(deps: {
     const booking = await bookings.get(payment.bookingId);
     if (booking && booking.status === 'payment_pending') {
       const paid = await bookings.setStatus(booking.id, 'paid');
+      await conciergeTasks.create({ bookingId: paid.id, type: 'confirm_pickup' });
       await sendBookingConfirmation(paid, email);
     }
     return c.json({ ok: true }, 200);

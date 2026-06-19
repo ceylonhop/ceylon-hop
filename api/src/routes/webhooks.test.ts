@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -53,6 +54,19 @@ describe('POST /webhooks/payments', () => {
     const dup = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(dup.status).toBe(200);
     expect(email.sent).toHaveLength(1);
+  });
+
+  it('files a confirm_pickup concierge task on paid', async () => {
+    const adapter = new FakePaymentAdapter();
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ adapter, conciergeTasks });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+
+    const tasks = await conciergeTasks.listByBooking(b.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].type).toBe('confirm_pickup');
   });
 
   it('rejects a bad signature (401)', async () => {

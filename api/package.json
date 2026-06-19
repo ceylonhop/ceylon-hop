@@ -11,6 +11,7 @@
     "start": "tsx src/server.ts",
     "demo": "tsx scripts/demo.ts",
     "test": "vitest run",
+    "smoke": "vitest run smoke",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && npm test"
@@ -27,6 +28,6 @@
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.9"
   }
 }
