@@ -77,16 +77,22 @@ npm run smoke    # end-to-end pipeline smoke test (from Milestone 6 on)
 
 ## Progress tracker
 
-- [ ] M0 Foundations (0.1–0.3)
-- [ ] M1 Single transfer, in-memory (1.1–1.5)
-- [ ] M2 Persistence (2.1–2.4)
-- [ ] M3 Booking lifecycle (3.1–3.2)
-- [ ] M4 Email, fake (4.1–4.3)
-- [ ] M5 PayHere (5.1–5.5)
-- [ ] M6 Ops visibility (6.1–6.3)
+_Status as of 2026-06-19 (mirrors merged work on `main`):_
+- [x] M0 Foundations — 0.1 skeleton ✓, 0.3 CI ✓. **0.2 validated config module NOT built** (env read ad-hoc via dotenv).
+- [x] M1 Single transfer, in-memory (1.1–1.5) ✓
+- [~] M2 Persistence — 2.1 connection ✓, 2.2 schema+migration ✓. **2.3 Postgres repo swap + 2.4 persist pending** (tables exist but empty).
+- [x] M3 Booking lifecycle (3.1–3.2) ✓
+- [~] M4 Email, fake — 4.1 adapter ✓, 4.2 confirmation ✓. **4.3 e-ticket PDF NOT built** (was optional; no attachment yet).
+- [~] M5 Payments — 5.1–5.4 (fake) ✓. **5.5 real PayHere = Phase 1.5, pending.**
+- [x] Customer capture (lead-traveller details) ✓
+- [x] M6 Ops visibility (6.1–6.3) ✓
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
 - [ ] M9+ later milestones (outlined at the end)
+
+> Known gaps (from the M2 review): `payments`/`concierge_tasks` not yet persisted (split
+> persistence once 2.3 lands); DB not yet exercised in CI/tests; schema stores places as
+> text + no `updated_at`/status constraint; rotate the exposed dev DB password.
 
 ---
 
