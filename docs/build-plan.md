@@ -88,7 +88,7 @@ _Status as of 2026-06-19 (mirrors merged work on `main`):_
 - [x] M6 Ops visibility (6.1–6.3) ✓
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
-- [~] M9 Multi-stop trips — 9.1 schema ✓, 9.2 pricing ✓, 9.3 booking model ✓, 9.4 `POST /bookings/trip` ✓, 9.5 persist (mode column + trip_request) ✓ (9.6 smoke pending). _Built autonomously ahead of M7/M8, which need a UI edit / Google key._
+- [x] M9 Multi-stop trips (9.1–9.6) ✓ — schema, pricing, booking model (single|trip), `POST /bookings/trip`, Postgres persistence (mode + trip_request), and the E2E smoke covers a trip. _Built ahead of M7/M8, which need a UI edit / Google key._
 - [ ] M10+ later milestones (outlined at the end)
 
 > Known gaps: e-ticket PDF (4.3) not built; schema stores places as free text with no
