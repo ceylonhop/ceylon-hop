@@ -14,7 +14,9 @@ export async function sendBookingConfirmation(
   const route =
     booking.mode === 'trip'
       ? booking.input.stops.join(' → ')
-      : `${booking.input.from} → ${booking.input.to}`;
+      : booking.mode === 'shared'
+        ? `shared ride (${booking.input.corridorId})`
+        : `${booking.input.from} → ${booking.input.to}`;
 
   await email.send({
     to: customer.email,

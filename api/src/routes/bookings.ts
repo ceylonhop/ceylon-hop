@@ -1,17 +1,20 @@
 import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
-import { quoteSingleTransfer, quoteTrip } from '../services/pricing';
+import { SharedInput } from '../domain/shared';
+import { quoteSingleTransfer, quoteTrip, quoteShared } from '../services/pricing';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
+import type { DepartureRepo } from '../db/departureRepo';
 
 export function bookingRoutes(deps: {
   bookings: BookingRepo;
   payments: PaymentRepo;
   adapter: PaymentAdapter;
+  departures: DepartureRepo;
 }) {
-  const { bookings, payments, adapter } = deps;
+  const { bookings, payments, adapter, departures } = deps;
   const r = new Hono();
 
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
@@ -54,6 +57,40 @@ export function bookingRoutes(deps: {
     const { currency, total } = quoteTrip(parsed.data);
     const booking = await bookings.create(
       { mode: 'trip', input: parsed.data, total, currency },
+      { idempotencyKey: key },
+    );
+    return c.json(booking, 201);
+  });
+
+  // 10.4 — book a shared seat. Resolve the corridor, price by seats, atomically hold the
+  // seats on the departure (409 if sold out), then create the booking.
+  r.post('/shared', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = SharedInput.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+    }
+
+    const key = c.req.header('Idempotency-Key');
+    if (key) {
+      const existing = await bookings.findByIdempotencyKey(key);
+      if (existing) return c.json(existing, 200);
+    }
+
+    const corridor = await departures.getCorridor(parsed.data.corridorId);
+    if (!corridor) return c.json({ error: 'unknown_corridor' }, 400);
+
+    const held = await departures.holdSeats({
+      corridorId: parsed.data.corridorId,
+      date: parsed.data.date,
+      time: parsed.data.time,
+      seats: parsed.data.seats,
+    });
+    if (!held) return c.json({ error: 'sold_out' }, 409);
+
+    const { currency, total } = quoteShared(parsed.data.seats, corridor.seatPrice);
+    const booking = await bookings.create(
+      { mode: 'shared', input: parsed.data, total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);

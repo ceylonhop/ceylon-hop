@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
+import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
 
-// A booking is either a single transfer or a multi-stop trip, discriminated on `mode`.
-// `input.customer` is common to both shapes.
+// A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
+// `mode`. `input.customer` is common to all three shapes.
 export type NewBooking =
   | { mode: 'single'; input: SingleTransferInput; total: number; currency: string }
-  | { mode: 'trip'; input: TripInput; total: number; currency: string };
+  | { mode: 'trip'; input: TripInput; total: number; currency: string }
+  | { mode: 'shared'; input: SharedInput; total: number; currency: string };
 
 export type Booking = NewBooking & {
   id: string;

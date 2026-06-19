@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
+import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { bookingRoutes } from './routes/bookings';
@@ -13,6 +14,7 @@ export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
   conciergeTasks?: ConciergeTaskRepo;
+  departures?: DepartureRepo;
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   adminApiKey?: string;
@@ -23,13 +25,14 @@ export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
+  const departures = deps.departures ?? new InMemoryDepartureRepo();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
 
   const app = new Hono();
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  app.route('/bookings', bookingRoutes({ bookings, payments, adapter }));
+  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin', adminRoutes({ bookings, adminApiKey }));
   return app;

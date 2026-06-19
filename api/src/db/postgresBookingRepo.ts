@@ -77,6 +77,9 @@ export class PostgresBookingRepo implements BookingRepo {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
     }
+    if (b.mode === 'shared') {
+      throw new Error('shared persistence not implemented yet (M10.5)');
+    }
     const c = b.input.customer;
     const row = await this.db.transaction(async (tx) => {
       const [cust] = await tx
