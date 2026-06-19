@@ -369,8 +369,10 @@ note below the steps.
 > the Postgres data:
 > - **Now (tiny volume):** Supabase **Table Editor** — free, already there, zero setup.
 > - **Within ~6 months (manual ops grows):** put **NocoDB** (open-source, free,
->   Airtable-like grid/kanban) or **Retool** (free tier, custom dashboard + action
->   buttons + RBAC) **directly on the same Postgres** — no data duplication, no sync.
+>   Airtable-like grid/kanban; unlimited users/records self-hosted) or **Retool**
+>   (free tier = **up to 5 users**, custom dashboard + action buttons; granular RBAC
+>   and audit logging are **paid**) **directly on the same Postgres** — no data
+>   duplication, no sync. Booking volume doesn't affect either free tier.
 > - *Avoid Airtable* — free tier caps at 1,000 records/base and is a second copy to sync.
 
 > ✅ **Milestone 6 review (end of Phase 1):** a **simulated** payment creates a paid

@@ -344,8 +344,9 @@ status (`en_route` → `completed`).
 
 **Interim ops UI (no data mirror).** Staff work directly on the Postgres data:
 **Supabase Table Editor** now (free, zero setup); when manual ops grows (within ~6
-months) put **NocoDB** (open-source, free, Airtable-like) or **Retool** (free tier,
-custom dashboard + RBAC) **on the same Postgres**. Build the bespoke dashboard (Phase 2)
+months) put **NocoDB** (open-source, free; unlimited users/records self-hosted) or
+**Retool** (free tier = up to 5 users; granular RBAC + audit logging are paid) **on the
+same Postgres**. Build the bespoke dashboard (Phase 2)
 only once the real process is known. Avoid Airtable — its free tier caps at 1,000
 records/base and duplicates the data.
 
