@@ -31,4 +31,19 @@ describe('InMemoryBookingRepo', () => {
     const b = await repo.create(sample, { idempotencyKey: 'k1' });
     expect(a.id).toBe(b.id);
   });
+
+  it('applies a legal status transition', async () => {
+    const repo = new InMemoryBookingRepo();
+    const a = await repo.create(sample);
+    const updated = await repo.setStatus(a.id, 'payment_pending');
+    expect(updated.status).toBe('payment_pending');
+    expect((await repo.get(a.id))?.status).toBe('payment_pending');
+  });
+
+  it('rejects an illegal transition and leaves the row unchanged', async () => {
+    const repo = new InMemoryBookingRepo();
+    const a = await repo.create(sample);
+    await expect(repo.setStatus(a.id, 'completed')).rejects.toThrow();
+    expect((await repo.get(a.id))?.status).toBe('draft');
+  });
 });

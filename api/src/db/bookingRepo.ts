@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SingleTransferInput } from '../domain/singleTransfer';
+import { assertTransition, type BookingStatus } from '../domain/status';
 
 export interface NewBooking {
   input: SingleTransferInput;
@@ -10,16 +11,24 @@ export interface NewBooking {
 export interface Booking extends NewBooking {
   id: string;
   reference: string;
-  status: 'draft';
+  status: BookingStatus;
   createdAt: string;
 }
 
 // The storage seam. The route layer depends only on this interface, so swapping the
 // in-memory store for Postgres later (M2) touches nothing else.
+export class BookingNotFoundError extends Error {
+  constructor(public readonly id: string) {
+    super(`Booking not found: ${id}`);
+    this.name = 'BookingNotFoundError';
+  }
+}
+
 export interface BookingRepo {
   create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
+  setStatus(id: string, to: BookingStatus): Promise<Booking>;
 }
 
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
@@ -66,5 +75,14 @@ export class InMemoryBookingRepo implements BookingRepo {
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
     const id = this.byKey.get(key);
     return id ? (this.byId.get(id) ?? null) : null;
+  }
+
+  async setStatus(id: string, to: BookingStatus): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
+    const updated: Booking = { ...current, status: to };
+    this.byId.set(id, updated);
+    return updated;
   }
 }
