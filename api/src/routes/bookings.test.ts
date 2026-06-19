@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
-import { InMemoryBookingRepo } from '../db/bookingRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -26,7 +25,7 @@ function post(
 
 describe('POST /bookings/single', () => {
   it('creates a draft (201) with reference and total', async () => {
-    const app = createApp(new InMemoryBookingRepo());
+    const app = createApp();
     const res = await post(app, valid);
     expect(res.status).toBe(201);
     const b = await res.json();
@@ -37,13 +36,13 @@ describe('POST /bookings/single', () => {
   });
 
   it('rejects an invalid body (400)', async () => {
-    const app = createApp(new InMemoryBookingRepo());
+    const app = createApp();
     const res = await post(app, { ...valid, adults: 0 });
     expect(res.status).toBe(400);
   });
 
   it('is idempotent on Idempotency-Key — one booking, second call returns it', async () => {
-    const app = createApp(new InMemoryBookingRepo());
+    const app = createApp();
     const r1 = await post(app, valid, { 'Idempotency-Key': 'abc' });
     const r2 = await post(app, valid, { 'Idempotency-Key': 'abc' });
     expect(r1.status).toBe(201);
@@ -54,7 +53,7 @@ describe('POST /bookings/single', () => {
 
 describe('GET /bookings/:id', () => {
   it('returns a created booking', async () => {
-    const app = createApp(new InMemoryBookingRepo());
+    const app = createApp();
     const created = await (await post(app, valid)).json();
     const res = await app.request(`/bookings/${created.id}`);
     expect(res.status).toBe(200);
@@ -62,7 +61,7 @@ describe('GET /bookings/:id', () => {
   });
 
   it('404 for an unknown id', async () => {
-    const app = createApp(new InMemoryBookingRepo());
+    const app = createApp();
     const res = await app.request('/bookings/does-not-exist');
     expect(res.status).toBe(404);
   });
