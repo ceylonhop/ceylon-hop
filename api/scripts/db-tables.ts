@@ -3,11 +3,8 @@ import postgres from 'postgres';
 
 const url = process.env.DATABASE_URL ?? '';
 const sql = postgres(url, { ssl: 'require', max: 1 });
-const rows = await sql`
-  select table_name from information_schema.tables
-  where table_schema = 'public' order by table_name`;
-console.log(
-  'public tables:',
-  rows.map((r) => r.table_name),
-);
+for (const t of ['customers', 'bookings', 'transfer_request', 'payments', 'concierge_tasks']) {
+  const [{ count }] = await sql`select count(*)::int as count from ${sql(t)}`;
+  console.log(`${t.padEnd(18)} ${count} rows`);
+}
 await sql.end();

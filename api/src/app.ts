@@ -7,6 +7,7 @@ import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
+import { config } from './config';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -24,7 +25,7 @@ export function createApp(deps: AppDeps = {}) {
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
-  const adminApiKey = deps.adminApiKey ?? process.env.ADMIN_API_KEY ?? '';
+  const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
 
   const app = new Hono();
   app.get('/health', (c) => c.json({ status: 'ok' }));

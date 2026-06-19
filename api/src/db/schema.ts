@@ -38,3 +38,27 @@ export const transferRequests = pgTable('transfer_request', {
   children: integer('children').notNull(),
   bags: integer('bags').notNull(),
 });
+
+export const payments = pgTable('payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id')
+    .notNull()
+    .references(() => bookings.id),
+  provider: text('provider').notNull(),
+  orderId: text('order_id').notNull().unique(),
+  amount: integer('amount').notNull(),
+  currency: text('currency').notNull(),
+  status: text('status').notNull(),
+  idempotencyKey: text('idempotency_key').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const conciergeTasks = pgTable('concierge_tasks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id')
+    .notNull()
+    .references(() => bookings.id),
+  type: text('type').notNull(),
+  status: text('status').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});

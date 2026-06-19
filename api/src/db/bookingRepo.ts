@@ -35,7 +35,7 @@ export interface BookingRepo {
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-function randomRef(): string {
+export function generateReference(): string {
   let s = 'CH-';
   for (let i = 0; i < 5; i++) {
     s += REF_ALPHABET[Math.floor(Math.random() * REF_ALPHABET.length)];
@@ -54,8 +54,8 @@ export class InMemoryBookingRepo implements BookingRepo {
       const existing = await this.findByIdempotencyKey(key);
       if (existing) return existing;
     }
-    let reference = randomRef();
-    while (this.refs.has(reference)) reference = randomRef();
+    let reference = generateReference();
+    while (this.refs.has(reference)) reference = generateReference();
     const booking: Booking = {
       ...b,
       id: randomUUID(),
