@@ -7,4 +7,9 @@ describe('GET /health', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
   });
+
+  it('sends CORS headers so the browser can call it cross-origin', async () => {
+    const res = await app.request('/health', { headers: { origin: 'http://localhost:4173' } });
+    expect(res.headers.get('access-control-allow-origin')).toBeTruthy();
+  });
 });

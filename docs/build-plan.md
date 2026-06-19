@@ -519,6 +519,21 @@ pass; don't let them block the first slices, but don't ship to production withou
   (`.github/workflows/ci.yml`), so parallel PRs don't stomp a shared test DB; locally use
   `DATABASE_URL_TEST` and truncate between tests.
 
+### From the pre-M7 audit (2026-06-19)
+- **Pricing / client total (decision for M7).** The API ignores any client price and
+  charges its own *stub* (`quoteSingleTransfer`/`quoteTrip`/`quoteShared`). The site shows
+  real prices, so M7 will mismatch. Spec §0.3 says v1 should **trust the front-end total** —
+  resolve at M7 (accept a client-quoted total + the documented tamper caveat) or wait for
+  the real engine (M11).
+- **Shared seat-hold leak.** The `/bookings/shared` route holds seats (committed) then
+  creates the booking in a *separate* transaction; if create fails, seats are held with no
+  booking. Make hold + create one transaction (or compensate on failure).
+- **Rate limiting.** Public booking endpoints have none (spec wanted rate-limited public
+  routes) — add before scaling / exposing publicly.
+- **Tighten CORS.** Currently allows all origins (`*`); restrict to the real site domains
+  for production.
+- **Fixed (this audit):** CORS enabled (M7 unblock) + a global JSON error handler.
+
 ---
 
 ## Definition-of-done checklist (paste into every PR)

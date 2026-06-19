@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
@@ -31,6 +32,17 @@ export function createApp(deps: AppDeps = {}) {
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
 
   const app = new Hono();
+
+  // The browser calls this API cross-origin (site on a different port/host). Allow it.
+  // Tighten `origin` to the real site domains before production.
+  app.use('*', cors());
+
+  // Never leak internals on an unexpected failure.
+  app.onError((err, c) => {
+    console.error(err);
+    return c.json({ error: 'internal_error' }, 500);
+  });
+
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
