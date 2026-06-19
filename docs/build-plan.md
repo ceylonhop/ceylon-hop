@@ -435,8 +435,8 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   the planner/tour payload (stops, nights, dates, service type); price via stub.
 - **M11 — Authoritative pricing engine + `rate_card`.** Replace the stub behind the same
   function signatures; parity test asserts site = booking = charge.
-- **M12 — Ops dashboard (custom UI).** Replace the Airtable mirror with a real
-  staff dashboard; Supabase Auth + RBAC roles.
+- **M12 — Ops dashboard (custom UI).** Graduate from NocoDB/Retool to a bespoke staff
+  dashboard; Supabase Auth + RBAC roles.
 - **M13 — WhatsApp Business API (fast follow).** Add a `WhatsAppAdapter`; auto-send
   confirmations/reminders; team inbox.
 - **M14 — Reminders, review requests, SLA timers.** Scheduled jobs + concierge SLA on

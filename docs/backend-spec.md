@@ -82,7 +82,7 @@ static site. This spec covers the **brain behind it**.
 | WhatsApp | WhatsApp Business Platform via a BSP (360dialog / Twilio / Gupshup) | The concierge channel must be a real API, not `wa.me` |
 | Email | Resend or Postmark | Transactional confirmations + e-ticket PDF |
 | Maps | Google Places + Distance Matrix | Geocode exact pickups; real distance/ETA |
-| Early ops UI | **Airtable/Notion** synced from the API | Validate the workflow before building a custom dashboard |
+| Early ops UI | **Supabase Studio** now → **NocoDB/Retool on Postgres** | Work the real DB directly (no mirror); validate the workflow before a bespoke dashboard |
 
 **Build approach.** Founder + Claude Code, built in vertical slices. Prefer managed
 services and configuration over custom infrastructure. Ship the smallest thing that
