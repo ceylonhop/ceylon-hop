@@ -6,6 +6,21 @@ export interface CheckoutParams {
   amount: number; // minor units
   currency: string;
   checkoutUrl: string;
+  fields?: Record<string, string>; // form fields the browser POSTs (PayHere)
+}
+
+export interface CreateCheckoutArgs {
+  orderId: string;
+  amount: number; // minor units
+  currency: string;
+  items?: string;
+  customer?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    country: string;
+  };
 }
 
 export interface WebhookEvent {
@@ -25,7 +40,7 @@ interface WebhookBody extends WebhookEvent {
 // so no real gateway is ever called.
 export interface PaymentAdapter {
   readonly provider: string;
-  createCheckout(args: { orderId: string; amount: number; currency: string }): Promise<CheckoutParams>;
+  createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
   // Verify + parse a raw webhook body. Returns null when the signature is invalid.
   parseWebhook(rawBody: string): WebhookEvent | null;
 }
@@ -58,11 +73,7 @@ export class FakePaymentAdapter implements PaymentAdapter {
     return createHmac('sha256', this.secret).update(canonical(e)).digest('hex');
   }
 
-  async createCheckout(args: {
-    orderId: string;
-    amount: number;
-    currency: string;
-  }): Promise<CheckoutParams> {
+  async createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams> {
     return {
       provider: this.provider,
       orderId: args.orderId,

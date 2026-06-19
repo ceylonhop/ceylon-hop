@@ -124,10 +124,20 @@ export function bookingRoutes(deps: {
       if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
     }
 
+    const cust = booking.input.customer;
+    const [firstName, ...rest] = cust.name.split(' ');
     const params = await adapter.createCheckout({
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
+      items: `Ceylon Hop ${booking.reference}`,
+      customer: {
+        firstName: firstName || 'Guest',
+        lastName: rest.join(' ') || '-',
+        email: cust.email,
+        phone: cust.whatsapp,
+        country: cust.country,
+      },
     });
     if (params.amount !== booking.total) {
       return c.json({ error: 'amount_mismatch' }, 409);

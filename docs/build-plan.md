@@ -83,7 +83,7 @@ _Status as of 2026-06-19 (mirrors merged work on `main`):_
 - [x] M2 Persistence — 2.1 connection ✓, 2.2 schema+migration ✓, 2.3 Postgres repos (bookings/payments/concierge) ✓, 2.4 customer persisted ✓. Server runs on Postgres; integration tests run in CI.
 - [x] M3 Booking lifecycle (3.1–3.2) ✓
 - [~] M4 Email, fake — 4.1 ✓, 4.2 ✓. **4.3 e-ticket PDF NOT built** (optional).
-- [~] M5 Payments — 5.1–5.4 (fake) ✓. **5.5 real PayHere = Phase 1.5, pending.**
+- [~] M5 Payments — 5.1–5.4 (fake) ✓. **5.5 Phase 1.5:** PayHerePaymentAdapter built + unit-tested (hash + md5sig), server selects it when keys present ✓. Pending: public notify URL (tunnel), front-end redirect to PayHere, live sandbox payment test.
 - [x] Customer capture (lead-traveller details) ✓
 - [x] M6 Ops visibility (6.1–6.3) ✓
 - [~] M7 Connect the live website — 7.1 single-transfer flow → API (flag-gated via `window.CEYLON_HOP_API` / `?api=`; default stays the simulated flow) ✓. Verified browser→API→Supabase persists a booking. (7.2 confirmation reads the booking back + 7.3 full click-through on staging pending; trip/shared API wiring later.)
