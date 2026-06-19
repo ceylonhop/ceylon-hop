@@ -38,9 +38,10 @@ already an operating business; this backend formalises what is partly manual tod
 
 **Net v1 (Phase 1) focus:** persist bookings + customer details → drive the flow with a
 **stubbed** PayHere (fake checkout + simulated webhook) to reach `paid` → send email
-confirmation + e-ticket → mirror bookings into Airtable so staff run concierge, dispatch
-and refunds manually. **Pricing stubbed, PayHere stubbed, WhatsApp manual.** Real PayHere
-is a separate later step (Phase 1.5).
+confirmation + e-ticket → surface bookings in **Supabase Table Editor** (a free grid on
+the real DB) so staff run concierge, dispatch and refunds manually. **Pricing stubbed,
+PayHere stubbed, WhatsApp manual, no data mirror.** Real PayHere is a separate later step
+(Phase 1.5).
 
 ---
 
@@ -341,9 +342,12 @@ places, corridors, tours.
 **Driver portal** (mobile web): today's jobs, customer + pickup details, one-tap
 status (`en_route` → `completed`).
 
-**Interim (Phase 1–2):** mirror bookings into **Airtable** via the API so ops can run
-on a familiar grid while the workflow is validated. Build the custom dashboard in
-Phase 2 once the real process is known.
+**Interim ops UI (no data mirror).** Staff work directly on the Postgres data:
+**Supabase Table Editor** now (free, zero setup); when manual ops grows (within ~6
+months) put **NocoDB** (open-source, free, Airtable-like) or **Retool** (free tier,
+custom dashboard + RBAC) **on the same Postgres**. Build the bespoke dashboard (Phase 2)
+only once the real process is known. Avoid Airtable — its free tier caps at 1,000
+records/base and duplicates the data.
 
 ---
 
@@ -391,7 +395,7 @@ Phase 2 once the real process is known.
 | Phase | Deliverable | "Done when…" |
 |---|---|---|
 | **0 Foundations** | Supabase project, data model v1, staff auth, CI/CD, **stub** pricing module | The booking flow can create + persist a draft with a total |
-| **1 End-to-end (stubbed payment)** | Booking persistence, **stubbed** PayHere (fake checkout + simulated webhook), email confirm + e-ticket PDF, Airtable mirror, auto-create concierge task | A *simulated* payment creates a `paid` booking, emails confirmation, and shows in Airtable |
+| **1 End-to-end (stubbed payment)** | Booking persistence, **stubbed** PayHere (fake checkout + simulated webhook), email confirm + e-ticket PDF, Supabase ops view, auto-create concierge task | A *simulated* payment creates a `paid` booking, emails confirmation, and is visible to staff in Supabase |
 | **1.5 Real payments** | Wire **existing** PayHere keys (sandbox → live) + webhook signature verification, behind the same adapter | A real sandbox PayHere payment creates a `paid` booking |
 | **2 Run operations** | Ops dashboard, drivers/vehicles, dispatch/assignment, **record** manual cancellations/refunds, shared-seat inventory + schedules, **authoritative pricing engine + `rate_card`** | Staff can assign a driver; refunds and prices are tracked in-system |
 | **3 Automate comms (fast follow)** | WhatsApp Business API + templates, reminders, concierge SLA timers, review requests, ops alerts | Confirmations/reminders auto-send on WhatsApp, no manual step |

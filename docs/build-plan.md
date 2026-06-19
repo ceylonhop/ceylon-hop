@@ -4,8 +4,10 @@ Status: v1 · Last updated: 2026-06-17 · Companion to [`backend-spec.md`](./bac
 
 A step-by-step, **build → test → verify** plan sized for an AI agent team. Every step
 is small, independently testable, and ends with a **human checkpoint** you can run to
-confirm it works. External services (PayHere, Google, email, Airtable) are added late
-and always behind an interface with a fake, so early steps never depend on them.
+confirm it works. External services (PayHere, Google, email) are added late and always
+behind an interface with a fake, so early steps never depend on them. Ops staff work
+directly on the Postgres data (Supabase Studio → NocoDB/Retool) — no mirror to a
+separate tool.
 
 ---
 
@@ -21,8 +23,8 @@ and always behind an interface with a fake, so early steps never depend on them.
 
 ## Agent guardrails (read first)
 
-1. **Never call a real external service in code or tests.** PayHere, Google Maps,
-   email, Airtable are reached only through an interface (`adapters/`) with a **fake**
+1. **Never call a real external service in code or tests.** PayHere, Google Maps and
+   email are reached only through an interface (`adapters/`) with a **fake**
    implementation used everywhere except the explicit "swap to real" steps.
 2. **Don't edit another step's tests** to make yours pass. If a prior test is wrong,
    stop and flag it.
@@ -72,7 +74,7 @@ npm run migrate  # apply DB migrations (from Milestone 2 on)
 - [ ] M3 Booking lifecycle (3.1–3.2)
 - [ ] M4 Email, fake (4.1–4.3)
 - [ ] M5 PayHere (5.1–5.5)
-- [ ] M6 Ops visibility (6.1–6.4)
+- [ ] M6 Ops visibility (6.1–6.2)
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
 - [ ] M9+ later milestones (outlined at the end)
@@ -349,31 +351,33 @@ return a created booking — no database, no external services.
 
 ## Milestone 6 — Ops visibility (so staff can run it manually)
 
+Staff act on the **real Postgres data** — no separate mirror or copy. See the ops-tool
+note below the steps.
+
 ### Step 6.1 — Concierge task on `paid`
 - **Build:** create a `concierge_task` (`confirm_pickup`) row when a booking becomes
   paid. **Tests:** one task per paid booking; none for unpaid. **Checkpoint:** Supabase
   shows the task. **Depends on:** 5.3.
 
-### Step 6.2 — Airtable mirror adapter (fake)
-- **Build:** `adapters/airtable.ts` interface + fake; on `paid`, push a booking summary.
-  **Tests:** fake receives the right fields. **Checkpoint:** `npm test` green.
-  **Depends on:** 5.3.
-
-### Step 6.3 — Real Airtable
-- **Build:** real Airtable adapter (config-selected). **Tests:** field-mapping unit test.
-  **Checkpoint:** a paid booking appears as a row in your Airtable base. **Depends on:** 6.2.
-
-### Step 6.4 — Admin list endpoint (simple API-key auth)
+### Step 6.2 — Admin list endpoint (simple API-key auth)
 - **Build:** `GET /admin/bookings` (filter by status), guarded by an `ADMIN_API_KEY`
   header (Supabase Auth/RBAC comes in a later milestone). **Tests:** wrong/no key → 401;
   valid key → list. **Checkpoint:** curl with the key → JSON list of bookings.
   **Depends on:** 2.3.
 
-> ✅ **Milestone 6 review (end of Phase 1):** a **simulated** payment now creates a paid
-> booking, emails the customer, files a concierge task, and shows up in Airtable + an
-> admin list — all on the **stub**, no real PayHere yet. Your team can run WhatsApp,
-> dispatch and refunds manually from there. **Real PayHere (Step 5.5) comes next, in
-> Phase 1.5.**
+> **Ops tool — configuration, not a build step.** Staff read/triage bookings directly on
+> the Postgres data:
+> - **Now (tiny volume):** Supabase **Table Editor** — free, already there, zero setup.
+> - **Within ~6 months (manual ops grows):** put **NocoDB** (open-source, free,
+>   Airtable-like grid/kanban) or **Retool** (free tier, custom dashboard + action
+>   buttons + RBAC) **directly on the same Postgres** — no data duplication, no sync.
+> - *Avoid Airtable* — free tier caps at 1,000 records/base and is a second copy to sync.
+
+> ✅ **Milestone 6 review (end of Phase 1):** a **simulated** payment creates a paid
+> booking, emails the customer, files a concierge task, and is visible to staff in
+> Supabase (and any DB-connected ops tool) — all on the **stub**, no real PayHere yet.
+> Your team runs WhatsApp, dispatch and refunds manually. **Real PayHere (Step 5.5) is
+> next, in Phase 1.5.**
 
 ---
 
@@ -393,8 +397,8 @@ return a created booking — no database, no external services.
 
 ### Step 7.3 — End-to-end on staging
 - **Build:** none (verification step). **Checkpoint:** a full run on the staging site:
-  search → book single transfer → sandbox pay → paid booking + email + Airtable row.
-  **Depends on:** 7.2, 6.3.
+  search → book single transfer → sandbox pay → paid booking + email + visible to staff
+  in Supabase / the ops tool. **Depends on:** 7.2, 6.2.
 
 > ✅ **This is the launch-readiness gate for single transfers** (switch PayHere to live
 > only after this passes on staging).
