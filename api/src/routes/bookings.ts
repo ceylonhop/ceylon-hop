@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
-import { quoteSingleTransfer } from '../services/pricing';
+import { TripInput } from '../domain/trip';
+import { quoteSingleTransfer, quoteTrip } from '../services/pricing';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
@@ -30,6 +31,29 @@ export function bookingRoutes(deps: {
     const { currency, total } = quoteSingleTransfer(parsed.data);
     const booking = await bookings.create(
       { mode: 'single', input: parsed.data, total, currency },
+      { idempotencyKey: key },
+    );
+    return c.json(booking, 201);
+  });
+
+  // 9.4 — create a multi-stop trip draft (planner / tour hand-off). Same idempotency
+  // and pipeline as a single transfer; only the input shape and pricing differ.
+  r.post('/trip', async (c) => {
+    const body = await c.req.json().catch(() => null);
+    const parsed = TripInput.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+    }
+
+    const key = c.req.header('Idempotency-Key');
+    if (key) {
+      const existing = await bookings.findByIdempotencyKey(key);
+      if (existing) return c.json(existing, 200);
+    }
+
+    const { currency, total } = quoteTrip(parsed.data);
+    const booking = await bookings.create(
+      { mode: 'trip', input: parsed.data, total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);
