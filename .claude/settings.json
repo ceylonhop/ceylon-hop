@@ -1,0 +1,61 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit(api/**)",
+      "Write(api/**)",
+      "Edit(docs/**)",
+      "Bash(npm run check:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run smoke:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run migrate:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm install:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git switch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Edit(*.html)",
+      "Edit(site.css)",
+      "Edit(favicon.svg)",
+      "Edit(image-slots.state.json)",
+      "Edit(site.js)",
+      "Edit(booking.js)",
+      "Edit(plan.js)",
+      "Edit(search.js)",
+      "Edit(datepicker.js)",
+      "Edit(image-slot.js)",
+      "Edit(tours-data.js)",
+      "Edit(transfers-data.js)",
+      "Edit(routes-data.js)",
+      "Edit(tweaks.js)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/protect-ui.sh" }
+        ]
+      }
+    ]
+  }
+}
