@@ -23,9 +23,9 @@ separate tool.
 - **Milestones (M-numbers) are the canonical execution order.** The spec's *phases* are
   thematic groupings only; the phase↔milestone map lives in
   [`backend-spec.md`](./backend-spec.md) §15.
-- **Every milestone ends with a human review gate.** The founder runs that milestone's
-  human checkpoints + a quick end-to-end smoke test and signs off **before the next
-  milestone begins**. The ✅ notes flag the launch-critical gates (M1, M6, M7), but the
+- **Every milestone ends with a human review gate.** The founder runs `npm run smoke`
+  (the standing end-to-end test, from M6) + that milestone's human checkpoints and signs
+  off **before the next milestone begins**. The ✅ notes flag the launch-critical gates (M1, M6, M7), but the
   sign-off applies to *all* milestones, M0 through M13.
 
 ## Agent guardrails (read first)
@@ -39,8 +39,9 @@ separate tool.
    steps depend on it. Changing it requires a dedicated step.
 4. **No scope creep.** Build only what the step lists. Extra ideas → note in the PR,
    don't implement.
-5. **Every step adds tests.** No new behaviour ships without a test that would fail if
-   the behaviour broke.
+5. **Every step adds tests, proven.** No new behaviour ships without a test that would
+   fail if the behaviour broke — and you **paste the test failing *before* your change**
+   (red→green) so "a test exists" can't be gamed by an assertion-free test.
 6. **Leave it green.** `npm run check` (typecheck + lint + test) must pass before PR.
 
 ---
@@ -62,6 +63,7 @@ npm run dev      # start API on http://localhost:8787
 npm test         # run all tests once
 npm run check    # typecheck + lint + test  (the gate for every PR)
 npm run migrate  # apply DB migrations (from Milestone 2 on)
+npm run smoke    # end-to-end pipeline smoke test (from Milestone 6 on)
 ```
 
 ### Test strategy
@@ -81,7 +83,7 @@ npm run migrate  # apply DB migrations (from Milestone 2 on)
 - [ ] M3 Booking lifecycle (3.1–3.2)
 - [ ] M4 Email, fake (4.1–4.3)
 - [ ] M5 PayHere (5.1–5.5)
-- [ ] M6 Ops visibility (6.1–6.2)
+- [ ] M6 Ops visibility (6.1–6.3)
 - [ ] M7 Connect the live website (7.1–7.3)
 - [ ] M8 Google Maps (8.1–8.2)
 - [ ] M9+ later milestones (outlined at the end)
@@ -381,6 +383,18 @@ note below the steps.
   valid key → list. **Checkpoint:** curl with the key → JSON list of bookings.
   **Depends on:** 2.3.
 
+### Step 6.3 — End-to-end smoke test (the Phase-1 pipeline)
+- **Build:** `npm run smoke` — one test that drives the **whole stub pipeline**:
+  `POST /bookings/single` → `POST /bookings/:id/checkout` → simulate the PayHere webhook →
+  assert the booking is `paid`, a confirmation email was sent (fake adapter), a
+  `confirm_pickup` task exists, and `GET /admin/bookings` lists it. Runs in CI.
+- **Tests:** the smoke *is* the test; it must fail if **any** stage of the pipeline breaks
+  (not just one unit).
+- **Human checkpoint:** `npm run smoke` → green. This is the script you re-run at **every
+  later milestone gate**. **Depends on:** 5.4, 6.1, 6.2.
+- **Note:** the smoke **grows** as milestones add capability — each new booking type
+  (multi-stop M9, shared M10) and real PayHere (5.5) extends it.
+
 > **Ops tool — configuration, not a build step.** Staff read/triage bookings directly on
 > the Postgres data:
 > - **Now (tiny volume):** Supabase **Table Editor** — free, already there, zero setup.
@@ -494,7 +508,9 @@ pass; don't let them block the first slices, but don't ship to production withou
 
 - [ ] Built only what the step lists; no out-of-scope changes
 - [ ] Tests added for the new behaviour (and they fail if it regresses)
+- [ ] Red→green evidence pasted — the new test failing *before* the change, passing after
 - [ ] `npm run check` green (typecheck + lint + test)
+- [ ] `npm run smoke` still green (from M6 on)
 - [ ] Human checkpoint performed and passed (paste the output/screenshot)
 - [ ] No real external service called in code or tests (except the explicit swap steps)
 - [ ] Interfaces unchanged (or change is the whole point of this step)

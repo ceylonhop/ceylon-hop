@@ -49,9 +49,12 @@ dependency chain (where tokens burn). Instead:
 Three roles plus CI. CI is not an agent — it is the non-negotiable automated gate.
 
 ### Orchestrator (never writes code)
-- **Mandate:** own the spec + build-plan; select the lowest-numbered step whose deps are
-  merged; brief one Builder with a **scoped** context (just that step's ticket + the one
-  interface it touches); decide what — if anything — is safe to parallelise; hold scope.
+- **Mandate:** own the spec + build-plan; **select the next step by a deterministic rule
+  (a script, not LLM guesswork)** — the lowest-id step whose `Depends-on` are all merged
+  and which isn't started. Brief one Builder with a **scoped** context (just that step's
+  ticket + the one interface it touches). The LLM judgment is reserved for exactly two
+  things: *is this step ambiguous → escalate*, and *what (if anything) is safe to
+  parallelise*. Hold scope.
 - **Must not:** write or edit code; change the plan, spec, or interfaces; let a step
   proceed if ambiguous — it **escalates to the human** instead.
 - **Model:** strong (judgment role).
@@ -85,7 +88,8 @@ typecheck · lint · all tests · **changed-paths guard** (fails if anything out
 
 ## 3. The operating loop (one step)
 
-1. **Select** — Orchestrator picks the next eligible step.
+1. **Select** (deterministic) — a script picks the lowest-id step whose deps are merged
+   and isn't started; no LLM guesswork at this stage.
 2. **Brief** — Orchestrator gives the Builder a fresh, scoped context.
 3. **Build (test-first)** — Builder writes tests, implements, runs `npm run check`,
    opens a PR with the DoD checklist filled in.
@@ -158,6 +162,7 @@ Any need to change a frozen contract → **stop and ask the human** + record an 
 
 - [ ] Built only the step's "Build" list; nothing out of scope
 - [ ] Tests written for the new behaviour (and they fail if it regresses)
+- [ ] **Red→green evidence pasted** — the new test failing *before* the change, passing after
 - [ ] `npm run check` green (typecheck + lint + test)
 - [ ] No files changed outside `api/` (and `docs/` when relevant) — UI untouched
 - [ ] No real external service called in code or tests (except sanctioned swap steps)
@@ -201,3 +206,44 @@ Stay at three roles for the single→multi-stop→shared backend arc. Introduce
 surface/discipline specialists only when independent parallel tracks appear with few
 shared files (e.g. ops dashboard UI, WhatsApp integration, reporting) — and even then,
 keep the duty separation (build vs review) and the same gates.
+
+---
+
+## 11. Resilience — Claude limits, pauses & resume
+
+The team must survive hitting a usage/rate limit or being interrupted mid-build without
+losing or corrupting work.
+
+- **Source of truth for progress is git, not memory.** A step is *done* iff its branch
+  (`step-<id>-*`) is merged to `main`. The build-plan checkboxes are a human-readable
+  mirror, kept in sync. The Orchestrator reconstructs "what's next" from merged PRs + the
+  deterministic selector — **never from session memory** — so a wiped or limited session
+  loses nothing.
+- **The step is the atomic, resumable unit.** Never pause with a dirty working tree. At
+  any interruption a step is either: (a) merged or in an open PR (safe — resume by
+  continuing review), or (b) incomplete → push the WIP branch as a **draft PR** if green,
+  else abandon the branch cleanly and mark the step not-started. A limit-pause costs **at
+  most one in-flight, re-runnable step**.
+- **Resume protocol:** confirm `main` is green → run the selector for the next eligible
+  step → continue. No archaeology required.
+- **Cost/limit hygiene:** keep the stable docs + guardrails as a **cached prompt prefix**
+  to cut cost and survive pauses; keep steps small enough to fit one context with
+  headroom so there is **no mid-step summarization** (itself a drift source). If a step
+  can't be finished in one context, it's too big — split it.
+
+---
+
+## 12. Operational tuning backlog (add once the team is moving)
+
+Deferred from the critique — efficiency tuning, not correctness blockers:
+
+- **Risk-tiered review:** CI-only for low-risk pure-logic steps; full Reviewer for
+  money / security / schema / external-swap steps. Roughly halves review tokens.
+- **Self-metrics:** track rework rate (Reviewer bounces), escalation rate, and rough
+  tokens/step + time/step — so thrashing is visible, not mistaken for progress.
+- **Draft-ahead at gates:** while awaiting the founder's milestone sign-off, the team may
+  *prepare* (draft, not merge) the next milestone's PRs so it never idles.
+- **Parallelism mechanics:** any parallel steps run in isolated branches/worktrees; the CI
+  ephemeral Postgres covers CI, but local parallel builders must not share a test DB.
+- **Enable branch protection** on `main` at bootstrap (require `ci` + code-owner review) —
+  until then, "Reviewer approves before merge" is not actually enforced.
