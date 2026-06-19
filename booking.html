@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- stamp mode class before first paint so trip flows never flash the wrong panel -->
 <script>if(new URLSearchParams(location.search).get('mode')==='trip'){document.documentElement.classList.add('mode-trip');}</script>
+<!-- M7: optional backend. Empty = simulated flow (default). Set ?api=<url> or window.CEYLON_HOP_API to create real bookings. -->
+<script>window.CEYLON_HOP_API = new URLSearchParams(location.search).get('api') || window.CEYLON_HOP_API || '';</script>
 <title>Book your hop — Ceylon Hop</title>
 <meta name="description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, instant WhatsApp confirmation and a Pro Hopper driver.">
 <meta name="theme-color" content="#0AB9B6">

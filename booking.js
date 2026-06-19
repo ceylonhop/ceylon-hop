@@ -840,8 +840,38 @@ document.getElementById('pay-btn').addEventListener('click',()=>{
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(); }, 3400);
 });
 
-function finalizeBooking(){
-  const ref='CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear());
+// M7.1 — when a backend is configured, create a real single-transfer booking and use its
+// reference. Returns null (so the simulated flow continues) when unset or on any failure,
+// so the default site behaviour is unchanged. Trip/shared wiring comes later.
+async function createApiBooking(){
+  const API = window.CEYLON_HOP_API;
+  if(!API || isTrip || isShared) return null;
+  const payload = {
+    from: state.locFrom || r.stops[0],
+    to: state.locTo || r.stops[r.stops.length-1],
+    date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
+    time: (state.flexTime || !state.dep) ? undefined : state.dep,
+    vehicleType: (vehicleKey==='van') ? 'van' : 'car',
+    adults: state.ad, children: state.ch, bags: state.bags,
+    customer: {
+      name: (document.getElementById('f-first').value+' '+document.getElementById('f-last').value).trim(),
+      email: document.getElementById('f-email').value.trim(),
+      whatsapp: document.getElementById('f-wa').value.trim(),
+      country: document.getElementById('f-country').value
+    }
+  };
+  try{
+    const res = await fetch(API.replace(/\/$/,'')+'/bookings/single', {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)
+    });
+    return res.ok ? await res.json() : null;
+  }catch(e){ return null; }
+}
+
+async function finalizeBooking(){
+  const apiBooking = await createApiBooking();
+  const ref = apiBooking ? apiBooking.reference
+    : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
   const last=document.getElementById('f-last').value||'';
   const dateText = state.flexDate ? 'To confirm' : (state.date?state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'To confirm');

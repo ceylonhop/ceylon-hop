@@ -86,7 +86,7 @@ _Status as of 2026-06-19 (mirrors merged work on `main`):_
 - [~] M5 Payments — 5.1–5.4 (fake) ✓. **5.5 real PayHere = Phase 1.5, pending.**
 - [x] Customer capture (lead-traveller details) ✓
 - [x] M6 Ops visibility (6.1–6.3) ✓
-- [ ] M7 Connect the live website (7.1–7.3)
+- [~] M7 Connect the live website — 7.1 single-transfer flow → API (flag-gated via `window.CEYLON_HOP_API` / `?api=`; default stays the simulated flow) ✓. Verified browser→API→Supabase persists a booking. (7.2 confirmation reads the booking back + 7.3 full click-through on staging pending; trip/shared API wiring later.)
 - [ ] M8 Google Maps (8.1–8.2)
 - [x] M9 Multi-stop trips (9.1–9.6) ✓ — schema, pricing, booking model (single|trip), `POST /bookings/trip`, Postgres persistence (mode + trip_request), and the E2E smoke covers a trip. _Built ahead of M7/M8, which need a UI edit / Google key._
 - [x] M10 Shared-seat bookings (10.1–10.6) ✓ — schema, pricing, inventory, endpoint, Postgres persistence (corridor/shared_departure/shared_request) with a **real-DB atomic seat-hold proven no-oversell under concurrency**, and the E2E smoke covers a shared seat.
