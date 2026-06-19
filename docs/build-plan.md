@@ -520,11 +520,11 @@ pass; don't let them block the first slices, but don't ship to production withou
   `DATABASE_URL_TEST` and truncate between tests.
 
 ### From the pre-M7 audit (2026-06-19)
-- **Pricing / client total (decision for M7).** The API ignores any client price and
-  charges its own *stub* (`quoteSingleTransfer`/`quoteTrip`/`quoteShared`). The site shows
-  real prices, so M7 will mismatch. Spec §0.3 says v1 should **trust the front-end total** —
-  resolve at M7 (accept a client-quoted total + the documented tamper caveat) or wait for
-  the real engine (M11).
+- **Pricing — DECIDED 2026-06-19: keep the server stub for now.** The API computes its own
+  stub total (`quoteSingleTransfer`/`quoteTrip`/`quoteShared`) and ignores any client price.
+  Consequence for M7: the booking/confirmation must show the **API's** total, not the
+  marketing-search price from `transfers-data.js` (they differ). Spec §0.3's "trust the
+  front-end total" is deferred; real prices arrive with the pricing engine (M11).
 - **Shared seat-hold leak.** The `/bookings/shared` route holds seats (committed) then
   creates the booking in a *separate* transaction; if create fails, seats are held with no
   booking. Make hold + create one transaction (or compensate on failure).
