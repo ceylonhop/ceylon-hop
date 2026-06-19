@@ -1,7 +1,13 @@
 import { Hono } from 'hono';
+import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
+import { bookingRoutes } from './routes/bookings';
 
-// The application surface. Routes are mounted here so tests can exercise the app
-// in-process via `app.request(...)` without binding a port (see app.test.ts).
-export const app = new Hono();
+// createApp lets tests inject a fresh repo for isolation; the server uses the default.
+export function createApp(repo: BookingRepo = new InMemoryBookingRepo()) {
+  const app = new Hono();
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+  app.route('/bookings', bookingRoutes(repo));
+  return app;
+}
 
-app.get('/health', (c) => c.json({ status: 'ok' }));
+export const app = createApp();
