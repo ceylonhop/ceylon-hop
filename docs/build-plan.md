@@ -434,11 +434,15 @@ step). They're outlined, not yet broken into tickets, because details depend on
 decisions still open (e.g. the real pricing model, driver model). Expand each into
 1.x-style steps when you reach it.
 
-- **M9 — Shared-seat bookings + inventory.** Mirror M1–M2 for `mode=shared`; add
-  `corridor` + `shared_departure`; **atomic seat-hold** (no oversell) with a
-  concurrency test that hammers the same departure.
-- **M10 — Multi-stop trips + tour hand-off.** Persist `itinerary`/`leg`/`stay`; accept
-  the planner/tour payload (stops, nights, dates, service type); price via stub.
+- **M9 — Multi-stop trips + tour hand-off.** The natural extension of single transfer —
+  reuses the whole Phase-1 pipeline (persistence, stubbed payment, email, ops) and only
+  adds the itinerary shape. Persist `itinerary`/`leg`/`stay`; accept the planner/tour
+  payload (stops, nights, dates, service type: private vs chauffeur); price via stub.
+  No new concurrency.
+- **M10 — Shared-seat bookings + inventory.** Built last of the three because it adds
+  genuinely new mechanics: `corridor` + `shared_departure` with an **atomic seat-hold**
+  (no oversell) plus a concurrency test that hammers the same departure. Reuses the
+  M1–M2 booking/persistence foundations for `mode=shared`.
 - **M11 — Authoritative pricing engine + `rate_card`.** Replace the stub behind the same
   function signatures; parity test asserts site = booking = charge.
 - **M12 — Ops dashboard (custom UI).** Graduate from NocoDB/Retool to a bespoke staff
