@@ -1,11 +1,43 @@
 # Ceylon Hop — Backend Technical Specification
 
-Status: draft v1 · Owner: founder + Claude Code · Last updated: 2026-06-17
+Status: draft v1.1 · Owner: founder + Claude Code · Last updated: 2026-06-17
 
 This document specifies the backend, data model, operations tooling, and
 communications needed to run Ceylon Hop as a real business. It is written to be
 built incrementally by the founder working with Claude Code, favouring managed
 services over bespoke infrastructure.
+
+---
+
+## 0. Confirmed scope (v1.1)
+
+Clarifications from the founder that **override** the relevant sections below. We are
+already an operating business; this backend formalises what is partly manual today.
+
+1. **PayHere is live.** We already take payments via PayHere **hosted checkout** and
+   hold API keys. The backend wires the **existing** credentials + notify/webhook — no
+   new gateway onboarding. (See §3.)
+2. **WhatsApp stays manual for now.** No WhatsApp Business API yet, so no automated
+   WhatsApp. v1 automates **email only**; the concierge messages customers **by hand**.
+   WhatsApp Business API automation is a **fast follow**. (See §10.)
+3. **Pricing is stubbed initially.** The rate model isn't finalised, so v1 ships a
+   placeholder pricing module and **trusts the front-end-computed total** at checkout.
+   The authoritative server pricing engine + `rate_card` is a fast follow via the API.
+   *Interim risk:* client-supplied totals aren't tamper-proof — acceptable at current
+   volume, harden before scaling. (See §6.)
+4. **Refunds are manual.** Cancellations/refunds are handled by staff in the PayHere
+   dashboard; the system only **records** that a refund happened. No website-triggered
+   refund. (See §9.3.)
+5. **No customer login in v1.** Confirmation is the post-payment page + email; an
+   optional tokenised "view your booking" link is the most we'd add. Customer accounts
+   are deferred. (See §8.)
+6. **No accounting integration in v1.** No accounting platform in use yet; deferred /
+   optional. (See §12.)
+
+**Net v1 (Phase 1) focus:** persist bookings + customer details → wire the existing
+PayHere hosted checkout + webhook to mark `paid` → send email confirmation + e-ticket →
+mirror bookings into Airtable so staff run concierge, dispatch and refunds manually.
+Pricing stubbed; WhatsApp manual.
 
 ---
 
@@ -163,6 +195,12 @@ as integer minor units + ISO currency code (never floats). Enums are Postgres en
 The single source of truth for money. Ports the logic currently in
 `transfers-data.js` to the server, reading from the active `rate_card`.
 
+> **v1 reality (per §0.3):** the rate model isn't finalised. v1 ships a **stub** that
+> accepts the front-end-computed total and records it on the booking; the functions and
+> `rate_card` below are the **target** for the fast-follow once rates are defined. Build
+> the booking flow against the stub now and swap in the real engine via the same API
+> later — the call sites don't change.
+
 **Functions (server module, also callable by the site for display):**
 - `privateQuote(from, to, vehicle)` → `{ distance_km, duration_min, car, van }`
 - `sharedOption(from, to)` → `{ corridor, seat_price, times, seats_left } | null`
@@ -244,8 +282,10 @@ Driver (authenticated, driver role):
 (collected by concierge link or on the day). Chauffeur trips default to deposit.
 
 ### 9.3 Refunds / cancellation
-Cancellation within the free-cancellation window → call PayHere refund API → record a
-`refund` payment → release inventory/assignments → notify customer.
+**v1 (per §0.4): manual.** Staff issue the refund in the **PayHere dashboard**, then
+mark the booking cancelled in the system, which records a `refund` payment row (for
+reporting) and releases inventory/assignments. No website-triggered refund API call.
+Automating this is a later-phase option.
 
 ### 9.4 Concurrency & idempotency
 - Shared-seat booking uses a transactional `UPDATE ... WHERE seats_booked + n <=
@@ -256,7 +296,13 @@ Cancellation within the free-cancellation window → call PayHere refund API →
 
 ## 10. Communications & notifications
 
-**Channels:** WhatsApp (primary), email (receipts/tickets), SMS (optional fallback).
+**Channels:** WhatsApp (primary brand channel), email (receipts/tickets), SMS (optional).
+
+> **v1 reality (per §0.2):** only **email is automated** in v1. WhatsApp messages are
+> sent **manually** by the concierge from the brand phone. The event→message matrix
+> below is the **target state**; treat the WhatsApp column as a fast follow that lands
+> when the WhatsApp Business API is integrated. The booking system should still *create
+> the concierge task* so staff know to message — it just won't auto-send yet.
 
 **Event → message matrix:**
 
@@ -300,7 +346,8 @@ Phase 2 once the real process is known.
 
 - **Google Maps** — Places Autocomplete for exact pickup/drop-off; Distance Matrix for
   km/min feeding pricing and driver ETAs.
-- **Accounting (Xero/QuickBooks)** — export revenue + driver payouts (Phase 4).
+- **Accounting (Xero/QuickBooks)** — deferred (per §0.6); no platform in use yet. A
+  CSV export of payments covers reporting needs until then.
 - **Reviews (Tripadvisor)** — post-trip review request links; track click-through.
 
 ---
@@ -338,19 +385,21 @@ Phase 2 once the real process is known.
 
 | Phase | Deliverable | "Done when…" |
 |---|---|---|
-| **0 Foundations** | Supabase project, data model v1, staff auth, CI/CD, pricing engine ported | A quote API returns the same numbers the site shows today |
-| **1 Take real money** | Booking persistence, PayHere (sandbox→live) + webhook, email confirm + e-ticket PDF, Airtable mirror | A real card payment creates a `paid` booking and sends a confirmation |
-| **2 Run operations** | Ops dashboard, drivers/vehicles, dispatch/assignment, cancellation/refund, shared-seat inventory + schedules | Staff can assign a driver and the customer can be refunded |
-| **3 Automate comms** | WhatsApp Business API + templates, reminders, concierge queue + SLA, review requests, ops alerts | Confirmations and reminders go out automatically with no manual step |
+| **0 Foundations** | Supabase project, data model v1, staff auth, CI/CD, **stub** pricing module | The booking flow can create + persist a draft with a total |
+| **1 Take real money** | Booking persistence, wire **existing** PayHere keys + webhook, email confirm + e-ticket PDF, Airtable mirror, auto-create concierge task | A real card payment creates a `paid` booking, emails confirmation, and shows in Airtable |
+| **2 Run operations** | Ops dashboard, drivers/vehicles, dispatch/assignment, **record** manual cancellations/refunds, shared-seat inventory + schedules, **authoritative pricing engine + `rate_card`** | Staff can assign a driver; refunds and prices are tracked in-system |
+| **3 Automate comms (fast follow)** | WhatsApp Business API + templates, reminders, concierge SLA timers, review requests, ops alerts | Confirmations/reminders auto-send on WhatsApp, no manual step |
 | **4 Scale & polish** | Driver app, reporting/analytics, accounting sync, seasonal pricing, multi-currency | — |
 
 ---
 
 ## 16. Pre-build checklist (start now — these have lead times)
 
-- [ ] **PayHere live merchant account** — business registration / KYC.
-- [ ] **WhatsApp Business Platform** — pick a BSP, complete Meta business verification,
-      submit message templates for approval.
+- [x] **PayHere** — live merchant account + API keys already in hand. Action: locate
+      keys, confirm the notify/webhook URL setting, and test in sandbox first.
+- [ ] **WhatsApp Business Platform** *(fast follow)* — pick a BSP, complete Meta
+      business verification, submit message templates for approval. Start early; it's
+      the slowest dependency.
 - [ ] **Google Maps API** project + billing + key restrictions.
 - [ ] **Email domain** — verify sending domain (SPF/DKIM) with Resend/Postmark.
 - [ ] **Supabase** project + Postgres region (close to customers/ops).
@@ -360,7 +409,8 @@ Phase 2 once the real process is known.
 
 ## 17. Open questions
 
-1. Sri Lanka business entity status (affects PayHere onboarding and future Stripe).
+1. ~~Entity status~~ — resolved: operating business with live PayHere. Revisit only if
+   incorporating a foreign entity for Stripe later.
 2. Shared-ride operations: are corridors/schedules fixed, or do they vary seasonally?
 3. Driver model — employees, contractors, or a partner fleet? (affects payouts + the
    driver portal).
