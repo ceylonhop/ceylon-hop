@@ -14,16 +14,22 @@
     "smoke": "vitest run smoke",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "db:generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@hono/node-server": "^1.8.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.0.0",
+    "postgres": "^3.4.9",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^20.11.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
