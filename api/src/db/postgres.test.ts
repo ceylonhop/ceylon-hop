@@ -9,6 +9,7 @@ import type { NewBooking } from './bookingRepo';
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
 const sample: NewBooking = {
+  mode: 'single',
   input: {
     from: 'Colombo Airport',
     to: 'Ella',
@@ -41,8 +42,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const got = await bookings.get(created.id);
     expect(got?.reference).toBe(created.reference);
     expect(got?.input.customer.email).toBe('maya@example.com');
-    expect(got?.input.from).toBe('Colombo Airport');
     expect(got?.total).toBe(5000);
+    if (got?.mode !== 'single') throw new Error('expected a single-transfer booking');
+    expect(got.input.from).toBe('Colombo Airport');
   });
 
   it('is idempotent on the booking idempotency key', async () => {

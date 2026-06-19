@@ -29,7 +29,7 @@ export function bookingRoutes(deps: {
 
     const { currency, total } = quoteSingleTransfer(parsed.data);
     const booking = await bookings.create(
-      { input: parsed.data, total, currency },
+      { mode: 'single', input: parsed.data, total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);

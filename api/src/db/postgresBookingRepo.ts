@@ -22,6 +22,7 @@ export class PostgresBookingRepo implements BookingRepo {
       .from(transferRequests)
       .where(eq(transferRequests.bookingId, row.id));
     return {
+      mode: 'single',
       id: row.id,
       reference: row.reference,
       status: row.status as BookingStatus,
@@ -53,7 +54,11 @@ export class PostgresBookingRepo implements BookingRepo {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
     }
-    const c = b.input.customer;
+    if (b.mode !== 'single') {
+      throw new Error('trip persistence not implemented yet (M9.5)');
+    }
+    const input = b.input;
+    const c = input.customer;
     const row = await this.db.transaction(async (tx) => {
       const [cust] = await tx
         .insert(customers)

@@ -9,16 +9,20 @@ export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
 ): Promise<void> {
-  const { reference, input, total, currency } = booking;
-  const { customer, from, to } = input;
-  const amount = money(total, currency);
+  const customer = booking.input.customer;
+  const amount = money(booking.total, booking.currency);
+  const route =
+    booking.mode === 'trip'
+      ? booking.input.stops.join(' → ')
+      : `${booking.input.from} → ${booking.input.to}`;
+
   await email.send({
     to: customer.email,
-    subject: `Your Ceylon Hop booking ${reference}`,
+    subject: `Your Ceylon Hop booking ${booking.reference}`,
     html:
       `<p>Hi ${customer.name},</p>` +
-      `<p>Your transfer <b>${from} → ${to}</b> is booked.</p>` +
-      `<p>Reference: <b>${reference}</b><br>Total paid: <b>${amount}</b></p>` +
-      `<p>Our team will message you on WhatsApp to confirm your exact pickup. See you on board.</p>`,
+      `<p>Your trip <b>${route}</b> is booked.</p>` +
+      `<p>Reference: <b>${booking.reference}</b><br>Total paid: <b>${amount}</b></p>` +
+      `<p>Our team will message you on WhatsApp to confirm your pickup. See you on board.</p>`,
   });
 }

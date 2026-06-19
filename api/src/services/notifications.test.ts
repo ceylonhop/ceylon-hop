@@ -4,6 +4,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
 const booking: Booking = {
+  mode: 'single',
   id: 'id1',
   reference: 'CH-ABC12',
   status: 'paid',

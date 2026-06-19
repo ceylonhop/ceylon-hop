@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { InMemoryBookingRepo, type NewBooking } from './bookingRepo';
 
 const sample: NewBooking = {
+  mode: 'single',
   input: {
     from: 'A',
     to: 'B',
