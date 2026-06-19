@@ -17,6 +17,7 @@ export const bookings = pgTable('bookings', {
     .references(() => customers.id),
   reference: text('reference').notNull().unique(),
   status: text('status').notNull(),
+  mode: text('mode').notNull().default('single'),
   total: integer('total').notNull(),
   currency: text('currency').notNull(),
   idempotencyKey: text('idempotency_key').unique(),
@@ -61,4 +62,20 @@ export const conciergeTasks = pgTable('concierge_tasks', {
   type: text('type').notNull(),
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// v1 stores the multi-stop trip as arrays (stops/nights/dates) rather than the fully
+// normalised itinerary/leg/stay of spec §5.2 — fine for the stub, normalise later.
+export const tripRequests = pgTable('trip_request', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bookingId: uuid('booking_id')
+    .notNull()
+    .unique()
+    .references(() => bookings.id),
+  serviceType: text('service_type').notNull(),
+  pax: integer('pax').notNull(),
+  vehicleType: text('vehicle_type').notNull(),
+  stops: text('stops').array().notNull(),
+  nights: integer('nights').array().notNull(),
+  dates: text('dates').array(),
 });

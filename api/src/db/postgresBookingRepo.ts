@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests } from './schema';
+import { customers, bookings, transferRequests, tripRequests } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
@@ -17,34 +17,57 @@ export class PostgresBookingRepo implements BookingRepo {
 
   private async assemble(row: BookingRow): Promise<Booking> {
     const [cust] = await this.db.select().from(customers).where(eq(customers.id, row.customerId));
-    const [tr] = await this.db
-      .select()
-      .from(transferRequests)
-      .where(eq(transferRequests.bookingId, row.id));
-    return {
-      mode: 'single',
+    const customer = {
+      name: cust.name,
+      email: cust.email,
+      whatsapp: cust.whatsapp,
+      country: cust.country,
+      marketingOptIn: cust.marketingOptIn ?? undefined,
+    };
+    const base = {
       id: row.id,
       reference: row.reference,
       status: row.status as BookingStatus,
       createdAt: row.createdAt.toISOString(),
       total: row.total,
       currency: row.currency,
-      input: {
-        from: tr.fromPlace,
-        to: tr.toPlace,
-        date: tr.travelDate ?? undefined,
-        time: tr.travelTime ?? undefined,
-        vehicleType: tr.vehicleType as 'car' | 'van',
-        adults: tr.adults,
-        children: tr.children,
-        bags: tr.bags,
-        customer: {
-          name: cust.name,
-          email: cust.email,
-          whatsapp: cust.whatsapp,
-          country: cust.country,
-          marketingOptIn: cust.marketingOptIn ?? undefined,
+    };
+    if (row.mode === 'trip') {
+      const [tr] = await this.db
+        .select()
+        .from(tripRequests)
+        .where(eq(tripRequests.bookingId, row.id));
+      return {
+        ...base,
+        mode: 'trip',
+        input: {
+          stops: tr.stops,
+          nights: tr.nights,
+          dates: tr.dates ?? undefined,
+          pax: tr.pax,
+          vehicleType: tr.vehicleType as 'car' | 'van',
+          serviceType: tr.serviceType as 'private' | 'chauffeur',
+          customer,
         },
+      };
+    }
+    const [t] = await this.db
+      .select()
+      .from(transferRequests)
+      .where(eq(transferRequests.bookingId, row.id));
+    return {
+      ...base,
+      mode: 'single',
+      input: {
+        from: t.fromPlace,
+        to: t.toPlace,
+        date: t.travelDate ?? undefined,
+        time: t.travelTime ?? undefined,
+        vehicleType: t.vehicleType as 'car' | 'van',
+        adults: t.adults,
+        children: t.children,
+        bags: t.bags,
+        customer,
       },
     };
   }
@@ -54,11 +77,7 @@ export class PostgresBookingRepo implements BookingRepo {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
     }
-    if (b.mode !== 'single') {
-      throw new Error('trip persistence not implemented yet (M9.5)');
-    }
-    const input = b.input;
-    const c = input.customer;
+    const c = b.input.customer;
     const row = await this.db.transaction(async (tx) => {
       const [cust] = await tx
         .insert(customers)
@@ -76,22 +95,37 @@ export class PostgresBookingRepo implements BookingRepo {
           customerId: cust.id,
           reference: generateReference(),
           status: 'draft',
+          mode: b.mode,
           total: b.total,
           currency: b.currency,
           idempotencyKey: opts?.idempotencyKey ?? null,
         })
         .returning();
-      await tx.insert(transferRequests).values({
-        bookingId: bk.id,
-        fromPlace: b.input.from,
-        toPlace: b.input.to,
-        travelDate: b.input.date ?? null,
-        travelTime: b.input.time ?? null,
-        vehicleType: b.input.vehicleType,
-        adults: b.input.adults,
-        children: b.input.children,
-        bags: b.input.bags,
-      });
+      if (b.mode === 'trip') {
+        const t = b.input;
+        await tx.insert(tripRequests).values({
+          bookingId: bk.id,
+          serviceType: t.serviceType,
+          pax: t.pax,
+          vehicleType: t.vehicleType,
+          stops: t.stops,
+          nights: t.nights,
+          dates: t.dates ?? null,
+        });
+      } else {
+        const t = b.input;
+        await tx.insert(transferRequests).values({
+          bookingId: bk.id,
+          fromPlace: t.from,
+          toPlace: t.to,
+          travelDate: t.date ?? null,
+          travelTime: t.time ?? null,
+          vehicleType: t.vehicleType,
+          adults: t.adults,
+          children: t.children,
+          bags: t.bags,
+        });
+      }
       return bk;
     });
     // assemble after commit so the joined rows are visible

@@ -61,6 +61,31 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await expect(bookings.setStatus(b.id, 'completed')).rejects.toThrow();
   });
 
+  it('persists and reads back a multi-stop trip', async () => {
+    const trip: NewBooking = {
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+        nights: [1, 2, 0],
+        dates: ['2026-07-20', '2026-07-22'],
+        pax: 2,
+        vehicleType: 'van',
+        serviceType: 'private',
+        customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 12000,
+      currency: 'USD',
+    };
+    const created = await bookings.create(trip);
+    const got = await bookings.get(created.id);
+    expect(got?.mode).toBe('trip');
+    if (got?.mode !== 'trip') throw new Error('expected a trip booking');
+    expect(got.input.stops).toEqual(['Colombo Airport', 'Sigiriya', 'Ella']);
+    expect(got.input.serviceType).toBe('private');
+    expect(got.input.customer.email).toBe('maya@example.com');
+    expect(got.total).toBe(12000);
+  });
+
   it('persists a payment and a concierge task', async () => {
     const b = await bookings.create(sample);
     const p = await payments.create({
