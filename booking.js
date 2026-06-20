@@ -13,7 +13,7 @@ document.querySelectorAll('.addon .box').forEach(b=>b.innerHTML=CK);
 // ---- params + state ----
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
-let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car';
+let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
 let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripDays=0, tripBase=0, tripEditUrl='';
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 
@@ -56,6 +56,7 @@ if(mode==='trip' && window.TRANSFERS){
     times:(params.get('times')||'').split(',').filter(Boolean)
   };
   isCustom=false; unit=price; perVehicle=(mode==='private');
+  routeNamePrefix = (mode==='private'?'Private transfer':'Shared ride');
 } else {
   r=getRoute(params.get('id')) || ROUTES[0];
   isCustom = r.price==null;
@@ -268,7 +269,17 @@ function renderRouteMap(){
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
     window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
       onFail: showFallback,
-      onRoute: ({km, durationMin}) => setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null)),
+      onRoute: ({km, durationMin}) => {
+        setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
+        // re-price single private transfers from the REAL driving distance so the
+        // summary total always matches the route actually shown on the map.
+        if(km!=null && perVehicle && !isTrip && T && T.legPrice){
+          state.routeKm = km;
+          vehPrices = { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') };
+          const np = vehPrices[vehicleKey];
+          if(np!=null){ unit = np; r.price = np; render(); }
+        }
+      },
     });
   } else {
     showFallback();
@@ -727,6 +738,11 @@ function render(){
   // live route from the actual entered locations
   const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = state.locFrom || r.stops[0];
   const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = state.locTo || r.stops[r.stops.length-1];
+  // keep the summary title in sync with the entered route (single transfers)
+  const _sn=document.getElementById('sum-name');
+  if(_sn && routeNamePrefix && !isTrip){
+    _sn.textContent = `${routeNamePrefix} · ${state.locFrom||r.stops[0]} → ${state.locTo||r.stops[r.stops.length-1]}`;
+  }
   document.getElementById('sum-date').textContent = state.flexDate ? 'To confirm (12h before)' : (state.date ? state.date.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—');
   document.getElementById('sum-time').textContent = state.flexTime ? 'To confirm (12h before)' : (state.dep ? fmtTime(state.dep) : '—');
   document.getElementById('sum-bags').textContent = state.bags>0 ? (state.bags+' large bag'+(state.bags>1?'s':'')) : 'No large bags';
