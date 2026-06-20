@@ -838,7 +838,19 @@ document.getElementById('pay-btn').addEventListener('click',()=>{
     document.getElementById('ph-spin').style.display='none';
     document.getElementById('ph-msg').innerHTML='✓ Payment approved — returning to Ceylon Hop…';
   }, 2500);
-  setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(); }, 3400);
+  setTimeout(async ()=>{
+    const ok = await finalizeBooking();
+    if(ok){ ov.classList.remove('show'); return; }
+    // booking didn't persist — surface it instead of showing a fake confirmation
+    document.getElementById('ph-spin').style.display='none';
+    document.getElementById('ph-msg').innerHTML='⚠️ We couldn’t complete your booking — please try again.';
+    setTimeout(()=>{
+      ov.classList.remove('show');
+      const d=document.getElementById('details-error');
+      if(d){ d.textContent='Your booking didn’t go through. Please check your connection and try again.'; d.hidden=false; }
+      const pb=document.getElementById('pay-btn'); if(pb) pb.scrollIntoView({behavior:'smooth',block:'center'});
+    }, 2000);
+  }, 3400);
 });
 
 // M7 — when a backend is configured, create a real booking and use its reference.
@@ -849,7 +861,8 @@ async function createApiBooking(){
   const API = window.CEYLON_HOP_API;
   if(!API) return null;
   const customer = {
-    name: (document.getElementById('f-first').value+' '+document.getElementById('f-last').value).trim(),
+    firstName: document.getElementById('f-first').value.trim(),
+    lastName: document.getElementById('f-last').value.trim(),
     email: document.getElementById('f-email').value.trim(),
     whatsapp: document.getElementById('f-wa').value.trim(),
     country: document.getElementById('f-country').value
@@ -889,16 +902,24 @@ async function createApiBooking(){
       customer
     };
   }
+  // A backend IS configured, so a failure here must surface — never fake a confirmation.
+  // (Returning null is reserved for "no backend configured" = intentional demo mode.)
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 30000);
+  let res;
   try{
-    const res = await fetch(API.replace(/\/$/,'')+endpoint, {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)
+    res = await fetch(API.replace(/\/$/,'')+endpoint, {
+      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload), signal: ctrl.signal
     });
-    return res.ok ? await res.json() : null;
-  }catch(e){ return null; }
+  } finally { clearTimeout(timer); }
+  if(!res.ok) throw new Error('booking_failed_'+res.status);
+  return await res.json();
 }
 
 async function finalizeBooking(){
-  const apiBooking = await createApiBooking();
+  let apiBooking;
+  try { apiBooking = await createApiBooking(); }
+  catch(e){ return false; } // backend was configured but the save failed — caller surfaces it
   const ref = apiBooking ? apiBooking.reference
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
@@ -927,6 +948,7 @@ async function finalizeBooking(){
   document.getElementById('psteps').style.display='none';
   document.getElementById('confirm').style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
+  return true;
 }
 
 // single transfer: pre-select the pick-up time if one was chosen upstream,

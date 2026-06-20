@@ -18,7 +18,8 @@ export class PostgresBookingRepo implements BookingRepo {
   private async assemble(row: BookingRow): Promise<Booking> {
     const [cust] = await this.db.select().from(customers).where(eq(customers.id, row.customerId));
     const customer = {
-      name: cust.name,
+      firstName: cust.firstName,
+      lastName: cust.lastName,
       email: cust.email,
       whatsapp: cust.whatsapp,
       country: cust.country,
@@ -99,7 +100,8 @@ export class PostgresBookingRepo implements BookingRepo {
       const [cust] = await tx
         .insert(customers)
         .values({
-          name: c.name,
+          firstName: c.firstName,
+          lastName: c.lastName,
           email: c.email,
           whatsapp: c.whatsapp,
           country: c.country,

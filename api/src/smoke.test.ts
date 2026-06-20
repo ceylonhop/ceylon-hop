@@ -13,7 +13,7 @@ const valid = {
   adults: 3,
   children: 1,
   bags: 4,
-  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+  customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
 describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
@@ -67,7 +67,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
       pax: 2,
       vehicleType: 'van',
       serviceType: 'private',
-      customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
     };
     const b = await (
       await app.request('/bookings/trip', {
@@ -106,7 +106,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
       date: '2026-07-20',
       time: '08:00',
       seats: 2,
-      customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
     };
     const b = await (
       await app.request('/bookings/shared', {

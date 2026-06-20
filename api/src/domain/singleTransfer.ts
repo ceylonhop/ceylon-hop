@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 // The lead traveller — we send confirmation here and contact them about the booking.
 export const CustomerInput = z.object({
-  name: z.string().min(1),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
   email: z.string().email(),
   whatsapp: z.string().min(1),
   country: z.string().min(1),

@@ -10,7 +10,7 @@ const valid = {
   pax: 2,
   vehicleType: 'van',
   serviceType: 'private',
-  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+  customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
 async function postTrip(app: ReturnType<typeof createApp>, body: unknown) {

@@ -8,7 +8,7 @@ const valid = {
   date: '2026-07-20',
   time: '08:00',
   seats: 2,
-  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+  customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
 async function postShared(app: ReturnType<typeof createApp>, body: unknown) {

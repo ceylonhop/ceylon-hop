@@ -2,7 +2,8 @@ import { pgTable, uuid, text, integer, boolean, timestamp, unique } from 'drizzl
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
+  firstName: text('first_name').notNull(),
+  lastName: text('last_name').notNull(),
   email: text('email').notNull(),
   whatsapp: text('whatsapp').notNull(),
   country: text('country').notNull(),

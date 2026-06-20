@@ -9,7 +9,7 @@ const valid = {
   children: 0,
   bags: 2,
   customer: {
-    name: 'Maya',
+    firstName: 'Maya', lastName: 'Silva',
     email: 'maya@example.com',
     whatsapp: '+34600000000',
     country: 'Spain',

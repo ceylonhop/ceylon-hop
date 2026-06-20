@@ -22,7 +22,7 @@ export async function sendBookingConfirmation(
     to: customer.email,
     subject: `Your Ceylon Hop booking ${booking.reference}`,
     html:
-      `<p>Hi ${customer.name},</p>` +
+      `<p>Hi ${customer.firstName},</p>` +
       `<p>Your trip <b>${route}</b> is booked.</p>` +
       `<p>Reference: <b>${booking.reference}</b><br>Total paid: <b>${amount}</b></p>` +
       `<p>Our team will message you on WhatsApp to confirm your pickup. See you on board.</p>`,

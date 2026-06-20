@@ -137,15 +137,14 @@ export function bookingRoutes(deps: {
     }
 
     const cust = booking.input.customer;
-    const [firstName, ...rest] = cust.name.split(' ');
     const params = await adapter.createCheckout({
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
       items: `Ceylon Hop ${booking.reference}`,
       customer: {
-        firstName: firstName || 'Guest',
-        lastName: rest.join(' ') || '-',
+        firstName: cust.firstName,
+        lastName: cust.lastName,
         email: cust.email,
         phone: cust.whatsapp,
         country: cust.country,

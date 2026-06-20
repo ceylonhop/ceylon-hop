@@ -18,7 +18,7 @@ const booking: Booking = {
     adults: 2,
     children: 0,
     bags: 2,
-    customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+    customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
   },
 };
 
