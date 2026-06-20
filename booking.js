@@ -118,6 +118,7 @@ locTo.value   = r.stops[r.stops.length-1];
 state.locFrom = locFrom.value;
 state.locTo   = locTo.value;
 let _rmTimer=null;
+let userSetLocation=false; // true once the customer actively picks a pickup/drop-off
 function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
 const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
@@ -139,6 +140,7 @@ function attachAC(input, menu, which){
 
   async function choose(i){
     const d=data[i]; if(!d) return;
+    userSetLocation=true; // a deliberate selection — now the price may re-price
     input.value=d.label; onLoc(); close();
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
@@ -273,7 +275,7 @@ function renderRouteMap(){
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
         // summary total always matches the route actually shown on the map.
-        if(km!=null && perVehicle && !isTrip && T && T.legPrice){
+        if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice){
           state.routeKm = km;
           vehPrices = { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') };
           const np = vehPrices[vehicleKey];
