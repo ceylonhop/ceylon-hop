@@ -951,6 +951,15 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
     return;
   }
 
+  runPayment();
+});
+
+// Runs the actual payment after the contact form passes validation. Every outcome
+// (working / failed / cancelled) is surfaced INSIDE the PayHere overlay so the
+// customer always sees what happened where they expect it — never a stray note on
+// the form. The overlay opens immediately so clicking Pay always shows feedback.
+async function runPayment(){
+  phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
   if(!API){ return simulatePayThenConfirm(null); }
@@ -958,7 +967,7 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // Backend configured: create the real (draft) booking first.
   let booking;
   try { booking = await createApiBooking(); }
-  catch(e){ return showPayFailed(); }
+  catch(e){ return phShowEnd('error','We couldn’t start your booking just now. Please check your connection and try again.'); }
   if(!booking){ return simulatePayThenConfirm(null); }
 
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
@@ -969,11 +978,43 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   }catch(e){}
 
   if(checkout && checkout.checkoutUrl && /payhere\.lk/.test(checkout.checkoutUrl) && window.payhere){
+    document.getElementById('ph-msg').textContent='Opening secure payment…';
     return startPayHere(checkout, booking);
   }
   // Backend without a real gateway (fake adapter) → simulated interstitial, real reference.
   return simulatePayThenConfirm(booking);
-});
+}
+
+// ---- payment overlay states (loading / problem) ----
+function phShowLoading(msg){
+  const amt=document.getElementById('ph-amt'); if(amt){ amt.style.display=''; amt.textContent=money(amountDueNow()); }
+  document.getElementById('ph-spin').style.display='block';
+  const ico=document.getElementById('ph-ico'); if(ico) ico.hidden=true;
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='';
+  const m=document.getElementById('ph-msg'); m.className='ph-msg'; m.textContent=msg||'Processing your payment securely…';
+  document.getElementById('ph-actions').hidden=true;
+  document.getElementById('ph-overlay').classList.add('show');
+}
+// kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
+function phShowEnd(kind, msg){
+  document.getElementById('ph-spin').style.display='none';
+  const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
+  const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
+  const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='none';
+  const ico=document.getElementById('ph-ico');
+  if(ico){
+    ico.hidden=false; ico.className='ph-ico '+(kind==='error'?'err':'warn');
+    ico.innerHTML = kind==='error'
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
+  }
+  const m=document.getElementById('ph-msg'); m.className='ph-msg ph-msg-big'; m.textContent=msg;
+  document.getElementById('ph-actions').hidden=false;
+  document.getElementById('ph-overlay').classList.add('show');
+}
+document.getElementById('ph-retry').addEventListener('click', ()=>runPayment());
+document.getElementById('ph-close').addEventListener('click', ()=>document.getElementById('ph-overlay').classList.remove('show'));
 
 // Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
 function simulatePayThenConfirm(booking){
@@ -992,20 +1033,17 @@ function simulatePayThenConfirm(booking){
 // truth for "paid"; onCompleted just shows the customer their confirmation.
 function startPayHere(checkout, booking){
   const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-  payhere.onCompleted = function(){ finalizeBooking(booking); };
+  payhere.onCompleted = function(){ document.getElementById('ph-overlay').classList.remove('show'); finalizeBooking(booking); };
   payhere.onDismissed = function(){ showPayDismissed(); };
   payhere.onError = function(){ showPayFailed(); };
   payhere.startPayment(payment);
 }
 
 function showPayFailed(){
-  const d=document.getElementById('details-error');
-  if(d){ d.textContent='Your payment didn’t complete. Please try again.'; d.hidden=false; }
-  const pb=document.getElementById('pay-btn'); if(pb) pb.scrollIntoView({behavior:'smooth',block:'center'});
+  phShowEnd('error','Your payment didn’t go through — no charge was made. Please try again.');
 }
 function showPayDismissed(){
-  const d=document.getElementById('details-error');
-  if(d){ d.textContent='Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.'; d.hidden=false; }
+  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
 }
 
 // M7 — when a backend is configured, create a real booking and use its reference.

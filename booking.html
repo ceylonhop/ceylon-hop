@@ -274,6 +274,17 @@
   @keyframes phspin{to{transform:rotate(360deg)}}
   .ph-amt{font-family:var(--display);font-weight:800;font-size:1.8rem;color:#1b1b1b}
   .ph-msg{font-size:.86rem;color:#444;margin-top:6px}
+  .ph-msg.ph-msg-big{font-size:.98rem;color:#333;line-height:1.45;margin-top:2px}
+  .ph-ico{width:56px;height:56px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
+  .ph-ico svg{width:30px;height:30px}
+  .ph-ico.err{background:#fdeee9;color:#c0392b}
+  .ph-ico.warn{background:#fef6e7;color:#b9770e}
+  .ph-actions{display:flex;flex-direction:column;gap:9px;margin-top:22px}
+  .ph-btn{border:none;border-radius:11px;padding:12px 16px;font-weight:600;font-size:.9rem;cursor:pointer;font-family:inherit;transition:background .15s}
+  .ph-btn-primary{background:var(--accent,#0AB9B6);color:#fff}
+  .ph-btn-primary:hover{background:var(--accent-deep,#0a9d9a)}
+  .ph-btn-ghost{background:transparent;color:#666}
+  .ph-btn-ghost:hover{background:#f1f1f1}
   .ph-secure{font-size:.72rem;color:#999;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:.4rem}
   .ph-secure svg{width:13px;height:13px}
 
@@ -674,11 +685,16 @@
 <div class="ph-overlay" id="ph-overlay">
   <div class="ph-card">
     <div class="ph-logo">Pay<span>Here</span></div>
-    <div class="ph-sub">Sri Lanka&rsquo;s trusted payment gateway</div>
+    <div class="ph-sub" id="ph-sub">Sri Lanka&rsquo;s trusted payment gateway</div>
     <div class="ph-spin" id="ph-spin"></div>
+    <div class="ph-ico" id="ph-ico" hidden></div>
     <div class="ph-amt" id="ph-amt">$0</div>
     <div class="ph-msg" id="ph-msg">Redirecting you to PayHere&hellip;</div>
-    <div class="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
+    <div class="ph-actions" id="ph-actions" hidden>
+      <button type="button" class="ph-btn ph-btn-primary" id="ph-retry">Try again</button>
+      <button type="button" class="ph-btn ph-btn-ghost" id="ph-close">Close</button>
+    </div>
+    <div class="ph-secure" id="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
   </div>
 </div>
 
