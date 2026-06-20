@@ -11,6 +11,13 @@ const Env = z.object({
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
   APP_BASE_URL: z.string().default('http://localhost:4173'),
+  // Browser origins allowed to call the API (comma-separated). The live site + local dev.
+  ALLOWED_ORIGINS: z
+    .string()
+    .default('https://ceylonhop.github.io,https://ceylonhop.com,http://localhost:4173,http://localhost:8787'),
+  // Per-IP rate limit on booking writes.
+  RATE_LIMIT_MAX: z.coerce.number().default(20),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
 });
 
 export const config = Env.parse(process.env);

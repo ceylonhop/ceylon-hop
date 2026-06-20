@@ -528,11 +528,12 @@ pass; don't let them block the first slices, but don't ship to production withou
 - **Shared seat-hold leak.** The `/bookings/shared` route holds seats (committed) then
   creates the booking in a *separate* transaction; if create fails, seats are held with no
   booking. Make hold + create one transaction (or compensate on failure).
-- **Rate limiting.** Public booking endpoints have none (spec wanted rate-limited public
-  routes) — **now urgent**: the API is deployed (Render) and baked into the live site, so
-  `/bookings/*` POST is publicly writable. Add per-IP limits before broad sharing.
-- **Tighten CORS.** Currently allows all origins (`*`); restrict to the real site domains
-  for production.
+- **Rate limiting — DONE 2026-06-19.** Per-IP sliding-window limiter (`lib/rateLimit.ts`)
+  on `/bookings/*` POSTs (default 20/min/IP, configurable via `RATE_LIMIT_MAX`/`_WINDOW_MS`);
+  429 + `Retry-After`. Webhooks/reads unaffected.
+- **Tighten CORS — DONE 2026-06-19.** Allow-list via `ALLOWED_ORIGINS` (live site + local
+  dev) instead of `*`; unknown origins get no `Access-Control-Allow-Origin`. Server-to-server
+  callers (PayHere webhook) send no Origin and are unaffected.
 
 ### Deployment + reliability (2026-06-19)
 - **Backend deployed** to Render free Web Service → `https://ceylon-hop-api.onrender.com`;

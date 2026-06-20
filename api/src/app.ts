@@ -9,6 +9,7 @@ import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
+import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
 export interface AppDeps {
@@ -19,6 +20,8 @@ export interface AppDeps {
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   adminApiKey?: string;
+  allowedOrigins?: string[];
+  rateLimit?: { max: number; windowMs: number };
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -30,12 +33,25 @@ export function createApp(deps: AppDeps = {}) {
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
+  const allowedOrigins =
+    deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
+  const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
 
   const app = new Hono();
 
-  // The browser calls this API cross-origin (site on a different port/host). Allow it.
-  // Tighten `origin` to the real site domains before production.
-  app.use('*', cors());
+  // Restrict cross-origin browser calls to the live site + local dev. Server-to-server
+  // callers (e.g. the PayHere webhook) send no Origin and are unaffected by CORS.
+  app.use(
+    '*',
+    cors({
+      origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
+      allowMethods: ['GET', 'POST', 'OPTIONS'],
+      allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key'],
+    }),
+  );
+
+  // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
+  app.use('/bookings/*', rateLimit(rl));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
