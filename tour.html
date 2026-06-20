@@ -159,7 +159,6 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
             <span><b>Make it yours.</b> This is a starting route — add, drop or reorder any stop and change your nights. We&rsquo;ll handle the transport end to end.</span>
           </div>
-          <div class="field" style="margin:14px 0"><label for="bk-date">Preferred start date</label><input type="date" id="bk-date" data-datepicker data-placeholder="Add a date" aria-label="Preferred start date"></div>
           <div class="stepper">
             <div><b>Travelers</b><div class="muted" style="font-size:.75rem">Adults</div></div>
             <div class="ctrls"><button type="button" onclick="step('ad',-1)">–</button><b id="ad-n">2</b><button type="button" onclick="step('ad',1)">+</button></div>
@@ -208,15 +207,6 @@
   document.getElementById('t-blurb').textContent=t.blurb;
   document.getElementById('bk-price').textContent='$'+t.price;
   document.getElementById('bk-wa').innerHTML = ICON.wa + ' Ask a question';
-
-  // distribute the tour's nights across its stops (all but the final stop)
-  function nightsArray(){
-    const n=t.stops.length, arr=new Array(n).fill(0);
-    let left=t.nights;
-    for(let i=0;i<n-1 && left>0;i++){ arr[i]=1; left--; }      // 1 night minimum each
-    let i=0; while(left>0){ arr[i%(n-1)]++; left--; i++; }       // spread the rest
-    return arr;
-  }
 
   // gallery — lead photo from the tour, plus scene placeholders
   const scenes=[t.photo,'Your private AC vehicle & chauffeur-guide','A boutique hotel along the route','Local Sri Lankan rice & curry','A scenic stop on the road'];
@@ -268,23 +258,17 @@
   window.step=function(which,d){ ad=Math.max(1,ad+d); document.getElementById('ad-n').textContent=ad; updateEst(); };
   updateEst();
 
-  // default start = 30 days out
-  const dd=new Date(); dd.setDate(dd.getDate()+30);
-  document.getElementById('bk-date').value=dd.toISOString().slice(0,10);
-
+  // Customise → open the tour's ROUTE in the multi-stop editor, carrying only the stops,
+  // travellers and vehicle. We deliberately do NOT pre-fill stays/nights or dates — the
+  // customer hasn't chosen those yet; they add stays in the planner and dates in the
+  // "Add your dates" step.
   function tripParams(){
     return new URLSearchParams({
       stops: t.stops.join('|'),
-      nights: nightsArray().join(','),
       pax: String(ad),
-      vehicle: vehFor(ad),
-      start: document.getElementById('bk-date').value || dd.toISOString().slice(0,10)
+      vehicle: vehFor(ad)
     });
   }
-  // Customise → open the same itinerary in the multi-stop editor, carrying the
-  // full starting point through: stops, the tour's per-stop nights, travellers,
-  // vehicle and the chosen start date. Previously only stops + pax were passed,
-  // so the planner reopened as a 0-night route and silently dropped the date.
   document.getElementById('bk-edit').addEventListener('click',()=>{
     location.href='plan.html?'+tripParams().toString();
   });
