@@ -39,6 +39,16 @@ describe('POST /bookings/trip', () => {
     expect(res.status).toBe(400);
   });
 
+  it('records chauffeur days + driver nights', async () => {
+    const app = createApp();
+    const res = await postTrip(app, { ...valid, serviceType: 'chauffeur', days: 3, driverNights: 2 });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    const got = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(got.input.days).toBe(3);
+    expect(got.input.driverNights).toBe(2);
+  });
+
   it('flows through checkout → webhook → paid → email', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();

@@ -48,6 +48,8 @@ export class PostgresBookingRepo implements BookingRepo {
           pax: tr.pax,
           vehicleType: tr.vehicleType as 'car' | 'van',
           serviceType: tr.serviceType as 'private' | 'chauffeur',
+          days: tr.days ?? undefined,
+          driverNights: tr.driverNights ?? undefined,
           customer,
         },
       };
@@ -130,6 +132,8 @@ export class PostgresBookingRepo implements BookingRepo {
           stops: t.stops,
           nights: t.nights,
           dates: t.dates ?? null,
+          days: t.days ?? null,
+          driverNights: t.driverNights ?? null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;

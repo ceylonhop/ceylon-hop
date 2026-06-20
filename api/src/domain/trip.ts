@@ -13,6 +13,9 @@ export const TripInput = z.object({
   serviceType: z.enum(['private', 'chauffeur']),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
+  // Chauffeur-guide: days the car is kept + driver accommodation nights (days − 1).
+  days: z.number().int().positive().optional(),
+  driverNights: z.number().int().min(0).optional(),
 });
 
 export type TripInput = z.infer<typeof TripInput>;

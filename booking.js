@@ -25,7 +25,9 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
-  tripDays=tripNights.reduce((a,b)=>a+b,0)||tripStops.length;
+  // Chauffeur is billed by the days the car is kept = trip date span (start→end inclusive).
+  // Fall back to per-stop nights, then stop count, when the trip isn't fully dated.
+  tripDays=chauffeurDuration().days||tripNights.reduce((a,b)=>a+b,0)||tripStops.length;
   const q=T.tripQuote(tripStops, vehicleKey);
   tripBase=q.total;
   r={
@@ -587,6 +589,16 @@ function tripDatesComplete(){
   // need a start anchor to price it — intermediate legs may stay flexible and still quote
   return !!((tripDates[0]||'').trim() || (startParam||'').trim());
 }
+// Chauffeur duration from the trip dates: nights on the road = (last date − first date),
+// days the car is kept = nights + 1. Driver accommodation = one night per night away.
+function chauffeurDuration(){
+  const dated=tripDates.filter(d=>(d||'').trim());
+  if(!dated.length) return { days:0, nights:0 };
+  const a=new Date(dated[0]+'T00:00:00'), b=new Date(dated[dated.length-1]+'T00:00:00');
+  if(isNaN(a)||isNaN(b)||b<a) return { days:0, nights:0 };
+  const nights=Math.round((b-a)/86400000);
+  return { days:nights+1, nights };
+}
 // the calendar days the car & driver-guide is retained (chauffeur is billed per day)
 function chauffeurDayList(){
   const startISO = (tripDates.find(d=>(d||'').trim()) || startParam || '');
@@ -881,7 +893,9 @@ async function createApiBooking(){
       vehicleType: (vehicleKey==='van') ? 'van' : 'car',
       serviceType: state.svc,
       customer,
-      quotedTotal
+      quotedTotal,
+      days: (state.svc==='chauffeur') ? tripDays : undefined,
+      driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined
     };
   } else if(isShared){
     endpoint = '/bookings/shared';

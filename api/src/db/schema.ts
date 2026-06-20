@@ -79,6 +79,10 @@ export const tripRequests = pgTable('trip_request', {
   stops: text('stops').array().notNull(),
   nights: integer('nights').array().notNull(),
   dates: text('dates').array(),
+  // Chauffeur-guide only: car-retention days (start→end inclusive) and driver
+  // accommodation nights (days − 1). Null for point-to-point transfers.
+  days: integer('days'),
+  driverNights: integer('driver_nights'),
 });
 
 export const corridors = pgTable('corridor', {
