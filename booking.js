@@ -821,7 +821,7 @@ window.goStep=function(n){
 };
 
 // ---- payment ----
-document.getElementById('pay-btn').addEventListener('click',()=>{
+document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // validate the lead traveller's contact details before payment
   const first=document.getElementById('f-first'), last=document.getElementById('f-last'),
         email=document.getElementById('f-email'), wa=document.getElementById('f-wa');
@@ -838,32 +838,63 @@ document.getElementById('pay-btn').addEventListener('click',()=>{
     document.getElementById('agree').closest('.addon').style.borderColor='var(--tomato)';
     return;
   }
-  // 1) show the PayHere redirect interstitial
+
+  const API = window.CEYLON_HOP_API;
+  // No backend configured → demo mode: simulated interstitial, then confirm.
+  if(!API){ return simulatePayThenConfirm(null); }
+
+  // Backend configured: create the real (draft) booking first.
+  let booking;
+  try { booking = await createApiBooking(); }
+  catch(e){ return showPayFailed(); }
+  if(!booking){ return simulatePayThenConfirm(null); }
+
+  // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
+  let checkout=null;
+  try{
+    const res = await fetch(API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',{method:'POST'});
+    if(res.ok) checkout = await res.json();
+  }catch(e){}
+
+  if(checkout && checkout.checkoutUrl && /payhere\.lk/.test(checkout.checkoutUrl) && window.payhere){
+    return startPayHere(checkout, booking);
+  }
+  // Backend without a real gateway (fake adapter) → simulated interstitial, real reference.
+  return simulatePayThenConfirm(booking);
+});
+
+// Demo / no real gateway: the simulated "Redirecting to PayHere…" interstitial, then the pass.
+function simulatePayThenConfirm(booking){
   const ov=document.getElementById('ph-overlay');
   document.getElementById('ph-amt').textContent=money(amountDueNow());
   document.getElementById('ph-msg').textContent='Redirecting you to PayHere…';
   document.getElementById('ph-spin').style.display='block';
   ov.classList.add('show');
-  // 2) simulate the hosted-page round trip
   setTimeout(()=>{ document.getElementById('ph-msg').textContent='Processing your payment securely…'; }, 1300);
-  setTimeout(()=>{
-    document.getElementById('ph-spin').style.display='none';
-    document.getElementById('ph-msg').innerHTML='✓ Payment approved — returning to Ceylon Hop…';
-  }, 2500);
-  setTimeout(async ()=>{
-    const ok = await finalizeBooking();
-    if(ok){ ov.classList.remove('show'); return; }
-    // booking didn't persist — surface it instead of showing a fake confirmation
-    document.getElementById('ph-spin').style.display='none';
-    document.getElementById('ph-msg').innerHTML='⚠️ We couldn’t complete your booking — please try again.';
-    setTimeout(()=>{
-      ov.classList.remove('show');
-      const d=document.getElementById('details-error');
-      if(d){ d.textContent='Your booking didn’t go through. Please check your connection and try again.'; d.hidden=false; }
-      const pb=document.getElementById('pay-btn'); if(pb) pb.scrollIntoView({behavior:'smooth',block:'center'});
-    }, 2000);
-  }, 3400);
-});
+  setTimeout(()=>{ document.getElementById('ph-spin').style.display='none';
+    document.getElementById('ph-msg').innerHTML='✓ Payment approved — returning to Ceylon Hop…'; }, 2500);
+  setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(booking); }, 3400);
+}
+
+// Real PayHere hosted checkout via the JS SDK (popup). The notify webhook is the source of
+// truth for "paid"; onCompleted just shows the customer their confirmation.
+function startPayHere(checkout, booking){
+  const payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
+  payhere.onCompleted = function(){ finalizeBooking(booking); };
+  payhere.onDismissed = function(){ showPayDismissed(); };
+  payhere.onError = function(){ showPayFailed(); };
+  payhere.startPayment(payment);
+}
+
+function showPayFailed(){
+  const d=document.getElementById('details-error');
+  if(d){ d.textContent='Your payment didn’t complete. Please try again.'; d.hidden=false; }
+  const pb=document.getElementById('pay-btn'); if(pb) pb.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function showPayDismissed(){
+  const d=document.getElementById('details-error');
+  if(d){ d.textContent='Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.'; d.hidden=false; }
+}
 
 // M7 — when a backend is configured, create a real booking and use its reference.
 // Handles all three flows: single transfer, multi-stop trip, and shared seat.
@@ -937,10 +968,9 @@ async function createApiBooking(){
   return await res.json();
 }
 
-async function finalizeBooking(){
-  let apiBooking;
-  try { apiBooking = await createApiBooking(); }
-  catch(e){ return false; } // backend was configured but the save failed — caller surfaces it
+// Render the confirmation / boarding pass. Takes the created booking (or null in demo
+// mode). Booking creation + payment happen in the pay-btn handler before this runs.
+function finalizeBooking(apiBooking){
   const ref = apiBooking ? apiBooking.reference
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
