@@ -191,8 +191,13 @@ function renderRouteMap(){
       <text class="rm-pin-label" x="${lx.toFixed(1)}" y="${(p.y+2.5).toFixed(1)}" text-anchor="${anchor}">${short}</text>
     </g>`;
   }
-  document.getElementById('rm-canvas').innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
+  // Real Google map (Embed API) when a key is configured; the SVG illustration is the fallback.
+  const mapsKey = window.CEYLON_MAPS_KEY;
+  const enc = s => encodeURIComponent(s.replace(/\s*\([^)]*\)/,'').replace(/\s*\/\s*/g,' ').trim() + ', Sri Lanka');
+  document.getElementById('rm-canvas').innerHTML = mapsKey
+    ? `<iframe title="Driving route from ${a.name} to ${b.name}" src="https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${enc(a.name)}&destination=${enc(b.name)}&mode=driving" style="width:100%;height:260px;border:0;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>`
+    : svg;
 
   const km=T.kmBetween(state.locFrom, state.locTo);
   const meta = km!=null

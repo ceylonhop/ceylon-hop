@@ -469,7 +469,18 @@ function renderMap(){
       <text class="tm-pin-label" x="${lx.toFixed(1)}" y="${(p.y+2.5).toFixed(1)}" text-anchor="${anchor}">${short}</text>
     </g>`;
   }).join('');
-  host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
+  const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
+  // Real Google map (Embed API, with waypoints) when a key is configured; SVG is the fallback.
+  const mapsKey=window.CEYLON_MAPS_KEY;
+  const enc=s=>encodeURIComponent(s.replace(/\s*\([^)]*\)/,'').replace(/\s*\/\s*/g,' ').trim()+', Sri Lanka');
+  if(mapsKey){
+    const names=pts.map(p=>p.name);
+    const wp=names.slice(1,-1).map(enc).join('|');
+    const src=`https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${enc(names[0])}&destination=${enc(names[names.length-1])}${wp?`&waypoints=${wp}`:''}&mode=driving`;
+    host.innerHTML=`<iframe title="Your route across Sri Lanka" src="${src}" style="width:100%;height:260px;border:0;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>`;
+  } else {
+    host.innerHTML=svg;
+  }
 }
 
 // ---- continue into the booking flow ----
