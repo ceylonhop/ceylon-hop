@@ -529,10 +529,22 @@ pass; don't let them block the first slices, but don't ship to production withou
   creates the booking in a *separate* transaction; if create fails, seats are held with no
   booking. Make hold + create one transaction (or compensate on failure).
 - **Rate limiting.** Public booking endpoints have none (spec wanted rate-limited public
-  routes) — add before scaling / exposing publicly.
+  routes) — **now urgent**: the API is deployed (Render) and baked into the live site, so
+  `/bookings/*` POST is publicly writable. Add per-IP limits before broad sharing.
 - **Tighten CORS.** Currently allows all origins (`*`); restrict to the real site domains
   for production.
-- **Fixed (this audit):** CORS enabled (M7 unblock) + a global JSON error handler.
+
+### Deployment + reliability (2026-06-19)
+- **Backend deployed** to Render free Web Service → `https://ceylon-hop-api.onrender.com`;
+  `booking.html` defaults the API flag to it (override `?api=<url>` / `?api=off`).
+- **Customer name split** into `first_name` + `last_name` columns (migration 0004);
+  `CustomerInput` now takes `firstName`/`lastName`; checkout no longer string-splits a name.
+- **No more fake confirmations.** When a backend is configured, a failed save now throws
+  (30s timeout) and the flow shows a retry error instead of a simulated `CH-XXXXX-YYYY` ref.
+- **Keep-alive** (`.github/workflows/keepalive.yml`) pings `/health` every 13 min so the
+  free instance doesn't cold-start. Free-tier still sleeps if the schedule lapses; upgrade
+  off free before launch.
+- **Fixed (earlier audit):** CORS enabled (M7 unblock) + a global JSON error handler.
 
 ---
 
