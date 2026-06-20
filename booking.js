@@ -723,11 +723,24 @@ function vanPrice(){
   if(vehPrices) return vehPrices.van;
   return null;
 }
+// price of an AC car for this journey (single transfer or whole trip)
+function carPrice(){
+  if(isTrip) return window.TRANSFERS.tripQuote(tripStops,'car').total;
+  if(vehPrices) return vehPrices.car;
+  return null;
+}
 // upgrade car → van when the party is over a car's capacity, and re-price
 window.switchToVan=function(){
   vehicleKey='van'; vehicleLabel='AC van (up to 6)';
   vehPax=VEH_CAP.van.pax; maxBags=VEH_CAP.van.bags;
   const vp=vanPrice(); if(vp!=null){ unit=vp; if(isTrip) tripBase=vp; }
+  render();
+};
+// downgrade van → car when the party fits a car again, and re-price (saves money)
+window.switchToCar=function(){
+  vehicleKey='car'; vehicleLabel='AC car (up to 3)';
+  vehPax=VEH_CAP.car.pax; maxBags=VEH_CAP.car.bags;
+  const cp=carPrice(); if(cp!=null){ unit=cp; if(isTrip) tripBase=cp; }
   render();
 };
 // free-cancellation window depends on the service type
@@ -801,6 +814,15 @@ function render(){
       } else {
         note.textContent=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — message us and we’ll arrange a larger vehicle.`;
       }
+    } else if(perVehicle && vehicleKey==='van' && pax<=VEH_CAP.car.pax && state.bags<=VEH_CAP.car.bags){
+      // party now fits an AC car again — recommend the cheaper vehicle to save money
+      const carP=carPrice(), vanP=(vehPrices?vehPrices.van:unit);
+      const save=(carP!=null && vanP!=null)?vanP-carP:null;
+      if(carP!=null && save!=null && save>0){
+        note.className='cap-note show ok';
+        note.innerHTML=`<b>An AC car fits your group</b> — ${pax} traveller${pax>1?'s':''}${state.bags>0?` · ${state.bags} bag${state.bags>1?'s':''}`:''}. Downgrade and save.`+
+          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ${money(save)}</button>`;
+      } else { note.className='cap-note'; note.textContent=''; }
     } else if(isShared && state.bags>freeBags){
       const extra=state.bags-freeBags;
       note.className='cap-note show ok';
