@@ -68,7 +68,6 @@ function legPrice(km, veh){
 // ---- state: an ordered list of transfer legs ----
 const params=new URLSearchParams(location.search);
 const startStops = (params.get('stops')||'Colombo Airport (CMB)|Sigiriya|Ella').split('|').map(s=>s.trim()).filter(Boolean);
-const startParam = params.get('start');
 // Optional per-stop nights (e.g. from a tour hand-off). Index i = nights at stops[i];
 // the final stop is a departure point and carries no nights.
 const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)||0);
@@ -93,9 +92,17 @@ const state = {
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
   legs: buildLegs(startStops, nightsParam)
 };
-// anchor the chosen start date on the first intercity transfer (a leading stay has no wire/date)
-const firstTransfer = state.legs.find(l=>l.type==='transfer');
-if(startParam && firstTransfer) firstTransfer.date = new Date(startParam+'T00:00:00');
+// Restore the travel dates the customer already chose: the booking step passes them back
+// as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
+// auto-fill from `start` — a tour hand-off carries a default start the customer never
+// picked, so legs stay blank and "Add your dates" means what it says (fixes tour auto-dates).
+const datesParam = (params.get('dates')||'').split(',');
+let _tIdx = 0;
+state.legs.forEach(l=>{
+  if(l.type!=='transfer') return;
+  const ds = (datesParam[_tIdx++]||'').trim();
+  if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())) l.date=d; }
+});
 if(state.pax>3) state.vehicle='van';
 
 // ---- datalist for Google-style place predictions ----
