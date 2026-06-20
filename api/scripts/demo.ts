@@ -15,7 +15,7 @@ const booking = {
   adults: 3,
   children: 1,
   bags: 4,
-  customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+  customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;

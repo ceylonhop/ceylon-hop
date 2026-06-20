@@ -866,9 +866,10 @@ document.getElementById('pay-btn').addEventListener('click',()=>{
 });
 
 // M7 — when a backend is configured, create a real booking and use its reference.
-// Handles single transfer and multi-stop trip; returns null (so the simulated flow
-// continues) when unset or on any failure, so default site behaviour is unchanged.
-// Shared-seat wiring needs a backend corridor lookup and lands next.
+// Handles all three flows: single transfer, multi-stop trip, and shared seat.
+// Returns null only when no backend is configured (demo mode, default site behaviour);
+// when a backend IS set, a failed save throws so the caller shows an error instead of a
+// fake confirmation.
 async function createApiBooking(){
   const API = window.CEYLON_HOP_API;
   if(!API) return null;
