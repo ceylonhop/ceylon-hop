@@ -867,6 +867,9 @@ async function createApiBooking(){
     whatsapp: document.getElementById('f-wa').value.trim(),
     country: document.getElementById('f-country').value
   };
+  // the price the customer was shown (minor units) — the backend records this, so the
+  // confirmation, the DB and the eventual charge all agree.
+  const quotedTotal = calcTotal() > 0 ? Math.round(calcTotal() * 100) : undefined;
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
@@ -877,7 +880,8 @@ async function createApiBooking(){
       pax: state.ad + state.ch,
       vehicleType: (vehicleKey==='van') ? 'van' : 'car',
       serviceType: state.svc,
-      customer
+      customer,
+      quotedTotal
     };
   } else if(isShared){
     endpoint = '/bookings/shared';
@@ -888,7 +892,8 @@ async function createApiBooking(){
       date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
       time: state.dep || undefined,
       seats: state.ad + state.ch,
-      customer
+      customer,
+      quotedTotal
     };
   } else {
     endpoint = '/bookings/single';
@@ -899,7 +904,8 @@ async function createApiBooking(){
       time: (state.flexTime || !state.dep) ? undefined : state.dep,
       vehicleType: (vehicleKey==='van') ? 'van' : 'car',
       adults: state.ad, children: state.ch, bags: state.bags,
-      customer
+      customer,
+      quotedTotal
     };
   }
   // A backend IS configured, so a failure here must surface — never fake a confirmation.

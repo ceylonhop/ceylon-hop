@@ -33,7 +33,7 @@ export function bookingRoutes(deps: {
 
     const { currency, total } = quoteSingleTransfer(parsed.data);
     const booking = await bookings.create(
-      { mode: 'single', input: parsed.data, total, currency },
+      { mode: 'single', input: parsed.data, total: parsed.data.quotedTotal ?? total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);
@@ -56,7 +56,7 @@ export function bookingRoutes(deps: {
 
     const { currency, total } = quoteTrip(parsed.data);
     const booking = await bookings.create(
-      { mode: 'trip', input: parsed.data, total, currency },
+      { mode: 'trip', input: parsed.data, total: parsed.data.quotedTotal ?? total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);
@@ -102,7 +102,7 @@ export function bookingRoutes(deps: {
       customer: req.customer,
     };
     const booking = await bookings.create(
-      { mode: 'shared', input, total, currency },
+      { mode: 'shared', input, total: req.quotedTotal ?? total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CustomerInput } from './singleTransfer';
+import { CustomerInput, QuotedTotal } from './singleTransfer';
 
 // A seat on a fixed daily corridor service. Unlike a private transfer the route and
 // departure time are fixed; the customer picks a corridor + date + how many seats.
@@ -23,6 +23,7 @@ export const SharedBookingRequest = z.object({
   time: z.string().min(1),
   seats: z.number().int().min(1),
   customer: CustomerInput,
+  quotedTotal: QuotedTotal,
 });
 
 export type SharedBookingRequest = z.infer<typeof SharedBookingRequest>;

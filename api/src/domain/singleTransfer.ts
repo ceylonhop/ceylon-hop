@@ -12,6 +12,13 @@ export const CustomerInput = z.object({
 
 export type CustomerInput = z.infer<typeof CustomerInput>;
 
+// The total the customer was quoted on the site, in minor units (cents). The booking
+// records THIS — the price they agreed to — instead of a recomputed server stub, so the
+// confirmation, the DB, and the eventual charge all match. Bounded to reject tampering
+// ($1–$1,000,000). Absent => fall back to the server quote (API-only callers / tests).
+// The authoritative server-side pricing engine replaces this passthrough in M11.
+export const QuotedTotal = z.number().int().min(100).max(100_000_000).optional();
+
 // The validated shape of a single-transfer booking request. `date`/`time` are optional —
 // an absent value means "flexible, confirm later" (matches the front-end's Decide-later).
 export const SingleTransferInput = z.object({
@@ -24,6 +31,7 @@ export const SingleTransferInput = z.object({
   children: z.number().int().min(0),
   bags: z.number().int().min(0),
   customer: CustomerInput,
+  quotedTotal: QuotedTotal,
 });
 
 export type SingleTransferInput = z.infer<typeof SingleTransferInput>;

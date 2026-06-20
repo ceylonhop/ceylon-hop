@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CustomerInput } from './singleTransfer';
+import { CustomerInput, QuotedTotal } from './singleTransfer';
 
 // A multi-stop trip from the planner/tour hand-off. `nights` is per stop; `dates` is one
 // per leg (the gap between consecutive stops) and optional/flexible. serviceType picks
@@ -12,6 +12,7 @@ export const TripInput = z.object({
   vehicleType: z.enum(['car', 'van']),
   serviceType: z.enum(['private', 'chauffeur']),
   customer: CustomerInput,
+  quotedTotal: QuotedTotal,
 });
 
 export type TripInput = z.infer<typeof TripInput>;

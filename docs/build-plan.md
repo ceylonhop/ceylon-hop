@@ -520,11 +520,15 @@ pass; don't let them block the first slices, but don't ship to production withou
   `DATABASE_URL_TEST` and truncate between tests.
 
 ### From the pre-M7 audit (2026-06-19)
-- **Pricing — DECIDED 2026-06-19: keep the server stub for now.** The API computes its own
-  stub total (`quoteSingleTransfer`/`quoteTrip`/`quoteShared`) and ignores any client price.
-  Consequence for M7: the booking/confirmation must show the **API's** total, not the
-  marketing-search price from `transfers-data.js` (they differ). Spec §0.3's "trust the
-  front-end total" is deferred; real prices arrive with the pricing engine (M11).
+- **Pricing — REVISED 2026-06-19: store the quoted price (spec §0.3).** The earlier
+  "ignore client price, use the stub" decision created a real mismatch (site showed $70,
+  DB stored a $50 stub). Now the site sends `quotedTotal` (minor units = the price the
+  customer was shown) and the API records it; the stub (`quoteSingleTransfer`/`quoteTrip`/
+  `quoteShared`) is only a fallback when `quotedTotal` is absent (API-only callers/tests).
+  `quotedTotal` is bounded ($1–$1M) to reject tampering; bookings are still manually
+  confirmed before charging, and writes are rate-limited. The **authoritative** server-side
+  engine (real rate_card + Google distances for typed addresses) is still M11; this just
+  makes confirmation = DB = charge agree today.
 - **Shared seat-hold leak.** The `/bookings/shared` route holds seats (committed) then
   creates the booking in a *separate* transaction; if create fails, seats are held with no
   booking. Make hold + create one transaction (or compensate on failure).
