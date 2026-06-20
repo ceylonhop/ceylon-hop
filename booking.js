@@ -192,12 +192,10 @@ function renderRouteMap(){
     </g>`;
   }
   const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
-  // Real Google map (Embed API) when a key is configured; the SVG illustration is the fallback.
-  const mapsKey = window.CEYLON_MAPS_KEY;
-  const enc = s => encodeURIComponent(s.replace(/\s*\([^)]*\)/,'').replace(/\s*\/\s*/g,' ').trim() + ', Sri Lanka');
-  document.getElementById('rm-canvas').innerHTML = mapsKey
-    ? `<iframe title="Driving route from ${a.name} to ${b.name}" src="https://www.google.com/maps/embed/v1/directions?key=${mapsKey}&origin=${enc(a.name)}&destination=${enc(b.name)}&mode=driving" style="width:100%;height:260px;border:0;display:block" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>`
-    : svg;
+  // Clean Google map (JS API: route line, no panel/markers) with a loading state; SVG fallback.
+  const canvas = document.getElementById('rm-canvas');
+  if(window.CH_MAP){ window.CH_MAP.renderRoute(canvas, [a.name, b.name], { onFail(){ canvas.innerHTML = svg; } }); }
+  else { canvas.innerHTML = svg; }
 
   const km=T.kmBetween(state.locFrom, state.locTo);
   const meta = km!=null
