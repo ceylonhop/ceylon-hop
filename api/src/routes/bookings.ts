@@ -7,14 +7,16 @@ import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
+import type { MapsAdapter } from '../adapters/maps';
 
 export function bookingRoutes(deps: {
   bookings: BookingRepo;
   payments: PaymentRepo;
   adapter: PaymentAdapter;
   departures: DepartureRepo;
+  maps: MapsAdapter;
 }) {
-  const { bookings, payments, adapter, departures } = deps;
+  const { bookings, payments, adapter, departures, maps } = deps;
   const r = new Hono();
 
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
@@ -32,8 +34,22 @@ export function bookingRoutes(deps: {
     }
 
     const { currency, total } = quoteSingleTransfer(parsed.data);
+    // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
+    let distance = null;
+    try {
+      distance = await maps.distance(parsed.data.from, parsed.data.to);
+    } catch {
+      distance = null;
+    }
     const booking = await bookings.create(
-      { mode: 'single', input: parsed.data, total: parsed.data.quotedTotal ?? total, currency },
+      {
+        mode: 'single',
+        input: parsed.data,
+        total: parsed.data.quotedTotal ?? total,
+        currency,
+        distanceKm: distance?.km ?? null,
+        durationMin: distance?.durationMin ?? null,
+      },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);

@@ -39,6 +39,9 @@ export const transferRequests = pgTable('transfer_request', {
   adults: integer('adults').notNull(),
   children: integer('children').notNull(),
   bags: integer('bags').notNull(),
+  // M8 — road distance + driving duration from the maps adapter. Null when unresolved.
+  distanceKm: integer('distance_km'),
+  durationMin: integer('duration_min'),
 });
 
 export const payments = pgTable('payments', {

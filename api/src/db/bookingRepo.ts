@@ -7,7 +7,15 @@ import { assertTransition, type BookingStatus } from '../domain/status';
 // A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
 // `mode`. `input.customer` is common to all three shapes.
 export type NewBooking =
-  | { mode: 'single'; input: SingleTransferInput; total: number; currency: string }
+  | {
+      mode: 'single';
+      input: SingleTransferInput;
+      total: number;
+      currency: string;
+      // Road distance + driving duration from the maps adapter (M8). Null when unresolved.
+      distanceKm?: number | null;
+      durationMin?: number | null;
+    }
   | { mode: 'trip'; input: TripInput; total: number; currency: string }
   | { mode: 'shared'; input: SharedInput; total: number; currency: string };
 

@@ -8,6 +8,7 @@ import { PostgresConciergeTaskRepo } from './db/postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
+import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -23,6 +24,10 @@ const adapter =
       })
     : new FakePaymentAdapter();
 
+const maps = config.GOOGLE_MAPS_API_KEY
+  ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
+  : new FakeMapsAdapter();
+
 const { db, sql } = createDb(config.DATABASE_URL);
 await seedCorridors(sql);
 const app = createApp({
@@ -31,6 +36,7 @@ const app = createApp({
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   adapter,
+  maps,
 });
 
 serve({ fetch: app.fetch, port: config.PORT });

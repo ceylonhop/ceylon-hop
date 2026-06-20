@@ -18,6 +18,9 @@ const Env = z.object({
   // Per-IP rate limit on booking writes.
   RATE_LIMIT_MAX: z.coerce.number().default(20),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
+  // Google Maps (M8). When set, the server uses the real Distance Matrix adapter; otherwise
+  // the fake (haversine) adapter. Restrict the key to the Distance Matrix API.
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
 });
 
 export const config = Env.parse(process.env);

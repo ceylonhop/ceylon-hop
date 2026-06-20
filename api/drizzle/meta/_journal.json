@@ -43,6 +43,13 @@
       "when": 1781926604079,
       "tag": "0005_chauffeur_days",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781990455121,
+      "tag": "0006_transfer_distance",
+      "breakpoints": true
     }
   ]
 }

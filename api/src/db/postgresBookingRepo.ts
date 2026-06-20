@@ -78,6 +78,8 @@ export class PostgresBookingRepo implements BookingRepo {
     return {
       ...base,
       mode: 'single',
+      distanceKm: t.distanceKm ?? undefined,
+      durationMin: t.durationMin ?? undefined,
       input: {
         from: t.fromPlace,
         to: t.toPlace,
@@ -156,6 +158,8 @@ export class PostgresBookingRepo implements BookingRepo {
           adults: t.adults,
           children: t.children,
           bags: t.bags,
+          distanceKm: b.distanceKm ?? null,
+          durationMin: b.durationMin ?? null,
         });
       }
       return bk;

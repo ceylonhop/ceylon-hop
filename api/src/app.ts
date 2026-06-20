@@ -6,6 +6,7 @@ import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/concierg
 import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
+import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
@@ -19,6 +20,7 @@ export interface AppDeps {
   departures?: DepartureRepo;
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
+  maps?: MapsAdapter;
   adminApiKey?: string;
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
@@ -32,6 +34,7 @@ export function createApp(deps: AppDeps = {}) {
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
+  const maps = deps.maps ?? new FakeMapsAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
@@ -60,7 +63,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures }));
+  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin', adminRoutes({ bookings, adminApiKey }));
   return app;

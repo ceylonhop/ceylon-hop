@@ -35,6 +35,19 @@ describe('POST /bookings/single', () => {
     expect(b.currency).toBe('USD');
   });
 
+  it('enriches the booking with road distance + duration (maps adapter)', async () => {
+    const app = createApp();
+    const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' })).json();
+    expect(b.distanceKm).toBeGreaterThan(150); // ~180 km via the fake's haversine estimate
+    expect(b.durationMin).toBeGreaterThan(0);
+  });
+
+  it('leaves distance null when the route is unrecognised (fake)', async () => {
+    const app = createApp();
+    const b = await (await post(app, { ...valid, from: 'Somewhere', to: 'Elsewhere' })).json();
+    expect(b.distanceKm).toBeNull();
+  });
+
   it('rejects an invalid body (400)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, adults: 0 });
