@@ -4,6 +4,7 @@ import {
   type Corridor,
   type SharedDeparture,
   DEFAULT_CORRIDORS,
+  corridorIdForRoute,
 } from './departureRepo';
 
 // Idempotently upsert the corridor catalogue (run at server start + in tests).
@@ -34,14 +35,10 @@ export class PostgresDepartureRepo implements DepartureRepo {
   }
 
   async findCorridorByRoute(from: string, to: string): Promise<Corridor | null> {
-    const rows = await this.sql<
-      { id: string; from_place: string; to_place: string; seat_price: number; seat_capacity: number }[]
-    >`select id, from_place, to_place, seat_price, seat_capacity from corridor
-      where lower(from_place) = lower(${from}) and lower(to_place) = lower(${to}) limit 1`;
-    const r = rows[0];
-    return r
-      ? { id: r.id, fromPlace: r.from_place, toPlace: r.to_place, seatPrice: r.seat_price, seatCapacity: r.seat_capacity }
-      : null;
+    // The corridor catalogue (with intermediate stops) lives in code; the DB only stores
+    // each corridor's endpoints. Resolve the corridor id from the stops, then read its row.
+    const id = corridorIdForRoute(from, to);
+    return id ? this.getCorridor(id) : null;
   }
 
   async holdSeats(args: {

@@ -30,10 +30,44 @@ export interface DepartureRepo {
   }): Promise<SharedDeparture | null>;
 }
 
-export const DEFAULT_CORRIDORS: Corridor[] = [
-  { id: 'cmb-ella', fromPlace: 'Colombo Airport', toPlace: 'Ella', seatPrice: 3500, seatCapacity: 12 },
-  { id: 'cmb-galle', fromPlace: 'Colombo Airport', toPlace: 'Galle', seatPrice: 3000, seatCapacity: 12 },
+// Shared corridors — these MIRROR the frozen front-end (transfers-data.js `CORRIDORS`).
+// `stops` are place NAMES exactly as the site sends them (booking.js posts the place
+// name for from/to). A shared seat exists between ANY two stops on one corridor, at the
+// corridor's flat seat price — same rule as the front-end's `sharedOption`.
+const SHARED_CAPACITY = 12;
+interface CorridorRoute {
+  id: string;
+  stops: string[];
+  seat: number; // whole USD per seat (front-end value)
+}
+const CORRIDOR_ROUTES: CorridorRoute[] = [
+  { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19 },
+  { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21 },
+  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23 },
+  { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14 },
+  { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16 },
+  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24 },
 ];
+
+export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
+  id: c.id,
+  fromPlace: c.stops[0],
+  toPlace: c.stops[c.stops.length - 1],
+  seatPrice: c.seat * 100, // minor units
+  seatCapacity: SHARED_CAPACITY,
+}));
+
+// Resolve which corridor carries both endpoints (any direction), first match wins —
+// mirrors the front-end iteration order. Used when no corridorId is supplied.
+export function corridorIdForRoute(from: string, to: string): string | null {
+  const f = from.trim().toLowerCase();
+  const t = to.trim().toLowerCase();
+  for (const c of CORRIDOR_ROUTES) {
+    const names = c.stops.map((s) => s.toLowerCase());
+    if (names.includes(f) && names.includes(t)) return c.id;
+  }
+  return null;
+}
 
 export class InMemoryDepartureRepo implements DepartureRepo {
   private corridors = new Map<string, Corridor>();
@@ -48,12 +82,8 @@ export class InMemoryDepartureRepo implements DepartureRepo {
   }
 
   async findCorridorByRoute(from: string, to: string): Promise<Corridor | null> {
-    const f = from.trim().toLowerCase();
-    const t = to.trim().toLowerCase();
-    for (const c of this.corridors.values()) {
-      if (c.fromPlace.toLowerCase() === f && c.toPlace.toLowerCase() === t) return c;
-    }
-    return null;
+    const id = corridorIdForRoute(from, to);
+    return id ? this.getCorridor(id) : null;
   }
 
   async holdSeats(args: {

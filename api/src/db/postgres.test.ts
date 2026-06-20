@@ -96,9 +96,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const shared: NewBooking = {
       mode: 'shared',
       input: {
-        corridorId: 'cmb-ella',
+        corridorId: 'hill-line',
         date: '2026-07-20',
-        time: '07:30',
+        time: '08:00',
         seats: 2,
         customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
       },
@@ -109,7 +109,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const got = await bookings.get(created.id);
     expect(got?.mode).toBe('shared');
     if (got?.mode !== 'shared') throw new Error('expected a shared booking');
-    expect(got.input.corridorId).toBe('cmb-ella');
+    expect(got.input.corridorId).toBe('hill-line');
     expect(got.input.seats).toBe(2);
   });
 

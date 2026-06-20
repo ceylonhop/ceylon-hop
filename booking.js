@@ -67,6 +67,7 @@ let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 // upgrade (mirrors the passenger over-capacity flow); the van is the hard ceiling
 const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
+const sharedCorridorId = params.get('corridor') || '';
 
 // trip start date (for deposit-window logic + chauffeur day count)
 const startParam = params.get('start') || params.get('date');
@@ -868,6 +869,7 @@ async function createApiBooking(){
   } else if(isShared){
     endpoint = '/bookings/shared';
     payload = {
+      corridorId: sharedCorridorId || undefined,
       from: state.locFrom || r.stops[0],
       to: state.locTo || r.stops[r.stops.length-1],
       date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),

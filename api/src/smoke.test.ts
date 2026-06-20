@@ -102,9 +102,9 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const app = createApp({ adapter, email, conciergeTasks, adminApiKey: 'smoke-key' });
 
     const shared = {
-      corridorId: 'cmb-ella',
+      corridorId: 'hill-line',
       date: '2026-07-20',
-      time: '07:30',
+      time: '08:00',
       seats: 2,
       customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
     };

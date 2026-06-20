@@ -4,9 +4,9 @@ import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 
 const valid = {
-  corridorId: 'cmb-ella',
+  corridorId: 'hill-line', // Kandy → Nuwara Eliya → Ella, $21/seat
   date: '2026-07-20',
-  time: '07:30',
+  time: '08:00',
   seats: 2,
   customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
@@ -26,7 +26,7 @@ describe('POST /bookings/shared', () => {
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.mode).toBe('shared');
-    expect(b.total).toBe(7000); // 2 seats × 3500 (cmb-ella)
+    expect(b.total).toBe(4200); // 2 seats × $21 (hill-line)
   });
 
   it('400 for an unknown corridor', async () => {
@@ -38,11 +38,22 @@ describe('POST /bookings/shared', () => {
     const app = createApp();
     const { corridorId: _omit, ...byRoute } = valid;
     void _omit;
-    const res = await postShared(app, { ...byRoute, from: 'Colombo Airport', to: 'Ella', seats: 1 });
+    const res = await postShared(app, { ...byRoute, from: 'Kandy', to: 'Ella', seats: 1 });
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.mode).toBe('shared');
-    expect(b.input.corridorId).toBe('cmb-ella');
+    expect(b.input.corridorId).toBe('hill-line');
+  });
+
+  it('resolves a mid-corridor pair (neither endpoint is the corridor terminus)', async () => {
+    const app = createApp();
+    const { corridorId: _o2, ...byRoute } = valid;
+    void _o2;
+    // Negombo → Kandy both sit on airport-cultural, but neither is its first/last stop
+    const res = await postShared(app, { ...byRoute, from: 'Negombo', to: 'Kandy', time: '07:30', seats: 1 });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.corridorId).toBe('airport-cultural');
   });
 
   it('400 when from/to has no matching corridor', async () => {

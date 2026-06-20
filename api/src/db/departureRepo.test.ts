@@ -4,15 +4,15 @@ import { InMemoryDepartureRepo, type Corridor } from './departureRepo';
 describe('InMemoryDepartureRepo', () => {
   it('exposes seeded corridors', async () => {
     const repo = new InMemoryDepartureRepo();
-    expect((await repo.getCorridor('cmb-ella'))?.toPlace).toBe('Ella');
+    expect((await repo.getCorridor('hill-line'))?.toPlace).toBe('Ella');
     expect(await repo.getCorridor('nope')).toBeNull();
   });
 
   it('holds seats and reflects the running total', async () => {
     const repo = new InMemoryDepartureRepo();
-    const a = await repo.holdSeats({ corridorId: 'cmb-ella', date: '2026-07-20', time: '07:30', seats: 2 });
+    const a = await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 2 });
     expect(a?.seatsBooked).toBe(2);
-    const b = await repo.holdSeats({ corridorId: 'cmb-ella', date: '2026-07-20', time: '07:30', seats: 3 });
+    const b = await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 3 });
     expect(b?.seatsBooked).toBe(5);
   });
 

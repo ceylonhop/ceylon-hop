@@ -146,7 +146,7 @@ if (shared) {
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
       <span class="chip">${ICONS.ck} Meet other travelers</span>
     </div>
-    <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(',') })}">Book a seat ${ICON.arrow}</a>
+    <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;
 } else {
   noShare = `

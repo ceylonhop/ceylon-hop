@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { SharedInput } from './shared';
 
 const valid = {
-  corridorId: 'cmb-ella',
+  corridorId: 'hill-line',
   date: '2026-07-20',
-  time: '07:30',
+  time: '08:00',
   seats: 2,
   customer: { name: 'Maya', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
