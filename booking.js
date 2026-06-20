@@ -86,7 +86,9 @@ const state={
   addons: new Set(),
   bags: Math.min(2, maxBags),
   locFrom: '',
-  locTo: ''
+  locTo: '',
+  locFromGeo: null,   // {name,address,lat,lng} when picked from Google Places
+  locToGeo: null
 };
 
 // ---- summary setup ----
@@ -114,96 +116,163 @@ locFrom.value = r.stops[0];
 locTo.value   = r.stops[r.stops.length-1];
 state.locFrom = locFrom.value;
 state.locTo   = locTo.value;
+let _rmTimer=null;
+function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
+const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
+
 function onLoc(){
   state.locFrom = locFrom.value.trim();
   state.locTo   = locTo.value.trim();
-  render(); checkWhere(); renderRouteMap();
+  render(); checkWhere(); scheduleRouteMap();
 }
 
-// Custom autocomplete: filter known places; if nothing matches, offer a
-// "search the map" fallback (stands in for a live Google Places lookup).
-function attachAC(input, menu){
-  let active=-1, items=[];
+// Pickup/drop-off autocomplete. With the Maps key + Places API we show live
+// Google suggestions restricted to Sri Lanka; otherwise we fall back to the
+// built-in list of known places so the field still works offline.
+function attachAC(input, menu, which){
+  let active=-1, els=[], data=[], seq=0;
   const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
-  const searchIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
-  function close(){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; items=[]; }
-  function choose(val){ input.value=val; onLoc(); close(); }
-  function build(){
-    const q=input.value.trim(), ql=q.toLowerCase();
-    let matches = (q ? ACPLACES.filter(p=>p.toLowerCase().includes(ql)) : ACPLACES.slice(0,6)).slice(0,6);
-    let html = matches.map(m=>`<div class="ac-item" data-v="${m.replace(/"/g,'&quot;')}"><span class="ac-ic">${pinIco}</span><span class="ac-tx"><b>${m}</b></span></div>`).join('');
-    // google-search fallback only when the typed place isn't in our list at all
-    if(q.length>=3 && matches.length===0){
-      html += `<div class="ac-item search" data-v="${q.replace(/"/g,'&quot;')}"><span class="ac-ic">${searchIco}</span><span class="ac-tx"><b>Use &ldquo;${q}&rdquo;</b><small>Search this address on the map</small></span></div>`;
-      html += `<div class="ac-gmap">via <b>Google&nbsp;Maps</b></div>`;
+  function close(){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; }
+  function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
+
+  async function choose(i){
+    const d=data[i]; if(!d) return;
+    input.value=d.label; onLoc(); close();
+    if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
+      const geo = await window.CH_MAP.resolvePick(d.item);
+      setGeo(which, geo);
+      if(geo && geo.name){ input.value=geo.name; onLoc(); }
+      renderRouteMap();
+    } else {
+      setGeo(which, null);
+      renderRouteMap();
     }
-    if(!html){ close(); return; }
-    menu.innerHTML=html; menu.classList.add('open');
-    items=[...menu.querySelectorAll('.ac-item')]; active=-1;
-    items.forEach((it,i)=>{
-      it.addEventListener('mousedown',e=>{ e.preventDefault(); choose(it.dataset.v); });
+  }
+
+  function renderMenu(){
+    if(!data.length){ close(); return; }
+    menu.innerHTML = data.map(d=>{
+      const sub = d.secondary ? `<small>${acEsc(d.secondary)}</small>` : '';
+      return `<div class="ac-item"><span class="ac-ic">${pinIco}</span><span class="ac-tx"><b>${acEsc(d.main||d.label)}</b>${sub}</span></div>`;
+    }).join('');
+    menu.classList.add('open');
+    els=[...menu.querySelectorAll('.ac-item')]; active=-1;
+    els.forEach((it,i)=>{
+      it.addEventListener('mousedown',e=>{ e.preventDefault(); choose(i); });
       it.addEventListener('mouseenter',()=>{ active=i; paint(); });
     });
   }
-  function paint(){ items.forEach((it,i)=>it.classList.toggle('active',i===active)); }
-  input.addEventListener('input',()=>{ onLoc(); build(); });
+
+  function localList(qs){
+    const ql=qs.toLowerCase();
+    const matches=(qs?ACPLACES.filter(p=>p.toLowerCase().includes(ql)):ACPLACES.slice(0,6)).slice(0,6);
+    return matches.map(m=>({kind:'local', label:m, main:m}));
+  }
+
+  async function build(){
+    const qs=input.value.trim();
+    const mySeq=++seq;
+    // live Google suggestions when available; fall back to the offline list
+    if(window.CH_MAP && window.CH_MAP.suggest && window.CEYLON_MAPS_KEY && qs.length>=2){
+      let sug=[];
+      try{ sug=await window.CH_MAP.suggest(qs); }catch(e){ sug=[]; }
+      if(mySeq!==seq) return;            // a newer keystroke already fired
+      if(sug.length){
+        data = sug.slice(0,6).map(s=>({kind:'google', label:s.text, main:s.main, secondary:s.secondary, item:s}));
+        renderMenu(); return;
+      }
+    }
+    if(mySeq!==seq) return;
+    data = localList(qs);
+    renderMenu();
+  }
+
+  input.addEventListener('input',()=>{ setGeo(which, null); onLoc(); build(); });
   input.addEventListener('focus',build);
   input.addEventListener('keydown',e=>{
     if(!menu.classList.contains('open')) return;
-    if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(items.length-1,active+1); paint(); }
+    if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(els.length-1,active+1); paint(); }
     else if(e.key==='ArrowUp'){ e.preventDefault(); active=Math.max(0,active-1); paint(); }
-    else if(e.key==='Enter'){ if(active>=0){ e.preventDefault(); choose(items[active].dataset.v); } }
+    else if(e.key==='Enter'){ if(active>=0){ e.preventDefault(); choose(active); } }
     else if(e.key==='Escape'){ close(); }
   });
-  input.addEventListener('blur',()=>setTimeout(close,120));
+  input.addEventListener('blur',()=>setTimeout(close,150));
 }
-attachAC(locFrom, document.getElementById('ac-from'));
-attachAC(locTo, document.getElementById('ac-to'));
+attachAC(locFrom, document.getElementById('ac-from'), 'from');
+attachAC(locTo, document.getElementById('ac-to'), 'to');
 
 // ---- route map on the Where step (Google-Maps-backed in production) ----
 // Plots the pickup + drop-off on a stylised Sri Lanka map once both ends resolve.
 function renderRouteMap(){
+  clearTimeout(_rmTimer);
   const host=document.getElementById('route-map');
   if(!host || isTrip) return; // trip mode shows the full itinerary route elsewhere
   const T=window.TRANSFERS;
-  const a = T && state.locFrom ? T.resolvePlace(state.locFrom) : null;
-  const b = T && state.locTo   ? T.resolvePlace(state.locTo)   : null;
-  if(!a || !b){ host.hidden=true; return; }
+  const fromName=state.locFrom, toName=state.locTo;
+  if(!fromName || !toName){ host.hidden=true; return; }
   host.hidden=false;
 
-  const W=344, H=250, padX=80, padY=44;
-  const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
-  const proj=(lat,lng)=>({
-    x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX),
-    y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY)
-  });
-  const pa=proj(a.lat,a.lng), pb=proj(b.lat,b.lng);
-  const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
-  const line=`<path d="M${pa.x.toFixed(1)} ${pa.y.toFixed(1)} L${pb.x.toFixed(1)} ${pb.y.toFixed(1)}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 7"/>`;
-  function pin(p,fill,num,name){
-    const labelLeft = p.x>W*0.58;
-    const lx = labelLeft ? p.x-11 : p.x+11;
-    const anchor = labelLeft ? 'end' : 'start';
-    const short=name.replace(/\s*\(.*?\)/,'');
-    return `<g>
-      <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="8.5" fill="${fill}" stroke="#fff" stroke-width="2"/>
-      <text class="rm-pin-num" x="${p.x.toFixed(1)}" y="${(p.y+2.6).toFixed(1)}" text-anchor="middle">${num}</text>
-      <text class="rm-pin-label" x="${lx.toFixed(1)}" y="${(p.y+2.5).toFixed(1)}" text-anchor="${anchor}">${short}</text>
-    </g>`;
-  }
-  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
-  // Clean Google map (JS API: route line, no panel/markers) with a loading state; SVG fallback.
-  const canvas = document.getElementById('rm-canvas');
-  if(window.CH_MAP){ window.CH_MAP.renderRoute(canvas, [a.name, b.name], { onFail(){ canvas.innerHTML = svg; } }); }
-  else { canvas.innerHTML = svg; }
+  const short = n => (n||'').replace(/\s*\(.*?\)/,'');
+  // local coords only resolve for known places; typed Google places won't have them
+  const a = T ? T.resolvePlace(fromName) : null;
+  const b = T ? T.resolvePlace(toName)   : null;
 
-  const km=T.kmBetween(state.locFrom, state.locTo);
-  const meta = km!=null
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg><span><b>${km} km</b> · about ${T.durationText(km)} drive</span>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span>Distance confirmed on request</span>`;
-  document.getElementById('rm-bar').innerHTML =
-    `<div class="rm-route"><span>${a.name.replace(/\s*\(.*?\)/,'')}</span><span class="ar">→</span><span>${b.name.replace(/\s*\(.*?\)/,'')}</span></div>`+
-    `<div class="rm-meta">${meta}</div>`;
+  // Stylised-island SVG fallback — only drawable when both ends are known places.
+  let svg='';
+  if(a && b){
+    const W=344, H=250, padX=80, padY=44;
+    const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
+    const proj=(lat,lng)=>({
+      x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX),
+      y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY)
+    });
+    const pa=proj(a.lat,a.lng), pb=proj(b.lat,b.lng);
+    const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
+    const line=`<path d="M${pa.x.toFixed(1)} ${pa.y.toFixed(1)} L${pb.x.toFixed(1)} ${pb.y.toFixed(1)}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="1 7"/>`;
+    const pin=(p,fill,num,name)=>{
+      const labelLeft = p.x>W*0.58;
+      const lx = labelLeft ? p.x-11 : p.x+11;
+      const anchor = labelLeft ? 'end' : 'start';
+      return `<g>
+        <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="8.5" fill="${fill}" stroke="#fff" stroke-width="2"/>
+        <text class="rm-pin-num" x="${p.x.toFixed(1)}" y="${(p.y+2.6).toFixed(1)}" text-anchor="middle">${num}</text>
+        <text class="rm-pin-label" x="${lx.toFixed(1)}" y="${(p.y+2.5).toFixed(1)}" text-anchor="${anchor}">${short(name)}</text>
+      </g>`;
+    };
+    svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
+  }
+
+  // distance/time bar — shows the REAL Google route once it resolves, falling
+  // back to the offline straight-line estimate while loading / if routing fails.
+  const truck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg>';
+  const info='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
+  const minsToText=mins=>{ const h=Math.floor(mins/60), m=mins%60; if(h<=0) return `${Math.max(5,m)} min`; return m>=8?`${h}h ${m}m`:`${h}h`; };
+  const setBar=(km,durText)=>{
+    const meta = km!=null
+      ? `${truck}<span><b>${km} km</b> · about ${durText} drive</span>`
+      : `${info}<span>Distance confirmed on request</span>`;
+    const bar=document.getElementById('rm-bar');
+    if(bar) bar.innerHTML =
+      `<div class="rm-route"><span>${short(fromName)}</span><span class="ar">→</span><span>${short(toName)}</span></div>`+
+      `<div class="rm-meta">${meta}</div>`;
+  };
+  const localKm = T ? T.kmBetween(fromName, toName) : null;
+  setBar(localKm, localKm!=null ? T.durationText(localKm) : null);
+
+  // Clean Google map (route line, no panel/markers) with a loading state; SVG fallback.
+  const canvas=document.getElementById('rm-canvas');
+  const showFallback=()=>{ canvas.innerHTML = svg; if(!svg) host.hidden=true; };
+  if(window.CH_MAP && window.CH_MAP.renderRoute){
+    const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
+    const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
+    window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+      onFail: showFallback,
+      onRoute: ({km, durationMin}) => setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null)),
+    });
+  } else {
+    showFallback();
+  }
 }
 
 // ---- TRIP MODE: itinerary route + service chooser instead of single locations ----

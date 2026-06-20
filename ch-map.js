@@ -43,6 +43,9 @@
 
   // Place names → geocodable query (drop "(CMB)"/slashes, anchor to Sri Lanka).
   const q = (s) => (s || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka';
+  // A stop may be a name string OR a {lat,lng} from a picked Places result —
+  // exact coords route more accurately than re-geocoding the name.
+  const toLoc = (s) => (s && typeof s === 'object' && s.lat != null) ? { lat: s.lat, lng: s.lng } : q(s);
 
   // host: container element. names: ordered place-name strings (>=2). opts.onFail: SVG fallback.
   async function renderRoute(host, names, opts) {
@@ -71,6 +74,10 @@
     try {
       await loadJs(key);
       const map = new google.maps.Map(mapDiv, {
+        // explicit centre/zoom on Sri Lanka so base tiles load immediately —
+        // the renderer re-fits to the route once it resolves (avoids grey tiles).
+        center: { lat: 7.87, lng: 80.77 },
+        zoom: 7,
         disableDefaultUI: true,
         zoomControl: true,
         clickableIcons: false,
@@ -83,9 +90,9 @@
       });
       new google.maps.DirectionsService().route(
         {
-          origin: q(stops[0]),
-          destination: q(stops[stops.length - 1]),
-          waypoints: stops.slice(1, -1).map((n) => ({ location: q(n), stopover: true })),
+          origin: toLoc(stops[0]),
+          destination: toLoc(stops[stops.length - 1]),
+          waypoints: stops.slice(1, -1).map((n) => ({ location: toLoc(n), stopover: true })),
           travelMode: google.maps.TravelMode.DRIVING,
         },
         (res, status) => {
@@ -95,6 +102,19 @@
             renderer.setDirections(res);
             done = true;
             wrap.classList.add('ready');
+            // report the REAL road distance + drive time so callers can show a
+            // figure that matches the route on the map (not an offline estimate).
+            if (opts.onRoute) {
+              try {
+                const legs = (res.routes[0] && res.routes[0].legs) || [];
+                let meters = 0, secs = 0;
+                legs.forEach((l) => {
+                  meters += l.distance ? l.distance.value : 0;
+                  secs += l.duration ? l.duration.value : 0;
+                });
+                opts.onRoute({ km: Math.round(meters / 1000), durationMin: Math.round(secs / 60) });
+              } catch (e) { /* leave the estimate in place */ }
+            }
           } else {
             fail();
           }
@@ -106,5 +126,63 @@
     }
   }
 
-  window.CH_MAP = { renderRoute };
+  // ---- Places autocomplete (new Places API) ----
+  let placesReady = null;
+  let sessionToken = null;
+  const ftext = (x) => (x && x.text != null ? x.text : x ? String(x) : '');
+
+  function loadPlaces(key) {
+    if (placesReady) return placesReady;
+    placesReady = loadJs(key).then(() => google.maps.importLibrary('places'));
+    return placesReady;
+  }
+
+  // Live suggestions restricted to Sri Lanka. Returns [] on any failure so the
+  // caller can fall back to its offline list.
+  async function suggest(input) {
+    const key = window.CEYLON_MAPS_KEY;
+    const text = (input || '').trim();
+    if (!key || text.length < 1) return [];
+    try {
+      const { AutocompleteSuggestion, AutocompleteSessionToken } = await loadPlaces(key);
+      if (!sessionToken) sessionToken = new AutocompleteSessionToken();
+      const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: text,
+        includedRegionCodes: ['lk'],
+        sessionToken,
+      });
+      return (suggestions || [])
+        .map((s) => s.placePrediction)
+        .filter(Boolean)
+        .map((p) => ({
+          text: ftext(p.text),
+          main: ftext(p.mainText) || ftext(p.text),
+          secondary: ftext(p.secondaryText),
+          _p: p,
+        }));
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Resolve a picked suggestion to coordinates; ends the billing session.
+  async function resolvePick(item) {
+    try {
+      const place = item._p.toPlace();
+      await place.fetchFields({ fields: ['location', 'displayName', 'formattedAddress'] });
+      sessionToken = null;
+      const loc = place.location;
+      return {
+        name: item.main || place.displayName || (place.formattedAddress || '').split(',')[0],
+        address: place.formattedAddress || '',
+        lat: loc ? loc.lat() : null,
+        lng: loc ? loc.lng() : null,
+      };
+    } catch (e) {
+      sessionToken = null;
+      return null;
+    }
+  }
+
+  window.CH_MAP = { renderRoute, suggest, resolvePick };
 })();
