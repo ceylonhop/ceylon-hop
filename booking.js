@@ -840,28 +840,55 @@ document.getElementById('pay-btn').addEventListener('click',()=>{
   setTimeout(()=>{ ov.classList.remove('show'); finalizeBooking(); }, 3400);
 });
 
-// M7.1 — when a backend is configured, create a real single-transfer booking and use its
-// reference. Returns null (so the simulated flow continues) when unset or on any failure,
-// so the default site behaviour is unchanged. Trip/shared wiring comes later.
+// M7 — when a backend is configured, create a real booking and use its reference.
+// Handles single transfer and multi-stop trip; returns null (so the simulated flow
+// continues) when unset or on any failure, so default site behaviour is unchanged.
+// Shared-seat wiring needs a backend corridor lookup and lands next.
 async function createApiBooking(){
   const API = window.CEYLON_HOP_API;
-  if(!API || isTrip || isShared) return null;
-  const payload = {
-    from: state.locFrom || r.stops[0],
-    to: state.locTo || r.stops[r.stops.length-1],
-    date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
-    time: (state.flexTime || !state.dep) ? undefined : state.dep,
-    vehicleType: (vehicleKey==='van') ? 'van' : 'car',
-    adults: state.ad, children: state.ch, bags: state.bags,
-    customer: {
-      name: (document.getElementById('f-first').value+' '+document.getElementById('f-last').value).trim(),
-      email: document.getElementById('f-email').value.trim(),
-      whatsapp: document.getElementById('f-wa').value.trim(),
-      country: document.getElementById('f-country').value
-    }
+  if(!API) return null;
+  const customer = {
+    name: (document.getElementById('f-first').value+' '+document.getElementById('f-last').value).trim(),
+    email: document.getElementById('f-email').value.trim(),
+    whatsapp: document.getElementById('f-wa').value.trim(),
+    country: document.getElementById('f-country').value
   };
+  let endpoint, payload;
+  if(isTrip){
+    endpoint = '/bookings/trip';
+    payload = {
+      stops: tripStops,
+      nights: tripNights,
+      dates: tripDates.some(Boolean) ? tripDates : undefined,
+      pax: state.ad + state.ch,
+      vehicleType: (vehicleKey==='van') ? 'van' : 'car',
+      serviceType: state.svc,
+      customer
+    };
+  } else if(isShared){
+    endpoint = '/bookings/shared';
+    payload = {
+      from: state.locFrom || r.stops[0],
+      to: state.locTo || r.stops[r.stops.length-1],
+      date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
+      time: state.dep || undefined,
+      seats: state.ad + state.ch,
+      customer
+    };
+  } else {
+    endpoint = '/bookings/single';
+    payload = {
+      from: state.locFrom || r.stops[0],
+      to: state.locTo || r.stops[r.stops.length-1],
+      date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
+      time: (state.flexTime || !state.dep) ? undefined : state.dep,
+      vehicleType: (vehicleKey==='van') ? 'van' : 'car',
+      adults: state.ad, children: state.ch, bags: state.bags,
+      customer
+    };
+  }
   try{
-    const res = await fetch(API.replace(/\/$/,'')+'/bookings/single', {
+    const res = await fetch(API.replace(/\/$/,'')+endpoint, {
       method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload)
     });
     return res.ok ? await res.json() : null;

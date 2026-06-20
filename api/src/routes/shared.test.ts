@@ -34,6 +34,25 @@ describe('POST /bookings/shared', () => {
     expect(res.status).toBe(400);
   });
 
+  it('resolves the corridor from from/to (what the website sends)', async () => {
+    const app = createApp();
+    const { corridorId: _omit, ...byRoute } = valid;
+    void _omit;
+    const res = await postShared(app, { ...byRoute, from: 'Colombo Airport', to: 'Ella', seats: 1 });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.mode).toBe('shared');
+    expect(b.input.corridorId).toBe('cmb-ella');
+  });
+
+  it('400 when from/to has no matching corridor', async () => {
+    const app = createApp();
+    const { corridorId: _o, ...byRoute } = valid;
+    void _o;
+    const res = await postShared(app, { ...byRoute, from: 'Nowhere', to: 'Elsewhere' });
+    expect(res.status).toBe(400);
+  });
+
   it('409 when the departure is sold out', async () => {
     const res = await postShared(createApp(), { ...valid, seats: 13 }); // capacity is 12
     expect(res.status).toBe(409);

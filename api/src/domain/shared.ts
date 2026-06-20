@@ -12,3 +12,17 @@ export const SharedInput = z.object({
 });
 
 export type SharedInput = z.infer<typeof SharedInput>;
+
+// HTTP request shape: the website sends from/to (it doesn't know corridor ids), and the
+// API resolves the corridor. A corridorId is also accepted directly.
+export const SharedBookingRequest = z.object({
+  corridorId: z.string().min(1).optional(),
+  from: z.string().min(1).optional(),
+  to: z.string().min(1).optional(),
+  date: z.string().min(1),
+  time: z.string().min(1),
+  seats: z.number().int().min(1),
+  customer: CustomerInput,
+});
+
+export type SharedBookingRequest = z.infer<typeof SharedBookingRequest>;

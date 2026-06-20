@@ -19,6 +19,7 @@ export interface SharedDeparture {
 
 export interface DepartureRepo {
   getCorridor(id: string): Promise<Corridor | null>;
+  findCorridorByRoute(from: string, to: string): Promise<Corridor | null>;
   // Find-or-create the departure for (corridor, date, time) and atomically hold `seats`.
   // Returns the updated departure, or null if there aren't enough seats (no oversell).
   holdSeats(args: {
@@ -44,6 +45,15 @@ export class InMemoryDepartureRepo implements DepartureRepo {
 
   async getCorridor(id: string): Promise<Corridor | null> {
     return this.corridors.get(id) ?? null;
+  }
+
+  async findCorridorByRoute(from: string, to: string): Promise<Corridor | null> {
+    const f = from.trim().toLowerCase();
+    const t = to.trim().toLowerCase();
+    for (const c of this.corridors.values()) {
+      if (c.fromPlace.toLowerCase() === f && c.toPlace.toLowerCase() === t) return c;
+    }
+    return null;
   }
 
   async holdSeats(args: {

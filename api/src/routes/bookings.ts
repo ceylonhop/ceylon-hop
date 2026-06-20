@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
-import { SharedInput } from '../domain/shared';
+import { SharedBookingRequest } from '../domain/shared';
 import { quoteSingleTransfer, quoteTrip, quoteShared } from '../services/pricing';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
@@ -66,10 +66,11 @@ export function bookingRoutes(deps: {
   // seats on the departure (409 if sold out), then create the booking.
   r.post('/shared', async (c) => {
     const body = await c.req.json().catch(() => null);
-    const parsed = SharedInput.safeParse(body);
+    const parsed = SharedBookingRequest.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const req = parsed.data;
 
     const key = c.req.header('Idempotency-Key');
     if (key) {
@@ -77,20 +78,31 @@ export function bookingRoutes(deps: {
       if (existing) return c.json(existing, 200);
     }
 
-    const corridor = await departures.getCorridor(parsed.data.corridorId);
+    const corridor = req.corridorId
+      ? await departures.getCorridor(req.corridorId)
+      : req.from && req.to
+        ? await departures.findCorridorByRoute(req.from, req.to)
+        : null;
     if (!corridor) return c.json({ error: 'unknown_corridor' }, 400);
 
     const held = await departures.holdSeats({
-      corridorId: parsed.data.corridorId,
-      date: parsed.data.date,
-      time: parsed.data.time,
-      seats: parsed.data.seats,
+      corridorId: corridor.id,
+      date: req.date,
+      time: req.time,
+      seats: req.seats,
     });
     if (!held) return c.json({ error: 'sold_out' }, 409);
 
-    const { currency, total } = quoteShared(parsed.data.seats, corridor.seatPrice);
+    const { currency, total } = quoteShared(req.seats, corridor.seatPrice);
+    const input = {
+      corridorId: corridor.id,
+      date: req.date,
+      time: req.time,
+      seats: req.seats,
+      customer: req.customer,
+    };
     const booking = await bookings.create(
-      { mode: 'shared', input: parsed.data, total, currency },
+      { mode: 'shared', input, total, currency },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);
