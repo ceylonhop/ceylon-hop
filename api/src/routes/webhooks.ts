@@ -39,7 +39,13 @@ export function webhookRoutes(deps: {
     if (booking && booking.status === 'payment_pending') {
       const paid = await bookings.setStatus(booking.id, 'paid');
       await conciergeTasks.create({ bookingId: paid.id, type: 'confirm_pickup' });
-      await sendBookingConfirmation(paid, email);
+      // Confirmation email is best-effort: the booking is already paid, so a mail
+      // provider hiccup must NOT fail the webhook (which would make PayHere retry).
+      try {
+        await sendBookingConfirmation(paid, email);
+      } catch (err) {
+        console.error(`confirmation email failed for ${paid.reference}:`, err);
+      }
     }
     return c.json({ ok: true }, 200);
   });

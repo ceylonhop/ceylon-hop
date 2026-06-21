@@ -47,6 +47,19 @@ describe('POST /webhooks/payments', () => {
     expect(email.sent[0].text).toBeTruthy();
   });
 
+  it('marks paid and returns 200 even if the confirmation email fails (best-effort)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = { send: async () => { throw new Error('provider down'); } };
+    const app = createApp({ adapter, email });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    const after = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(after.status).toBe('paid');
+  });
+
   it('is idempotent — a duplicate webhook does not re-pay or re-email', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
