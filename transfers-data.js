@@ -76,8 +76,36 @@
       Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dLng / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(s));
   }
-  // road distance ≈ crow-flies × winding factor (Sri Lankan roads are slow & curvy)
+  // Real road distances (Google Directions, baked) for known place pairs — keeps
+  // search + planner pricing on ACTUAL driving distance, not straight-line, which
+  // badly understates winding hill-country routes. Value = [km, minutes]. Symmetric.
+  const REAL_KM = {
+    "cmb-airport|colombo":[35,48],"cmb-airport|negombo":[7,18],"cmb-airport|bentota":[108,104],"cmb-airport|hikkaduwa":[144,130],"cmb-airport|galle":[153,135],"cmb-airport|weligama":[173,149],"cmb-airport|mirissa":[177,156],"cmb-airport|kandy":[118,177],"cmb-airport|nuwara-eliya":[161,298],"cmb-airport|ella":[335,297],"cmb-airport|sigiriya":[152,201],"cmb-airport|anuradhapura":[175,236],"cmb-airport|yala":[317,308],"cmb-airport|arugam-bay":[419,393],"cmb-airport|trincomalee":[240,293],
+    "colombo|negombo":[40,53],"colombo|bentota":[87,104],"colombo|hikkaduwa":[123,131],"colombo|galle":[133,135],"colombo|weligama":[152,150],"colombo|mirissa":[156,157],"colombo|kandy":[123,208],"colombo|nuwara-eliya":[174,302],"colombo|ella":[314,297],"colombo|sigiriya":[180,232],"colombo|anuradhapura":[209,266],"colombo|yala":[296,309],"colombo|arugam-bay":[399,393],"colombo|trincomalee":[269,323],
+    "negombo|bentota":[112,108],"negombo|hikkaduwa":[148,134],"negombo|galle":[157,139],"negombo|weligama":[177,153],"negombo|mirissa":[181,161],"negombo|kandy":[115,171],"negombo|nuwara-eliya":[165,300],"negombo|ella":[339,301],"negombo|sigiriya":[148,194],"negombo|anuradhapura":[172,227],"negombo|yala":[321,312],"negombo|arugam-bay":[423,397],"negombo|trincomalee":[237,286],
+    "bentota|hikkaduwa":[37,56],"bentota|galle":[70,75],"bentota|weligama":[90,89],"bentota|mirissa":[94,96],"bentota|kandy":[176,247],"bentota|nuwara-eliya":[211,335],"bentota|ella":[251,236],"bentota|sigiriya":[229,271],"bentota|anuradhapura":[258,305],"bentota|yala":[234,248],"bentota|arugam-bay":[336,333],"bentota|trincomalee":[318,363],
+    "hikkaduwa|galle":[19,35],"hikkaduwa|weligama":[58,67],"hikkaduwa|mirissa":[62,75],"hikkaduwa|kandy":[212,273],"hikkaduwa|nuwara-eliya":[275,326],"hikkaduwa|ella":[220,215],"hikkaduwa|sigiriya":[265,297],"hikkaduwa|anuradhapura":[294,331],"hikkaduwa|yala":[202,226],"hikkaduwa|arugam-bay":[305,311],"hikkaduwa|trincomalee":[354,389],
+    "galle|weligama":[27,50],"galle|mirissa":[41,58],"galle|kandy":[221,278],"galle|nuwara-eliya":[253,309],"galle|ella":[198,198],"galle|sigiriya":[274,302],"galle|anuradhapura":[303,336],"galle|yala":[181,210],"galle|arugam-bay":[283,294],"galle|trincomalee":[363,394],
+    "weligama|mirissa":[7,14],"weligama|kandy":[241,291],"weligama|nuwara-eliya":[233,294],"weligama|ella":[179,183],"weligama|sigiriya":[294,315],"weligama|anuradhapura":[323,349],"weligama|yala":[161,194],"weligama|arugam-bay":[263,279],"weligama|trincomalee":[383,407],
+    "mirissa|kandy":[245,299],"mirissa|nuwara-eliya":[228,296],"mirissa|ella":[173,185],"mirissa|sigiriya":[298,323],"mirissa|anuradhapura":[327,357],"mirissa|yala":[155,197],"mirissa|arugam-bay":[258,282],"mirissa|trincomalee":[387,414],
+    "kandy|nuwara-eliya":[76,158],"kandy|ella":[136,227],"kandy|sigiriya":[89,150],"kandy|anuradhapura":[137,201],"kandy|yala":[265,402],"kandy|arugam-bay":[214,307],"kandy|trincomalee":[178,242],
+    "nuwara-eliya|ella":[54,107],"nuwara-eliya|sigiriya":[195,290],"nuwara-eliya|anuradhapura":[249,342],"nuwara-eliya|yala":[180,304],"nuwara-eliya|arugam-bay":[183,287],"nuwara-eliya|trincomalee":[290,383],
+    "ella|sigiriya":[175,256],"ella|anuradhapura":[229,308],"ella|yala":[126,198],"ella|arugam-bay":[134,180],"ella|trincomalee":[270,349],
+    "sigiriya|anuradhapura":[74,90],"sigiriya|yala":[304,408],"sigiriya|arugam-bay":[252,312],"sigiriya|trincomalee":[98,113],
+    "anuradhapura|yala":[353,462],"anuradhapura|arugam-bay":[301,367],"anuradhapura|trincomalee":[108,127],
+    "yala|arugam-bay":[192,271],"yala|trincomalee":[364,466],
+    "arugam-bay|trincomalee":[248,332]
+  };
+  // baked real [km, min] for a known id pair (either direction), else null
+  function realLeg(aId, bId) {
+    if (!aId || !bId) return null;
+    return REAL_KM[aId + '|' + bId] || REAL_KM[bId + '|' + aId] || null;
+  }
+  // road distance: real baked value when both ends are known places, else the
+  // crow-flies × winding-factor estimate (for typed / not-yet-baked places).
   function roadKm(fromId, toId) {
+    const real = realLeg(fromId, toId);
+    if (real) return real[0];
     const a = byId[fromId], b = byId[toId];
     if (!a || !b) return 0;
     return Math.round(haversine(a, b) * 1.35);
@@ -88,17 +116,23 @@
     if (h <= 0) return `${Math.max(20, m)} min`;
     return m >= 8 ? `${h}h ${m}m` : `${h}h`;
   }
+  function minToText(min) {
+    const h = Math.floor(min / 60), m = Math.round(min % 60);
+    if (h <= 0) return `${Math.max(20, m)} min`;
+    return m >= 8 ? `${h}h ${m}m` : `${h}h`;
+  }
 
   // ---- Private quote: door-to-door, your own vehicle ----
   function privateQuote(fromId, toId) {
     const km = roadKm(fromId, toId);
+    const real = realLeg(fromId, toId);
     const carBase = 22, carRate = 0.62;     // sedan, up to 3 pax
     const vanRate = 0.86;                    // AC van, up to 6 pax
     const car = Math.max(28, Math.round((carBase + km * carRate) / 1) );
     const van = Math.max(38, Math.round((carBase + 8 + km * vanRate) / 1));
     return {
       km,
-      duration: durationText(km),
+      duration: real ? minToText(real[1]) : durationText(km),
       car: roundPretty(car),
       van: roundPretty(van)
     };
@@ -150,6 +184,8 @@
     const a = byId[aName] ? byId[aName] : resolvePlace(aName);
     const b = byId[bName] ? byId[bName] : resolvePlace(bName);
     if(!a || !b) return null;
+    const real = realLeg(a.id, b.id);
+    if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
   // per-leg private price by vehicle
