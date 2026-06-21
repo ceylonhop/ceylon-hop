@@ -1,0 +1,18 @@
+{
+  "name": "ceylon-hop-web-tests",
+  "private": true,
+  "type": "module",
+  "description": "Front-end test suite for the Ceylon Hop booking site (unit + e2e).",
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "vitest run && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "jsdom": "^25.0.1",
+    "vitest": "^2.1.9"
+  }
+}
