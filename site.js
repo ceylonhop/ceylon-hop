@@ -2,7 +2,7 @@
    CEYLON HOP — shared site chrome + helpers (vanilla)
    ============================================================ */
 (function(){
-  const WA = 'https://wa.me/94771986692';
+  const WA = 'https://wa.me/94779669662';
 
   // ---- SVG snippets ----
   const ICON = {

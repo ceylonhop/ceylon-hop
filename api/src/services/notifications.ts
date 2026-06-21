@@ -8,7 +8,7 @@ const TOMATO = '#e8623a';
 const INK = '#1b1b1b';
 const MUTED = '#6b7280';
 const FAINT = '#9ca3af';
-const WA_URL = 'https://wa.me/94771986692';
+const WA_URL = 'https://wa.me/94779669662';
 
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);

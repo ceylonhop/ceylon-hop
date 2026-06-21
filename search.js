@@ -174,7 +174,7 @@ if(help){
       <b>Not sure which to pick, or need a custom route?</b>
       <p>Message a real Hop planner — we usually reply in minutes during Sri Lanka hours.</p>
     </div>
-    <a class="btn btn-wa" href="https://wa.me/94771986692?text=${encodeURIComponent('Hi Ceylon Hop! I have a question about '+fromP.name+' → '+toP.name+'.')}" target="_blank" rel="noopener">${ICON.wa} Ask on WhatsApp</a>`;
+    <a class="btn btn-wa" href="https://wa.me/94779669662?text=${encodeURIComponent('Hi Ceylon Hop! I have a question about '+fromP.name+' → '+toP.name+'.')}" target="_blank" rel="noopener">${ICON.wa} Ask on WhatsApp</a>`;
 }
 
 initReveal();
