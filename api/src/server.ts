@@ -9,6 +9,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
+import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -28,6 +29,13 @@ const maps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
   : new FakeMapsAdapter();
 
+const email = config.RESEND_API_KEY
+  ? new ResendEmailAdapter(config.RESEND_API_KEY, {
+      from: config.EMAIL_FROM,
+      replyTo: config.EMAIL_REPLY_TO,
+    })
+  : new FakeEmailAdapter();
+
 const { db, sql } = createDb(config.DATABASE_URL);
 await seedCorridors(sql);
 const app = createApp({
@@ -37,6 +45,7 @@ const app = createApp({
   departures: new PostgresDepartureRepo(sql),
   adapter,
   maps,
+  email,
 });
 
 serve({ fetch: app.fetch, port: config.PORT });
