@@ -6,6 +6,15 @@ mountWA();
 document.getElementById('bk-brand').innerHTML = cmark(30,'var(--accent)') + '<span>Ceylon Hop</span>';
 document.getElementById('conf-wa').innerHTML = ICON.wa + ' Message us on WhatsApp';
 
+// Pre-warm the API. The free hosting tier spins the service down when idle and a
+// cold boot can take ~30s — firing a health ping on page load means it's usually
+// awake by the time the customer reaches payment, so "Pay" doesn't time out.
+(function warmApi(){
+  const API = window.CEYLON_HOP_API;
+  if(!API) return;
+  try { fetch(API.replace(/\/$/,'')+'/health', { method:'GET', cache:'no-store' }).catch(()=>{}); } catch(e){}
+})();
+
 // put check icons in addon boxes
 const CK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>';
 document.querySelectorAll('.addon .box').forEach(b=>b.innerHTML=CK);
@@ -964,10 +973,16 @@ async function runPayment(){
   // No backend configured → demo mode: simulated interstitial, then confirm.
   if(!API){ return simulatePayThenConfirm(null); }
 
-  // Backend configured: create the real (draft) booking first.
+  // Backend configured: create the real (draft) booking first. On the free hosting
+  // tier the API can be waking from idle, so reassure the customer if it's slow.
+  const slow = setTimeout(()=>{
+    const m=document.getElementById('ph-msg');
+    if(m && document.getElementById('ph-actions').hidden) m.textContent='Just waking up our booking system — one moment…';
+  }, 6000);
   let booking;
   try { booking = await createApiBooking(); }
-  catch(e){ return phShowEnd('error','We couldn’t start your booking just now. Please check your connection and try again.'); }
+  catch(e){ clearTimeout(slow); return phShowEnd('error','We couldn’t start your booking just now — please try again in a moment.'); }
+  clearTimeout(slow);
   if(!booking){ return simulatePayThenConfirm(null); }
 
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
@@ -1107,7 +1122,7 @@ async function createApiBooking(){
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const ctrl = new AbortController();
-  const timer = setTimeout(()=>ctrl.abort(), 30000);
+  const timer = setTimeout(()=>ctrl.abort(), 45000); // allow for a free-tier cold start
   let res;
   try{
     res = await fetch(API.replace(/\/$/,'')+endpoint, {
