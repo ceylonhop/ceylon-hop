@@ -84,10 +84,14 @@ describe('sendBookingConfirmation — trip (chauffeur)', () => {
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(trip, email);
     const m = email.sent[0];
-    expect(m.html).toContain('Colombo Airport → Kandy → Ella');
+    // route is now a stop-by-stop timeline (each stop on its own row)
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('Kandy');
+    expect(m.html).toContain('Ella');
     expect(m.html).toContain('Chauffeur-guide');
     expect(m.html).toContain('From');
     expect(m.html).toContain('1 Jul 2026');
+    expect(m.text).toContain('Colombo Airport → Kandy → Ella'); // text keeps the joined route
     expect(m.text).toContain('10 days');
   });
 });
