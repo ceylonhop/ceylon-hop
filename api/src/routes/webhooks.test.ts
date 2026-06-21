@@ -41,6 +41,10 @@ describe('POST /webhooks/payments', () => {
     expect(after.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].to).toBe('maya@example.com');
+    // the branded confirmation actually flows end-to-end through the webhook
+    expect(email.sent[0].subject).toContain(b.reference);
+    expect(email.sent[0].subject.toLowerCase()).toContain('confirmed');
+    expect(email.sent[0].text).toBeTruthy();
   });
 
   it('is idempotent — a duplicate webhook does not re-pay or re-email', async () => {
