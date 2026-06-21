@@ -21,6 +21,7 @@ comes up, so launch is a clean, mechanical switch-over.
 | `DATABASE_URL` | dev password (leaked in-session) | **rotated** password |
 | `GOOGLE_MAPS_API_KEY` | unset → fake/haversine distances | real key, restricted to Distance Matrix *(optional)* |
 | `RESEND_API_KEY` | ✅ set | (already fine) |
+| `ADMIN_API_KEY` | empty → **ops endpoints return 401 (locked out)** | strong secret so staff can use the ops endpoints |
 
 - [ ] `APP_BASE_URL` → apex
 - [ ] PayHere → live mode + live credentials
@@ -28,6 +29,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] (optional) real `GOOGLE_MAPS_API_KEY`
+- [ ] strong `ADMIN_API_KEY` set (ops endpoints are locked out until then)
 
 ## 2. DNS / external consoles
 
@@ -39,9 +41,15 @@ comes up, so launch is a clean, mechanical switch-over.
 ## 3. Hosting / code / data
 
 - [ ] **Serve the new site on the `ceylonhop.com` apex** (currently the live business site). Required because PayHere only works on the apex.
-- [ ] **Clear all test bookings** from Supabase: `CH-NDYDS` (sandbox PayHere proof), `CH-9862J` + `CH-TMRJR` (email e2e), direct-API test rows (`CH-XFXKX` / `CH-S67RZ` …), every `payment_pending`/draft row, and any "Roshen / Ama / Dave Weliwatta / Sam" test bookings.
+- [ ] **Clear all test data** from Supabase (it's the same DB that'll serve production):
+  - test **bookings** — `CH-NDYDS` (sandbox PayHere proof), `CH-9862J` + `CH-TMRJR` (email e2e), direct-API rows (`CH-XFXKX` / `CH-S67RZ` …), every `payment_pending`/draft row, and any "Roshen / Ama / Dave Weliwatta / Sam" bookings
+  - their associated **payments** and **concierge tasks**
+  - **reset `shared_departure` seat counts** — test shared bookings incremented `seats_booked`, so real availability is pre-consumed until reset (truncate the test departure rows, or zero `seats_booked`)
 - [ ] **Chauffeur deposit charge:** checkout charges the FULL total today; chauffeur (deposit) bookings should charge `amountDueNow` (the deposit). Small route/adapter fix.
 - [ ] **Harden the rate limiter:** it keys on the client-supplied `X-Forwarded-For` (spoofable) — use a trusted source before public traffic.
+- [ ] **Trim CORS dev origins:** once on the apex, drop `ceylonhop.github.io` + `localhost` from `ALLOWED_ORIGINS` (keep only `https://ceylonhop.com`).
+- [ ] **Confirm the front-end API URL:** `window.CEYLON_HOP_API` in `booking.html` defaults to the Render URL — update if the API moves to a custom domain.
+- [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
 ## 4. Verify after switching (smoke test on production)
 
