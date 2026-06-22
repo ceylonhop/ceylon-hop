@@ -10,6 +10,9 @@ import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
+import { opsRoutes } from './routes/ops';
+import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
+import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
@@ -21,7 +24,10 @@ export interface AppDeps {
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
+  rideOps?: RideOpsRepo;
+  coordinators?: CoordinatorRepo;
   adminApiKey?: string;
+  auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
 }
@@ -35,7 +41,15 @@ export function createApp(deps: AppDeps = {}) {
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
+  const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
+  const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
+  const opsAuthCfg = {
+    supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
+    founderKey: deps.auth?.opsFounderKey ?? config.OPS_FOUNDER_KEY,
+    sessionSecret: deps.auth?.opsSessionSecret ?? config.OPS_SESSION_SECRET,
+    adminApiKey,
+  };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
   const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
@@ -65,6 +79,7 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
+  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   app.route('/admin', adminRoutes({ bookings, adminApiKey }));
   return app;
 }
