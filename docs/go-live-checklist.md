@@ -22,6 +22,9 @@ comes up, so launch is a clean, mechanical switch-over.
 | `GOOGLE_MAPS_API_KEY` | unset → fake/haversine distances | real key, restricted to Distance Matrix *(optional)* |
 | `RESEND_API_KEY` | ✅ set | (already fine) |
 | `ADMIN_API_KEY` | empty → **ops endpoints return 401 (locked out)** | strong secret so staff can use the ops endpoints |
+| `OPS_SESSION_SECRET` | `dev-ops-secret-change-me` (public default → forgeable cookies) | **strong random secret** (e.g. `openssl rand -hex 32`) |
+| `OPS_FOUNDER_KEY` | empty | the founder login key for the ops dashboard |
+| `OPS_SUPPORT_KEY` | empty | the support/agent login key for the ops dashboard |
 
 - [ ] `APP_BASE_URL` → apex
 - [ ] PayHere → live mode + live credentials
