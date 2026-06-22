@@ -5,6 +5,8 @@ import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
+import { PostgresCoordinatorRepo } from './postgresCoordinatorRepo';
+import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -30,6 +32,8 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let payments: PostgresPaymentRepo;
   let tasks: PostgresConciergeTaskRepo;
   let departures: PostgresDepartureRepo;
+  let coordinators: PostgresCoordinatorRepo;
+  let rideOps: PostgresRideOpsRepo;
   let sql: Sql;
 
   beforeAll(async () => {
@@ -41,6 +45,8 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     payments = new PostgresPaymentRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
     departures = new PostgresDepartureRepo(sql);
+    coordinators = new PostgresCoordinatorRepo(conn.db);
+    rideOps = new PostgresRideOpsRepo(conn.db);
   });
 
   it('persists and reads back a booking with customer + transfer', async () => {
@@ -150,5 +156,25 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 
     await tasks.create({ bookingId: b.id, type: 'confirm_pickup' });
     expect(await tasks.listByBooking(b.id)).toHaveLength(1);
+  });
+
+  it('persists ops layer: coordinator + ride_ops assign/status/flags', async () => {
+    const coord = await coordinators.create({ name: 'Nuwan', whatsapp: '+94770', regions: 'South' });
+    expect((await coordinators.get(coord.id))?.name).toBe('Nuwan');
+
+    const b = await bookings.create(sample);
+    const assigned = await rideOps.assign(b.id, coord.id);
+    expect(assigned.coordinatorId).toBe(coord.id);
+    expect(assigned.fulfilmentStatus).toBe('assigned');
+
+    const sent = await rideOps.setStatus(b.id, 'sent_to_coordinator');
+    expect(sent.sentAt).toBeTruthy();
+    await expect(rideOps.setStatus(b.id, 'completed')).rejects.toThrow(); // guard holds in PG too
+
+    const flagged = await rideOps.setFlags(b.id, { vehiclePhotoReceived: true, opsNotes: 'gate 4421' });
+    expect(flagged.vehiclePhotoReceived).toBe(true);
+    expect(flagged.opsNotes).toBe('gate 4421');
+
+    expect((await rideOps.listByBookingIds([b.id])).map((r) => r.bookingId)).toEqual([b.id]);
   });
 });
