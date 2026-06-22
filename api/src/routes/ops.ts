@@ -6,7 +6,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { CoordinatorRepo } from '../db/coordinatorRepo';
 import { signSession, verifySession, roleForKey, type OpsRole } from '../lib/opsAuth';
-import { toOpsRow } from '../services/opsView';
+import { toOpsRow, manifestLine } from '../services/opsView';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -93,6 +93,57 @@ export function opsRoutes(deps: OpsDeps) {
       opsNotes: z.string().nullable().optional(),
     }).parse(await c.req.json());
     return c.json(await deps.rideOps.setFlags(c.req.param('id'), body));
+  });
+
+  // ---- daily rides, coordinators, manifest ----
+  function resolveDate(q: string | undefined): string {
+    if (q === 'today' || !q) return new Date().toISOString().slice(0, 10);
+    if (q === 'tomorrow') { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); }
+    return q;
+  }
+
+  async function rowsForDate(date: string) {
+    const all = await deps.bookings.list();
+    const ops = await deps.rideOps.listByBookingIds(all.map((b) => b.id));
+    const opsById = new Map(ops.map((o) => [o.bookingId, o]));
+    const out: { b: (typeof all)[number]; row: ReturnType<typeof toOpsRow> }[] = [];
+    for (const b of all) {
+      const paid = (await deps.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded');
+      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid });
+      if (row.travelDate === date) out.push({ b, row });
+    }
+    return out;
+  }
+
+  r.get('/rides', async (c) => {
+    const date = resolveDate(c.req.query('date'));
+    const rows = (await rowsForDate(date)).map((x) => x.row);
+    return c.json({ date, rows });
+  });
+
+  r.get('/coordinators', async (c) => c.json(await deps.coordinators.list()));
+  r.post('/coordinators', async (c) => {
+    const body = z.object({ name: z.string().min(1), whatsapp: z.string().min(1), regions: z.string().optional() }).parse(await c.req.json());
+    return c.json(await deps.coordinators.create(body), 201);
+  });
+
+  r.get('/manifest', async (c) => {
+    const coordinatorId = c.req.query('coordinatorId'); const date = resolveDate(c.req.query('date'));
+    const mine = (await rowsForDate(date)).filter((x) => x.row.coordinatorId === coordinatorId);
+    const coord = coordinatorId ? await deps.coordinators.get(coordinatorId) : null;
+    const header = `Ceylon Hop — ${date}${coord ? ` — ${coord.name}` : ''}\n`;
+    const text = header + (mine.length ? mine.map((x) => manifestLine(x.b)).join('\n') : '(no rides assigned)');
+    return c.json({ text });
+  });
+
+  r.post('/manifest/sent', async (c) => {
+    const body = z.object({ coordinatorId: z.string(), date: z.string() }).parse(await c.req.json());
+    const mine = (await rowsForDate(resolveDate(body.date))).filter((x) => x.row.coordinatorId === body.coordinatorId);
+    let sent = 0;
+    for (const x of mine) {
+      if (x.row.fulfilmentStatus === 'assigned') { await deps.rideOps.setStatus(x.b.id, 'sent_to_coordinator'); sent++; }
+    }
+    return c.json({ sent });
   });
 
   return r;
