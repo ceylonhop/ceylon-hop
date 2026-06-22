@@ -45,6 +45,13 @@ export function opsRoutes(deps: OpsDeps) {
 
   r.get('/whoami', (c) => c.json({ role: c.get('role') }));
 
+  // Reserved founder-only surface. The real finance content lands in the finance slice;
+  // the gate is enforced now so revenue endpoints never leak to support.
+  r.get('/finance/summary', (c) => {
+    if (c.get('role') !== 'founder') return c.json({ error: 'forbidden' }, 403);
+    return c.json({ ok: true });
+  });
+
   r.get('/bookings', async (c) => {
     const status = c.req.query('status'); const mode = c.req.query('mode');
     const date = c.req.query('date'); const q = (c.req.query('q') ?? '').toLowerCase();
