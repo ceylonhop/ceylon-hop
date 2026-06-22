@@ -27,6 +27,10 @@ const Env = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('Ceylon Hop <onboarding@resend.dev>'),
   EMAIL_REPLY_TO: z.string().optional(),
+  // Ops dashboard auth (Slice 1: per-role keys → signed session cookie).
+  OPS_SUPPORT_KEY: z.string().default(''),
+  OPS_FOUNDER_KEY: z.string().default(''),
+  OPS_SESSION_SECRET: z.string().default('dev-ops-secret-change-me'),
 });
 
 export const config = Env.parse(process.env);
