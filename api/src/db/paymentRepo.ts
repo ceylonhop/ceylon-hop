@@ -20,6 +20,7 @@ export interface PaymentRepo {
   create(p: NewPayment): Promise<Payment>;
   findByIdempotencyKey(key: string): Promise<Payment | null>;
   findByOrderId(orderId: string): Promise<Payment | null>;
+  findByBookingId(bookingId: string): Promise<Payment[]>;
   markSucceeded(id: string): Promise<Payment>;
 }
 
@@ -46,6 +47,10 @@ export class InMemoryPaymentRepo implements PaymentRepo {
   async findByOrderId(orderId: string): Promise<Payment | null> {
     const id = this.byOrder.get(orderId);
     return id ? (this.byId.get(id) ?? null) : null;
+  }
+
+  async findByBookingId(bookingId: string): Promise<Payment[]> {
+    return [...this.byId.values()].filter((p) => p.bookingId === bookingId);
   }
 
   async markSucceeded(id: string): Promise<Payment> {

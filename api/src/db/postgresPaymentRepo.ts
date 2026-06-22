@@ -38,6 +38,11 @@ export class PostgresPaymentRepo implements PaymentRepo {
     return row ? toPayment(row) : null;
   }
 
+  async findByBookingId(bookingId: string): Promise<Payment[]> {
+    const rows = await this.db.select().from(payments).where(eq(payments.bookingId, bookingId));
+    return rows.map(toPayment);
+  }
+
   async markSucceeded(id: string): Promise<Payment> {
     const [row] = await this.db
       .update(payments)

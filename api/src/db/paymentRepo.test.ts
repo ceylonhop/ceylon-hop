@@ -32,4 +32,14 @@ describe('InMemoryPaymentRepo', () => {
     const s = await r.markSucceeded(p.id);
     expect(s.status).toBe('succeeded');
   });
+
+  it('finds all payments for a booking', async () => {
+    const r = new InMemoryPaymentRepo();
+    await r.create(np);
+    await r.create({ ...np, orderId: 'CH-2', idempotencyKey: 'k2' });
+    await r.create({ ...np, bookingId: 'b2', orderId: 'CH-3', idempotencyKey: 'k3' });
+    expect(await r.findByBookingId('b1')).toHaveLength(2);
+    expect(await r.findByBookingId('b2')).toHaveLength(1);
+    expect(await r.findByBookingId('nope')).toHaveLength(0);
+  });
 });
