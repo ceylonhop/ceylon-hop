@@ -32,7 +32,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] (optional) real `GOOGLE_MAPS_API_KEY`
-- [ ] strong `ADMIN_API_KEY` set (ops endpoints are locked out until then)
+- [ ] strong `ADMIN_API_KEY` set (ops endpoints are locked out until then) — **also mirror it as a GitHub Actions repo secret `ADMIN_API_KEY`** so the `scheduled-notifications` workflow (daily reminders + review requests) can authenticate
 
 ## 2. DNS / external consoles
 
@@ -63,8 +63,8 @@ comes up, so launch is a clean, mechanical switch-over.
 
 ## Still-to-build (not launch-blocking — but finish or consciously defer)
 
-- **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`) and ✅ **refund** (`/refund`) now built + branded. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), driver-assigned, "we need your details", payment-didn't-complete. **Reminders + thank-you/review request need a job runner (M14).** (Tracked in the agent's email roadmap notes.)
-- **M11** authoritative pricing engine (interim: site sends `quotedTotal`, API stores it, checkout charges exactly that — site = DB = charge agree today; the authoritative server engine is M11) · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers · **M15** reporting/CSV export.
+- **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`), ✅ **refund** (`/refund`), and ✅ **pre-trip reminder + thank-you/review request** (M14 scheduler — `POST /admin/jobs/notifications`, driven daily by the `scheduled-notifications` workflow) now built + branded. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), driver-assigned, "we need your details", payment-didn't-complete. (Tracked in the agent's email roadmap notes.)
+- **M11** authoritative pricing engine (interim: site sends `quotedTotal`, API stores it, checkout charges exactly that — site = DB = charge agree today; the authoritative server engine is M11) · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers (pre-trip reminder + review request ✅ shipped via the scheduler; remaining: balance-due reminders, "confirm your details" nudges, SLA timers) · **M15** reporting/CSV export.
 
 ---
 

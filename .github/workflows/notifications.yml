@@ -1,0 +1,25 @@
+name: scheduled-notifications
+
+# Drives the M14 scheduled customer emails (pre-trip reminders + thank-you/review
+# requests) by POSTing the idempotent cron endpoint. Daily is enough: a reminder fires
+# within a 48h window of departure, so a once-a-day tick always catches it in time, and
+# the notification log makes a double-run a no-op. GitHub's scheduler is approximate and
+# pauses after ~60 days of repo inactivity — fine for this cadence.
+#
+# Requires a repo secret `ADMIN_API_KEY` whose value matches the API's ADMIN_API_KEY env
+# var on Render. If it's unset/mismatched the endpoint returns 401 and this job goes red —
+# which is the signal to set it.
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC ≈ 11:30 Sri Lanka time, daily
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run scheduled notifications
+        run: |
+          curl -fsS --max-time 120 -X POST \
+            -H "x-admin-key: ${{ secrets.ADMIN_API_KEY }}" \
+            https://ceylon-hop-api.onrender.com/admin/jobs/notifications
