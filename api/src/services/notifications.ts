@@ -91,10 +91,48 @@ function cancellationPolicy(booking: Booking): string {
     : 'Free cancellation up to 24 hours before travel.';
 }
 
-function renderHtml(booking: Booking): string {
-  const first = esc(booking.input.customer.firstName);
-  const amount = money(booking.total, booking.currency);
+// ── Reusable branded shell ────────────────────────────────────────────────
+// Every customer email shares one layout (header, reference card, optional
+// route/facts/total, a message box, footer); each email supplies its own
+// eyebrow/heading/lede, status badge and message block.
 
+interface Badge { label: string; bg: string; color: string }
+const BADGE_PAID: Badge = { label: 'Paid', bg: '#e7f6ec', color: '#0c6b39' };
+const BADGE_CANCELLED: Badge = { label: 'Cancelled', bg: '#f1efe9', color: '#6b645f' };
+const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e6f0fc', color: '#1f5fb0' };
+
+function brandHeader(): string {
+  return `<tr><td style="background:${TEAL_DEEP};padding:24px 32px">
+    <span style="color:#ffffff;font-size:21px;font-weight:800;letter-spacing:-.01em">Ceylon Hop</span>
+    <div style="color:#bfeae4;font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-top:3px">Ground transport · Sri Lanka</div>
+  </td></tr>`;
+}
+
+function introBlock(eyebrow: string, eyebrowColor: string, heading: string, lede: string): string {
+  return `<tr><td style="padding:30px 32px 6px">
+    <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${eyebrowColor}">${eyebrow}</div>
+    <h1 style="margin:8px 0 4px;font-size:23px;font-weight:800;color:${INK}">${heading}</h1>
+    <p style="margin:0;color:${MUTED};font-size:15px;line-height:1.5">${lede}</p>
+  </td></tr>`;
+}
+
+function refCard(booking: Booking, badge: Badge): string {
+  return `<tr><td style="padding:18px 32px 4px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1faf8;border:1px solid #d7ece7;border-radius:12px">
+      <tr>
+        <td style="padding:14px 18px">
+          <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED}">Booking reference</div>
+          <div style="font-size:21px;font-weight:800;letter-spacing:1.5px;color:${TEAL_DEEP};margin-top:2px">${esc(booking.reference)}</div>
+        </td>
+        <td align="right" style="padding:14px 18px">
+          <span style="background:${badge.bg};color:${badge.color};border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700">${esc(badge.label)}</span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>`;
+}
+
+function routeBlock(booking: Booking): string {
   const stopsHtml = journey(booking)
     .map(
       (s) =>
@@ -107,7 +145,13 @@ function renderHtml(booking: Booking): string {
         </tr>`,
     )
     .join('');
+  return `<tr><td style="padding:20px 32px 4px">
+    <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${FAINT};margin-bottom:8px">Your route</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stopsHtml}</table>
+  </td></tr>`;
+}
 
+function factsBlock(booking: Booking): string {
   const factsHtml = factRows(booking)
     .map(
       ([k, v]) =>
@@ -117,98 +161,105 @@ function renderHtml(booking: Booking): string {
         </tr>`,
     )
     .join('');
+  return `<tr><td style="padding:8px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">${factsHtml}</table>
+  </td></tr>`;
+}
 
+function totalBlock(label: string, amount: string): string {
+  return `<tr><td style="padding:6px 32px 22px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #f0efe9">
+      <tr>
+        <td style="padding:14px 0;font-size:15px;color:${MUTED}">${esc(label)}</td>
+        <td align="right" style="padding:14px 0;font-size:22px;font-weight:800;color:${INK}">${esc(amount)}</td>
+      </tr>
+    </table>
+  </td></tr>`;
+}
+
+function infoBox(title: string, body: string, note?: string): string {
+  return `<tr><td style="padding:0 32px 26px">
+    <div style="background:#f7faf9;border-radius:12px;padding:20px">
+      <div style="font-size:15px;font-weight:700;color:${INK};margin-bottom:6px">${title}</div>
+      <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.5">${body}</p>
+      <table role="presentation" cellpadding="0" cellspacing="0">
+        <tr><td bgcolor="#25D366" style="border-radius:10px">
+          <a href="${WA_URL}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">Message us on WhatsApp</a>
+        </td></tr>
+      </table>
+    </div>
+    ${note ? `<p style="margin:16px 2px 0;color:${FAINT};font-size:13px">${esc(note)}</p>` : ''}
+  </td></tr>`;
+}
+
+function footer(): string {
+  return `<tr><td style="padding:20px 32px;background:#faf8f2;color:${FAINT};font-size:12px;line-height:1.7">
+    <b style="color:${MUTED}">Ceylon Hop</b> &middot; Ground transport across Sri Lanka<br>
+    Questions? Just reply to this email, or message us on WhatsApp.
+  </td></tr>`;
+}
+
+function page(inner: string): string {
   return `<!doctype html><html><body style="margin:0;padding:0;background:#eef0ea;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef0ea;padding:28px 12px">
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)">
-
-        <tr><td style="background:${TEAL_DEEP};padding:24px 32px">
-          <span style="color:#ffffff;font-size:21px;font-weight:800;letter-spacing:-.01em">Ceylon Hop</span>
-          <div style="color:#bfeae4;font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-top:3px">Ground transport · Sri Lanka</div>
-        </td></tr>
-
-        <tr><td style="padding:30px 32px 6px">
-          <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${TEAL_DEEP}">✓ Booking confirmed</div>
-          <h1 style="margin:8px 0 4px;font-size:23px;font-weight:800;color:${INK}">You&rsquo;re all set, ${first}!</h1>
-          <p style="margin:0;color:${MUTED};font-size:15px;line-height:1.5">Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.</p>
-        </td></tr>
-
-        <tr><td style="padding:18px 32px 4px">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1faf8;border:1px solid #d7ece7;border-radius:12px">
-            <tr>
-              <td style="padding:14px 18px">
-                <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED}">Booking reference</div>
-                <div style="font-size:21px;font-weight:800;letter-spacing:1.5px;color:${TEAL_DEEP};margin-top:2px">${esc(booking.reference)}</div>
-              </td>
-              <td align="right" style="padding:14px 18px">
-                <span style="background:#e7f6ec;color:#0c6b39;border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700">Paid</span>
-              </td>
-            </tr>
-          </table>
-        </td></tr>
-
-        <tr><td style="padding:20px 32px 4px">
-          <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${FAINT};margin-bottom:8px">Your route</div>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stopsHtml}</table>
-        </td></tr>
-
-        <tr><td style="padding:8px 32px 0">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">${factsHtml}</table>
-        </td></tr>
-
-        <tr><td style="padding:6px 32px 22px">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #f0efe9">
-            <tr>
-              <td style="padding:14px 0;font-size:15px;color:${MUTED}">Total paid</td>
-              <td align="right" style="padding:14px 0;font-size:22px;font-weight:800;color:${INK}">${esc(amount)}</td>
-            </tr>
-          </table>
-        </td></tr>
-
-        <tr><td style="padding:0 32px 26px">
-          <div style="background:#f7faf9;border-radius:12px;padding:20px">
-            <div style="font-size:15px;font-weight:700;color:${INK};margin-bottom:6px">What happens next</div>
-            <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.5">Our team will message you on WhatsApp to confirm your exact pickup time and place. Reply there any time if something changes.</p>
-            <table role="presentation" cellpadding="0" cellspacing="0">
-              <tr><td bgcolor="#25D366" style="border-radius:10px">
-                <a href="${WA_URL}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">Message us on WhatsApp</a>
-              </td></tr>
-            </table>
-          </div>
-          <p style="margin:16px 2px 0;color:${FAINT};font-size:13px">${esc(cancellationPolicy(booking))}</p>
-        </td></tr>
-
-        <tr><td style="padding:20px 32px;background:#faf8f2;color:${FAINT};font-size:12px;line-height:1.7">
-          <b style="color:${MUTED}">Ceylon Hop</b> &middot; Ground transport across Sri Lanka<br>
-          Questions? Just reply to this email, or message us on WhatsApp.
-        </td></tr>
-
+        ${inner}
       </table>
     </td></tr>
   </table></body></html>`;
 }
 
-function renderText(booking: Booking): string {
-  const lines = [
-    'CEYLON HOP — your booking is confirmed',
+function textShell(title: string, lede: string, booking: Booking, lines: string[]): string {
+  return [
+    `CEYLON HOP — ${title}`,
     '',
     `Hi ${booking.input.customer.firstName},`,
     '',
-    "You're all set! Your trip details:",
+    lede,
     '',
     `Reference: ${booking.reference}`,
     `Trip: ${routeText(booking)}`,
+    ...lines,
+    '',
+    `WhatsApp: ${WA_URL}`,
+    '',
+    'Ceylon Hop · Ground transport across Sri Lanka',
+  ].join('\n');
+}
+
+// ── Booking confirmation (→ paid) ──────────────────────────────────────────
+function renderHtml(booking: Booking): string {
+  const first = esc(booking.input.customer.firstName);
+  return page(
+    brandHeader() +
+      introBlock(
+        '✓ Booking confirmed',
+        TEAL_DEEP,
+        `You&rsquo;re all set, ${first}!`,
+        'Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.',
+      ) +
+      refCard(booking, BADGE_PAID) +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      totalBlock('Total paid', money(booking.total, booking.currency)) +
+      infoBox(
+        'What happens next',
+        'Our team will message you on WhatsApp to confirm your exact pickup time and place. Reply there any time if something changes.',
+        cancellationPolicy(booking),
+      ) +
+      footer(),
+  );
+}
+
+function renderText(booking: Booking): string {
+  return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     `Total paid: ${money(booking.total, booking.currency)}`,
     '',
     'What happens next: our team will message you on WhatsApp to confirm your exact pickup time and place.',
-    `WhatsApp: ${WA_URL}`,
     cancellationPolicy(booking),
-    '',
-    'Ceylon Hop · Ground transport across Sri Lanka',
-  ];
-  return lines.join('\n');
+  ]);
 }
 
 export async function sendBookingConfirmation(booking: Booking, email: EmailAdapter): Promise<void> {
@@ -217,5 +268,72 @@ export async function sendBookingConfirmation(booking: Booking, email: EmailAdap
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
     html: renderHtml(booking),
     text: renderText(booking),
+  });
+}
+
+// ── Cancellation (→ cancelled) ─────────────────────────────────────────────
+export async function sendCancellationConfirmation(booking: Booking, email: EmailAdapter): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Booking cancelled',
+        TOMATO,
+        `Your booking is cancelled, ${first}`,
+        'This booking has been cancelled. We&rsquo;ve kept the details below for your records.',
+      ) +
+      refCard(booking, BADGE_CANCELLED) +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      infoBox(
+        'Anything we can do?',
+        'If you&rsquo;ve already paid, any refund due will be processed separately and you&rsquo;ll get a confirmation. Questions about this cancellation? Just reply or message us on WhatsApp.',
+      ) +
+      footer(),
+  );
+  const text = textShell('your booking is cancelled', 'This booking has been cancelled. Details for your records:', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    "If you've already paid, any refund due will be processed separately.",
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your Ceylon Hop booking was cancelled — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Refund processed (→ refunded) ──────────────────────────────────────────
+export async function sendRefundConfirmation(booking: Booking, email: EmailAdapter): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const amount = money(booking.total, booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Refund processed',
+        TEAL_DEEP,
+        `Your refund is on its way, ${first}`,
+        'We&rsquo;ve processed a refund for the booking below.',
+      ) +
+      refCard(booking, BADGE_REFUNDED) +
+      routeBlock(booking) +
+      totalBlock('Amount refunded', amount) +
+      infoBox(
+        'When will I see it?',
+        'Refunds usually land in 5&ndash;10 business days, depending on your bank or card provider. Questions? Just reply or message us on WhatsApp.',
+      ) +
+      footer(),
+  );
+  const text = textShell('refund processed', "We've processed a refund for your booking.", booking, [
+    `Amount refunded: ${amount}`,
+    '',
+    'Refunds usually land in 5-10 business days, depending on your bank or card provider.',
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your Ceylon Hop refund is processed — ${booking.reference}`,
+    html,
+    text,
   });
 }

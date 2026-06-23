@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sendBookingConfirmation } from './notifications';
+import { sendBookingConfirmation, sendCancellationConfirmation, sendRefundConfirmation } from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
@@ -116,5 +116,51 @@ describe('sendBookingConfirmation — shared seat', () => {
     expect(m.html).toContain('10 Jul 2026');
     expect(m.html).toContain('08:00');
     expect(m.html).toContain('$40.00');
+  });
+});
+
+describe('sendCancellationConfirmation', () => {
+  it('emails the customer that the booking is cancelled, with reference + route — once', async () => {
+    const email = new FakeEmailAdapter();
+    await sendCancellationConfirmation(single, email);
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('cancel');
+    expect(m.html.toLowerCase()).toContain('cancel');
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('Ella');
+  });
+
+  it('includes a plain-text alternative with the reference and no markup', async () => {
+    const email = new FakeEmailAdapter();
+    await sendCancellationConfirmation(single, email);
+    const m = email.sent[0];
+    expect(m.text).toBeTruthy();
+    expect(m.text).toContain('CH-ABC12');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendRefundConfirmation', () => {
+  it('emails the customer that a refund was processed, with reference + amount — once', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRefundConfirmation(single, email);
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('refund');
+    expect(m.html.toLowerCase()).toContain('refund');
+    expect(m.html).toContain('$50.00');
+  });
+
+  it('includes a plain-text alternative with the reference and no markup', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRefundConfirmation(single, email);
+    const m = email.sent[0];
+    expect(m.text).toContain('CH-ABC12');
+    expect(m.text).not.toContain('<');
   });
 });
