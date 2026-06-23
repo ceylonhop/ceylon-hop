@@ -44,10 +44,7 @@ comes up, so launch is a clean, mechanical switch-over.
 ## 3. Hosting / code / data
 
 - [ ] **Serve the new site on the `ceylonhop.com` apex** (currently the live business site). Required because PayHere only works on the apex.
-- [ ] **Clear all test data** from Supabase (it's the same DB that'll serve production):
-  - test **bookings** — `CH-NDYDS` (sandbox PayHere proof), `CH-9862J` + `CH-TMRJR` (email e2e), direct-API rows (`CH-XFXKX` / `CH-S67RZ` …), every `payment_pending`/draft row, and any "Roshen / Ama / Dave Weliwatta / Sam" bookings
-  - their associated **payments** and **concierge tasks**
-  - **reset `shared_departure` seat counts** — test shared bookings incremented `seats_booked`, so real availability is pre-consumed until reset (truncate the test departure rows, or zero `seats_booked`)
+- [ ] **Clear all test data** from Supabase (it's the same DB that'll serve production) — **run `api/scripts/clear-test-data.sql`**. It truncates every transactional + ops table (bookings/customers/payments/tasks/trip+shared requests/ride_ops/coordinators) **and resets `shared_departure` seat inventory**, while keeping the seeded `corridor` reference data. Run **once, pre-launch**, while everything is still test data (covers the sandbox `CH-NDYDS`, e2e rows, demo bookings, abandoned drafts — no need to enumerate them).
 - [ ] **Chauffeur deposit charge:** checkout charges the FULL total today; chauffeur (deposit) bookings should charge `amountDueNow` (the deposit). Small route/adapter fix.
 - [ ] **Harden the rate limiter:** it keys on the client-supplied `X-Forwarded-For` (spoofable) — use a trusted source before public traffic.
 - [ ] **Trim CORS dev origins:** once on the apex, drop `ceylonhop.github.io` + `localhost` from `ALLOWED_ORIGINS` (keep only `https://ceylonhop.com`).
@@ -66,9 +63,9 @@ comes up, so launch is a clean, mechanical switch-over.
 
 ## Still-to-build (not launch-blocking — but finish or consciously defer)
 
-- **Customer emails** beyond confirmation — cancellation, refund, deposit/balance, driver-assigned, "we need your details", payment-didn't-complete, reminders, review request. (Tracked in detail in the agent's email roadmap notes.)
-- **M11** authoritative pricing engine · **M12** ops dashboard · **M13** WhatsApp Business API · **M14** reminders/SLA timers · **M15** reporting/CSV export.
+- **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`) and ✅ **refund** (`/refund`) now built + branded. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), driver-assigned, "we need your details", payment-didn't-complete. **Reminders + thank-you/review request need a job runner (M14).** (Tracked in the agent's email roadmap notes.)
+- **M11** authoritative pricing engine (interim: site sends `quotedTotal`, API stores it, checkout charges exactly that — site = DB = charge agree today; the authoritative server engine is M11) · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers · **M15** reporting/CSV export.
 
 ---
 
-_Last updated: 2026-06-21. Add new items as they arise — don't rely on memory._
+_Last updated: 2026-06-23. Add new items as they arise — don't rely on memory._
