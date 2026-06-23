@@ -80,7 +80,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
-  app.route('/admin', adminRoutes({ bookings, adminApiKey }));
+  app.route('/admin', adminRoutes({ bookings, email, adminApiKey }));
   return app;
 }
 
