@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { sendBookingConfirmation, sendCancellationConfirmation, sendRefundConfirmation } from './notifications';
+import {
+  sendBookingConfirmation,
+  sendCancellationConfirmation,
+  sendRefundConfirmation,
+  sendTripReminder,
+  sendReviewRequest,
+} from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
 
@@ -139,6 +145,34 @@ describe('sendCancellationConfirmation', () => {
     const m = email.sent[0];
     expect(m.text).toBeTruthy();
     expect(m.text).toContain('CH-ABC12');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendTripReminder', () => {
+  it('reminds the customer about the upcoming trip, with reference, route and date — once', async () => {
+    const email = new FakeEmailAdapter();
+    await sendTripReminder({ ...single, input: { ...single.input, date: '2026-06-26', time: '09:00' } }, email);
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('26 Jun 2026');
+    expect(m.text).toContain('CH-ABC12');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendReviewRequest', () => {
+  it('thanks the customer and asks for a review, with reference and a review link — once', async () => {
+    const email = new FakeEmailAdapter();
+    await sendReviewRequest(single, email);
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.html.toLowerCase()).toContain('review');
+    expect(m.html).toContain('g.page/ceylonhop');
     expect(m.text).not.toContain('<');
   });
 });

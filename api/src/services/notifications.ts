@@ -9,6 +9,7 @@ const INK = '#1b1b1b';
 const MUTED = '#6b7280';
 const FAINT = '#9ca3af';
 const WA_URL = 'https://wa.me/94779669662';
+const REVIEW_URL = 'https://g.page/ceylonhop/review';
 
 function money(cents: number, currency: string): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
@@ -177,14 +178,17 @@ function totalBlock(label: string, amount: string): string {
   </td></tr>`;
 }
 
-function infoBox(title: string, body: string, note?: string): string {
+interface Cta { href: string; label: string; bg: string }
+const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Message us on WhatsApp', bg: '#25D366' };
+
+function infoBox(title: string, body: string, note?: string, cta: Cta = CTA_WHATSAPP): string {
   return `<tr><td style="padding:0 32px 26px">
     <div style="background:#f7faf9;border-radius:12px;padding:20px">
       <div style="font-size:15px;font-weight:700;color:${INK};margin-bottom:6px">${title}</div>
       <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.5">${body}</p>
       <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="#25D366" style="border-radius:10px">
-          <a href="${WA_URL}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">Message us on WhatsApp</a>
+        <tr><td bgcolor="${cta.bg}" style="border-radius:10px">
+          <a href="${cta.href}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">${cta.label}</a>
         </td></tr>
       </table>
     </div>
@@ -333,6 +337,72 @@ export async function sendRefundConfirmation(booking: Booking, email: EmailAdapt
   await email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop refund is processed — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Pre-trip reminder (scheduled, ~24–48h before travel) ───────────────────
+export async function sendTripReminder(booking: Booking, email: EmailAdapter): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Trip reminder',
+        TEAL_DEEP,
+        `Your trip is almost here, ${first}`,
+        'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
+      ) +
+      refCard(booking, BADGE_PAID) +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      infoBox(
+        'Before you travel',
+        "Our team will share your driver&rsquo;s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us.",
+      ) +
+      footer(),
+  );
+  const text = textShell('your trip is coming up', 'A quick reminder about your upcoming journey:', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    "We'll share your driver's details on WhatsApp shortly before pickup.",
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your Ceylon Hop trip is coming up — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Thank-you + review request (scheduled, after travel) ───────────────────
+export async function sendReviewRequest(booking: Booking, email: EmailAdapter): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Thank you',
+        TEAL_DEEP,
+        `Thanks for travelling with us, ${first}!`,
+        'We hope your journey was smooth and the views were worth it.',
+      ) +
+      refCard(booking, { label: 'Completed', bg: '#e6f4ec', color: '#0c6b39' }) +
+      routeBlock(booking) +
+      infoBox(
+        'How did we do?',
+        'A quick Google review would mean the world to our small team &mdash; it helps other travellers find us. Thank you! 🌴',
+        undefined,
+        { href: REVIEW_URL, label: 'Leave a review', bg: TEAL_DEEP },
+      ) +
+      footer(),
+  );
+  const text = textShell('thanks for travelling with us', 'We hope your journey was smooth!', booking, [
+    '',
+    `A quick Google review would mean the world to our small team: ${REVIEW_URL}`,
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `How was your trip? — ${booking.reference}`,
     html,
     text,
   });
