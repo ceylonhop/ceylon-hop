@@ -39,6 +39,22 @@ describe('POST /bookings/trip', () => {
     expect(res.status).toBe(400);
   });
 
+  it('enriches with summed road distance + duration when all stops are known (M8)', async () => {
+    const app = createApp();
+    const res = await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0] });
+    const b = await res.json();
+    expect(b.distanceKm).toBeGreaterThan(0);
+    expect(b.durationMin).toBeGreaterThan(0);
+  });
+
+  it('leaves distance null when any stop is unknown/typed (best-effort, never blocks)', async () => {
+    const app = createApp();
+    const res = await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', '17 Random Lane', 'Ella'], nights: [1, 2, 0] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.distanceKm).toBeNull();
+  });
+
   it('records chauffeur days + driver nights', async () => {
     const app = createApp();
     const res = await postTrip(app, { ...valid, serviceType: 'chauffeur', days: 3, driverNights: 2 });

@@ -71,8 +71,35 @@ export function bookingRoutes(deps: {
     }
 
     const { currency, total } = quoteTrip(parsed.data);
+    // M8 — total road distance/duration across the trip's legs (best-effort; null if any
+    // leg can't be resolved, since a partial sum would understate the trip).
+    const stops = parsed.data.stops;
+    let tripKm: number | null = 0;
+    let tripMin: number | null = 0;
+    try {
+      for (let i = 0; i < stops.length - 1; i++) {
+        const leg = await maps.distance(stops[i], stops[i + 1]);
+        if (!leg) {
+          tripKm = null;
+          tripMin = null;
+          break;
+        }
+        tripKm += leg.km;
+        tripMin += leg.durationMin;
+      }
+    } catch {
+      tripKm = null;
+      tripMin = null;
+    }
     const booking = await bookings.create(
-      { mode: 'trip', input: parsed.data, total: parsed.data.quotedTotal ?? total, currency },
+      {
+        mode: 'trip',
+        input: parsed.data,
+        total: parsed.data.quotedTotal ?? total,
+        currency,
+        distanceKm: tripKm === null ? null : Math.round(tripKm),
+        durationMin: tripMin === null ? null : Math.round(tripMin),
+      },
       { idempotencyKey: key },
     );
     return c.json(booking, 201);

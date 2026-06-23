@@ -16,7 +16,15 @@ export type NewBooking =
       distanceKm?: number | null;
       durationMin?: number | null;
     }
-  | { mode: 'trip'; input: TripInput; total: number; currency: string }
+  | {
+      mode: 'trip';
+      input: TripInput;
+      total: number;
+      currency: string;
+      // Total road distance + driving duration summed across the trip's legs (M8).
+      distanceKm?: number | null;
+      durationMin?: number | null;
+    }
   | { mode: 'shared'; input: SharedInput; total: number; currency: string };
 
 export type Booking = NewBooking & {
