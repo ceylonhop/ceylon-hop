@@ -57,6 +57,13 @@
       "when": 1782100330602,
       "tag": "0007_ops_layer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782223303625,
+      "tag": "0008_notification_log",
+      "breakpoints": true
     }
   ]
 }

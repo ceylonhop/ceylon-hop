@@ -153,3 +153,17 @@ export const rideOps = pgTable('ride_ops', {
   vehicleConfirmedAt: timestamp('vehicle_confirmed_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Dedup ledger for scheduled customer notifications (M14): one row per (booking, kind)
+// means the cron tick can run as often as it likes without ever double-sending.
+export const notificationLog = pgTable(
+  'notification_log',
+  {
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    kind: text('kind').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({ bookingKind: unique().on(t.bookingId, t.kind) }),
+);

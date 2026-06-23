@@ -7,6 +7,7 @@ import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import { PostgresCoordinatorRepo } from './postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
+import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -34,6 +35,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let departures: PostgresDepartureRepo;
   let coordinators: PostgresCoordinatorRepo;
   let rideOps: PostgresRideOpsRepo;
+  let notifLog: PostgresNotificationLogRepo;
   let sql: Sql;
 
   beforeAll(async () => {
@@ -47,6 +49,17 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     departures = new PostgresDepartureRepo(sql);
     coordinators = new PostgresCoordinatorRepo(conn.db);
     rideOps = new PostgresRideOpsRepo(conn.db);
+    notifLog = new PostgresNotificationLogRepo(conn.db);
+  });
+
+  it('notification log records sent kinds per booking, idempotently', async () => {
+    const b = await bookings.create(sample);
+    expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(false);
+    await notifLog.markSent(b.id, 'trip_reminder');
+    expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
+    expect(await notifLog.wasSent(b.id, 'review_request')).toBe(false);
+    await notifLog.markSent(b.id, 'trip_reminder'); // duplicate → no-op via unique constraint
+    expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
   });
 
   it('persists and reads back a booking with customer + transfer', async () => {
