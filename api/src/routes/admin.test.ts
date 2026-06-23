@@ -86,6 +86,30 @@ describe('POST /admin/bookings/:id/cancel', () => {
   });
 });
 
+describe('POST /admin/jobs/notifications', () => {
+  it('runs the scheduler and returns counts, sending a reminder for a booking due tomorrow', async () => {
+    const { app, bookings, email } = makeApp();
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000,
+      currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent.some((m) => /coming up/i.test(m.subject))).toBe(true);
+  });
+
+  it('401 without the admin key', async () => {
+    const { app } = makeApp();
+    expect((await app.request('/admin/jobs/notifications', { method: 'POST' })).status).toBe(401);
+  });
+});
+
 describe('POST /admin/bookings/:id/refund', () => {
   it('refunds a paid booking, transitions it to refunded, and emails the customer', async () => {
     const { app, bookings, email } = makeApp();

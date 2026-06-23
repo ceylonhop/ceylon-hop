@@ -13,6 +13,7 @@ import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
+import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
@@ -26,6 +27,7 @@ export interface AppDeps {
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
   coordinators?: CoordinatorRepo;
+  notificationLog?: NotificationLogRepo;
   adminApiKey?: string;
   auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
   allowedOrigins?: string[];
@@ -43,6 +45,7 @@ export function createApp(deps: AppDeps = {}) {
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
   const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
+  const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
@@ -80,7 +83,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
-  app.route('/admin', adminRoutes({ bookings, email, adminApiKey }));
+  app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
   return app;
 }
 

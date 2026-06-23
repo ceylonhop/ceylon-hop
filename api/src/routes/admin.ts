@@ -1,13 +1,20 @@
 import { Hono, type Context } from 'hono';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { EmailAdapter } from '../adapters/email';
+import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '../domain/status';
 import { sendCancellationConfirmation, sendRefundConfirmation } from '../services/notifications';
+import { runScheduledNotifications } from '../services/scheduler';
 
 // Interim staff API guarded by a single shared key. Supabase Auth + RBAC replaces this
 // in M12 — do not bake the API-key assumption deep.
-export function adminRoutes(deps: { bookings: BookingRepo; email: EmailAdapter; adminApiKey: string }) {
-  const { bookings, email, adminApiKey } = deps;
+export function adminRoutes(deps: {
+  bookings: BookingRepo;
+  email: EmailAdapter;
+  notificationLog: NotificationLogRepo;
+  adminApiKey: string;
+}) {
+  const { bookings, email, notificationLog, adminApiKey } = deps;
   const r = new Hono();
 
   const authed = (c: Context) => Boolean(adminApiKey) && c.req.header('x-admin-key') === adminApiKey;
@@ -54,6 +61,14 @@ export function adminRoutes(deps: { bookings: BookingRepo; email: EmailAdapter; 
 
   r.post('/bookings/:id/cancel', (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
   r.post('/bookings/:id/refund', (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
+
+  // Cron tick — an external scheduler (cron-job.org / GitHub Actions) POSTs here on a
+  // cadence; the work is idempotent via the notification log, so over-calling is harmless.
+  r.post('/jobs/notifications', async (c) => {
+    if (!authed(c)) return c.json({ error: 'unauthorized' }, 401);
+    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email });
+    return c.json(result, 200);
+  });
 
   return r;
 }
