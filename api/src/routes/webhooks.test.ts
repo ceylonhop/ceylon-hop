@@ -107,4 +107,28 @@ describe('POST /webhooks/payments', () => {
     const res = await app.request('/webhooks/payments', { method: 'POST', body: tampered });
     expect(res.status).toBe(400);
   });
+
+  it('rejects a currency mismatch (400) and leaves the booking unpaid', async () => {
+    const adapter = new FakePaymentAdapter();
+    const app = createApp({ adapter });
+    const b = await bookAndCheckout(app); // priced in USD
+    const wrongCurrency = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: 'EUR' });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: wrongCurrency });
+    expect(res.status).toBe(400);
+    const after = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(after.status).not.toBe('paid');
+  });
+
+  it('does NOT mark the booking paid when the payment failed (acknowledge, no email)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adapter, email });
+    const b = await bookAndCheckout(app);
+    const failed = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed' });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: failed });
+    expect(res.status).toBe(200); // acknowledged so PayHere won't retry…
+    const after = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(after.status).toBe('payment_pending'); // …but the booking must NOT be paid
+    expect(email.sent).toHaveLength(0);
+  });
 });
