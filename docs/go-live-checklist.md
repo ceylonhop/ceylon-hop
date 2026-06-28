@@ -44,6 +44,7 @@ comes up, so launch is a clean, mechanical switch-over.
 ## 3. Hosting / code / data
 
 - [ ] **Serve the new site on the `ceylonhop.com` apex** (currently the live business site). Required because PayHere only works on the apex.
+  - ⚠️ **SEO RISK — do M16 first.** The current site ranks via per-route landing pages (`/trip/<from>-to-<to>/`) the new app-style site doesn't have. Cutting over without recreating route pages + 301-redirecting old URLs will drop long-tail rankings. Full plan: [`seo-migration-plan.md`](./seo-migration-plan.md) (sitemap/robots/404/CNAME + canonical/OG live there too).
 - [ ] **Clear all test data** from Supabase (it's the same DB that'll serve production) — **run `api/scripts/clear-test-data.sql`**. It truncates every transactional + ops table (bookings/customers/payments/tasks/trip+shared requests/ride_ops/coordinators) **and resets `shared_departure` seat inventory**, while keeping the seeded `corridor` reference data. Run **once, pre-launch**, while everything is still test data (covers the sandbox `CH-NDYDS`, e2e rows, demo bookings, abandoned drafts — no need to enumerate them).
 - [ ] **Chauffeur deposit charge:** checkout charges the FULL total today; chauffeur (deposit) bookings should charge `amountDueNow` (the deposit). Small route/adapter fix.
 - [ ] **Harden the rate limiter:** it keys on the client-supplied `X-Forwarded-For` (spoofable) — use a trusted source before public traffic.

@@ -495,6 +495,12 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
 - **M14 — Reminders, review requests, SLA timers.** Scheduled jobs + concierge SLA on
   SL hours.
 - **M15 — Reporting / CSV export.** Payments + bookings export until accounting lands.
+- **M16 — SEO-safe site migration.** Replacing the current `ceylonhop.com` site with the
+  new booking site is **not like-for-like**: the live site ranks via per-route landing pages
+  (`/trip/<from>-to-<to>/`) the new app-style site doesn't have. Recreate static route pages
+  (from corridor/`REAL_KM` data), 301-map the old URLs, and ship the missing
+  `sitemap.xml`/`robots.txt`/`404.html`/`CNAME` + sitewide canonical/OG + structured data
+  before the apex cutover. **Full analysis + action plan: [`seo-migration-plan.md`](./seo-migration-plan.md).**
 
 ---
 
