@@ -46,4 +46,52 @@ describe('PayHerePaymentAdapter', () => {
     const body = a.simulateNotify({ orderId: 'CH-X', amount: 4000, currency: 'USD', statusCode: '-2' });
     expect(a.parseWebhook(body)?.status).toBe('failed');
   });
+
+  // Pinned known-good signature: locks the md5sig algorithm + field ORDER against
+  // regression. The literal was computed once for these exact inputs (md5sig =
+  // UPPER(md5( MID + order + amount + currency + status_code + UPPER(md5(secret)) )));
+  // any change to the production hashing makes parseWebhook recompute a different value,
+  // reject this body, and fail this test. (A truly independent oracle = a captured real
+  // sandbox notify; until then this prevents silent drift from the sandbox-verified algo.)
+  it('accepts a body carrying a pinned, independently-computed md5sig', () => {
+    const body = new URLSearchParams({
+      merchant_id: MID,
+      order_id: 'CH-LOCK1',
+      payment_id: 'PAY-LOCK',
+      payhere_amount: '40.00',
+      payhere_currency: 'USD',
+      status_code: '2',
+      md5sig: 'E54BE7A7858B65FC8EEE345CA059AF9C',
+    }).toString();
+    const event = adapter().parseWebhook(body);
+    expect(event).not.toBeNull();
+    expect(event?.status).toBe('succeeded');
+    expect(event?.amount).toBe(4000);
+    expect(event?.orderId).toBe('CH-LOCK1');
+  });
+
+  it('rejects a forged md5sig (valid fields, attacker-chosen signature)', () => {
+    const a = adapter();
+    const valid = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    const forged = valid.replace(/md5sig=[A-F0-9]+/, 'md5sig=' + 'A'.repeat(32));
+    expect(a.parseWebhook(forged)).toBeNull();
+  });
+
+  it('rejects a notify with no md5sig at all', () => {
+    const noSig = new URLSearchParams({
+      merchant_id: MID,
+      order_id: 'CH-ABC12',
+      payhere_amount: '40.00',
+      payhere_currency: 'USD',
+      status_code: '2',
+    }).toString();
+    expect(adapter().parseWebhook(noSig)).toBeNull();
+  });
+
+  it('rejects a tampered status_code (signed as failed, flipped to success)', () => {
+    const a = adapter();
+    const failed = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD', statusCode: '-2' });
+    const forgedSuccess = failed.replace('status_code=-2', 'status_code=2');
+    expect(a.parseWebhook(forgedSuccess)).toBeNull();
+  });
 });
