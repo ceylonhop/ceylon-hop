@@ -48,6 +48,40 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
     await d.bookings.setStatus(b.id, 'cancelled');
     expect((await runScheduledNotifications(NOW, d)).reminders).toBe(0);
   });
+
+  it('reminds a CONFIRMED booking within 48h (not only paid)', async () => {
+    const d = deps();
+    const b = await paidSingle(d.bookings, '2026-07-02');
+    await d.bookings.setStatus(b.id, 'confirmed');
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+  });
+
+  it('skips a booking with no travel date (flexible) — no reminder, no review', async () => {
+    const d = deps();
+    const b = await d.bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer },
+      total: 5000,
+      currency: 'USD',
+    });
+    await d.bookings.setStatus(b.id, 'payment_pending');
+    await d.bookings.setStatus(b.id, 'paid');
+    const r = await runScheduledNotifications(NOW, d);
+    expect(r.reminders).toBe(0);
+    expect(r.reviews).toBe(0);
+  });
+
+  it('does NOT mark sent when the email fails, so the next tick retries', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    let calls = 0;
+    const flaky = { send: async () => { calls++; if (calls === 1) throw new Error('provider down'); } };
+    await paidSingle(bookings, '2026-07-02');
+    const r1 = await runScheduledNotifications(NOW, { bookings, log, email: flaky });
+    expect(r1.reminders).toBe(0); // send threw → swallowed, NOT counted, NOT marked
+    const r2 = await runScheduledNotifications(NOW, { bookings, log, email: flaky });
+    expect(r2.reminders).toBe(1); // retried on the next tick and succeeded
+  });
 });
 
 describe('runScheduledNotifications — review request', () => {
