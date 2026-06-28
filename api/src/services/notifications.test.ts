@@ -49,6 +49,16 @@ describe('sendBookingConfirmation — single transfer', () => {
     expect(m.text).not.toContain('<'); // genuinely plain text
   });
 
+  it('HTML-escapes customer-supplied text (no markup/script injection)', async () => {
+    const email = new FakeEmailAdapter();
+    const evil = { ...customer, firstName: 'Mal<script>alert(1)</script>&"' };
+    await sendBookingConfirmation({ ...single, input: { ...single.input, from: 'Pickup<b>x</b>', customer: evil } }, email);
+    const m = email.sent[0];
+    expect(m.html).not.toContain('<script>');
+    expect(m.html).not.toContain('Pickup<b>');
+    expect(m.html).toContain('&lt;script&gt;');
+  });
+
   it('shows "To confirm" when no date was set (flexible booking)', async () => {
     const email = new FakeEmailAdapter();
     await sendBookingConfirmation(single, email);

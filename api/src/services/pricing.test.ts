@@ -26,8 +26,10 @@ describe('quoteSingleTransfer (stub)', () => {
     expect(quoteSingleTransfer({ ...base, vehicleType: 'van', adults: 2 }).total).toBe(7000);
   });
 
-  it('is deterministic', () => {
-    expect(quoteSingleTransfer(base)).toEqual(quoteSingleTransfer(base));
+  it('does not charge for children — only adults drive the price', () => {
+    const withKids = quoteSingleTransfer({ ...base, adults: 2, children: 3 }).total;
+    expect(withKids).toBe(quoteSingleTransfer({ ...base, adults: 2, children: 0 }).total);
+    expect(withKids).toBe(5000); // base 4000 + 1 extra adult 1000
   });
 });
 
