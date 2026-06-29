@@ -1,5 +1,10 @@
 # Ceylon Hop — Quote Calculation: Detailed Worked Examples (for ops review)
 
+> 🧭 **This document is validation evidence — NOT the canonical price source.** The authoritative
+> rates live in code (`api/src/quote/rateCard.ts`, + the corridor repo for shared seat prices),
+> PR-reviewed and golden-tested. Numbers here use **hand-estimated distances** and include **"team
+> actual" figures that intentionally differ** from the engine. **Do not quote a customer from this doc.**
+
 **Purpose:** validate the proposed automated **Quote Engine** against the real WhatsApp quotes the
 team gave. Every customer below shows the **full itinerary, distance per leg, vehicle, the rate
 applied ($/km and $/day), line-by-line totals, deposit**, and **what the team actually charged**.
@@ -47,7 +52,8 @@ All sell prices below **already include the 25% margin** (markup shown for trans
 
 **Extras (checkout add-ons — server-validated price table, client can't set the price):**
 `sightseeing` Sightseeing stops up to 3h **$10** (live) · `safari-wait` Wait for Safari **$19** (to add) ·
-`luggage` Luggage rack $5 · `front` Child seat $8 · `flex` Flexi ticket $12 · extra bag $10.
+`luggage` Luggage rack $5 · `front` Child seat $8 · `flex` Flexi ticket $12. *(An extra-bag charge is
+a front-end/shared concept, **not** in the v1 engine.)*
 Extras show only on a **single point-to-point private transfer** (matches `booking.js`).
 
 **Surcharges/codes seen in the chats (to encode):** Colombo city-pickup **+$3/seat** · discount codes
@@ -59,8 +65,8 @@ Extras show only on a **single point-to-point private transfer** (matches `booki
 
 The team keeps a manual price sheet of common routes so ops staff can quote quickly without asking
 co-founder Dasis each time. **The automated engine does NOT use this table.** Private + chauffeur
-transfers always compute **`km × $0.46`**. The sheet is shown here only to **confirm** that
-$0.46/km matches how the team actually prices today.
+transfers compute **`km × rate`** (car $0.46 / van $0.83) with the **$29 car / $50 van floors**. The
+sheet is shown here only to **confirm** that the car $0.46/km matches how the team actually prices today.
 
 | Route (ops sheet) | Car price | ~km | implied $/km |
 |---|---|---|---|
