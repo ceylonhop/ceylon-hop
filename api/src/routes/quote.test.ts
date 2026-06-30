@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { createApp } from '../app';
 import { quoteRoutes } from './quote';
 
+
 function post(app: ReturnType<typeof createApp>, body: unknown, headers: Record<string, string> = {}) {
   return app.request('/quote', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 }
@@ -47,5 +48,37 @@ describe('POST /quote', () => {
     });
     expect(stripped.status).toBe(200);
     expect((await stripped.json()).marginEstimateCents).toBeUndefined();
+  });
+});
+
+describe('POST /quote — validation & security gaps', () => {
+  it('wrong x-internal-key strips marginEstimateCents (security)', async () => {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ internalKey: 'test-key' }));
+    const res = await app.request('/quote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-key': 'wrong-key' },
+      body: JSON.stringify({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).marginEstimateCents).toBeUndefined();
+  });
+
+  it('unknown extra code → 400 invalid_request (Zod rejects before engine)', async () => {
+    const res = await post(createApp(), {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }],
+      extras: ['bogus'],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
+  });
+
+  it('empty legs array → 400 (Zod .min(1))', async () => {
+    const res = await post(createApp(), {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_request');
   });
 });
