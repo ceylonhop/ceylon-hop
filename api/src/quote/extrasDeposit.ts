@@ -7,7 +7,7 @@ const EXTRA_LABELS: Record<ExtraCode, string> = {
   luggage: 'Luggage rack',
   front: 'Child seat',
   flex: 'Flexi ticket',
-  waiting: 'Waiting time', // label copy to be finalised in Task 14
+  waiting: 'Waiting fee',
 };
 
 export function priceExtras(codes: ExtraCode[]): { lineItems: LineItem[]; subtotalCents: number } {

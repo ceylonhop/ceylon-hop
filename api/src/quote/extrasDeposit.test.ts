@@ -7,6 +7,9 @@ describe('priceExtras', () => {
     expect(r.subtotalCents).toBe(2900);
     expect(r.lineItems).toHaveLength(2);
   });
+  it('prices waiting extra ($10)', () => {
+    expect(priceExtras(['waiting']).subtotalCents).toBe(1000);
+  });
   it('throws on an unknown extra code', () => {
     // @ts-expect-error invalid code on purpose
     expect(() => priceExtras(['bogus'])).toThrow('UNKNOWN_EXTRA');
