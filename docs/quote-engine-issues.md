@@ -25,6 +25,12 @@ idle-day rule. **Confirm** it's intended across the board (it is, per your "keep
 so it's explicit, and so the worked-examples "team actual" comparisons are understood as *historical*,
 pre-buffer).
 
+**⚠️ Magnitude (do not skim):** this is a **~10% uplift on every per-km quote on every surface**,
+stacking on the 25% markup. Example: Airport→Sigiriya was **$69** on the ops sheet → **$75.90** unbuffered
+→ **~$83.50** buffered. If the website-display follow-up ever wires the engine to the public site, that's
+a visible **~20% price increase vs the live frozen formula** — make a conscious taper decision before
+doing so. Founder's call, but logged at full magnitude.
+
 ## 🟠 I3 — FX rate value is not set, and LKR display drifts with it
 `fxUsdToLkr` is a manual config (placeholder **320**). Two things: (1) set the real rate before use;
 (2) because the engine is USD-canonical and LKR is converted, the LKR figure shifts whenever ops edits
@@ -56,6 +62,38 @@ UI layer — flagged.
 ## 🟡 I9 — Vehicle auto-upgrade must be shown, not hidden
 The engine prices the *larger* of requested/required vehicle (a car request for 6 pax is priced as a
 van, with a warning). The UI must surface that warning, not present a fake cheaper "car" price.
+
+---
+
+## 🟠 I10 — Engine result lacks `bufferKm` / `billableKm` fields the tool UI needs
+The tool's headline "distance → +10% → billable" breakdown needs the result to expose `bufferKm` and
+`billableKm`, but the base engine plan only puts `distanceKm` in a `LineItem.meta`. **Add these fields**
+to the private/chauffeur result in Phase 0 (engine), or the tool's pricing summary can't render the
+breakdown. (Found by review; reflected in the tool plan.)
+
+## 🟠 I11 — `opsAuth` has no reusable middleware to mount the tool behind
+The tool plan says `/admin/quote` mounts "behind the `opsAuth` middleware," but `opsAuth.ts` only
+exports pure functions — the actual cookie/key check is **inline** in `ops.ts` (~lines 38–44). **Phase 1
+must first extract** a `requireOps(auth)` middleware factory (and refactor `ops.ts` to use it), or inline
+the same check in `internalQuote.ts`. The auth config it needs is `{ supportKey, founderKey,
+sessionSecret, adminApiKey }`, not a single key.
+
+## 🟠 I12 — Typed-leg → `QuoteRequest` mapping is unspecified
+A trip is a timeline of mixed typed legs (Transfer / Stay day / Sightseeing / Safari / Airport), but the
+engine takes **one product per call** (private XOR chauffeur). The tool plan doesn't say how a mixed
+itinerary (some "keep car+driver" days, some plain transfers) collapses into request(s). **Needs a
+worked rule before Phase 1** — e.g. "any keep-car-driver day → the whole trip is one chauffeur request;
+otherwise N independent private legs."
+
+## 🟡 I13 — FX rate is a hardcoded const, not ops-editable
+`fxUsdToLkr` lives in `rateCard.ts`, and tool-plan Phase 2 defers rate-card editing — so "ops updates it
+occasionally" actually means **a PR + deploy each time**. Either make it an env var / config value now,
+or accept that the LKR figure is engineer-maintained in v1.
+
+## 🟡 I14 — Out-of-order execution caveat
+Task 4 asserts the unbuffered `quotePrivateLegs` subtotal (6350); Task 11 supersedes it to 6718. If tasks
+run **out of order** (parallel), Task 4's test goes red after Task 11. Execute Tasks 1–14 **in order**;
+the changelog table lists every superseded value.
 
 ---
 

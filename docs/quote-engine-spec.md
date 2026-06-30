@@ -249,7 +249,7 @@ POST /quote
 - **Golden cases** — every customer in the worked-examples doc + the 10 Notion leads becomes a unit
   test: `quote(request) === expectedTotal`. Locks the engine to validated numbers.
 - **Floor tests** — short legs hit `$29 / $50`; just-above legs don't.
-- **Chauffeur tests** — idle-day math (Emma → $867, Ayan → $323.50).
+- **Chauffeur tests** — idle-day math **+ the 10% travel-km buffer** (Emma → **$903.80**, Ayan → **$340.98**; the $867 / $323.50 figures are the *pre-buffer* values — buffer/waiting/FX are added in plan Tasks 10–14, which this §10 predates).
 - **Deposit tests** — cap vs percentage boundary ($500 → $50; $400 → $40).
 - **Property tests** — `total ≥ Σ floors`; `deposit ≤ cap`; money never negative; rounding stable.
 - **Tamper tests** (follow-up plan, §8) — `clientTotal ≠ canonicalCents` → `QUOTE_TAMPERED`; a submitted

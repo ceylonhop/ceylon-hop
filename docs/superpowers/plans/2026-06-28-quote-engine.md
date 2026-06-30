@@ -19,7 +19,7 @@ An adversarial review killed the original "recompute overrides the charge at boo
 - **Rate card is a versioned code module.** `RATE_CARD.version` stamped on every quote.
 - **Rates (all sell prices include 25% markup):** car `46`¢/km, van `83`¢/km, chauffeur day `3500`¢, floors car `2900`¢ / van `5000`¢, idle-day min km car `100` / van `150`, deposit `min(10% × total, 5000¢)`, Colombo-pickup surcharge `300`¢/seat.
 - **Vehicle (web):** car ≤ 3 pax & ≤ 3 bags · van ≤ 6 pax · bigger → not priced (`TOO_BIG`).
-- **Extras (cents):** sightseeing `1000`, safari-wait `1900`, luggage `500`, front `800`, flex `1200`; extra bag `1000`.
+- **Extras (cents):** sightseeing `1000`, **waiting `1000`**, safari-wait `1900`, luggage `500`, front `800`, flex `1200`. (No extra-bag charge in v1.)
 - **Distance is an input** to the engine (caller supplies `distanceKm`); the engine never fetches it.
 - **Shared seat price is an input** (`seatPriceCents`), sourced from the corridor repo — not the rate card.
 - **TDD:** failing test → watch it fail → minimal impl → watch it pass → commit. Gate: `npm run check` green before each commit.
@@ -991,7 +991,7 @@ it('quotePrivateLegs prices off buffered km (Julián subtotal 6718)', () => {
 });
 ```
 - [ ] **Step 2: Run → fail** (`billableKm` not exported).
-- [ ] **Step 3: Implement** — add `billableKm` and price each leg via `legPriceCents(billableKm(leg.distanceKm), vehicle)` (floor-warning check uses the buffered km too).
+- [ ] **Step 3: Implement** — add `billableKm` and price each leg via `legPriceCents(billableKm(leg.distanceKm), vehicle)` (floor-warning check uses the buffered km too). Include `billableKm` (and the raw `distanceKm`) in each leg's `meta` so the tool can render the `distance → +buffer → billable` breakdown (issue I10).
 - [ ] **Step 4: Run → pass.**
 - [ ] **Step 5: Commit.** `git commit -m "feat(quote): 10% distance buffer on private legs (M11 task 11)"`
 

@@ -17,7 +17,7 @@ Companion to the engine docs: [README](./quote-engine-README.md) · [spec](./quo
 2. **FX = a manually-set `USD→LKR` rate** in config, updated occasionally (no live API in v1).
 3. **Chauffeur = one toggle** per date ("Keep car + driver") → applies our **$35/day + idle-km
    minimum**. (Merges the design's two switches; no separate accommodation line.)
-4. **Buffer = flat 10%** on billable km, surfaced as `distance → +10% buffer → billable`.
+4. **Buffer = flat 10%** on **travel km only** (NOT chauffeur idle-min km — per issue I1), surfaced as `distance → +10% buffer → billable`.
 5. **Stateless v1** — no Save / lead-lifecycle / Notion persistence yet.
 6. **Per-leg Sightseeing + Waiting fees shown.** Extras (cents): sightseeing `1000`, **waiting `1000`
    (new)**, safari-wait `1900`, luggage `500`, child seat `800`, flexi `1200`.
@@ -37,8 +37,9 @@ tool cannot be correct against today's placeholder `pricing.ts`.
 ## Phase 0 — Engine superset tweaks (TDD; fold into the engine plan / rate card)
 
 1. **Buffer.** Add `RATE_CARD.bufferPct = 10`. Apply per leg: `legBillableKm = round(legKm × 1.10)`,
-   then price off that (`max(floor, legBillableKm × rate)`). For chauffeur, buffer applies to all
-   billable km (travel + idle minimums). The result exposes `distanceKm`, `bufferKm`, `billableKm` so
+   then price off that (`max(floor, legBillableKm × rate)`). **For chauffeur, buffer applies to travel
+   km only — idle-day minimum km are NOT buffered (issue I1, resolved).** Add **new** `bufferKm` +
+   `billableKm` fields to the engine result (the base plan only puts `distanceKm` in `meta` — issue I10) so
    the summary can show the `400 → +40 → 440` breakdown. Golden tests updated for the +10%.
 2. **Waiting extra.** Add `waiting: 1000` to `RATE_CARD.extras` + the `ExtraCode` union + a label.
 3. **FX config.** Add `RATE_CARD.fxUsdToLkr` (a number, manually maintained). The **engine stays
@@ -49,11 +50,16 @@ tool cannot be correct against today's placeholder `pricing.ts`.
 
 ## Phase 1 — Tool API (orchestration, behind ops auth)
 
-1. New `api/src/routes/internalQuote.ts` mounted at `/admin/quote`, behind the `opsAuth` middleware.
+1. **First extract a reusable ops-auth middleware** (issue I11): `opsAuth.ts` only exports pure
+   functions today — the cookie/key check is inline in `ops.ts`. Pull it into `requireOps(auth)` (auth =
+   `{ supportKey, founderKey, sessionSecret, adminApiKey }`) and refactor `ops.ts` to use it. Then mount
+   new `api/src/routes/internalQuote.ts` at `/admin/quote` behind `requireOps`.
 2. `POST /admin/quote/estimate` — body: `{ customer: {name, pax, bags, vehicle}, legs: [{ type,
    from, to, stops?, date, overrideKm?, keepCarDriver?, sightseeing?, waiting?, safariWait? }] }`.
-3. For each leg without `overrideKm`, call `maps.distance(from,to)`; assemble the `QuoteRequest`
-   (private legs, or chauffeur `travelDays`/idle from the `keepCarDriver` toggles); call `quote()`.
+3. For each leg without `overrideKm`, call `maps.distance(from,to)`; assemble the `QuoteRequest`; call
+   `quote()`. **Mapping rule (issue I12):** one engine call takes one product. If **any** leg is marked
+   "keep car + driver", the whole trip is **one chauffeur request** (its travel days + idle days);
+   otherwise it's **N independent private legs**. (Mixed within a single request is not representable.)
 4. Convert to **LKR (primary) + USD (reference)** via `fxUsdToLkr`.
 5. Build the drafted **WhatsApp / Email / Notion** text from `result.lineItems`.
 6. Respond `{ result, lkr, usd, perLegDistances:[{from,to,usedKm,source}], drafts }`. **422** on

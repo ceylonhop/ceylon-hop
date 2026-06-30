@@ -311,9 +311,9 @@ Sigiriya→Kandy $17×2 + Ella→Mirissa $24×2 + Mirissa→Airport $24×2 = **$
 | Tissa→Mirissa | shared | $17×2 | $34 |
 | Negombo→Wilpattu | private car | 130×.46 | $59.80 |
 | Wilpattu→Dambulla | private car | 95×.46 | $43.70 |
-| Mirissa→Galle | private car | 40×.46 | $18.40 |
+| Mirissa→Galle | private car | max($29, 40×.46) | **$29.00** (floor) |
 | Galle→Colombo | private car | 120×.46 | $55.20 |
-**Total $277.10** (2 pax). **Logic:** each leg priced by its own product — shared seat×2 on covered routes, private km×$0.46 off-route.
+**Total $287.70** (2 pax — Mirissa→Galle floored to $29). **Logic:** each leg priced by its own product — shared seat×2 on covered routes, private `max($29, km×$0.46)` off-route.
 
 ### 30. Jen Lorimer — **2 adults + 2 kids = 4 pax (van)**, dated (Mar)
 | Leg | Mode | Seats/Veh | Calc | Line |
