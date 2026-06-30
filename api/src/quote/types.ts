@@ -19,7 +19,7 @@ export interface QuoteResult {
   totalCents: number;
   depositCents: number;
   amountDueNowCents: number;
-  marginEstimateCents: number; // total − cost basis; surfaced to internal/ops callers only
+  marginEstimateCents: number | null; // total − cost basis; null for shared (cost not modelled); surfaced to internal/ops callers only
   rateCardVersion: string;
   warnings: string[];
 }

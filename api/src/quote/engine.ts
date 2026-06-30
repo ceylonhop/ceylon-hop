@@ -54,6 +54,7 @@ export function quote(req: QuoteRequest): QuoteResult {
   const totalCents = subtotalCents;
   const deposit = depositCents(totalCents);
   const amountDueNowCents = req.product === 'chauffeur' ? deposit : totalCents;
+  const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
 
   return {
     product: req.product,
@@ -63,7 +64,7 @@ export function quote(req: QuoteRequest): QuoteResult {
     totalCents,
     depositCents: deposit,
     amountDueNowCents,
-    marginEstimateCents: totalCents - costCents,
+    marginEstimateCents,
     rateCardVersion: RATE_CARD.version,
     warnings,
   };

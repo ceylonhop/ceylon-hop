@@ -54,4 +54,9 @@ describe('quote()', () => {
   it('throws NO_LEGS on an empty chauffeur request', () => {
     expect(() => quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-01-01', lastDate: '2026-01-01', travelDays: [] })).toThrow('NO_LEGS');
   });
+
+  it('shared product has marginEstimateCents === null (cost not modelled)', () => {
+    const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: false }] });
+    expect(r.marginEstimateCents).toBeNull();
+  });
 });
