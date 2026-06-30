@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { Hono } from 'hono';
 import { createApp } from '../app';
+import { quoteRoutes } from './quote';
 
 function post(app: ReturnType<typeof createApp>, body: unknown, headers: Record<string, string> = {}) {
   return app.request('/quote', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -23,5 +25,27 @@ describe('POST /quote', () => {
   it('400 on a malformed body', async () => {
     const res = await post(createApp(), { product: 'private' });
     expect(res.status).toBe(400);
+  });
+
+  it('includes marginEstimateCents only when x-internal-key matches', async () => {
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ internalKey: 'test-key' }));
+    const body = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] };
+
+    const ok = await app.request('/quote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-internal-key': 'test-key' },
+      body: JSON.stringify(body),
+    });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).marginEstimateCents).toBeDefined();
+
+    const stripped = await app.request('/quote', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(stripped.status).toBe(200);
+    expect((await stripped.json()).marginEstimateCents).toBeUndefined();
   });
 });
