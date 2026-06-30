@@ -2,7 +2,7 @@
 import { RATE_CARD } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
 import { selectVehicle } from './vehicle';
-import { quotePrivateLegs } from './private';
+import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
 import { priceExtras, depositCents } from './extrasDeposit';
@@ -32,7 +32,7 @@ export function quote(req: QuoteRequest): QuoteResult {
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
-    costCents += req.legs.reduce((s, l) => s + Math.round(l.distanceKm * RATE_CARD.costPerKmCents[vehicle]), 0);
+    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm) * RATE_CARD.costPerKmCents[vehicle]), 0);
     if (req.extras?.length) {
       const e = priceExtras(req.extras);
       lineItems.push(...e.lineItems);

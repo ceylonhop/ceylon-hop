@@ -9,6 +9,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(4048); // 88km × 46¢ = 4048
     expect(r.amountDueNowCents).toBe(4048);
     expect(r.rateCardVersion).toBe(RATE_CARD.version);
+    expect(r.marginEstimateCents).toBe(792); // 4048 - (88km × 37¢ cost = 3256)
   });
 
   it('private with extras adds them to the total', () => {
