@@ -6,17 +6,16 @@ card + 10% buffer, so they're exact.
 
 ---
 
-## 🔴 I1 — The 10% buffer STACKS on the chauffeur idle-minimum (and the 25% markup)
-For chauffeur, buffer applies to *all* billable km, including the synthetic idle-day minimums. Effect:
+## ✅ I1 — Buffer vs chauffeur idle-minimum — RESOLVED: option (b), travel km only
+The 10% buffer applies to **travel km only**; the synthetic idle-day minimum km are **not** buffered.
 
-| Trip | Team (historical) | Engine, no buffer | Engine, +10% buffer |
+| Trip | Team (historical) | Engine, no buffer | Engine (final: buffer on travel only) |
 |---|---|---|---|
-| **Emma** (9 days, 4 idle) | $690 | $867 (+26%) | **$922.20 (+34%)** |
-| **Ayan** (3 days, 1 idle) | $235 | $323.50 (+38%) | **$345.58 (+47%)** |
+| **Emma** (9 days, 4 idle) | $690 | $867 | **$903.80** |
+| **Ayan** (3 days, 1 idle) | $235 | $323.50 | **$340.98** |
 
-This is three uplifts compounding (markup × idle-min × buffer). **Decision needed:** should the buffer
-apply to chauffeur billable km **(a)** including idle minimums (current plan), **(b)** only to actual
-travel km, or **(c)** not to chauffeur at all? The plan currently does (a); easy to change.
+Chauffeur still runs above the historical hand-quotes (intended — idle days bill + 25% markup), but
+the buffer no longer compounds on the idle minimums. Baked into plan **Task 12**.
 
 ## 🟠 I2 — Buffer pushes every per-km quote ~10% above the validated examples
 The worked-examples doc validated `km × rate` *without* buffer (Tatia 80 km = $36.80 ≈ team $37). With

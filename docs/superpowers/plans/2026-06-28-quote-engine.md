@@ -931,16 +931,16 @@ git commit -m "feat(quote): POST /quote endpoint (M11 task 9)"
 
 These add the founder-design superset: a **10% distance buffer**, a **waiting** extra, and a manual
 **USD→LKR** display rate. **All expected numbers below are validated** by a throwaway calculator (no
-drift). ⚠️ See [issues](../../quote-engine-issues.md) **I1/I2** — the buffer stacks on chauffeur
-idle-minimums (Emma → $922.20); confirm before/while building.
+drift). **Issue I1 resolved → option (b): buffer applies to travel km only, NOT chauffeur idle-day
+minimums** (Emma → $903.80, not $922).
 
 ### Test expectations these tasks UPDATE (changelog — base tasks were unbuffered)
-| Where | Was (no buffer) | Now (+10% buffer) |
+| Where | Was (no buffer) | Now (+10% buffer, travel km only) |
 |---|---|---|
 | Task 4 `quotePrivateLegs` Julián subtotal | 6350 | **6718** (Mirissa→Tangalle floored $29 + Yala→Tangalle 83 km × 46 = $38.18) |
 | Task 8 `quote()` Tatia 80 km car total | 3680 | **4048** ($40.48) |
-| Task 8 `quote()` Emma chauffeur total / deposit | 86700 / 5000 | **92220 / 5000** (deposit still capped) |
-| Task 6 `quoteChauffeur` Ayan subtotal / Emma subtotal | 32350 / 86700 | **34558 / 92220** |
+| Task 8 `quote()` Emma chauffeur total / deposit | 86700 / 5000 | **90380 / 5000** (deposit still capped) |
+| Task 6 `quoteChauffeur` Ayan subtotal / Emma subtotal | 32350 / 86700 | **34098 / 90380** |
 > `legPriceCents` (Task 4 unit) stays **buffer-free** — it's the validated rate primitive. Buffer is
 > applied by `billableKm()` at the leg/chauffeur level (Tasks 11–12).
 
@@ -995,32 +995,32 @@ it('quotePrivateLegs prices off buffered km (Julián subtotal 6718)', () => {
 - [ ] **Step 4: Run → pass.**
 - [ ] **Step 5: Commit.** `git commit -m "feat(quote): 10% distance buffer on private legs (M11 task 11)"`
 
-### Task 12: 10% buffer on chauffeur billable km
+### Task 12: 10% buffer on chauffeur TRAVEL km (idle minimums unbuffered)
 
-**Files:** Modify `api/src/quote/chauffeur.ts` + `chauffeur.test.ts`. (Imports `billableKm` from Task 11.)
+**Files:** Modify `api/src/quote/chauffeur.ts` + `chauffeur.test.ts`. (Imports `billableKm` from Task 11.) **Decision I1 = (b): buffer applies to travel km only; the idle-day minimum km are NOT buffered.**
 
-- [ ] **Step 1: Update the failing tests** (Ayan + Emma now buffered)
+- [ ] **Step 1: Update the failing tests** (Ayan + Emma — buffer on travel only)
 ```ts
-it('Ayan: 3 days, 2 travel + 1 idle (car), buffered = $345.58', () => {
+it('Ayan: 3 days, 1 idle (car); buffer on travel only = $340.98', () => {
   const r = quoteChauffeur({ vehicle:'car', firstDate:'2026-11-02', lastDate:'2026-11-04',
     travelDays:[ {date:'2026-11-02',from:'Hikkaduwa',to:'N.Eliya',distanceKm:165},
                  {date:'2026-11-04',from:'N.Eliya',to:'Hiriketiya',distanceKm:210} ] });
-  expect(r.meta).toEqual({ days:3, idleDays:1, rawKm:475, billableKm:523 });
-  expect(r.subtotalCents).toBe(34558); // day 10500 + 523×46 = 24058
+  expect(r.meta).toEqual({ days:3, idleDays:1, travelKm:375, idleKm:100, billableKm:513 });
+  expect(r.subtotalCents).toBe(34098); // day 10500 + 513×46 = 23598; travel 375→413, idle 100 unbuffered
 });
-it('Emma: 9 days, 5 travel + 4 idle (car), buffered = $922.20', () => {
+it('Emma: 9 days, 4 idle (car); buffer on travel only = $903.80', () => {
   const r = quoteChauffeur({ vehicle:'car', firstDate:'2026-02-14', lastDate:'2026-02-22',
     travelDays:[ {date:'2026-02-14',from:'Airport',to:'Kandy',distanceKm:120},
                  {date:'2026-02-16',from:'Kandy',to:'Sigiriya day trip',distanceKm:200},
                  {date:'2026-02-17',from:'Kandy',to:'Ella',distanceKm:140},
                  {date:'2026-02-19',from:'Ella',to:'Bentota',distanceKm:230},
                  {date:'2026-02-22',from:'Bentota',to:'Airport',distanceKm:110} ] });
-  expect(r.meta).toEqual({ days:9, idleDays:4, rawKm:1200, billableKm:1320 });
-  expect(r.subtotalCents).toBe(92220); // day 31500 + 1320×46 = 60720
+  expect(r.meta).toEqual({ days:9, idleDays:4, travelKm:800, idleKm:400, billableKm:1280 });
+  expect(r.subtotalCents).toBe(90380); // day 31500 + 1280×46 = 58880; travel 800→880, idle 400 unbuffered
 });
 ```
 - [ ] **Step 2: Run → fail.**
-- [ ] **Step 3: Implement** — `const rawKm = travelKm + idleKm; const bill = billableKm(rawKm); const distanceCharge = bill × perKmCents[vehicle];` and return `meta: { days, idleDays, rawKm, billableKm: bill }`.
+- [ ] **Step 3: Implement** — `const idleKm = idleDays × idleMinKm[vehicle]; const bill = billableKm(travelKm) + idleKm;` (buffer on travel only — idle minimums unbuffered) `const distanceCharge = bill × perKmCents[vehicle];` and return `meta: { days, idleDays, travelKm, idleKm, billableKm: bill }`.
 - [ ] **Step 4: Run → pass.**
 - [ ] **Step 5: Commit.** `git commit -m "feat(quote): 10% buffer on chauffeur billable km (M11 task 12)"`
 
@@ -1028,9 +1028,9 @@ it('Emma: 9 days, 5 travel + 4 idle (car), buffered = $922.20', () => {
 
 **Files:** Modify `api/src/quote/engine.ts` + `engine.test.ts`.
 
-- [ ] **Step 1: Update the golden totals** in `engine.test.ts`: Tatia private `totalCents` `3680 → 4048`; Emma chauffeur `totalCents` `86700 → 92220` (deposit stays `5000`, `amountDueNowCents` `5000`).
+- [ ] **Step 1: Update the golden totals** in `engine.test.ts`: Tatia private `totalCents` `3680 → 4048`; Emma chauffeur `totalCents` `86700 → 90380` (deposit stays `5000`, `amountDueNowCents` `5000`).
 - [ ] **Step 2: Run → fail** (impl returns old numbers).
-- [ ] **Step 3: Implement** — `quotePrivateLegs`/`quoteChauffeur` already buffer (Tasks 11–12). Update the **cost basis** to use buffered km so margin stays ~25%: `costCents += billableKm(leg.distanceKm) × costPerKmCents[vehicle]` (and `billableKm(rawKm) × costPerKmCents` for chauffeur).
+- [ ] **Step 3: Implement** — `quotePrivateLegs`/`quoteChauffeur` already buffer (Tasks 11–12). Update the **cost basis** to use the same billable km so margin stays ~25%: `costCents += billableKm(leg.distanceKm) × costPerKmCents[vehicle]` for private, and `(billableKm(travelKm) + idleKm) × costPerKmCents[vehicle]` for chauffeur (matching Task 12).
 - [ ] **Step 4: Run → pass** (`cd api && npm run check`).
 - [ ] **Step 5: Commit.** `git commit -m "feat(quote): buffered totals + cost basis in dispatcher (M11 task 13)"`
 
