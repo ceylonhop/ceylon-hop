@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { quote } from '../quote/engine';
 import type { QuoteRequest } from '../quote/types';
+import { EXTRA_CODES } from '../quote/rateCard';
 
-const ExtraCode = z.enum(['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting']);
+const ExtraCode = z.enum(EXTRA_CODES);
 const ENGINE_ERRORS = new Set(['TOO_BIG', 'UNKNOWN_EXTRA', 'NO_LEGS']);
 
 const QuoteSchema = z.discriminatedUnion('product', [

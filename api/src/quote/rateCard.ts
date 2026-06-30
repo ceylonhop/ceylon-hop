@@ -1,5 +1,6 @@
 export type Vehicle = 'car' | 'van';
-export type ExtraCode = 'sightseeing' | 'safari-wait' | 'luggage' | 'front' | 'flex' | 'waiting';
+export const EXTRA_CODES = ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] as const;
+export type ExtraCode = typeof EXTRA_CODES[number];
 
 export const RATE_CARD = {
   version: '2026-06-28',
