@@ -16,7 +16,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(4048 + 1000);
   });
 
-  it('chauffeur → amountDueNow is the capped deposit (Emma $867 → $50)', () => {
+  it('chauffeur → amountDueNow is the capped deposit (Emma $903.80 → $50)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -27,7 +27,7 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.totalCents).toBe(86700);
+    expect(r.totalCents).toBe(90380);
     expect(r.amountDueNowCents).toBe(5000);
   });
 

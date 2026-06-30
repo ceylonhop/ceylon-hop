@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { quoteChauffeur } from './chauffeur';
 
 describe('quoteChauffeur', () => {
-  it('Ayan: 3 days, 2 travel + 1 idle (car) = $323.50', () => {
+  it('Ayan: 3 days, 1 idle (car); buffer on travel only = $340.98', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-11-02', lastDate: '2026-11-04',
       travelDays: [
@@ -11,11 +11,11 @@ describe('quoteChauffeur', () => {
         { date: '2026-11-04', from: 'N.Eliya', to: 'Hiriketiya', distanceKm: 210 },
       ],
     });
-    expect(r.meta).toEqual({ days: 3, idleDays: 1, billableKm: 475 });
-    expect(r.subtotalCents).toBe(32350);
+    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 100, billableKm: 513 });
+    expect(r.subtotalCents).toBe(34098); // day 10500 + 513×46 = 23598; travel 375→413, idle 100 unbuffered
   });
 
-  it('Emma: 9 days, 5 travel + 4 idle (car) = $867', () => {
+  it('Emma: 9 days, 4 idle (car); buffer on travel only = $903.80', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -26,8 +26,8 @@ describe('quoteChauffeur', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.meta).toEqual({ days: 9, idleDays: 4, billableKm: 1200 });
-    expect(r.subtotalCents).toBe(86700);
+    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 400, billableKm: 1280 });
+    expect(r.subtotalCents).toBe(90380); // day 31500 + 1280×46 = 58880; travel 800→880, idle 400 unbuffered
   });
 
   it('clamps idleDays to 0 when travelDays exceed the date span (bad input)', () => {
@@ -40,7 +40,7 @@ describe('quoteChauffeur', () => {
     });
     expect(r.meta.days).toBe(1);
     expect(r.meta.idleDays).toBe(0); // not −1
-    expect(r.meta.billableKm).toBe(100);
+    expect(r.meta.billableKm).toBe(110); // billableKm(100) + 0 idle = 110
   });
 
   it('ignores a time component on the dates (no SL-timezone off-by-one)', () => {
