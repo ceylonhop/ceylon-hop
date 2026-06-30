@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { legPriceCents, quotePrivateLegs } from './private';
+import { billableKm, legPriceCents, quotePrivateLegs } from './private';
 
 describe('legPriceCents', () => {
   it('prices per km (Tatia Kandy→Nanu Oya 80km car = $36.80)', () => {
@@ -16,16 +16,24 @@ describe('legPriceCents', () => {
   });
 });
 
+describe('billableKm', () => {
+  it('adds 10% (half-up)', () => {
+    expect(billableKm(80)).toBe(88);
+    expect(billableKm(75)).toBe(83);   // 82.5 → 83
+    expect(billableKm(35)).toBe(39);   // 38.5 → 39
+  });
+});
+
 describe('quotePrivateLegs', () => {
-  it('sums legs and warns on floored legs (Julián Mirissa→Tangalle + Yala→Tangalle)', () => {
+  it('prices off buffered km (Julián subtotal 6718)', () => {
     const r = quotePrivateLegs(
       [
-        { from: 'Mirissa', to: 'Tangalle', distanceKm: 35 }, // → floor $29
-        { from: 'Yala', to: 'Tangalle', distanceKm: 75 },    // → $34.50
+        { from: 'Mirissa', to: 'Tangalle', distanceKm: 35 }, // bill 39 → $29 floor
+        { from: 'Yala', to: 'Tangalle', distanceKm: 75 },    // bill 83 → 83×46 = 3818
       ],
       'car',
     );
-    expect(r.subtotalCents).toBe(2900 + 3450);
+    expect(r.subtotalCents).toBe(6718);
     expect(r.lineItems).toHaveLength(2);
     expect(r.warnings).toContain('Mirissa→Tangalle hit the $29 car minimum');
   });

@@ -4,16 +4,16 @@ import { quote } from './engine';
 import { RATE_CARD } from './rateCard';
 
 describe('quote()', () => {
-  it('private single leg with deposit = full total (Tatia Kandy→Nanu Oya $36.80)', () => {
+  it('private single leg with deposit = full total (Tatia Kandy→Nanu Oya 80km→bill 88km = $40.48)', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] });
-    expect(r.totalCents).toBe(3680);
-    expect(r.amountDueNowCents).toBe(3680);
+    expect(r.totalCents).toBe(4048); // 88km × 46¢ = 4048
+    expect(r.amountDueNowCents).toBe(4048);
     expect(r.rateCardVersion).toBe(RATE_CARD.version);
   });
 
   it('private with extras adds them to the total', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
-    expect(r.totalCents).toBe(3680 + 1000);
+    expect(r.totalCents).toBe(4048 + 1000);
   });
 
   it('chauffeur → amountDueNow is the capped deposit (Emma $867 → $50)', () => {
@@ -42,7 +42,7 @@ describe('quote()', () => {
 
   it('never undercharges: car requested for 6 pax is priced as the required van', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 6, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }] });
-    expect(r.totalCents).toBe(8300); // 100 km × van 83¢, NOT car 46¢
+    expect(r.totalCents).toBe(9130); // 100km → bill 110km × van 83¢ = 9130, NOT car 46¢
     expect(r.warnings.some((w) => w.includes('vehicle set to van'))).toBe(true);
   });
 
