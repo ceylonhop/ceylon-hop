@@ -23,4 +23,10 @@ describe('depositCents', () => {
   it('caps at $50 ($867 → $50, not $86.70)', () => {
     expect(depositCents(86700)).toBe(5000);
   });
+  it('cap boundary: exactly $500 total (50000¢) → deposit exactly $50 (5000¢)', () => {
+    expect(depositCents(50000)).toBe(5000);
+  });
+  it('cap boundary: 49990¢ total → deposit 4999¢ (just under cap)', () => {
+    expect(depositCents(49990)).toBe(4999);
+  });
 });
