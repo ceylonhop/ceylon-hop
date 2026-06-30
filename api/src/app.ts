@@ -11,6 +11,7 @@ import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
+import { quoteRoutes } from './routes/quote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
@@ -81,6 +82,7 @@ export function createApp(deps: AppDeps = {}) {
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
+  app.route('/quote', quoteRoutes({ internalKey: process.env.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
