@@ -927,6 +927,125 @@ git commit -m "feat(quote): POST /quote endpoint (M11 task 9)"
 
 ---
 
+## Tasks 10–14: Superset tweaks (buffer / waiting / FX)
+
+These add the founder-design superset: a **10% distance buffer**, a **waiting** extra, and a manual
+**USD→LKR** display rate. **All expected numbers below are validated** by a throwaway calculator (no
+drift). ⚠️ See [issues](../../quote-engine-issues.md) **I1/I2** — the buffer stacks on chauffeur
+idle-minimums (Emma → $922.20); confirm before/while building.
+
+### Test expectations these tasks UPDATE (changelog — base tasks were unbuffered)
+| Where | Was (no buffer) | Now (+10% buffer) |
+|---|---|---|
+| Task 4 `quotePrivateLegs` Julián subtotal | 6350 | **6718** (Mirissa→Tangalle floored $29 + Yala→Tangalle 83 km × 46 = $38.18) |
+| Task 8 `quote()` Tatia 80 km car total | 3680 | **4048** ($40.48) |
+| Task 8 `quote()` Emma chauffeur total / deposit | 86700 / 5000 | **92220 / 5000** (deposit still capped) |
+| Task 6 `quoteChauffeur` Ayan subtotal / Emma subtotal | 32350 / 86700 | **34558 / 92220** |
+> `legPriceCents` (Task 4 unit) stays **buffer-free** — it's the validated rate primitive. Buffer is
+> applied by `billableKm()` at the leg/chauffeur level (Tasks 11–12).
+
+---
+
+### Task 10: Extend the rate card (buffer %, FX, waiting)
+
+**Files:** Modify `api/src/quote/rateCard.ts` + `rateCard.test.ts`.
+
+- [ ] **Step 1: Add the assertions to `rateCard.test.ts`**
+```ts
+expect(RATE_CARD.bufferPct).toBe(10);
+expect(RATE_CARD.fxUsdToLkr).toBeGreaterThan(0);   // manual rate; placeholder until ops sets it
+expect(RATE_CARD.extras.waiting).toBe(1000);
+```
+- [ ] **Step 2: Run → fail.** `cd api && npx vitest run src/quote/rateCard.test.ts` → FAIL.
+- [ ] **Step 3: Extend the const** — add to `RATE_CARD`:
+```ts
+  bufferPct: 10,
+  fxUsdToLkr: 320, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
+  // and add `waiting: 1000` inside `extras`
+```
+Also add `'waiting'` to the `ExtraCode` union in `rateCard.ts` **and** to the `ExtraCode` Zod enum in `routes/quote.ts` (Task 9), so the new code type-checks and validates.
+- [ ] **Step 4: Run → pass.** `cd api && npx vitest run src/quote/rateCard.test.ts` → PASS.
+- [ ] **Step 5: Commit.** `git commit -m "feat(quote): rate card buffer% + FX + waiting extra (M11 task 10)"`
+
+### Task 11: 10% distance buffer on private legs
+
+**Files:** Modify `api/src/quote/private.ts` + `private.test.ts`.
+
+**Interfaces:** add `billableKm(rawKm: number): number` = `Math.round(rawKm × (1 + bufferPct/100))`. `quotePrivateLegs` prices each leg off `billableKm(leg.distanceKm)`.
+
+- [ ] **Step 1: Write the failing tests**
+```ts
+import { billableKm, quotePrivateLegs } from './private';
+it('billableKm adds 10% (half-up)', () => {
+  expect(billableKm(80)).toBe(88);
+  expect(billableKm(75)).toBe(83);   // 82.5 → 83
+  expect(billableKm(35)).toBe(39);   // 38.5 → 39
+});
+it('quotePrivateLegs prices off buffered km (Julián subtotal 6718)', () => {
+  const r = quotePrivateLegs([
+    { from: 'Mirissa', to: 'Tangalle', distanceKm: 35 }, // bill 39 → $29 floor
+    { from: 'Yala', to: 'Tangalle', distanceKm: 75 },    // bill 83 → 83×46 = $38.18
+  ], 'car');
+  expect(r.subtotalCents).toBe(6718);
+  expect(r.warnings).toContain('Mirissa→Tangalle hit the $29 car minimum');
+});
+```
+- [ ] **Step 2: Run → fail** (`billableKm` not exported).
+- [ ] **Step 3: Implement** — add `billableKm` and price each leg via `legPriceCents(billableKm(leg.distanceKm), vehicle)` (floor-warning check uses the buffered km too).
+- [ ] **Step 4: Run → pass.**
+- [ ] **Step 5: Commit.** `git commit -m "feat(quote): 10% distance buffer on private legs (M11 task 11)"`
+
+### Task 12: 10% buffer on chauffeur billable km
+
+**Files:** Modify `api/src/quote/chauffeur.ts` + `chauffeur.test.ts`. (Imports `billableKm` from Task 11.)
+
+- [ ] **Step 1: Update the failing tests** (Ayan + Emma now buffered)
+```ts
+it('Ayan: 3 days, 2 travel + 1 idle (car), buffered = $345.58', () => {
+  const r = quoteChauffeur({ vehicle:'car', firstDate:'2026-11-02', lastDate:'2026-11-04',
+    travelDays:[ {date:'2026-11-02',from:'Hikkaduwa',to:'N.Eliya',distanceKm:165},
+                 {date:'2026-11-04',from:'N.Eliya',to:'Hiriketiya',distanceKm:210} ] });
+  expect(r.meta).toEqual({ days:3, idleDays:1, rawKm:475, billableKm:523 });
+  expect(r.subtotalCents).toBe(34558); // day 10500 + 523×46 = 24058
+});
+it('Emma: 9 days, 5 travel + 4 idle (car), buffered = $922.20', () => {
+  const r = quoteChauffeur({ vehicle:'car', firstDate:'2026-02-14', lastDate:'2026-02-22',
+    travelDays:[ {date:'2026-02-14',from:'Airport',to:'Kandy',distanceKm:120},
+                 {date:'2026-02-16',from:'Kandy',to:'Sigiriya day trip',distanceKm:200},
+                 {date:'2026-02-17',from:'Kandy',to:'Ella',distanceKm:140},
+                 {date:'2026-02-19',from:'Ella',to:'Bentota',distanceKm:230},
+                 {date:'2026-02-22',from:'Bentota',to:'Airport',distanceKm:110} ] });
+  expect(r.meta).toEqual({ days:9, idleDays:4, rawKm:1200, billableKm:1320 });
+  expect(r.subtotalCents).toBe(92220); // day 31500 + 1320×46 = 60720
+});
+```
+- [ ] **Step 2: Run → fail.**
+- [ ] **Step 3: Implement** — `const rawKm = travelKm + idleKm; const bill = billableKm(rawKm); const distanceCharge = bill × perKmCents[vehicle];` and return `meta: { days, idleDays, rawKm, billableKm: bill }`.
+- [ ] **Step 4: Run → pass.**
+- [ ] **Step 5: Commit.** `git commit -m "feat(quote): 10% buffer on chauffeur billable km (M11 task 12)"`
+
+### Task 13: Update the dispatcher tests + buffered cost basis
+
+**Files:** Modify `api/src/quote/engine.ts` + `engine.test.ts`.
+
+- [ ] **Step 1: Update the golden totals** in `engine.test.ts`: Tatia private `totalCents` `3680 → 4048`; Emma chauffeur `totalCents` `86700 → 92220` (deposit stays `5000`, `amountDueNowCents` `5000`).
+- [ ] **Step 2: Run → fail** (impl returns old numbers).
+- [ ] **Step 3: Implement** — `quotePrivateLegs`/`quoteChauffeur` already buffer (Tasks 11–12). Update the **cost basis** to use buffered km so margin stays ~25%: `costCents += billableKm(leg.distanceKm) × costPerKmCents[vehicle]` (and `billableKm(rawKm) × costPerKmCents` for chauffeur).
+- [ ] **Step 4: Run → pass** (`cd api && npm run check`).
+- [ ] **Step 5: Commit.** `git commit -m "feat(quote): buffered totals + cost basis in dispatcher (M11 task 13)"`
+
+### Task 14: Waiting extra label
+
+**Files:** Modify `api/src/quote/extrasDeposit.ts` + `extrasDeposit.test.ts`.
+
+- [ ] **Step 1: Add the test** — `expect(priceExtras(['waiting']).subtotalCents).toBe(1000);`
+- [ ] **Step 2: Run → fail** (no label for `waiting`).
+- [ ] **Step 3: Implement** — add `waiting: 'Waiting fee'` to `EXTRA_LABELS` (price comes from `RATE_CARD.extras.waiting`, Task 10).
+- [ ] **Step 4: Run → pass.**
+- [ ] **Step 5: Commit.** `git commit -m "feat(quote): waiting extra (M11 task 14)"`
+
+---
+
 ## This plan stops here (deliberately)
 
 The engine is live behind `POST /quote` and powers the **internal quoting tool** (margin-aware via `x-internal-key`) and the **ops dashboard**. **No customer is charged by anything above.** The legacy `pricing.ts` stubs and the `quotedTotal` passthrough in `bookings.ts` are **left untouched** — the booking/charge path does not change in this plan.

@@ -14,7 +14,9 @@ frozen formula).
 |---|---|---|
 | **[quote-engine-worked-examples.md](./quote-engine-worked-examples.md)** | **Validation evidence** — the rate card narrative + every real WhatsApp/Notion quote run through the engine, with approximate distances. **Not the canonical price source.** | Sanity-check the *approach* against reality; share with ops. |
 | **[quote-engine-spec.md](./quote-engine-spec.md)** | The **engineering design**: types, rate-card module, pricing logic, API, anti-tamper, versioning. | Understand *how* it's built. |
-| **[superpowers/plans/2026-06-28-quote-engine.md](./superpowers/plans/2026-06-28-quote-engine.md)** | The **build plan**: 9 bite-sized TDD tasks. | See exactly what gets coded, step by step. |
+| **[superpowers/plans/2026-06-28-quote-engine.md](./superpowers/plans/2026-06-28-quote-engine.md)** | The **engine build plan**: bite-sized TDD tasks 1–9 + buffer/waiting/FX tasks 10–14. | See exactly what gets coded, step by step. |
+| **[internal-quoting-tool-plan.md](./internal-quoting-tool-plan.md)** | The **ops quoting-tool** plan, adapted from the founder's Quote Generator design (the UX target). | See the tool that sits on the engine. |
+| **[quote-engine-issues.md](./quote-engine-issues.md)** | **Issues log** — open decisions + things to revisit (e.g. the buffer/idle-min stacking). | Check what's unresolved before building. |
 
 **Canonical source of prices = code, not docs.** The rates live in `api/src/quote/rateCard.ts`
 (per-km, day, floors, deposit, extras, markup) and the **corridor repo** (shared seat prices), both
@@ -32,9 +34,11 @@ and "team actual" numbers that intentionally differ — **never read a price out
 | Idle (no-travel) day | **$35 + 100 km car / 150 km van** at the per-km rate |
 | Shared | **seat price × seats** (seat price from the corridor repo) |
 | Deposit | **min(10% × total, $50)** |
-| Extras | sightseeing $10 · wait-for-safari $19 · luggage $5 · child seat $8 · flexi $12 · extra bag $10 |
+| Extras | sightseeing $10 · **waiting $10** · safari-wait $19 · luggage $5 · child seat $8 · flexi $12 |
 | Web vehicles | **Car + Van only** (bigger → internal tool) |
 | Markup | **25%** — one config value; every quote reports its margin |
+| Distance buffer | **+10%** on billable km (⚠️ stacks on chauffeur idle-min — issue I1) |
+| FX (display) | manual **USD→LKR** rate; engine stays USD-canonical |
 
 ## Decisions already made (no action needed)
 
