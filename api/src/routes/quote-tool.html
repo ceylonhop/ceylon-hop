@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ceylon Hop · Quote Generator</title>
-<script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <style>
   :root{--bg:#f5f0e8;--card:#fff;--ink:#2a2622;--soft:#7a736a;--line:#e3dccd;--teal:#0ab9b6;--teal-d:#0a7a78}
   *{box-sizing:border-box;margin:0;padding:0}
@@ -33,7 +32,6 @@
   .acmenu.on{display:block}
   .acitem{padding:9px 12px;cursor:pointer;font-size:.9rem;border-bottom:1px solid #f3eee3}
   .acitem:hover,.acitem.sel{background:rgba(10,185,182,.08)}
-  .acitem .m{font-weight:600}.acitem .s{color:var(--soft);font-size:.8rem}
   .dist{font-size:.8rem;color:var(--teal-d);margin-top:5px}
   button{font:inherit;cursor:pointer}
   .btn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:11px 22px;font-weight:600}.btn:hover{background:var(--teal-d)}
@@ -48,7 +46,7 @@
   .cmp{border:1.5px solid var(--line);border-radius:12px;padding:14px;text-align:center}.cmp b{font-family:Georgia,serif;font-size:1.3rem}
   textarea{width:100%;min-height:160px;padding:12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;resize:vertical}
   .muted{color:var(--soft);font-size:.82rem}
-  .banner{background:#fff7e6;border:1px solid #f0d999;color:#8a6d1f;border-radius:10px;padding:8px 12px;font-size:.78rem;margin-top:10px}
+  .banner{background:#eef9f8;border:1px solid #bfe8e6;color:#0a6a68;border-radius:10px;padding:8px 12px;font-size:.78rem;margin-top:10px}
   .tabs{display:flex;gap:6px;margin-bottom:10px}
   .tab{padding:6px 14px;border:1.5px solid var(--line);border-radius:99px;background:#fff;font-size:.85rem;font-weight:600;color:var(--soft)}
   .tab.on{background:var(--teal);color:#fff;border-color:var(--teal)}
@@ -59,7 +57,7 @@
 <div class="wrap">
   <h1><span class="dot">C</span> Ceylon Hop</h1>
   <div class="sub">Internal · Quote Generator</div>
-  <div class="banner" id="mapsBanner">Loading Google Places…</div>
+  <div class="banner">Autocomplete + auto-distance run server-side — pick a location and the distance fills in (editable). Known SL places work offline; full Google coverage turns on once a server Maps key is set.</div>
 
   <div class="card">
     <h2>① Customer &amp; Request</h2>
@@ -96,81 +94,25 @@
 
 <script>
 const $=(id)=>document.getElementById(id);
-const KEY=window.CEYLON_MAPS_KEY;
-let Places=null, Directions=null, sessionToken=null, legId=0;
+let legId=0;
 
-// ---- Google Maps bootstrap (official inline loader) ----
-(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=`https://maps.${c}apis.com/maps/api/js?`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({key:KEY,v:"weekly"});
+async function apiPlaces(q){ try{ const r=await fetch('/admin/quote/places?q='+encodeURIComponent(q)); const d=await r.json(); return d.places||[]; }catch(e){ return []; } }
+async function apiDistance(from,to){ try{ const r=await fetch('/admin/quote/distance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({from,to})}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
 
-(async function initMaps(){
-  try{
-    const pl=await google.maps.importLibrary('places');
-    const rt=await google.maps.importLibrary('routes');
-    // Probe a real call — the key may load the script but block this origin (referrer restriction).
-    const tok=new pl.AutocompleteSessionToken();
-    await pl.AutocompleteSuggestion.fetchAutocompleteSuggestions({input:'Kandy',includedRegionCodes:['lk'],sessionToken:tok});
-    Places={Sug:pl.AutocompleteSuggestion,Tok:pl.AutocompleteSessionToken};
-    Directions=rt.DirectionsService;
-    $('mapsBanner').textContent='✓ Google Places autocomplete + live distance active — pick a location and the distance fills automatically (editable).';
-  }catch(e){
-    Places=null; Directions=null;
-    const blocked=/referer|blocked|RefererNotAllowed/i.test(String(e&&e.message||e));
-    $('mapsBanner').textContent= blocked
-      ? '⚠️ Google Maps key blocks this origin — autocomplete/auto-distance are OFF. Type place names and enter the distance (km) by hand for now. (Fix: add this origin to the Maps key, or wire Google server-side.)'
-      : '⚠️ Google Maps unavailable — type place names and enter distance (km) manually.';
-    console.warn('maps unavailable:',e);
-  }
-})();
-
-async function suggest(text){
-  if(!Places||text.trim().length<2) return [];
-  try{
-    if(!sessionToken) sessionToken=new Places.Tok();
-    const {suggestions}=await Places.Sug.fetchAutocompleteSuggestions({input:text.trim(),includedRegionCodes:['lk'],sessionToken});
-    return (suggestions||[]).map(s=>s.placePrediction).filter(Boolean).map(p=>({
-      main:(p.mainText&&p.mainText.text)||(p.text&&p.text.text)||'',
-      sec:(p.secondaryText&&p.secondaryText.text)||'', _p:p
-    }));
-  }catch(e){ return []; }
-}
-async function resolvePick(item){
-  try{
-    const place=item._p.toPlace();
-    await place.fetchFields({fields:['location','displayName']});
-    sessionToken=null;
-    const loc=place.location;
-    return { name:item.main||(place.displayName||''), lat:loc?loc.lat():null, lng:loc?loc.lng():null };
-  }catch(e){ sessionToken=null; return {name:item.main,lat:null,lng:null}; }
-}
-function routeKm(a,b){
-  return new Promise((res)=>{
-    if(!Directions||!a||!b||a.lat==null||b.lat==null){res(null);return;}
-    new Directions().route({origin:{lat:a.lat,lng:a.lng},destination:{lat:b.lat,lng:b.lng},travelMode:'DRIVING'},(r,s)=>{
-      if(s==='OK'&&r.routes[0]){let m=0,sec=0;r.routes[0].legs.forEach(l=>{m+=l.distance?l.distance.value:0;sec+=l.duration?l.duration.value:0});res({km:Math.round(m/1000),min:Math.round(sec/60)});}
-      else res(null);
-    });
-  });
-}
-
-// ---- autocomplete attach ----
-function attachAC(input, onPick){
+function attachAC(input){
   const wrap=document.createElement('div'); wrap.className='ac';
   input.parentNode.insertBefore(wrap,input); wrap.appendChild(input);
   const menu=document.createElement('div'); menu.className='acmenu'; wrap.appendChild(menu);
   let items=[],seq=0;
   const close=()=>{menu.classList.remove('on');menu.innerHTML='';};
   input.addEventListener('input',async()=>{
-    input._geo=null; // typing invalidates a previous pick
-    const my=++seq; const sug=await suggest(input.value);
+    const my=++seq; const sug=await apiPlaces(input.value);
     if(my!==seq) return;
     items=sug;
     if(!sug.length){close();return;}
-    menu.innerHTML=sug.map((s,i)=>`<div class="acitem" data-i="${i}"><span class="m">${s.main}</span> <span class="s">${s.sec}</span></div>`).join('');
+    menu.innerHTML=sug.map((s,i)=>`<div class="acitem" data-i="${i}">${s}</div>`).join('');
     menu.classList.add('on');
-    menu.querySelectorAll('.acitem').forEach(el=>el.onclick=async()=>{
-      const it=items[+el.dataset.i]; input.value=it.main; close();
-      const geo=await resolvePick(it); input._geo=geo; if(onPick) onPick(geo);
-    });
+    menu.querySelectorAll('.acitem').forEach(el=>el.onclick=()=>{ input.value=items[+el.dataset.i]; close(); input.dispatchEvent(new Event('change')); });
   });
   input.addEventListener('blur',()=>setTimeout(close,150));
 }
@@ -192,8 +134,8 @@ function legRow(){
       <div></div>
     </div>
     <div class="lr">
-      <div><label>From</label><input data-f="from" placeholder="Start typing…"/></div>
-      <div><label>To</label><input data-f="to" placeholder="Start typing…"/></div>
+      <div><label>From</label><input data-f="from" placeholder="Start typing…" autocomplete="off"/></div>
+      <div><label>To</label><input data-f="to" placeholder="Start typing…" autocomplete="off"/></div>
       <div><label>Distance (km)</label><input data-f="distanceKm" type="number" min="0" placeholder="auto"/></div>
       <button class="x" onclick="this.closest('.leg').remove();syncMode()">✕</button>
     </div>
@@ -209,11 +151,14 @@ function wireLeg(div){
   const dist=div.querySelector('[data-f=distanceKm]'), note=div.querySelector('[data-f=distNote]');
   let manual=false; dist.addEventListener('input',()=>{manual=true;});
   const recompute=async()=>{
-    if(manual) return;
-    const r=await routeKm(from._geo,to._geo);
-    if(r){ dist.value=r.km; note.textContent=`≈ ${r.km} km · ~${Math.floor(r.min/60)?Math.floor(r.min/60)+'h ':''}${r.min%60}m (auto — editable)`; }
+    if(manual||!from.value.trim()||!to.value.trim()) return;
+    note.textContent='measuring…';
+    const r=await apiDistance(from.value.trim(),to.value.trim());
+    if(r){ dist.value=r.km; note.textContent=`≈ ${r.km} km · ~${Math.floor(r.durationMin/60)?Math.floor(r.durationMin/60)+'h ':''}${r.durationMin%60}m (auto — editable)`; }
+    else { note.textContent='no auto-distance for this pair — enter km manually'; }
   };
-  attachAC(from,recompute); attachAC(to,recompute);
+  attachAC(from); attachAC(to);
+  from.addEventListener('change',recompute); to.addEventListener('change',recompute);
   div.querySelector('[data-f=type]').addEventListener('change',()=>syncStay(div));
   syncStay(div);
 }
@@ -282,7 +227,6 @@ function renderResult(d){
     </div>`);
 }
 
-// seed one leg
 addLeg();
 syncMode();
 </script>

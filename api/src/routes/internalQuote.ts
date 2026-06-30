@@ -5,6 +5,7 @@ import { quote } from '../quote/engine';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
+import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 
 // The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
 // Read per-request so edits hot-reload in dev without a server restart.
@@ -155,10 +156,43 @@ function notionDraft(req: ToolRequest, result: QuoteResult): string {
   );
 }
 
-export function internalQuoteRoutes() {
+// Place suggestions: Google Places Autocomplete when a server key is configured, else the
+// offline known-place list (so the tool works in dev without a key).
+async function suggestPlaces(q: string, googleKey?: string): Promise<string[]> {
+  const query = (q || '').trim();
+  if (query.length < 2) return [];
+  if (googleKey) {
+    try {
+      const url =
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json' +
+        `?input=${encodeURIComponent(query)}&components=country:lk&key=${googleKey}`;
+      const res = await fetch(url);
+      const j = (await res.json()) as { predictions?: { description: string }[] };
+      const out = (j.predictions || []).slice(0, 6).map((p) => p.description);
+      if (out.length) return out;
+    } catch {
+      /* fall through to the offline list */
+    }
+  }
+  const ql = query.toLowerCase();
+  return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
+}
+
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string }) {
   const r = new Hono();
 
   r.get('/', (c) => c.html(toolHtml()));
+
+  // Autocomplete (server-side; key never reaches the browser).
+  r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.googleKey) }));
+
+  // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
+  r.post('/distance', async (c) => {
+    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string } | null;
+    if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
+    const d = await deps.maps.distance(b.from, b.to);
+    return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
+  });
 
   r.post('/estimate', async (c) => {
     const body = (await c.req.json().catch(() => null)) as ToolRequest | null;
@@ -169,7 +203,9 @@ export function internalQuoteRoutes() {
     if (driving.length === 0) return c.json({ error: 'add at least one travel leg (a stay day alone has no transfer)' }, 400);
     for (const l of driving) {
       if (!l.distanceKm || Number(l.distanceKm) <= 0) {
-        return c.json({ error: `set a distance for ${l.from || '?'} → ${l.to || '?'}` }, 400);
+        const d = await deps.maps.distance(l.from, l.to);
+        if (d) l.distanceKm = d.km;
+        else return c.json({ error: `couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually` }, 400);
       }
     }
     try {

@@ -87,7 +87,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
-  app.route('/admin/quote', internalQuoteRoutes()); // internal quoting tool (UI + /estimate) — see I11: add auth before prod
+  app.route('/admin/quote', internalQuoteRoutes({ maps, googleKey: config.GOOGLE_MAPS_API_KEY })); // internal quoting tool — see I11: add auth before prod
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
   return app;
 }

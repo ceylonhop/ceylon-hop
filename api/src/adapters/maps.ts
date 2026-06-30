@@ -35,6 +35,14 @@ const COORDS: Record<string, [number, number]> = {
   trincomalee: [8.59, 81.21],
 };
 
+// Display names for the known places (each normalizes to a COORDS key above). The internal quoting
+// tool offers these for offline autocomplete, so distance resolves even without a Google key.
+export const KNOWN_PLACES: string[] = [
+  'Colombo Airport (CMB)', 'Colombo City', 'Negombo', 'Bentota', 'Hikkaduwa', 'Galle', 'Weligama',
+  'Mirissa', 'Kandy', 'Nuwara Eliya', 'Ella', 'Sigiriya / Dambulla', 'Anuradhapura', 'Yala',
+  'Arugam Bay', 'Trincomalee',
+];
+
 const norm = (s: string): string => s.trim().toLowerCase();
 
 function haversineKm(a: [number, number], b: [number, number]): number {
