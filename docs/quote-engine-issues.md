@@ -95,6 +95,16 @@ Task 4 asserts the unbuffered `quotePrivateLegs` subtotal (6350); Task 11 supers
 run **out of order** (parallel), Task 4's test goes red after Task 11. Execute Tasks 1–14 **in order**;
 the changelog table lists every superseded value.
 
+## 🟡 I15 — `private.ts` floor-warning strings hardcode `$29` / `$50`
+The floor-warning text derives `$29`/`$50` from a literal (`vehicle === 'car' ? '$29' : '$50'`) instead
+of `RATE_CARD.floorCents[vehicle] / 100`. If a floor ever changes, the warning copy silently drifts.
+One-line follow-up; not merge-blocking (flagged in the whole-branch review).
+
+## 🟡 I16 — shared `marginEstimateCents` equals the total (100%)
+Shared cost isn't modelled, so `marginEstimateCents === totalCents` for shared quotes (mitigated by a
+`"margin not modelled for shared"` warning). The internal tool must not present a shared margin as real;
+a cleaner follow-up would omit/null the field for shared rather than report 100%.
+
 ---
 
 _Last updated: 2026-06-28. Add new issues as they surface; tick/strike when resolved._
