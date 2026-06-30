@@ -49,4 +49,8 @@ describe('quote()', () => {
   it('throws NO_LEGS on an empty private request', () => {
     expect(() => quote({ product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [] })).toThrow('NO_LEGS');
   });
+
+  it('throws NO_LEGS on an empty chauffeur request', () => {
+    expect(() => quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-01-01', lastDate: '2026-01-01', travelDays: [] })).toThrow('NO_LEGS');
+  });
 });
