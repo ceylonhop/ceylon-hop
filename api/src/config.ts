@@ -31,6 +31,8 @@ const Env = z.object({
   OPS_SUPPORT_KEY: z.string().default(''),
   OPS_FOUNDER_KEY: z.string().default(''),
   OPS_SESSION_SECRET: z.string().default('dev-ops-secret-change-me'),
+  // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
+  INTERNAL_QUOTE_KEY: z.string().default(''),
 });
 
 export const config = Env.parse(process.env);
