@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ceylon Hop · Quote Generator</title>
+<style>
+  :root{--bg:#f5f0e8;--card:#fff;--ink:#2a2622;--soft:#7a736a;--line:#e3dccd;--teal:#0ab9b6;--teal-d:#0a7a78;--accent:#0ab9b6;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
+  .wrap{max-width:840px;margin:0 auto}
+  h1{font-family:Georgia,"Times New Roman",serif;font-size:1.7rem;font-weight:700;display:flex;align-items:center;gap:12px}
+  h1 .dot{width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-family:Georgia,serif;font-weight:700}
+  .sub{color:var(--soft);font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;margin-left:46px;margin-top:-4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .card h2{font-family:Georgia,serif;font-size:1.15rem;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  label{display:block;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);margin-bottom:5px}
+  input,select{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font:inherit;background:#fff;color:var(--ink)}
+  input:focus,select:focus{outline:none;border-color:var(--teal)}
+  .row{display:grid;gap:12px}
+  .r4{grid-template-columns:2fr 1fr 1fr 1.4fr}
+  .leg{border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fdfcf9}
+  .leg .lr{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr .6fr;gap:10px;align-items:end}
+  .leg .opts{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap;align-items:center}
+  .chk{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--ink);text-transform:none;letter-spacing:0}
+  .chk input{width:auto}
+  .x{background:#f3eee3;border:1px solid var(--line);border-radius:8px;cursor:pointer;padding:9px;color:var(--soft)}
+  button{font:inherit;cursor:pointer}
+  .btn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:11px 20px;font-weight:600}
+  .btn:hover{background:var(--teal-d)}
+  .ghost{background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 14px;color:var(--teal-d);font-weight:600}
+  .summary .total{font-family:Georgia,serif;font-size:2.2rem;color:var(--teal-d);font-weight:700}
+  .summary .usd{color:var(--soft);font-size:1rem}
+  .li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line);font-size:.92rem}
+  .li:last-child{border-bottom:none}
+  .pill{display:inline-block;background:rgba(10,185,182,.12);color:var(--teal-d);padding:3px 10px;border-radius:99px;font-size:.78rem;font-weight:600}
+  .warn{background:#fff7e6;border:1px solid #f0d999;color:#8a6d1f;padding:9px 12px;border-radius:9px;font-size:.85rem;margin-top:8px}
+  .err{background:#fdecea;border:1px solid #f3b4ad;color:#a3271b;padding:11px 14px;border-radius:10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .cmp{border:1.5px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .cmp b{font-family:Georgia,serif;font-size:1.3rem;color:var(--ink)}
+  textarea{width:100%;min-height:150px;padding:12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;resize:vertical}
+  .muted{color:var(--soft);font-size:.82rem}
+  .banner{background:#fff7e6;border:1px solid #f0d999;color:#8a6d1f;border-radius:10px;padding:8px 12px;font-size:.8rem;margin-top:10px}
+  @media(max-width:680px){.r4,.leg .lr{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="dot">C</span> Ceylon Hop</h1>
+  <div class="sub">Internal · Quote Generator</div>
+  <div class="banner">Dev preview — wired to the live pricing engine. Margin is internal-only. Auth + Save/Notion + the shared-rides tab come later.</div>
+
+  <div class="card">
+    <h2>① Customer &amp; Request</h2>
+    <div class="row r4">
+      <div><label>Customer name</label><input id="name" placeholder="e.g. Nikhil" /></div>
+      <div><label>Passengers</label><input id="pax" type="number" min="1" value="2" /></div>
+      <div><label>Bags</label><input id="bags" type="number" min="0" value="2" /></div>
+      <div><label>Service</label>
+        <select id="product">
+          <option value="private">Transfers (point-to-point)</option>
+          <option value="chauffeur">Chauffeur (keep car + driver)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row r4" style="margin-top:12px">
+      <div><label>Vehicle</label>
+        <select id="vehicle"><option value="car">Car (≤3 pax)</option><option value="van">Van (≤6 pax)</option></select>
+      </div>
+      <div id="firstDateWrap" style="display:none"><label>Trip start</label><input id="firstDate" type="date" /></div>
+      <div id="lastDateWrap" style="display:none"><label>Trip end</label><input id="lastDate" type="date" /></div>
+      <div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>② Itinerary <span class="muted" id="itinHint" style="font-weight:400;font-size:.8rem"></span></h2>
+    <div id="legs"></div>
+    <button class="ghost" onclick="addLeg()">+ Add leg</button>
+  </div>
+
+  <div style="margin-top:18px;display:flex;gap:12px;align-items:center">
+    <button class="btn" id="go" onclick="getQuote()">Get Quote</button>
+    <span class="muted" id="status"></span>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let legId = 0;
+
+function legRow(){
+  const id = 'leg'+(legId++);
+  const div = document.createElement('div');
+  div.className='leg'; div.dataset.id=id;
+  div.innerHTML = `
+    <div class="lr">
+      <div><label>From</label><input data-f="from" placeholder="Colombo"/></div>
+      <div><label>To</label><input data-f="to" placeholder="Sigiriya"/></div>
+      <div><label>Distance (km)</label><input data-f="distanceKm" type="number" min="0" placeholder="km"/></div>
+      <div class="dateCell" style="display:none"><label>Date</label><input data-f="date" type="date"/></div>
+      <button class="x" onclick="this.closest('.leg').remove()">✕</button>
+    </div>
+    <div class="opts">
+      <span class="chk keepCell" style="display:none"><input data-f="keepCarDriver" type="checkbox"/> Keep car + driver this day</span>
+      <span class="chk"><input data-f="sightseeing" type="checkbox"/> Sightseeing (+$10)</span>
+      <span class="chk"><input data-f="waiting" type="checkbox"/> Waiting (+$10)</span>
+    </div>`;
+  return div;
+}
+function addLeg(){ $('legs').appendChild(legRow()); syncMode(); }
+
+function syncMode(){
+  const ch = $('product').value === 'chauffeur';
+  $('firstDateWrap').style.display = ch ? '' : 'none';
+  $('lastDateWrap').style.display = ch ? '' : 'none';
+  $('itinHint').textContent = ch ? '· car + driver retained; idle days bill the minimum' : '· each leg priced point-to-point';
+  document.querySelectorAll('.dateCell').forEach(e=>e.style.display = ch ? '' : 'none');
+  document.querySelectorAll('.keepCell').forEach(e=>e.style.display = ch ? '' : 'none');
+}
+$('product').addEventListener('change', syncMode);
+
+function collect(){
+  const legs = [...document.querySelectorAll('.leg')].map(L=>{
+    const o={}; L.querySelectorAll('[data-f]').forEach(el=>{
+      o[el.dataset.f] = el.type==='checkbox' ? el.checked : el.value;
+    }); return o;
+  });
+  return {
+    name:$('name').value, pax:+$('pax').value||1, bags:+$('bags').value||0,
+    product:$('product').value, vehicle:$('vehicle').value,
+    firstDate:$('firstDate').value||undefined, lastDate:$('lastDate').value||undefined, legs
+  };
+}
+
+async function getQuote(){
+  $('status').textContent='Pricing…'; $('go').disabled=true;
+  try{
+    const res = await fetch('/admin/quote/estimate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(collect())});
+    const d = await res.json();
+    if(!res.ok){ render(`<div class="card"><div class="err">${d.error||'Error'}</div></div>`); return; }
+    renderResult(d);
+  }catch(e){ render(`<div class="card"><div class="err">${e}</div></div>`); }
+  finally{ $('status').textContent=''; $('go').disabled=false; }
+}
+
+function render(html){ $('result').innerHTML=html; }
+function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function renderResult(d){
+  const li = d.lineItems.map(x=>`<div class="li"><span>${esc(x.label)}</span><b>${x.lkr} <span class="muted">${x.usd}</span></b></div>`).join('');
+  const warn = (d.warnings||[]).filter(w=>w!=='margin not modelled for shared').map(w=>`<div class="warn">⚠️ ${esc(w)}</div>`).join('');
+  const cmp = d.comparison ? `
+    <div class="card"><h2>Car vs Van</h2><div class="grid2">
+      <div class="cmp"><div class="muted">Car</div><b>${d.comparison.car.total?d.comparison.car.total.lkr:'—'}</b><div class="muted">${d.comparison.car.total?d.comparison.car.total.usd:d.comparison.car.error||''}</div></div>
+      <div class="cmp"><div class="muted">Van</div><b>${d.comparison.van.total?d.comparison.van.total.lkr:'—'}</b><div class="muted">${d.comparison.van.total?d.comparison.van.total.usd:d.comparison.van.error||''}</div></div>
+    </div></div>` : '';
+  const margin = d.margin ? `<div class="li"><span class="muted">Est. margin (internal)</span><b class="muted">${d.margin.lkr} ${d.margin.usd}</b></div>` : '';
+  render(`
+    <div class="card summary">
+      <h2>③ Pricing Summary <span class="pill">${esc(d.product)}</span></h2>
+      <div class="total">${d.total.lkr}</div>
+      <div class="usd">~${d.total.usd} · FX ${d.fxUsdToLkr} LKR/$ · deposit ${d.deposit.lkr} · due now ${d.amountDueNow.lkr}</div>
+      ${warn}
+      <div style="margin-top:14px">${li}${margin}</div>
+    </div>
+    ${cmp}
+    <div class="card">
+      <h2>④ Quote Output <span class="muted" style="font-weight:400;font-size:.8rem">— WhatsApp</span></h2>
+      <textarea id="wa">${esc(d.whatsapp)}</textarea>
+      <div style="margin-top:10px"><button class="ghost" onclick="navigator.clipboard.writeText($('wa').value);this.textContent='Copied ✓'">Copy WhatsApp</button></div>
+    </div>`);
+}
+
+// seed
+addLeg();
+$('legs').querySelector('[data-f=from]').value='Colombo City';
+$('legs').querySelector('[data-f=to]').value='Lunuganga';
+$('legs').querySelector('[data-f=distanceKm]').value='75';
+syncMode();
+</script>
+</body>
+</html>
