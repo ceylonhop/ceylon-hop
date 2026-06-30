@@ -99,7 +99,7 @@ type QuoteResult = {
   totalCents: number;
   depositCents: number;         // min(10%, $50)
   amountDueNowCents: number;    // chauffeur → deposit; else → total
-  marginEstimateCents: number;  // total − cost basis (internal/ops callers only)
+  marginEstimateCents: number | null;  // total − cost basis (internal/ops only); null for shared (not modelled)
   rateCardVersion: string;      // e.g. "2026-06-28"
   warnings: string[];           // e.g. "leg hit the $29 car minimum"
 };
@@ -184,7 +184,10 @@ for chauffeur, else full total.
 `marginEstimateCents = total` and emits a `'margin not modelled for shared'` warning — internal/ops
 callers must not read shared margin as real.
 
-**Rounding rule:** round **once per leg** to whole cents; sums are exact. Documented and tested so it
+**Rounding rule:** the buffer rounds km first (`billableKm = round(km × 1.10)`), then the leg price
+rounds to whole cents (`round(billableKm × perKmCents)`) — **two rounds**, both deterministic. Because
+every caller prices through the engine, client and server always agree (matters for the §8 recompute).
+Sums are exact. Documented and tested so it
 never drifts.
 
 ---
@@ -194,7 +197,7 @@ never drifts.
 ```
 selectVehicle(pax, bags):
   car  if pax ≤ 3 and bags ≤ 3
-  van  if pax ≤ 6
+  van  if pax ≤ 6 and bags ≤ 6
   else → 'too_big'
 ```
 On `too_big` the engine **throws `Error('TOO_BIG')`**; the `/quote` route maps it to **422 `TOO_BIG`**
@@ -239,8 +242,12 @@ POST /quote
 - Same endpoint powers website + internal tool (internal tool also reads `marginEstimateCents` via an
   `x-internal-key` header; the public response omits it).
 - Booking validation calls the engine **in-process** (not over HTTP).
-- Rate-limited; `/quote` needs no auth (prices only), but `marginEstimate` is gated to authenticated
-  ops/internal callers.
+- **Rate-limited** (`app.use('/quote', rateLimit)`); `/quote` needs no auth (prices only). The
+  `marginEstimateCents` field is gated to callers whose `x-internal-key` header matches
+  `config.INTERNAL_QUOTE_KEY` (CORS allows that header); everyone else gets it stripped.
+- **Edge validation:** the Zod schema rejects an unknown extra or empty `legs`/`travelDays` at the
+  edge → **400 `invalid_request`**. So the engine's `UNKNOWN_EXTRA`/`NO_LEGS` **422** only fires for
+  *in-process* callers (defense-in-depth); over HTTP those surface as **400**.
 
 ---
 
