@@ -11,6 +11,7 @@ import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
+import { quoteRoutes } from './routes/quote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
@@ -66,12 +67,13 @@ export function createApp(deps: AppDeps = {}) {
     cors({
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
-      allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key'],
+      allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
     }),
   );
 
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
+  app.use('/quote', rateLimit(rl));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
@@ -81,6 +83,7 @@ export function createApp(deps: AppDeps = {}) {
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
+  app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));

@@ -95,6 +95,30 @@ Task 4 asserts the unbuffered `quotePrivateLegs` subtotal (6350); Task 11 supers
 run **out of order** (parallel), Task 4's test goes red after Task 11. Execute Tasks 1–14 **in order**;
 the changelog table lists every superseded value.
 
+## ✅ I15 — Floor-warning strings hardcoded `$29`/`$50` — **RESOLVED** (now `$${floorCents[vehicle]/100}`)
+The floor-warning text derives `$29`/`$50` from a literal (`vehicle === 'car' ? '$29' : '$50'`) instead
+of `RATE_CARD.floorCents[vehicle] / 100`. If a floor ever changes, the warning copy silently drifts.
+One-line follow-up; not merge-blocking (flagged in the whole-branch review).
+
+## ✅ I16 — Shared `marginEstimateCents` = total — **RESOLVED** (field is now `number | null`, null for shared)
+Shared cost isn't modelled, so `marginEstimateCents === totalCents` for shared quotes (mitigated by a
+`"margin not modelled for shared"` warning). The internal tool must not present a shared margin as real;
+a cleaner follow-up would omit/null the field for shared rather than report 100%.
+
+## ✅ I17 — End-to-end review (architect + QA, post-build) — findings RESOLVED
+After the engine was built, run live over HTTP, and reviewed end-to-end, the following were fixed (fix
+wave, re-reviewed Approved):
+- **Van bag cap enforced** — `selectVehicle` now returns `too_big` when `bags > 6` (your decision:
+  "contact us").
+- **`/quote` rate-limited** (spec §9); **CORS allows `x-internal-key`**; `INTERNAL_QUOTE_KEY` via `config`.
+- **Extras single-source** (`EXTRA_CODES` drives both the type and the Zod enum — no more drift).
+- **Shared margin → `null`** (I16); **floor-warning copy from the rate card** (I15).
+- **Tests added (21):** wrong-key margin strip (security), unknown-extra→400, empty-legs→400, chauffeur
+  margin value, deposit-cap boundary, and invariants (integer totals, deposit ≤ cap, due ≤ total). 242 green.
+
+**Still deferred to the tool phase (not fixed now):** relocate `billableKm` to a neutral module
+(cosmetic); expose top-level `bufferKm`/`billableKm` on the result (I10 — the tool needs it).
+
 ---
 
-_Last updated: 2026-06-28. Add new issues as they surface; tick/strike when resolved._
+_Last updated: 2026-06-29. Add new issues as they surface; tick/strike when resolved._
