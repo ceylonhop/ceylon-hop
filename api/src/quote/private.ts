@@ -18,7 +18,7 @@ export function quotePrivateLegs(
   const warnings: string[] = [];
   let subtotalCents = 0;
   const floor = RATE_CARD.floorCents[vehicle];
-  const dollars = vehicle === 'car' ? '$29' : '$50';
+  const dollars = `$${RATE_CARD.floorCents[vehicle] / 100}`;
 
   for (const leg of legs) {
     const bKm = billableKm(leg.distanceKm);
