@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { quote } from '../quote/engine';
 import type { QuoteRequest } from '../quote/types';
 
-const ExtraCode = z.enum(['sightseeing', 'safari-wait', 'luggage', 'front', 'flex']);
+const ExtraCode = z.enum(['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting']);
 const ENGINE_ERRORS = new Set(['TOO_BIG', 'UNKNOWN_EXTRA', 'NO_LEGS']);
 
 const QuoteSchema = z.discriminatedUnion('product', [
