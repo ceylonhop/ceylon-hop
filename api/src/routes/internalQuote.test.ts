@@ -165,6 +165,33 @@ describe('internal quoting tool route', () => {
   });
 });
 
+describe('quoting tool — admin-key auth', () => {
+  const keyed = () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), adminKey: 'secret' }));
+    return a;
+  };
+
+  it('serves the HTML shell without a key', async () => {
+    const res = await keyed().request('/admin/quote');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+  });
+
+  it('401s a data route without the key and 200s with it', async () => {
+    const app = keyed();
+    expect((await app.request('/admin/quote/places?q=kand')).status).toBe(401);
+    const ok = await app.request('/admin/quote/places?q=kand', { headers: { 'x-admin-key': 'secret' } });
+    expect(ok.status).toBe(200);
+    expect((await ok.json()).places).toEqual(['Kandy']);
+  });
+
+  it('leaves data routes open when no key is configured (dev/preview)', async () => {
+    // createApp default ADMIN_API_KEY is '' → open
+    expect((await createApp().request('/admin/quote/places?q=kand')).status).toBe(200);
+  });
+});
+
 describe('quoting tool — Google Places path (mocked fetch)', () => {
   const origFetch = global.fetch;
   afterEach(() => {

@@ -215,10 +215,21 @@ async function suggestPlaces(q: string, googleKey?: string): Promise<string[]> {
   return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string; quotes: QuoteRepo }) {
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string; quotes: QuoteRepo; adminKey?: string }) {
   const r = new Hono();
 
+  // Open shell (a browser navigation can't send a header). The JS attaches the key to
+  // its fetches; the guard below protects every data/XHR route.
   r.get('/', (c) => c.html(toolHtml()));
+
+  // Enforce the admin key ONLY when one is configured, so dev/preview (no key) still works.
+  // Prod MUST set ADMIN_API_KEY — see the go-live checklist.
+  r.use('*', async (c, next) => {
+    if (deps.adminKey && c.req.header('x-admin-key') !== deps.adminKey) {
+      return c.json({ error: 'unauthorized' }, 401);
+    }
+    return next();
+  });
 
   // Autocomplete (server-side; key never reaches the browser).
   r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.googleKey) }));

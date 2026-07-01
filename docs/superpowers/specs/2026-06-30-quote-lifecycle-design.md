@@ -145,3 +145,4 @@ Follows the "prove red → green" contract. Coverage:
   pricing logic is validated through the tool.
 - Lost-reason enum + conversion dashboard.
 - Auto-link won quote → booking (populate `converted_booking_id`).
+- Prod MUST set ADMIN_API_KEY (auth enforced only when configured) — added to the go-live checklist.
