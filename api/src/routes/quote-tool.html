@@ -1374,7 +1374,9 @@ function attachEventListeners() {
     } else if (action === 'manualDistance') {
       updateLeg(legId, { manualDistance: true });
     } else if (action === 'autoDistance') {
+      delete _distCache[legId];
       updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0 });
+      scheduleAutoDistance(legId);
     } else if (action === 'removeStop') {
       var stopIdx = parseInt(el.getAttribute('data-stop'), 10);
       var legObj = state.legs.find(function(l) { return l.id === legId; });
@@ -1436,7 +1438,228 @@ function attachEventListeners() {
       updateLeg(legId, { stopovers: stops });
     }
   }, true);
+
+  // Wire place autocomplete on all ch-tl-title inputs
+  attachAutoComplete();
 }
+
+// ── Auto-distance ─────────────────────────────────────────────────────────────
+// Per-leg debounce timers and last-fetched from/to cache to avoid redundant fetches.
+var _distTimers = {};      // legId → setTimeout handle
+var _distCache = {};       // legId → 'from||to' string of the last fetch
+
+function scheduleAutoDistance(legId) {
+  clearTimeout(_distTimers[legId]);
+  _distTimers[legId] = setTimeout(function() {
+    runAutoDistance(legId);
+  }, 350);
+}
+
+async function runAutoDistance(legId) {
+  var leg = state.legs.find(function(l) { return l.id === legId; });
+  if (!leg) return;
+  // Only drive auto-distance for non-stay legs with both endpoints set, not in manual mode
+  if (leg.category === 'stay_day') return;
+  if (leg.manualDistance) return;
+  var from = (leg.pickupLocation || '').trim();
+  var to = (leg.dropoffLocation || '').trim();
+  if (!from || !to) return;
+  var cacheKey = from + '||' + to;
+  if (_distCache[legId] === cacheKey) return; // already fetched this pair
+  _distCache[legId] = cacheKey;
+
+  var result = await apiDistance(from, to);
+  // Guard: leg may have changed while we awaited
+  var current = state.legs.find(function(l) { return l.id === legId; });
+  if (!current || current.manualDistance) return;
+  if ((current.pickupLocation || '').trim() !== from) return;
+  if ((current.dropoffLocation || '').trim() !== to) return;
+
+  if (result && result.km != null) {
+    var hrs = Math.round((result.durationMin / 60) * 100) / 100;
+    updateLeg(legId, { distanceKm: result.km, driveTimeHours: hrs, autoMatched: true });
+  } else {
+    // Unknown route — show "No distance" warn state
+    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
+  }
+}
+
+// ── Place autocomplete ────────────────────────────────────────────────────────
+// Module-level state for the currently open autocomplete menu.
+var _ac = {
+  legId: null,
+  field: null,
+  items: [],
+  hiIdx: -1,
+  inputEl: null,
+  menuEl: null,
+  timer: null,
+};
+
+function acClose() {
+  if (_ac.menuEl && _ac.menuEl.parentNode) {
+    _ac.menuEl.parentNode.removeChild(_ac.menuEl);
+  }
+  _ac.legId = null;
+  _ac.field = null;
+  _ac.items = [];
+  _ac.hiIdx = -1;
+  _ac.inputEl = null;
+  _ac.menuEl = null;
+}
+
+function acPick(name) {
+  var legId = _ac.legId;
+  var field = _ac.field;
+  if (!legId || !field) { acClose(); return; }
+
+  // Update the input value without a full re-render so cursor stays correct
+  if (_ac.inputEl) _ac.inputEl.value = name;
+  acClose();
+
+  // Patch leg state (this calls render(), wiping the menu — already gone)
+  var patch = {};
+  patch[field] = name;
+  // Clear cache so a new distance fetch runs after the leg updates
+  delete _distCache[legId];
+  // Use direct state mutation to avoid two renders
+  state.legs = state.legs.map(function(l) {
+    return l.id === legId ? Object.assign({}, l, patch) : l;
+  });
+  // Now schedule auto-distance before rendering so the leg is already updated
+  scheduleAutoDistance(legId);
+  render();
+}
+
+function acRenderMenu(inputEl, items, query) {
+  // Remove any existing menu
+  if (_ac.menuEl && _ac.menuEl.parentNode) {
+    _ac.menuEl.parentNode.removeChild(_ac.menuEl);
+    _ac.menuEl = null;
+  }
+  if (!items || items.length === 0) return;
+
+  var menu = document.createElement('div');
+  menu.className = 'ch-ac-menu';
+
+  items.forEach(function(name, idx) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ch-ac-item' + (idx === _ac.hiIdx ? ' hi' : '');
+    // Highlight matching substring
+    var escaped = esc(name);
+    var escapedQuery = esc(query);
+    var re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    var highlighted = escaped.replace(re, '<b>$1</b>');
+    btn.innerHTML = '<span class="ch-ac-pin">📍</span><span class="ch-ac-name">' + highlighted + '</span>';
+    btn.addEventListener('mousedown', function(e) {
+      e.preventDefault(); // prevent blur before click
+      acPick(name);
+    });
+    menu.appendChild(btn);
+  });
+
+  // Position under the input
+  var wrap = inputEl.parentNode;
+  wrap.style.position = 'relative';
+  wrap.appendChild(menu);
+  _ac.menuEl = menu;
+}
+
+function acUpdateHighlight() {
+  if (!_ac.menuEl) return;
+  var btns = _ac.menuEl.querySelectorAll('.ch-ac-item');
+  btns.forEach(function(b, i) {
+    b.classList.toggle('hi', i === _ac.hiIdx);
+  });
+}
+
+function attachAutoComplete() {
+  // Find all place inputs in the current DOM
+  var inputs = document.querySelectorAll('.ch-tl-title[data-field="pickupLocation"], .ch-tl-title[data-field="dropoffLocation"]');
+
+  inputs.forEach(function(input) {
+    var legId = input.getAttribute('data-leg');
+    var field = input.getAttribute('data-field');
+    if (!legId || !field) return;
+
+    // Debounced input handler — fetch suggestions
+    input.addEventListener('input', function() {
+      var q = input.value.trim();
+      clearTimeout(_ac.timer);
+
+      if (q.length < 2) {
+        acClose();
+        return;
+      }
+
+      // Track which input is active
+      _ac.legId = legId;
+      _ac.field = field;
+      _ac.inputEl = input;
+      _ac.hiIdx = -1;
+
+      _ac.timer = setTimeout(function() {
+        apiPlaces(q).then(function(places) {
+          // Guard: input must still be the active one
+          if (_ac.inputEl !== input) return;
+          var limited = places.slice(0, 6);
+          _ac.items = limited;
+          acRenderMenu(input, limited, q);
+        });
+      }, 220);
+    });
+
+    // Keyboard navigation
+    input.addEventListener('keydown', function(e) {
+      if (!_ac.menuEl || _ac.inputEl !== input) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _ac.hiIdx = Math.min(_ac.hiIdx + 1, _ac.items.length - 1);
+        acUpdateHighlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _ac.hiIdx = Math.max(_ac.hiIdx - 1, -1);
+        acUpdateHighlight();
+      } else if (e.key === 'Enter') {
+        if (_ac.hiIdx >= 0 && _ac.items[_ac.hiIdx]) {
+          e.preventDefault();
+          acPick(_ac.items[_ac.hiIdx]);
+        }
+      } else if (e.key === 'Escape') {
+        acClose();
+      }
+    });
+
+    // Close on blur — small delay so mousedown on an item fires first
+    input.addEventListener('blur', function() {
+      setTimeout(function() {
+        if (_ac.inputEl === input) acClose();
+        // Also trigger auto-distance when the user finishes typing manually
+        var leg = state.legs.find(function(l) { return l.id === legId; });
+        if (leg && !leg.manualDistance) {
+          // Update state for the field value (in case user typed without picking)
+          var currentVal = input.value;
+          if (leg[field] !== currentVal) {
+            delete _distCache[legId];
+            state.legs = state.legs.map(function(l) {
+              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; return p; })()) : l;
+            });
+          }
+          scheduleAutoDistance(legId);
+        }
+      }, 200);
+    });
+  });
+
+}
+
+// Close autocomplete on outside click — registered once, not per render
+document.addEventListener('mousedown', function(e) {
+  if (_ac.menuEl && !_ac.menuEl.contains(e.target) && _ac.inputEl !== e.target) {
+    acClose();
+  }
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async function boot() {
