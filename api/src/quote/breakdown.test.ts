@@ -6,8 +6,11 @@ describe('quoteBreakdown', () => {
   it('private: per-leg billable + price and km totals (140km van = 12782¢)', () => {
     const req: QuoteRequest = { product: 'private', vehicle: 'van', pax: 4, bags: 4, legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }] };
     const b = quoteBreakdown(req);
-    expect(b.legs).toEqual([{ from: 'Kandy', to: 'Ella', distanceKm: 140, billableKm: 154, priceCents: 12782 }]);
+    expect(b.legs).toEqual([{ from: 'Kandy', to: 'Ella', distanceKm: 140, billableKm: 154, priceCents: 12782, cls: 'van', minApplied: false }]);
     expect(b.km).toEqual({ distanceKm: 140, bufferKm: 14, billableKm: 154 });
+    // raw = round(154 * 83) = 12782 >= floor 5000 → minApplied false
+    expect(b.legs[0].minApplied).toBe(false);
+    expect(b.legs[0].cls).toBe('van');
   });
 
   it('private: floor applies on a short leg (car, 20km → floor 2900¢)', () => {
@@ -15,6 +18,9 @@ describe('quoteBreakdown', () => {
     const b = quoteBreakdown(req);
     expect(b.legs[0].priceCents).toBe(2900); // max(floor, round(22*46))
     expect(b.km.billableKm).toBe(22);
+    // raw = round(22 * 46) = 1012 < floor 2900 → minApplied true
+    expect(b.legs[0].minApplied).toBe(true);
+    expect(b.legs[0].cls).toBe('car');
   });
 
   it('chauffeur: uses travelDays for the per-leg breakdown', () => {

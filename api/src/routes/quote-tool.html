@@ -1309,6 +1309,26 @@ function computeFlags() {
     }
   });
 
+  // blue: van minimum applied
+  if (lastEstimate && lastEstimate.breakdown && lastEstimate.breakdown.legs) {
+    var hasVanMin = lastEstimate.breakdown.legs.some(function(bl) { return bl.minApplied === true && bl.cls === 'van'; });
+    if (hasVanMin) {
+      flags.push({
+        level: 'blue',
+        title: 'Van minimum applied',
+        detail: 'Minimum 100 km charge used on one or more legs.',
+      });
+    }
+    var hasCarMin = lastEstimate.breakdown.legs.some(function(bl) { return bl.minApplied === true && bl.cls === 'car'; });
+    if (hasCarMin) {
+      flags.push({
+        level: 'blue',
+        title: 'Car minimum applied',
+        detail: 'Minimum 50 km charge used on one or more legs.',
+      });
+    }
+  }
+
   // Merge engine warnings as extra blue flags
   if (lastEstimate && lastEstimate.warnings && lastEstimate.warnings.length > 0) {
     lastEstimate.warnings.forEach(function(w) {

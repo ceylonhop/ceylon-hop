@@ -1,4 +1,5 @@
 import { billableKm, legPriceCents } from './private';
+import { RATE_CARD } from './rateCard';
 import type { QuoteRequest } from './types';
 
 export interface LegBreakdown {
@@ -7,6 +8,8 @@ export interface LegBreakdown {
   distanceKm: number;
   billableKm: number;
   priceCents: number;
+  cls: 'car' | 'van';
+  minApplied: boolean;
 }
 export interface QuoteBreakdown {
   km: { distanceKm: number; bufferKm: number; billableKm: number };
@@ -21,7 +24,9 @@ export function quoteBreakdown(req: QuoteRequest): QuoteBreakdown {
     req.product === 'chauffeur' ? req.travelDays : req.product === 'private' ? req.legs : [];
   const legs: LegBreakdown[] = src.map((l) => {
     const bKm = billableKm(l.distanceKm);
-    return { from: l.from, to: l.to, distanceKm: l.distanceKm, billableKm: bKm, priceCents: legPriceCents(bKm, vehicle) };
+    const raw = Math.round(bKm * RATE_CARD.perKmCents[vehicle]);
+    const minApplied = raw < RATE_CARD.floorCents[vehicle];
+    return { from: l.from, to: l.to, distanceKm: l.distanceKm, billableKm: bKm, priceCents: legPriceCents(bKm, vehicle), cls: vehicle, minApplied };
   });
   const distanceKm = legs.reduce((s, l) => s + l.distanceKm, 0);
   const billable = legs.reduce((s, l) => s + l.billableKm, 0);
