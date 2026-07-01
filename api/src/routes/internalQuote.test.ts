@@ -197,6 +197,21 @@ describe('internal quoting tool route', () => {
       expect((await res.json()).error).toMatch(/rate/i);
     }
   });
+
+  it('estimate includes a breakdown (km strip + per-leg prices)', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'van_6', passengerCount: 4, luggageCount: 4, legs: [{ category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 }] })).json();
+    expect(d.breakdown.km).toEqual({ distanceKm: 140, bufferKm: 14, billableKm: 154 });
+    expect(d.breakdown.legs[0].priceCents).toBe(12782);
+  });
+
+  it('GET /rate-card returns the locked rate card for the read-only Settings', async () => {
+    const d = await (await createApp().request('/admin/quote/rate-card')).json();
+    expect(d.version).toBe('2026-06-28');
+    expect(d.perKmCents).toEqual({ car: 46, van: 83 });
+    expect(d.floorCents).toEqual({ car: 2900, van: 5000 });
+    expect(d.chauffeurDayRateCents).toBe(3500);
+    expect(d.fxUsdToLkr).toBe(320);
+  });
 });
 
 describe('quoting tool — admin-key auth', () => {

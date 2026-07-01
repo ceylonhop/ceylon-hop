@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { quote } from '../quote/engine';
+import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
@@ -259,6 +260,7 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
       return c.json({
         ...shape(result),
         fxUsdToLkr: fxRate,
+        breakdown: quoteBreakdown(req),
         comparison,
         drafts: {
           whatsapp: whatsappDraft(body?.name ?? '', body as ToolRequest, result),
@@ -296,6 +298,21 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
       throw e;
     }
   });
+
+  // Read-only view of the locked rate card for the tool's Settings card.
+  // MUST be registered before /:id so that /rate-card doesn't match the param route.
+  r.get('/rate-card', (c) =>
+    c.json({
+      version: RATE_CARD.version,
+      perKmCents: RATE_CARD.perKmCents,
+      floorCents: RATE_CARD.floorCents,
+      chauffeurDayRateCents: RATE_CARD.chauffeur.dayRateCents,
+      bufferPct: RATE_CARD.bufferPct,
+      depositPct: RATE_CARD.deposit.pct,
+      extras: RATE_CARD.extras,
+      fxUsdToLkr: RATE_CARD.fxUsdToLkr,
+    }),
+  );
 
   // List quotes (newest first), optionally filtered by status/product/from/to.
   // MUST be registered before /:id so that /list doesn't match the param route.
