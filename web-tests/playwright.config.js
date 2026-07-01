@@ -16,10 +16,19 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
-  webServer: {
-    command: 'node ../serve-booking.js',
-    url: 'http://localhost:4173/index.html',
-    reuseExistingServer: true,
-    timeout: 30000,
-  },
+  webServer: [
+    {
+      command: 'node ../serve-booking.js',
+      url: 'http://localhost:4173/index.html',
+      reuseExistingServer: true,
+      timeout: 30000,
+    },
+    {
+      // The API serves the internal quoting tool at /admin/quote (see quote-tool.spec.js).
+      command: 'npm --prefix ../api run dev',
+      url: 'http://localhost:8787/health',
+      reuseExistingServer: true,
+      timeout: 60000,
+    },
+  ],
 });

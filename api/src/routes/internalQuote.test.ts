@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { Hono } from 'hono';
 import { createApp } from '../app';
+import { internalQuoteRoutes } from './internalQuote';
+import { FakeMapsAdapter } from '../adapters/maps';
 
 type App = ReturnType<typeof createApp>;
 function post(app: App, path: string, body: unknown) {
@@ -92,5 +95,50 @@ describe('internal quoting tool route', () => {
     expect(d.product).toBe('chauffeur');
     expect(d.amountDueNow.cents).toBe(d.deposit.cents); // chauffeur pays the deposit now
     expect(d.deposit.cents).toBeLessThanOrEqual(5000); // cap
+  });
+});
+
+describe('quoting tool — Google Places path (mocked fetch)', () => {
+  const origFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = origFetch;
+  });
+  const appWithKey = () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), googleKey: 'test-key' }));
+    return a;
+  };
+
+  it('returns Google predictions when a server key is configured', async () => {
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ predictions: [{ description: 'Colombo Fort, Sri Lanka' }, { description: 'Colombo City Centre' }] }), { status: 200 })) as typeof fetch;
+    const res = await appWithKey().request('/admin/quote/places?q=colombo');
+    expect((await res.json()).places).toEqual(['Colombo Fort, Sri Lanka', 'Colombo City Centre']);
+  });
+
+  it('falls back to the offline list when Google throws', async () => {
+    global.fetch = (async () => {
+      throw new Error('network down');
+    }) as typeof fetch;
+    const res = await appWithKey().request('/admin/quote/places?q=kand');
+    expect((await res.json()).places).toEqual(['Kandy']);
+  });
+
+  it('falls back to the offline list when Google returns no predictions', async () => {
+    global.fetch = (async () => new Response(JSON.stringify({ predictions: [] }), { status: 200 })) as typeof fetch;
+    const res = await appWithKey().request('/admin/quote/places?q=ella');
+    expect((await res.json()).places).toEqual(['Ella']);
+  });
+
+  it('builds the Places request scoped to Sri Lanka with the query + key', async () => {
+    let captured = '';
+    global.fetch = (async (u: string) => {
+      captured = String(u);
+      return new Response(JSON.stringify({ predictions: [{ description: 'X' }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await appWithKey().request('/admin/quote/places?q=galle');
+    expect(captured).toContain('input=galle');
+    expect(captured).toContain('components=country:lk');
+    expect(captured).toContain('key=test-key');
   });
 });
