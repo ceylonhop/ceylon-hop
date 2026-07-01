@@ -19,6 +19,12 @@ if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
 }
 
+if (!config.ADMIN_API_KEY) {
+  console.warn(
+    'WARNING: ADMIN_API_KEY is not set — the internal quoting tool (/admin/quote/*) is UNAUTHENTICATED and exposes customer PII + cost/margin. Set ADMIN_API_KEY before serving real traffic.',
+  );
+}
+
 const adapter =
   config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET
     ? new PayHerePaymentAdapter(config.PAYHERE_MERCHANT_ID, config.PAYHERE_MERCHANT_SECRET, {

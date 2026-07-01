@@ -98,7 +98,6 @@ function toSummary(q: SavedQuote): QuoteSummary {
 
 export class InMemoryQuoteRepo implements QuoteRepo {
   private readonly rows = new Map<string, SavedQuote>();
-  private insertionOrder: string[] = [];
   private insertionIndex = 0;
   private readonly insertionIndices = new Map<string, number>();
 

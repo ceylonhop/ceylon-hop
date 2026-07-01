@@ -108,7 +108,7 @@ describe('internal quoting tool route', () => {
     expect(got.totalCents).toBe(4048); // engine price, not the bogus client total
   });
 
-  it('POST /save is 422 for an unpriceable trip (no travel leg)', async () => {
+  it('POST /save is 400 for an unpriceable trip (no travel leg)', async () => {
     const res = await post(createApp(), '/admin/quote/save', {
       product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ type: 'stay_day', from: 'Kandy', to: '' }],
     });
@@ -143,7 +143,6 @@ describe('internal quoting tool route', () => {
   });
 
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
-    const { InMemoryQuoteRepo } = await import('../db/quoteRepo');
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const res = await app.request('/admin/quote/places?q=kand');
     expect((await res.json()).places).toEqual(['Kandy']);
