@@ -55,3 +55,20 @@ test('a manual distance prices without needing the maps lookup', async ({ page }
   await page.click('#go');
   await expect(page.locator('.total')).toContainText('LKR');
 });
+
+test('save a quote → reference appears → shows in Recent, and status can change', async ({ page }) => {
+  await page.goto(TOOL);
+  await page.locator('.leg [data-f="from"]').first().fill('Somewhere Villa');
+  await page.locator('.leg [data-f="to"]').first().fill('Airport');
+  await page.locator('.leg [data-f="distanceKm"]').first().fill('80');
+  await page.fill('#name', 'E2E Save');
+  await page.click('#go');
+  await expect(page.locator('.total')).toContainText('LKR');
+  await page.click('#saveBtn');
+  await expect(page.locator('#saveMsg')).toContainText('Q-');
+  await expect(page.locator('#recent .qrow', { hasText: 'E2E Save' }).first()).toBeVisible();
+  // change its status
+  const row = page.locator('#recent .qrow', { hasText: 'E2E Save' }).first();
+  await row.locator('.qstatus').selectOption('won');
+  await expect(row.locator('.qstatus')).toHaveValue('won');
+});

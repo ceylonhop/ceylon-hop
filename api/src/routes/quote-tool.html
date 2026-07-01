@@ -19,6 +19,7 @@
   input:focus,select:focus{outline:none;border-color:var(--teal)}
   .row{display:grid;gap:12px}
   .r4{grid-template-columns:2fr 1fr 1fr 1.6fr}
+  .r5{grid-template-columns:1.6fr 1.4fr .8fr .8fr 1.4fr}
   .r3{grid-template-columns:1fr 1fr 1fr}
   .leg{border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fdfcf9;position:relative}
   .leg .top{display:grid;grid-template-columns:1.3fr 1fr .8fr;gap:10px;margin-bottom:10px}
@@ -50,7 +51,7 @@
   .tabs{display:flex;gap:6px;margin-bottom:10px}
   .tab{padding:6px 14px;border:1.5px solid var(--line);border-radius:99px;background:#fff;font-size:.85rem;font-weight:600;color:var(--soft)}
   .tab.on{background:var(--teal);color:#fff;border-color:var(--teal)}
-  @media(max-width:700px){.r4,.r3,.leg .top,.leg .lr,.grid2{grid-template-columns:1fr 1fr}}
+  @media(max-width:700px){.r4,.r5,.r3,.leg .top,.leg .lr,.grid2{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -61,8 +62,9 @@
 
   <div class="card">
     <h2>① Customer &amp; Request</h2>
-    <div class="row r4">
+    <div class="row r5">
       <div><label>Customer name</label><input id="name" placeholder="e.g. Nikhil" /></div>
+      <div><label>WhatsApp / email</label><input id="contact" placeholder="WhatsApp / email" /></div>
       <div><label>Passengers</label><input id="pax" type="number" min="1" value="2" /></div>
       <div><label>Bags</label><input id="bags" type="number" min="0" value="2" /></div>
       <div><label>Service</label><select id="product"><option value="private">Transfers (point-to-point)</option><option value="chauffeur">Chauffeur (keep car + driver)</option></select></div>
@@ -90,14 +92,32 @@
     <span class="muted" id="status"></span>
   </div>
   <div id="result"></div>
+  <div class="card" style="margin-top:24px">
+    <h2>Recent Quotes</h2>
+    <div id="recent"></div>
+  </div>
 </div>
 
 <script>
 const $=(id)=>document.getElementById(id);
 let legId=0;
 
-async function apiPlaces(q){ try{ const r=await fetch('/admin/quote/places?q='+encodeURIComponent(q)); const d=await r.json(); return d.places||[]; }catch(e){ return []; } }
-async function apiDistance(from,to){ try{ const r=await fetch('/admin/quote/distance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({from,to})}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
+function adminKey(){ return localStorage.getItem('chAdminKey') || ''; }
+async function api(path, opts){
+  opts = opts || {};
+  const headers = Object.assign({}, opts.headers || {});
+  const k = adminKey(); if(k) headers['x-admin-key'] = k;
+  let res = await fetch(path, Object.assign({}, opts, { headers }));
+  if(res.status === 401){
+    const entered = prompt('Enter the admin key for the quoting tool:');
+    if(entered){ localStorage.setItem('chAdminKey', entered); headers['x-admin-key'] = entered;
+      res = await fetch(path, Object.assign({}, opts, { headers })); }
+  }
+  return res;
+}
+
+async function apiPlaces(q){ try{ const r=await api('/admin/quote/places?q='+encodeURIComponent(q)); const d=await r.json(); return d.places||[]; }catch(e){ return []; } }
+async function apiDistance(from,to){ try{ const r=await api('/admin/quote/distance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({from,to})}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
 
 function attachAC(input){
   const wrap=document.createElement('div'); wrap.className='ac';
@@ -187,7 +207,7 @@ function collect(){
 async function getQuote(){
   $('status').textContent='Pricing…'; $('go').disabled=true;
   try{
-    const res=await fetch('/admin/quote/estimate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(collect())});
+    const res=await api('/admin/quote/estimate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(collect())});
     const d=await res.json();
     if(!res.ok){ render(`<div class="card"><div class="err">${esc(d.error||'Error')}</div></div>`); return; }
     renderResult(d);
@@ -213,6 +233,10 @@ function renderResult(d){
       <div class="total">${d.total.lkr}</div>
       <div class="usd">~${d.total.usd} · FX ${d.fxUsdToLkr} LKR/$ · deposit ${d.deposit.lkr} · due now ${d.amountDueNow.lkr}</div>
       ${warn}<div style="margin-top:14px">${li}${margin}</div>
+      <div style="margin-top:14px;display:flex;gap:12px;align-items:center">
+        <button class="btn" id="saveBtn" onclick="saveQuote()">Save quote</button>
+        <span id="saveMsg"></span>
+      </div>
     </div>
     ${cmp}
     <div class="card">
@@ -227,8 +251,41 @@ function renderResult(d){
     </div>`);
 }
 
+async function saveQuote(){
+  const payload = collect();
+  payload.name = ($('name').value || '').trim();
+  payload.contact = ($('contact') ? $('contact').value.trim() : '');
+  const res = await api('/admin/quote/save', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload) });
+  const d = await res.json();
+  if(!res.ok){ $('saveMsg').textContent = d.error || 'Save failed'; return; }
+  $('saveMsg').innerHTML = 'Saved as <b>'+d.reference+'</b>';
+  loadRecent();
+}
+
+async function loadRecent(){
+  const res = await api('/admin/quote/list');
+  if(!res.ok) return;
+  const { quotes } = await res.json();
+  $('recent').innerHTML = quotes.map(function(q){
+    return '<div class="qrow" data-id="'+q.id+'"><span class="qref">'+q.reference+'</span>'
+      + '<span>'+(q.customerName||'—')+'</span>'
+      + '<span>'+q.product+'</span>'
+      + '<span class="qtotal">'+q.totalCents+'</span>'
+      + '<select class="qstatus">'
+      + ['draft','sent','won','lost','expired'].map(function(s){ return '<option'+(s===q.status?' selected':'')+'>'+s+'</option>'; }).join('')
+      + '</select></div>';
+  }).join('');
+  Array.prototype.forEach.call(document.querySelectorAll('.qrow .qstatus'), function(sel){
+    sel.addEventListener('change', function(){
+      const id = sel.closest('.qrow').getAttribute('data-id');
+      api('/admin/quote/'+id, { method:'PATCH', headers:{'content-type':'application/json'}, body: JSON.stringify({ status: sel.value }) });
+    });
+  });
+}
+
 addLeg();
 syncMode();
+loadRecent();
 </script>
 </body>
 </html>
