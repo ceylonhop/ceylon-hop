@@ -90,7 +90,7 @@ describe('internal quoting tool route', () => {
     const res = await post(app, '/admin/quote/save', bodyReq);
     expect(res.status).toBe(201);
     const saved = await res.json();
-    expect(saved.reference).toMatch(/^Q-[0-9A-Z]{4}$/);
+    expect(saved.reference).toMatch(/^Q-[A-HJ-NP-Z2-9]{5}$/); // 5 chars, unambiguous alphabet (no 0/O/1/I)
     expect(saved.status).toBe('draft');
     const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
@@ -121,6 +121,7 @@ describe('internal quoting tool route', () => {
   it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
     const app = createApp();
     const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    await new Promise((r) => setTimeout(r, 5)); // distinct createdAt — same-ms ties order by reference, not insertion
     const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await app.request('/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first

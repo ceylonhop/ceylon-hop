@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { InMemoryQuoteRepo, type NewQuote } from './quoteRepo';
+import { describe, it, expect, vi } from 'vitest';
+import { InMemoryQuoteRepo, genReference, parseDateFilter, type NewQuote } from './quoteRepo';
 
 const sample = (over: Partial<NewQuote> = {}): NewQuote => ({
   product: 'private',
@@ -20,7 +20,7 @@ describe('InMemoryQuoteRepo', () => {
     const repo = new InMemoryQuoteRepo();
     const q = await repo.save(sample());
     expect(q.id).toMatch(/[0-9a-f-]{36}/);
-    expect(q.reference).toMatch(/^Q-[0-9A-Z]{4}$/);
+    expect(q.reference).toMatch(/^Q-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}$/);
     expect(q.status).toBe('draft');
     expect(q.channel).toBe('ops');
     expect(q.totalCents).toBe(4048);
@@ -44,10 +44,68 @@ describe('InMemoryQuoteRepo', () => {
     const b = await repo.save(sample({ product: 'chauffeur' }));
     await repo.patch(b.id, { status: 'won' });
     const all = await repo.list();
-    expect(all.map((r) => r.id)).toEqual([b.id, a.id]); // newest first
+    expect(all.map((r) => r.id).sort()).toEqual([a.id, b.id].sort());
     expect((await repo.list({ product: 'chauffeur' })).map((r) => r.id)).toEqual([b.id]);
     expect((await repo.list({ status: 'won' })).map((r) => r.id)).toEqual([b.id]);
     expect((await repo.list({ status: 'draft' })).map((r) => r.id)).toEqual([a.id]);
+  });
+
+  it('list orders by createdAt desc, then reference desc as a deterministic tiebreak', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-06-15T10:00:00.000Z'));
+      const repo = new InMemoryQuoteRepo();
+      // Both saves happen at the exact same fake instant, forcing a real createdAt tie.
+      const a = await repo.save(sample());
+      const b = await repo.save(sample());
+      expect(a.createdAt.getTime()).toBe(b.createdAt.getTime());
+
+      const expected = [a, b].sort((x, y) => (x.reference < y.reference ? 1 : -1)).map((r) => r.id);
+      const first = await repo.list();
+      const second = await repo.list();
+      expect(first.map((r) => r.id)).toEqual(expected);
+      expect(second.map((r) => r.id)).toEqual(expected); // stable across repeated calls
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('genReference produces a Q- reference from the unambiguous 5-char alphabet', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(genReference()).toMatch(/^Q-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{5}$/);
+    }
+  });
+
+  it('save never produces a duplicate reference across many inserts', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const refs = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const q = await repo.save(sample());
+      expect(refs.has(q.reference)).toBe(false);
+      refs.add(q.reference);
+    }
+    expect(refs.size).toBe(200);
+  });
+
+  it('parseDateFilter treats a date-only "to" as inclusive of the whole UTC day', () => {
+    const from = parseDateFilter('2026-07-01', 'from');
+    const to = parseDateFilter('2026-07-01', 'to');
+    expect(from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-07-01T23:59:59.999Z');
+  });
+
+  it('parseDateFilter parses non date-only strings as-is', () => {
+    const iso = '2026-07-01T05:30:00.000Z';
+    expect(parseDateFilter(iso, 'from').toISOString()).toBe(iso);
+    expect(parseDateFilter(iso, 'to').toISOString()).toBe(iso);
+  });
+
+  it('list from/to filters are inclusive of the whole day when dates are date-only', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const today = q.createdAt.toISOString().slice(0, 10);
+    const listed = await repo.list({ from: today, to: today });
+    expect(listed.map((r) => r.id)).toContain(q.id);
   });
 
   it('patch updates status, stamps sent_at then decided_at, and records lost_reason', async () => {

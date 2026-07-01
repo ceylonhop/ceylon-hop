@@ -76,9 +76,31 @@ export interface QuoteRepo {
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
 }
 
-// A short, human-referenceable code (e.g. "Q-7F3K") for pasting into WhatsApp.
+// Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
+// reference is easy to read over the phone or paste into WhatsApp. 5 chars over this
+// 32-symbol alphabet gives 32^5 (~33.5M) combinations.
+const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+// A short, human-referenceable code (e.g. "Q-7F3KX") for pasting into WhatsApp.
 export function genReference(): string {
-  return 'Q-' + randomUUID().replace(/-/g, '').slice(0, 4).toUpperCase();
+  let s = 'Q-';
+  for (let i = 0; i < 5; i++) {
+    s += REF_ALPHABET[Math.floor(Math.random() * REF_ALPHABET.length)];
+  }
+  return s;
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// A date-only filter string (e.g. "2026-07-01") is ambiguous as an instant: naively
+// parsing it gives midnight UTC, which excludes the whole "to" day. Treat date-only
+// strings as the start/end of that UTC day depending on which bound they're used for;
+// anything else (already a full timestamp) is parsed as-is.
+export function parseDateFilter(value: string, bound: 'from' | 'to'): Date {
+  if (DATE_ONLY.test(value)) {
+    return new Date(`${value}T${bound === 'from' ? '00:00:00.000' : '23:59:59.999'}Z`);
+  }
+  return new Date(value);
 }
 
 function toSummary(q: SavedQuote): QuoteSummary {
@@ -98,14 +120,20 @@ function toSummary(q: SavedQuote): QuoteSummary {
 
 export class InMemoryQuoteRepo implements QuoteRepo {
   private readonly rows = new Map<string, SavedQuote>();
-  private insertionIndex = 0;
-  private readonly insertionIndices = new Map<string, number>();
+  private readonly usedReferences = new Set<string>();
+
+  private nextReference(): string {
+    let reference = genReference();
+    while (this.usedReferences.has(reference)) reference = genReference();
+    this.usedReferences.add(reference);
+    return reference;
+  }
 
   async save(q: NewQuote): Promise<SavedQuote> {
     const now = new Date();
     const row: SavedQuote = {
       id: randomUUID(),
-      reference: genReference(),
+      reference: this.nextReference(),
       channel: q.channel ?? 'ops',
       status: 'draft',
       lostReason: null,
@@ -127,7 +155,6 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       decidedAt: null,
     };
     this.rows.set(row.id, row);
-    this.insertionIndices.set(row.id, this.insertionIndex++);
     return { ...row };
   }
 
@@ -140,12 +167,12 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     let rows = [...this.rows.values()];
     if (filter.status) rows = rows.filter((r) => r.status === filter.status);
     if (filter.product) rows = rows.filter((r) => r.product === filter.product);
-    if (filter.from) rows = rows.filter((r) => r.createdAt >= new Date(filter.from as string));
-    if (filter.to) rows = rows.filter((r) => r.createdAt <= new Date(filter.to as string));
+    if (filter.from) rows = rows.filter((r) => r.createdAt >= parseDateFilter(filter.from as string, 'from'));
+    if (filter.to) rows = rows.filter((r) => r.createdAt <= parseDateFilter(filter.to as string, 'to'));
     rows.sort((a, b) => {
       const timeComp = b.createdAt.getTime() - a.createdAt.getTime();
       if (timeComp !== 0) return timeComp;
-      return (this.insertionIndices.get(b.id) ?? 0) - (this.insertionIndices.get(a.id) ?? 0);
+      return a.reference < b.reference ? 1 : a.reference > b.reference ? -1 : 0;
     });
     return rows.map(toSummary);
   }

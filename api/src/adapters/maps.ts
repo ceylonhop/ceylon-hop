@@ -11,7 +11,13 @@ export interface MapsAdapter {
   readonly provider: string;
   // Returns null when the route can't be resolved (e.g. the fake doesn't know a typed address).
   distance(from: string, to: string): Promise<DistanceResult | null>;
+  // Place suggestions for autocomplete. At most 6 display-name strings; [] when none/unavailable.
+  places(query: string): Promise<string[]>;
 }
+
+// Shared fetch timeout for outbound Google Maps calls, so a slow/hanging upstream never
+// stalls a request indefinitely.
+const FETCH_TIMEOUT_MS = 4000;
 
 // Known-place coordinates, mirroring the front-end's place table (transfers-data.js). The
 // fake estimates road distance as crow-flies × 1.35 (Sri Lankan roads are slow & winding) and
@@ -65,6 +71,13 @@ export class FakeMapsAdapter implements MapsAdapter {
     const km = Math.round(haversineKm(a, b) * 1.35);
     return { km, durationMin: Math.round((km / 42) * 60) };
   }
+
+  // Mirrors the offline fallback the route used to do itself: case-insensitive substring
+  // match over the known-place list, capped at 6 suggestions.
+  async places(query: string): Promise<string[]> {
+    const ql = query.toLowerCase();
+    return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
+  }
 }
 
 // Real adapter: Google Distance Matrix (driving). Resolves names/addresses server-side.
@@ -78,17 +91,68 @@ export class GoogleMapsAdapter implements MapsAdapter {
       `?origins=${encodeURIComponent(from)}&destinations=${encodeURIComponent(to)}` +
       `&mode=driving&key=${this.apiKey}`;
     let res: Response;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      res = await fetch(url);
+      res = await fetch(url, { signal: controller.signal });
     } catch {
+      console.error('[maps] Distance Matrix error: fetch failed or timed out');
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      console.error(`[maps] Distance Matrix error: HTTP ${res.status}`);
       return null;
     }
-    if (!res.ok) return null;
     const data = (await res.json()) as {
+      status?: string;
       rows?: { elements?: { status?: string; distance?: { value: number }; duration?: { value: number } }[] }[];
     };
+    if (data.status && data.status !== 'OK') {
+      console.error('[maps] Distance Matrix error: ' + data.status);
+      return null;
+    }
     const el = data.rows?.[0]?.elements?.[0];
     if (!el || el.status !== 'OK' || !el.distance || !el.duration) return null;
     return { km: Math.round(el.distance.value / 1000), durationMin: Math.round(el.duration.value / 60) };
+  }
+
+  // Places Autocomplete, mirroring the request the route used to make directly. Google is
+  // tried first; on any non-usable outcome (error, timeout, non-OK status, or zero
+  // predictions) we fall back to the offline KNOWN_PLACES filter, exactly preserving the
+  // route's old "Google first, offline fallback" behavior.
+  async places(query: string): Promise<string[]> {
+    const url =
+      'https://maps.googleapis.com/maps/api/place/autocomplete/json' +
+      `?input=${encodeURIComponent(query)}&components=country:lk&key=${this.apiKey}`;
+    const offlineFallback = (): string[] => {
+      const ql = query.toLowerCase();
+      return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
+    };
+
+    let res: Response;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } catch {
+      console.error('[maps] places error: fetch failed or timed out');
+      return offlineFallback();
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      console.error(`[maps] places error: HTTP ${res.status}`);
+      return offlineFallback();
+    }
+    const data = (await res.json()) as { status?: string; predictions?: { description: string }[] };
+    if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error('[maps] places error: ' + data.status);
+      return [];
+    }
+    const out = (data.predictions || []).slice(0, 6).map((p) => p.description);
+    if (out.length) return out;
+    return offlineFallback();
   }
 }

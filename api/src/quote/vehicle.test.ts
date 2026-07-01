@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { selectVehicle, vehicleRank, VEHICLE_ORDER } from './vehicle';
+import { selectVehicle, vehicleRank, VEHICLE_ORDER, pricedVehicle } from './vehicle';
+import type { QuoteRequest } from './types';
 
 describe('selectVehicle', () => {
   it('car for ≤3 pax and ≤3 bags', () => {
@@ -57,5 +58,36 @@ describe('vehicleRank', () => {
     expect(vehicleRank('van9')).toBe(2);
     expect(vehicleRank('van14')).toBe(3);
     expect(vehicleRank('custom')).toBe(4);
+  });
+});
+
+describe('pricedVehicle (V3 fix: mirrors engine.ts anti-tamper upgrade logic)', () => {
+  it('private: upgrades to the capacity-required tier when requested vehicle is too small (8 pax/2 bags, car requested → van9)', () => {
+    const req: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 8, bags: 2,
+      legs: [{ from: 'A', to: 'B', distanceKm: 140 }],
+    };
+    expect(pricedVehicle(req)).toBe('van9');
+  });
+
+  it('private: keeps requested vehicle when it already meets/exceeds capacity', () => {
+    const req: QuoteRequest = {
+      product: 'private', vehicle: 'van14', pax: 2, bags: 1,
+      legs: [{ from: 'A', to: 'B', distanceKm: 10 }],
+    };
+    expect(pricedVehicle(req)).toBe('van14');
+  });
+
+  it('chauffeur: never upgraded (no pax on chauffeur requests) — stays req.vehicle', () => {
+    const req: QuoteRequest = {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-14',
+      travelDays: [{ date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 20 }],
+    };
+    expect(pricedVehicle(req)).toBe('car');
+  });
+
+  it('shared: returns car placeholder (breakdown legs are [] anyway)', () => {
+    const req: QuoteRequest = { product: 'shared', legs: [] };
+    expect(pricedVehicle(req)).toBe('car');
   });
 });

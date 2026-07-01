@@ -197,9 +197,31 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     const listed = await quotes.list({ product: 'private' });
     expect(listed.some((r) => r.id === saved.id)).toBe(true);
 
+    // to-day-inclusive filter: a same-day date-only "to" must include a quote created
+    // right now (regression test for the date-only filter treating "to" as midnight UTC).
+    const today = saved.createdAt.toISOString().slice(0, 10);
+    const listedByDay = await quotes.list({ from: today, to: today });
+    expect(listedByDay.some((r) => r.id === saved.id)).toBe(true);
+
+    const sent = await quotes.patch(saved.id, { status: 'sent' });
+    expect(sent?.status).toBe('sent');
+    expect(sent?.sentAt).toBeInstanceOf(Date);
+    expect(sent?.decidedAt).toBeNull();
+
+    // atomic patch path: moving to a decided status stamps decidedAt exactly once, and a
+    // later patch (even to another decided status) must not move it — set-once semantics
+    // enforced in a single SQL statement, not a read-then-write race.
     const won = await quotes.patch(saved.id, { status: 'won' });
     expect(won?.status).toBe('won');
     expect(won?.decidedAt).toBeInstanceOf(Date);
+    expect(won?.sentAt?.getTime()).toBe(sent?.sentAt?.getTime()); // preserved, not re-stamped
+
+    const decidedAtFirst = won?.decidedAt?.getTime();
+    const patchedAgain = await quotes.patch(saved.id, { status: 'lost', lostReason: 'too slow' });
+    expect(patchedAgain?.status).toBe('lost');
+    expect(patchedAgain?.decidedAt?.getTime()).toBe(decidedAtFirst); // still set-once
+    expect(patchedAgain?.lostReason).toBe('too slow');
+
     expect(await quotes.patch('00000000-0000-0000-0000-000000000000', { status: 'won' })).toBeNull();
   });
 
