@@ -1,5 +1,5 @@
 import { billableKm, legPriceCents } from './private';
-import { RATE_CARD } from './rateCard';
+import { RATE_CARD, type Vehicle } from './rateCard';
 import type { QuoteRequest } from './types';
 
 export interface LegBreakdown {
@@ -8,7 +8,7 @@ export interface LegBreakdown {
   distanceKm: number;
   billableKm: number;
   priceCents: number;
-  cls: 'car' | 'van';
+  cls: Vehicle;
   minApplied: boolean;
 }
 export interface QuoteBreakdown {
@@ -19,7 +19,7 @@ export interface QuoteBreakdown {
 // UI-facing breakdown computed from the engine's own primitives — the km strip and per-leg
 // prices the Summary/timeline show. Deliberately NOT part of the core quote() result (P8).
 export function quoteBreakdown(req: QuoteRequest): QuoteBreakdown {
-  const vehicle = 'vehicle' in req && req.vehicle === 'van' ? 'van' : 'car';
+  const vehicle: Vehicle = 'vehicle' in req ? req.vehicle : 'car';
   const src =
     req.product === 'chauffeur' ? req.travelDays : req.product === 'private' ? req.legs : [];
   const legs: LegBreakdown[] = src.map((l) => {

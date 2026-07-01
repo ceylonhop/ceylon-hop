@@ -17,13 +17,13 @@ const QuoteSchema = z.discriminatedUnion('product', [
   }),
   z.object({
     product: z.literal('private'),
-    vehicle: z.enum(['car', 'van']), pax: z.number().int().min(1), bags: z.number().int().min(0),
+    vehicle: z.enum(['car', 'van', 'van9', 'van14', 'custom']), pax: z.number().int().min(1), bags: z.number().int().min(0),
     legs: z.array(z.object({ from: z.string().min(1), to: z.string().min(1), distanceKm: z.number().min(0) })).min(1),
     extras: z.array(ExtraCode).optional(),
   }),
   z.object({
     product: z.literal('chauffeur'),
-    vehicle: z.enum(['car', 'van']), firstDate: z.string().min(1), lastDate: z.string().min(1),
+    vehicle: z.enum(['car', 'van', 'van9', 'van14', 'custom']), firstDate: z.string().min(1), lastDate: z.string().min(1),
     travelDays: z.array(z.object({ date: z.string().min(1), from: z.string().min(1), to: z.string().min(1), distanceKm: z.number().min(0) })).min(1),
     extras: z.array(ExtraCode).optional(),
   }),

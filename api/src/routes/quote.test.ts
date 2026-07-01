@@ -17,8 +17,8 @@ describe('POST /quote', () => {
     expect(body.marginEstimateCents).toBeUndefined();
   });
 
-  it('422 with TOO_BIG on an oversize request', async () => {
-    const res = await post(createApp(), { product: 'private', vehicle: 'van', pax: 9, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] });
+  it('422 with TOO_BIG on an oversize request (pax > custom 99 cap)', async () => {
+    const res = await post(createApp(), { product: 'private', vehicle: 'custom', pax: 120, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] });
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBe('TOO_BIG');
   });

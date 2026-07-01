@@ -41,14 +41,50 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(2200);
   });
 
-  it('throws TOO_BIG when private pax exceeds van', () => {
-    expect(() => quote({ product: 'private', vehicle: 'van', pax: 7, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
+  it('throws TOO_BIG only when pax exceeds custom capacity (>99)', () => {
+    expect(() => quote({ product: 'private', vehicle: 'custom', pax: 120, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
   });
 
   it('never undercharges: car requested for 6 pax is priced as the required van', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 6, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }] });
     expect(r.totalCents).toBe(9130); // 100km → bill 110km × van 83¢ = 9130, NOT car 46¢
     expect(r.warnings.some((w) => w.includes('vehicle set to van'))).toBe(true);
+  });
+
+  // New van9 / van14 / custom tier tests
+  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 100¢ = 15400¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(15400); // 154km × 100¢
+    expect(r.marginEstimateCents).toBe(15400 - Math.round(154 * 80)); // 154 × 80¢ cost = 12320; margin = 3080
+  });
+
+  it('van14: 140km private → 154 billableKm × 130¢ = 20020¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(20020); // 154km × 130¢
+  });
+
+  it('custom: 140km private → 154 billableKm × 175¢ = 26950¢', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 20, bags: 15, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // 154km × 175¢
+  });
+
+  it('van9: 20km private → floor 6500¢ applies (raw 22km × 100¢ = 2200 < 6500)', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
+    expect(r.totalCents).toBe(6500); // floor
+    // costCents = round(22 * 80) = 1760; margin = 6500 - 1760 = 4740
+    expect(r.marginEstimateCents).toBe(6500 - Math.round(22 * 80));
+  });
+
+  it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(15400); // van9 price
+    expect(r.warnings.some((w) => w.includes('vehicle set to van9'))).toBe(true);
+  });
+
+  it('anti-tamper: custom requested for 2 pax is priced as custom (no downgrade)', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 2, bags: 0, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // custom 154km × 175¢
+    expect(r.warnings.filter((w) => w.includes('vehicle set to'))).toHaveLength(0); // no warning — custom is already >= required (car)
   });
 
   it('throws NO_LEGS on an empty private request', () => {

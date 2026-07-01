@@ -1,7 +1,7 @@
 // api/src/quote/engine.ts
 import { RATE_CARD } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
-import { selectVehicle } from './vehicle';
+import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
@@ -24,9 +24,9 @@ export function quote(req: QuoteRequest): QuoteResult {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
     const minVehicle = selectVehicle(req.pax, req.bags);
     if (minVehicle === 'too_big') throw new Error('TOO_BIG');
-    // Price with the LARGER of (requested, required) — never below what the party needs; a van upgrade is allowed.
+    // Price with the LARGER of (requested, required) — never below what the party needs; an upgrade is allowed.
     // (Do NOT trust req.vehicle blindly: car requested for 6 pax must not be priced as a car.)
-    const vehicle = req.vehicle === 'van' || minVehicle === 'van' ? 'van' : 'car';
+    const vehicle = vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
     if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
     const p = quotePrivateLegs(req.legs, vehicle);
     lineItems.push(...p.lineItems);

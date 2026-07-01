@@ -24,9 +24,9 @@ const CATEGORIES: Record<string, { drives: boolean }> = {
   stay_day: { drives: false },
 };
 
-// Tool vehicle tiers → engine vehicle class. Bigger tiers are gated until rates exist.
+// Tool vehicle tiers → engine vehicle class. All tiers now have rates.
 const VEHICLE_MAP: Record<string, Vehicle | null> = {
-  car: 'car', van_6: 'van', van_9: null, van_14: null, custom: null,
+  car: 'car', van_6: 'van', van_9: 'van9', van_14: 'van14', custom: 'custom',
 };
 
 interface ToolLeg {

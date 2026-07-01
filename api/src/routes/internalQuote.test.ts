@@ -190,11 +190,21 @@ describe('internal quoting tool route', () => {
     expect(withFees.total.cents).toBe(base.total.cents + 1000 + 1000); // sightseeing $10 + waiting $10
   });
 
-  it('gates van_9/van_14/custom vehicles until rates exist (400)', async () => {
-    for (const vehicle of ['van_9', 'van_14', 'custom']) {
-      const res = await post(createApp(), '/admin/quote/estimate', { vehicle, passengerCount: 6, luggageCount: 6, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80 }] });
-      expect(res.status).toBe(400);
-      expect((await res.json()).error).toMatch(/rate/i);
+  it('van_9/van_14/custom are no longer gated — they price correctly (200, total > 0)', async () => {
+    const cases: Array<{ vehicle: string; pax: number; expectedPerKmCents: number }> = [
+      { vehicle: 'van_9',  pax: 8,  expectedPerKmCents: 100 }, // 154 billableKm × 100¢ = 15400
+      { vehicle: 'van_14', pax: 12, expectedPerKmCents: 130 }, // 154 × 130¢ = 20020
+      { vehicle: 'custom', pax: 20, expectedPerKmCents: 175 }, // 154 × 175¢ = 26950
+    ];
+    for (const { vehicle, pax, expectedPerKmCents } of cases) {
+      const res = await post(createApp(), '/admin/quote/estimate', {
+        vehicle, passengerCount: pax, luggageCount: 2,
+        legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 140 }],
+      });
+      expect(res.status).toBe(200);
+      const d = await res.json();
+      expect(d.total.cents).toBe(154 * expectedPerKmCents); // 140km → 154 billableKm
+      expect(d.total.cents).toBeGreaterThan(0);
     }
   });
 
@@ -204,11 +214,11 @@ describe('internal quoting tool route', () => {
     expect(d.breakdown.legs[0].priceCents).toBe(12782);
   });
 
-  it('GET /rate-card returns the locked rate card for the read-only Settings', async () => {
+  it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers)', async () => {
     const d = await (await createApp().request('/admin/quote/rate-card')).json();
     expect(d.version).toBe('2026-06-28');
-    expect(d.perKmCents).toEqual({ car: 46, van: 83 });
-    expect(d.floorCents).toEqual({ car: 2900, van: 5000 });
+    expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 100, van14: 130, custom: 175 });
+    expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 6500, van14: 8500, custom: 11000 });
     expect(d.chauffeurDayRateCents).toBe(3500);
     expect(d.fxUsdToLkr).toBe(320);
   });

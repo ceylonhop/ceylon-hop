@@ -459,8 +459,8 @@ var lastEstimate = null;   // last successful /estimate response
 var lastEstimateError = null; // string | null
 var _estimateTimer = null;
 
-// Vehicles that need a custom rate — skip server call and show note
-var GATED_VEHICLES = { van_9: true, van_14: true, custom: true };
+// All vehicle tiers have rates — no gating
+var GATED_VEHICLES = {};
 
 var VEHICLE_LABELS = {
   car:    'Car',
