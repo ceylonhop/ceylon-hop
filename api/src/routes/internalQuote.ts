@@ -41,6 +41,41 @@ interface ToolRequest {
   legs: ToolLeg[];
 }
 
+// Thrown by resolveAndPrice so the route can map it to the right HTTP status.
+class PriceError extends Error {
+  constructor(message: string, readonly status: 400 | 422) {
+    super(message);
+  }
+}
+
+// Shared by /estimate and /save: validate legs, auto-resolve missing distances via the
+// maps adapter, then price with the engine. Mutates each driving leg's distanceKm in place.
+async function resolveAndPrice(
+  body: ToolRequest,
+  maps: MapsAdapter,
+): Promise<{ req: QuoteRequest; result: QuoteResult }> {
+  if (!body || !Array.isArray(body.legs) || body.legs.length === 0) {
+    throw new PriceError('add at least one leg', 400);
+  }
+  const driving = body.legs.filter((l) => LEG_TYPES[l.type || 'transfer']?.drives);
+  if (driving.length === 0) {
+    throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
+  }
+  for (const l of driving) {
+    if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+      const d = await maps.distance(l.from, l.to);
+      if (d) l.distanceKm = d.km;
+      else throw new PriceError(`couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually`, 400);
+    }
+  }
+  try {
+    const req = toEngineRequest(body);
+    return { req, result: quote(req) };
+  } catch (e) {
+    throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
+  }
+}
+
 const fxRate = RATE_CARD.fxUsdToLkr;
 const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
@@ -197,22 +232,8 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
 
   r.post('/estimate', async (c) => {
     const body = (await c.req.json().catch(() => null)) as ToolRequest | null;
-    if (!body || !Array.isArray(body.legs) || body.legs.length === 0) {
-      return c.json({ error: 'add at least one leg' }, 400);
-    }
-    const driving = body.legs.filter((l) => LEG_TYPES[l.type || 'transfer']?.drives);
-    if (driving.length === 0) return c.json({ error: 'add at least one travel leg (a stay day alone has no transfer)' }, 400);
-    for (const l of driving) {
-      if (!l.distanceKm || Number(l.distanceKm) <= 0) {
-        const d = await deps.maps.distance(l.from, l.to);
-        if (d) l.distanceKm = d.km;
-        else return c.json({ error: `couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually` }, 400);
-      }
-    }
     try {
-      const req = toEngineRequest(body);
-      const result = quote(req);
-
+      const { req, result } = await resolveAndPrice(body as ToolRequest, deps.maps);
       const comparison: Record<string, ReturnType<typeof shape> | { error: string }> = {};
       for (const v of ['car', 'van'] as Vehicle[]) {
         try {
@@ -221,20 +242,19 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
           comparison[v] = { error: e instanceof Error ? e.message : 'n/a' };
         }
       }
-
       return c.json({
         ...shape(result),
         fxUsdToLkr: fxRate,
         comparison,
         drafts: {
-          whatsapp: whatsappDraft(body.name ?? '', body, result),
-          email: emailDraft(body.name ?? '', body, result),
-          notion: notionDraft(body, result),
+          whatsapp: whatsappDraft(body?.name ?? '', body as ToolRequest, result),
+          email: emailDraft(body?.name ?? '', body as ToolRequest, result),
+          notion: notionDraft(body as ToolRequest, result),
         },
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'could not price this trip';
-      return c.json({ error: msg }, 422);
+      if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
+      throw e;
     }
   });
 
