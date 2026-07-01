@@ -430,6 +430,12 @@ const STATUS_LABELS = {
   'expired': 'Expired',
 };
 
+// ── Rate card (fetched once on load) ─────────────────────────────────────────
+var rateCard = null;
+
+// ── Settings card collapse state ──────────────────────────────────────────────
+var settingsOpen = false;
+
 // ── State model ───────────────────────────────────────────────────────────────
 let legSeq = 0;
 
@@ -908,6 +914,94 @@ function renderConnector(legA, legB) {
   ].join('');
 }
 
+// ── Rate card body renderer ────────────────────────────────────────────────────
+function renderRateCardBody() {
+  if (!rateCard) {
+    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">Loading rate card…</div>';
+  }
+
+  var fx = rateCard.fxUsdToLkr;
+
+  // Helper: cents → "$X.XX"
+  function usd(cents) {
+    return '$' + (cents / 100).toFixed(2);
+  }
+
+  // Helper: cents → "Rs X,XXX" (LKR = round(cents × fx / 100))
+  function lkr(cents) {
+    var val = Math.round(cents * fx / 100);
+    return 'Rs ' + val.toLocaleString('en-US');
+  }
+
+  // Helper: render a static rate row
+  function rateRow(label, hint, valueHtml) {
+    return [
+      '<div class="ch-rate-row">',
+      '  <span class="ch-rate-label">',
+      esc(label),
+      hint ? '<span class="ch-rate-hint">' + esc(hint) + '</span>' : '',
+      '  </span>',
+      '  <span class="ch-rate-control" style="font-size:13px;font-weight:600;color:var(--ink);text-align:right">',
+      valueHtml,
+      '  </span>',
+      '</div>',
+    ].join('');
+  }
+
+  var carKmCents = rateCard.perKmCents.car;
+  var vanKmCents = rateCard.perKmCents.van;
+  var carFloorCents = rateCard.floorCents.car;
+  var vanFloorCents = rateCard.floorCents.van;
+  var driverCents = rateCard.chauffeurDayRateCents;
+  var bufferPct = rateCard.bufferPct;
+  var depositPct = rateCard.depositPct;
+  var extras = rateCard.extras;
+
+  var leftCol = [
+    '<div class="ch-rate-col">',
+    '  <div class="ch-rate-group-title">Per-km rates</div>',
+    rateRow('Car', null,
+      esc(usd(carKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carKmCents)) + ' /km</span>'),
+    rateRow('Van', null,
+      esc(usd(vanKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanKmCents)) + ' /km</span>'),
+    '  <div class="ch-rate-group-title">Minimum per leg</div>',
+    rateRow('Car floor', null,
+      esc(usd(carFloorCents))
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(carFloorCents)) + '</span>'),
+    rateRow('Van floor', null,
+      esc(usd(vanFloorCents))
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanFloorCents)) + '</span>'),
+    '</div>',
+  ].join('');
+
+  var rightCol = [
+    '<div class="ch-rate-col">',
+    '  <div class="ch-rate-group-title">Chauffeur &amp; buffer</div>',
+    rateRow('Driver day rate', null,
+      esc(usd(driverCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /day</span>'
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(driverCents)) + ' /day</span>'),
+    rateRow('Buffer', null, esc(String(bufferPct)) + '%'),
+    rateRow('Deposit', null, esc(String(depositPct)) + '%'),
+    '  <div class="ch-rate-group-title">Add-ons &amp; FX</div>',
+    rateRow('Sightseeing', null,
+      esc(usd(extras.sightseeing))
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.sightseeing)) + '</span>'),
+    rateRow('Waiting', null,
+      esc(usd(extras.waiting))
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras.waiting)) + '</span>'),
+    rateRow('Safari wait', null,
+      esc(usd(extras['safari-wait']))
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(extras['safari-wait'])) + '</span>'),
+    rateRow('FX', 'LKR per USD', 'Rs ' + esc(String(fx)) + ' / $'),
+    rateRow('Rate card', 'version', esc(rateCard.version)),
+    '</div>',
+  ].join('');
+
+  return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
+}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render() {
   var st = state;
@@ -1063,20 +1157,24 @@ function render() {
     '        </div>',
     '      </section>',
 
-    // Card 2: Rate Settings (placeholder body — filled by later task)
+    // Card 2: Rate Settings (read-only, collapsible)
     '      <section class="ch-card">',
-    '        <header class="ch-card-head">',
+    '        <header class="ch-card-head" style="cursor:pointer" id="settingsCardHead">',
     '          <div class="ch-card-head-l">',
     '            <div class="ch-card-icon" style="background:var(--black)">②</div>',
     '            <h2>Rate Settings</h2>',
     '          </div>',
     '          <div class="ch-card-head-r">',
-    '            <span class="ch-badge tone-slate">Locked</span>',
+    '            <span class="ch-badge tone-slate">&#x1F512; Locked</span>',
+    '            <span class="ch-chev' + (settingsOpen ? ' open' : '') + '">&#x2303;</span>',
     '          </div>',
     '        </header>',
-    '        <div class="ch-card-body">',
-    '          <div class="ch-lock-note">All rates are in <b>LKR</b> and managed server-side.</div>',
-    '        </div>',
+    (settingsOpen ? [
+      '        <div class="ch-card-body">',
+      '          <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
+      renderRateCardBody(),
+      '        </div>',
+    ].join('') : ''),
     '      </section>',
 
     // Card 3: Itinerary
@@ -1218,6 +1316,15 @@ function attachEventListeners() {
   var btnCopyNotion = document.getElementById('btnCopyNotion');
   if (btnCopyNotion) btnCopyNotion.addEventListener('click', function() { copyText('', 'Notion'); });
 
+  // Settings card toggle
+  var settingsHead = document.getElementById('settingsCardHead');
+  if (settingsHead) {
+    settingsHead.addEventListener('click', function() {
+      settingsOpen = !settingsOpen;
+      render();
+    });
+  }
+
   // Customer card fields — live update state without full re-render for text inputs
   var fieldMap = {
     'f-customerName':    function(v) { state.customerName = v; },
@@ -1332,7 +1439,14 @@ function attachEventListeners() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-render();
+(async function boot() {
+  render(); // first paint with loading state
+  var rc = await apiRateCard();
+  if (rc) {
+    rateCard = rc;
+    render(); // repaint with rate card data
+  }
+})();
 </script>
 </body>
 </html>
