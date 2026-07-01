@@ -13,6 +13,7 @@ import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresCoordinatorRepo } from './db/postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
+import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -49,6 +50,7 @@ const app = createApp({
   rideOps: new PostgresRideOpsRepo(db),
   coordinators: new PostgresCoordinatorRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
+  quotes: new PostgresQuoteRepo(db),
   adapter,
   maps,
   email,
