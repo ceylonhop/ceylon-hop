@@ -436,6 +436,94 @@ var rateCard = null;
 // ── Settings card collapse state ──────────────────────────────────────────────
 var settingsOpen = false;
 
+// ── Estimate state ────────────────────────────────────────────────────────────
+var lastEstimate = null;   // last successful /estimate response
+var lastEstimateError = null; // string | null
+var _estimateTimer = null;
+
+// Vehicles that need a custom rate — skip server call and show note
+var GATED_VEHICLES = { van_9: true, van_14: true, custom: true };
+
+var VEHICLE_LABELS = {
+  car:    'Car',
+  van_6:  'Van 6 Seat',
+  van_9:  'Van 9 Seat',
+  van_14: 'Van 14 Seat',
+  custom: 'Custom',
+};
+
+// Vehicle capacity table for client-side flags
+var VEHICLE_CAPS = {
+  car:    { pax: 3,  bags: 3  },
+  van_6:  { pax: 6,  bags: 5  },
+  van_9:  { pax: 9,  bags: 8  },
+  van_14: { pax: 14, bags: 12 },
+};
+
+// Driving categories (for flag computation)
+var DRIVING_CATS = {
+  transfer: true, train_support: true, sightseeing: true,
+  safari_wait: true, airport: true,
+};
+
+function refreshEstimate() {
+  clearTimeout(_estimateTimer);
+  _estimateTimer = setTimeout(function() {
+    _runEstimate();
+  }, 350);
+}
+
+async function _runEstimate() {
+  var st = state;
+
+  // Gate: gated vehicle types — skip server call entirely
+  if (GATED_VEHICLES[st.vehicleType]) {
+    lastEstimate = null;
+    var label = VEHICLE_LABELS[st.vehicleType] || st.vehicleType;
+    lastEstimateError = 'No rate set for ' + label + ' yet — pick Car or Van 6, or add its rate.';
+    render();
+    return;
+  }
+
+  // Build the payload (Task 2 mapping)
+  var payload = {
+    vehicle: st.vehicleType,
+    passengerCount: st.passengerCount,
+    luggageCount: st.luggageCount,
+    legs: st.legs.map(function(leg) {
+      return {
+        category:         leg.category,
+        from:             leg.pickupLocation || '',
+        to:               leg.dropoffLocation || '',
+        distanceKm:       leg.distanceKm || 0,
+        date:             leg.date || '',
+        addSightseeingFee: !!leg.addSightseeingFee,
+        addWaitingFee:    !!leg.addWaitingFee,
+        hasDriver:        !!leg.hasDriver,
+        hasCarStay:       !!leg.hasCarStay,
+      };
+    }),
+  };
+
+  var result = await apiEstimate(payload);
+
+  if (result._error) {
+    lastEstimate = null;
+    // Friendly version for the common unknown-distance case
+    var msg = result._error;
+    if (/unknown distance|no distance|distance not found/i.test(msg)) {
+      msg = 'Add distances to price this trip.';
+    }
+    lastEstimateError = msg;
+    render();
+    return;
+  }
+
+  lastEstimate = result;
+  lastEstimateError = null;
+  render();
+}
+
 // ── State model ───────────────────────────────────────────────────────────────
 let legSeq = 0;
 
@@ -475,6 +563,10 @@ let state = {
 // ── State mutators ────────────────────────────────────────────────────────────
 function mutate(patch) {
   Object.assign(state, patch);
+  // Re-estimate if any pricing-affecting field changed
+  if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch) {
+    refreshEstimate();
+  }
   render();
 }
 
@@ -482,6 +574,7 @@ function updateLeg(id, patch) {
   state.legs = state.legs.map(function(leg) {
     return leg.id === id ? Object.assign({}, leg, patch) : leg;
   });
+  refreshEstimate();
   render();
 }
 
@@ -502,11 +595,13 @@ function addLeg(cat) {
     }
   }
   state.legs = state.legs.concat([leg]);
+  refreshEstimate();
   render();
 }
 
 function removeLeg(id) {
   state.legs = state.legs.filter(function(leg) { return leg.id !== id; });
+  refreshEstimate();
   render();
 }
 
@@ -517,6 +612,7 @@ function dupLeg(id) {
   var copy = Object.assign({}, src, { id: 'leg_' + (legSeq++) });
   var next = state.legs.slice(0, idx + 1).concat([copy]).concat(state.legs.slice(idx + 1));
   state.legs = next;
+  refreshEstimate();
   render();
 }
 
@@ -565,9 +661,10 @@ async function apiEstimate(payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch (e) { return null; }
+    var body = await r.json();
+    if (!r.ok) return { _error: body.error || 'Estimate failed' };
+    return body;
+  } catch (e) { return { _error: 'Network error' }; }
 }
 
 async function apiRateCard() {
@@ -646,6 +743,9 @@ function newQuote() {
     internalNotes: '',
     legs: [newLeg()],
   };
+  lastEstimate = null;
+  lastEstimateError = null;
+  refreshEstimate();
   render();
   showToast('New quote started');
 }
@@ -671,6 +771,17 @@ function legTagLabel(idx, total) {
   if (idx === 0) return 'TRIP START';
   if (idx === total - 1) return 'FINAL STOP';
   return 'STOP ' + (idx + 1);
+}
+
+// ── Per-leg price from lastEstimate breakdown ────────────────────────────────
+function getLegBreakdownPrice(legIdx) {
+  if (!lastEstimate || !lastEstimate.breakdown || !lastEstimate.breakdown.legs) return null;
+  var bleg = lastEstimate.breakdown.legs[legIdx];
+  if (!bleg) return null;
+  // cents → LKR display: round(cents × fx / 100)
+  var fx = lastEstimate.fxUsdToLkr || 320;
+  var lkrVal = Math.round(bleg.priceCents * fx / 100);
+  return 'LKR ' + lkrVal.toLocaleString('en-US');
 }
 
 // ── Render leg card HTML ──────────────────────────────────────────────────────
@@ -773,6 +884,16 @@ function renderLegCard(leg, idx, total) {
       '      data-leg="' + esc(leg.id) + '" data-field="date" />',
       '  </label>',
       distHtml,
+      (function() {
+        var legPrice = getLegBreakdownPrice(idx);
+        if (!legPrice) return '';
+        return [
+          '<div class="ch-meta-price">',
+          '  <span class="ch-price-lbl">Leg price</span>',
+          '  <span class="ch-price-val">' + esc(legPrice) + '</span>',
+          '</div>',
+        ].join('');
+      })(),
       '</div>',
     ].join('');
   }
@@ -1002,6 +1123,258 @@ function renderRateCardBody() {
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
 }
 
+// ── Summary card renderer (④) ─────────────────────────────────────────────────
+function renderSummaryCardBody() {
+  // Error / gated-vehicle / loading state
+  if (lastEstimateError) {
+    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">' + esc(lastEstimateError) + '</div>';
+  }
+  if (!lastEstimate) {
+    return '<div style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0">Fill the itinerary to see pricing.</div>';
+  }
+
+  var est = lastEstimate;
+  var bkm = est.breakdown && est.breakdown.km ? est.breakdown.km : null;
+  var lines = [];
+
+  // km strip
+  if (bkm) {
+    lines.push('<div class="ch-km-strip">');
+    lines.push('  <div class="ch-km"><b>' + esc(String(bkm.distanceKm)) + '</b><span>distance km</span></div>');
+    lines.push('  <div class="ch-km"><b>+' + esc(String(bkm.bufferKm)) + '</b><span>buffer km</span></div>');
+    lines.push('  <div class="ch-km hero"><b>' + esc(String(bkm.billableKm)) + '</b><span>billable km</span></div>');
+    lines.push('</div>');
+  }
+
+  // Cost build-up block
+  lines.push('<div class="ch-sum-block blue">');
+  lines.push('  <div class="ch-sum-head"><div class="ch-dot blue"></div> Cost build-up</div>');
+
+  // Line items from server
+  var lineItems = est.lineItems || [];
+  lineItems.forEach(function(item) {
+    lines.push('  <div class="ch-line">');
+    lines.push('    <span class="ch-line-label">' + esc(item.label) + '</span>');
+    lines.push('    <span class="ch-line-val">' + esc(item.lkr) + '</span>');
+    lines.push('  </div>');
+  });
+
+  // Quote total (strong)
+  lines.push('  <div class="ch-line strong">');
+  lines.push('    <span class="ch-line-label">Quote total</span>');
+  lines.push('    <span class="ch-line-val">' + esc(est.total.lkr) + '</span>');
+  lines.push('  </div>');
+
+  // Margin
+  if (est.margin) {
+    lines.push('  <div class="ch-margin">Est. margin ' + esc(est.margin.lkr) + '</div>');
+  }
+
+  // Chauffeur product: deposit + due now
+  if (est.product === 'chauffeur' && est.deposit && est.amountDueNow) {
+    lines.push('  <div class="ch-line">');
+    lines.push('    <span class="ch-line-label">Deposit</span>');
+    lines.push('    <span class="ch-line-val">' + esc(est.deposit.lkr) + '</span>');
+    lines.push('  </div>');
+    lines.push('  <div class="ch-line">');
+    lines.push('    <span class="ch-line-label">Due now</span>');
+    lines.push('    <span class="ch-line-val">' + esc(est.amountDueNow.lkr) + '</span>');
+    lines.push('  </div>');
+  }
+
+  lines.push('</div>'); // end ch-sum-block
+
+  // Car vs van comparison
+  if (est.comparison && est.comparison.car && est.comparison.van) {
+    lines.push('<div class="ch-compare">');
+    lines.push('  <div class="ch-compare-row"><span>Car</span><b>' + esc(est.comparison.car.total.lkr) + '</b></div>');
+    lines.push('  <div class="ch-compare-row"><span>Van 6</span><b>' + esc(est.comparison.van.total.lkr) + '</b></div>');
+    lines.push('  <div class="ch-compare-note">Vehicle comparison at same itinerary — for internal reference only.</div>');
+    lines.push('</div>');
+  }
+
+  // Engine warnings as a tip
+  if (est.warnings && est.warnings.length > 0) {
+    est.warnings.forEach(function(w) {
+      lines.push('<div class="ch-tip">' + esc(w) + '</div>');
+    });
+  }
+
+  return lines.join('');
+}
+
+// ── Flags computation (client-side) ──────────────────────────────────────────
+function computeFlags() {
+  var st = state;
+  var flags = [];
+
+  // red: car luggage limit
+  if (st.vehicleType === 'car' && st.luggageCount > 3) {
+    flags.push({
+      level: 'red',
+      title: 'Car luggage limit',
+      detail: 'A car fits a maximum of 3 bags — ' + st.luggageCount + ' requested. Confirm with the customer or size up to a van.',
+    });
+  }
+
+  // red: long drive warning — any leg driveTimeHours >= 6 (add once)
+  var hasLongDrive = st.legs.some(function(leg) { return (leg.driveTimeHours || 0) >= 6; });
+  if (hasLongDrive) {
+    flags.push({
+      level: 'red',
+      title: 'Long drive warning',
+      detail: 'A leg is 6+ hours on the road. Confirm the customer understands the travel time and consider a break or an overnight stop.',
+    });
+  }
+
+  // orange: hectic itinerary — 3+ consecutive driving dates
+  var drivingDates = [];
+  st.legs.forEach(function(leg) {
+    if (DRIVING_CATS[leg.category] && leg.date) {
+      drivingDates.push(leg.date);
+    }
+  });
+  if (maxConsecutiveDates(drivingDates) >= 3) {
+    flags.push({
+      level: 'orange',
+      title: 'Hectic itinerary warning',
+      detail: 'Customer is moving on 3+ consecutive days. Consider adding a stay day or trimming stops.',
+    });
+  }
+
+  // orange: capacity — skip 'custom'
+  var vcap = VEHICLE_CAPS[st.vehicleType];
+  if (vcap) {
+    if (st.passengerCount > vcap.pax || st.luggageCount > vcap.bags) {
+      var vLabel = VEHICLE_LABELS[st.vehicleType] || st.vehicleType;
+      flags.push({
+        level: 'orange',
+        title: 'Capacity warning',
+        detail: st.passengerCount + ' pax + ' + st.luggageCount + ' bags may not fit a ' + vLabel + '. Confirm vehicle type or size up.',
+      });
+    }
+  }
+
+  // Per-leg flags — each type fires at most once
+  var flagSeen = {};
+  st.legs.forEach(function(leg) {
+    // orange: driver stays without the car
+    if (!flagSeen.driverNocar && leg.hasDriver && !leg.hasCarStay) {
+      flagSeen.driverNocar = true;
+      flags.push({
+        level: 'orange',
+        title: 'Driver stays without the car',
+        detail: 'A date has the driver staying but the car returning. Confirm this is intended — usually the car stays with the driver.',
+      });
+    }
+
+    // orange: safari waiting
+    if (!flagSeen.safari && leg.category === 'safari_wait') {
+      flagSeen.safari = true;
+      flags.push({
+        level: 'orange',
+        title: 'Safari waiting flagged',
+        detail: 'Review safari waiting time and entry timing separately before sending.',
+      });
+    }
+
+    // blue: airport timing
+    if (!flagSeen.airport && (leg.category === 'airport' || /airport|cmb|katunayake/i.test((leg.pickupLocation || '') + ' ' + (leg.dropoffLocation || '')))) {
+      flagSeen.airport = true;
+      flags.push({
+        level: 'blue',
+        title: 'Airport timing reminder',
+        detail: 'Confirm flight number, landing/departure time, and buffer time.',
+      });
+    }
+
+    // blue: stopover included
+    if (!flagSeen.stopover && (leg.stopovers || []).filter(Boolean).length > 0) {
+      flagSeen.stopover = true;
+      flags.push({
+        level: 'blue',
+        title: 'Stopover included',
+        detail: 'Confirm whether each stop is a quick break, sightseeing, safari wait, or multi-hour stop.',
+      });
+    }
+
+    // blue: check distances — driving leg with no distance, not auto-matched, not manual
+    if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && (leg.distanceKm || 0) <= 0 && !leg.autoMatched && !leg.manualDistance) {
+      flagSeen.distCheck = true;
+      flags.push({
+        level: 'blue',
+        title: 'Check distances',
+        detail: 'One or more legs couldn\'t be auto-located. Enter the distance manually to price them.',
+      });
+    }
+  });
+
+  // Merge engine warnings as extra blue flags
+  if (lastEstimate && lastEstimate.warnings && lastEstimate.warnings.length > 0) {
+    lastEstimate.warnings.forEach(function(w) {
+      flags.push({ level: 'blue', title: 'Engine note', detail: w });
+    });
+  }
+
+  return flags;
+}
+
+// Helper: max consecutive calendar dates
+function maxConsecutiveDates(dates) {
+  if (!dates || dates.length === 0) return 0;
+  // Deduplicate and convert to epoch days
+  var days = [];
+  var seen = {};
+  dates.forEach(function(d) {
+    if (!d || seen[d]) return;
+    seen[d] = true;
+    days.push(Math.floor(new Date(d).getTime() / 86400000));
+  });
+  days.sort(function(a, b) { return a - b; });
+  var maxRun = 1, run = 1;
+  for (var i = 1; i < days.length; i++) {
+    if (days[i] === days[i - 1] + 1) {
+      run++;
+      if (run > maxRun) maxRun = run;
+    } else {
+      run = 1;
+    }
+  }
+  return maxRun;
+}
+
+// ── Flags card renderer (⑤) ──────────────────────────────────────────────────
+function renderFlagsCardBody() {
+  var flags = computeFlags();
+
+  if (flags.length === 0) {
+    return '<div class="ch-flags-clear">&#x2713; No warnings. This itinerary looks clean to send.</div>';
+  }
+
+  var MARK = { red: '&#x25B2;', orange: '&#x25CF;', blue: '&#x2139;' };
+
+  var parts = ['<div class="ch-flags">'];
+  flags.forEach(function(f) {
+    parts.push('<div class="ch-flag tone-' + esc(f.level) + '">');
+    parts.push('  <span class="ch-flag-mark">' + (MARK[f.level] || '&#x2022;') + '</span>');
+    parts.push('  <div>');
+    parts.push('    <div class="ch-flag-title">' + esc(f.title) + '</div>');
+    parts.push('    <div class="ch-flag-detail">' + esc(f.detail) + '</div>');
+    parts.push('  </div>');
+    parts.push('</div>');
+  });
+  parts.push('</div>');
+  return parts.join('');
+}
+
+// ── Flags badge (count or "All clear") ────────────────────────────────────────
+function renderFlagsBadge(flagCount) {
+  if (flagCount === 0) {
+    return '<span class="ch-badge tone-teal">All clear</span>';
+  }
+  return '<span class="ch-badge tone-orange">' + flagCount + '</span>';
+}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render() {
   var st = state;
@@ -1210,7 +1583,7 @@ function render() {
     // Right column
     '    <div class="ch-col-r">',
 
-    // Card 4: Summary (placeholder)
+    // Card 4: Summary (live — engine-backed)
     '      <section class="ch-card">',
     '        <header class="ch-card-head">',
     '          <div class="ch-card-head-l">',
@@ -1218,29 +1591,34 @@ function render() {
     '            <h2>Pricing Summary</h2>',
     '          </div>',
     '          <div class="ch-card-head-r">',
-    '            <span class="ch-badge tone-slate">LKR &middot; internal</span>',
+    '            <span class="ch-badge tone-blue">LKR &middot; internal</span>',
     '          </div>',
     '        </header>',
     '        <div class="ch-card-body">',
-    '          <div style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0">Fill the itinerary to see pricing.</div>',
+    renderSummaryCardBody(),
     '        </div>',
     '      </section>',
 
-    // Card 5: Flags (placeholder)
-    '      <section class="ch-card">',
-    '        <header class="ch-card-head">',
-    '          <div class="ch-card-head-l">',
-    '            <div class="ch-card-icon" style="background:var(--orange)">⑤</div>',
-    '            <h2>Operational Flags</h2>',
-    '          </div>',
-    '          <div class="ch-card-head-r">',
-    '            <span class="ch-badge tone-teal">All clear</span>',
-    '          </div>',
-    '        </header>',
-    '        <div class="ch-card-body">',
-    '          <div class="ch-flags-clear">✓ No warnings. This itinerary looks clean to send.</div>',
-    '        </div>',
-    '      </section>',
+    // Card 5: Flags (live — client-side computation)
+    (function() {
+      var flags = computeFlags();
+      return [
+        '      <section class="ch-card">',
+        '        <header class="ch-card-head">',
+        '          <div class="ch-card-head-l">',
+        '            <div class="ch-card-icon" style="background:var(--orange)">⑤</div>',
+        '            <h2>Operational Flags</h2>',
+        '          </div>',
+        '          <div class="ch-card-head-r">',
+        renderFlagsBadge(flags.length),
+        '          </div>',
+        '        </header>',
+        '        <div class="ch-card-body">',
+        renderFlagsCardBody(),
+        '        </div>',
+        '      </section>',
+      ].join('');
+    })(),
 
     '    </div>', // ch-col-r
 
@@ -1333,11 +1711,16 @@ function attachEventListeners() {
     'f-luggageCount':    function(v) { state.luggageCount = parseInt(v, 10) || 0; },
     'f-internalNotes':   function(v) { state.internalNotes = v; },
   };
+  var priceFields = { 'f-passengerCount': true, 'f-luggageCount': true };
   Object.keys(fieldMap).forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('input', function() { fieldMap[id](el.value); });
-    el.addEventListener('change', function() { fieldMap[id](el.value); render(); });
+    el.addEventListener('change', function() {
+      fieldMap[id](el.value);
+      if (priceFields[id]) refreshEstimate();
+      render();
+    });
   });
 
   // Vehicle type select
@@ -1528,6 +1911,7 @@ function acPick(name) {
   });
   // Now schedule auto-distance before rendering so the leg is already updated
   scheduleAutoDistance(legId);
+  refreshEstimate();
   render();
 }
 
@@ -1647,6 +2031,7 @@ function attachAutoComplete() {
             });
           }
           scheduleAutoDistance(legId);
+          refreshEstimate();
         }
       }, 200);
     });
