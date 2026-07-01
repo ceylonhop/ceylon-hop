@@ -258,5 +258,36 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
     }
   });
 
+  // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
+  r.post('/save', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as (ToolRequest & { name?: string; contact?: string; notes?: string }) | null;
+    try {
+      const { req, result } = await resolveAndPrice(body as ToolRequest, deps.maps);
+      const saved = await deps.quotes.save({
+        product: req.product,
+        vehicle: 'vehicle' in req ? req.vehicle : null,
+        customerName: body?.name ?? null,
+        customerContact: body?.contact ?? null,
+        totalCents: result.totalCents,
+        currency: RATE_CARD.currency,
+        rateCardVersion: RATE_CARD.version,
+        marginCents: result.marginEstimateCents ?? null,
+        request: req,
+        result,
+        notes: body?.notes ?? null,
+      });
+      return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
+    } catch (e) {
+      if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
+      throw e;
+    }
+  });
+
+  // Full quote (incl. request/result JSON) for re-opening in the tool.
+  r.get('/:id', async (c) => {
+    const q = await deps.quotes.get(c.req.param('id'));
+    return q ? c.json(q) : c.json({ error: 'not_found' }, 404);
+  });
+
   return r;
 }

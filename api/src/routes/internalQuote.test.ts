@@ -83,6 +83,38 @@ describe('internal quoting tool route', () => {
     expect(withS.total.cents).toBe(base.total.cents + 1000);
   });
 
+  it('POST /save persists a priced quote and returns a Q- reference; total matches /estimate', async () => {
+    const app = createApp();
+    const bodyReq = { name: 'Maya', contact: '+34600', product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [leg({ distanceKm: 80 })] };
+    const est = await (await post(app, '/admin/quote/estimate', bodyReq)).json();
+    const res = await post(app, '/admin/quote/save', bodyReq);
+    expect(res.status).toBe(201);
+    const saved = await res.json();
+    expect(saved.reference).toMatch(/^Q-[0-9A-Z]{4}$/);
+    expect(saved.status).toBe('draft');
+    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
+    expect(got.customerName).toBe('Maya');
+    expect(got.rateCardVersion).toBe('2026-06-28');
+  });
+
+  it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', {
+      product: 'private', vehicle: 'car', pax: 1, bags: 0, total: 999999, totalCents: 999999, legs: [leg({ distanceKm: 80 })],
+    });
+    const saved = await res.json();
+    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    expect(got.totalCents).toBe(4048); // engine price, not the bogus client total
+  });
+
+  it('POST /save is 422 for an unpriceable trip (no travel leg)', async () => {
+    const res = await post(createApp(), '/admin/quote/save', {
+      product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ type: 'stay_day', from: 'Kandy', to: '' }],
+    });
+    expect(res.status).toBe(400); // stay-day-only → no travel leg
+  });
+
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
     const { InMemoryQuoteRepo } = await import('../db/quoteRepo');
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
