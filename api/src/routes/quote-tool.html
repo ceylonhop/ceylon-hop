@@ -448,6 +448,9 @@ const STATUS_LABELS = {
 // ── Rate card (fetched once on load) ─────────────────────────────────────────
 var rateCard = null;
 
+// ── I1: once-guard for app-node delegated listeners ──────────────────────────
+var _delegatesWired = false;
+
 // ── Settings card collapse state ──────────────────────────────────────────────
 var settingsOpen = false;
 
@@ -1493,7 +1496,12 @@ function M(priceCents) {
   var cur = state.outputCurrency || 'LKR';
   var fx = (lastEstimate && lastEstimate.fxUsdToLkr) ? lastEstimate.fxUsdToLkr : 320;
   if (cur === 'USD') {
-    return '$' + Math.round(priceCents / 100).toLocaleString('en-US');
+    // I3: use toFixed(2) so $40.48 is not rounded to $40
+    var dollars = (priceCents / 100).toFixed(2);
+    // Add thousands separator to the integer part
+    var parts = dollars.split('.');
+    parts[0] = parseInt(parts[0], 10).toLocaleString('en-US');
+    return '$' + parts[0] + '.' + parts[1];
   }
   // LKR: priceCents is in USD cents, convert via fxUsdToLkr
   return 'LKR ' + Math.round(priceCents * fx / 100).toLocaleString('en-US');
@@ -2060,16 +2068,21 @@ function attachEventListeners() {
     'f-luggageCount':    function(v) { state.luggageCount = parseInt(v, 10) || 0; },
     'f-internalNotes':   function(v) { state.internalNotes = v; },
   };
+  // I2: only price-affecting fields trigger refreshEstimate+render on change.
+  // Text-only fields (customerName, contact, internalNotes) update state on input only —
+  // no change→render, which would destroy #btnSave between mousedown and click.
   var priceFields = { 'f-passengerCount': true, 'f-luggageCount': true };
   Object.keys(fieldMap).forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('input', function() { fieldMap[id](el.value); });
-    el.addEventListener('change', function() {
-      fieldMap[id](el.value);
-      if (priceFields[id]) refreshEstimate();
-      render();
-    });
+    if (priceFields[id]) {
+      el.addEventListener('change', function() {
+        fieldMap[id](el.value);
+        refreshEstimate();
+        render();
+      });
+    }
   });
 
   // Vehicle type select
@@ -2081,8 +2094,13 @@ function attachEventListeners() {
   }
 
   // Event delegation for data-action on the whole app
+  // I1: attach these ONCE — #app persists across renders, so adding on every
+  // render would accumulate duplicate handlers (N renders → N handler copies).
   var app = document.getElementById('app');
   if (!app) return;
+
+  if (!_delegatesWired) {
+    _delegatesWired = true;
 
   app.addEventListener('click', function(e) {
     var el = e.target.closest('[data-action]');
@@ -2191,7 +2209,10 @@ function attachEventListeners() {
     }
   }, true);
 
-  // Wire place autocomplete on all ch-tl-title inputs
+  } // end if (!_delegatesWired)
+
+  // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
+  // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
 }
 
