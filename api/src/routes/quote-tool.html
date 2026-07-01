@@ -258,7 +258,7 @@ async function saveQuote(){
   const res = await api('/admin/quote/save', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload) });
   const d = await res.json();
   if(!res.ok){ $('saveMsg').textContent = d.error || 'Save failed'; return; }
-  $('saveMsg').innerHTML = 'Saved as <b>'+d.reference+'</b>';
+  $('saveMsg').innerHTML = 'Saved as <b>'+esc(d.reference)+'</b>';
   loadRecent();
 }
 
@@ -267,9 +267,9 @@ async function loadRecent(){
   if(!res.ok) return;
   const { quotes } = await res.json();
   $('recent').innerHTML = quotes.map(function(q){
-    return '<div class="qrow" data-id="'+q.id+'"><span class="qref">'+q.reference+'</span>'
-      + '<span>'+(q.customerName||'—')+'</span>'
-      + '<span>'+q.product+'</span>'
+    return '<div class="qrow" data-id="'+q.id+'"><span class="qref">'+esc(q.reference)+'</span>'
+      + '<span>'+esc(q.customerName||'—')+'</span>'
+      + '<span>'+esc(q.product)+'</span>'
       + '<span class="qtotal">'+q.totalCents+'</span>'
       + '<select class="qstatus">'
       + ['draft','sent','won','lost','expired'].map(function(s){ return '<option'+(s===q.status?' selected':'')+'>'+s+'</option>'; }).join('')
