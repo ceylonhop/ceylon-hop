@@ -75,10 +75,27 @@ plus the extras — i.e. the same `ToolRequest` shape `/save` already re-prices 
    - `legs: [{ from, to, distanceKm, billableKm, priceCents }]` (per driving leg; for chauffeur these are the travel legs)
    Unit-tested against known values (e.g. 140 km van).
 2. **`/estimate` response superset:** add `breakdown` (the above) and keep everything it already returns
-   (total, deposit, amountDueNow, margin, warnings, lineItems, fxUsdToLkr, comparison, drafts).
+   (total, deposit, amountDueNow, margin, warnings, lineItems, fxUsdToLkr, comparison).
 3. **Rate-card exposure for the read-only Settings:** `/estimate` (or a small `GET /admin/quote/rate-card`)
    returns the display rate card — `perKmCents{car,van}`, `floorCents{car,van}`, chauffeur `dayRateCents`,
-   `bufferPct`, `deposit`, `extras`, `fxUsdToLkr`, `version`. The Settings card renders these read-only.
+   `bufferPct`, `deposit`, `extras`, `fxUsdToLkr`, `version`, and per-vehicle `maxPax`/`maxBags` caps
+   (for client-side vehicle labelling). The Settings card renders these read-only.
+
+### Additive changes since this doc was written (fix campaign)
+
+- **`/estimate` no longer returns `drafts`.** WhatsApp/email/Notion templates are now owned
+  entirely by the client (P3/§5 still holds — the tool renders its own live output tabs from the
+  priced result; the server-side draft generators were dead code and were removed).
+- **`comparison` entries carry a `vehicle` label** (`'car'` \| `'van'`), and a tier smaller than
+  the party requires returns `{ error: 'too small for this party' }` instead of a silently
+  upgraded price under the wrong label.
+- **`GET /rate-card` includes `vehicle: { car, van, van9, van14, custom }`**, each `{ maxPax,
+  maxBags }`, for client-side vehicle capacity/labelling logic.
+- **`lineItems` entries carry `amountCents`** (integer minor units) alongside the existing
+  `usd`/`lkr` display strings, so the client can do its own math without re-parsing currency text.
+- **Places autocomplete is served via `MapsAdapter.places()`** — the Google-key branching and
+  offline-list fallback that used to live inline in this route now live in the adapter; the route
+  just delegates.
 
 ## Flags (design §4)
 
@@ -91,9 +108,10 @@ leg has no resolvable distance.
 ## Output templates (design §5)
 
 Port `whatsappMessage` / `emailMessage` / `notionTable` **client-side**, built from the priced result +
-itinerary (they match the server drafts already generated — same copy). Per-leg rows use the breakdown's
-per-leg prices; currency toggle (LKR/USD) converts at the rate card's `fxUsdToLkr` for display only. The
-server draft generators can remain for API callers but the tool renders its own live tabs.
+itinerary. Per-leg rows use the breakdown's per-leg prices; currency toggle (LKR/USD) converts at the
+rate card's `fxUsdToLkr` for display only. **Update:** the server-side draft generators were removed
+(see "Additive changes" above) — the client owns these templates outright; `/estimate` no longer emits
+`drafts` at all.
 
 ## What is dropped / deferred
 

@@ -1,18 +1,34 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
+import { selectVehicle, vehicleRank } from '../quote/vehicle';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
-import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
+import type { MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 
 // The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
-// Read per-request so edits hot-reload in dev without a server restart.
-const toolHtml = (): string => readFileSync(fileURLToPath(new URL('./quote-tool.html', import.meta.url)), 'utf8');
+// Read per-request so edits hot-reload in dev without a server restart (success path only —
+// a missing/unreadable file must not 500 every load with zero diagnostics). On a failed read we
+// fall back to the last-good copy cached from a prior successful read; if we've never had a
+// good read yet, `toolHtml()` returns null and the route serves a minimal unavailable body.
+let cachedHtml: string | null = null;
+const toolHtml = (): string | null => {
+  try {
+    const html = readFileSync(fileURLToPath(new URL('./quote-tool.html', import.meta.url)), 'utf8');
+    cachedHtml = html;
+    return html;
+  } catch (e) {
+    console.error('toolHtml: failed to read quote-tool.html', e);
+    if (cachedHtml) return cachedHtml;
+    return null;
+  }
+};
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -29,26 +45,32 @@ const VEHICLE_MAP: Record<string, Vehicle | null> = {
   car: 'car', van_6: 'van', van_9: 'van9', van_14: 'van14', custom: 'custom',
 };
 
-interface ToolLeg {
-  category?: string;
-  date?: string;
-  from: string;
-  to: string;
-  distanceKm?: number;
-  addSightseeingFee?: boolean;
-  addWaitingFee?: boolean;
-  hasDriver?: boolean;
-  hasCarStay?: boolean;
-}
-interface ToolRequest {
-  name?: string;
-  contact?: string;
-  notes?: string;
-  vehicle: string; // design tier id
-  passengerCount: number;
-  luggageCount: number;
-  legs: ToolLeg[];
-}
+// Zod schema for the tool's request payload (V18). Parsed at the route boundary so
+// malformed payloads fail fast with a human-readable 400 rather than crashing the pricer.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ToolLegSchema = z.object({
+  category: z.enum(['transfer', 'airport', 'train_support', 'sightseeing', 'safari_wait', 'stay_day']).optional(),
+  date: z.string().regex(ISO_DATE, 'date must be YYYY-MM-DD').optional(),
+  from: z.string(),
+  to: z.string(),
+  distanceKm: z.number().min(0).optional(),
+  stopovers: z.array(z.string()).optional(),
+  addSightseeingFee: z.boolean().optional(),
+  addWaitingFee: z.boolean().optional(),
+  hasDriver: z.boolean().optional(),
+  hasCarStay: z.boolean().optional(),
+});
+const ToolRequestSchema = z.object({
+  name: z.string().optional(),
+  contact: z.string().optional(),
+  notes: z.string().optional(),
+  vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
+  passengerCount: z.number().int().min(1),
+  luggageCount: z.number().int().min(0),
+  legs: z.array(ToolLegSchema).min(1),
+});
+type ToolLeg = z.infer<typeof ToolLegSchema>;
+type ToolRequest = z.infer<typeof ToolRequestSchema>;
 
 // Thrown by resolveAndPrice so the route can map it to the right HTTP status.
 class PriceError extends Error {
@@ -57,24 +79,29 @@ class PriceError extends Error {
   }
 }
 
+// Zod-validate a raw request body; PriceError 400 with the first human-readable issue on failure.
+function parseToolRequest(raw: unknown): ToolRequest {
+  const parsed = ToolRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    throw new PriceError(first?.message || 'invalid request', 400);
+  }
+  return parsed.data;
+}
+
 // Shared by /estimate and /save: validate legs, auto-resolve missing distances via the
 // maps adapter, then price with the engine. Mutates each driving leg's distanceKm in place.
 async function resolveAndPrice(
   body: ToolRequest,
   maps: MapsAdapter,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
-  if (!body || !Array.isArray(body.legs) || body.legs.length === 0) {
-    throw new PriceError('add at least one leg', 400);
-  }
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
     throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
   }
   for (const l of driving) {
     if (!l.distanceKm || Number(l.distanceKm) <= 0) {
-      const d = await maps.distance(l.from, l.to);
-      if (d) l.distanceKm = d.km;
-      else throw new PriceError(`couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually`, 400);
+      l.distanceKm = await resolveLegKm(l, maps);
     }
   }
   try {
@@ -84,6 +111,25 @@ async function resolveAndPrice(
     if (e instanceof PriceError) throw e;
     throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
   }
+}
+
+// Resolve a driving leg's km via the maps adapter. With stopovers, resolve the CHAINED route
+// [from, s1], [s1, s2] … [sn, to] and sum the km (S1); otherwise a single from→to lookup.
+// Any unresolvable segment → 400 naming the failing segment.
+async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
+  const stops = (l.stopovers ?? []).filter((s) => s.trim().length > 0);
+  const points = stops.length > 0 ? [l.from, ...stops, l.to] : [l.from, l.to];
+  let total = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const from = points[i];
+    const to = points[i + 1];
+    const d = await maps.distance(from, to);
+    if (!d) {
+      throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
+    }
+    total += d.km;
+  }
+  return Math.round(total);
 }
 
 const fxRate = RATE_CARD.fxUsdToLkr;
@@ -115,12 +161,16 @@ function toEngineRequest(req: ToolRequest): QuoteRequest {
   const extras = collectExtras(req.legs);
   const driving = req.legs.filter(drives);
   if (isChauffeur(req.legs)) {
-    const dated = req.legs.map((l) => l.date).filter(Boolean) as string[];
-    if (dated.length < 1) throw new PriceError('chauffeur trips need dates on the legs (to count the days)', 400);
+    // Every leg (driving AND stay) must carry a date, else an undated leg gets pinned to day 0 —
+    // silently dropping a day rate + idle km (the confirmed underquote). No fallback.
+    if (req.legs.some((l) => !l.date)) {
+      throw new PriceError('chauffeur trips need a date on every leg (including stay days)', 400);
+    }
+    const dated = req.legs.map((l) => l.date as string);
     const sorted = [...dated].sort();
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
-      travelDays: driving.map((l) => ({ date: l.date || sorted[0], from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
+      travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
       extras,
     };
   }
@@ -142,88 +192,30 @@ function shape(result: QuoteResult) {
     amountDueNow: money(result.amountDueNowCents),
     margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents),
     warnings: result.warnings,
-    lineItems: result.lineItems.map((li) => ({ label: li.label, usd: usd(li.amountCents), lkr: lkr(li.amountCents) })),
+    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents) })),
   };
 }
 
-function legLabel(l: ToolLeg): string {
-  return drives(l) ? `${l.from} → ${l.to}` : `Stay in ${l.from || l.to}`;
-}
-
-function whatsappDraft(name: string, req: ToolRequest, result: QuoteResult): string {
-
-  const lines = req.legs
-    .filter(drives)
-    .map((l) => `${l.date ? l.date + ' — ' : ''}${legLabel(l)}`)
-    .join('\n');
-  const due = result.product === 'chauffeur' ? `\nDeposit to confirm: ${lkr(result.amountDueNowCents)} (balance on/after the trip).` : '';
-  return (
-    `Hi ${name || 'there'}, thank you for sharing the details.\n\n` +
-    `We can help with this. Based on your itinerary, here is the quote:\n\n${lines}\n\n` +
-    `Total: ${lkr(result.totalCents)}${due}\n\n` +
-    `This is for a private ${req.vehicle} and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.` +
-    (result.product === 'chauffeur' ? ' It also covers the driver staying with you for the nights marked, including driver meals and accommodation.' : '') +
-    `\n\nPlease let me know if you have any questions or if you would like to proceed.`
-  );
-}
-
-function emailDraft(name: string, req: ToolRequest, result: QuoteResult): string {
-
-  const lines = req.legs
-    .filter(drives)
-    .map((l) => `  ${l.date ? l.date + '   ' : ''}${legLabel(l)}`)
-    .join('\n');
-  return (
-    `Subject: Ceylon Hop Transport Quote for Your Sri Lanka Trip\n\n` +
-    `Hi ${name || 'there'},\n\n` +
-    `Thank you for reaching out to Ceylon Hop. Based on the itinerary you shared, please find the transport quote below.\n\n` +
-    `${lines}\n\n` +
-    `Total (private ${req.vehicle}): ${lkr(result.totalCents)}\n\n` +
-    `This quote includes fuel, driver cost, tolls, and pickup/drop-off from the agreed locations.\n\n` +
-    `Please let us know if you would like to proceed and we can send over the booking/payment details.\n\nBest,\nRoshen\nCeylon Hop`
-  );
-}
-
-function notionDraft(req: ToolRequest, result: QuoteResult): string {
-
-  const body = req.legs
-    .filter(drives)
-    .map((l) => `| ${l.date || ''} | ${legLabel(l)} | |`)
-    .join('\n');
-  return (
-    `| Date | Route | Price Given |\n|---|---|---|\n${body}\n` +
-    `| PRIVATE TRANSFER VIA ${req.vehicle.toUpperCase()} | | ${lkr(result.totalCents)} |`
-  );
-}
-
-// Place suggestions: Google Places Autocomplete when a server key is configured, else the
-// offline known-place list (so the tool works in dev without a key).
-async function suggestPlaces(q: string, googleKey?: string): Promise<string[]> {
+// Place suggestions via the maps adapter (Google/offline fallback now lives in the adapter).
+async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
   const query = (q || '').trim();
   if (query.length < 2) return [];
-  if (googleKey) {
-    try {
-      const url =
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json' +
-        `?input=${encodeURIComponent(query)}&components=country:lk&key=${googleKey}`;
-      const res = await fetch(url);
-      const j = (await res.json()) as { predictions?: { description: string }[] };
-      const out = (j.predictions || []).slice(0, 6).map((p) => p.description);
-      if (out.length) return out;
-    } catch {
-      /* fall through to the offline list */
-    }
-  }
-  const ql = query.toLowerCase();
-  return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
+  return maps.places(query);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string; quotes: QuoteRepo; adminKey?: string }) {
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string }) {
   const r = new Hono();
 
   // Open shell (a browser navigation can't send a header). The JS attaches the key to
   // its fetches; the guard below protects every data/XHR route.
-  r.get('/', (c) => c.html(toolHtml()));
+  r.get('/', (c) => {
+    const html = toolHtml();
+    if (html == null) {
+      console.error('GET /admin/quote: no cached quote-tool.html available — serving fallback');
+      return c.html('<h1>quote tool unavailable</h1>', 500);
+    }
+    return c.html(html);
+  });
 
   // Enforce the admin key ONLY when one is configured, so dev/preview (no key) still works.
   // Prod MUST set ADMIN_API_KEY — see the go-live checklist.
@@ -234,8 +226,8 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
     return next();
   });
 
-  // Autocomplete (server-side; key never reaches the browser).
-  r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.googleKey) }));
+  // Autocomplete (delegated to the maps adapter; Google key/timeout live there now).
+  r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.maps) }));
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
   r.post('/distance', async (c) => {
@@ -246,13 +238,22 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
   });
 
   r.post('/estimate', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as ToolRequest | null;
+    const raw = await c.req.json().catch(() => null);
     try {
-      const { req, result } = await resolveAndPrice(body as ToolRequest, deps.maps);
-      const comparison: Record<string, ReturnType<typeof shape> | { error: string }> = {};
+      const body = parseToolRequest(raw);
+      const { req, result } = await resolveAndPrice(body, deps.maps);
+      // V4: an honest car-vs-van comparison. For private trips, a tier smaller than the party
+      // requires is flagged as too small rather than silently upgraded by the engine (which
+      // would print a van9 price under a "Car" label). Chauffeur has no pax → keep both feasible.
+      const required = req.product === 'private' ? selectVehicle(req.pax, req.bags) : null;
+      const comparison: Record<string, (ReturnType<typeof shape> & { vehicle: string }) | { error: string }> = {};
       for (const v of ['car', 'van'] as Vehicle[]) {
+        if (required && required !== 'too_big' && vehicleRank(v) < vehicleRank(required)) {
+          comparison[v] = { error: 'too small for this party' };
+          continue;
+        }
         try {
-          comparison[v] = shape(quote({ ...req, vehicle: v } as QuoteRequest));
+          comparison[v] = { ...shape(quote({ ...req, vehicle: v } as QuoteRequest)), vehicle: v };
         } catch (e) {
           comparison[v] = { error: e instanceof Error ? e.message : 'n/a' };
         }
@@ -262,11 +263,6 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req),
         comparison,
-        drafts: {
-          whatsapp: whatsappDraft(body?.name ?? '', body as ToolRequest, result),
-          email: emailDraft(body?.name ?? '', body as ToolRequest, result),
-          notion: notionDraft(body as ToolRequest, result),
-        },
       });
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
@@ -276,21 +272,24 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
 
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
   r.post('/save', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as (ToolRequest & { name?: string; contact?: string; notes?: string }) | null;
+    const raw = await c.req.json().catch(() => null);
     try {
-      const { req, result } = await resolveAndPrice(body as ToolRequest, deps.maps);
+      const body = parseToolRequest(raw);
+      const { req, result } = await resolveAndPrice(body, deps.maps);
       const saved = await deps.quotes.save({
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
-        customerName: body?.name ?? null,
-        customerContact: body?.contact ?? null,
+        customerName: body.name ?? null,
+        customerContact: body.contact ?? null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
         rateCardVersion: RATE_CARD.version,
         marginCents: result.marginEstimateCents ?? null,
-        request: req,
+        // V19: persist the reopenable tool payload (with stopovers) alongside the engine request.
+        // GET /:id returns request.tool for the UI to reopen the draft.
+        request: { tool: body, engine: req },
         result,
-        notes: body?.notes ?? null,
+        notes: body.notes ?? null,
       });
       return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
     } catch (e) {
@@ -311,6 +310,7 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
       depositPct: RATE_CARD.deposit.pct,
       extras: RATE_CARD.extras,
       fxUsdToLkr: RATE_CARD.fxUsdToLkr,
+      vehicle: RATE_CARD.vehicle, // V12: per-tier maxPax/maxBags caps for client-side vehicle labelling
     }),
   );
 

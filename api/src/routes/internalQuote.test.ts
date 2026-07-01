@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
@@ -35,7 +35,7 @@ describe('internal quoting tool route', () => {
     expect(res.status).toBe(404);
   });
 
-  it('estimate prices a private leg from a manual km (80km car = 4048¢) + emits a WhatsApp draft', async () => {
+  it('estimate prices a private leg from a manual km (80km car = 4048¢); no drafts; lineItems carry cents', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       name: 'Test', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
     });
@@ -43,11 +43,12 @@ describe('internal quoting tool route', () => {
     const d = await res.json();
     expect(d.total.cents).toBe(4048);
     expect(d.amountDueNow.cents).toBe(4048); // private → full
-    expect(d.drafts.whatsapp).toContain('A → B');
-    expect(d.drafts.email).toContain('Subject:');
-    expect(d.drafts.notion).toContain('| Date | Route |');
+    expect(d.drafts).toBeUndefined(); // V15: dead drafts removed
+    expect(Number.isInteger(d.lineItems[0].amountCents)).toBe(true); // Fix 7: cents on line items
     expect(d.comparison.car.total.cents).toBe(4048);
+    expect(d.comparison.car.vehicle).toBe('car'); // V4: honest tier label
     expect(d.comparison.van.total.cents).toBeGreaterThan(4048);
+    expect(d.comparison.van.vehicle).toBe('van');
   });
 
   it('estimate auto-resolves the distance from known places when km is omitted', async () => {
@@ -215,13 +216,105 @@ describe('internal quoting tool route', () => {
     expect(d.breakdown.legs[0].priceCents).toBe(12782);
   });
 
-  it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers)', async () => {
+  it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers) + vehicle caps', async () => {
     const d = await (await createApp().request('/admin/quote/rate-card')).json();
     expect(d.version).toBe('2026-06-28');
     expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 100, van14: 130, custom: 175 });
     expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 6500, van14: 8500, custom: 11000 });
     expect(d.chauffeurDayRateCents).toBe(3500);
     expect(d.fxUsdToLkr).toBe(320);
+    // V12 server half: expose vehicle capacity caps for client-side vehicle labelling
+    expect(d.vehicle).toMatchObject({
+      car: { maxPax: 3, maxBags: 3 },
+      van: { maxPax: 6, maxBags: 6 },
+      van9: { maxPax: 9, maxBags: 8 },
+      van14: { maxPax: 14, maxBags: 12 },
+      custom: { maxPax: 99, maxBags: 99 },
+    });
+  });
+
+  // Fix 1 (V18): Zod validation on /estimate.
+  it('estimate is 400 when passengerCount is 0', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 0, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBeTruthy();
+  });
+
+  it('estimate is 400 when passengerCount is missing', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    expect(res.status).toBe(400);
+  });
+
+  it('estimate is 400 with a Zod-rejected empty legs array', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('estimate is 400 for a bad leg category', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'teleport', from: 'A', to: 'B', distanceKm: 80 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('estimate is 400 when a chauffeur itinerary has any undated leg (dates required on every leg incl. stay)', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: '' }, // undated → should reject
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/date/i);
+  });
+
+  // Fix 2 (S1): stopovers must affect pricing.
+  it('stopovers chain the route so the total exceeds the direct route', async () => {
+    const direct = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy' }],
+    })).json();
+    const viaNegombo = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Negombo'] }],
+    })).json();
+    expect(viaNegombo.total.cents).toBeGreaterThan(direct.total.cents);
+  });
+
+  it('estimate is 400 when a stopover segment cannot be resolved', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Nowhereville'] }],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // Fix 3 (V4): honest comparison — smaller tiers than required are flagged, not silently upgraded.
+  it('comparison flags both car and van as too small for a large party (pax=8)', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'van_9', passengerCount: 8, luggageCount: 2, legs: [leg({ distanceKm: 140 })],
+    })).json();
+    expect(d.comparison.car.error).toBe('too small for this party');
+    expect(d.comparison.van.error).toBe('too small for this party');
+  });
+
+  it('comparison prices both car and van with vehicle labels for a small party (pax=2)', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
+    })).json();
+    expect(d.comparison.car.vehicle).toBe('car');
+    expect(d.comparison.van.vehicle).toBe('van');
+    expect(d.comparison.car.total.cents).toBeGreaterThan(0);
+    expect(d.comparison.van.total.cents).toBeGreaterThan(0);
+  });
+
+  // Fix 8 (V19): /save persists the reopenable tool payload under request.tool (+ engine req).
+  it('POST /save stores request.tool (with stopovers) and request.engine for reopening', async () => {
+    const app = createApp();
+    const body = { name: 'Reo', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Negombo'] }] };
+    const res = await post(app, '/admin/quote/save', body);
+    expect(res.status).toBe(201);
+    const saved = await res.json();
+    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    expect(got.request.tool.legs[0].stopovers).toEqual(['Negombo']);
+    expect(got.request.engine).toBeTruthy();
+    expect(got.request.engine.product).toBe('private');
   });
 });
 
@@ -252,47 +345,88 @@ describe('quoting tool — admin-key auth', () => {
   });
 });
 
-describe('quoting tool — Google Places path (mocked fetch)', () => {
-  const origFetch = global.fetch;
-  afterEach(() => {
-    global.fetch = origFetch;
-  });
-  const appWithKey = () => {
+describe('quoting tool — /places delegates to the maps adapter', () => {
+  it('returns whatever the injected adapter.places() yields (Google now lives in the adapter)', async () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), googleKey: 'test-key', quotes: new InMemoryQuoteRepo() }));
-    return a;
-  };
-
-  it('returns Google predictions when a server key is configured', async () => {
-    global.fetch = (async () =>
-      new Response(JSON.stringify({ predictions: [{ description: 'Colombo Fort, Sri Lanka' }, { description: 'Colombo City Centre' }] }), { status: 200 })) as typeof fetch;
-    const res = await appWithKey().request('/admin/quote/places?q=colombo');
-    expect((await res.json()).places).toEqual(['Colombo Fort, Sri Lanka', 'Colombo City Centre']);
+    const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo() }));
+    const res = await a.request('/admin/quote/places?q=colombo');
+    expect(res.status).toBe(200);
+    expect((await res.json()).places).toEqual(['Stubbed']);
   });
 
-  it('falls back to the offline list when Google throws', async () => {
-    global.fetch = (async () => {
-      throw new Error('network down');
-    }) as typeof fetch;
-    const res = await appWithKey().request('/admin/quote/places?q=kand');
-    expect((await res.json()).places).toEqual(['Kandy']);
+  it('returns [] for a too-short query without touching the adapter', async () => {
+    const a = new Hono();
+    let called = false;
+    const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo() }));
+    const res = await a.request('/admin/quote/places?q=c');
+    expect((await res.json()).places).toEqual([]);
+    expect(called).toBe(false);
+  });
+});
+
+// Fix (S4): toolHtml() resilience. readFileSync is mocked so we can force the "missing/unreadable
+// file" path without touching the real quote-tool.html. Each test re-imports the module fresh
+// (vi.resetModules) so the in-module cache var starts empty, matching a freshly-booted server.
+describe('quoting tool — GET / (toolHtml) resilience to a failing read', () => {
+  const okContent = '<html><body>tool v1</body></html>';
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doUnmock('node:fs');
   });
 
-  it('falls back to the offline list when Google returns no predictions', async () => {
-    global.fetch = (async () => new Response(JSON.stringify({ predictions: [] }), { status: 200 })) as typeof fetch;
-    const res = await appWithKey().request('/admin/quote/places?q=ella');
-    expect((await res.json()).places).toEqual(['Ella']);
+  it('serves the file normally on a healthy read (no caching concern on the happy path)', async () => {
+    vi.doMock('node:fs', () => ({ readFileSync: vi.fn(() => okContent) }));
+    const { internalQuoteRoutes: routes } = await import('./internalQuote');
+    const a = new Hono();
+    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+    const res = await a.request('/admin/quote');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(okContent);
   });
 
-  it('builds the Places request scoped to Sri Lanka with the query + key', async () => {
-    let captured = '';
-    global.fetch = (async (u: string) => {
-      captured = String(u);
-      return new Response(JSON.stringify({ predictions: [{ description: 'X' }] }), { status: 200 });
-    }) as unknown as typeof fetch;
-    await appWithKey().request('/admin/quote/places?q=galle');
-    expect(captured).toContain('input=galle');
-    expect(captured).toContain('components=country:lk');
-    expect(captured).toContain('key=test-key');
+  it('serves the last-good cached copy (with a console.error) when a later read fails', async () => {
+    let shouldFail = false;
+    vi.doMock('node:fs', () => ({
+      readFileSync: vi.fn(() => {
+        if (shouldFail) throw new Error('ENOENT: no such file');
+        return okContent;
+      }),
+    }));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { internalQuoteRoutes: routes } = await import('./internalQuote');
+    const a = new Hono();
+    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+
+    const first = await a.request('/admin/quote');
+    expect(first.status).toBe(200);
+    expect(await first.text()).toBe(okContent); // warms the cache
+
+    shouldFail = true;
+    const second = await a.request('/admin/quote');
+    expect(second.status).toBe(200); // cached copy, not a 500
+    expect(await second.text()).toBe(okContent);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('returns a minimal 500 body and console.errors when the read fails with no cache warmed yet', async () => {
+    vi.doMock('node:fs', () => ({
+      readFileSync: vi.fn(() => {
+        throw new Error('ENOENT: no such file');
+      }),
+    }));
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { internalQuoteRoutes: routes } = await import('./internalQuote');
+    const a = new Hono();
+    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+
+    const res = await a.request('/admin/quote');
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain('quote tool unavailable');
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 });
