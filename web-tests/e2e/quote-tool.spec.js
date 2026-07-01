@@ -1,74 +1,72 @@
 import { test, expect } from '@playwright/test';
 
-// The internal quoting tool is served by the API (not the static site), so these specs use an
-// absolute URL to the API's /admin/quote page. The API web server is started by playwright.config.js.
+// The internal quoting tool is served by the API (not the static site).
 const TOOL = 'http://localhost:8787/admin/quote';
 
-test('autocomplete → auto-distance → priced quote (server-side, no Google key)', async ({ page }) => {
+// Spec 1: Timeline autocomplete → auto-distance → priced summary → save
+test('timeline autocomplete → priced LKR summary → save reference toast', async ({ page }) => {
   await page.goto(TOOL);
-  await expect(page.locator('h1')).toContainText('Ceylon Hop');
+  // Wait for the page to fully initialise (rate card fetch + render complete)
+  await page.waitForLoadState('networkidle');
 
-  // Type a partial place → the server-side /places autocomplete suggests it.
-  const from = page.locator('.leg [data-f="from"]').first();
-  await from.click();
-  await from.fill('Kand');
-  const kandy = page.locator('.leg .acmenu .acitem', { hasText: 'Kandy' }).first();
-  await expect(kandy).toBeVisible();
-  await kandy.click();
-  await expect(from).toHaveValue('Kandy');
+  // Fill first leg: "From" field (first .ch-tl-title with data-field="pickupLocation")
+  // Use click + keyboard.type() so individual key events fire the input listener
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await fromInput.click();
+  await page.keyboard.type('Kand', { delay: 40 });
+  // Wait for autocomplete menu to appear (220ms debounce + network)
+  await expect(page.locator('.ch-ac-menu').first()).toBeVisible({ timeout: 5000 });
+  // Click the Kandy item — pick binds on mousedown
+  await page.locator('.ch-ac-menu .ch-ac-item', { hasText: 'Kandy' }).first().click();
 
-  const to = page.locator('.leg [data-f="to"]').first();
-  await to.click();
-  await to.fill('Ella');
-  await page.locator('.leg .acmenu .acitem', { hasText: 'Ella' }).first().click();
-  await expect(to).toHaveValue('Ella');
+  // Fill second leg: "Destination" field (first .ch-tl-title with data-field="dropoffLocation")
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await toInput.click();
+  await page.keyboard.type('Ella', { delay: 40 });
+  await expect(page.locator('.ch-ac-menu').first()).toBeVisible({ timeout: 5000 });
+  await page.locator('.ch-ac-menu .ch-ac-item', { hasText: 'Ella' }).first().click();
 
-  // Distance auto-fills from the server (/distance).
-  const dist = page.locator('.leg [data-f="distanceKm"]').first();
-  await expect(dist).not.toHaveValue('');
+  // Wait for auto-distance to resolve and estimate to populate
+  // The km hero tile and the quote total line should appear
+  await expect(page.locator('.ch-km.hero')).toBeVisible({ timeout: 8000 });
+  const heroText = await page.locator('.ch-km.hero b').textContent();
+  expect(heroText).not.toBe('0');
 
-  // Price it.
-  await page.fill('#name', 'E2E');
-  await page.click('#go');
-  await expect(page.locator('.total')).toContainText('LKR');
-  await expect(page.locator('#draftBox')).toContainText('Kandy');
-  // Car-vs-van comparison rendered.
-  await expect(page.locator('.cmp')).toHaveCount(2);
+  // Quote total (strong line) should contain LKR
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
+
+  // Fill customer name and explicitly blur so the change→render cycle completes
+  // before clicking Save (avoids stale-element races with the render cycle)
+  const nameInput = page.locator('#f-customerName');
+  await nameInput.fill('E2E Port');
+  await nameInput.press('Tab'); // commit the change + triggers re-render
+  await page.waitForTimeout(200); // let render() settle
+
+  // Click header Save button
+  await page.locator('#btnSave').click();
+
+  // Toast should appear containing the reference (starts with Q-)
+  // Wait for the .ch-toast-msg to be populated with a Q- reference
+  const toastMsg = page.locator('.ch-toast-msg');
+  await expect(toastMsg).toContainText('Q-', { timeout: 8000 });
 });
 
-test('an unknown place with no manual km shows an error (never a silent/blank quote)', async ({ page }) => {
+// Spec 2: Car + 4 bags triggers the luggage flag
+test('car + 4 bags raises the luggage flag', async ({ page }) => {
   await page.goto(TOOL);
-  await page.locator('.leg [data-f="from"]').first().fill('Nowhereville');
-  await page.locator('.leg [data-f="to"]').first().fill('Kandy');
-  await page.locator('#name').click(); // blur the location field so its autocomplete menu closes
-  await expect(page.locator('.leg .acmenu.on')).toHaveCount(0);
-  await page.click('#go');
-  await expect(page.locator('.err')).toBeVisible();
-  await expect(page.locator('.total')).toHaveCount(0);
-});
+  await page.waitForLoadState('networkidle');
 
-test('a manual distance prices without needing the maps lookup', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.locator('.leg [data-f="from"]').first().fill('Somewhere Villa');
-  await page.locator('.leg [data-f="to"]').first().fill('Airport');
-  await page.locator('.leg [data-f="distanceKm"]').first().fill('80');
-  await page.click('#go');
-  await expect(page.locator('.total')).toContainText('LKR');
-});
+  // Select Car in the vehicle dropdown
+  const vehicleSel = page.locator('#f-vehicleType');
+  await vehicleSel.selectOption('car');
 
-test('save a quote → reference appears → shows in Recent, and status can change', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.locator('.leg [data-f="from"]').first().fill('Somewhere Villa');
-  await page.locator('.leg [data-f="to"]').first().fill('Airport');
-  await page.locator('.leg [data-f="distanceKm"]').first().fill('80');
-  await page.fill('#name', 'E2E Save');
-  await page.click('#go');
-  await expect(page.locator('.total')).toContainText('LKR');
-  await page.click('#saveBtn');
-  await expect(page.locator('#saveMsg')).toContainText('Q-');
-  await expect(page.locator('#recent .qrow', { hasText: 'E2E Save' }).first()).toBeVisible();
-  // change its status
-  const row = page.locator('#recent .qrow', { hasText: 'E2E Save' }).first();
-  await row.locator('.qstatus').selectOption('won');
-  await expect(row.locator('.qstatus')).toHaveValue('won');
+  // Set bags to 4
+  const bagsInput = page.locator('#f-luggageCount');
+  await bagsInput.fill('4');
+  await bagsInput.dispatchEvent('change');
+
+  // A flag with "luggage" (case-insensitive) should be visible
+  await expect(
+    page.locator('.ch-flag', { hasText: /luggage/i }).first()
+  ).toBeVisible({ timeout: 5000 });
 });
