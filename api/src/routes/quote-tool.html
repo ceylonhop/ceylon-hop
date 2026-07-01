@@ -3,289 +3,1336 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Ceylon Hop · Quote Generator</title>
+<title>Ceylon Hop · Ops · Quote Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
-  :root{--bg:#f5f0e8;--card:#fff;--ink:#2a2622;--soft:#7a736a;--line:#e3dccd;--teal:#0ab9b6;--teal-d:#0a7a78}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}
-  .wrap{max-width:880px;margin:0 auto}
-  h1{font-family:Georgia,serif;font-size:1.7rem;font-weight:700;display:flex;align-items:center;gap:12px}
-  h1 .dot{width:34px;height:34px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-family:Georgia,serif;font-weight:700}
-  .sub{color:var(--soft);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;margin-left:46px;margin-top:-4px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:18px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-  .card h2{font-family:Georgia,serif;font-size:1.15rem;margin-bottom:14px}
-  label{display:block;font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);margin-bottom:5px}
-  input,select{width:100%;padding:9px 11px;border:1.5px solid var(--line);border-radius:9px;font:inherit;background:#fff;color:var(--ink)}
-  input:focus,select:focus{outline:none;border-color:var(--teal)}
-  .row{display:grid;gap:12px}
-  .r4{grid-template-columns:2fr 1fr 1fr 1.6fr}
-  .r5{grid-template-columns:1.6fr 1.4fr .8fr .8fr 1.4fr}
-  .r3{grid-template-columns:1fr 1fr 1fr}
-  .leg{border:1.5px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fdfcf9;position:relative}
-  .leg .top{display:grid;grid-template-columns:1.3fr 1fr .8fr;gap:10px;margin-bottom:10px}
-  .leg .lr{display:grid;grid-template-columns:1fr 1fr 1.1fr .5fr;gap:10px;align-items:end}
-  .leg .opts{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}
-  .chk{display:flex;align-items:center;gap:6px;font-size:.85rem;text-transform:none;letter-spacing:0}
-  .chk input{width:auto}
-  .x{background:#f3eee3;border:1px solid var(--line);border-radius:8px;cursor:pointer;padding:9px;color:var(--soft)}
-  .ac{position:relative}
-  .acmenu{position:absolute;z-index:50;left:0;right:0;top:calc(100% + 4px);background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:240px;overflow:auto;display:none}
-  .acmenu.on{display:block}
-  .acitem{padding:9px 12px;cursor:pointer;font-size:.9rem;border-bottom:1px solid #f3eee3}
-  .acitem:hover,.acitem.sel{background:rgba(10,185,182,.08)}
-  .dist{font-size:.8rem;color:var(--teal-d);margin-top:5px}
-  button{font:inherit;cursor:pointer}
-  .btn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:11px 22px;font-weight:600}.btn:hover{background:var(--teal-d)}
-  .ghost{background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:8px 14px;color:var(--teal-d);font-weight:600}
-  .total{font-family:Georgia,serif;font-size:2.2rem;color:var(--teal-d);font-weight:700}
-  .usd{color:var(--soft);font-size:1rem}
-  .li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line);font-size:.92rem}.li:last-child{border-bottom:none}
-  .pill{display:inline-block;background:rgba(10,185,182,.12);color:var(--teal-d);padding:3px 10px;border-radius:99px;font-size:.78rem;font-weight:600;text-transform:capitalize}
-  .warn{background:#fff7e6;border:1px solid #f0d999;color:#8a6d1f;padding:9px 12px;border-radius:9px;font-size:.85rem;margin-top:8px}
-  .err{background:#fdecea;border:1px solid #f3b4ad;color:#a3271b;padding:11px 14px;border-radius:10px}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .cmp{border:1.5px solid var(--line);border-radius:12px;padding:14px;text-align:center}.cmp b{font-family:Georgia,serif;font-size:1.3rem}
-  textarea{width:100%;min-height:160px;padding:12px;border:1.5px solid var(--line);border-radius:10px;font:inherit;resize:vertical}
-  .muted{color:var(--soft);font-size:.82rem}
-  .banner{background:#eef9f8;border:1px solid #bfe8e6;color:#0a6a68;border-radius:10px;padding:8px 12px;font-size:.78rem;margin-top:10px}
-  .tabs{display:flex;gap:6px;margin-bottom:10px}
-  .tab{padding:6px 14px;border:1.5px solid var(--line);border-radius:99px;background:#fff;font-size:.85rem;font-weight:600;color:var(--soft)}
-  .tab.on{background:var(--teal);color:#fff;border-color:var(--teal)}
-  @media(max-width:700px){.r4,.r5,.r3,.leg .top,.leg .lr,.grid2{grid-template-columns:1fr 1fr}}
+/* Ceylon Hop Ops — base + layout + components CSS */
+:root {
+  --blue: #63BFD6;
+  --blue-d: #3da6c0;
+  --black: #3A3739;
+  --cream: #F0EEE5;
+  --cream-d: #e6e3d6;
+  --orange: #F9A429;
+  --red: #EC3A24;
+  --teal: #0AB9B6;
+  --teal-d: #089a97;
+
+  --paper: #ffffff;
+  --ink: #3A3739;
+  --muted: #8b8780;
+  --muted-2: #b4afa6;
+  --line: #e7e3d8;
+  --line-soft: #efece2;
+
+  --r-lg: 18px;
+  --r-md: 13px;
+  --r-sm: 9px;
+  --shadow-card: 0 1px 2px rgba(58,55,57,.04), 0 8px 24px rgba(58,55,57,.06);
+  --shadow-pop: 0 12px 40px rgba(58,55,57,.16);
+  --serif: "Bodoni Moda", "Didot", Georgia, serif;
+  --sans: "Poppins", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--cream);
+  background-image: radial-gradient(circle at 18% -8%, rgba(99,191,214,.10), transparent 42%),
+                    radial-gradient(circle at 100% 0%, rgba(249,164,41,.07), transparent 38%);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.45;
+}
+h1, h2, h3 { margin: 0; font-weight: 600; }
+input, select, textarea, button { font-family: inherit; }
+
+/* ---------- App shell ---------- */
+.ch-app { min-height: 100vh; padding-bottom: 64px; }
+.ch-container { max-width: 1340px; margin: 0 auto; padding: 0 22px; }
+
+/* ---------- Header ---------- */
+.ch-header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255,255,255,.82);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.ch-header-in { max-width: 1340px; margin: 0 auto; padding: 12px 22px; display: flex; align-items: center; gap: 18px; }
+.ch-brand { display: flex; align-items: center; gap: 11px; }
+.ch-mark {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--blue); color: #fff;
+  display: grid; place-items: center;
+  font-family: var(--serif); font-weight: 700; font-size: 18px;
+  box-shadow: 0 3px 0 var(--blue-d);
+}
+.ch-brand-txt { line-height: 1.05; }
+.ch-brand-txt b { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; display: block; }
+.ch-brand-txt span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 2.2px; color: var(--muted); }
+.ch-header-spacer { flex: 1; }
+.ch-header-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------- Status select ---------- */
+.ch-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: 999px; padding: 5px 6px 5px 12px;
+  border: 1px solid var(--line); background: #fff;
+  font-size: 12.5px; font-weight: 500;
+}
+.ch-status .dot { width: 9px; height: 9px; border-radius: 50%; }
+.ch-status select { border: none; background: none; font-weight: 600; font-size: 12.5px; outline: none; cursor: pointer; color: var(--ink); }
+
+/* ---------- Layout grid ---------- */
+.ch-main { padding-top: 22px; display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, .92fr); gap: 20px; align-items: start; }
+.ch-col-l { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.ch-col-r { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 86px; }
+.ch-output-wrap { margin-top: 20px; }
+@media (max-width: 1080px) {
+  .ch-main { grid-template-columns: 1fr; }
+  .ch-col-r { position: static; }
+}
+
+/* ---------- Card ---------- */
+.ch-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+.ch-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line-soft); }
+.ch-card-head-l { display: flex; align-items: center; gap: 11px; }
+.ch-card-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+.ch-card-head-l { min-width: 0; }
+.ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--black); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
+.ch-card-head-r { display: flex; align-items: center; gap: 10px; }
+.ch-chev { font-size: 19px; color: var(--muted); transition: transform .2s; line-height: 1; }
+.ch-chev.open { transform: rotate(180deg); }
+.ch-card-body { padding: 18px; }
+.ch-card-body.nopad { padding: 0; }
+.ch-head-tools { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Fields ---------- */
+.ch-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.ch-row:last-child { margin-bottom: 0; }
+.ch-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 0; }
+.ch-field-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; align-items: center; gap: 3px; }
+.ch-field-label .req { color: var(--red); font-style: normal; }
+.ch-field-hint { font-size: 11px; color: var(--red); }
+.ch-card-body > .ch-field { margin-top: 14px; }
+
+.ch-input-wrap { display: flex; align-items: center; gap: 0; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 0 10px; transition: border-color .15s, box-shadow .15s; }
+.ch-input-wrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+.ch-input-wrap.invalid { border-color: var(--red); }
+.ch-input { width: 100%; border: none; background: none; outline: none; padding: 9px 0; font-size: 14px; color: var(--ink); min-width: 0; }
+.ch-input::placeholder { color: var(--muted-2); }
+.ch-input-prefix, .ch-input-suffix { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.ch-input-prefix { padding-right: 6px; }
+.ch-input-suffix { padding-left: 6px; }
+.ch-textarea { padding: 9px 10px; resize: vertical; border: 1.5px solid var(--line); border-radius: var(--r-sm); line-height: 1.5; }
+.ch-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+
+.ch-select-wrap { position: relative; padding-right: 0; }
+.ch-select { appearance: none; padding-right: 26px; cursor: pointer; background: none; }
+.ch-select-chev { position: absolute; right: 10px; pointer-events: none; color: var(--muted); font-size: 15px; }
+
+/* ---------- Segmented ---------- */
+.ch-seg { display: inline-flex; background: var(--cream); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px; gap: 3px; width: 100%; }
+.ch-seg-btn { flex: 1; border: none; background: none; padding: 7px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+.ch-seg-btn.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(58,55,57,.12); }
+.ch-seg.sm .ch-seg-btn { padding: 5px 8px; font-size: 12px; }
+
+/* ---------- Toggle ---------- */
+.ch-toggle-row { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; padding: 0; }
+.ch-toggle { width: 38px; height: 22px; border-radius: 999px; background: var(--cream-d); position: relative; transition: background .18s; flex: none; border: 1px solid var(--line); }
+.ch-toggle.on[data-tone="blue"] { background: var(--blue); border-color: var(--blue); }
+.ch-toggle.on[data-tone="teal"] { background: var(--teal); border-color: var(--teal); }
+.ch-toggle-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.ch-toggle.on .ch-toggle-knob { transform: translateX(16px); }
+.ch-toggle-label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+
+/* ---------- Check ---------- */
+.ch-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.ch-check input { display: none; }
+.ch-check-box { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line); display: grid; place-items: center; color: #fff; font-size: 12px; background: #fff; transition: all .15s; }
+.ch-check input:checked + .ch-check-box { background: var(--blue); border-color: var(--blue); }
+
+/* ---------- Buttons ---------- */
+.ch-btn { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: var(--r-sm); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.ch-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ch-btn-icon { font-size: 13px; line-height: 1; }
+.ch-btn-sm { padding: 6px 10px; font-size: 12px; }
+.ch-btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-d); }
+.ch-btn-primary:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.ch-btn-teal { background: var(--teal); color: #fff; box-shadow: 0 2px 0 var(--teal-d); }
+.ch-btn-dark { background: var(--black); color: #fff; }
+.ch-btn-dark:hover { filter: brightness(1.2); }
+.ch-btn-outline { background: #fff; color: var(--ink); border: 1.5px solid var(--line); }
+.ch-btn-outline:hover { border-color: var(--blue); color: var(--blue-d); }
+.ch-btn-ghost { background: var(--cream); color: var(--ink); }
+.ch-btn-ghost:hover { background: var(--cream-d); }
+.ch-btn-ghostdanger { background: none; color: var(--muted); padding: 6px 9px; }
+.ch-btn-ghostdanger:hover { background: rgba(236,58,36,.1); color: var(--red); }
+.ch-btn-dashed { background: #fff; color: var(--muted); border: 1.5px dashed var(--line); }
+.ch-btn-dashed:hover { border-color: var(--orange); color: var(--orange); background: #fffdf8; }
+
+/* ---------- Badge ---------- */
+.ch-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.ch-badge.tone-slate { background: var(--cream); color: var(--muted); }
+.ch-badge.tone-blue { background: rgba(99,191,214,.16); color: var(--blue-d); }
+.ch-badge.tone-teal { background: rgba(10,185,182,.14); color: var(--teal-d); }
+.ch-badge.tone-orange { background: rgba(249,164,41,.16); color: #c47d12; }
+.ch-badge.tone-red { background: rgba(236,58,36,.13); color: var(--red); }
+
+/* ---------- Rate settings ---------- */
+.ch-lock-note { background: var(--cream); border-radius: var(--r-md); padding: 11px 14px; font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+.ch-rate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.ch-rate-grid.disabled { opacity: .55; pointer-events: none; }
+.ch-rate-col { display: flex; flex-direction: column; gap: 3px; }
+.ch-rate-group-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--blue-d); margin: 12px 0 4px; }
+.ch-rate-col .ch-rate-group-title:first-child { margin-top: 0; }
+.ch-rate-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.ch-rate-label { font-size: 13px; font-weight: 500; display: flex; flex-direction: column; }
+.ch-rate-hint { font-size: 10.5px; color: var(--muted-2); }
+.ch-rate-control { width: 132px; flex: none; }
+@media (max-width: 620px) { .ch-rate-grid { grid-template-columns: 1fr; gap: 8px; } }
+
+/* ---------- Itinerary (premium timeline) ---------- */
+.ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ch-empty-icon { font-size: 34px; }
+.ch-empty-title { color: var(--muted); font-size: 14px; }
+
+.ch-timeline-wrap { padding: 22px 24px 8px; }
+.ch-timeline { position: relative; }
+
+.ch-tl-item { position: relative; display: grid; grid-template-columns: 30px 1fr; gap: 16px; }
+.ch-tl-rail { position: relative; display: flex; justify-content: center; }
+/* continuous line down the rail */
+.ch-tl-item:not(:last-child) .ch-tl-rail::before { content: ''; position: absolute; top: 6px; bottom: -6px; left: 50%; transform: translateX(-50%); width: 2px; border-left: 2px dotted var(--muted-2); opacity: .55; }
+.ch-marker { position: relative; z-index: 1; width: 18px; height: 18px; border-radius: 50%; margin-top: 4px; display: grid; place-items: center; font-size: 9px; color: #fff; box-shadow: 0 0 0 4px var(--paper); flex: none; }
+.ch-marker.tone-teal { background: var(--teal); }
+.ch-marker.tone-red { background: var(--red); }
+.ch-marker.tone-blue { background: var(--blue); }
+.ch-marker.ring { background: #fff; border: 2.5px solid var(--blue); }
+.ch-marker.stay { background: #fff; border: 2px dashed var(--muted-2); color: var(--muted); }
+
+.ch-tl-body { min-width: 0; padding-bottom: 8px; }
+
+/* card */
+.ch-tl-card { background: var(--paper); border: 1.5px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; transition: border-color .15s, box-shadow .15s; }
+.ch-tl-card:hover { border-color: var(--cream-d); box-shadow: var(--shadow-card); }
+.ch-tl-card.tone-teal { border-top: 3px solid var(--teal); }
+.ch-tl-card.tone-red { border-top: 3px solid var(--red); }
+.ch-tl-card.tone-blue { border-top: 3px solid var(--blue); }
+
+.ch-tl-head { display: flex; align-items: center; gap: 10px; }
+.ch-tl-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; padding: 4px 10px; border-radius: 999px; flex: none; }
+.ch-tl-tag.tone-teal { background: rgba(10,185,182,.13); color: var(--teal-d); }
+.ch-tl-tag.tone-red { background: rgba(236,58,36,.11); color: var(--red); }
+.ch-tl-tag.tone-blue { background: rgba(99,191,214,.16); color: var(--blue-d); }
+.ch-tl-cat { width: 175px; }
+.ch-tl-cat .ch-input-wrap { padding: 0 10px; }
+.ch-tl-cat .ch-input { padding: 6px 0; font-size: 12.5px; font-weight: 500; }
+.ch-tl-actions { margin-left: auto; display: flex; gap: 6px; }
+.ch-icon-btn { width: 30px; height: 30px; border: 1.5px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--muted); display: grid; place-items: center; transition: all .15s; }
+.ch-icon-btn:hover { border-color: var(--blue); color: var(--blue-d); }
+.ch-icon-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(236,58,36,.06); }
+
+.ch-tl-title-field { display: flex; flex-direction: column; gap: 4px; }
+.ch-tl-title-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: var(--muted-2); }
+.ch-tl-route { display: flex; align-items: flex-end; gap: 12px; }
+.ch-tl-route .ch-tl-title-field { flex: 1 1 0; min-width: 0; }
+.ch-route-sep { font-size: 22px; color: var(--muted-2); padding-bottom: 9px; flex: none; }
+.ch-tl-stoprow:empty { display: none; }
+@media (max-width: 560px) { .ch-tl-route { flex-direction: column; align-items: stretch; gap: 8px; } .ch-route-sep { display: none; } }
+
+/* place autocomplete */
+.ch-ac { position: relative; }
+.ch-tl-title-field .ch-ac { width: 100%; }
+.ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; }
+.ch-ac-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); font-family: var(--sans); }
+.ch-ac-item:hover, .ch-ac-item.hi { background: var(--cream); }
+.ch-ac-pin { font-size: 13px; flex: none; opacity: .85; }
+.ch-ac-name { font-weight: 400; color: var(--muted); }
+.ch-ac-name b { font-weight: 700; color: var(--ink); }
+.ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: #fff; outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; }
+.ch-tl-title:hover { border-color: var(--cream-d); }
+.ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+.ch-tl-title::placeholder { color: var(--muted-2); font-style: italic; font-weight: 600; }
+
+.ch-tl-from { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -4px; }
+.ch-from-lbl { font-size: 12px; color: var(--muted); }
+.ch-from-in { border: none; border-bottom: 1.5px solid var(--line); background: none; padding: 2px 2px; font-size: 13.5px; font-weight: 500; color: var(--ink); outline: none; min-width: 80px; max-width: 180px; }
+.ch-from-in:focus { border-bottom-color: var(--blue); }
+.ch-from-in::placeholder { color: var(--muted-2); font-weight: 400; }
+
+.ch-stops { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.ch-stop-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 7px 3px 9px; font-size: 11px; font-weight: 500; }
+.ch-stop-x { border: none; background: none; color: #b9760f; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+.ch-stop-input { border: 1px dashed var(--line); background: #fff; border-radius: 999px; padding: 2px 9px; font-size: 11px; outline: none; width: 60px; }
+.ch-stop-input:focus { border-color: var(--orange); width: 100px; }
+
+.ch-tl-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ch-meta-date { display: inline-flex; align-items: center; gap: 6px; background: var(--cream); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; }
+.ch-meta-date .ch-meta-ic { font-size: 12px; opacity: .8; }
+.ch-meta-date input { border: none; background: none; outline: none; font-family: inherit; font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.ch-meta-dist { display: flex; align-items: center; }
+.ch-dist-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--cream); color: var(--ink); }
+.ch-dist-pill.auto { background: rgba(99,191,214,.12); color: var(--blue-d); }
+.ch-dist-pill.warn { background: rgba(249,164,41,.13); color: #b9760f; }
+.ch-dist-manual { display: flex; align-items: center; gap: 7px; }
+.ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
+.ch-link:hover { opacity: 1; }
+.ch-meta-price { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; flex: none; }
+.ch-price-lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted-2); white-space: nowrap; }
+.ch-price-val { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); }
+
+/* driver / car stay toggles */
+.ch-tl-stays { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.ch-stay-toggle { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); background: #fff; border-radius: 10px; padding: 7px 12px; cursor: pointer; transition: all .15s; }
+.ch-stay-toggle:hover { border-color: var(--muted-2); }
+.ch-stay-ic { font-size: 15px; filter: grayscale(.4); opacity: .7; }
+.ch-stay-lb { font-size: 13px; font-weight: 600; color: var(--muted); }
+.ch-stay-state { font-size: 9px; font-weight: 800; letter-spacing: .6px; color: var(--muted-2); background: var(--cream); border-radius: 5px; padding: 2px 5px; }
+.ch-stay-toggle.on { background: #fff; }
+.ch-stay-toggle.on .ch-stay-ic { filter: none; opacity: 1; }
+.ch-stay-toggle.on .ch-stay-lb { color: var(--ink); }
+.ch-stay-toggle.on.tone-teal { border-color: var(--teal); background: rgba(10,185,182,.07); }
+.ch-stay-toggle.on.tone-teal .ch-stay-state { background: var(--teal); color: #fff; }
+.ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(99,191,214,.08); }
+.ch-stay-toggle.on.tone-blue .ch-stay-state { background: var(--blue); color: #fff; }
+.ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
+
+.ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ch-fee { display: inline-flex; align-items: center; gap: 9px; }
+.ch-note-in { border: 1px solid var(--line); background: #fcfbf7; border-radius: var(--r-sm); padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; color: var(--ink); width: 100%; }
+.ch-note-in:focus { border-color: var(--blue); background: #fff; }
+
+/* connector between stops */
+.ch-connector { display: flex; align-items: center; gap: 12px; padding: 12px 4px 12px 0; }
+.ch-connector-node { width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 14px; color: var(--blue-d); flex: none; margin-left: -1px; }
+.ch-connector-text { display: flex; flex-direction: column; line-height: 1.3; }
+.ch-connector-text b { font-size: 13px; font-weight: 600; color: var(--ink); }
+.ch-connector-text span { font-size: 12px; color: var(--muted); }
+.ch-connector.rest .ch-connector-node { border-style: dashed; color: var(--muted); }
+
+.ch-timeline-add { display: flex; gap: 10px; padding: 6px 0 4px 46px; flex-wrap: wrap; }
+.ch-timeline-hint { padding: 12px 24px 18px 46px; font-size: 12px; color: var(--muted); }
+.ch-timeline-hint b { color: var(--ink); font-weight: 600; }
+
+.ch-cur-toggle { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.ch-cur-toggle .ch-seg { width: 100px; }
+
+/* ---------- Summary ---------- */
+.ch-km-strip { display: flex; gap: 10px; margin-bottom: 16px; }
+.ch-km { flex: 1; background: var(--cream); border-radius: var(--r-md); padding: 11px; text-align: center; }
+.ch-km.hero { background: var(--black); color: #fff; }
+.ch-km b { font-family: var(--serif); font-size: 22px; font-weight: 700; display: block; line-height: 1; }
+.ch-km span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.ch-km.hero span { color: rgba(255,255,255,.7); }
+.ch-sum-block { border: 1px solid var(--line); border-radius: var(--r-md); padding: 13px 15px; margin-bottom: 13px; }
+.ch-sum-block.blue { border-left: 3px solid var(--blue); }
+.ch-sum-block.teal { border-left: 3px solid var(--teal); }
+.ch-sum-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; margin-bottom: 9px; }
+.ch-dot { width: 9px; height: 9px; border-radius: 50%; }
+.ch-dot.blue { background: var(--blue); }
+.ch-dot.teal { background: var(--teal); }
+.ch-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 13px; }
+.ch-line-label { color: var(--muted); white-space: nowrap; }
+.ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
+.ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
+.ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
+.ch-line.strong .ch-line-val { font-family: var(--serif); font-size: 21px; font-weight: 700; }
+.ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
+.ch-compare { background: var(--cream); border-radius: var(--r-md); padding: 13px 15px; }
+.ch-compare-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; }
+.ch-compare-row span { font-size: 13px; font-weight: 500; }
+.ch-compare-row b { font-family: var(--serif); font-size: 19px; }
+.ch-compare-note { font-size: 12px; color: var(--muted); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 9px; }
+.ch-tip { background: rgba(99,191,214,.1); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; color: var(--black); margin-top: 13px; line-height: 1.5; }
+.ch-tip b { color: var(--blue-d); }
+
+/* ---------- Flags ---------- */
+.ch-flags-clear { color: var(--teal-d); font-size: 13px; font-weight: 500; padding: 4px 0; }
+.ch-flags { display: flex; flex-direction: column; gap: 9px; }
+.ch-flag { display: flex; gap: 11px; padding: 11px 13px; border-radius: var(--r-md); }
+.ch-flag-mark { font-size: 13px; line-height: 1.4; flex: none; }
+.ch-flag.tone-red { background: rgba(236,58,36,.08); }
+.ch-flag.tone-red .ch-flag-mark { color: var(--red); }
+.ch-flag.tone-orange { background: rgba(249,164,41,.1); }
+.ch-flag.tone-orange .ch-flag-mark { color: var(--orange); }
+.ch-flag.tone-blue { background: rgba(99,191,214,.1); }
+.ch-flag.tone-blue .ch-flag-mark { color: var(--blue-d); }
+.ch-flag-title { font-weight: 600; font-size: 13px; }
+.ch-flag-detail { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+
+/* ---------- Output ---------- */
+.ch-tabs { display: flex; gap: 4px; background: var(--cream); padding: 4px; border-radius: var(--r-md); margin-bottom: 14px; }
+.ch-tab { flex: 1; border: none; background: none; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .15s; }
+.ch-tab.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(58,55,57,.12); }
+.ch-output-body { min-height: 120px; }
+.ch-pre { font-family: var(--sans); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--cream); border-radius: var(--r-md); padding: 16px 18px; margin: 0; color: var(--ink); }
+.ch-pre.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.ch-email-subject { font-size: 13px; margin-bottom: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.ch-email-subject span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted-2); margin-right: 8px; }
+.ch-internal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.ch-internal-grid > div { background: var(--cream); border-radius: var(--r-sm); padding: 9px 11px; }
+.ch-internal-grid span { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted-2); display: block; }
+.ch-internal-grid b { font-size: 13.5px; }
+.ch-itable { width: 100%; border-collapse: collapse; }
+.ch-itable td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--line-soft); }
+.ch-itable td:last-child { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ch-itable tr.sec td { color: var(--muted); }
+.ch-itable tr.hi td { font-weight: 700; }
+.ch-itable tr.hi.blue td:last-child { color: var(--blue-d); }
+.ch-itable tr.hi.teal td:last-child { color: var(--teal-d); }
+.ch-internal-note { font-size: 11.5px; color: var(--muted-2); margin-top: 12px; font-style: italic; }
+@media (max-width: 520px) { .ch-internal-grid { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- Toast ---------- */
+.ch-toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 100; display: flex; align-items: center; gap: 8px; }
+.ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.ch-toast .tick { color: var(--teal); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1><span class="dot">C</span> Ceylon Hop</h1>
-  <div class="sub">Internal · Quote Generator</div>
-  <div class="banner">Autocomplete + auto-distance run server-side — pick a location and the distance fills in (editable). Known SL places work offline; full Google coverage turns on once a server Maps key is set.</div>
 
-  <div class="card">
-    <h2>① Customer &amp; Request</h2>
-    <div class="row r5">
-      <div><label>Customer name</label><input id="name" placeholder="e.g. Nikhil" /></div>
-      <div><label>WhatsApp / email</label><input id="contact" placeholder="WhatsApp / email" /></div>
-      <div><label>Passengers</label><input id="pax" type="number" min="1" value="2" /></div>
-      <div><label>Bags</label><input id="bags" type="number" min="0" value="2" /></div>
-      <div><label>Service</label><select id="product"><option value="private">Transfers (point-to-point)</option><option value="chauffeur">Chauffeur (keep car + driver)</option></select></div>
-    </div>
-    <div class="row r3" style="margin-top:12px">
-      <div><label>Vehicle</label><select id="vehicle">
-        <option value="car">Car (≤3 pax)</option>
-        <option value="van">Van 6 (≤6 pax)</option>
-        <option value="van9" disabled>Van 9 — rate pending</option>
-        <option value="van14" disabled>Van 14 — rate pending</option>
-        <option value="custom" disabled>Custom — rate pending</option>
-      </select></div>
-      <div></div><div></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>② Itinerary <span class="muted" id="itinHint" style="font-weight:400;font-size:.8rem"></span></h2>
-    <div id="legs"></div>
-    <button class="ghost" onclick="addLeg()">+ Add leg</button>
-  </div>
-
-  <div style="margin-top:18px;display:flex;gap:12px;align-items:center">
-    <button class="btn" id="go" onclick="getQuote()">Get Quote</button>
-    <span class="muted" id="status"></span>
-  </div>
-  <div id="result"></div>
-  <div class="card" style="margin-top:24px">
-    <h2>Recent Quotes</h2>
-    <div id="recent"></div>
-  </div>
+<div class="ch-app" id="app">
+  <!-- rendered by render() -->
 </div>
 
 <script>
-const $=(id)=>document.getElementById(id);
-let legId=0;
+'use strict';
 
-function adminKey(){ return localStorage.getItem('chAdminKey') || ''; }
-async function api(path, opts){
+// ── HTML escape helper ────────────────────────────────────────────────────────
+function esc(s) {
+  return (s == null ? '' : String(s))
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Status tone map ───────────────────────────────────────────────────────────
+const STATUS_TONE = {
+  'draft':   'var(--muted-2)',
+  'sent':    'var(--blue)',
+  'won':     'var(--orange)',
+  'lost':    'var(--red)',
+  'expired': 'var(--muted)',
+};
+
+const STATUS_LABELS = {
+  'draft':   'Draft',
+  'sent':    'Sent',
+  'won':     'Booked',
+  'lost':    'Lost',
+  'expired': 'Expired',
+};
+
+// ── State model ───────────────────────────────────────────────────────────────
+let legSeq = 0;
+
+function newLeg() {
+  return {
+    id: 'leg_' + (legSeq++),
+    category: 'transfer',
+    pickupLocation: '',
+    dropoffLocation: '',
+    stopovers: [],
+    distanceKm: 0,
+    driveTimeHours: 0,
+    manualDistance: false,
+    autoMatched: false,
+    addSightseeingFee: false,
+    addWaitingFee: false,
+    hasDriver: false,
+    hasCarStay: false,
+    notes: '',
+    date: '',
+  };
+}
+
+let state = {
+  id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+  customerName: '',
+  contact: '',
+  passengerCount: 2,
+  luggageCount: 2,
+  vehicleType: 'van_6',
+  outputCurrency: 'LKR',
+  status: 'draft',
+  internalNotes: '',
+  legs: [newLeg()],
+};
+
+// ── State mutators ────────────────────────────────────────────────────────────
+function mutate(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+function updateLeg(id, patch) {
+  state.legs = state.legs.map(function(leg) {
+    return leg.id === id ? Object.assign({}, leg, patch) : leg;
+  });
+  render();
+}
+
+function addLeg(cat) {
+  var prev = state.legs.length > 0 ? state.legs[state.legs.length - 1] : null;
+  var leg = newLeg();
+  leg.category = cat || 'transfer';
+  if (prev) {
+    leg.pickupLocation = prev.dropoffLocation || '';
+    if (cat === 'stay_day') {
+      leg.dropoffLocation = prev.dropoffLocation || '';
+    }
+    // Auto-increment date by 1 day
+    if (prev.date) {
+      var d = new Date(prev.date);
+      d.setDate(d.getDate() + 1);
+      leg.date = d.toISOString().slice(0, 10);
+    }
+  }
+  state.legs = state.legs.concat([leg]);
+  render();
+}
+
+function removeLeg(id) {
+  state.legs = state.legs.filter(function(leg) { return leg.id !== id; });
+  render();
+}
+
+function dupLeg(id) {
+  var idx = state.legs.findIndex(function(leg) { return leg.id === id; });
+  if (idx < 0) return;
+  var src = state.legs[idx];
+  var copy = Object.assign({}, src, { id: 'leg_' + (legSeq++) });
+  var next = state.legs.slice(0, idx + 1).concat([copy]).concat(state.legs.slice(idx + 1));
+  state.legs = next;
+  render();
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function api(path, opts) {
   opts = opts || {};
-  const headers = Object.assign({}, opts.headers || {});
-  const k = adminKey(); if(k) headers['x-admin-key'] = k;
-  let res = await fetch(path, Object.assign({}, opts, { headers }));
-  if(res.status === 401){
-    const entered = prompt('Enter the admin key for the quoting tool:');
-    if(entered){ localStorage.setItem('chAdminKey', entered); headers['x-admin-key'] = entered;
-      res = await fetch(path, Object.assign({}, opts, { headers })); }
+  var headers = Object.assign({}, opts.headers || {});
+  var k = localStorage.getItem('chAdminKey');
+  if (k) headers['x-admin-key'] = k;
+  var res = await fetch(path, Object.assign({}, opts, { headers: headers }));
+  if (res.status === 401) {
+    var entered = prompt('Enter admin key:');
+    if (entered) {
+      localStorage.setItem('chAdminKey', entered);
+      headers['x-admin-key'] = entered;
+      res = await fetch(path, Object.assign({}, opts, { headers: headers }));
+    }
   }
   return res;
 }
 
-async function apiPlaces(q){ try{ const r=await api('/admin/quote/places?q='+encodeURIComponent(q)); const d=await r.json(); return d.places||[]; }catch(e){ return []; } }
-async function apiDistance(from,to){ try{ const r=await api('/admin/quote/distance',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({from,to})}); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
-
-function attachAC(input){
-  const wrap=document.createElement('div'); wrap.className='ac';
-  input.parentNode.insertBefore(wrap,input); wrap.appendChild(input);
-  const menu=document.createElement('div'); menu.className='acmenu'; wrap.appendChild(menu);
-  let items=[],seq=0;
-  const close=()=>{menu.classList.remove('on');menu.innerHTML='';};
-  input.addEventListener('input',async()=>{
-    const my=++seq; const sug=await apiPlaces(input.value);
-    if(my!==seq) return;
-    items=sug;
-    if(!sug.length){close();return;}
-    menu.innerHTML=sug.map((s,i)=>`<div class="acitem" data-i="${i}">${s}</div>`).join('');
-    menu.classList.add('on');
-    menu.querySelectorAll('.acitem').forEach(el=>el.onclick=()=>{ input.value=items[+el.dataset.i]; close(); input.dispatchEvent(new Event('change')); });
-  });
-  input.addEventListener('blur',()=>setTimeout(close,150));
+async function apiPlaces(q) {
+  try {
+    var r = await api('/admin/quote/places?q=' + encodeURIComponent(q));
+    var d = await r.json();
+    return d.places || [];
+  } catch (e) { return []; }
 }
 
-function legRow(){
-  const id='leg'+(legId++);
-  const div=document.createElement('div'); div.className='leg'; div.dataset.id=id;
-  div.innerHTML=`
-    <div class="top">
-      <div><label>Leg type</label><select data-f="type">
-        <option value="transfer">Transfer</option>
-        <option value="airport">Airport pickup / drop-off</option>
-        <option value="train_support">Train / luggage support</option>
-        <option value="sightseeing">Sightseeing / waiting</option>
-        <option value="safari_wait">Safari waiting</option>
-        <option value="stay_day">Stay day (no transfer)</option>
-      </select></div>
-      <div class="dateCell" style="display:none"><label>Date</label><input data-f="date" type="date"/></div>
-      <div></div>
-    </div>
-    <div class="lr">
-      <div><label>From</label><input data-f="from" placeholder="Start typing…" autocomplete="off"/></div>
-      <div><label>To</label><input data-f="to" placeholder="Start typing…" autocomplete="off"/></div>
-      <div><label>Distance (km)</label><input data-f="distanceKm" type="number" min="0" placeholder="auto"/></div>
-      <button class="x" onclick="this.closest('.leg').remove();syncMode()">✕</button>
-    </div>
-    <div class="dist" data-f="distNote"></div>
-    <div class="opts">
-      <span class="chk"><input data-f="sightseeing" type="checkbox"/> Sightseeing fee (+$10)</span>
-      <span class="chk"><input data-f="waiting" type="checkbox"/> Waiting fee (+$10)</span>
-    </div>`;
-  return div;
-}
-function wireLeg(div){
-  const from=div.querySelector('[data-f=from]'), to=div.querySelector('[data-f=to]');
-  const dist=div.querySelector('[data-f=distanceKm]'), note=div.querySelector('[data-f=distNote]');
-  let manual=false; dist.addEventListener('input',()=>{manual=true;});
-  const recompute=async()=>{
-    if(manual||!from.value.trim()||!to.value.trim()) return;
-    note.textContent='measuring…';
-    const r=await apiDistance(from.value.trim(),to.value.trim());
-    if(r){ dist.value=r.km; note.textContent=`≈ ${r.km} km · ~${Math.floor(r.durationMin/60)?Math.floor(r.durationMin/60)+'h ':''}${r.durationMin%60}m (auto — editable)`; }
-    else { note.textContent='no auto-distance for this pair — enter km manually'; }
-  };
-  attachAC(from); attachAC(to);
-  from.addEventListener('change',recompute); to.addEventListener('change',recompute);
-  div.querySelector('[data-f=type]').addEventListener('change',()=>syncStay(div));
-  syncStay(div);
-}
-function syncStay(div){
-  const stay=div.querySelector('[data-f=type]').value==='stay_day';
-  div.querySelector('[data-f=to]').closest('div').style.display=stay?'none':'';
-  div.querySelector('[data-f=distanceKm]').closest('div').style.display=stay?'none':'';
-  div.querySelector('[data-f=from]').closest('div').querySelector('label').textContent=stay?'Staying at':'From';
-}
-function addLeg(){ const d=legRow(); $('legs').appendChild(d); wireLeg(d); syncMode(); }
-
-function syncMode(){
-  const ch=$('product').value==='chauffeur';
-  $('itinHint').textContent=ch?'· car + driver retained; add Stay days for idle days (they bill the minimum)':'· each leg priced point-to-point';
-  document.querySelectorAll('.dateCell').forEach(e=>e.style.display=ch?'':'none');
-}
-$('product').addEventListener('change',syncMode);
-
-function collect(){
-  const legs=[...document.querySelectorAll('.leg')].map(L=>{
-    const o={}; L.querySelectorAll('[data-f]').forEach(el=>{ if(el.dataset.f==='distNote')return; o[el.dataset.f]=el.type==='checkbox'?el.checked:el.value; }); return o;
-  });
-  return { name:$('name').value, pax:+$('pax').value||1, bags:+$('bags').value||0, product:$('product').value, vehicle:$('vehicle').value, legs };
-}
-
-async function getQuote(){
-  $('status').textContent='Pricing…'; $('go').disabled=true;
-  try{
-    const res=await api('/admin/quote/estimate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(collect())});
-    const d=await res.json();
-    if(!res.ok){ render(`<div class="card"><div class="err">${esc(d.error||'Error')}</div></div>`); return; }
-    renderResult(d);
-  }catch(e){ render(`<div class="card"><div class="err">${esc(String(e))}</div></div>`); }
-  finally{ $('status').textContent=''; $('go').disabled=false; }
-}
-function render(h){ $('result').innerHTML=h; }
-function esc(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-let DRAFTS={};
-function showTab(which,btn){ $('draftBox').value=DRAFTS[which]||''; document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on')); btn.classList.add('on'); }
-function renderResult(d){
-  DRAFTS=d.drafts||{};
-  const li=d.lineItems.map(x=>`<div class="li"><span>${esc(x.label)}</span><b>${x.lkr} <span class="muted">${x.usd}</span></b></div>`).join('');
-  const warn=(d.warnings||[]).filter(w=>w!=='margin not modelled for shared').map(w=>`<div class="warn">⚠️ ${esc(w)}</div>`).join('');
-  const margin=d.margin?`<div class="li"><span class="muted">Est. margin (internal)</span><b class="muted">${d.margin.lkr} ${d.margin.usd}</b></div>`:'';
-  const cmp=d.comparison?`<div class="card"><h2>Car vs Van</h2><div class="grid2">
-      <div class="cmp"><div class="muted">Car</div><b>${d.comparison.car.total?d.comparison.car.total.lkr:'—'}</b><div class="muted">${d.comparison.car.total?d.comparison.car.total.usd:(d.comparison.car.error||'')}</div></div>
-      <div class="cmp"><div class="muted">Van</div><b>${d.comparison.van.total?d.comparison.van.total.lkr:'—'}</b><div class="muted">${d.comparison.van.total?d.comparison.van.total.usd:(d.comparison.van.error||'')}</div></div>
-    </div></div>`:'';
-  render(`
-    <div class="card">
-      <h2>③ Pricing Summary <span class="pill">${esc(d.product)}</span></h2>
-      <div class="total">${d.total.lkr}</div>
-      <div class="usd">~${d.total.usd} · FX ${d.fxUsdToLkr} LKR/$ · deposit ${d.deposit.lkr} · due now ${d.amountDueNow.lkr}</div>
-      ${warn}<div style="margin-top:14px">${li}${margin}</div>
-      <div style="margin-top:14px;display:flex;gap:12px;align-items:center">
-        <button class="btn" id="saveBtn" onclick="saveQuote()">Save quote</button>
-        <span id="saveMsg"></span>
-      </div>
-    </div>
-    ${cmp}
-    <div class="card">
-      <h2>④ Quote Output</h2>
-      <div class="tabs">
-        <button class="tab on" onclick="showTab('whatsapp',this)">WhatsApp</button>
-        <button class="tab" onclick="showTab('email',this)">Email</button>
-        <button class="tab" onclick="showTab('notion',this)">Notion</button>
-      </div>
-      <textarea id="draftBox">${esc(DRAFTS.whatsapp||'')}</textarea>
-      <div style="margin-top:10px"><button class="ghost" onclick="navigator.clipboard.writeText($('draftBox').value);this.textContent='Copied ✓'">Copy</button></div>
-    </div>`);
-}
-
-async function saveQuote(){
-  const payload = collect();
-  payload.name = ($('name').value || '').trim();
-  payload.contact = ($('contact') ? $('contact').value.trim() : '');
-  const res = await api('/admin/quote/save', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload) });
-  const d = await res.json();
-  if(!res.ok){ $('saveMsg').textContent = d.error || 'Save failed'; return; }
-  $('saveMsg').innerHTML = 'Saved as <b>'+esc(d.reference)+'</b>';
-  loadRecent();
-}
-
-async function loadRecent(){
-  const res = await api('/admin/quote/list');
-  if(!res.ok) return;
-  const { quotes } = await res.json();
-  $('recent').innerHTML = quotes.map(function(q){
-    return '<div class="qrow" data-id="'+q.id+'"><span class="qref">'+esc(q.reference)+'</span>'
-      + '<span>'+esc(q.customerName||'—')+'</span>'
-      + '<span>'+esc(q.product)+'</span>'
-      + '<span class="qtotal">'+q.totalCents+'</span>'
-      + '<select class="qstatus">'
-      + ['draft','sent','won','lost','expired'].map(function(s){ return '<option'+(s===q.status?' selected':'')+'>'+s+'</option>'; }).join('')
-      + '</select></div>';
-  }).join('');
-  Array.prototype.forEach.call(document.querySelectorAll('.qrow .qstatus'), function(sel){
-    sel.addEventListener('change', function(){
-      const id = sel.closest('.qrow').getAttribute('data-id');
-      api('/admin/quote/'+id, { method:'PATCH', headers:{'content-type':'application/json'}, body: JSON.stringify({ status: sel.value }) });
+async function apiDistance(from, to) {
+  try {
+    var r = await api('/admin/quote/distance', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ from: from, to: to }),
     });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function apiEstimate(payload) {
+  try {
+    var r = await api('/admin/quote/estimate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function apiRateCard() {
+  try {
+    var r = await api('/admin/quote/rate-card');
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function apiSave(payload) {
+  try {
+    var r = await api('/admin/quote/save', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function apiList(filter) {
+  try {
+    var qs = filter ? '?' + new URLSearchParams(filter).toString() : '';
+    var r = await api('/admin/quote/list' + qs);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function apiPatch(id, patch) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+var _toastTimer = null;
+function showToast(msg) {
+  var el = document.getElementById('ch-toast');
+  if (!el) return;
+  el.querySelector('.ch-toast-msg').textContent = msg;
+  el.classList.add('show');
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3000);
+}
+
+// ── Copy helpers ──────────────────────────────────────────────────────────────
+function copyText(text, label) {
+  navigator.clipboard.writeText(text || '').then(function() {
+    showToast((label || 'Text') + ' copied');
+  }).catch(function() {
+    showToast('Copy failed — check clipboard permission');
   });
 }
 
-addLeg();
-syncMode();
-loadRecent();
+// ── Action handlers ───────────────────────────────────────────────────────────
+function newQuote() {
+  if (!confirm('Start a new quote? Unsaved changes will be lost.')) return;
+  legSeq = 0;
+  state = {
+    id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+    customerName: '',
+    contact: '',
+    passengerCount: 2,
+    luggageCount: 2,
+    vehicleType: 'van_6',
+    outputCurrency: 'LKR',
+    status: 'draft',
+    internalNotes: '',
+    legs: [newLeg()],
+  };
+  render();
+  showToast('New quote started');
+}
+
+async function saveQuote() {
+  var res = await apiSave(state);
+  if (res && res.id) {
+    showToast('Quote saved — ' + esc(res.reference || res.id));
+  } else {
+    showToast('Save failed');
+  }
+}
+
+// ── Leg tone helpers ──────────────────────────────────────────────────────────
+function legTone(idx, total, cat) {
+  if (idx === 0) return 'teal';
+  if (idx === total - 1) return 'red';
+  if (cat === 'stay_day') return 'stay';
+  return 'blue';
+}
+
+function legTagLabel(idx, total) {
+  if (idx === 0) return 'TRIP START';
+  if (idx === total - 1) return 'FINAL STOP';
+  return 'STOP ' + (idx + 1);
+}
+
+// ── Render leg card HTML ──────────────────────────────────────────────────────
+function renderLegCard(leg, idx, total) {
+  var tone = legTone(idx, total, leg.category);
+  var tagTone = tone === 'stay' ? 'blue' : tone;
+  var tagLabel = legTagLabel(idx, total);
+  var isStay = leg.category === 'stay_day';
+
+  var markerClass = 'ch-marker';
+  if (tone === 'teal') markerClass += ' tone-teal';
+  else if (tone === 'red') markerClass += ' tone-red';
+  else if (tone === 'stay') markerClass += ' stay';
+  else markerClass += ' ring';
+
+  var cardToneClass = 'ch-tl-card';
+  if (tone === 'teal') cardToneClass += ' tone-teal';
+  else if (tone === 'red') cardToneClass += ' tone-red';
+  else cardToneClass += ' tone-blue';
+
+  // Route section
+  var routeHtml;
+  if (isStay) {
+    routeHtml = [
+      '<div class="ch-tl-title-field">',
+      '  <span class="ch-tl-title-lbl">Staying at</span>',
+      '  <input class="ch-tl-title" type="text" placeholder="Where are they staying?"',
+      '    value="' + esc(leg.dropoffLocation) + '"',
+      '    data-leg="' + esc(leg.id) + '" data-field="dropoffLocation" />',
+      '</div>',
+    ].join('');
+  } else {
+    var distHtml;
+    if (leg.manualDistance) {
+      distHtml = [
+        '<div class="ch-meta-dist">',
+        '  <div class="ch-dist-manual">',
+        '    <div class="ch-input-wrap" style="width:86px">',
+        '      <input class="ch-input" type="number" min="0" value="' + esc(leg.distanceKm) + '"',
+        '        data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:60px" />',
+        '      <span class="ch-input-suffix">km</span>',
+        '    </div>',
+        '    <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '">auto</button>',
+        '  </div>',
+        '</div>',
+      ].join('');
+    } else if (leg.autoMatched) {
+      var hrs = leg.driveTimeHours || 0;
+      var hh = Math.floor(hrs);
+      var mm = Math.round((hrs - hh) * 60);
+      var durStr = hh > 0 ? hh + 'h ' + mm + 'm' : mm + 'm';
+      distHtml = [
+        '<div class="ch-meta-dist">',
+        '  <span class="ch-dist-pill auto">≈ ' + esc(leg.distanceKm) + ' km · ~' + esc(durStr) + '</span>',
+        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '">&nbsp;edit</button>',
+        '</div>',
+      ].join('');
+    } else {
+      distHtml = [
+        '<div class="ch-meta-dist">',
+        '  <span class="ch-dist-pill warn">No distance</span>',
+        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '">&nbsp;set</button>',
+        '</div>',
+      ].join('');
+    }
+
+    // Stopovers chips
+    var stopChips = (leg.stopovers || []).map(function(s, si) {
+      return '<span class="ch-stop-chip">' + esc(s) +
+        '<button class="ch-stop-x" data-action="removeStop" data-leg="' + esc(leg.id) + '" data-stop="' + si + '">×</button></span>';
+    }).join('');
+
+    routeHtml = [
+      '<div class="ch-tl-route">',
+      '  <div class="ch-tl-title-field">',
+      '    <span class="ch-tl-title-lbl">From</span>',
+      '    <input class="ch-tl-title" type="text" placeholder="Origin"',
+      '      value="' + esc(leg.pickupLocation) + '"',
+      '      data-leg="' + esc(leg.id) + '" data-field="pickupLocation" />',
+      '  </div>',
+      '  <span class="ch-route-sep">→</span>',
+      '  <div class="ch-tl-title-field">',
+      '    <span class="ch-tl-title-lbl">Destination</span>',
+      '    <input class="ch-tl-title" type="text" placeholder="Destination"',
+      '      value="' + esc(leg.dropoffLocation) + '"',
+      '      data-leg="' + esc(leg.id) + '" data-field="dropoffLocation" />',
+      '  </div>',
+      '</div>',
+      '<div class="ch-tl-stoprow">',
+      '  <div class="ch-stops">',
+      stopChips,
+      '    <input class="ch-stop-input" placeholder="+ stop"',
+      '      data-action="addStop" data-leg="' + esc(leg.id) + '" />',
+      '  </div>',
+      '</div>',
+      '<div class="ch-tl-meta">',
+      '  <label class="ch-meta-date">',
+      '    <span class="ch-meta-ic">&#128197;</span>',
+      '    <input type="date" value="' + esc(leg.date) + '"',
+      '      data-leg="' + esc(leg.id) + '" data-field="date" />',
+      '  </label>',
+      distHtml,
+      '</div>',
+    ].join('');
+  }
+
+  // Stay meta for stay_day
+  var stayMetaHtml = isStay ? [
+    '<div class="ch-tl-meta">',
+    '  <label class="ch-meta-date">',
+    '    <span class="ch-meta-ic">&#128197;</span>',
+    '    <input type="date" value="' + esc(leg.date) + '"',
+    '      data-leg="' + esc(leg.id) + '" data-field="date" />',
+    '  </label>',
+    '</div>',
+  ].join('') : '';
+
+  // Driver / car stay toggles
+  var driverOnClass = leg.hasDriver ? ' on tone-teal' : '';
+  var carOnClass = leg.hasCarStay ? ' on tone-blue' : '';
+  var chauffeurNote = (leg.hasDriver || leg.hasCarStay) ?
+    '<span class="ch-stays-note">+ chauffeur rate for this date</span>' : '';
+
+  // Category select options
+  var cats = [
+    { id: 'transfer',      label: 'Transfer' },
+    { id: 'stay_day',      label: 'Stay day' },
+    { id: 'train_support', label: 'Train / luggage support' },
+    { id: 'sightseeing',   label: 'Sightseeing / waiting' },
+    { id: 'safari_wait',   label: 'Safari waiting' },
+    { id: 'airport',       label: 'Airport pickup / drop-off' },
+  ];
+  var catOptions = cats.map(function(c) {
+    return '<option value="' + esc(c.id) + '"' + (leg.category === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>';
+  }).join('');
+
+  // Fees
+  var sightChecked = leg.addSightseeingFee ? ' checked' : '';
+  var waitChecked = leg.addWaitingFee ? ' checked' : '';
+  var sightFeeInput = leg.addSightseeingFee ? [
+    '<div class="ch-input-wrap" style="width:110px">',
+    '  <span class="ch-input-prefix">Rs</span>',
+    '  <input class="ch-input" type="number" min="0" value="' + esc(leg.sightseeingFeeLkr || 3000) + '"',
+    '    data-leg="' + esc(leg.id) + '" data-field="sightseeingFeeLkr" />',
+    '</div>',
+  ].join('') : '';
+  var waitFeeInput = leg.addWaitingFee ? [
+    '<div class="ch-input-wrap" style="width:110px">',
+    '  <span class="ch-input-prefix">Rs</span>',
+    '  <input class="ch-input" type="number" min="0" value="' + esc(leg.waitingFeeLkr || 2000) + '"',
+    '    data-leg="' + esc(leg.id) + '" data-field="waitingFeeLkr" />',
+    '</div>',
+  ].join('') : '';
+
+  // Notes (show when fees enabled or notes non-empty)
+  var showNotes = leg.addSightseeingFee || leg.addWaitingFee || (leg.notes && leg.notes.length > 0);
+  var notesHtml = showNotes ? [
+    '<input class="ch-note-in" type="text" value="' + esc(leg.notes) + '"',
+    '  placeholder="Note (e.g. 1–3 hr temple stop, safari wait)…"',
+    '  data-leg="' + esc(leg.id) + '" data-field="notes" />',
+  ].join('') : '';
+
+  return [
+    '<div class="ch-tl-item" data-leg-id="' + esc(leg.id) + '">',
+    '  <div class="ch-tl-rail">',
+    '    <div class="' + markerClass + '">',
+    tone === 'stay' ? '&#x263E;' : '',
+    '    </div>',
+    '  </div>',
+    '  <div class="ch-tl-body">',
+    '    <div class="' + cardToneClass + '">',
+    '      <div class="ch-tl-head">',
+    '        <span class="ch-tl-tag tone-' + esc(tagTone) + '">' + tagLabel + '</span>',
+    '        <div class="ch-tl-cat">',
+    '          <div class="ch-input-wrap">',
+    '            <select class="ch-input ch-select" data-leg="' + esc(leg.id) + '" data-field="category">',
+    catOptions,
+    '            </select>',
+    '          </div>',
+    '        </div>',
+    '        <div class="ch-tl-actions">',
+    '          <button class="ch-icon-btn" title="Duplicate" data-action="dupLeg" data-leg="' + esc(leg.id) + '">⧉</button>',
+    '          <button class="ch-icon-btn danger" title="Remove" data-action="removeLeg" data-leg="' + esc(leg.id) + '">×</button>',
+    '        </div>',
+    '      </div>',
+    routeHtml,
+    stayMetaHtml,
+    '      <div class="ch-tl-stays">',
+    '        <button class="ch-stay-toggle' + driverOnClass + '" data-action="toggleDriver" data-leg="' + esc(leg.id) + '">',
+    '          <span class="ch-stay-ic">&#x1F9D1;&#x200D;&#x2708;&#xFE0F;</span>',
+    '          <span class="ch-stay-lb">Driver stays</span>',
+    '          <span class="ch-stay-state">' + (leg.hasDriver ? 'ON' : 'OFF') + '</span>',
+    '        </button>',
+    '        <button class="ch-stay-toggle' + carOnClass + '" data-action="toggleCarStay" data-leg="' + esc(leg.id) + '">',
+    '          <span class="ch-stay-ic">&#x1F699;</span>',
+    '          <span class="ch-stay-lb">Car stays</span>',
+    '          <span class="ch-stay-state">' + (leg.hasCarStay ? 'ON' : 'OFF') + '</span>',
+    '        </button>',
+    chauffeurNote,
+    '      </div>',
+    '      <div class="ch-tl-fees">',
+    '        <label class="ch-fee">',
+    '          <label class="ch-check">',
+    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSightseeingFee"' + sightChecked + ' />',
+    '            <span class="ch-check-box">' + (leg.addSightseeingFee ? '&#10003;' : '') + '</span>',
+    '            Sightseeing fee',
+    '          </label>',
+    sightFeeInput,
+    '        </label>',
+    '        <label class="ch-fee">',
+    '          <label class="ch-check">',
+    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addWaitingFee"' + waitChecked + ' />',
+    '            <span class="ch-check-box">' + (leg.addWaitingFee ? '&#10003;' : '') + '</span>',
+    '            Waiting fee',
+    '          </label>',
+    waitFeeInput,
+    '        </label>',
+    '      </div>',
+    notesHtml ? '<div>' + notesHtml + '</div>' : '',
+    '    </div>',
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+// ── Render connector between legs ─────────────────────────────────────────────
+function renderConnector(legA, legB) {
+  var isRest = legB && legB.category === 'stay_day';
+  var connClass = 'ch-connector' + (isRest ? ' rest' : '');
+  var icon = isRest ? '&#x263E;' : '&#x1F697;';
+  var title = isRest
+    ? 'Rest day / No transfer — vehicle on standby'
+    : 'Private transfer';
+  return [
+    '<div class="' + connClass + '">',
+    '  <div class="ch-connector-node">' + icon + '</div>',
+    '  <div class="ch-connector-text">',
+    '    <b>' + title + '</b>',
+    '  </div>',
+    '</div>',
+  ].join('');
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+function render() {
+  var st = state;
+  var dotColor = STATUS_TONE[st.status] || 'var(--muted-2)';
+  var statusOptions = [
+    { value: 'draft',   label: 'Draft' },
+    { value: 'sent',    label: 'Sent' },
+    { value: 'won',     label: 'Booked' },
+    { value: 'lost',    label: 'Lost' },
+    { value: 'expired', label: 'Expired' },
+  ].map(function(o) {
+    return '<option value="' + o.value + '"' + (st.status === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+  }).join('');
+
+  // Vehicles list
+  var vehicles = [
+    { id: 'car',    label: 'Car' },
+    { id: 'van_6',  label: 'Van 6 Seat' },
+    { id: 'van_9',  label: 'Van 9 Seat' },
+    { id: 'van_14', label: 'Van 14 Seat' },
+    { id: 'custom', label: 'Custom' },
+  ];
+  var vehicleOptions = vehicles.map(function(v) {
+    return '<option value="' + v.id + '"' + (st.vehicleType === v.id ? ' selected' : '') + '>' + esc(v.label) + '</option>';
+  }).join('');
+
+  // Build legs HTML
+  var legsHtml = '';
+  if (st.legs.length === 0) {
+    legsHtml = [
+      '<div class="ch-empty">',
+      '  <div class="ch-empty-icon">&#x1F5FA;&#xFE0F;</div>',
+      '  <div class="ch-empty-title">Build the journey stop by stop to start pricing.</div>',
+      '  <button class="ch-btn ch-btn-primary" data-action="addLeg" data-cat="transfer">',
+      '    <span class="ch-btn-icon">&#xFF0B;</span> Add first stop',
+      '  </button>',
+      '</div>',
+    ].join('');
+  } else {
+    var parts = [];
+    for (var i = 0; i < st.legs.length; i++) {
+      parts.push(renderLegCard(st.legs[i], i, st.legs.length));
+      if (i < st.legs.length - 1) {
+        parts.push(renderConnector(st.legs[i], st.legs[i + 1]));
+      }
+    }
+    legsHtml = parts.join('');
+  }
+
+  var driverNights = st.legs.filter(function(l) { return l.hasDriver; }).length;
+  var itinBadge = st.legs.length + ' stop' + (st.legs.length !== 1 ? 's' : '') + ' · ' + driverNights + ' driver night' + (driverNights !== 1 ? 's' : '');
+
+  var html = [
+    '<header class="ch-header">',
+    '  <div class="ch-header-in">',
+    '    <div class="ch-brand">',
+    '      <div class="ch-mark">C</div>',
+    '      <div class="ch-brand-txt">',
+    '        <b>Ceylon Hop</b>',
+    '        <span>Ops &middot; Quote Generator</span>',
+    '      </div>',
+    '    </div>',
+    '    <div class="ch-header-spacer"></div>',
+    '    <div class="ch-header-tools">',
+    '      <div class="ch-status">',
+    '        <span class="dot" style="background:' + dotColor + '"></span>',
+    '        <select id="statusSelect">',
+    statusOptions,
+    '        </select>',
+    '      </div>',
+    '      <button class="ch-btn ch-btn-ghost" id="btnNew">',
+    '        <span class="ch-btn-icon">&#xFF0B;</span> New',
+    '      </button>',
+    '      <button class="ch-btn ch-btn-dark" id="btnSave">',
+    '        <span class="ch-btn-icon">&#x1F4BE;</span> Save',
+    '      </button>',
+    '      <button class="ch-btn ch-btn-primary" id="btnCopyWA">',
+    '        WhatsApp',
+    '      </button>',
+    '      <button class="ch-btn ch-btn-outline" id="btnCopyEmail">',
+    '        Email',
+    '      </button>',
+    '      <button class="ch-btn ch-btn-outline" id="btnCopyNotion">',
+    '        Notion',
+    '      </button>',
+    '    </div>',
+    '  </div>',
+    '</header>',
+
+    '<div class="ch-container">',
+    '  <div class="ch-main">',
+
+    // Left column
+    '    <div class="ch-col-l">',
+
+    // Card 1: Customer & Request
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--blue)">①</div>',
+    '            <h2>Customer &amp; Request</h2>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body">',
+    '          <div class="ch-row">',
+    '            <div class="ch-field" style="flex:1 1 200px">',
+    '              <label class="ch-field-label">Customer name</label>',
+    '              <div class="ch-input-wrap">',
+    '                <input class="ch-input" id="f-customerName" type="text" placeholder="e.g. Karen" value="' + esc(st.customerName) + '" />',
+    '              </div>',
+    '            </div>',
+    '            <div class="ch-field" style="flex:1 1 160px">',
+    '              <label class="ch-field-label">WhatsApp / email</label>',
+    '              <div class="ch-input-wrap">',
+    '                <input class="ch-input" id="f-contact" type="text" placeholder="WhatsApp / email" value="' + esc(st.contact) + '" />',
+    '              </div>',
+    '            </div>',
+    '            <div class="ch-field" style="flex:0 0 120px">',
+    '              <label class="ch-field-label">Passengers <em class="req">*</em></label>',
+    '              <div class="ch-input-wrap">',
+    '                <span class="ch-input-prefix">&#x1F465;</span>',
+    '                <input class="ch-input" id="f-passengerCount" type="number" min="0" value="' + esc(st.passengerCount) + '" />',
+    '              </div>',
+    '            </div>',
+    '            <div class="ch-field" style="flex:0 0 120px">',
+    '              <label class="ch-field-label">Bags / luggage <em class="req">*</em></label>',
+    '              <div class="ch-input-wrap">',
+    '                <span class="ch-input-prefix">&#x1F9F3;</span>',
+    '                <input class="ch-input" id="f-luggageCount" type="number" min="0" value="' + esc(st.luggageCount) + '" />',
+    '              </div>',
+    '            </div>',
+    '          </div>',
+    '          <div class="ch-row">',
+    '            <div class="ch-field" style="flex:0 0 180px">',
+    '              <label class="ch-field-label">Vehicle type <em class="req">*</em></label>',
+    '              <div class="ch-input-wrap ch-select-wrap">',
+    '                <select class="ch-input ch-select" id="f-vehicleType">',
+    vehicleOptions,
+    '                </select>',
+    '                <span class="ch-select-chev">&#x25BE;</span>',
+    '              </div>',
+    '            </div>',
+    '          </div>',
+    (st.vehicleType === 'car' && st.luggageCount > 3 ? [
+      '<div style="background:rgba(249,164,41,.13);border-radius:13px;padding:11px 14px;font-size:13px;color:#b9760f;font-weight:500;margin-top:8px">',
+      '  &#x26A0;&#xFE0F; A car can only accommodate max 3 bags. You\'ve selected ' + esc(st.luggageCount) + '. Please confirm or choose a larger vehicle.',
+      '</div>',
+    ].join('') : ''),
+    '          <div class="ch-field" style="margin-top:14px">',
+    '            <label class="ch-field-label">Internal notes</label>',
+    '            <textarea class="ch-input ch-textarea" id="f-internalNotes" rows="2" placeholder="Anything ops should remember about this request…">' + esc(st.internalNotes) + '</textarea>',
+    '          </div>',
+    '        </div>',
+    '      </section>',
+
+    // Card 2: Rate Settings (placeholder body — filled by later task)
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--black)">②</div>',
+    '            <h2>Rate Settings</h2>',
+    '          </div>',
+    '          <div class="ch-card-head-r">',
+    '            <span class="ch-badge tone-slate">Locked</span>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body">',
+    '          <div class="ch-lock-note">All rates are in <b>LKR</b> and managed server-side.</div>',
+    '        </div>',
+    '      </section>',
+
+    // Card 3: Itinerary
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--orange)">③</div>',
+    '            <h2>Itinerary</h2>',
+    '          </div>',
+    '          <div class="ch-card-head-r">',
+    '            <span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body nopad">',
+    (st.legs.length === 0 ? legsHtml : [
+      '<div class="ch-timeline-wrap">',
+      '  <div class="ch-timeline">',
+      legsHtml,
+      '  </div>',
+      '</div>',
+      '<div class="ch-timeline-add">',
+      '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add transfer</button>',
+      '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="stay_day"><span class="ch-btn-icon">&#x263E;</span> Add stay day</button>',
+      '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="sightseeing"><span class="ch-btn-icon">&#x1F4F8;</span> Add sightseeing</button>',
+      '</div>',
+      '<div class="ch-timeline-hint">Set <b>Driver stays</b> / <b>Car stays</b> on each night to build up the chauffeur rate.</div>',
+    ].join('')),
+    '        </div>',
+    '      </section>',
+
+    '    </div>', // ch-col-l
+
+    // Right column
+    '    <div class="ch-col-r">',
+
+    // Card 4: Summary (placeholder)
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--blue)">④</div>',
+    '            <h2>Pricing Summary</h2>',
+    '          </div>',
+    '          <div class="ch-card-head-r">',
+    '            <span class="ch-badge tone-slate">LKR &middot; internal</span>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body">',
+    '          <div style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0">Fill the itinerary to see pricing.</div>',
+    '        </div>',
+    '      </section>',
+
+    // Card 5: Flags (placeholder)
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--orange)">⑤</div>',
+    '            <h2>Operational Flags</h2>',
+    '          </div>',
+    '          <div class="ch-card-head-r">',
+    '            <span class="ch-badge tone-teal">All clear</span>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body">',
+    '          <div class="ch-flags-clear">✓ No warnings. This itinerary looks clean to send.</div>',
+    '        </div>',
+    '      </section>',
+
+    '    </div>', // ch-col-r
+
+    '  </div>', // ch-main
+
+    // Output card (full width)
+    '  <div class="ch-output-wrap">',
+    '    <section class="ch-card">',
+    '      <header class="ch-card-head">',
+    '        <div class="ch-card-head-l">',
+    '          <div class="ch-card-icon" style="background:var(--teal)">⑥</div>',
+    '          <h2>Quote Output</h2>',
+    '        </div>',
+    '        <div class="ch-card-head-r">',
+    '          <div class="ch-cur-toggle">',
+    '            <span>Send in</span>',
+    '            <div class="ch-seg sm" style="width:100px">',
+    '              <button class="ch-seg-btn' + (st.outputCurrency === 'LKR' ? ' active' : '') + '" data-action="setCurrency" data-val="LKR">LKR</button>',
+    '              <button class="ch-seg-btn' + (st.outputCurrency === 'USD' ? ' active' : '') + '" data-action="setCurrency" data-val="USD">USD</button>',
+    '            </div>',
+    '          </div>',
+    '        </div>',
+    '      </header>',
+    '      <div class="ch-card-body">',
+    '        <div class="ch-tabs">',
+    '          <button class="ch-tab active">Internal Calc</button>',
+    '          <button class="ch-tab">WhatsApp</button>',
+    '          <button class="ch-tab">Email</button>',
+    '          <button class="ch-tab">Notion</button>',
+    '        </div>',
+    '        <div class="ch-output-body">',
+    '          <div style="color:var(--muted);font-size:13px;padding:24px 0">Output will appear here once you fill the itinerary and get a quote.</div>',
+    '        </div>',
+    '      </div>',
+    '    </section>',
+    '  </div>',
+
+    '</div>', // ch-container
+
+    '<div class="ch-toast" id="ch-toast">',
+    '  <span class="tick">✓</span>',
+    '  <span class="ch-toast-msg"></span>',
+    '</div>',
+  ].join('');
+
+  document.getElementById('app').innerHTML = html;
+  attachEventListeners();
+}
+
+// ── Event delegation ──────────────────────────────────────────────────────────
+function attachEventListeners() {
+  // Status select
+  var statusSel = document.getElementById('statusSelect');
+  if (statusSel) {
+    statusSel.addEventListener('change', function() {
+      mutate({ status: statusSel.value });
+    });
+  }
+
+  // Header buttons
+  var btnNew = document.getElementById('btnNew');
+  if (btnNew) btnNew.addEventListener('click', newQuote);
+
+  var btnSave = document.getElementById('btnSave');
+  if (btnSave) btnSave.addEventListener('click', saveQuote);
+
+  var btnCopyWA = document.getElementById('btnCopyWA');
+  if (btnCopyWA) btnCopyWA.addEventListener('click', function() { copyText('', 'WhatsApp'); });
+
+  var btnCopyEmail = document.getElementById('btnCopyEmail');
+  if (btnCopyEmail) btnCopyEmail.addEventListener('click', function() { copyText('', 'Email'); });
+
+  var btnCopyNotion = document.getElementById('btnCopyNotion');
+  if (btnCopyNotion) btnCopyNotion.addEventListener('click', function() { copyText('', 'Notion'); });
+
+  // Customer card fields — live update state without full re-render for text inputs
+  var fieldMap = {
+    'f-customerName':    function(v) { state.customerName = v; },
+    'f-contact':         function(v) { state.contact = v; },
+    'f-passengerCount':  function(v) { state.passengerCount = parseInt(v, 10) || 0; },
+    'f-luggageCount':    function(v) { state.luggageCount = parseInt(v, 10) || 0; },
+    'f-internalNotes':   function(v) { state.internalNotes = v; },
+  };
+  Object.keys(fieldMap).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', function() { fieldMap[id](el.value); });
+    el.addEventListener('change', function() { fieldMap[id](el.value); render(); });
+  });
+
+  // Vehicle type select
+  var vehicleSel = document.getElementById('f-vehicleType');
+  if (vehicleSel) {
+    vehicleSel.addEventListener('change', function() {
+      mutate({ vehicleType: vehicleSel.value });
+    });
+  }
+
+  // Event delegation for data-action on the whole app
+  var app = document.getElementById('app');
+  if (!app) return;
+
+  app.addEventListener('click', function(e) {
+    var el = e.target.closest('[data-action]');
+    if (!el) return;
+    var action = el.getAttribute('data-action');
+    var legId = el.getAttribute('data-leg');
+
+    if (action === 'addLeg') {
+      var cat = el.getAttribute('data-cat') || 'transfer';
+      addLeg(cat);
+    } else if (action === 'removeLeg') {
+      removeLeg(legId);
+    } else if (action === 'dupLeg') {
+      dupLeg(legId);
+    } else if (action === 'toggleDriver') {
+      var leg = state.legs.find(function(l) { return l.id === legId; });
+      if (leg) updateLeg(legId, { hasDriver: !leg.hasDriver });
+    } else if (action === 'toggleCarStay') {
+      var leg2 = state.legs.find(function(l) { return l.id === legId; });
+      if (leg2) updateLeg(legId, { hasCarStay: !leg2.hasCarStay });
+    } else if (action === 'manualDistance') {
+      updateLeg(legId, { manualDistance: true });
+    } else if (action === 'autoDistance') {
+      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0 });
+    } else if (action === 'removeStop') {
+      var stopIdx = parseInt(el.getAttribute('data-stop'), 10);
+      var legObj = state.legs.find(function(l) { return l.id === legId; });
+      if (legObj) {
+        var stops = legObj.stopovers.slice();
+        stops.splice(stopIdx, 1);
+        updateLeg(legId, { stopovers: stops });
+      }
+    } else if (action === 'setCurrency') {
+      mutate({ outputCurrency: el.getAttribute('data-val') });
+    }
+  });
+
+  // Leg field change delegation
+  app.addEventListener('change', function(e) {
+    var el = e.target;
+    var legId = el.getAttribute('data-leg');
+    var field = el.getAttribute('data-field');
+    if (!legId || !field) return;
+
+    var val;
+    if (el.type === 'checkbox') {
+      val = el.checked;
+    } else if (el.type === 'number') {
+      val = parseFloat(el.value) || 0;
+    } else {
+      val = el.value;
+    }
+    var patch = {};
+    patch[field] = val;
+    updateLeg(legId, patch);
+  });
+
+  // Add stopover on Enter/blur
+  app.addEventListener('keydown', function(e) {
+    var el = e.target;
+    if (el.getAttribute('data-action') !== 'addStop') return;
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var legId = el.getAttribute('data-leg');
+    var val = el.value.trim();
+    if (!val) return;
+    var legObj = state.legs.find(function(l) { return l.id === legId; });
+    if (legObj) {
+      var stops = legObj.stopovers.concat([val]);
+      updateLeg(legId, { stopovers: stops });
+    }
+  });
+
+  app.addEventListener('blur', function(e) {
+    var el = e.target;
+    if (el.getAttribute('data-action') !== 'addStop') return;
+    var legId = el.getAttribute('data-leg');
+    var val = el.value.trim();
+    if (!val) return;
+    var legObj = state.legs.find(function(l) { return l.id === legId; });
+    if (legObj) {
+      var stops = legObj.stopovers.concat([val]);
+      updateLeg(legId, { stopovers: stops });
+    }
+  }, true);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+render();
 </script>
 </body>
 </html>
