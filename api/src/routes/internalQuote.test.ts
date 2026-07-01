@@ -115,6 +115,33 @@ describe('internal quoting tool route', () => {
     expect(res.status).toBe(400); // stay-day-only → no travel leg
   });
 
+  const patch = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
+    const app = createApp();
+    const a = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const b = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'van', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const list = await (await app.request('/admin/quote/list')).json();
+    expect(list.quotes[0].id).toBe(b.id); // newest first
+    await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
+    const won = await (await app.request('/admin/quote/list?status=won')).json();
+    expect(won.quotes.map((q: { id: string }) => q.id)).toEqual([a.id]);
+  });
+
+  it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
+    const app = createApp();
+    const q = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
+    expect(sent.status).toBe('sent');
+    expect(sent.sentAt).not.toBeNull();
+    const lost = await (await patch(app, `/admin/quote/${q.id}`, { status: 'lost', lostReason: 'too expensive' })).json();
+    expect(lost.decidedAt).not.toBeNull();
+    expect(lost.lostReason).toBe('too expensive');
+    expect((await patch(app, '/admin/quote/00000000-0000-0000-0000-000000000000', { status: 'won' })).status).toBe(404);
+    expect((await patch(app, `/admin/quote/${q.id}`, { status: 'bogus' })).status).toBe(400);
+  });
+
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
     const { InMemoryQuoteRepo } = await import('../db/quoteRepo');
     const app = createApp({ quotes: new InMemoryQuoteRepo() });

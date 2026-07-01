@@ -6,6 +6,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
+import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 
 // The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
@@ -283,10 +284,37 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: strin
     }
   });
 
+  // List quotes (newest first), optionally filtered by status/product/from/to.
+  // MUST be registered before /:id so that /list doesn't match the param route.
+  r.get('/list', async (c) => {
+    const status = c.req.query('status') as QuoteStatus | undefined;
+    if (status && !QUOTE_STATUSES.includes(status)) return c.json({ error: 'bad_status' }, 400);
+    const quotesList = await deps.quotes.list({
+      status,
+      product: c.req.query('product') || undefined,
+      from: c.req.query('from') || undefined,
+      to: c.req.query('to') || undefined,
+    });
+    return c.json({ quotes: quotesList });
+  });
+
   // Full quote (incl. request/result JSON) for re-opening in the tool.
   r.get('/:id', async (c) => {
     const q = await deps.quotes.get(c.req.param('id'));
     return q ? c.json(q) : c.json({ error: 'not_found' }, 404);
+  });
+
+  // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
+  r.patch('/:id', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { status?: string; lostReason?: string | null; notes?: string | null } | null;
+    if (!body) return c.json({ error: 'bad_request' }, 400);
+    if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
+    const updated = await deps.quotes.patch(c.req.param('id'), {
+      status: body.status as QuoteStatus | undefined,
+      lostReason: body.lostReason,
+      notes: body.notes,
+    });
+    return updated ? c.json(updated) : c.json({ error: 'not_found' }, 404);
   });
 
   return r;
