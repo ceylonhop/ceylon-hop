@@ -9,7 +9,7 @@ type App = ReturnType<typeof createApp>;
 function post(app: App, path: string, body: unknown) {
   return app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 }
-const leg = (o: Record<string, unknown>) => ({ type: 'transfer', from: 'A', to: 'B', ...o });
+const leg = (o: Record<string, unknown>) => ({ category: 'transfer', from: 'A', to: 'B', ...o });
 
 describe('internal quoting tool route', () => {
   it('GET /places filters the offline known-place list', async () => {
@@ -37,7 +37,7 @@ describe('internal quoting tool route', () => {
 
   it('estimate prices a private leg from a manual km (80km car = 4048¢) + emits a WhatsApp draft', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      name: 'Test', product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [leg({ distanceKm: 80 })],
+      name: 'Test', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
     });
     expect(res.status).toBe(200);
     const d = await res.json();
@@ -52,7 +52,7 @@ describe('internal quoting tool route', () => {
 
   it('estimate auto-resolves the distance from known places when km is omitted', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ type: 'transfer', from: 'Colombo City', to: 'Kandy' }],
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy' }],
     });
     expect(res.status).toBe(200);
     expect((await res.json()).total.cents).toBeGreaterThan(0);
@@ -60,32 +60,32 @@ describe('internal quoting tool route', () => {
 
   it('estimate is 400 when distance is unknown and no manual km is given', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ type: 'transfer', from: 'Nowhereville', to: 'Kandy' }],
+      vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'Nowhereville', to: 'Kandy' }],
     });
     expect(res.status).toBe(400);
   });
 
   it('estimate is 400 with no legs', async () => {
-    const res = await post(createApp(), '/admin/quote/estimate', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [] });
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [] });
     expect(res.status).toBe(400);
   });
 
   it('estimate is 400 with only a stay day (no travel leg)', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      product: 'chauffeur', vehicle: 'car', pax: 1, bags: 0, legs: [{ type: 'stay_day', from: 'Kandy', to: '', date: '2026-02-15' }],
+      vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'stay_day', from: 'Kandy', to: '', date: '2026-02-15' }],
     });
     expect(res.status).toBe(400);
   });
 
-  it('a sightseeing leg type adds the $10 sightseeing extra vs a plain transfer', async () => {
-    const base = await (await post(createApp(), '/admin/quote/estimate', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
-    const withS = await (await post(createApp(), '/admin/quote/estimate', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ type: 'sightseeing', distanceKm: 80 })] })).json();
+  it('addSightseeingFee toggle adds the $10 sightseeing extra vs a plain transfer', async () => {
+    const base = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const withS = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80, addSightseeingFee: true })] })).json();
     expect(withS.total.cents).toBe(base.total.cents + 1000);
   });
 
   it('POST /save persists a priced quote and returns a Q- reference; total matches /estimate', async () => {
     const app = createApp();
-    const bodyReq = { name: 'Maya', contact: '+34600', product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [leg({ distanceKm: 80 })] };
+    const bodyReq = { name: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
     const est = await (await post(app, '/admin/quote/estimate', bodyReq)).json();
     const res = await post(app, '/admin/quote/save', bodyReq);
     expect(res.status).toBe(201);
@@ -101,7 +101,7 @@ describe('internal quoting tool route', () => {
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
     const app = createApp();
     const res = await post(app, '/admin/quote/save', {
-      product: 'private', vehicle: 'car', pax: 1, bags: 0, total: 999999, totalCents: 999999, legs: [leg({ distanceKm: 80 })],
+      vehicle: 'car', passengerCount: 1, luggageCount: 0, total: 999999, totalCents: 999999, legs: [leg({ distanceKm: 80 })],
     });
     const saved = await res.json();
     const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
@@ -110,7 +110,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save is 400 for an unpriceable trip (no travel leg)', async () => {
     const res = await post(createApp(), '/admin/quote/save', {
-      product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ type: 'stay_day', from: 'Kandy', to: '' }],
+      vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'stay_day', from: 'Kandy', to: '' }],
     });
     expect(res.status).toBe(400); // stay-day-only → no travel leg
   });
@@ -120,8 +120,8 @@ describe('internal quoting tool route', () => {
 
   it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
     const app = createApp();
-    const a = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
-    const b = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'van', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await app.request('/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
     await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
@@ -131,7 +131,7 @@ describe('internal quoting tool route', () => {
 
   it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
     const app = createApp();
-    const q = await (await post(app, '/admin/quote/save', { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
     const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
     expect(sent.status).toBe('sent');
     expect(sent.sentAt).not.toBeNull();
@@ -150,10 +150,10 @@ describe('internal quoting tool route', () => {
 
   it('chauffeur: stay days become idle days; amountDueNow is the capped deposit', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, legs: [
-        { type: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
-        { type: 'stay_day', from: 'Kandy', to: '', date: '2026-02-15' },
-        { type: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: '', date: '2026-02-15' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
       ],
     });
     expect(res.status).toBe(200);
@@ -161,6 +161,41 @@ describe('internal quoting tool route', () => {
     expect(d.product).toBe('chauffeur');
     expect(d.amountDueNow.cents).toBe(d.deposit.cents); // chauffeur pays the deposit now
     expect(d.deposit.cents).toBeLessThanOrEqual(5000); // cap
+  });
+
+  it('derives chauffeur when a leg has a stay day or a driver/car stay', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', date: '2026-02-15' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).product).toBe('chauffeur');
+  });
+
+  it('a plain transfer itinerary is private', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'van_6', passengerCount: 4, luggageCount: 4, legs: [{ category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+    });
+    const d = await res.json();
+    expect(d.product).toBe('private');
+    expect(d.total.cents).toBe(12782); // van 140km
+  });
+
+  it('a leg sightseeing/waiting toggle and safari_wait category add engine extras', async () => {
+    const base = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80 }] })).json();
+    const withFees = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, addSightseeingFee: true, addWaitingFee: true }] })).json();
+    expect(withFees.total.cents).toBe(base.total.cents + 1000 + 1000); // sightseeing $10 + waiting $10
+  });
+
+  it('gates van_9/van_14/custom vehicles until rates exist (400)', async () => {
+    for (const vehicle of ['van_9', 'van_14', 'custom']) {
+      const res = await post(createApp(), '/admin/quote/estimate', { vehicle, passengerCount: 6, luggageCount: 6, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80 }] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/rate/i);
+    }
   });
 });
 

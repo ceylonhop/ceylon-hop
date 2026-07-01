@@ -13,32 +13,39 @@ import type { QuoteRepo } from '../db/quoteRepo';
 // Read per-request so edits hot-reload in dev without a server restart.
 const toolHtml = (): string => readFileSync(fileURLToPath(new URL('./quote-tool.html', import.meta.url)), 'utf8');
 
-// Leg "types" the tool offers. `drives` = the vehicle actually moves that day (priced as a travel
-// leg); a stay day is an idle day for a chauffeur trip.
-const LEG_TYPES: Record<string, { drives: boolean; extra?: ExtraCode }> = {
+// Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
+const CATEGORIES: Record<string, { drives: boolean }> = {
   transfer: { drives: true },
-  train_support: { drives: true },
   airport: { drives: true },
-  sightseeing: { drives: true, extra: 'sightseeing' },
-  safari_wait: { drives: true, extra: 'safari-wait' },
+  train_support: { drives: true },
+  sightseeing: { drives: true },
+  safari_wait: { drives: true },
   stay_day: { drives: false },
 };
 
+// Tool vehicle tiers → engine vehicle class. Bigger tiers are gated until rates exist.
+const VEHICLE_MAP: Record<string, Vehicle | null> = {
+  car: 'car', van_6: 'van', van_9: null, van_14: null, custom: null,
+};
+
 interface ToolLeg {
-  type?: string;
+  category?: string;
   date?: string;
   from: string;
   to: string;
   distanceKm?: number;
-  sightseeing?: boolean;
-  waiting?: boolean;
+  addSightseeingFee?: boolean;
+  addWaitingFee?: boolean;
+  hasDriver?: boolean;
+  hasCarStay?: boolean;
 }
 interface ToolRequest {
   name?: string;
-  product: 'private' | 'chauffeur';
-  vehicle: Vehicle;
-  pax: number;
-  bags: number;
+  contact?: string;
+  notes?: string;
+  vehicle: string; // design tier id
+  passengerCount: number;
+  luggageCount: number;
   legs: ToolLeg[];
 }
 
@@ -58,7 +65,7 @@ async function resolveAndPrice(
   if (!body || !Array.isArray(body.legs) || body.legs.length === 0) {
     throw new PriceError('add at least one leg', 400);
   }
-  const driving = body.legs.filter((l) => LEG_TYPES[l.type || 'transfer']?.drives);
+  const driving = body.legs.filter(drives);
   if (driving.length === 0) {
     throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
   }
@@ -73,6 +80,7 @@ async function resolveAndPrice(
     const req = toEngineRequest(body);
     return { req, result: quote(req) };
   } catch (e) {
+    if (e instanceof PriceError) throw e;
     throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
   }
 }
@@ -82,13 +90,18 @@ const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
 
+function drives(l: ToolLeg): boolean {
+  return CATEGORIES[l.category || 'transfer']?.drives ?? true;
+}
+function isChauffeur(legs: ToolLeg[]): boolean {
+  return legs.some((l) => (l.category || 'transfer') === 'stay_day' || l.hasDriver || l.hasCarStay);
+}
 function collectExtras(legs: ToolLeg[]): ExtraCode[] {
   const out: ExtraCode[] = [];
   for (const l of legs) {
-    const t = LEG_TYPES[l.type || 'transfer'];
-    if (t?.extra) out.push(t.extra);
-    if (l.sightseeing) out.push('sightseeing');
-    if (l.waiting) out.push('waiting');
+    if (l.addSightseeingFee) out.push('sightseeing');
+    if (l.addWaitingFee) out.push('waiting');
+    if ((l.category || 'transfer') === 'safari_wait') out.push('safari-wait');
   }
   return out;
 }
@@ -96,34 +109,23 @@ function collectExtras(legs: ToolLeg[]): ExtraCode[] {
 // Map the tool's typed itinerary to the engine's QuoteRequest. Driving legs price/travel;
 // stay days become idle days for a chauffeur trip (the engine derives idle days from the date span).
 function toEngineRequest(req: ToolRequest): QuoteRequest {
+  const vehicle = VEHICLE_MAP[req.vehicle];
+  if (!vehicle) throw new PriceError(`no rate is set for "${req.vehicle}" yet — pick Car or Van 6, or add its rate`, 400);
   const extras = collectExtras(req.legs);
-  const driving = req.legs.filter((l) => LEG_TYPES[l.type || 'transfer']?.drives);
-  const dated = req.legs.map((l) => l.date).filter(Boolean) as string[];
-
-  if (req.product === 'chauffeur') {
-    if (dated.length < 1) throw new Error('chauffeur needs dates on the legs (to count the days)');
+  const driving = req.legs.filter(drives);
+  if (isChauffeur(req.legs)) {
+    const dated = req.legs.map((l) => l.date).filter(Boolean) as string[];
+    if (dated.length < 1) throw new PriceError('chauffeur trips need dates on the legs (to count the days)', 400);
     const sorted = [...dated].sort();
     return {
-      product: 'chauffeur',
-      vehicle: req.vehicle,
-      firstDate: sorted[0],
-      lastDate: sorted[sorted.length - 1],
-      travelDays: driving.map((l) => ({
-        date: l.date || sorted[0],
-        from: l.from,
-        to: l.to,
-        distanceKm: Number(l.distanceKm),
-      })),
+      product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
+      travelDays: driving.map((l) => ({ date: l.date || sorted[0], from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
       extras,
     };
   }
   return {
-    product: 'private',
-    vehicle: req.vehicle,
-    pax: req.pax,
-    bags: req.bags,
-    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
-    extras,
+    product: 'private', vehicle, pax: req.passengerCount, bags: req.luggageCount,
+    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras,
   };
 }
 
@@ -144,13 +146,13 @@ function shape(result: QuoteResult) {
 }
 
 function legLabel(l: ToolLeg): string {
-  return LEG_TYPES[l.type || 'transfer']?.drives ? `${l.from} → ${l.to}` : `Stay in ${l.from || l.to}`;
+  return drives(l) ? `${l.from} → ${l.to}` : `Stay in ${l.from || l.to}`;
 }
 
 function whatsappDraft(name: string, req: ToolRequest, result: QuoteResult): string {
-  
+
   const lines = req.legs
-    .filter((l) => LEG_TYPES[l.type || 'transfer']?.drives)
+    .filter(drives)
     .map((l) => `${l.date ? l.date + ' — ' : ''}${legLabel(l)}`)
     .join('\n');
   const due = result.product === 'chauffeur' ? `\nDeposit to confirm: ${lkr(result.amountDueNowCents)} (balance on/after the trip).` : '';
@@ -165,9 +167,9 @@ function whatsappDraft(name: string, req: ToolRequest, result: QuoteResult): str
 }
 
 function emailDraft(name: string, req: ToolRequest, result: QuoteResult): string {
-  
+
   const lines = req.legs
-    .filter((l) => LEG_TYPES[l.type || 'transfer']?.drives)
+    .filter(drives)
     .map((l) => `  ${l.date ? l.date + '   ' : ''}${legLabel(l)}`)
     .join('\n');
   return (
@@ -182,9 +184,9 @@ function emailDraft(name: string, req: ToolRequest, result: QuoteResult): string
 }
 
 function notionDraft(req: ToolRequest, result: QuoteResult): string {
-  
+
   const body = req.legs
-    .filter((l) => LEG_TYPES[l.type || 'transfer']?.drives)
+    .filter(drives)
     .map((l) => `| ${l.date || ''} | ${legLabel(l)} | |`)
     .join('\n');
   return (
