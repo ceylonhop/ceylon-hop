@@ -16,6 +16,7 @@ import { internalQuoteRoutes } from './routes/internalQuote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
+import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
@@ -30,6 +31,7 @@ export interface AppDeps {
   rideOps?: RideOpsRepo;
   coordinators?: CoordinatorRepo;
   notificationLog?: NotificationLogRepo;
+  quotes?: QuoteRepo;
   adminApiKey?: string;
   auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
   allowedOrigins?: string[];
@@ -48,6 +50,7 @@ export function createApp(deps: AppDeps = {}) {
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
   const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
+  const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
@@ -87,7 +90,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
-  app.route('/admin/quote', internalQuoteRoutes({ maps, googleKey: config.GOOGLE_MAPS_API_KEY })); // internal quoting tool — see I11: add auth before prod
+  app.route('/admin/quote', internalQuoteRoutes({ maps, googleKey: config.GOOGLE_MAPS_API_KEY, quotes })); // internal quoting tool
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
   return app;
 }

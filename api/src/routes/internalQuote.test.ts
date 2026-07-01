@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { createApp } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
 
 type App = ReturnType<typeof createApp>;
 function post(app: App, path: string, body: unknown) {
@@ -82,6 +83,13 @@ describe('internal quoting tool route', () => {
     expect(withS.total.cents).toBe(base.total.cents + 1000);
   });
 
+  it('accepts an injected QuoteRepo without breaking existing routes', async () => {
+    const { InMemoryQuoteRepo } = await import('../db/quoteRepo');
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    const res = await app.request('/admin/quote/places?q=kand');
+    expect((await res.json()).places).toEqual(['Kandy']);
+  });
+
   it('chauffeur: stay days become idle days; amountDueNow is the capped deposit', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, legs: [
@@ -105,7 +113,7 @@ describe('quoting tool — Google Places path (mocked fetch)', () => {
   });
   const appWithKey = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), googleKey: 'test-key' }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), googleKey: 'test-key', quotes: new InMemoryQuoteRepo() }));
     return a;
   };
 

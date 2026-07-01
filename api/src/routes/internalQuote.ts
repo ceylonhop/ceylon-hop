@@ -6,6 +6,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
+import type { QuoteRepo } from '../db/quoteRepo';
 
 // The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
 // Read per-request so edits hot-reload in dev without a server restart.
@@ -178,7 +179,7 @@ async function suggestPlaces(q: string, googleKey?: string): Promise<string[]> {
   return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string }) {
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; googleKey?: string; quotes: QuoteRepo }) {
   const r = new Hono();
 
   r.get('/', (c) => c.html(toolHtml()));
