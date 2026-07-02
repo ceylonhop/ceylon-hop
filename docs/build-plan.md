@@ -501,6 +501,12 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   (from corridor/`REAL_KM` data), 301-map the old URLs, and ship the missing
   `sitemap.xml`/`robots.txt`/`404.html`/`CNAME` + sitewide canonical/OG + structured data
   before the apex cutover. **Full analysis + action plan: [`seo-migration-plan.md`](./seo-migration-plan.md).**
+- **M17 — Observability & alerting.** Production today has **no error tracking, uptime alerting,
+  or payment-failure alerts** — just `console.error` to ephemeral Render logs. For a payments
+  business that's the main launch risk. Right-sized plan (Sentry + uptime monitor + a payments
+  watchdog for webhook failures / stuck `payment_pending` / paid-without-confirmation, alerting to
+  WhatsApp/Slack). **Strongly recommended before taking real payments. Full plan:
+  [`observability-plan.md`](./observability-plan.md).**
 
 ---
 

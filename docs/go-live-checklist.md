@@ -52,6 +52,8 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Confirm the front-end API URL:** `window.CEYLON_HOP_API` in `booking.html` defaults to the Render URL — update if the API moves to a custom domain.
 - [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
+- [ ] **Observability & alerting (M17) — strongly recommended before taking real payments.** Production today has **no error tracking, uptime alerting, or payment-failure alerts** (just `console.error` to ephemeral Render logs). At minimum wire: error tracking (Sentry, API + front-end), an uptime monitor on `/health` with alerts, and a payments watchdog (webhook failure / stuck `payment_pending` / paid-without-confirmation → WhatsApp/Slack). Full plan: [`observability-plan.md`](./observability-plan.md).
+
 ## 4. Verify after switching (smoke test on production)
 
 - [ ] A real (small) booking on `ceylonhop.com` completes a **live** PayHere payment → booking goes `paid`.
