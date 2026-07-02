@@ -2320,8 +2320,53 @@ function render() {
 
   ].join('');
 
+  // V19: render() replaces #app.innerHTML wholesale, which destroys whatever
+  // input the operator is currently typing into. A background render (an earlier
+  // leg's auto-distance resolving, or refreshEstimate landing) would otherwise
+  // wipe the destination the operator is entering on a LATER leg — the "distance
+  // stops working after the first leg" symptom. Snapshot the focused field's
+  // in-progress text + caret before the swap and restore them after.
+  var _focusSnap = captureEditorFocus();
   document.getElementById('app').innerHTML = html;
   attachEventListeners();
+  restoreEditorFocus(_focusSnap);
+}
+
+// Capture the currently-focused editor input so a full re-render doesn't lose
+// the operator's typing. Identified by data-leg+data-field (leg place/distance
+// inputs) or element id (customer fields). Returns null when focus is elsewhere.
+function captureEditorFocus() {
+  var el = document.activeElement;
+  if (!el || typeof el.matches !== 'function') return null;
+  if (!el.matches('#app input, #app textarea')) return null;
+  var leg = el.getAttribute('data-leg');
+  var field = el.getAttribute('data-field');
+  var id = el.id || null;
+  if (!leg && !id) return null;
+  var snap = { leg: leg, field: field, id: id, value: el.value, start: null, end: null };
+  // selectionStart throws on some input types (e.g. type=number/date) — guard it.
+  try { snap.start = el.selectionStart; snap.end = el.selectionEnd; } catch (e) {}
+  return snap;
+}
+
+function restoreEditorFocus(snap) {
+  if (!snap) return;
+  var sel;
+  if (snap.leg && snap.field) {
+    sel = '#app [data-leg="' + snap.leg + '"][data-field="' + snap.field + '"]';
+  } else if (snap.id) {
+    sel = '#app #' + snap.id;
+  } else {
+    return;
+  }
+  var el = document.querySelector(sel);
+  if (!el) return;
+  // Restore the operator's in-progress text (state may lag a keystroke behind).
+  if (typeof snap.value === 'string' && el.value !== snap.value) el.value = snap.value;
+  el.focus();
+  if (snap.start != null) {
+    try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
+  }
 }
 
 // ── Event delegation ──────────────────────────────────────────────────────────
