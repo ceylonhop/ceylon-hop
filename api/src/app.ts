@@ -12,6 +12,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { quoteRoutes } from './routes/quote';
+import { internalQuoteRoutes } from './routes/internalQuote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
@@ -86,6 +87,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
+  app.route('/admin/quote', internalQuoteRoutes({ maps, googleKey: config.GOOGLE_MAPS_API_KEY })); // internal quoting tool — see I11: add auth before prod
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
   return app;
 }
