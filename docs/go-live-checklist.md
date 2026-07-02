@@ -33,6 +33,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] (optional) real `GOOGLE_MAPS_API_KEY`
 - [ ] strong `ADMIN_API_KEY` set (ops endpoints are locked out until then) — **also mirror it as a GitHub Actions repo secret `ADMIN_API_KEY`** so the `scheduled-notifications` workflow (daily reminders + review requests) can authenticate
+- [ ] `ADMIN_API_KEY` also gates the internal quoting tool (`/admin/quote/*`), which stores customer PII and exposes cost/margin. Unlike the ops endpoints (which fail closed), the quoting tool fails OPEN when the key is unset — it MUST be set before real traffic.
 
 ## 2. DNS / external consoles
 

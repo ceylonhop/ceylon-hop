@@ -1,13 +1,15 @@
 import type { Context, Next } from 'hono';
 
 // Per-IP sliding-window limiter for write endpoints. In-memory is fine: the API runs as a
-// single instance. Only POST requests count (reads/preflight pass through). Behind Render
-// the real client IP is the first entry of x-forwarded-for.
-export function rateLimit(opts: { windowMs: number; max: number }) {
+// single instance. By default only POST requests count (reads/preflight pass through); pass
+// `methods` to also throttle GETs (e.g. billed read endpoints like autocomplete). Behind
+// Render the real client IP is the first entry of x-forwarded-for.
+export function rateLimit(opts: { windowMs: number; max: number; methods?: string[] }) {
   const hits = new Map<string, number[]>();
+  const methods = opts.methods ?? ['POST'];
 
   return async (c: Context, next: Next) => {
-    if (c.req.method !== 'POST') return next();
+    if (!methods.includes(c.req.method)) return next();
 
     const now = Date.now();
     const fwd = c.req.header('x-forwarded-for') ?? '';

@@ -36,19 +36,153 @@ describe('quote()', () => {
     expect(r.marginEstimateCents).toBe(43020);
   });
 
+  it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withExtras = quote({ ...base, extras: ['sightseeing', 'waiting'] });
+    const withoutExtras = quote(base);
+    expect(withExtras.totalCents).toBe(withoutExtras.totalCents);
+    expect(withExtras.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(withExtras.warnings.some((w) => w.includes('waiting') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: luggage is still charged (not an included extra)', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const withLuggage = quote({ ...base, extras: ['luggage'] });
+    expect(withLuggage.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+  });
+
+  it('chauffeur: sightseeing + luggage → only luggage added, sightseeing warned as included', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['sightseeing', 'luggage'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+    expect(r.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: safari-wait is included and not charged', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['safari-wait'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents);
+    expect(r.warnings.some((w) => w.includes('safari-wait') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
+    expect(r.totalCents).toBe(4048 + 1000);
+    expect(r.warnings.some((w) => w.includes('included in chauffeur day rate'))).toBe(false);
+  });
+
   it('shared total (Hakan $22 incl pickup)', () => {
     const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: true }] });
     expect(r.totalCents).toBe(2200);
   });
 
-  it('throws TOO_BIG when private pax exceeds van', () => {
-    expect(() => quote({ product: 'private', vehicle: 'van', pax: 7, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
+  it('throws TOO_BIG only when pax exceeds custom capacity (>99)', () => {
+    expect(() => quote({ product: 'private', vehicle: 'custom', pax: 120, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
   });
 
   it('never undercharges: car requested for 6 pax is priced as the required van', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 6, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }] });
     expect(r.totalCents).toBe(9130); // 100km → bill 110km × van 83¢ = 9130, NOT car 46¢
     expect(r.warnings.some((w) => w.includes('vehicle set to van'))).toBe(true);
+  });
+
+  // New van9 / van14 / custom tier tests
+  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 55¢ = 8470¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(8470); // 154km × 55¢ (owner-provided rate)
+    expect(r.marginEstimateCents).toBe(8470 - Math.round(154 * 44)); // 154 × 44¢ cost
+  });
+
+  it('van14: 140km private → 154 billableKm × 130¢ = 20020¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(20020); // 154km × 130¢
+  });
+
+  it('custom: 140km private → 154 billableKm × 175¢ = 26950¢', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 20, bags: 15, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // 154km × 175¢
+  });
+
+  it('van9: 20km private → floor 5000¢ applies (raw 22km × 55¢ = 1210 < 5000)', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
+    expect(r.totalCents).toBe(5000); // floor
+    expect(r.marginEstimateCents).toBe(5000 - Math.round(22 * 44));
+  });
+
+  it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(8470); // van9 price ($0.55/km)
+    expect(r.warnings.some((w) => w.includes('vehicle set to van9'))).toBe(true);
+  });
+
+  it('anti-tamper: custom requested for 2 pax is priced as custom (no downgrade)', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 2, bags: 0, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // custom 154km × 175¢
+    expect(r.warnings.filter((w) => w.includes('vehicle set to'))).toHaveLength(0); // no warning — custom is already >= required (car)
+  });
+
+  // GL-1d: van14/custom have no fixed owner rate — they are custom-priced per quote
+  // (owner decision 2026-07-02). The operator supplies customPerKmCents; the rate-card
+  // values remain only prefill defaults.
+  describe('customPerKmCents (van14/custom are custom-priced per quote)', () => {
+    it('van14 private: overridden rate replaces the rate-card per-km', () => {
+      const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(154 * 90); // 13860, not the placeholder 130¢
+      // margin keeps the 25% markup model: cost/km = round(override / 1.25)
+      expect(r.marginEstimateCents).toBe(154 * 90 - Math.round(154 * Math.round(90 / 1.25)));
+    });
+
+    it('custom chauffeur: overridden rate drives the distance charge', () => {
+      const r = quote({
+        product: 'chauffeur', vehicle: 'custom', firstDate: '2026-08-01', lastDate: '2026-08-02',
+        travelDays: [
+          { date: '2026-08-01', from: 'A', to: 'B', distanceKm: 100 },
+          { date: '2026-08-02', from: 'B', to: 'C', distanceKm: 50 },
+        ],
+        customPerKmCents: 200,
+      });
+      // 2 days × $35 + billable 165km (150×1.1) × $2.00 = 7000 + 33000
+      expect(r.totalCents).toBe(7000 + 33000);
+    });
+
+    it('floor still applies under an overridden rate', () => {
+      const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 10 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(8500); // 11km × 90¢ = 990 < van14 floor $85
+    });
+
+    it('throws when the priced vehicle is not van14/custom', () => {
+      expect(() => quote({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }], customPerKmCents: 90 }))
+        .toThrow('CUSTOM_RATE_ONLY_FOR_CUSTOM_TIERS');
+    });
+
+    it('anti-tamper upgrade INTO van14 keeps the override (rate set for the trip, tier is capacity)', () => {
+      const r = quote({ product: 'private', vehicle: 'van9', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(154 * 90);
+      expect(r.warnings.some((w) => w.includes('vehicle set to van14'))).toBe(true);
+    });
   });
 
   it('throws NO_LEGS on an empty private request', () => {

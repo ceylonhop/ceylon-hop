@@ -16,6 +16,7 @@ import { internalQuoteRoutes } from './routes/internalQuote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
+import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
@@ -30,6 +31,7 @@ export interface AppDeps {
   rideOps?: RideOpsRepo;
   coordinators?: CoordinatorRepo;
   notificationLog?: NotificationLogRepo;
+  quotes?: QuoteRepo;
   adminApiKey?: string;
   auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
   allowedOrigins?: string[];
@@ -48,6 +50,7 @@ export function createApp(deps: AppDeps = {}) {
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
   const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
+  const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
@@ -75,6 +78,14 @@ export function createApp(deps: AppDeps = {}) {
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
   app.use('/quote', rateLimit(rl));
+  // /admin/quote/* fronts billed Google APIs (GET /places, POST /distance), 2-3 pricing
+  // passes per /estimate, and DB writes on /save — its admin-key auth only enforces when
+  // configured, so this is a hard backstop. 4x the booking cap: autocomplete legitimately
+  // bursts GETs while typing. Subpaths only — Hono's '/admin/quote/*' also matches the bare
+  // parent path, so we explicitly pass the exact shell path through untouched, keeping
+  // GET /admin/quote (the HTML shell) unthrottled, intentionally.
+  const adminQuoteLimiter = rateLimit({ ...rl, max: rl.max * 4, methods: ['POST', 'GET'] });
+  app.use('/admin/quote/*', (c, next) => (c.req.path === '/admin/quote' ? next() : adminQuoteLimiter(c, next)));
 
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
@@ -87,7 +98,8 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
-  app.route('/admin/quote', internalQuoteRoutes({ maps, googleKey: config.GOOGLE_MAPS_API_KEY })); // internal quoting tool — see I11: add auth before prod
+  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
+  app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
   app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
   return app;
 }

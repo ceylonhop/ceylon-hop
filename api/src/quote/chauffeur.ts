@@ -14,6 +14,8 @@ export function quoteChauffeur(input: {
   firstDate: string;
   lastDate: string;
   travelDays: ChauffeurTravelDay[];
+  // GL-1d: operator's custom rate for van14/custom — validated by engine.ts.
+  customPerKmCents?: number;
 }): { lineItems: LineItem[]; subtotalCents: number; meta: { days: number; idleDays: number; travelKm: number; idleKm: number; billableKm: number } } {
   const { vehicle, firstDate, lastDate, travelDays } = input;
   const days = Math.max(1, dayNumber(lastDate) - dayNumber(firstDate) + 1);
@@ -24,7 +26,7 @@ export function quoteChauffeur(input: {
   const bill = billableKm(travelKm) + idleKm;
 
   const dayCharge = days * RATE_CARD.chauffeur.dayRateCents;
-  const distanceCharge = Math.round(bill * RATE_CARD.perKmCents[vehicle]);
+  const distanceCharge = Math.round(bill * (input.customPerKmCents ?? RATE_CARD.perKmCents[vehicle]));
 
   const lineItems: LineItem[] = [
     { label: `Chauffeur day rate — ${days} day(s)`, amountCents: dayCharge },

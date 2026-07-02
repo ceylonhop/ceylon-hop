@@ -47,6 +47,44 @@ describe('rate limiting (booking writes)', () => {
   });
 });
 
+describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', () => {
+  it('GET /admin/quote/places 429s past 4x the configured max (autocomplete bursts GETs)', async () => {
+    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 } }); // effective GET/POST cap on /admin/quote/* = 8
+    const hit = (i: number) =>
+      app.request(`/admin/quote/places?q=kand${i}`, { headers: { 'x-forwarded-for': '5.5.5.5' } });
+    for (let i = 0; i < 8; i++) {
+      expect((await hit(i)).status).toBe(200);
+    }
+    const blocked = await hit(8);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('retry-after')).toBeTruthy();
+    expect((await blocked.json()).error).toBe('rate_limited');
+  });
+
+  it('POST /admin/quote/estimate 429s past 4x the configured max', async () => {
+    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } }); // effective cap = 4
+    const body = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 10 }] };
+    const hit = () =>
+      app.request('/admin/quote/estimate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '6.6.6.6' },
+        body: JSON.stringify(body),
+      });
+    for (let i = 0; i < 4; i++) {
+      expect((await hit()).status).toBe(200);
+    }
+    expect((await hit()).status).toBe(429);
+  });
+
+  it('GET /admin/quote (the HTML shell) is NOT throttled — only subpaths match', async () => {
+    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } });
+    for (let i = 0; i < 10; i++) {
+      const r = await app.request('/admin/quote', { headers: { 'x-forwarded-for': '7.7.7.7' } });
+      expect(r.status).toBe(200);
+    }
+  });
+});
+
 describe('CORS allow-list', () => {
   it('reflects an allowed origin', async () => {
     const app = createApp({ allowedOrigins: ['https://ceylonhop.github.io'] });

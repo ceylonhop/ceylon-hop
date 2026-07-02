@@ -54,7 +54,7 @@ record why a lost quote was lost.
 | `currency` | text notNull | ISO code (`USD`) |
 | `rate_card_version` | text notNull | which rate card priced it (freeze context) |
 | `margin_cents` | integer nullable | engine margin estimate at quote time |
-| `request_json` | jsonb notNull | the engine `QuoteRequest` verbatim |
+| `request_json` | jsonb notNull | `{ tool, engine }` — `tool` is the Zod-validated `ToolRequest` payload (incl. stopovers) for reopening the draft in the UI; `engine` is the engine `QuoteRequest` verbatim |
 | `result_json` | jsonb notNull | the engine `QuoteResult` verbatim (line items, deposit, …) |
 | `converted_booking_id` | uuid nullable → bookings.id | set when a won quote becomes a booking (population deferred) |
 | `notes` | text nullable | free notes |
@@ -64,8 +64,12 @@ record why a lost quote was lost.
 | `decided_at` | timestamptz nullable | set on `→ won/lost/expired` |
 
 Notes:
-- `request_json` / `result_json` store the exact engine I/O so a quote is replayable and
-  the quoted price is frozen even if the rate card changes.
+- `request_json` stores `{ tool, engine }`: `tool` is the validated tool payload (so the UI
+  can reopen the exact draft, stopovers included) and `engine` is the engine `QuoteRequest`
+  verbatim (so the quote is replayable and the quoted price is frozen even if the rate card
+  changes). `result_json` stores the engine `QuoteResult` verbatim, unchanged.
+- `/save` validates the incoming body via Zod (`ToolRequestSchema`) before pricing — malformed
+  payloads 400 with a human-readable message rather than reaching the engine.
 - `reference` is generated server-side (short, unambiguous alphabet).
 - No FK to `customers` — ops leads are lightweight; a customer row is only created if they
   actually book. `converted_booking_id` is the eventual bridge.
@@ -145,3 +149,4 @@ Follows the "prove red → green" contract. Coverage:
   pricing logic is validated through the tool.
 - Lost-reason enum + conversion dashboard.
 - Auto-link won quote → booking (populate `converted_booking_id`).
+- Prod MUST set ADMIN_API_KEY (auth enforced only when configured) — added to the go-live checklist.

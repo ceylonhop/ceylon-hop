@@ -3,6 +3,9 @@ import { z } from 'zod';
 
 const Env = z.object({
   PORT: z.coerce.number().default(8787),
+  // Render sets NODE_ENV=production. Gates fail-open conveniences (e.g. the quoting tool
+  // allowing keyless access in dev) — anything reading this must fail CLOSED in production.
+  NODE_ENV: z.string().default('development'),
   DATABASE_URL: z.string().optional(),
   DATABASE_URL_TEST: z.string().optional(),
   ADMIN_API_KEY: z.string().default(''),
