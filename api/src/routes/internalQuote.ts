@@ -50,7 +50,8 @@ const VEHICLE_MAP: Record<string, Vehicle | null> = {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ToolLegSchema = z.object({
   category: z.enum(['transfer', 'airport', 'train_support', 'sightseeing', 'safari_wait', 'stay_day']).optional(),
-  date: z.string().regex(ISO_DATE, 'date must be YYYY-MM-DD').optional(),
+  // The tool sends date:'' for undated legs — treat empty as absent, not invalid.
+  date: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(ISO_DATE, 'date must be YYYY-MM-DD').optional()),
   from: z.string(),
   to: z.string(),
   distanceKm: z.number().min(0).optional(),
@@ -192,7 +193,8 @@ function shape(result: QuoteResult) {
     amountDueNow: money(result.amountDueNowCents),
     margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents),
     warnings: result.warnings,
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents) })),
+    // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
+    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: li.meta })),
   };
 }
 

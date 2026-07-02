@@ -458,6 +458,8 @@ var settingsOpen = false;
 var lastEstimate = null;   // last successful /estimate response
 var lastEstimateError = null; // string | null
 var _estimateTimer = null;
+// V8: monotonic sequence so a slow /estimate response can't overwrite a newer one.
+var _estimateSeq = 0;
 
 // All vehicle tiers have rates — no gating
 var GATED_VEHICLES = {};
@@ -470,13 +472,26 @@ var VEHICLE_LABELS = {
   custom: 'Custom',
 };
 
-// Vehicle capacity table for client-side flags
-var VEHICLE_CAPS = {
-  car:    { pax: 3,  bags: 3  },
-  van_6:  { pax: 6,  bags: 5  },
-  van_9:  { pax: 9,  bags: 8  },
-  van_14: { pax: 14, bags: 12 },
+// V12: map tool vehicle ids → engine rate-card tiers so caps come from server truth.
+var VEHICLE_ENGINE_TIER = {
+  car:    'car',
+  van_6:  'van',
+  van_9:  'van9',
+  van_14: 'van14',
+  custom: 'custom',
 };
+
+// V12: derive { pax, bags } caps from the cached rate-card. Returns null until the
+// rate card has loaded (so we never flag against stale defaults) and for 'custom'
+// (exempt from the capacity flag; its caps are 99/99 anyway).
+function vehicleCaps(toolId) {
+  if (!rateCard || !rateCard.vehicle) return null;
+  if (toolId === 'custom') return null;
+  var tier = VEHICLE_ENGINE_TIER[toolId];
+  var v = tier ? rateCard.vehicle[tier] : null;
+  if (!v) return null;
+  return { pax: v.maxPax, bags: v.maxBags };
+}
 
 // Driving categories (for flag computation)
 var DRIVING_CATS = {
@@ -493,6 +508,8 @@ function refreshEstimate() {
 
 async function _runEstimate() {
   var st = state;
+  // V8: claim a sequence number; a later _runEstimate bumps it, invalidating us.
+  var seq = ++_estimateSeq;
 
   // Gate: gated vehicle types — skip server call entirely
   if (GATED_VEHICLES[st.vehicleType]) {
@@ -513,6 +530,7 @@ async function _runEstimate() {
         category:         leg.category,
         from:             leg.pickupLocation || '',
         to:               leg.dropoffLocation || '',
+        stopovers:        (leg.stopovers || []).filter(function(s) { return s && s.trim(); }),
         distanceKm:       leg.distanceKm || 0,
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
@@ -525,10 +543,13 @@ async function _runEstimate() {
 
   var result = await apiEstimate(payload);
 
-  if (result._error) {
+  // V8: a newer estimate started while we awaited — drop this stale result.
+  if (seq !== _estimateSeq) return;
+
+  if (result.error) {
     lastEstimate = null;
     // Friendly version for the common unknown-distance case
-    var msg = result._error;
+    var msg = result.error;
     if (/unknown distance|no distance|distance not found/i.test(msg)) {
       msg = 'Add distances to price this trip.';
     }
@@ -607,9 +628,10 @@ function addLeg(cat) {
     }
     // Auto-increment date by 1 day
     if (prev.date) {
-      var d = new Date(prev.date);
+      // V6: parse + format locally so the +1-day roll never shifts under any TZ.
+      var d = parseISODateLocal(prev.date);
       d.setDate(d.getDate() + 1);
-      leg.date = d.toISOString().slice(0, 10);
+      leg.date = fmtISODateLocal(d);
     }
   }
   state.legs = state.legs.concat([leg]);
@@ -652,11 +674,32 @@ async function api(path, opts) {
   return res;
 }
 
+// V9: parse a JSON body defensively — res.json() throws on empty/non-JSON bodies.
+async function jsonOrNull(res) {
+  try { return await res.json(); } catch (e) { return null; }
+}
+// V9: build a consistent { error } from a non-ok response.
+async function errPayload(res) {
+  var body = await jsonOrNull(res);
+  return { error: (body && body.error) ? body.error : ('HTTP ' + res.status) };
+}
+
+// V9: one-shot flag so a 401 during autocomplete doesn't spam a toast per keystroke.
+var _authToastShown = false;
+
 async function apiPlaces(q) {
   try {
     var r = await api('/admin/quote/places?q=' + encodeURIComponent(q));
-    var d = await r.json();
-    return d.places || [];
+    if (!r.ok) {
+      // Only surface an auth problem (after the api() retry) — and only once.
+      if (r.status === 401 && !_authToastShown) {
+        _authToastShown = true;
+        showToast('Not authenticated — check the admin key');
+      }
+      return [];
+    }
+    var d = await jsonOrNull(r);
+    return (d && d.places) ? d.places : [];
   } catch (e) { return []; }
 }
 
@@ -679,10 +722,10 @@ async function apiEstimate(payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    var body = await r.json();
-    if (!r.ok) return { _error: body.error || 'Estimate failed' };
-    return body;
-  } catch (e) { return { _error: 'Network error' }; }
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Estimate failed' };
+  } catch (e) { return { error: 'Network error' }; }
 }
 
 async function apiRateCard() {
@@ -700,17 +743,20 @@ async function apiSave(payload) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    return await r.json();
-  } catch (e) { return null; }
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Save failed' };
+  } catch (e) { return { error: 'Network error' }; }
 }
 
 async function apiList(filter) {
   try {
     var qs = filter ? '?' + new URLSearchParams(filter).toString() : '';
     var r = await api('/admin/quote/list' + qs);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch (e) { return null; }
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'List failed' };
+  } catch (e) { return { error: 'Network error' }; }
 }
 
 async function apiPatch(id, patch) {
@@ -720,9 +766,20 @@ async function apiPatch(id, patch) {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(patch),
     });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch (e) { return null; }
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Update failed' };
+  } catch (e) { return { error: 'Network error' }; }
+}
+
+// V19: fetch a full saved quote (incl. request.tool) for reopening.
+async function apiGetQuote(id) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id));
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Load failed' };
+  } catch (e) { return { error: 'Network error' }; }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -783,6 +840,7 @@ function savePayload() {
         category:         leg.category,
         from:             leg.pickupLocation || '',
         to:               leg.dropoffLocation || '',
+        stopovers:        (leg.stopovers || []).filter(function(s) { return s && s.trim(); }),
         distanceKm:       leg.distanceKm || 0,
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
@@ -802,17 +860,81 @@ async function saveQuote() {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
     var ref = res.reference || res.id;
+    // V5: /save always persists 'draft' — if the operator picked another status
+    // before the first save, sync it now via PATCH.
+    var statusSynced = true;
+    if (state.status !== 'draft') {
+      var patchRes = await apiPatch(state.savedId, { status: state.status });
+      if (!patchRes || patchRes.error) statusSynced = false;
+    }
     // Load recent first (triggers render), then show toast so it survives
     var listResult = await apiList();
     if (listResult && listResult.quotes) {
       recentQuotes = listResult.quotes;
     }
     render();
-    showToast('Saved as ' + ref);
+    if (statusSynced) {
+      showToast('Saved as ' + ref);
+    } else {
+      showToast('Saved as ' + ref + ', but status sync failed');
+    }
   } else {
     var errMsg = (res && res.error) ? res.error : 'Save failed';
     showToast(errMsg);
   }
+}
+
+// ── Reopen a saved quote (V19) ────────────────────────────────────────────────
+async function reopenQuote(id) {
+  if (!id) return;
+  var q = await apiGetQuote(id);
+  if (!q || q.error) {
+    showToast('Could not open quote — ' + ((q && q.error) || 'unknown error'));
+    return;
+  }
+  var tool = q.request && q.request.tool;
+  if (!tool) {
+    // Legacy row saved before the { tool, engine } shape.
+    showToast('This quote was saved before reopen support — re-create it to edit.');
+    return;
+  }
+
+  // Map persisted tool legs (from/to) back to state legs (pickup/dropoff).
+  legSeq = 0;
+  var legs = (tool.legs || []).map(function(tl) {
+    var leg = newLeg();
+    leg.category = tl.category || 'transfer';
+    leg.pickupLocation = tl.from || '';
+    leg.dropoffLocation = tl.to || '';
+    leg.stopovers = (tl.stopovers || []).slice();
+    leg.distanceKm = tl.distanceKm || 0;
+    // Treat the persisted distance as manual so prices don't re-resolve differently.
+    leg.manualDistance = (tl.distanceKm || 0) > 0;
+    leg.date = tl.date || '';
+    leg.addSightseeingFee = !!tl.addSightseeingFee;
+    leg.addWaitingFee = !!tl.addWaitingFee;
+    leg.hasDriver = !!tl.hasDriver;
+    leg.hasCarStay = !!tl.hasCarStay;
+    return leg;
+  });
+  if (legs.length === 0) legs = [newLeg()];
+
+  state.customerName = q.customerName || tool.name || '';
+  state.contact = q.customerContact || tool.contact || '';
+  state.internalNotes = q.notes || tool.notes || '';
+  state.vehicleType = tool.vehicle || state.vehicleType;
+  state.passengerCount = Math.max(1, parseInt(tool.passengerCount, 10) || 1);
+  state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
+  state.legs = legs;
+  state.status = q.status || 'draft';
+  state.savedId = q.id;
+  state.reference = q.reference || q.id;
+
+  lastEstimate = null;
+  lastEstimateError = null;
+  render();
+  refreshEstimate();
+  showToast('Reopened ' + (q.reference || q.id));
 }
 
 // ── Leg tone helpers ──────────────────────────────────────────────────────────
@@ -830,9 +952,28 @@ function legTagLabel(idx, total) {
 }
 
 // ── Per-leg price from lastEstimate breakdown ────────────────────────────────
+// ── Driving-leg helpers (V1: breakdown.legs contains ONLY driving legs) ───
+// A leg "drives" if it is not a stay day. breakdown.legs[] and the leg-order
+// travel lineItems are indexed by DRIVING position, not by state.legs index — a
+// stay_day shifts every following driving leg by one. drivingIndex() maps a
+// state.legs index to its driving position (or -1 for a stay day).
+function legDrives(leg) {
+  return !!leg && leg.category !== 'stay_day';
+}
+
+function drivingIndex(stateIdx) {
+  var d = -1;
+  for (var i = 0; i <= stateIdx; i++) {
+    if (legDrives(state.legs[i])) d++;
+  }
+  return legDrives(state.legs[stateIdx]) ? d : -1;
+}
+
 function getLegBreakdownPrice(legIdx) {
   if (!lastEstimate || !lastEstimate.breakdown || !lastEstimate.breakdown.legs) return null;
-  var bleg = lastEstimate.breakdown.legs[legIdx];
+  var di = drivingIndex(legIdx);
+  if (di < 0) return null; // stay day → no per-leg price
+  var bleg = lastEstimate.breakdown.legs[di];
   if (!bleg) return null;
   // cents → LKR display: round(cents × fx / 100)
   var fx = lastEstimate.fxUsdToLkr || 320;
@@ -1240,13 +1381,24 @@ function renderSummaryCardBody() {
 
   lines.push('</div>'); // end ch-sum-block
 
-  // Car vs van comparison
-  if (est.comparison && est.comparison.car && est.comparison.van) {
-    lines.push('<div class="ch-compare">');
-    lines.push('  <div class="ch-compare-row"><span>Car</span><b>' + esc(est.comparison.car.total.lkr) + '</b></div>');
-    lines.push('  <div class="ch-compare-row"><span>Van 6</span><b>' + esc(est.comparison.van.total.lkr) + '</b></div>');
-    lines.push('  <div class="ch-compare-note">Vehicle comparison at same itinerary — for internal reference only.</div>');
-    lines.push('</div>');
+  // Car vs van comparison (V4): entries carry .vehicle (engine tier) or .error.
+  // Render only the entries WITHOUT an error; if all error, omit the block.
+  if (est.comparison) {
+    var COMPARE_LABEL = { car: 'Car', van: 'Van 6 Seat', van9: 'Van 9 Seat', van14: 'Van 14 Seat', custom: 'Custom' };
+    var compareRows = [];
+    Object.keys(est.comparison).forEach(function(key) {
+      var entry = est.comparison[key];
+      if (!entry || entry.error) return;
+      if (!entry.total) return;
+      var label = COMPARE_LABEL[entry.vehicle] || COMPARE_LABEL[key] || entry.vehicle || key;
+      compareRows.push('  <div class="ch-compare-row"><span>' + esc(label) + '</span><b>' + esc(entry.total.lkr) + '</b></div>');
+    });
+    if (compareRows.length > 0) {
+      lines.push('<div class="ch-compare">');
+      compareRows.forEach(function(row) { lines.push(row); });
+      lines.push('  <div class="ch-compare-note">Vehicle comparison at same itinerary — for internal reference only.</div>');
+      lines.push('</div>');
+    }
   }
 
   // Engine warnings as a tip
@@ -1298,8 +1450,8 @@ function computeFlags() {
     });
   }
 
-  // orange: capacity — skip 'custom'
-  var vcap = VEHICLE_CAPS[st.vehicleType];
+  // orange: capacity — server-derived caps; null until rate card loads / for 'custom'
+  var vcap = vehicleCaps(st.vehicleType);
   if (vcap) {
     if (st.passengerCount > vcap.pax || st.luggageCount > vcap.bags) {
       var vLabel = VEHICLE_LABELS[st.vehicleType] || st.vehicleType;
@@ -1404,7 +1556,8 @@ function maxConsecutiveDates(dates) {
   dates.forEach(function(d) {
     if (!d || seen[d]) return;
     seen[d] = true;
-    days.push(Math.floor(new Date(d).getTime() / 86400000));
+    // V6: parse date-only locally so consecutive-day math is TZ-stable.
+    days.push(Math.floor(parseISODateLocal(d).getTime() / 86400000));
   });
   days.sort(function(a, b) { return a - b; });
   var maxRun = 1, run = 1;
@@ -1473,10 +1626,23 @@ async function fetchRecentQuiet() {
   }
 }
 
+// ── Date helpers ──────────────────────────────────────────────────────────────
+// V6: parse a date-only 'YYYY-MM-DD' as LOCAL midnight (not UTC midnight) so an
+// operator west of UTC never shows customers a date one day early.
+function parseISODateLocal(iso) {
+  var p = String(iso).split('-');
+  return new Date(+p[0], +p[1] - 1, +p[2]);
+}
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
+// Manual local YYYY-MM-DD formatting — never round-trips through UTC.
+function fmtISODateLocal(d) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+}
+
 // ── Output template helpers ────────────────────────────────────────────────────
 function fmtDate(iso) {
   if (!iso) return '—';
-  var d = new Date(iso);
+  var d = parseISODateLocal(iso);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 }
@@ -1507,34 +1673,107 @@ function M(priceCents) {
   return 'LKR ' + Math.round(priceCents * fx / 100).toLocaleString('en-US');
 }
 
-// chargeRows — legs that have a price > 0 from lastEstimate.breakdown.legs
-function chargeRows() {
-  if (!lastEstimate || !lastEstimate.breakdown || !lastEstimate.breakdown.legs) return [];
+// ── Template row model (V2/S2): rows that sum to the total by construction ────
+// The engine returns lineItems already in the right order:
+//   PRIVATE  : one travel item PER DRIVING LEG (in driving order), then extras.
+//   CHAUFFEUR: day-rate, distance (incl. idle), then extras — no per-leg items.
+// The per-leg travel items are identified by meta.billableKm when present; if the
+// server strips meta, they are equivalently the FIRST N lineItems where N is the
+// number of driving legs (engine pushes leg items before extras). We zip those to
+// the driving legs (via the driving-index map) to caption them with date+route.
+
+function legOrderItems() {
+  return (lastEstimate && lastEstimate.lineItems) ? lastEstimate.lineItems : [];
+}
+
+function drivingLegList() {
+  return state.legs.filter(legDrives);
+}
+
+// Split lineItems into { travel: [...perDrivingLeg], extras: [...rest] }.
+function splitLineItems() {
+  var items = legOrderItems();
+  var drivingCount = drivingLegList().length;
+  // Prefer explicit meta.billableKm markers; fall back to positional (first N).
+  var hasMeta = items.some(function(it) { return it.meta && it.meta.billableKm != null; });
+  var travel = [];
+  var extras = [];
+  if (hasMeta) {
+    items.forEach(function(it) {
+      if (it.meta && it.meta.billableKm != null) travel.push(it);
+      else extras.push(it);
+    });
+  } else {
+    items.forEach(function(it, i) {
+      if (i < drivingCount) travel.push(it);
+      else extras.push(it);
+    });
+  }
+  return { travel: travel, extras: extras };
+}
+
+// PRIVATE per-driving-leg rows: { date, route, cents } zipped in driving order.
+function privateLegRows() {
+  var split = splitLineItems();
   var rows = [];
-  state.legs.forEach(function(leg, idx) {
-    var bl = lastEstimate.breakdown.legs[idx];
-    if (bl && bl.priceCents > 0) {
-      rows.push({ leg: leg, priceCents: bl.priceCents });
-    }
+  var drivingLegs = drivingLegList();
+  drivingLegs.forEach(function(leg, di) {
+    var item = split.travel[di];
+    if (!item) return;
+    rows.push({ date: leg.date, route: routeText(leg), cents: item.amountCents });
   });
   return rows;
+}
+
+function isChauffeurEstimate() {
+  return lastEstimate && lastEstimate.product === 'chauffeur';
+}
+
+function productBlurb(veh) {
+  if (isChauffeurEstimate()) {
+    return 'This is for a chauffeur-driven ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations. It also covers the driver staying with you for the nights marked, including driver meals and accommodation.';
+  }
+  return 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.';
 }
 
 function whatsappMessage() {
   if (!lastEstimate) return null;
   var name = state.customerName || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType;
-  var driverDays = state.legs.filter(function(l) { return l.hasDriver; }).length;
+  var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
   var lines = [];
   lines.push('Hi ' + name + ', thank you for sharing the details.', '', 'We can help with this. Based on your itinerary, here is the quote:', '');
-  chargeRows().forEach(function(r) {
-    lines.push(fmtDate(r.leg.date) + ' — ' + routeText(r.leg) + ' — ' + M(r.priceCents));
-  });
-  var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
-  lines.push('', 'Total: ' + M(totalCents), '', 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.');
-  if (driverDays > 0) {
-    lines.push('It also covers the driver staying with you for the nights marked, including driver meals and accommodation.');
+
+  if (isChauffeurEstimate()) {
+    // Itinerary lines UNpriced (driving legs + stay days), in state order.
+    state.legs.forEach(function(leg) {
+      if (legDrives(leg)) {
+        lines.push(fmtDate(leg.date) + ' — ' + routeText(leg));
+      } else {
+        lines.push(fmtDate(leg.date) + ' — Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?'));
+      }
+    });
+    lines.push('');
+    // Every engine lineItem as a priced row.
+    legOrderItems().forEach(function(it) {
+      lines.push(it.label + ' — ' + M(it.amountCents));
+    });
+    lines.push('', 'Total: ' + M(totalCents));
+    lines.push('', productBlurb(veh));
+    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
+    lines.push('', 'Deposit to confirm: ' + M(dueCents) + ' (balance on/after the trip).');
+  } else {
+    // PRIVATE: per driving leg (date — route — price), then extras, then total.
+    privateLegRows().forEach(function(r) {
+      lines.push(fmtDate(r.date) + ' — ' + r.route + ' — ' + M(r.cents));
+    });
+    splitLineItems().extras.forEach(function(it) {
+      lines.push(it.label + ' — ' + M(it.amountCents));
+    });
+    lines.push('', 'Total: ' + M(totalCents));
+    lines.push('', productBlurb(veh));
   }
+
   lines.push('', 'Please let me know if you have any questions or if you would like to proceed.');
   return lines.join('\n');
 }
@@ -1543,26 +1782,69 @@ function emailMessage() {
   if (!lastEstimate) return null;
   var name = state.customerName || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType;
-  var lines = ['Hi ' + name + ',', '', 'Thank you for reaching out to Ceylon Hop. Based on the itinerary you shared, please find the transport quote below.', ''];
-  chargeRows().forEach(function(r) {
-    lines.push('  ' + fmtDate(r.leg.date) + '   ' + routeText(r.leg) + '   ' + M(r.priceCents));
-  });
   var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
-  lines.push('', 'Total (private ' + veh + '): ' + M(totalCents));
-  lines.push('', 'This quote includes fuel, driver cost, tolls, and pickup/drop-off from the agreed locations.', '', 'Please let us know if you would like to proceed and we can send over the booking/payment details.', '', 'Best,', 'Roshen', 'Ceylon Hop');
+  var lines = ['Hi ' + name + ',', '', 'Thank you for reaching out to Ceylon Hop. Based on the itinerary you shared, please find the transport quote below.', ''];
+
+  if (isChauffeurEstimate()) {
+    state.legs.forEach(function(leg) {
+      if (legDrives(leg)) {
+        lines.push('  ' + fmtDate(leg.date) + '   ' + routeText(leg));
+      } else {
+        lines.push('  ' + fmtDate(leg.date) + '   Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?'));
+      }
+    });
+    lines.push('');
+    legOrderItems().forEach(function(it) {
+      lines.push('  ' + it.label + '   ' + M(it.amountCents));
+    });
+    lines.push('', 'Total: ' + M(totalCents));
+    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
+    lines.push('', 'Deposit to confirm: ' + M(dueCents) + ' (balance on/after the trip).');
+  } else {
+    privateLegRows().forEach(function(r) {
+      lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));
+    });
+    splitLineItems().extras.forEach(function(it) {
+      lines.push('  ' + it.label + '   ' + M(it.amountCents));
+    });
+    lines.push('', 'Total: ' + M(totalCents));
+  }
+
+  lines.push('', productBlurb(veh), '', 'Please let us know if you would like to proceed and we can send over the booking/payment details.', '', 'Best,', 'Roshen', 'Ceylon Hop');
   return lines.join('\n');
 }
 
 function notionTable() {
   if (!lastEstimate) return null;
-  var veh = (VEHICLE_LABELS[state.vehicleType] || state.vehicleType).toUpperCase();
+  // S3: escape '|' in every interpolated text cell so it can't corrupt the table.
+  function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '∣'); }
+  var veh = cell(VEHICLE_LABELS[state.vehicleType] || state.vehicleType);
+  var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
   var out = [];
   out.push('| Date | Route | Price Given |', '|---|---|---|');
-  chargeRows().forEach(function(r) {
-    out.push('| ' + fmtDate(r.leg.date) + ' | ' + routeText(r.leg) + ' | ' + M(r.priceCents) + ' |');
-  });
-  var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
-  out.push('| PRIVATE TRANSFER VIA ' + veh + ' |  | ' + M(totalCents) + ' |');
+
+  if (isChauffeurEstimate()) {
+    state.legs.forEach(function(leg) {
+      var route = legDrives(leg)
+        ? routeText(leg)
+        : 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
+      out.push('| ' + cell(fmtDate(leg.date)) + ' | ' + cell(route) + ' |  |');
+    });
+    legOrderItems().forEach(function(it) {
+      out.push('| ' + cell(it.label) + ' |  | ' + cell(M(it.amountCents)) + ' |');
+    });
+    out.push('| CHAUFFEUR-DRIVEN ' + veh.toUpperCase() + ' |  | ' + cell(M(totalCents)) + ' |');
+    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
+    out.push('| Deposit to confirm |  | ' + cell(M(dueCents)) + ' |');
+  } else {
+    privateLegRows().forEach(function(r) {
+      out.push('| ' + cell(fmtDate(r.date)) + ' | ' + cell(r.route) + ' | ' + cell(M(r.cents)) + ' |');
+    });
+    splitLineItems().extras.forEach(function(it) {
+      out.push('| ' + cell(it.label) + ' |  | ' + cell(M(it.amountCents)) + ' |');
+    });
+    out.push('| PRIVATE TRANSFER VIA ' + veh.toUpperCase() + ' |  | ' + cell(M(totalCents)) + ' |');
+  }
   return out.join('\n');
 }
 
@@ -1670,8 +1952,9 @@ function renderRecentPanel() {
     var totalLkr = q.totalCents ? Math.round(q.totalCents * fx / 100) : 0;
     var totalStr = totalLkr ? 'LKR ' + totalLkr.toLocaleString('en-US') : '—';
     var displayName = q.customerName || q.name || 'Untitled';
+    // V19: the row (except the status select) is clickable to reopen the draft.
     return [
-      '<div class="ch-recent-row" data-qid="' + esc(q.id) + '">',
+      '<div class="ch-recent-row" data-action="reopenQuote" data-qid="' + esc(q.id) + '" style="cursor:pointer">',
       '  <span class="ch-recent-ref">' + esc(q.reference || q.id) + '</span>',
       '  <span class="ch-recent-name">' + esc(displayName) + '</span>',
       '  <span class="ch-recent-total">' + esc(totalStr) + '</span>',
@@ -1829,7 +2112,7 @@ function render() {
     '              <label class="ch-field-label">Passengers <em class="req">*</em></label>',
     '              <div class="ch-input-wrap">',
     '                <span class="ch-input-prefix">&#x1F465;</span>',
-    '                <input class="ch-input" id="f-passengerCount" type="number" min="0" value="' + esc(st.passengerCount) + '" />',
+    '                <input class="ch-input" id="f-passengerCount" type="number" min="1" value="' + esc(st.passengerCount) + '" />',
     '              </div>',
     '            </div>',
     '            <div class="ch-field" style="flex:0 0 120px">',
@@ -2006,10 +2289,20 @@ function attachEventListeners() {
   var statusSel = document.getElementById('statusSelect');
   if (statusSel) {
     statusSel.addEventListener('change', function() {
+      var prevStatus = state.status;
       var newStatus = statusSel.value;
       mutate({ status: newStatus });
+      // V9: only persist for an already-saved quote; await + revert on failure so
+      // the UI never shows a status the server rejected. (Before first save, the
+      // chosen status is carried and synced by saveQuote — see V5.)
       if (state.savedId) {
-        apiPatch(state.savedId, { status: newStatus });
+        apiPatch(state.savedId, { status: newStatus }).then(function(res) {
+          if (!res || res.error) {
+            showToast('Status update failed — ' + ((res && res.error) || 'unknown error'));
+            state.status = prevStatus;
+            render();
+          }
+        });
       }
     });
   }
@@ -2064,8 +2357,9 @@ function attachEventListeners() {
   var fieldMap = {
     'f-customerName':    function(v) { state.customerName = v; },
     'f-contact':         function(v) { state.contact = v; },
-    'f-passengerCount':  function(v) { state.passengerCount = parseInt(v, 10) || 0; },
-    'f-luggageCount':    function(v) { state.luggageCount = parseInt(v, 10) || 0; },
+    // V18: server 400s on pax<1 — clamp client-side so we never send it.
+    'f-passengerCount':  function(v) { state.passengerCount = Math.max(1, parseInt(v, 10) || 1); },
+    'f-luggageCount':    function(v) { state.luggageCount = Math.max(0, parseInt(v, 10) || 0); },
     'f-internalNotes':   function(v) { state.internalNotes = v; },
   };
   // I2: only price-affecting fields trigger refreshEstimate+render on change.
@@ -2133,13 +2427,20 @@ function attachEventListeners() {
       if (legObj) {
         var stops = legObj.stopovers.slice();
         stops.splice(stopIdx, 1);
+        // S1: stopover change must invalidate distance + re-run auto-distance.
+        delete _distCache[legId];
         updateLeg(legId, { stopovers: stops });
+        scheduleAutoDistance(legId);
       }
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'setTab') {
       outputTab = el.getAttribute('data-tab') || 'whatsapp';
       render();
+    } else if (action === 'reopenQuote') {
+      // V19: don't reopen when the click landed inside the status select control.
+      if (e.target.closest('.ch-select-wrap')) return;
+      reopenQuote(el.getAttribute('data-qid'));
     } else if (action === 'patchStatus') {
       // handled via change event below
     }
@@ -2152,7 +2453,12 @@ function attachEventListeners() {
       var qid = el.getAttribute('data-qid');
       var newStatus = el.value;
       if (qid) {
-        apiPatch(qid, { status: newStatus }).then(function() {
+        // V9: await + on failure toast and revert (reload the list so the row
+        // reflects the server's actual status, never a rejected one).
+        apiPatch(qid, { status: newStatus }).then(function(res) {
+          if (!res || res.error) {
+            showToast('Status update failed — ' + ((res && res.error) || 'unknown error'));
+          }
           loadRecent();
         });
       }
@@ -2192,7 +2498,13 @@ function attachEventListeners() {
     var legObj = state.legs.find(function(l) { return l.id === legId; });
     if (legObj) {
       var stops = legObj.stopovers.concat([val]);
+      // Clear BEFORE the re-render: the destroyed input's blur re-fires on the old
+      // node (capture listener) and would double-add if it still held the value.
+      el.value = '';
+      // S1: stopover change must invalidate distance + re-run auto-distance.
+      delete _distCache[legId];
       updateLeg(legId, { stopovers: stops });
+      scheduleAutoDistance(legId);
     }
   });
 
@@ -2203,9 +2515,14 @@ function attachEventListeners() {
     var val = el.value.trim();
     if (!val) return;
     var legObj = state.legs.find(function(l) { return l.id === legId; });
-    if (legObj) {
+    // Skip if this value was just added (Enter path already handled it).
+    if (legObj && legObj.stopovers[legObj.stopovers.length - 1] !== val) {
       var stops = legObj.stopovers.concat([val]);
+      el.value = '';
+      // S1: stopover change must invalidate distance + re-run auto-distance.
+      delete _distCache[legId];
       updateLeg(legId, { stopovers: stops });
+      scheduleAutoDistance(legId);
     }
   }, true);
 
@@ -2237,22 +2554,37 @@ async function runAutoDistance(legId) {
   var from = (leg.pickupLocation || '').trim();
   var to = (leg.dropoffLocation || '').trim();
   if (!from || !to) return;
-  var cacheKey = from + '||' + to;
-  if (_distCache[legId] === cacheKey) return; // already fetched this pair
+  var stops = (leg.stopovers || []).map(function(s) { return (s || '').trim(); }).filter(Boolean);
+  // S1: include stopovers in the cache key so a stopover edit invalidates stale distance.
+  var cacheKey = [from].concat(stops).concat([to]).join('||');
+  if (_distCache[legId] === cacheKey) return; // already fetched this exact chain
   _distCache[legId] = cacheKey;
 
-  var result = await apiDistance(from, to);
+  // Chain the route from→stops→to, one /distance call per segment, summing km + duration.
+  var points = [from].concat(stops).concat([to]);
+  var totalKm = 0;
+  var totalDurMin = 0;
+  var failed = false;
+  for (var si = 0; si < points.length - 1; si++) {
+    var seg = await apiDistance(points[si], points[si + 1]);
+    if (!seg || seg.km == null) { failed = true; break; }
+    totalKm += seg.km;
+    totalDurMin += (seg.durationMin || 0);
+  }
+
   // Guard: leg may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
   if (!current || current.manualDistance) return;
   if ((current.pickupLocation || '').trim() !== from) return;
   if ((current.dropoffLocation || '').trim() !== to) return;
+  var curStops = (current.stopovers || []).map(function(s) { return (s || '').trim(); }).filter(Boolean);
+  if (curStops.join('||') !== stops.join('||')) return; // stopovers changed under us
 
-  if (result && result.km != null) {
-    var hrs = Math.round((result.durationMin / 60) * 100) / 100;
-    updateLeg(legId, { distanceKm: result.km, driveTimeHours: hrs, autoMatched: true });
+  if (!failed) {
+    var hrs = Math.round((totalDurMin / 60) * 100) / 100;
+    updateLeg(legId, { distanceKm: totalKm, driveTimeHours: hrs, autoMatched: true });
   } else {
-    // Unknown route — show "No distance" warn state
+    // Any failed segment → "No distance" warn state
     updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
   }
 }

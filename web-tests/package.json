@@ -8,6 +8,7 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:tool": "CH_E2E_API=1 playwright test quote-tool",
     "test:all": "vitest run && playwright test"
   },
   "devDependencies": {

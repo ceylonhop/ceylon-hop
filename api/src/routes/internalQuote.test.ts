@@ -45,10 +45,18 @@ describe('internal quoting tool route', () => {
     expect(d.amountDueNow.cents).toBe(4048); // private → full
     expect(d.drafts).toBeUndefined(); // V15: dead drafts removed
     expect(Number.isInteger(d.lineItems[0].amountCents)).toBe(true); // Fix 7: cents on line items
+    expect(d.lineItems[0].meta.billableKm).toBe(88); // meta passthrough — client zips travel items with legs
     expect(d.comparison.car.total.cents).toBe(4048);
     expect(d.comparison.car.vehicle).toBe('car'); // V4: honest tier label
     expect(d.comparison.van.total.cents).toBeGreaterThan(4048);
     expect(d.comparison.van.vehicle).toBe('van');
+  });
+
+  it('an empty-string date on an undated private leg is treated as absent, not invalid', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80, date: '' })],
+    });
+    expect(res.status).toBe(200); // regression: the tool always sends date:'' for undated legs
   });
 
   it('estimate auto-resolves the distance from known places when km is omitted', async () => {
