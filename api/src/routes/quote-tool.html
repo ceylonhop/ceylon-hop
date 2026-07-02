@@ -452,11 +452,14 @@ input, select, textarea, button { font-family: inherit; }
 .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
 /* second thin line: add-ons chip row (always present on point-to-point driving legs) */
-.ch-leg-addonrow { padding: 0 12px 9px 44px; }
-.ch-addon-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px dashed var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; }
-.ch-addon-chip:hover { border-color: var(--orange); color: var(--orange); }
-.ch-addon-chip.on { border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; }
+.ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; }
+/* empty state: a quiet inline text action, not an orphaned button */
+.ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
+.ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
+/* active state: a solid pill naming the fees */
+.ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
+.ch-dist-time { color: var(--muted); font-weight: 400; margin-left: 5px; padding-left: 6px; border-left: 1px solid currentColor; opacity: .55; }
 
 /* second thin line: add-on toggles (only when the popover is open) */
 .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
@@ -1179,6 +1182,14 @@ function getLegBreakdownPrice(legIdx) {
 }
 
 // ── Render leg card HTML ──────────────────────────────────────────────────────
+// hours (e.g. 2.62) → "2h 37m" / "48m"
+function fmtDur(hours) {
+  if (!hours || hours <= 0) return '';
+  var mins = Math.round(hours * 60);
+  var h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? (h + 'h' + (m ? ' ' + m + 'm' : '')) : (m + 'm');
+}
+
 function renderLegCard(leg, idx, total) {
   var tone = legTone(idx, total, leg.category);
   var isStay = leg.category === 'stay_day';
@@ -1255,10 +1266,11 @@ function renderLegCard(leg, idx, total) {
         '</div>',
       ].join('');
     } else if (leg.autoMatched) {
+      var durStr = fmtDur(leg.driveTimeHours);
       distHtml = [
         '<div class="ch-leg-dist">',
-        '  <span class="ch-dist-pill auto">&#8776; ' + esc(leg.distanceKm) + ' km</span>',
-        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '">edit</button>',
+        '  <span class="ch-dist-pill auto"><b>' + esc(leg.distanceKm) + ' km</b>' + (durStr ? '<span class="ch-dist-time">' + esc(durStr) + '</span>' : '') + '</span>',
+        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" title="Edit distance">&#9998;</button>',
         '</div>',
       ].join('');
     } else {
@@ -1293,10 +1305,11 @@ function renderLegCard(leg, idx, total) {
   if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
   if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
   var anyAddon = activeAddonLabels.length > 0;
-  var addonChipLabel = anyAddon ? ('Add-ons: ' + activeAddonLabels.join(' · ')) : '+ Add-ons';
   var addonChipRow = (!isChauffeur && !isStay) ? [
     '<div class="ch-leg-addonrow">',
-    '  <button class="ch-addon-chip' + (anyAddon ? ' on' : '') + '" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(addonChipLabel) + '</button>',
+    anyAddon
+      ? '  <button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
+      : '  <button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>',
     '</div>',
   ].join('') : '';
 
