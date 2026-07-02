@@ -67,6 +67,9 @@ const ToolRequestSchema = z.object({
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
   legs: z.array(ToolLegSchema).min(1),
+  // GL-1d: van14/custom are custom-priced per quote — the operator's per-km rate in cents.
+  // Bounded to catch fat-finger dollars-vs-cents mistakes ($1000/km ceiling).
+  customRatePerKmCents: z.number().int().min(1).max(100_000).optional(),
 });
 type ToolLeg = z.infer<typeof ToolLegSchema>;
 type ToolRequest = z.infer<typeof ToolRequestSchema>;
@@ -151,6 +154,12 @@ function collectExtras(legs: ToolLeg[]): ExtraCode[] {
 function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauffeur'): QuoteRequest {
   const vehicle = VEHICLE_MAP[req.vehicle];
   if (!vehicle) throw new PriceError(`no rate is set for "${req.vehicle}" yet — pick Car or Van 6, or add its rate`, 400);
+  // GL-1d: a custom rate only makes sense on the custom-priced tiers — friendly 400 here;
+  // the engine's CUSTOM_RATE_ONLY_FOR_CUSTOM_TIERS check remains the backstop.
+  if (req.customRatePerKmCents != null && vehicle !== 'van14' && vehicle !== 'custom') {
+    throw new PriceError('a custom $/km rate only applies to Van 14 or Custom vehicles', 400);
+  }
+  const customPerKmCents = req.customRatePerKmCents;
   const extras = collectExtras(req.legs);
   const driving = req.legs.filter(drives);
   const service = serviceOverride ?? req.service;
@@ -166,12 +175,12 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
       travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
-      extras,
+      extras, customPerKmCents,
     };
   }
   return {
     product: 'private', vehicle, pax: req.passengerCount, bags: req.luggageCount,
-    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras,
+    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras, customPerKmCents,
   };
 }
 
@@ -205,7 +214,7 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
   return maps.places(query);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string }) {
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string; allowNoKey?: boolean }) {
   const r = new Hono();
 
   // Open shell (a browser navigation can't send a header). The JS attaches the key to
@@ -219,10 +228,16 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
     return c.html(html);
   });
 
-  // Enforce the admin key ONLY when one is configured, so dev/preview (no key) still works.
-  // Prod MUST set ADMIN_API_KEY — see the go-live checklist.
+  // GL-1c: fail CLOSED. The tool stores customer PII and exposes cost/margin, so with no
+  // key configured the data routes lock unless dev-openness was explicitly requested
+  // (allowNoKey — app.ts passes NODE_ENV !== 'production'). A misconfigured production
+  // deploy must lock, not expose. Prod sets ADMIN_API_KEY — see the go-live checklist.
   r.use('*', async (c, next) => {
-    if (deps.adminKey && c.req.header('x-admin-key') !== deps.adminKey) {
+    if (deps.adminKey) {
+      if (c.req.header('x-admin-key') !== deps.adminKey) {
+        return c.json({ error: 'unauthorized' }, 401);
+      }
+    } else if (!deps.allowNoKey) {
       return c.json({ error: 'unauthorized' }, 401);
     }
     return next();

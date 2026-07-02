@@ -416,8 +416,75 @@ describe('quoting tool — admin-key auth', () => {
   });
 
   it('leaves data routes open when no key is configured (dev/preview)', async () => {
-    // createApp default ADMIN_API_KEY is '' → open
+    // createApp default ADMIN_API_KEY is '' → open (NODE_ENV !== 'production' under vitest)
     expect((await createApp().request('/admin/quote/places?q=kand')).status).toBe(200);
+  });
+});
+
+// GL-1d: van14/custom are custom-priced per quote — the tool sends customRatePerKmCents.
+describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
+  const openApp = () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
+    return a;
+  };
+  const estimate = (body: unknown) =>
+    openApp().request('/admin/quote/estimate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    });
+
+  it('van_14 + customRatePerKmCents prices at the overridden rate', async () => {
+    const res = await estimate({
+      vehicle: 'van_14', passengerCount: 12, luggageCount: 8, service: 'private',
+      legs: [{ from: 'A', to: 'B', distanceKm: 140 }],
+      customRatePerKmCents: 90,
+    });
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.total.cents).toBe(154 * 90); // billable 154km × 90¢, not the 130¢ placeholder
+  });
+
+  it('400s a custom rate on a non-custom tier (car)', async () => {
+    const res = await estimate({
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, service: 'private',
+      legs: [{ from: 'A', to: 'B', distanceKm: 100 }],
+      customRatePerKmCents: 90,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Van 14|Custom/);
+  });
+});
+
+// GL-1c: the tool stores customer PII and exposes cost/margin. With no key configured the
+// guard must fail CLOSED unless dev-openness is explicitly requested (allowNoKey) — a
+// misconfigured production deploy must lock, not expose.
+describe('quoting tool — fail-closed when no key is configured', () => {
+  const locked = () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+    return a;
+  };
+
+  it('401s data routes when no adminKey is set and allowNoKey is absent (production default)', async () => {
+    const app = locked();
+    expect((await app.request('/admin/quote/places?q=kand')).status).toBe(401);
+    expect((await app.request('/admin/quote/list')).status).toBe(401);
+    const est = await app.request('/admin/quote/estimate', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+    expect(est.status).toBe(401);
+  });
+
+  it('still serves the HTML shell when locked (browser navigation cannot send a header)', async () => {
+    const res = await locked().request('/admin/quote');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/html');
+  });
+
+  it('allowNoKey: true keeps data routes open without a key (dev/preview)', async () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
+    expect((await a.request('/admin/quote/places?q=kand')).status).toBe(200);
   });
 });
 
@@ -425,7 +492,7 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns whatever the injected adapter.places() yields (Google now lives in the adapter)', async () => {
     const a = new Hono();
     const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo() }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
     const res = await a.request('/admin/quote/places?q=colombo');
     expect(res.status).toBe(200);
     expect((await res.json()).places).toEqual(['Stubbed']);
@@ -435,7 +502,7 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
     const a = new Hono();
     let called = false;
     const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo() }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
     const res = await a.request('/admin/quote/places?q=c');
     expect((await res.json()).places).toEqual([]);
     expect(called).toBe(false);

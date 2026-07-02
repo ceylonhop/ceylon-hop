@@ -144,6 +144,47 @@ describe('quote()', () => {
     expect(r.warnings.filter((w) => w.includes('vehicle set to'))).toHaveLength(0); // no warning — custom is already >= required (car)
   });
 
+  // GL-1d: van14/custom have no fixed owner rate — they are custom-priced per quote
+  // (owner decision 2026-07-02). The operator supplies customPerKmCents; the rate-card
+  // values remain only prefill defaults.
+  describe('customPerKmCents (van14/custom are custom-priced per quote)', () => {
+    it('van14 private: overridden rate replaces the rate-card per-km', () => {
+      const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(154 * 90); // 13860, not the placeholder 130¢
+      // margin keeps the 25% markup model: cost/km = round(override / 1.25)
+      expect(r.marginEstimateCents).toBe(154 * 90 - Math.round(154 * Math.round(90 / 1.25)));
+    });
+
+    it('custom chauffeur: overridden rate drives the distance charge', () => {
+      const r = quote({
+        product: 'chauffeur', vehicle: 'custom', firstDate: '2026-08-01', lastDate: '2026-08-02',
+        travelDays: [
+          { date: '2026-08-01', from: 'A', to: 'B', distanceKm: 100 },
+          { date: '2026-08-02', from: 'B', to: 'C', distanceKm: 50 },
+        ],
+        customPerKmCents: 200,
+      });
+      // 2 days × $35 + billable 165km (150×1.1) × $2.00 = 7000 + 33000
+      expect(r.totalCents).toBe(7000 + 33000);
+    });
+
+    it('floor still applies under an overridden rate', () => {
+      const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 10 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(8500); // 11km × 90¢ = 990 < van14 floor $85
+    });
+
+    it('throws when the priced vehicle is not van14/custom', () => {
+      expect(() => quote({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }], customPerKmCents: 90 }))
+        .toThrow('CUSTOM_RATE_ONLY_FOR_CUSTOM_TIERS');
+    });
+
+    it('anti-tamper upgrade INTO van14 keeps the override (rate set for the trip, tier is capacity)', () => {
+      const r = quote({ product: 'private', vehicle: 'van9', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }], customPerKmCents: 90 });
+      expect(r.totalCents).toBe(154 * 90);
+      expect(r.warnings.some((w) => w.includes('vehicle set to van14'))).toBe(true);
+    });
+  });
+
   it('throws NO_LEGS on an empty private request', () => {
     expect(() => quote({ product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [] })).toThrow('NO_LEGS');
   });

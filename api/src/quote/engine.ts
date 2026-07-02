@@ -7,6 +7,16 @@ import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
 import { priceExtras, depositCents, EXTRA_LABELS } from './extrasDeposit';
 
+// GL-1d: van14/custom are custom-priced per quote (owner decision 2026-07-02) — the operator
+// supplies the per-km rate. Any other tier has an owner-confirmed rate that must not be
+// overridable (undercharge/tamper risk), so a stray override is a hard error, not a warning.
+function validateCustomRate(customPerKmCents: number | undefined, pricedVehicle: string): number | undefined {
+  if (customPerKmCents == null) return undefined;
+  if (pricedVehicle !== 'van14' && pricedVehicle !== 'custom') throw new Error('CUSTOM_RATE_ONLY_FOR_CUSTOM_TIERS');
+  if (!Number.isInteger(customPerKmCents) || customPerKmCents <= 0) throw new Error('CUSTOM_RATE_INVALID');
+  return customPerKmCents;
+}
+
 export function quote(req: QuoteRequest): QuoteResult {
   const lineItems: LineItem[] = [];
   const warnings: string[] = [];
@@ -28,11 +38,16 @@ export function quote(req: QuoteRequest): QuoteResult {
     // (Do NOT trust req.vehicle blindly: car requested for 6 pax must not be priced as a car.)
     const vehicle = vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
     if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
-    const p = quotePrivateLegs(req.legs, vehicle);
+    // GL-1d: a custom per-km rate is only meaningful on the custom-priced tiers. Validate
+    // against the PRICED vehicle (an upgrade INTO van14/custom keeps the operator's rate —
+    // the rate is set for the trip; the tier is capacity).
+    const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle);
+    const p = quotePrivateLegs(req.legs, vehicle, perKmOverride);
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
-    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm) * RATE_CARD.costPerKmCents[vehicle]), 0);
+    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[vehicle];
+    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm) * costPerKm), 0);
     if (req.extras?.length) {
       const e = priceExtras(req.extras);
       lineItems.push(...e.lineItems);
@@ -40,10 +55,12 @@ export function quote(req: QuoteRequest): QuoteResult {
     }
   } else {
     if (req.travelDays.length === 0) throw new Error('NO_LEGS');
+    const perKmOverride = validateCustomRate(req.customPerKmCents, req.vehicle); // GL-1d
     const c = quoteChauffeur(req);
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
-    costCents += Math.round(c.meta.billableKm * RATE_CARD.costPerKmCents[req.vehicle]);
+    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[req.vehicle];
+    costCents += Math.round(c.meta.billableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
       // already covered by the day rate and must never be charged again.

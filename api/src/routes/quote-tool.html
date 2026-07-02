@@ -665,6 +665,14 @@ function vehicleCaps(toolId) {
   return { pax: v.maxPax, bags: v.maxBags };
 }
 
+// GL-1d: the rate-card prefill default for the custom-priced tiers, as dollars for the
+// $/km input placeholder. Falls back to the shipped placeholders until /rate-card loads.
+function defaultCustomRateDollars(toolId) {
+  var tier = VEHICLE_ENGINE_TIER[toolId];
+  var cents = (rateCard && rateCard.perKmCents && rateCard.perKmCents[tier]) || (toolId === 'van_14' ? 130 : 175);
+  return (cents / 100).toFixed(2);
+}
+
 // Driving categories (for flag computation) — slim set (R4). Anything not a
 // stay day drives; stay_day is the only non-driving category.
 var DRIVING_CATS = {
@@ -706,6 +714,7 @@ async function _runEstimate() {
     vehicle: st.vehicleType,
     passengerCount: st.passengerCount,
     luggageCount: st.luggageCount,
+    customRatePerKmCents: customRateCents(), // GL-1d: undefined unless van_14/custom + set
     legs: st.legs.map(function(leg) {
       return {
         category:         leg.category,
@@ -770,17 +779,32 @@ let state = {
   passengerCount: 2,
   luggageCount: 2,
   vehicleType: null,
+  // GL-1d: Van 14/Custom are custom-priced per quote — operator's $/km (dollars, UI-side).
+  // null = use the rate-card prefill default; only sent to the API when explicitly set.
+  customRatePerKm: null,
   service: 'private',
   outputCurrency: 'USD',
   status: 'draft',
   legs: [newLeg()],
 };
 
+// GL-1b: unsaved-changes guard. Every state mutator marks dirty; save/new/reopen clear it.
+// beforeunload asks the browser to confirm the close so an unsaved quote is never lost silently.
+var _dirty = false;
+function markDirty() { _dirty = true; }
+window.addEventListener('beforeunload', function(e) {
+  if (_dirty) {
+    e.preventDefault();
+    e.returnValue = ''; // required by Chrome to show the native confirm
+  }
+});
+
 // ── State mutators ────────────────────────────────────────────────────────────
 function mutate(patch) {
   Object.assign(state, patch);
+  markDirty();
   // Re-estimate if any pricing-affecting field changed
-  if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch) {
+  if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch || 'customRatePerKm' in patch) {
     refreshEstimate();
   }
   render();
@@ -799,6 +823,7 @@ function setService(service) {
         : leg;
     });
   }
+  markDirty();
   refreshEstimate();
   render();
 }
@@ -816,11 +841,13 @@ function updateLeg(id, patch) {
   state.legs = state.legs.map(function(leg) {
     return leg.id === id ? Object.assign({}, leg, patch) : leg;
   });
+  markDirty();
   refreshEstimate();
   render();
 }
 
 function addLeg(cat) {
+  markDirty();
   var prev = state.legs.length > 0 ? state.legs[state.legs.length - 1] : null;
   var leg = newLeg();
   leg.category = cat || 'transfer';
@@ -844,6 +871,7 @@ function addLeg(cat) {
 
 function removeLeg(id) {
   state.legs = state.legs.filter(function(leg) { return leg.id !== id; });
+  markDirty();
   refreshEstimate();
   render();
 }
@@ -861,6 +889,7 @@ function moveLeg(id, dir) {
   next[idx] = next[target];
   next[target] = tmp;
   state.legs = next;
+  markDirty();
   refreshEstimate();
   render();
 }
@@ -872,6 +901,7 @@ function dupLeg(id) {
   var copy = Object.assign({}, src, { id: 'leg_' + (legSeq++) });
   var next = state.legs.slice(0, idx + 1).concat([copy]).concat(state.legs.slice(idx + 1));
   state.legs = next;
+  markDirty();
   refreshEstimate();
   render();
 }
@@ -1024,6 +1054,7 @@ function newQuote() {
     passengerCount: 2,
     luggageCount: 2,
     vehicleType: null,
+    customRatePerKm: null,
     service: 'private',
     outputCurrency: 'USD',
     status: 'draft',
@@ -1035,9 +1066,19 @@ function newQuote() {
   lastEstimateError = null;
   outputTab = 'whatsapp';
   outputOpen = null; // back to the layout default
+  _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
   render();
   showToast('New quote started');
+}
+
+// GL-1d: the operator's custom $/km (dollars) → integer cents for the API. Only meaningful
+// for Van 14/Custom; undefined otherwise (or when unset → server prices at the prefill default).
+function customRateCents() {
+  if (state.vehicleType !== 'van_14' && state.vehicleType !== 'custom') return undefined;
+  var v = state.customRatePerKm;
+  if (v == null || v === '' || isNaN(v) || Number(v) <= 0) return undefined;
+  return Math.round(Number(v) * 100);
 }
 
 function savePayload() {
@@ -1048,6 +1089,7 @@ function savePayload() {
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
     luggageCount: state.luggageCount,
+    customRatePerKmCents: customRateCents(), // GL-1d
     legs: state.legs.map(function(leg) {
       return {
         category:         leg.category,
@@ -1081,6 +1123,7 @@ async function saveQuote() {
       var patchRes = await apiPatch(state.savedId, { status: state.status });
       if (!patchRes || patchRes.error) statusSynced = false;
     }
+    _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
     // Load recent first (triggers render), then show toast so it survives
     var listResult = await apiList();
     if (listResult && listResult.quotes) {
@@ -1134,6 +1177,8 @@ async function reopenQuote(id) {
   state.customerName = q.customerName || tool.name || '';
   state.contact = q.customerContact || tool.contact || '';
   state.vehicleType = tool.vehicle || state.vehicleType;
+  // GL-1d: restore the operator's custom $/km (persisted in cents on the request snapshot).
+  state.customRatePerKm = tool.customRatePerKmCents ? tool.customRatePerKmCents / 100 : null;
   state.service = (tool.service === 'chauffeur') ? 'chauffeur' : 'private';
   state.passengerCount = Math.max(1, parseInt(tool.passengerCount, 10) || 1);
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
@@ -1144,6 +1189,7 @@ async function reopenQuote(id) {
 
   lastEstimate = null;
   lastEstimateError = null;
+  _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   render();
   refreshEstimate();
   showToast('Reopened ' + (q.reference || q.id));
@@ -2029,6 +2075,40 @@ function renderInternalView() {
 }
 
 // ── Output body renderer ──────────────────────────────────────────────────────
+// GL-1a: copy the active tab's message for manual paste into WhatsApp/email (owner
+// decision 2026-07-02 — no deep link; the operator sends it themselves).
+function copyOutputText() {
+  var text = null;
+  if (outputTab === 'whatsapp') {
+    text = whatsappMessage();
+  } else if (outputTab === 'email') {
+    var body = emailMessage();
+    if (body) text = 'Subject: Ceylon Hop Transport Quote for Your Sri Lanka Trip\n\n' + body;
+  }
+  if (!text) { showToast('Price the trip first'); return; }
+  var done = function() {
+    showToast(outputTab === 'whatsapp' ? 'Copied — paste into WhatsApp' : 'Copied — paste into your email');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function() { legacyCopy(text); done(); });
+  } else {
+    legacyCopy(text);
+    done();
+  }
+}
+
+// execCommand fallback for non-secure contexts (clipboard API needs HTTPS/localhost).
+function legacyCopy(text) {
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* best effort */ }
+  document.body.removeChild(ta);
+}
+
 function renderOutputBody() {
   var tab = outputTab;
   var guard = '<div style="color:var(--muted);font-size:13px;padding:16px 0">Price the trip to generate the message.</div>';
@@ -2215,6 +2295,16 @@ function render() {
     vehicleOptions,
     '            </select><span class="ch-select-chev">&#x25BE;</span></div>',
     '          </div>',
+    // GL-1d: Van 14/Custom have no fixed rate — the operator sets $/km per quote.
+    // Placeholder shows the rate-card prefill default; an empty input prices at that default.
+    (st.vehicleType === 'van_14' || st.vehicleType === 'custom' ? [
+      '          <div class="ch-field">',
+      '            <label class="ch-field-label">Rate $/km <em class="req">*</em></label>',
+      '            <div class="ch-input-wrap"><input class="ch-input" id="f-customRate" type="number" min="0.01" step="0.01"',
+      '              value="' + (st.customRatePerKm != null ? esc(st.customRatePerKm) : '') + '"',
+      '              placeholder="' + esc(defaultCustomRateDollars(st.vehicleType)) + '" /></div>',
+      '          </div>',
+    ].join('') : ''),
     '        </div>',
     '      </div>',
 
@@ -2272,12 +2362,14 @@ function render() {
       '              <button class="ch-tab' + (outputTab === 'email' ? ' active' : '') + '" data-action="setTab" data-tab="email">Email</button>',
       '            </div>',
       (outputTab !== 'internal' ? [
-        '            <div class="ch-cur-toggle" style="margin-bottom:12px">',
+        // GL-1a: quotes go out by manual copy → WhatsApp (owner decision 2026-07-02, no deep link).
+        '            <div class="ch-cur-toggle" style="margin-bottom:12px;display:flex;align-items:center;gap:10px">',
         '              <span>Send in</span>',
         '              <div class="ch-seg sm" style="width:100px">',
         '                <button class="ch-seg-btn' + (st.outputCurrency === 'LKR' ? ' active' : '') + '" data-action="setCurrency" data-val="LKR">LKR</button>',
         '                <button class="ch-seg-btn' + (st.outputCurrency === 'USD' ? ' active' : '') + '" data-action="setCurrency" data-val="USD">USD</button>',
         '              </div>',
+        '              <button class="ch-btn ch-btn-sm" data-action="copyOutput" style="margin-left:auto" title="Copy the message to paste into ' + (outputTab === 'email' ? 'an email' : 'WhatsApp') + '">&#x2398; Copy</button>',
         '            </div>',
       ].join('') : ''),
       '            <div class="ch-output-body">',
@@ -2455,11 +2547,21 @@ function attachEventListeners() {
     }
   });
 
-  // Vehicle type select
+  // Vehicle type select. Changing tier clears the custom $/km — a rate set for one
+  // vehicle must never silently price another (GL-1d).
   var vehicleSel = document.getElementById('f-vehicleType');
   if (vehicleSel) {
     vehicleSel.addEventListener('change', function() {
-      mutate({ vehicleType: vehicleSel.value });
+      mutate({ vehicleType: vehicleSel.value, customRatePerKm: null });
+    });
+  }
+
+  // GL-1d: operator's custom $/km for Van 14/Custom (empty → price at the prefill default).
+  var customRateIn = document.getElementById('f-customRate');
+  if (customRateIn) {
+    customRateIn.addEventListener('change', function() {
+      var v = parseFloat(customRateIn.value);
+      mutate({ customRatePerKm: (isNaN(v) || v <= 0) ? null : v });
     });
   }
 
@@ -2530,6 +2632,8 @@ function attachEventListeners() {
       scheduleAutoDistance(legId);
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
+    } else if (action === 'copyOutput') {
+      copyOutputText(); // GL-1a: manual copy → WhatsApp/email
     } else if (action === 'setTab') {
       outputTab = el.getAttribute('data-tab') || 'whatsapp';
       render();
@@ -2674,6 +2778,7 @@ function acPick(name) {
   state.legs = state.legs.map(function(l) {
     return l.id === legId ? Object.assign({}, l, patch) : l;
   });
+  markDirty();
   // Now schedule auto-distance before rendering so the leg is already updated
   scheduleAutoDistance(legId);
   refreshEstimate();
@@ -2794,6 +2899,7 @@ function attachAutoComplete() {
             state.legs = state.legs.map(function(l) {
               return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; return p; })()) : l;
             });
+            markDirty();
           }
           scheduleAutoDistance(legId);
           refreshEstimate();
