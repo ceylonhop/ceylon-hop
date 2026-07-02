@@ -1000,15 +1000,6 @@ function showToast(msg) {
   _toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3000);
 }
 
-// ── Copy helpers ──────────────────────────────────────────────────────────────
-function copyText(text, label) {
-  navigator.clipboard.writeText(text || '').then(function() {
-    showToast((label || 'Text') + ' copied');
-  }).catch(function() {
-    showToast('Copy failed — check clipboard permission');
-  });
-}
-
 // ── Action handlers ───────────────────────────────────────────────────────────
 function newQuote() {
   if (!confirm('Start a new quote? Unsaved changes will be lost.')) return;
@@ -1742,7 +1733,7 @@ function renderFlagsBadge(flagCount) {
 }
 
 // ── Output tab state ──────────────────────────────────────────────────────────
-var outputTab = 'whatsapp'; // 'internal' | 'whatsapp' | 'email' | 'notion'
+var outputTab = 'whatsapp'; // 'internal' | 'whatsapp' | 'email'
 
 // ── Recent quotes list ────────────────────────────────────────────────────────
 var recentQuotes = [];  // array of { id, reference, name, status, total }
@@ -1957,40 +1948,6 @@ function emailMessage() {
   return lines.join('\n');
 }
 
-function notionTable() {
-  if (!lastEstimate) return null;
-  // S3: escape '|' in every interpolated text cell so it can't corrupt the table.
-  function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '∣'); }
-  var veh = cell(VEHICLE_LABELS[state.vehicleType] || state.vehicleType || '—');
-  var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
-  var out = [];
-  out.push('| Date | Route | Price Given |', '|---|---|---|');
-
-  if (isChauffeurEstimate()) {
-    state.legs.forEach(function(leg) {
-      var route = legDrives(leg)
-        ? routeText(leg)
-        : 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
-      out.push('| ' + cell(fmtDate(leg.date)) + ' | ' + cell(route) + ' |  |');
-    });
-    legOrderItems().forEach(function(it) {
-      out.push('| ' + cell(it.label) + ' |  | ' + cell(M(it.amountCents)) + ' |');
-    });
-    out.push('| CHAUFFEUR-DRIVEN ' + veh.toUpperCase() + ' |  | ' + cell(M(totalCents)) + ' |');
-    var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    out.push('| Deposit to confirm |  | ' + cell(M(dueCents)) + ' |');
-  } else {
-    privateLegRows().forEach(function(r) {
-      out.push('| ' + cell(fmtDate(r.date)) + ' | ' + cell(r.route) + ' | ' + cell(M(r.cents)) + ' |');
-    });
-    splitLineItems().extras.forEach(function(it) {
-      out.push('| ' + cell(it.label) + ' |  | ' + cell(M(it.amountCents)) + ' |');
-    });
-    out.push('| PRIVATE TRANSFER VIA ' + veh.toUpperCase() + ' |  | ' + cell(M(totalCents)) + ' |');
-  }
-  return out.join('\n');
-}
-
 // ── Internal view renderer ────────────────────────────────────────────────────
 function renderInternalView() {
   if (!lastEstimate) {
@@ -2066,10 +2023,6 @@ function renderOutputBody() {
       '<div class="ch-email-subject"><span>Subject</span> Ceylon Hop Transport Quote for Your Sri Lanka Trip</div>',
       '<pre class="ch-pre">' + esc(msg2) + '</pre>',
     ].join('');
-  } else if (tab === 'notion') {
-    var msg3 = notionTable();
-    if (!msg3) return guard;
-    return '<pre class="ch-pre mono">' + esc(msg3) + '</pre>';
   }
   return '';
 }
@@ -2111,25 +2064,10 @@ function renderRecentPanel() {
 
   return [
     '<div class="ch-recent-panel">',
-    '  <div class="ch-recent-title">Recent Quotes</div>',
+    '  <div class="ch-recent-title">Quotes</div>',
     rows,
     '</div>',
   ].join('');
-}
-
-// ── Get the current template text for the active tab ─────────────────────────
-function currentCopyText() {
-  if (outputTab === 'whatsapp') return whatsappMessage() || '';
-  if (outputTab === 'email') return emailMessage() || '';
-  if (outputTab === 'notion') return notionTable() || '';
-  return '';
-}
-
-function currentCopyLabel() {
-  if (outputTab === 'whatsapp') return 'WhatsApp';
-  if (outputTab === 'email') return 'Email';
-  if (outputTab === 'notion') return 'Notion';
-  return '';
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
@@ -2217,10 +2155,7 @@ function render() {
     '      <button class="ch-btn ch-btn-dark ch-btn-sm" id="btnSave">',
     '        <span class="ch-btn-icon">&#x1F4BE;</span> Save',
     '      </button>',
-    '      <button class="ch-btn ch-btn-primary ch-btn-sm" id="btnCopyWA">WhatsApp</button>',
-    '      <button class="ch-btn ch-btn-outline ch-btn-sm" id="btnCopyEmail">Email</button>',
-    '      <button class="ch-btn ch-btn-outline ch-btn-sm" id="btnCopyNotion">Notion</button>',
-    '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openDrawer" id="btnRecent">Recent</button>',
+    '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openDrawer" id="btnRecent">Quotes</button>',
     '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>',
     '    </div>',
     '  </div>',
@@ -2300,7 +2235,7 @@ function render() {
     renderFlagsCardBody(),
     '        </div>',
 
-    // Output: tab bar + copy at the card foot
+    // Output: tab bar at the card foot
     '        <div class="ch-out-collapse">',
     '          <button class="ch-out-toggle" data-action="toggleOutput">',
     '            <span>Quote output</span>',
@@ -2312,7 +2247,6 @@ function render() {
       '              <button class="ch-tab' + (outputTab === 'internal' ? ' active' : '') + '" data-action="setTab" data-tab="internal">Internal</button>',
       '              <button class="ch-tab' + (outputTab === 'whatsapp' ? ' active' : '') + '" data-action="setTab" data-tab="whatsapp">WhatsApp</button>',
       '              <button class="ch-tab' + (outputTab === 'email' ? ' active' : '') + '" data-action="setTab" data-tab="email">Email</button>',
-      '              <button class="ch-tab' + (outputTab === 'notion' ? ' active' : '') + '" data-action="setTab" data-tab="notion">Notion</button>',
       '            </div>',
       (outputTab !== 'internal' ? [
         '            <div class="ch-cur-toggle" style="margin-bottom:12px">',
@@ -2321,7 +2255,6 @@ function render() {
         '                <button class="ch-seg-btn' + (st.outputCurrency === 'LKR' ? ' active' : '') + '" data-action="setCurrency" data-val="LKR">LKR</button>',
         '                <button class="ch-seg-btn' + (st.outputCurrency === 'USD' ? ' active' : '') + '" data-action="setCurrency" data-val="USD">USD</button>',
         '              </div>',
-        '              <button class="ch-btn ch-btn-outline ch-btn-sm" id="btnOutputCopy" style="margin-left:auto">Copy ' + esc(currentCopyLabel()) + '</button>',
         '            </div>',
       ].join('') : ''),
       '            <div class="ch-output-body">',
@@ -2343,7 +2276,7 @@ function render() {
       '<div class="ch-scrim show" data-action="closeDrawer"></div>',
       '<aside class="ch-drawer show">',
       '  <div class="ch-drawer-head">',
-      '    <h2>Recent Quotes</h2>',
+      '    <h2>Quotes</h2>',
       '    <button class="ch-x-btn" data-action="closeDrawer" title="Close">&times;</button>',
       '  </div>',
       '  <div class="ch-drawer-body">',
@@ -2408,36 +2341,6 @@ function attachEventListeners() {
 
   var btnSave = document.getElementById('btnSave');
   if (btnSave) btnSave.addEventListener('click', saveQuote);
-
-  var btnCopyWA = document.getElementById('btnCopyWA');
-  if (btnCopyWA) btnCopyWA.addEventListener('click', function() {
-    var msg = whatsappMessage();
-    if (msg) copyText(msg, 'WhatsApp');
-    else showToast('Price the trip first');
-  });
-
-  var btnCopyEmail = document.getElementById('btnCopyEmail');
-  if (btnCopyEmail) btnCopyEmail.addEventListener('click', function() {
-    var msg = emailMessage();
-    if (msg) copyText(msg, 'Email');
-    else showToast('Price the trip first');
-  });
-
-  var btnCopyNotion = document.getElementById('btnCopyNotion');
-  if (btnCopyNotion) btnCopyNotion.addEventListener('click', function() {
-    var msg = notionTable();
-    if (msg) copyText(msg, 'Notion');
-    else showToast('Price the trip first');
-  });
-
-  // Output tab copy button
-  var btnOutputCopy = document.getElementById('btnOutputCopy');
-  if (btnOutputCopy) btnOutputCopy.addEventListener('click', function() {
-    var txt = currentCopyText();
-    var lbl = currentCopyLabel();
-    if (txt) copyText(txt, lbl);
-    else showToast('Price the trip first');
-  });
 
   // Customer card fields — live update state without full re-render for text inputs
   var fieldMap = {
