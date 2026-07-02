@@ -52,7 +52,6 @@ const ToolLegSchema = z.object({
   from: z.string(),
   to: z.string(),
   distanceKm: z.number().min(0).optional(),
-  stopovers: z.array(z.string()).optional(),
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
@@ -114,23 +113,14 @@ async function resolveAndPrice(
   }
 }
 
-// Resolve a driving leg's km via the maps adapter. With stopovers, resolve the CHAINED route
-// [from, s1], [s1, s2] … [sn, to] and sum the km (S1); otherwise a single from→to lookup.
-// Any unresolvable segment → 400 naming the failing segment.
+// Resolve a driving leg's km via the maps adapter (a single from→to lookup).
+// Unresolvable → 400 naming the failing leg.
 async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
-  const stops = (l.stopovers ?? []).filter((s) => s.trim().length > 0);
-  const points = stops.length > 0 ? [l.from, ...stops, l.to] : [l.from, l.to];
-  let total = 0;
-  for (let i = 0; i < points.length - 1; i++) {
-    const from = points[i];
-    const to = points[i + 1];
-    const d = await maps.distance(from, to);
-    if (!d) {
-      throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
-    }
-    total += d.km;
+  const d = await maps.distance(l.from, l.to);
+  if (!d) {
+    throw new PriceError(`couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually`, 400);
   }
-  return Math.round(total);
+  return Math.round(d.km);
 }
 
 const fxRate = RATE_CARD.fxUsdToLkr;
@@ -309,7 +299,7 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
         currency: RATE_CARD.currency,
         rateCardVersion: RATE_CARD.version,
         marginCents: result.marginEstimateCents ?? null,
-        // V19: persist the reopenable tool payload (with stopovers) alongside the engine request.
+        // V19: persist the reopenable tool payload alongside the engine request.
         // GET /:id returns request.tool for the UI to reopen the draft.
         request: { tool: body, engine: req },
         result,

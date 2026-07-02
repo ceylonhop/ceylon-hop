@@ -242,7 +242,6 @@ input, select, textarea, button { font-family: inherit; }
 .ch-tl-route { display: flex; align-items: flex-end; gap: 12px; }
 .ch-tl-route .ch-tl-title-field { flex: 1 1 0; min-width: 0; }
 .ch-route-sep { font-size: 22px; color: var(--muted-2); padding-bottom: 9px; flex: none; }
-.ch-tl-stoprow:empty { display: none; }
 @media (max-width: 560px) { .ch-tl-route { flex-direction: column; align-items: stretch; gap: 8px; } .ch-route-sep { display: none; } }
 
 /* place autocomplete */
@@ -264,12 +263,6 @@ input, select, textarea, button { font-family: inherit; }
 .ch-from-in { border: none; border-bottom: 1.5px solid var(--line); background: none; padding: 2px 2px; font-size: 13.5px; font-weight: 500; color: var(--ink); outline: none; min-width: 80px; max-width: 180px; }
 .ch-from-in:focus { border-bottom-color: var(--blue); }
 .ch-from-in::placeholder { color: var(--muted-2); font-weight: 400; }
-
-.ch-stops { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
-.ch-stop-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 7px 3px 9px; font-size: 11px; font-weight: 500; }
-.ch-stop-x { border: none; background: none; color: #b9760f; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
-.ch-stop-input { border: 1px dashed var(--line); background: #fff; border-radius: 999px; padding: 2px 9px; font-size: 11px; outline: none; width: 60px; }
-.ch-stop-input:focus { border-color: var(--orange); width: 100px; }
 
 .ch-tl-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ch-meta-date { display: inline-flex; align-items: center; gap: 6px; background: var(--cream); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; }
@@ -458,15 +451,15 @@ input, select, textarea, button { font-family: inherit; }
 .ch-leg-price.empty { color: var(--muted-2); font-family: var(--sans); font-size: 12px; font-weight: 500; }
 .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
-/* second thin line: stops (when present) */
-.ch-leg-stoprow { padding: 0 12px 9px 44px; }
-.ch-leg-stoprow .ch-stops { gap: 5px; }
+/* second thin line: add-ons chip row (always present on point-to-point driving legs) */
+.ch-leg-addonrow { padding: 0 12px 9px 44px; }
+.ch-addon-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px dashed var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 500; cursor: pointer; transition: all .15s; }
+.ch-addon-chip:hover { border-color: var(--orange); color: var(--orange); }
+.ch-addon-chip.on { border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; }
+.ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
 
-/* second thin line: add-on toggles (only when a popover is open) */
+/* second thin line: add-on toggles (only when the popover is open) */
 .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
-.ch-addon-btn { border: 1px solid var(--line); background: #fff; border-radius: 7px; width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--muted); display: grid; place-items: center; flex: none; transition: all .15s; }
-.ch-addon-btn:hover { border-color: var(--orange); color: var(--orange); }
-.ch-addon-btn.on { border-color: var(--orange); color: var(--orange); background: #fffdf8; }
 
 /* dense-row responsive: stack route below controls on narrow */
 @media (max-width: 780px) {
@@ -705,7 +698,6 @@ async function _runEstimate() {
         category:         leg.category,
         from:             leg.pickupLocation || '',
         to:               leg.dropoffLocation || '',
-        stopovers:        (leg.stopovers || []).filter(function(s) { return s && s.trim(); }),
         distanceKm:       leg.distanceKm || 0,
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
@@ -746,7 +738,6 @@ function newLeg() {
     category: 'transfer',
     pickupLocation: '',
     dropoffLocation: '',
-    stopovers: [],
     distanceKm: 0,
     driveTimeHours: 0,
     manualDistance: false,
@@ -1058,7 +1049,6 @@ function savePayload() {
         category:         leg.category,
         from:             leg.pickupLocation || '',
         to:               leg.dropoffLocation || '',
-        stopovers:        (leg.stopovers || []).filter(function(s) { return s && s.trim(); }),
         distanceKm:       leg.distanceKm || 0,
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
@@ -1126,7 +1116,6 @@ async function reopenQuote(id) {
     leg.category = tl.category || 'transfer';
     leg.pickupLocation = tl.from || '';
     leg.dropoffLocation = tl.to || '';
-    leg.stopovers = (tl.stopovers || []).slice();
     leg.distanceKm = tl.distanceKm || 0;
     // Treat the persisted distance as manual so prices don't re-resolve differently.
     leg.manualDistance = (tl.distanceKm || 0) > 0;
@@ -1297,32 +1286,27 @@ function renderLegCard(leg, idx, total) {
     ? '<div class="ch-leg-price">' + esc(legPrice) + '</div>'
     : '<div class="ch-leg-price empty">' + (isStay ? 'stay' : '—') + '</div>';
 
-  // Add-on toggle button (private travel legs only) — opens the thin add-on line
-  var anyAddon = leg.addSightseeingFee || leg.addWaitingFee || leg.addSafariWait;
-  var addonToggle = (!isChauffeur && !isStay) ? [
-    '<button class="ch-addon-btn' + (anyAddon ? ' on' : '') + '" title="Add-ons (sightseeing / waiting / safari)"',
-    '  data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#9873;</button>',
-  ].join('') : '';
-
-  // Actions cluster
+  // Actions cluster (duplicate / remove only — add-ons now lives on the second line)
   var actions = [
     '<div class="ch-leg-actions">',
-    addonToggle,
     '  <button class="ch-mini-btn" title="Duplicate" data-action="dupLeg" data-leg="' + esc(leg.id) + '">&#10697;</button>',
     '  <button class="ch-mini-btn danger" title="Remove" data-action="removeLeg" data-leg="' + esc(leg.id) + '">&times;</button>',
     '</div>',
   ].join('');
 
-  // Stopover chips (thin second line, only when present) — KEEP .ch-stop-input/.ch-stop-x
-  var stopChips = (leg.stopovers || []).map(function(s, si) {
-    return '<span class="ch-stop-chip">' + esc(s) +
-      '<button class="ch-stop-x" data-action="removeStop" data-leg="' + esc(leg.id) + '" data-stop="' + si + '">&times;</button></span>';
-  }).join('');
-  var stopRow = (!isStay) ? [
-    '<div class="ch-leg-stoprow"><div class="ch-stops">',
-    stopChips,
-    '  <input class="ch-stop-input" placeholder="+ stop" data-action="addStop" data-leg="' + esc(leg.id) + '" />',
-    '</div></div>',
+  // Add-ons chip (thin second line, point-to-point driving legs only). Shows a
+  // muted dashed "+ Add-ons" pill when none are active, or a solid orange-tinted
+  // pill naming the active ones — both open/close the same toggle popover.
+  var activeAddonLabels = [];
+  if (leg.addSightseeingFee) activeAddonLabels.push('Sightseeing');
+  if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
+  if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
+  var anyAddon = activeAddonLabels.length > 0;
+  var addonChipLabel = anyAddon ? ('Add-ons: ' + activeAddonLabels.join(' · ')) : '+ Add-ons';
+  var addonChipRow = (!isChauffeur && !isStay) ? [
+    '<div class="ch-leg-addonrow">',
+    '  <button class="ch-addon-chip' + (anyAddon ? ' on' : '') + '" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(addonChipLabel) + '</button>',
+    '</div>',
   ].join('') : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
@@ -1349,7 +1333,7 @@ function renderLegCard(leg, idx, total) {
     priceHtml,
     actions,
     '  </div>',
-    stopRow,
+    addonChipRow,
     addonLine,
     '</div>',
   ].join('');
@@ -1659,16 +1643,6 @@ function computeFlags() {
       });
     }
 
-    // blue: stopover included
-    if (!flagSeen.stopover && (leg.stopovers || []).filter(Boolean).length > 0) {
-      flagSeen.stopover = true;
-      flags.push({
-        level: 'blue',
-        title: 'Stopover included',
-        detail: 'Confirm whether each stop is a quick break, sightseeing, safari wait, or multi-hour stop.',
-      });
-    }
-
     // blue: check distances — driving leg with no distance, not auto-matched, not manual
     if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && (leg.distanceKm || 0) <= 0 && !leg.autoMatched && !leg.manualDistance) {
       flagSeen.distCheck = true;
@@ -1814,10 +1788,7 @@ function routeText(leg) {
   if (leg.category === 'stay_day') {
     return 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
   }
-  var parts = [leg.pickupLocation || '?'];
-  (leg.stopovers || []).filter(Boolean).forEach(function(s) { parts.push(s); });
-  parts.push(leg.dropoffLocation || '?');
-  return parts.join(' → ');
+  return (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
 }
 
 // M(priceCents) — convert cents to display currency
@@ -2194,9 +2165,9 @@ function render() {
     legsHtml = [
       '<div class="ch-empty">',
       '  <div class="ch-empty-icon">&#x1F5FA;&#xFE0F;</div>',
-      '  <div class="ch-empty-title">Build the journey stop by stop to start pricing.</div>',
+      '  <div class="ch-empty-title">Build the journey leg by leg to start pricing.</div>',
       '  <button class="ch-btn ch-btn-primary" data-action="addLeg" data-cat="transfer">',
-      '    <span class="ch-btn-icon">&#xFF0B;</span> Add first stop',
+      '    <span class="ch-btn-icon">&#xFF0B;</span> Add first leg',
       '  </button>',
       '</div>',
     ].join('');
@@ -2209,7 +2180,7 @@ function render() {
   }
 
   var stayDays = st.legs.filter(function(l) { return l.category === 'stay_day'; }).length;
-  var itinBadge = st.legs.length + ' stop' + (st.legs.length !== 1 ? 's' : '') + ' · ' + stayDays + ' stay day' + (stayDays !== 1 ? 's' : '');
+  var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '') + ' · ' + stayDays + ' stay day' + (stayDays !== 1 ? 's' : '');
 
   var flags = computeFlags();
 
@@ -2566,17 +2537,6 @@ function attachEventListeners() {
       delete _distCache[legId];
       updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0 });
       scheduleAutoDistance(legId);
-    } else if (action === 'removeStop') {
-      var stopIdx = parseInt(el.getAttribute('data-stop'), 10);
-      var legObj = state.legs.find(function(l) { return l.id === legId; });
-      if (legObj) {
-        var stops = legObj.stopovers.slice();
-        stops.splice(stopIdx, 1);
-        // S1: stopover change must invalidate distance + re-run auto-distance.
-        delete _distCache[legId];
-        updateLeg(legId, { stopovers: stops });
-        scheduleAutoDistance(legId);
-      }
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'setTab') {
@@ -2632,46 +2592,6 @@ function attachEventListeners() {
     updateLeg(legId, patch);
   });
 
-  // Add stopover on Enter/blur
-  app.addEventListener('keydown', function(e) {
-    var el = e.target;
-    if (el.getAttribute('data-action') !== 'addStop') return;
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    var legId = el.getAttribute('data-leg');
-    var val = el.value.trim();
-    if (!val) return;
-    var legObj = state.legs.find(function(l) { return l.id === legId; });
-    if (legObj) {
-      var stops = legObj.stopovers.concat([val]);
-      // Clear BEFORE the re-render: the destroyed input's blur re-fires on the old
-      // node (capture listener) and would double-add if it still held the value.
-      el.value = '';
-      // S1: stopover change must invalidate distance + re-run auto-distance.
-      delete _distCache[legId];
-      updateLeg(legId, { stopovers: stops });
-      scheduleAutoDistance(legId);
-    }
-  });
-
-  app.addEventListener('blur', function(e) {
-    var el = e.target;
-    if (el.getAttribute('data-action') !== 'addStop') return;
-    var legId = el.getAttribute('data-leg');
-    var val = el.value.trim();
-    if (!val) return;
-    var legObj = state.legs.find(function(l) { return l.id === legId; });
-    // Skip if this value was just added (Enter path already handled it).
-    if (legObj && legObj.stopovers[legObj.stopovers.length - 1] !== val) {
-      var stops = legObj.stopovers.concat([val]);
-      el.value = '';
-      // S1: stopover change must invalidate distance + re-run auto-distance.
-      delete _distCache[legId];
-      updateLeg(legId, { stopovers: stops });
-      scheduleAutoDistance(legId);
-    }
-  }, true);
-
   } // end if (!_delegatesWired)
 
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
@@ -2700,37 +2620,23 @@ async function runAutoDistance(legId) {
   var from = (leg.pickupLocation || '').trim();
   var to = (leg.dropoffLocation || '').trim();
   if (!from || !to) return;
-  var stops = (leg.stopovers || []).map(function(s) { return (s || '').trim(); }).filter(Boolean);
-  // S1: include stopovers in the cache key so a stopover edit invalidates stale distance.
-  var cacheKey = [from].concat(stops).concat([to]).join('||');
-  if (_distCache[legId] === cacheKey) return; // already fetched this exact chain
+  var cacheKey = from + '||' + to;
+  if (_distCache[legId] === cacheKey) return; // already fetched this exact from/to
   _distCache[legId] = cacheKey;
 
-  // Chain the route from→stops→to, one /distance call per segment, summing km + duration.
-  var points = [from].concat(stops).concat([to]);
-  var totalKm = 0;
-  var totalDurMin = 0;
-  var failed = false;
-  for (var si = 0; si < points.length - 1; si++) {
-    var seg = await apiDistance(points[si], points[si + 1]);
-    if (!seg || seg.km == null) { failed = true; break; }
-    totalKm += seg.km;
-    totalDurMin += (seg.durationMin || 0);
-  }
+  var seg = await apiDistance(from, to);
 
   // Guard: leg may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
   if (!current || current.manualDistance) return;
   if ((current.pickupLocation || '').trim() !== from) return;
   if ((current.dropoffLocation || '').trim() !== to) return;
-  var curStops = (current.stopovers || []).map(function(s) { return (s || '').trim(); }).filter(Boolean);
-  if (curStops.join('||') !== stops.join('||')) return; // stopovers changed under us
 
-  if (!failed) {
-    var hrs = Math.round((totalDurMin / 60) * 100) / 100;
-    updateLeg(legId, { distanceKm: totalKm, driveTimeHours: hrs, autoMatched: true });
+  if (seg && seg.km != null) {
+    var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
+    updateLeg(legId, { distanceKm: seg.km, driveTimeHours: hrs, autoMatched: true });
   } else {
-    // Any failed segment → "No distance" warn state
+    // No distance found → "No distance" warn state
     updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
   }
 }

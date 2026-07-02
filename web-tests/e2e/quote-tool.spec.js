@@ -220,54 +220,7 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0);
 });
 
-// Spec 4 (S1): Stopovers are priced — adding a stopover chip increases distance
-// (and therefore the total); removing it brings the total back down.
-test('adding then removing a stopover changes the priced total (S1)', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
-  await chooseVehicle(page, 'van_6');
-
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  await pickPlace(page, fromInput, 'Colombo City', 'Colombo');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
-  await pickPlace(page, toInput, 'Kand', 'Kandy');
-  await fillFirstLegDate(page, '2026-08-01');
-
-  // Wait for the initial (no-stopover) estimate
-  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
-  const baseline = await totalLineText(page);
-  // Let the background auto-distance/estimate render() settle before typing — render()
-  // replaces #app wholesale and can otherwise wipe the stop-input mid-keystroke.
-  await page.waitForTimeout(600);
-
-  // Add a stopover. NOTE: commit via blur (click elsewhere), not Enter — pressing Enter
-  // double-submits the stopover here (the keydown handler adds it via updateLeg(), which
-  // re-renders and replaces the input node, but the original node's blur teardown then
-  // fires the *same* add-on-blur handler again with its still-populated value). That's a
-  // real app bug (duplicate stopovers on Enter); tracked separately, not this file's to fix.
-  const stopInput = page.locator('.ch-stop-input').first();
-  await stopInput.click();
-  await page.keyboard.type('Negombo', { delay: 30 });
-  await expect(stopInput).toHaveValue('Negombo');
-  await page.locator('#f-customerName').click();
-  await expect(page.locator('.ch-stop-chip')).toHaveCount(1);
-
-  // Wait for the total to change (distance re-resolves + re-estimates)
-  await expect.poll(async () => totalLineText(page), { timeout: 10000 }).not.toBe(baseline);
-  const withStopover = await totalLineText(page);
-
-  // Remove the stopover
-  await page.locator('.ch-stop-x').first().click();
-
-  // Total should decrease back toward (or to) the baseline
-  await expect.poll(async () => totalLineText(page), { timeout: 10000 }).not.toBe(withStopover);
-  const afterRemoval = await totalLineText(page);
-
-  const toNum = (s) => parseInt(String(s).replace(/[^\d]/g, ''), 10);
-  expect(toNum(afterRemoval)).toBeLessThan(toNum(withStopover));
-});
-
-// Spec 5 (V5): Save→status sync — setting the status before the first save must
+// Spec 4 (V5): Save→status sync — setting the status before the first save must
 // be persisted (via the post-save PATCH) so the Recent list reflects it.
 test('status chosen before first save is synced on save (V5)', async ({ page }) => {
   await page.goto(TOOL);
@@ -300,7 +253,7 @@ test('status chosen before first save is synced on save (V5)', async ({ page }) 
   await expect(row.locator('select[data-action="patchStatus"]')).toHaveValue('sent');
 });
 
-// Spec 6 (V19): Reopen — clicking a Recent row (not its status select) reopens
+// Spec 5 (V19): Reopen — clicking a Recent row (not its status select) reopens
 // the saved quote and repopulates the customer name.
 test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => {
   await page.goto(TOOL);
@@ -336,7 +289,7 @@ test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => 
   await expect(page.locator('#f-customerName')).toHaveValue(custName);
 });
 
-// Spec 7 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
+// Spec 6 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
 test('legs can be reordered and out-of-order dates raise a flag', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');

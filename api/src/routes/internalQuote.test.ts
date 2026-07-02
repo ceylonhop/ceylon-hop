@@ -275,22 +275,23 @@ describe('internal quoting tool route', () => {
     expect((await res.json()).error).toMatch(/date/i);
   });
 
-  // Fix 2 (S1): stopovers must affect pricing.
-  it('stopovers chain the route so the total exceeds the direct route', async () => {
-    const direct = await (await post(createApp(), '/admin/quote/estimate', {
+  // Legs are the only concept now (owner decision: a via-request = two same-date legs).
+  // A plain leg with a missing km still auto-resolves via the maps adapter…
+  it('estimate auto-resolves a single leg\'s distance via the maps adapter when km is omitted', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
       vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy' }],
-    })).json();
-    const viaNegombo = await (await post(createApp(), '/admin/quote/estimate', {
-      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Negombo'] }],
-    })).json();
-    expect(viaNegombo.total.cents).toBeGreaterThan(direct.total.cents);
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).total.cents).toBeGreaterThan(0);
   });
 
-  it('estimate is 400 when a stopover segment cannot be resolved', async () => {
+  // …and an unresolvable leg still 400s naming the failing segment.
+  it('estimate is 400 when a leg\'s distance cannot be resolved', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
-      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Nowhereville'] }],
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Nowhereville' }],
     });
     expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/couldn't find the distance/i);
   });
 
   // Reflow: `services` chooser replaces the car/van comparison.
@@ -368,16 +369,28 @@ describe('internal quoting tool route', () => {
   });
 
   // Fix 8 (V19): /save persists the reopenable tool payload under request.tool (+ engine req).
-  it('POST /save stores request.tool (with stopovers) and request.engine for reopening', async () => {
+  it('POST /save stores request.tool and request.engine for reopening', async () => {
     const app = createApp();
-    const body = { name: 'Reo', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', stopovers: ['Negombo'] }] };
+    const body = { name: 'Reo', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy', distanceKm: 100 }] };
     const res = await post(app, '/admin/quote/save', body);
     expect(res.status).toBe(201);
     const saved = await res.json();
     const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
-    expect(got.request.tool.legs[0].stopovers).toEqual(['Negombo']);
+    expect(got.request.tool.legs[0].from).toBe('Colombo City');
     expect(got.request.engine).toBeTruthy();
     expect(got.request.engine.product).toBe('private');
+  });
+
+  // Legs-only decision: an OLD saved quote whose request.tool legs still carry a `stopovers`
+  // array (persisted before this change) must still reopen/reprice fine — Zod strips the
+  // unknown key rather than rejecting the payload.
+  it('re-pricing an old saved quote whose tool legs carry a leftover stopovers array still works', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, stopovers: ['Old Data'] }],
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).total.cents).toBe(4048);
   });
 });
 
