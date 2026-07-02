@@ -29,11 +29,23 @@ async function fillFirstLegDate(page, iso) {
   await page.locator('input[type="date"][data-field="date"]').first().fill(iso);
 }
 
+// Fix 1: there is no default vehicle anymore — ops must choose one before any
+// estimate is priced. Every spec that expects a priced summary must call this
+// right after goto + networkidle.
+async function chooseVehicle(page, value) {
+  await page.locator('#f-vehicleType').selectOption(value);
+  // Choosing a vehicle kicks off a debounced estimate that render()s ~350ms later,
+  // replacing #app wholesale. Let that settle before the spec starts typing into
+  // leg inputs, or the re-render wipes the input node mid-keystroke.
+  await page.waitForTimeout(600);
+}
+
 // Spec 1: Timeline autocomplete → auto-distance → priced summary → save
 test('timeline autocomplete → priced LKR summary → save reference toast', async ({ page }) => {
   await page.goto(TOOL);
   // Wait for the page to fully initialise (rate card fetch + render complete)
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   // Fill first leg: "From" field (first .ch-tl-title with data-field="pickupLocation")
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -94,6 +106,7 @@ test('car + 4 bags raises the luggage flag', async ({ page }) => {
 test('stay day renders unpriced in WhatsApp output with deposit line (V1)', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   // Leg 1 (transfer): Kandy → Ella, dated. (Settle waits: render() replaces #app
   // wholesale ~350ms after each mutation; see the app's debounce.)
@@ -153,6 +166,7 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
 test('service chooser: chauffeur gated by dates, add-ons only in point-to-point', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   // Undated single leg → chauffeur disabled.
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -196,6 +210,7 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
 test('adding then removing a stopover changes the priced total (S1)', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Colombo City', 'Colombo');
@@ -242,6 +257,7 @@ test('adding then removing a stopover changes the priced total (S1)', async ({ p
 test('status chosen before first save is synced on save (V5)', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
@@ -271,6 +287,7 @@ test('status chosen before first save is synced on save (V5)', async ({ page }) 
 test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
@@ -296,4 +313,34 @@ test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => 
 
   await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
   await expect(page.locator('#f-customerName')).toHaveValue(custName);
+});
+
+// Spec 7 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
+test('legs can be reordered and out-of-order dates raise a flag', async ({ page }) => {
+  await page.goto(TOOL);
+  await page.waitForLoadState('networkidle');
+  await chooseVehicle(page, 'van_6');
+
+  const outOfOrderFlag = page.locator('.ch-flag', { hasText: /Dates out of order/i });
+
+  // Leg 1, dated first.
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.waitForTimeout(400);
+
+  // Add leg 2, dated LATER — dates are in order, so no flag.
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(2);
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-05');
+  await page.waitForTimeout(400);
+  await expect(outOfOrderFlag).toHaveCount(0);
+
+  // Swap the dates so leg 1 is LATER than leg 2 → flag appears.
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-10');
+  await page.waitForTimeout(400);
+  await expect(outOfOrderFlag.first()).toBeVisible({ timeout: 5000 });
+
+  // Move leg 2 up (now dates read 2026-08-05 then 2026-08-10) → linear again, flag clears.
+  await page.locator('.ch-tl-item').nth(1).locator('[data-action="moveLegUp"]').click();
+  await page.waitForTimeout(400);
+  await expect(outOfOrderFlag).toHaveCount(0);
 });

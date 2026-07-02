@@ -37,6 +37,9 @@ export default defineConfig({
         url: 'http://localhost:8787/health',
         reuseExistingServer: true,
         timeout: 60000,
+        // Parallel specs share one IP; the /admin/quote rate limiter (RATE_LIMIT_MAX*4)
+        // saturates near the tail of a full run. Raise the cap for the test server only.
+        env: { ...process.env, RATE_LIMIT_MAX: '200' },
       },
     ] : []),
   ],
