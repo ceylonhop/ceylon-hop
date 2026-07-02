@@ -2337,9 +2337,29 @@ function render() {
   // stops working after the first leg" symptom. Snapshot the focused field's
   // in-progress text + caret before the swap and restore them after.
   var _focusSnap = captureEditorFocus();
+  // Was an autocomplete menu open? The innerHTML swap below destroys it (it's a
+  // child of #app), so capture the intent to rebuild it afterwards.
+  var _menuWasOpen = !!_ac.menuEl;
   document.getElementById('app').innerHTML = html;
   attachEventListeners();
   restoreEditorFocus(_focusSnap);
+  if (_menuWasOpen) reopenAutoCompleteMenu();
+}
+
+// After a full re-render blows away the open autocomplete menu, rebuild it
+// against the fresh input node so it doesn't vanish mid-selection (the "dropdown
+// disappears before I can click" symptom when a background estimate/distance
+// render lands while the operator is choosing a place). _ac still holds the last
+// fetched items + highlight index; we just need the new DOM node to anchor to.
+function reopenAutoCompleteMenu() {
+  if (!_ac.legId || !_ac.field || !_ac.items || _ac.items.length === 0) return;
+  var sel = '#app [data-leg="' + _ac.legId + '"][data-field="' + _ac.field + '"]';
+  var input = document.querySelector(sel);
+  if (!input) return;
+  // Only reopen while the operator is actually in this field.
+  if (document.activeElement !== input) return;
+  _ac.inputEl = input;
+  acRenderMenu(input, _ac.items, input.value || '');
 }
 
 // Capture the currently-focused editor input so a full re-render doesn't lose
