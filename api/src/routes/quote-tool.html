@@ -344,6 +344,14 @@ input, select, textarea, button { font-family: inherit; }
 .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
 .ch-line.strong .ch-line-val { font-family: var(--serif); font-size: 21px; font-weight: 700; }
 .ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
+/* ---------- Service chooser ---------- */
+.ch-service-seg .ch-seg-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 8px; height: auto; }
+.ch-service-seg .ch-seg-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ch-service-seg .ch-seg-price { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--ink); }
+.ch-service-seg .ch-seg-btn:not(.active) .ch-seg-price { color: var(--muted); }
+.ch-service-hint { font-size: 11.5px; color: var(--red); margin-top: 9px; }
+.ch-service-caption { font-size: 12px; color: var(--teal-d); margin-top: 9px; line-height: 1.4; font-weight: 500; }
+
 .ch-compare { background: var(--cream); border-radius: var(--r-md); padding: 13px 15px; }
 .ch-compare-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; }
 .ch-compare-row span { font-size: 13px; font-weight: 500; }
@@ -493,10 +501,10 @@ function vehicleCaps(toolId) {
   return { pax: v.maxPax, bags: v.maxBags };
 }
 
-// Driving categories (for flag computation)
+// Driving categories (for flag computation) — slim set (R4). Anything not a
+// stay day drives; stay_day is the only non-driving category.
 var DRIVING_CATS = {
-  transfer: true, train_support: true, sightseeing: true,
-  safari_wait: true, airport: true,
+  transfer: true, train_support: true, airport: true,
 };
 
 function refreshEstimate() {
@@ -522,6 +530,7 @@ async function _runEstimate() {
 
   // Build the payload (Task 2 mapping)
   var payload = {
+    service: st.service || 'private',
     vehicle: st.vehicleType,
     passengerCount: st.passengerCount,
     luggageCount: st.luggageCount,
@@ -535,8 +544,7 @@ async function _runEstimate() {
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
         addWaitingFee:    !!leg.addWaitingFee,
-        hasDriver:        !!leg.hasDriver,
-        hasCarStay:       !!leg.hasCarStay,
+        addSafariWait:    !!leg.addSafariWait,
       };
     }),
   };
@@ -579,8 +587,7 @@ function newLeg() {
     autoMatched: false,
     addSightseeingFee: false,
     addWaitingFee: false,
-    hasDriver: false,
-    hasCarStay: false,
+    addSafariWait: false,
     notes: '',
     date: '',
   };
@@ -593,6 +600,7 @@ let state = {
   passengerCount: 2,
   luggageCount: 2,
   vehicleType: 'van_6',
+  service: 'private',
   outputCurrency: 'LKR',
   status: 'draft',
   internalNotes: '',
@@ -607,6 +615,32 @@ function mutate(patch) {
     refreshEstimate();
   }
   render();
+}
+
+// R1/R3: set the chosen service. Flipping to private converts any stay_day leg to
+// a transfer so no stay_day is ever sent under private (backend Zod 400s otherwise).
+function setService(service) {
+  if (service !== 'private' && service !== 'chauffeur') service = 'private';
+  if (service === state.service) return;
+  state.service = service;
+  if (service === 'private') {
+    state.legs = state.legs.map(function(leg) {
+      return leg.category === 'stay_day'
+        ? Object.assign({}, leg, { category: 'transfer' })
+        : leg;
+    });
+  }
+  refreshEstimate();
+  render();
+}
+
+// Count distinct leg dates — chauffeur needs >1 to be feasible (R6).
+function distinctLegDateCount() {
+  var seen = {};
+  state.legs.forEach(function(leg) {
+    if (leg.date) seen[leg.date] = true;
+  });
+  return Object.keys(seen).length;
 }
 
 function updateLeg(id, patch) {
@@ -813,6 +847,7 @@ function newQuote() {
     passengerCount: 2,
     luggageCount: 2,
     vehicleType: 'van_6',
+    service: 'private',
     outputCurrency: 'LKR',
     status: 'draft',
     internalNotes: '',
@@ -832,6 +867,7 @@ function savePayload() {
   return {
     name: state.customerName,
     contact: state.contact,
+    service: state.service || 'private',
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
     luggageCount: state.luggageCount,
@@ -845,8 +881,7 @@ function savePayload() {
         date:             leg.date || '',
         addSightseeingFee: !!leg.addSightseeingFee,
         addWaitingFee:    !!leg.addWaitingFee,
-        hasDriver:        !!leg.hasDriver,
-        hasCarStay:       !!leg.hasCarStay,
+        addSafariWait:    !!leg.addSafariWait,
       };
     }),
     notes: state.internalNotes,
@@ -913,8 +948,7 @@ async function reopenQuote(id) {
     leg.date = tl.date || '';
     leg.addSightseeingFee = !!tl.addSightseeingFee;
     leg.addWaitingFee = !!tl.addWaitingFee;
-    leg.hasDriver = !!tl.hasDriver;
-    leg.hasCarStay = !!tl.hasCarStay;
+    leg.addSafariWait = !!tl.addSafariWait;
     return leg;
   });
   if (legs.length === 0) legs = [newLeg()];
@@ -923,6 +957,7 @@ async function reopenQuote(id) {
   state.contact = q.customerContact || tool.contact || '';
   state.internalNotes = q.notes || tool.notes || '';
   state.vehicleType = tool.vehicle || state.vehicleType;
+  state.service = (tool.service === 'chauffeur') ? 'chauffeur' : 'private';
   state.passengerCount = Math.max(1, parseInt(tool.passengerCount, 10) || 1);
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
   state.legs = legs;
@@ -1106,21 +1141,14 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('') : '';
 
-  // Driver / car stay toggles
-  var driverOnClass = leg.hasDriver ? ' on tone-teal' : '';
-  var carOnClass = leg.hasCarStay ? ' on tone-blue' : '';
-  var chauffeurNote = (leg.hasDriver || leg.hasCarStay) ?
-    '<span class="ch-stays-note">+ chauffeur rate for this date</span>' : '';
-
-  // Category select options
+  // Category select options (R4: slim set). Stay day only under chauffeur (R3).
+  var isChauffeur = (state.service === 'chauffeur');
   var cats = [
     { id: 'transfer',      label: 'Transfer' },
-    { id: 'stay_day',      label: 'Stay day' },
-    { id: 'train_support', label: 'Train / luggage support' },
-    { id: 'sightseeing',   label: 'Sightseeing / waiting' },
-    { id: 'safari_wait',   label: 'Safari waiting' },
     { id: 'airport',       label: 'Airport pickup / drop-off' },
+    { id: 'train_support', label: 'Train / luggage support' },
   ];
+  if (isChauffeur) cats.push({ id: 'stay_day', label: 'Stay day' });
   var catOptions = cats.map(function(c) {
     return '<option value="' + esc(c.id) + '"' + (leg.category === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>';
   }).join('');
@@ -1128,6 +1156,7 @@ function renderLegCard(leg, idx, total) {
   // Fees
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
   var waitChecked = leg.addWaitingFee ? ' checked' : '';
+  var safariChecked = leg.addSafariWait ? ' checked' : '';
   var sightFeeInput = leg.addSightseeingFee ? [
     '<div class="ch-input-wrap" style="width:110px">',
     '  <span class="ch-input-prefix">Rs</span>',
@@ -1141,6 +1170,37 @@ function renderLegCard(leg, idx, total) {
     '  <input class="ch-input" type="number" min="0" value="' + esc(leg.waitingFeeLkr || 2000) + '"',
     '    data-leg="' + esc(leg.id) + '" data-field="waitingFeeLkr" />',
     '</div>',
+  ].join('') : '';
+
+  // R2/R4: per-leg add-on toggles only in point-to-point (private). Under chauffeur
+  // these are included in the day rate and the engine refuses to charge them, so we
+  // don't render them at all.
+  var feesHtml = (!isChauffeur && !isStay) ? [
+    '      <div class="ch-tl-fees">',
+    '        <label class="ch-fee">',
+    '          <label class="ch-check">',
+    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSightseeingFee"' + sightChecked + ' />',
+    '            <span class="ch-check-box">' + (leg.addSightseeingFee ? '&#10003;' : '') + '</span>',
+    '            Sightseeing fee',
+    '          </label>',
+    sightFeeInput,
+    '        </label>',
+    '        <label class="ch-fee">',
+    '          <label class="ch-check">',
+    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addWaitingFee"' + waitChecked + ' />',
+    '            <span class="ch-check-box">' + (leg.addWaitingFee ? '&#10003;' : '') + '</span>',
+    '            Waiting fee',
+    '          </label>',
+    waitFeeInput,
+    '        </label>',
+    '        <label class="ch-fee">',
+    '          <label class="ch-check">',
+    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSafariWait"' + safariChecked + ' />',
+    '            <span class="ch-check-box">' + (leg.addSafariWait ? '&#10003;' : '') + '</span>',
+    '            Safari wait',
+    '          </label>',
+    '        </label>',
+    '      </div>',
   ].join('') : '';
 
   // Notes (show when fees enabled or notes non-empty)
@@ -1176,37 +1236,7 @@ function renderLegCard(leg, idx, total) {
     '      </div>',
     routeHtml,
     stayMetaHtml,
-    '      <div class="ch-tl-stays">',
-    '        <button class="ch-stay-toggle' + driverOnClass + '" data-action="toggleDriver" data-leg="' + esc(leg.id) + '">',
-    '          <span class="ch-stay-ic">&#x1F9D1;&#x200D;&#x2708;&#xFE0F;</span>',
-    '          <span class="ch-stay-lb">Driver stays</span>',
-    '          <span class="ch-stay-state">' + (leg.hasDriver ? 'ON' : 'OFF') + '</span>',
-    '        </button>',
-    '        <button class="ch-stay-toggle' + carOnClass + '" data-action="toggleCarStay" data-leg="' + esc(leg.id) + '">',
-    '          <span class="ch-stay-ic">&#x1F699;</span>',
-    '          <span class="ch-stay-lb">Car stays</span>',
-    '          <span class="ch-stay-state">' + (leg.hasCarStay ? 'ON' : 'OFF') + '</span>',
-    '        </button>',
-    chauffeurNote,
-    '      </div>',
-    '      <div class="ch-tl-fees">',
-    '        <label class="ch-fee">',
-    '          <label class="ch-check">',
-    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSightseeingFee"' + sightChecked + ' />',
-    '            <span class="ch-check-box">' + (leg.addSightseeingFee ? '&#10003;' : '') + '</span>',
-    '            Sightseeing fee',
-    '          </label>',
-    sightFeeInput,
-    '        </label>',
-    '        <label class="ch-fee">',
-    '          <label class="ch-check">',
-    '            <input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addWaitingFee"' + waitChecked + ' />',
-    '            <span class="ch-check-box">' + (leg.addWaitingFee ? '&#10003;' : '') + '</span>',
-    '            Waiting fee',
-    '          </label>',
-    waitFeeInput,
-    '        </label>',
-    '      </div>',
+    feesHtml,
     notesHtml ? '<div>' + notesHtml + '</div>' : '',
     '    </div>',
     '  </div>',
@@ -1320,6 +1350,52 @@ function renderRateCardBody() {
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
 }
 
+// ── Service chooser renderer (R1) ─────────────────────────────────────────────
+// Segmented Point-to-point | Chauffeur-guide bound to state.service. Each button
+// shows its total from est.services (Money.lkr). Chauffeur is disabled with its
+// error hint when that side returns { error } or the trip has ≤1 distinct date.
+function renderServiceCardBody() {
+  var svc = (lastEstimate && lastEstimate.services) ? lastEstimate.services : null;
+  var p2p = svc ? svc.pointToPoint : null;
+  var chauf = svc ? svc.chauffeur : null;
+
+  var p2pPrice = (p2p && p2p.total) ? p2p.total.lkr : '—';
+
+  // Chauffeur disabled reason: server error, or a visual pre-empt when the itinerary
+  // has ≤1 distinct leg date (avoids a flash before the server error arrives).
+  var chaufErr = (chauf && chauf.error) ? chauf.error : null;
+  if (!chaufErr && distinctLegDateCount() <= 1) {
+    chaufErr = 'single-day — point-to-point only';
+  }
+  var chaufPrice = (chauf && chauf.total) ? chauf.total.lkr : '—';
+  var chaufDisabled = !!chaufErr;
+
+  var p2pActive = (state.service !== 'chauffeur');
+  // If chauffeur is selected but became unavailable, still show it active so the
+  // operator sees why; the caption/hint explains. (setService is the only path back.)
+  var chaufActive = (state.service === 'chauffeur');
+
+  var parts = [];
+  parts.push('<div class="ch-seg ch-service-seg">');
+  parts.push('  <button class="ch-seg-btn' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
+  parts.push('    <span>Point-to-point</span>');
+  parts.push('    <span class="ch-seg-price">' + esc(p2pPrice) + '</span>');
+  parts.push('  </button>');
+  parts.push('  <button class="ch-seg-btn' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  parts.push('    <span>Chauffeur-guide</span>');
+  parts.push('    <span class="ch-seg-price">' + esc(chaufDisabled ? '—' : chaufPrice) + '</span>');
+  parts.push('  </button>');
+  parts.push('</div>');
+
+  if (chaufDisabled) {
+    parts.push('<div class="ch-service-hint">Chauffeur-guide: ' + esc(chaufErr) + '</div>');
+  }
+  if (chaufActive && !chaufDisabled) {
+    parts.push('<div class="ch-service-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
+  }
+  return parts.join('');
+}
+
 // ── Summary card renderer (④) ─────────────────────────────────────────────────
 function renderSummaryCardBody() {
   // Error / gated-vehicle / loading state
@@ -1381,25 +1457,7 @@ function renderSummaryCardBody() {
 
   lines.push('</div>'); // end ch-sum-block
 
-  // Car vs van comparison (V4): entries carry .vehicle (engine tier) or .error.
-  // Render only the entries WITHOUT an error; if all error, omit the block.
-  if (est.comparison) {
-    var COMPARE_LABEL = { car: 'Car', van: 'Van 6 Seat', van9: 'Van 9 Seat', van14: 'Van 14 Seat', custom: 'Custom' };
-    var compareRows = [];
-    Object.keys(est.comparison).forEach(function(key) {
-      var entry = est.comparison[key];
-      if (!entry || entry.error) return;
-      if (!entry.total) return;
-      var label = COMPARE_LABEL[entry.vehicle] || COMPARE_LABEL[key] || entry.vehicle || key;
-      compareRows.push('  <div class="ch-compare-row"><span>' + esc(label) + '</span><b>' + esc(entry.total.lkr) + '</b></div>');
-    });
-    if (compareRows.length > 0) {
-      lines.push('<div class="ch-compare">');
-      compareRows.forEach(function(row) { lines.push(row); });
-      lines.push('  <div class="ch-compare-note">Vehicle comparison at same itinerary — for internal reference only.</div>');
-      lines.push('</div>');
-    }
-  }
+  // (Car/van comparison removed — the service chooser + `services` object replace it.)
 
   // Engine warnings as a tip
   if (est.warnings && est.warnings.length > 0) {
@@ -1466,18 +1524,8 @@ function computeFlags() {
   // Per-leg flags — each type fires at most once
   var flagSeen = {};
   st.legs.forEach(function(leg) {
-    // orange: driver stays without the car
-    if (!flagSeen.driverNocar && leg.hasDriver && !leg.hasCarStay) {
-      flagSeen.driverNocar = true;
-      flags.push({
-        level: 'orange',
-        title: 'Driver stays without the car',
-        detail: 'A date has the driver staying but the car returning. Confirm this is intended — usually the car stays with the driver.',
-      });
-    }
-
-    // orange: safari waiting
-    if (!flagSeen.safari && leg.category === 'safari_wait') {
+    // orange: safari waiting add-on flagged (now a per-leg add-on, not a category)
+    if (!flagSeen.safari && leg.addSafariWait) {
       flagSeen.safari = true;
       flags.push({
         level: 'orange',
@@ -1856,7 +1904,7 @@ function renderInternalView() {
   var est = lastEstimate;
   var bkm = est.breakdown && est.breakdown.km ? est.breakdown.km : null;
   var blines = est.lineItems || [];
-  var driverDays = state.legs.filter(function(l) { return l.hasDriver; }).length;
+  var serviceLabel = (state.service === 'chauffeur') ? 'Chauffeur-guide' : 'Point-to-point';
   var fx = est.fxUsdToLkr || 320;
 
   var vLabel = VEHICLE_LABELS[state.vehicleType] || state.vehicleType;
@@ -1866,7 +1914,7 @@ function renderInternalView() {
     '  <div><span>Customer</span><b>' + esc(state.customerName || '—') + '</b></div>',
     '  <div><span>Pax / Bags</span><b>' + esc(state.passengerCount) + ' / ' + esc(state.luggageCount) + '</b></div>',
     '  <div><span>Vehicle</span><b>' + esc(vLabel) + '</b></div>',
-    '  <div><span>Driver nights</span><b>' + driverDays + '</b></div>',
+    '  <div><span>Service</span><b>' + esc(serviceLabel) + '</b></div>',
     '  <div><span>Status</span><b>' + esc(STATUS_LABELS[state.status] || state.status) + '</b></div>',
     '  <div><span>FX</span><b>Rs ' + esc(String(fx)) + '/$</b></div>',
     '</div>',
@@ -2040,8 +2088,8 @@ function render() {
     legsHtml = parts.join('');
   }
 
-  var driverNights = st.legs.filter(function(l) { return l.hasDriver; }).length;
-  var itinBadge = st.legs.length + ' stop' + (st.legs.length !== 1 ? 's' : '') + ' · ' + driverNights + ' driver night' + (driverNights !== 1 ? 's' : '');
+  var stayDays = st.legs.filter(function(l) { return l.category === 'stay_day'; }).length;
+  var itinBadge = st.legs.length + ' stop' + (st.legs.length !== 1 ? 's' : '') + ' · ' + stayDays + ' stay day' + (stayDays !== 1 ? 's' : '');
 
   var html = [
     '<header class="ch-header">',
@@ -2186,11 +2234,25 @@ function render() {
       '</div>',
       '<div class="ch-timeline-add">',
       '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add transfer</button>',
-      '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="stay_day"><span class="ch-btn-icon">&#x263E;</span> Add stay day</button>',
-      '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="sightseeing"><span class="ch-btn-icon">&#x1F4F8;</span> Add sightseeing</button>',
+      (st.service === 'chauffeur'
+        ? '  <button class="ch-btn ch-btn-dashed" data-action="addLeg" data-cat="stay_day"><span class="ch-btn-icon">&#x263E;</span> Add stay day</button>'
+        : ''),
       '</div>',
-      '<div class="ch-timeline-hint">Set <b>Driver stays</b> / <b>Car stays</b> on each night to build up the chauffeur rate.</div>',
+      '<div class="ch-timeline-hint">Build the itinerary and dates, then pick a <b>service</b> below to compare prices.</div>',
     ].join('')),
+    '        </div>',
+    '      </section>',
+
+    // Card 3b: Service chooser (R1) — between Itinerary and Summary
+    '      <section class="ch-card">',
+    '        <header class="ch-card-head">',
+    '          <div class="ch-card-head-l">',
+    '            <div class="ch-card-icon" style="background:var(--teal)">◆</div>',
+    '            <h2>Service</h2>',
+    '          </div>',
+    '        </header>',
+    '        <div class="ch-card-body">',
+    renderServiceCardBody(),
     '        </div>',
     '      </section>',
 
@@ -2409,12 +2471,9 @@ function attachEventListeners() {
       removeLeg(legId);
     } else if (action === 'dupLeg') {
       dupLeg(legId);
-    } else if (action === 'toggleDriver') {
-      var leg = state.legs.find(function(l) { return l.id === legId; });
-      if (leg) updateLeg(legId, { hasDriver: !leg.hasDriver });
-    } else if (action === 'toggleCarStay') {
-      var leg2 = state.legs.find(function(l) { return l.id === legId; });
-      if (leg2) updateLeg(legId, { hasCarStay: !leg2.hasCarStay });
+    } else if (action === 'setService') {
+      if (el.disabled) return;
+      setService(el.getAttribute('data-service'));
     } else if (action === 'manualDistance') {
       updateLeg(legId, { manualDistance: true });
     } else if (action === 'autoDistance') {

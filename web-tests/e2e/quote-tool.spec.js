@@ -85,71 +85,108 @@ test('car + 4 bags raises the luggage flag', async ({ page }) => {
   ).toBeVisible({ timeout: 5000 });
 });
 
-// Spec 3 (V1): Stay-day alignment — a chauffeur trip's WhatsApp output must show
-// the stay-in line WITHOUT a price, plus a deposit line, and the total must match
-// the Summary card's total.
+// Spec 3 (V1 + reflow): a chauffeur trip (chosen via the service chooser) with a
+// mid-itinerary stay day renders the stay UNpriced in WhatsApp, keeps the deposit
+// line, keeps the LAST transfer's row (the old alignment bug dropped it), and the
+// total matches the Summary card.
 test('stay day renders unpriced in WhatsApp output with deposit line (V1)', async ({ page }) => {
   await page.goto(TOOL);
   await page.waitForLoadState('networkidle');
 
-  // Leg 1 (transfer): Kandy → Ella
+  // Leg 1 (transfer): Kandy → Ella, dated. (Settle waits: render() replaces #app
+  // wholesale ~350ms after each mutation; see the app's debounce.)
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  // Give leg 1 a date and mark driver+car as staying (chauffeur product)
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
-  await page.locator('[data-action="toggleDriver"]').first().click();
-  await page.locator('[data-action="toggleCarStay"]').first().click();
-  // Let the auto-distance/estimate background renders triggered above settle before the
-  // next step — render() replaces #app wholesale (debounced ~350ms after the last
-  // mutation), which would otherwise wipe an autocomplete menu opened mid-flight
-  // against a stale DOM node. networkidle doesn't cover the pre-network debounce
-  // window, so a short bounded settle wait is used instead (matches the app's own
-  // 350ms debounce).
   await page.waitForTimeout(600);
 
-  // Add a stay day (inherits dropoff from previous leg = Ella)
-  await page.locator('[data-action="addLeg"][data-cat="stay_day"]').click();
-  const stayDateInputs = page.locator('input[type="date"][data-field="date"]');
-  await expect(stayDateInputs).toHaveCount(2);
-  await stayDateInputs.nth(1).fill('2026-08-02');
-  await page.waitForTimeout(600);
-
-  // Add a third leg (transfer): Ella → Galle. Fill its date FIRST (every leg needs a
-  // valid date or /estimate 400s) so the background estimate settles before we type
-  // into the autocomplete field.
+  // Leg 2 (transfer): Ella → Galle, dated (becomes the stay day after choosing chauffeur).
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
-  const legItems = page.locator('.ch-tl-item');
-  await expect(legItems).toHaveCount(3);
-  const dateInputs3 = page.locator('input[type="date"][data-field="date"]');
-  await expect(dateInputs3).toHaveCount(3);
-  await dateInputs3.nth(2).fill('2026-08-03');
+  await expect(page.locator('.ch-tl-item')).toHaveCount(2);
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.waitForTimeout(600);
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
-  const thirdToInput = legItems.nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]');
-  await pickPlace(page, thirdToInput, 'Galle', 'Galle');
+  // Leg 3 (transfer): Galle → Mirissa, dated.
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(3);
+  await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-03');
+  await page.waitForTimeout(600);
+  const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
+  await page.waitForTimeout(600);
 
-  // Wait for a priced summary (chauffeur product, since driver/car stay is set)
+  // Choose Chauffeur-guide via the service chooser (all legs dated, 3 distinct dates → enabled).
+  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
+  await expect(chBtn).toBeEnabled({ timeout: 10000 });
+  await chBtn.click();
+  await page.waitForTimeout(600);
+
+  // Turn leg 2 into a mid-itinerary stay day (category option exists under chauffeur).
+  await page.locator('.ch-tl-item').nth(1).locator('select[data-field="category"]').selectOption('stay_day');
+
+  // Priced chauffeur summary.
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const summaryTotal = await totalLineText(page);
 
-  // Switch to the WhatsApp tab and inspect the <pre> output
+  // WhatsApp output checks.
   await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
   const pre = page.locator('.ch-output-body .ch-pre');
   await expect(pre).toBeVisible({ timeout: 8000 });
   const waText = await pre.textContent();
 
-  // A "Stay in" line exists and does NOT carry a trailing price on that same line
   const stayLine = waText.split('\n').find((l) => l.includes('Stay in'));
   expect(stayLine, waText).toBeTruthy();
-  expect(stayLine).not.toMatch(/LKR|\$/);
-
-  // Deposit line present
+  expect(stayLine).not.toMatch(/LKR|\$/); // stay day carries no price
+  expect(waText).toContain('Mirissa'); // the transfer AFTER the stay is not dropped (old V1 bug)
   expect(waText).toMatch(/Deposit to confirm/);
-
-  // The WhatsApp total matches the Summary card's strong total line
   expect(waText).toContain(summaryTotal.trim());
+});
+
+// Spec 3b (reflow): the service chooser gates chauffeur and the per-leg add-ons.
+test('service chooser: chauffeur gated by dates, add-ons only in point-to-point', async ({ page }) => {
+  await page.goto(TOOL);
+  await page.waitForLoadState('networkidle');
+
+  // Undated single leg → chauffeur disabled.
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
+  await expect(chBtn).toBeDisabled();
+
+  // Point-to-point (default): sightseeing/waiting/safari add-on toggles are available.
+  await expect(page.locator('input[data-field="addSightseeingFee"]').first()).toBeAttached();
+  await expect(page.locator('input[data-field="addSafariWait"]').first()).toBeAttached();
+
+  // Date both ends across two days → chauffeur becomes enabled and shows a price.
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.waitForTimeout(600);
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.waitForTimeout(600);
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, secondTo, 'Galle', 'Galle');
+  await expect(chBtn).toBeEnabled({ timeout: 10000 });
+  await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
+
+  // Choose chauffeur → add-on toggles disappear, caption shows, stay-day add appears.
+  await chBtn.click();
+  await page.waitForTimeout(600);
+  await expect(page.locator('input[data-field="addSightseeingFee"]')).toHaveCount(0);
+  await expect(page.locator('.ch-service-caption')).toContainText(/included/i);
+  await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toBeAttached();
+
+  // Back to point-to-point → toggles return, stay-day add gone.
+  await page.locator('[data-action="setService"][data-service="private"]').click();
+  await page.waitForTimeout(600);
+  await expect(page.locator('input[data-field="addSightseeingFee"]').first()).toBeAttached();
+  await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0);
 });
 
 // Spec 4 (S1): Stopovers are priced — adding a stopover chip increases distance
