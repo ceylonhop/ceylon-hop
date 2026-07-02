@@ -307,14 +307,6 @@ input, select, textarea, button { font-family: inherit; }
 .ch-note-in { border: 1px solid var(--line); background: #fcfbf7; border-radius: var(--r-sm); padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; color: var(--ink); width: 100%; }
 .ch-note-in:focus { border-color: var(--blue); background: #fff; }
 
-/* connector between stops */
-.ch-connector { display: flex; align-items: center; gap: 12px; padding: 12px 4px 12px 0; }
-.ch-connector-node { width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 1.5px solid var(--line); display: grid; place-items: center; font-size: 14px; color: var(--blue-d); flex: none; margin-left: -1px; }
-.ch-connector-text { display: flex; flex-direction: column; line-height: 1.3; }
-.ch-connector-text b { font-size: 13px; font-weight: 600; color: var(--ink); }
-.ch-connector-text span { font-size: 12px; color: var(--muted); }
-.ch-connector.rest .ch-connector-node { border-style: dashed; color: var(--muted); }
-
 .ch-timeline-add { display: flex; gap: 10px; padding: 6px 0 4px 46px; flex-wrap: wrap; }
 .ch-timeline-hint { padding: 12px 24px 18px 46px; font-size: 12px; color: var(--muted); }
 .ch-timeline-hint b { color: var(--ink); font-weight: 600; }
@@ -323,19 +315,8 @@ input, select, textarea, button { font-family: inherit; }
 .ch-cur-toggle .ch-seg { width: 100px; }
 
 /* ---------- Summary ---------- */
-.ch-km-strip { display: flex; gap: 10px; margin-bottom: 16px; }
-.ch-km { flex: 1; background: var(--cream); border-radius: var(--r-md); padding: 11px; text-align: center; }
-.ch-km.hero { background: var(--black); color: #fff; }
-.ch-km b { font-family: var(--serif); font-size: 22px; font-weight: 700; display: block; line-height: 1; }
-.ch-km span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
-.ch-km.hero span { color: rgba(255,255,255,.7); }
-.ch-sum-block { border: 1px solid var(--line); border-radius: var(--r-md); padding: 13px 15px; margin-bottom: 13px; }
-.ch-sum-block.blue { border-left: 3px solid var(--blue); }
-.ch-sum-block.teal { border-left: 3px solid var(--teal); }
-.ch-sum-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; margin-bottom: 9px; }
-.ch-dot { width: 9px; height: 9px; border-radius: 50%; }
-.ch-dot.blue { background: var(--blue); }
-.ch-dot.teal { background: var(--teal); }
+/* .ch-km base kept — the money-pane km line reuses .ch-km.hero (overridden there). */
+.ch-km b { font-family: var(--serif); font-weight: 700; line-height: 1; }
 .ch-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 13px; }
 .ch-line-label { color: var(--muted); white-space: nowrap; }
 .ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
@@ -346,19 +327,6 @@ input, select, textarea, button { font-family: inherit; }
 /* USD-primary display: small muted LKR reference under a value */
 .ch-val-sub { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.3; text-align: right; }
 .ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
-/* ---------- Service chooser ---------- */
-.ch-service-seg .ch-seg-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 8px; height: auto; }
-.ch-service-seg .ch-seg-btn:disabled { opacity: .5; cursor: not-allowed; }
-.ch-service-seg .ch-seg-price { font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--ink); }
-.ch-service-seg .ch-seg-btn:not(.active) .ch-seg-price { color: var(--muted); }
-.ch-service-hint { font-size: 11.5px; color: var(--red); margin-top: 9px; }
-.ch-service-caption { font-size: 12px; color: var(--teal-d); margin-top: 9px; line-height: 1.4; font-weight: 500; }
-
-.ch-compare { background: var(--cream); border-radius: var(--r-md); padding: 13px 15px; }
-.ch-compare-row { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; }
-.ch-compare-row span { font-size: 13px; font-weight: 500; }
-.ch-compare-row b { font-family: var(--serif); font-size: 19px; }
-.ch-compare-note { font-size: 12px; color: var(--muted); margin-top: 8px; border-top: 1px solid var(--line); padding-top: 9px; }
 .ch-tip { background: rgba(99,191,214,.1); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; color: var(--black); margin-top: 13px; line-height: 1.5; }
 .ch-tip b { color: var(--blue-d); }
 
@@ -421,18 +389,18 @@ input, select, textarea, button { font-family: inherit; }
 .ch-header-tools .ch-btn-sm { padding: 7px 11px; }
 
 /* two-pane grid */
-.ch-cockpit { padding-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.ch-cockpit { padding-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
 .ch-editor { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .ch-money { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 0; }
-@media (max-width: 1080px) {
+@media (max-width: 960px) {
   .ch-cockpit { grid-template-columns: 1fr; }
   .ch-money { position: static; }
 }
 
-/* section title (shared, lightweight — replaces heavy card heads in the editor) */
+/* section micro-label (matches the customer-strip label style — no serif floaters) */
 .ch-sec { }
-.ch-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 10px; }
-.ch-sec-head h2 { font-family: var(--serif); font-size: 17px; font-weight: 700; letter-spacing: .2px; }
+.ch-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 10px; }
+.ch-sec-head h2 { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
 .ch-sec-head-r { display: flex; align-items: center; gap: 8px; }
 
 /* ---------- Customer strip (one compact row) ---------- */
@@ -508,31 +476,73 @@ input, select, textarea, button { font-family: inherit; }
 
 .ch-legs-add { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 
-/* ---------- Right money pane ---------- */
+/* ══════════════════════════════════════════════════════════════════════════
+   Money pane — ONE cohesive card, tight vertical rhythm
+   ══════════════════════════════════════════════════════════════════════════ */
 .ch-money-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
-.ch-money-card + .ch-money-card { margin-top: 16px; }
-.ch-money-body { padding: 16px; }
-.ch-money-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line-soft); }
-.ch-money-head h2 { font-family: var(--serif); font-size: 16px; font-weight: 700; }
 
-/* mini service echo in the money pane */
-.ch-money-svc { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
-.ch-msvc { flex: 1; border-radius: var(--r-sm); border: 1px solid var(--line); padding: 8px 10px; text-align: center; }
-.ch-msvc.active { border-color: var(--blue); background: rgba(99,191,214,.07); }
-.ch-msvc-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); display: block; }
-.ch-msvc-val { font-family: var(--serif); font-size: 15px; font-weight: 700; color: var(--ink); }
-.ch-msvc:not(.active) .ch-msvc-val { color: var(--muted); }
+/* shared hairline divider inside the card */
+.ch-money-rule { height: 1px; background: var(--line-soft); margin: 0; }
 
-/* flags as compact rows inside money pane */
-.ch-flags-mini { padding: 12px 16px 4px; }
-.ch-flags-mini .ch-flag { padding: 9px 11px; margin-bottom: 8px; }
-.ch-flags-mini .ch-flags-clear { padding: 4px 0 10px; }
+/* micro-label (matches the customer-strip label style) */
+.ch-money-micro { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
 
-/* output collapsed section in money pane */
+/* --- 1. Service chooser = the card head (two price boxes that ARE the chooser) --- */
+.ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
+.ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
+.ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
+.ch-svc-box.active { border-color: var(--teal); background: rgba(10,185,182,.06); box-shadow: 0 0 0 1px var(--teal) inset; }
+.ch-svc-box:disabled { cursor: not-allowed; background: var(--cream); border-color: var(--line); }
+.ch-svc-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.ch-svc-box.active .ch-svc-lbl { color: var(--teal-d); }
+.ch-svc-price { font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.ch-svc-box:not(.active) .ch-svc-price { color: var(--muted); }
+.ch-svc-box:disabled .ch-svc-price { color: var(--muted-2); }
+.ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
+.ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
+.ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
+.ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
+
+/* --- 2. km line — one text line, not tiles --- */
+.ch-money-body { padding: 14px 16px; }
+.ch-km-line { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 10px; line-height: 1.4; }
+.ch-km-line .ch-km.hero { font-family: var(--serif); font-weight: 700; font-size: 14px; color: var(--ink); background: none; padding: 0; border-radius: 0; display: inline; }
+
+/* build-up lines (tightened) */
+.ch-money-body .ch-line { padding: 4px 0; }
+
+/* quote total — the big serif moment */
+.ch-total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ch-total-lbl { font-size: 11px; font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .5px; }
+.ch-total-val { text-align: right; line-height: 1.05; }
+.ch-total-usd { font-family: var(--serif); font-size: 30px; font-weight: 700; color: var(--ink); }
+.ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
+
+/* deposit / due-now highlighted chip row (chauffeur) */
+.ch-deposit-chip { margin-top: 12px; background: rgba(10,185,182,.08); border: 1px solid rgba(10,185,182,.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ch-deposit-chip .dep-lbl { font-size: 12px; color: var(--teal-d); font-weight: 600; }
+.ch-deposit-chip .dep-val { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--teal-d); font-variant-numeric: tabular-nums; }
+.ch-deposit-note { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+
+/* margin — small teal line */
+.ch-money-body .ch-margin { margin-top: 8px; }
+
+/* empty / error state */
+.ch-money-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 22px 0; }
+
+/* --- FLAGS — slim severity rows inside the same card, under a hairline --- */
+.ch-flags-mini { padding: 12px 16px; }
+.ch-flags-mini .ch-flags { gap: 7px; }
+.ch-flags-mini .ch-flag { padding: 8px 11px; }
+.ch-flags-mini .ch-flags-clear { padding: 2px 2px; }
+
+/* --- OUTPUT — tab bar + copy at the card foot --- */
 .ch-out-collapse { border-top: 1px solid var(--line-soft); }
-.ch-out-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
-.ch-out-toggle .ch-chev { font-size: 17px; }
+.ch-out-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.ch-out-toggle:hover { color: var(--ink); }
+.ch-out-toggle .ch-chev { font-size: 16px; }
 .ch-out-panel { padding: 0 16px 16px; }
+.ch-out-panel .ch-tabs { margin-bottom: 12px; }
 
 /* ---------- Slide-in drawer (Recent) ---------- */
 .ch-scrim { position: fixed; inset: 0; background: rgba(58,55,57,.32); backdrop-filter: blur(2px); z-index: 90; opacity: 0; transition: opacity .2s; }
@@ -601,13 +611,12 @@ var rateCard = null;
 // ── I1: once-guard for app-node delegated listeners ──────────────────────────
 var _delegatesWired = false;
 
-// ── Settings card collapse state ──────────────────────────────────────────────
-var settingsOpen = false;
-
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
 var drawerOpen = false;   // Recent quotes slide-in drawer
 var ratesOpen = false;    // Rate Settings modal
-var outputOpen = false;   // Output section (collapsed by default in money pane)
+// Output section: tri-state (null = follow layout default: open when two-pane
+// ≥960px, collapsed when stacked; true/false = operator's explicit choice).
+var outputOpen = null;
 // Per-leg add-on line visibility: legId → bool (private legs only)
 var legAddonsOpen = {};
 
@@ -1030,6 +1039,7 @@ function newQuote() {
   lastEstimate = null;
   lastEstimateError = null;
   outputTab = 'whatsapp';
+  outputOpen = null; // back to the layout default
   refreshEstimate();
   render();
   showToast('New quote started');
@@ -1345,24 +1355,6 @@ function renderLegCard(leg, idx, total) {
   ].join('');
 }
 
-// ── Render connector between legs ─────────────────────────────────────────────
-function renderConnector(legA, legB) {
-  var isRest = legB && legB.category === 'stay_day';
-  var connClass = 'ch-connector' + (isRest ? ' rest' : '');
-  var icon = isRest ? '&#x263E;' : '&#x1F697;';
-  var title = isRest
-    ? 'Rest day / No transfer — vehicle on standby'
-    : 'Private transfer';
-  return [
-    '<div class="' + connClass + '">',
-    '  <div class="ch-connector-node">' + icon + '</div>',
-    '  <div class="ch-connector-text">',
-    '    <b>' + title + '</b>',
-    '  </div>',
-    '</div>',
-  ].join('');
-}
-
 // ── Rate card body renderer ────────────────────────────────────────────────────
 function renderRateCardBody() {
   if (!rateCard) {
@@ -1451,26 +1443,32 @@ function renderRateCardBody() {
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
 }
 
-// ── Service chooser renderer (R1) ─────────────────────────────────────────────
-// Segmented Point-to-point | Chauffeur-guide bound to state.service. Each button
-// shows its total from est.services (Money.lkr). Chauffeur is disabled with its
-// error hint when that side returns { error } or the trip has ≤1 distinct date.
-function renderServiceCardBody() {
+// ── Service chooser = money-pane head (R1) ───────────────────────────────────
+// Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
+// chooser. The selected box gets the teal-accent border/fill; each shows its
+// total from est.services (USD primary + LKR sub). Chauffeur is disabled with a
+// small reason hint beneath its '—' when that side returns { error } or the trip
+// has ≤1 distinct leg date. Keeps [data-action=setService][data-service=…].
+function renderServiceChooser() {
   var svc = (lastEstimate && lastEstimate.services) ? lastEstimate.services : null;
   var p2p = svc ? svc.pointToPoint : null;
   var chauf = svc ? svc.chauffeur : null;
 
-  // Pre-escaped HTML (USD primary + LKR sub) — interpolated raw below.
-  var p2pPrice = (p2p && p2p.total) ? esc(fmtUsd(p2p.total.cents)) + '<span class="ch-val-sub">' + esc(p2p.total.lkr) + '</span>' : '—';
+  // Pre-escaped inner HTML for the price element (USD primary + LKR sub) — raw below.
+  var p2pPrice = (p2p && p2p.total)
+    ? esc(fmtUsd(p2p.total.cents)) + '<span class="ch-svc-sub">' + esc(p2p.total.lkr) + '</span>'
+    : '—';
 
   // Chauffeur disabled reason: server error, or a visual pre-empt when the itinerary
   // has ≤1 distinct leg date (avoids a flash before the server error arrives).
   var chaufErr = (chauf && chauf.error) ? chauf.error : null;
   if (!chaufErr && distinctLegDateCount() <= 1) {
-    chaufErr = 'single-day — point-to-point only';
+    chaufErr = 'single-day trip — point-to-point only';
   }
-  var chaufPrice = (chauf && chauf.total) ? esc(fmtUsd(chauf.total.cents)) + '<span class="ch-val-sub">' + esc(chauf.total.lkr) + '</span>' : '—';
   var chaufDisabled = !!chaufErr;
+  var chaufPrice = (chauf && chauf.total)
+    ? esc(fmtUsd(chauf.total.cents)) + '<span class="ch-svc-sub">' + esc(chauf.total.lkr) + '</span>'
+    : '—';
 
   var p2pActive = (state.service !== 'chauffeur');
   // If chauffeur is selected but became unavailable, still show it active so the
@@ -1478,88 +1476,84 @@ function renderServiceCardBody() {
   var chaufActive = (state.service === 'chauffeur');
 
   var parts = [];
-  parts.push('<div class="ch-seg ch-service-seg">');
-  parts.push('  <button class="ch-seg-btn' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
-  parts.push('    <span>Point-to-point</span>');
-  parts.push('    <span class="ch-seg-price">' + p2pPrice + '</span>'); // pre-escaped above
+  parts.push('<div class="ch-svc-choose">');
+  // Point-to-point box
+  parts.push('  <button class="ch-svc-box' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
+  parts.push('    <span class="ch-svc-lbl">Point-to-point</span>');
+  parts.push('    <span class="ch-svc-price">' + p2pPrice + '</span>'); // pre-escaped above
   parts.push('  </button>');
-  parts.push('  <button class="ch-seg-btn' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
-  parts.push('    <span>Chauffeur-guide</span>');
-  parts.push('    <span class="ch-seg-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
+  // Chauffeur-guide box
+  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  parts.push('    <span class="ch-svc-lbl">Chauffeur-guide</span>');
+  parts.push('    <span class="ch-svc-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
+  if (chaufDisabled) {
+    parts.push('    <span class="ch-svc-hint">' + esc(chaufErr) + '</span>');
+  }
   parts.push('  </button>');
   parts.push('</div>');
 
-  if (chaufDisabled) {
-    parts.push('<div class="ch-service-hint">Chauffeur-guide: ' + esc(chaufErr) + '</div>');
-  }
   if (chaufActive && !chaufDisabled) {
-    parts.push('<div class="ch-service-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
+    parts.push('<div class="ch-svc-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
   }
   return parts.join('');
 }
 
-// ── Summary card renderer (④) ─────────────────────────────────────────────────
+// ── Summary card body (money-pane core) ──────────────────────────────────────
+// Composition (top→bottom): km line → cost build-up rows → big serif total →
+// deposit chip (chauffeur) → margin. km hero number keeps .ch-km.hero for e2e.
 function renderSummaryCardBody() {
   // Error / gated-vehicle / loading state
   if (lastEstimateError) {
-    return '<div style="color:var(--muted);font-size:13px;padding:12px 0">' + esc(lastEstimateError) + '</div>';
+    return '<div class="ch-money-empty">' + esc(lastEstimateError) + '</div>';
   }
   if (!lastEstimate) {
-    return '<div style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0">Fill the itinerary to see pricing.</div>';
+    return '<div class="ch-money-empty">Fill the itinerary to see pricing.</div>';
   }
 
   var est = lastEstimate;
   var bkm = est.breakdown && est.breakdown.km ? est.breakdown.km : null;
   var lines = [];
 
-  // km strip
+  // km line — one text line (keep .ch-km.hero on the billable number for e2e)
   if (bkm) {
-    lines.push('<div class="ch-km-strip">');
-    lines.push('  <div class="ch-km"><b>' + esc(String(bkm.distanceKm)) + '</b><span>distance km</span></div>');
-    lines.push('  <div class="ch-km"><b>+' + esc(String(bkm.bufferKm)) + '</b><span>buffer km</span></div>');
-    lines.push('  <div class="ch-km hero"><b>' + esc(String(bkm.billableKm)) + '</b><span>billable km</span></div>');
-    lines.push('</div>');
+    lines.push('<div class="ch-km-line">'
+      + esc(String(bkm.distanceKm)) + ' km + ' + esc(String(bkm.bufferKm)) + ' buffer &rarr; '
+      + '<span class="ch-km hero"><b>' + esc(String(bkm.billableKm)) + '</b></span> billable km'
+      + '</div>');
   }
 
-  // Cost build-up block
-  lines.push('<div class="ch-sum-block blue">');
-  lines.push('  <div class="ch-sum-head"><div class="ch-dot blue"></div> Cost build-up</div>');
-
-  // Line items from server
+  // Cost build-up lines (from server, tightened)
   var lineItems = est.lineItems || [];
   lineItems.forEach(function(item) {
-    lines.push('  <div class="ch-line">');
-    lines.push('    <span class="ch-line-label">' + esc(item.label) + '</span>');
-    lines.push('    <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
-    lines.push('  </div>');
+    lines.push('<div class="ch-line">');
+    lines.push('  <span class="ch-line-label">' + esc(item.label) + '</span>');
+    lines.push('  <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
+    lines.push('</div>');
   });
 
-  // Quote total (strong)
-  lines.push('  <div class="ch-line strong">');
-  lines.push('    <span class="ch-line-label">Quote total</span>');
-  lines.push('    <span class="ch-line-val">' + usdWithLkr(est.total.cents, est.total.lkr) + '</span>');
-  lines.push('  </div>');
+  // Quote total — the big serif moment (USD large, LKR sub beneath).
+  // Keeps .ch-line.strong + .ch-line-val (with LKR) so the e2e total hooks hold.
+  lines.push('<div class="ch-total ch-line strong">');
+  lines.push('  <span class="ch-total-lbl ch-line-label">Quote total</span>');
+  lines.push('  <span class="ch-total-val ch-line-val">'
+    + '<span class="ch-total-usd">' + esc(fmtUsd(est.total.cents)) + '</span>'
+    + (est.total.lkr ? '<span class="ch-total-lkr ch-val-sub">' + esc(est.total.lkr) + '</span>' : '')
+    + '</span>');
+  lines.push('</div>');
 
-  // Margin
+  // Chauffeur product: deposit + balance as a subtle highlighted chip/row.
+  if (est.product === 'chauffeur' && est.amountDueNow) {
+    lines.push('<div class="ch-deposit-chip">');
+    lines.push('  <span class="dep-lbl">Deposit to confirm</span>');
+    lines.push('  <span class="dep-val">' + esc(fmtUsd(est.amountDueNow.cents)) + '</span>');
+    lines.push('</div>');
+    lines.push('<div class="ch-deposit-note">' + esc(est.amountDueNow.lkr || '') + ' &middot; balance after the trip</div>');
+  }
+
+  // Margin — the small teal line.
   if (est.margin) {
-    lines.push('  <div class="ch-margin">Est. margin ' + esc(fmtUsd(est.margin.cents)) + ' (' + esc(est.margin.lkr) + ')</div>');
+    lines.push('<div class="ch-margin">Est. margin ' + esc(fmtUsd(est.margin.cents)) + ' (' + esc(est.margin.lkr) + ')</div>');
   }
-
-  // Chauffeur product: deposit + due now
-  if (est.product === 'chauffeur' && est.deposit && est.amountDueNow) {
-    lines.push('  <div class="ch-line">');
-    lines.push('    <span class="ch-line-label">Deposit</span>');
-    lines.push('    <span class="ch-line-val">' + usdWithLkr(est.deposit.cents, est.deposit.lkr) + '</span>');
-    lines.push('  </div>');
-    lines.push('  <div class="ch-line">');
-    lines.push('    <span class="ch-line-label">Due now</span>');
-    lines.push('    <span class="ch-line-val">' + usdWithLkr(est.amountDueNow.cents, est.amountDueNow.lkr) + '</span>');
-    lines.push('  </div>');
-  }
-
-  lines.push('</div>'); // end ch-sum-block
-
-  // (Car/van comparison removed — the service chooser + `services` object replace it.)
 
   // Engine warnings as a tip
   if (est.warnings && est.warnings.length > 0) {
@@ -2219,21 +2213,14 @@ function render() {
 
   var flags = computeFlags();
 
-  // Money pane: compact service echo (both service totals; the interactive chooser stays in the editor)
-  var svc = (lastEstimate && lastEstimate.services) ? lastEstimate.services : null;
-  var moneySvcHtml = '';
-  if (svc) {
-    var p2p = svc.pointToPoint, chauf = svc.chauffeur;
-    var p2pV = (p2p && p2p.total) ? esc(fmtUsd(p2p.total.cents)) : '—';
-    var chaufV = (chauf && chauf.total && !chauf.error) ? esc(fmtUsd(chauf.total.cents)) : '—';
-    var p2pActive = (st.service !== 'chauffeur');
-    moneySvcHtml = [
-      '<div class="ch-money-svc">',
-      '  <div class="ch-msvc' + (p2pActive ? ' active' : '') + '"><span class="ch-msvc-lbl">Point-to-point</span><span class="ch-msvc-val">' + p2pV + '</span></div>',
-      '  <div class="ch-msvc' + (!p2pActive ? ' active' : '') + '"><span class="ch-msvc-lbl">Chauffeur</span><span class="ch-msvc-val">' + chaufV + '</span></div>',
-      '</div>',
-    ].join('');
-  }
+  // Output panel open/closed. outputOpen is tri-state:
+  //   null  → follow the layout default (open on the two-pane ≥960px layout where
+  //           there's room; collapsed when stacked)
+  //   true  → operator explicitly opened it
+  //   false → operator explicitly collapsed it
+  var wideLayout = (typeof window !== 'undefined' && window.matchMedia)
+    ? window.matchMedia('(min-width: 961px)').matches : true;
+  var showOutput = (outputOpen === null) ? wideLayout : outputOpen;
 
   var html = [
     '<header class="ch-header">',
@@ -2319,39 +2306,36 @@ function render() {
     ].join('') : ''),
     '      </div>',
 
-    // Service chooser (segmented, compact)
-    '      <div class="ch-sec">',
-    '        <div class="ch-sec-head"><h2>Service</h2></div>',
-    renderServiceCardBody(),
-    '      </div>',
-
     '    </div>', // ch-editor
 
-    // ══ RIGHT: money pane ══
+    // ══ RIGHT: money pane — ONE cohesive card ══
     '    <div class="ch-money">',
 
     '      <div class="ch-money-card">',
-    '        <div class="ch-money-head">',
-    '          <h2>Pricing</h2>',
-    '          <span class="ch-badge tone-blue">USD (LKR ref)</span>',
-    '        </div>',
-    moneySvcHtml,
+
+    // Head: the service chooser (two price boxes that ARE the chooser)
+    renderServiceChooser(),
+
+    '        <div class="ch-money-rule"></div>',
+
+    // Core: km line → build-up → total → deposit → margin
     '        <div class="ch-money-body">',
     renderSummaryCardBody(),
     '        </div>',
 
-    // Flags merged into the money pane as compact rows
+    // Flags: slim severity rows under a hairline, in the same card
+    '        <div class="ch-money-rule"></div>',
     '        <div class="ch-flags-mini">',
     renderFlagsCardBody(),
     '        </div>',
 
-    // Output collapsed section
+    // Output: tab bar + copy at the card foot
     '        <div class="ch-out-collapse">',
     '          <button class="ch-out-toggle" data-action="toggleOutput">',
     '            <span>Quote output</span>',
-    '            <span class="ch-chev' + (outputOpen ? ' open' : '') + '">&#x2303;</span>',
+    '            <span class="ch-chev' + (showOutput ? ' open' : '') + '">&#x2303;</span>',
     '          </button>',
-    (outputOpen ? [
+    (showOutput ? [
       '          <div class="ch-out-panel">',
       '            <div class="ch-tabs">',
       '              <button class="ch-tab' + (outputTab === 'internal' ? ' active' : '') + '" data-action="setTab" data-tab="internal">Internal</button>',
@@ -2484,15 +2468,6 @@ function attachEventListeners() {
     else showToast('Price the trip first');
   });
 
-  // Settings card toggle
-  var settingsHead = document.getElementById('settingsCardHead');
-  if (settingsHead) {
-    settingsHead.addEventListener('click', function() {
-      settingsOpen = !settingsOpen;
-      render();
-    });
-  }
-
   // Customer card fields — live update state without full re-render for text inputs
   var fieldMap = {
     'f-customerName':    function(v) { state.customerName = v; },
@@ -2578,7 +2553,12 @@ function attachEventListeners() {
       ratesOpen = false;
       render();
     } else if (action === 'toggleOutput') {
-      outputOpen = !outputOpen;
+      // Resolve the current effective open state (tri-state → bool), then flip to
+      // the explicit opposite so one click always toggles what the operator sees.
+      var wide = (typeof window !== 'undefined' && window.matchMedia)
+        ? window.matchMedia('(min-width: 961px)').matches : true;
+      var eff = (outputOpen === null) ? wide : outputOpen;
+      outputOpen = !eff;
       render();
     } else if (action === 'manualDistance') {
       updateLeg(legId, { manualDistance: true });

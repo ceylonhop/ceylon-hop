@@ -148,9 +148,14 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const summaryTotal = await totalLineText(page);
 
-  // WhatsApp output checks. Output lives in a collapsed section in the money pane
-  // (cockpit layout) — open it before reading the tabs/pre.
-  await page.locator('[data-action="toggleOutput"]').click();
+  // WhatsApp output checks. The output panel lives at the foot of the money card.
+  // On the two-pane (≥960px) layout it's OPEN by default; when stacked it's
+  // collapsed. Ensure it's open (only toggle if the panel isn't already showing)
+  // so this spec is robust to the viewport-driven default.
+  const outPanel = page.locator('.ch-out-panel');
+  if (!(await outPanel.isVisible().catch(() => false))) {
+    await page.locator('[data-action="toggleOutput"]').click();
+  }
   await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
   const pre = page.locator('.ch-output-body .ch-pre');
   await expect(pre).toBeVisible({ timeout: 8000 });
@@ -205,7 +210,7 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await page.waitForTimeout(600);
   await expect(page.locator('input[data-field="addSightseeingFee"]')).toHaveCount(0);
   await expect(page.locator('[data-action="toggleAddons"]')).toHaveCount(0);
-  await expect(page.locator('.ch-service-caption')).toContainText(/included/i);
+  await expect(page.locator('.ch-svc-caption')).toContainText(/included/i);
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toBeAttached();
 
   // Back to point-to-point → per-leg add-on control returns, stay-day add gone.
