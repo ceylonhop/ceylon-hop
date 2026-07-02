@@ -64,6 +64,13 @@
       "when": 1782223303625,
       "tag": "0008_notification_log",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782867819160,
+      "tag": "0009_supreme_pixie",
+      "breakpoints": true
     }
   ]
 }

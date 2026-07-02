@@ -8,6 +8,7 @@ import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import { PostgresCoordinatorRepo } from './postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
+import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -36,6 +37,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let coordinators: PostgresCoordinatorRepo;
   let rideOps: PostgresRideOpsRepo;
   let notifLog: PostgresNotificationLogRepo;
+  let quotes: PostgresQuoteRepo;
   let sql: Sql;
 
   beforeAll(async () => {
@@ -50,6 +52,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     coordinators = new PostgresCoordinatorRepo(conn.db);
     rideOps = new PostgresRideOpsRepo(conn.db);
     notifLog = new PostgresNotificationLogRepo(conn.db);
+    quotes = new PostgresQuoteRepo(conn.db);
   });
 
   it('notification log records sent kinds per booking, idempotently', async () => {
@@ -169,6 +172,57 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 
     await tasks.create({ bookingId: b.id, type: 'confirm_pickup' });
     expect(await tasks.listByBooking(b.id)).toHaveLength(1);
+  });
+
+  it('persists a quote with JSONB request/result and patches its status', async () => {
+    const saved = await quotes.save({
+      product: 'private',
+      vehicle: 'car',
+      customerName: 'Maya',
+      customerContact: '+34600',
+      totalCents: 4048,
+      currency: 'USD',
+      rateCardVersion: '2026-06-28',
+      marginCents: 900,
+      request: { product: 'private', legs: [{ from: 'A', to: 'B', distanceKm: 80 }] },
+      result: { totalCents: 4048, lineItems: [{ label: 'A → B', amountCents: 4048 }] },
+      notes: 'via WhatsApp',
+    });
+    expect(saved.reference).toMatch(/^Q-/);
+    const got = await quotes.get(saved.id);
+    expect(got?.totalCents).toBe(4048);
+    expect((got?.request as { legs: unknown[] }).legs).toHaveLength(1);
+    expect((got?.result as { lineItems: unknown[] }).lineItems).toHaveLength(1);
+
+    const listed = await quotes.list({ product: 'private' });
+    expect(listed.some((r) => r.id === saved.id)).toBe(true);
+
+    // to-day-inclusive filter: a same-day date-only "to" must include a quote created
+    // right now (regression test for the date-only filter treating "to" as midnight UTC).
+    const today = saved.createdAt.toISOString().slice(0, 10);
+    const listedByDay = await quotes.list({ from: today, to: today });
+    expect(listedByDay.some((r) => r.id === saved.id)).toBe(true);
+
+    const sent = await quotes.patch(saved.id, { status: 'sent' });
+    expect(sent?.status).toBe('sent');
+    expect(sent?.sentAt).toBeInstanceOf(Date);
+    expect(sent?.decidedAt).toBeNull();
+
+    // atomic patch path: moving to a decided status stamps decidedAt exactly once, and a
+    // later patch (even to another decided status) must not move it — set-once semantics
+    // enforced in a single SQL statement, not a read-then-write race.
+    const won = await quotes.patch(saved.id, { status: 'won' });
+    expect(won?.status).toBe('won');
+    expect(won?.decidedAt).toBeInstanceOf(Date);
+    expect(won?.sentAt?.getTime()).toBe(sent?.sentAt?.getTime()); // preserved, not re-stamped
+
+    const decidedAtFirst = won?.decidedAt?.getTime();
+    const patchedAgain = await quotes.patch(saved.id, { status: 'lost', lostReason: 'too slow' });
+    expect(patchedAgain?.status).toBe('lost');
+    expect(patchedAgain?.decidedAt?.getTime()).toBe(decidedAtFirst); // still set-once
+    expect(patchedAgain?.lostReason).toBe('too slow');
+
+    expect(await quotes.patch('00000000-0000-0000-0000-000000000000', { status: 'won' })).toBeNull();
   });
 
   it('persists ops layer: coordinator + ride_ops assign/status/flags', async () => {

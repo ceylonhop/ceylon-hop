@@ -36,19 +36,113 @@ describe('quote()', () => {
     expect(r.marginEstimateCents).toBe(43020);
   });
 
+  it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withExtras = quote({ ...base, extras: ['sightseeing', 'waiting'] });
+    const withoutExtras = quote(base);
+    expect(withExtras.totalCents).toBe(withoutExtras.totalCents);
+    expect(withExtras.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(withExtras.warnings.some((w) => w.includes('waiting') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: luggage is still charged (not an included extra)', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const withLuggage = quote({ ...base, extras: ['luggage'] });
+    expect(withLuggage.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+  });
+
+  it('chauffeur: sightseeing + luggage → only luggage added, sightseeing warned as included', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['sightseeing', 'luggage'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+    expect(r.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: safari-wait is included and not charged', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['safari-wait'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents);
+    expect(r.warnings.some((w) => w.includes('safari-wait') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
+    expect(r.totalCents).toBe(4048 + 1000);
+    expect(r.warnings.some((w) => w.includes('included in chauffeur day rate'))).toBe(false);
+  });
+
   it('shared total (Hakan $22 incl pickup)', () => {
     const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: true }] });
     expect(r.totalCents).toBe(2200);
   });
 
-  it('throws TOO_BIG when private pax exceeds van', () => {
-    expect(() => quote({ product: 'private', vehicle: 'van', pax: 7, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
+  it('throws TOO_BIG only when pax exceeds custom capacity (>99)', () => {
+    expect(() => quote({ product: 'private', vehicle: 'custom', pax: 120, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 10 }] })).toThrow('TOO_BIG');
   });
 
   it('never undercharges: car requested for 6 pax is priced as the required van', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 6, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }] });
     expect(r.totalCents).toBe(9130); // 100km → bill 110km × van 83¢ = 9130, NOT car 46¢
     expect(r.warnings.some((w) => w.includes('vehicle set to van'))).toBe(true);
+  });
+
+  // New van9 / van14 / custom tier tests
+  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 100¢ = 15400¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(15400); // 154km × 100¢
+    expect(r.marginEstimateCents).toBe(15400 - Math.round(154 * 80)); // 154 × 80¢ cost = 12320; margin = 3080
+  });
+
+  it('van14: 140km private → 154 billableKm × 130¢ = 20020¢', () => {
+    const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(20020); // 154km × 130¢
+  });
+
+  it('custom: 140km private → 154 billableKm × 175¢ = 26950¢', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 20, bags: 15, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // 154km × 175¢
+  });
+
+  it('van9: 20km private → floor 6500¢ applies (raw 22km × 100¢ = 2200 < 6500)', () => {
+    const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
+    expect(r.totalCents).toBe(6500); // floor
+    // costCents = round(22 * 80) = 1760; margin = 6500 - 1760 = 4740
+    expect(r.marginEstimateCents).toBe(6500 - Math.round(22 * 80));
+  });
+
+  it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(15400); // van9 price
+    expect(r.warnings.some((w) => w.includes('vehicle set to van9'))).toBe(true);
+  });
+
+  it('anti-tamper: custom requested for 2 pax is priced as custom (no downgrade)', () => {
+    const r = quote({ product: 'private', vehicle: 'custom', pax: 2, bags: 0, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
+    expect(r.totalCents).toBe(26950); // custom 154km × 175¢
+    expect(r.warnings.filter((w) => w.includes('vehicle set to'))).toHaveLength(0); // no warning — custom is already >= required (car)
   });
 
   it('throws NO_LEGS on an empty private request', () => {

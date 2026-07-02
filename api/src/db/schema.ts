@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb } from 'drizzle-orm/pg-core';
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -167,3 +167,30 @@ export const notificationLog = pgTable(
   },
   (t) => ({ bookingKind: unique().on(t.bookingId, t.kind) }),
 );
+
+// M11 quote lifecycle — every price the internal quoting tool hands out. request_json /
+// result_json store the engine I/O verbatim (replayable; freezes the quoted price even
+// if the rate card changes). converted_booking_id is a nullable bridge, populated later.
+export const quotes = pgTable('quotes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  reference: text('reference').notNull().unique(),
+  channel: text('channel').notNull().default('ops'),
+  status: text('status').notNull().default('draft'),
+  lostReason: text('lost_reason'),
+  product: text('product').notNull(),
+  vehicle: text('vehicle'),
+  customerName: text('customer_name'),
+  customerContact: text('customer_contact'),
+  totalCents: integer('total_cents').notNull(),
+  currency: text('currency').notNull(),
+  rateCardVersion: text('rate_card_version').notNull(),
+  marginCents: integer('margin_cents'),
+  requestJson: jsonb('request_json').notNull(),
+  resultJson: jsonb('result_json').notNull(),
+  convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+});
