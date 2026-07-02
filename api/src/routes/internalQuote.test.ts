@@ -46,10 +46,10 @@ describe('internal quoting tool route', () => {
     expect(d.drafts).toBeUndefined(); // V15: dead drafts removed
     expect(Number.isInteger(d.lineItems[0].amountCents)).toBe(true); // Fix 7: cents on line items
     expect(d.lineItems[0].meta.billableKm).toBe(88); // meta passthrough — client zips travel items with legs
-    expect(d.comparison.car.total.cents).toBe(4048);
-    expect(d.comparison.car.vehicle).toBe('car'); // V4: honest tier label
-    expect(d.comparison.van.total.cents).toBeGreaterThan(4048);
-    expect(d.comparison.van.vehicle).toBe('van');
+    expect(d.comparison).toBeUndefined(); // reflow: car/van comparison removed
+    // reflow: services chooser replaces comparison. Single undated leg → chauffeur infeasible.
+    expect(d.services.pointToPoint.total.cents).toBe(4048);
+    expect(d.services.chauffeur.error).toBeTruthy();
   });
 
   it('an empty-string date on an undated private leg is treated as absent, not invalid', async () => {
@@ -173,7 +173,7 @@ describe('internal quoting tool route', () => {
     expect(d.deposit.cents).toBeLessThanOrEqual(5000); // cap
   });
 
-  it('derives chauffeur when a leg has a stay day or a driver/car stay', async () => {
+  it('derives chauffeur when a leg has a stay day (no explicit service)', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [
         { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
@@ -194,10 +194,10 @@ describe('internal quoting tool route', () => {
     expect(d.total.cents).toBe(12782); // van 140km
   });
 
-  it('a leg sightseeing/waiting toggle and safari_wait category add engine extras', async () => {
+  it('sightseeing/waiting/safari-wait toggles add engine extras on a private trip', async () => {
     const base = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80 }] })).json();
-    const withFees = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, addSightseeingFee: true, addWaitingFee: true }] })).json();
-    expect(withFees.total.cents).toBe(base.total.cents + 1000 + 1000); // sightseeing $10 + waiting $10
+    const withFees = await (await post(createApp(), '/admin/quote/estimate', { service: 'private', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, addSightseeingFee: true, addWaitingFee: true, addSafariWait: true }] })).json();
+    expect(withFees.total.cents).toBe(base.total.cents + 1000 + 1000 + 1900); // sightseeing $10 + waiting $10 + safari-wait $19
   });
 
   it('van_9/van_14/custom are no longer gated — they price correctly (200, total > 0)', async () => {
@@ -293,23 +293,78 @@ describe('internal quoting tool route', () => {
     expect(res.status).toBe(400);
   });
 
-  // Fix 3 (V4): honest comparison — smaller tiers than required are flagged, not silently upgraded.
-  it('comparison flags both car and van as too small for a large party (pax=8)', async () => {
+  // Reflow: `services` chooser replaces the car/van comparison.
+  it('services: a multi-day dated 2-leg itinerary prices BOTH pointToPoint and chauffeur', async () => {
     const d = await (await post(createApp(), '/admin/quote/estimate', {
-      vehicle: 'van_9', passengerCount: 8, luggageCount: 2, legs: [leg({ distanceKm: 140 })],
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
     })).json();
-    expect(d.comparison.car.error).toBe('too small for this party');
-    expect(d.comparison.van.error).toBe('too small for this party');
+    expect(d.product).toBe('private'); // selected service drives the detailed response
+    expect(d.services.pointToPoint.total.cents).toBeGreaterThan(0);
+    expect(d.services.chauffeur.total.cents).toBeGreaterThan(0);
+    expect(d.services.chauffeur.deposit.cents).toBeLessThanOrEqual(5000); // chauffeur deposit cap
+    expect(d.services.chauffeur.amountDueNow.cents).toBe(d.services.chauffeur.deposit.cents);
+    expect(d.comparison).toBeUndefined();
   });
 
-  it('comparison prices both car and van with vehicle labels for a small party (pax=2)', async () => {
+  it('services: selecting chauffeur drives the detailed response and still prices pointToPoint', async () => {
     const d = await (await post(createApp(), '/admin/quote/estimate', {
-      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
+      service: 'chauffeur', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
     })).json();
-    expect(d.comparison.car.vehicle).toBe('car');
-    expect(d.comparison.van.vehicle).toBe('van');
-    expect(d.comparison.car.total.cents).toBeGreaterThan(0);
-    expect(d.comparison.van.total.cents).toBeGreaterThan(0);
+    expect(d.product).toBe('chauffeur');
+    expect(d.services.pointToPoint.total.cents).toBeGreaterThan(0);
+    expect(d.services.chauffeur.total.cents).toBeGreaterThan(0);
+  });
+
+  it('services: a single-day itinerary returns chauffeur error "single-day"', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-14' },
+      ],
+    })).json();
+    expect(d.services.pointToPoint.total.cents).toBeGreaterThan(0);
+    expect(d.services.chauffeur.error).toMatch(/single-day/i);
+  });
+
+  it('services: an undated multi-leg itinerary returns chauffeur error "add a date"', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      ],
+    })).json();
+    expect(d.services.pointToPoint.total.cents).toBeGreaterThan(0);
+    expect(d.services.chauffeur.error).toMatch(/add a date/i);
+  });
+
+  it('service:chauffeur does NOT charge sightseeing (engine rule); private DOES (+1000)', async () => {
+    const legs = [
+      { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14', addSightseeingFee: true },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+    ];
+    const priv = await (await post(createApp(), '/admin/quote/estimate', { service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs })).json();
+    const privNoFee = await (await post(createApp(), '/admin/quote/estimate', { service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: legs.map((l) => ({ ...l, addSightseeingFee: false })) })).json();
+    expect(priv.total.cents).toBe(privNoFee.total.cents + 1000); // private charges sightseeing
+
+    const chauf = await (await post(createApp(), '/admin/quote/estimate', { service: 'chauffeur', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs })).json();
+    const chaufNoFee = await (await post(createApp(), '/admin/quote/estimate', { service: 'chauffeur', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: legs.map((l) => ({ ...l, addSightseeingFee: false })) })).json();
+    expect(chauf.total.cents).toBe(chaufNoFee.total.cents); // chauffeur does NOT charge sightseeing
+  });
+
+  it('estimate rejects category "sightseeing" (no longer a valid leg category) with 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'sightseeing', from: 'A', to: 'B', distanceKm: 80 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('estimate rejects category "safari_wait" (now a toggle, not a category) with 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'safari_wait', from: 'A', to: 'B', distanceKm: 80 }] });
+    expect(res.status).toBe(400);
   });
 
   // Fix 8 (V19): /save persists the reopenable tool payload under request.tool (+ engine req).

@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
-import { selectVehicle, vehicleRank } from '../quote/vehicle';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import type { MapsAdapter } from '../adapters/maps';
@@ -35,8 +34,6 @@ const CATEGORIES: Record<string, { drives: boolean }> = {
   transfer: { drives: true },
   airport: { drives: true },
   train_support: { drives: true },
-  sightseeing: { drives: true },
-  safari_wait: { drives: true },
   stay_day: { drives: false },
 };
 
@@ -49,7 +46,7 @@ const VEHICLE_MAP: Record<string, Vehicle | null> = {
 // malformed payloads fail fast with a human-readable 400 rather than crashing the pricer.
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ToolLegSchema = z.object({
-  category: z.enum(['transfer', 'airport', 'train_support', 'sightseeing', 'safari_wait', 'stay_day']).optional(),
+  category: z.enum(['transfer', 'airport', 'train_support', 'stay_day']).optional(),
   // The tool sends date:'' for undated legs — treat empty as absent, not invalid.
   date: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(ISO_DATE, 'date must be YYYY-MM-DD').optional()),
   from: z.string(),
@@ -58,13 +55,15 @@ const ToolLegSchema = z.object({
   stopovers: z.array(z.string()).optional(),
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
-  hasDriver: z.boolean().optional(),
-  hasCarStay: z.boolean().optional(),
+  addSafariWait: z.boolean().optional(),
 });
 const ToolRequestSchema = z.object({
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
+  // Explicit service chooser (reflow). When present it overrides leg-derived product;
+  // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
+  service: z.enum(['private', 'chauffeur']).optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
@@ -95,6 +94,7 @@ function parseToolRequest(raw: unknown): ToolRequest {
 async function resolveAndPrice(
   body: ToolRequest,
   maps: MapsAdapter,
+  serviceOverride?: 'private' | 'chauffeur',
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
@@ -106,7 +106,7 @@ async function resolveAndPrice(
     }
   }
   try {
-    const req = toEngineRequest(body);
+    const req = toEngineRequest(body, serviceOverride);
     return { req, result: quote(req) };
   } catch (e) {
     if (e instanceof PriceError) throw e;
@@ -142,26 +142,30 @@ function drives(l: ToolLeg): boolean {
   return CATEGORIES[l.category || 'transfer']?.drives ?? true;
 }
 function isChauffeur(legs: ToolLeg[]): boolean {
-  return legs.some((l) => (l.category || 'transfer') === 'stay_day' || l.hasDriver || l.hasCarStay);
+  return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
 function collectExtras(legs: ToolLeg[]): ExtraCode[] {
   const out: ExtraCode[] = [];
   for (const l of legs) {
     if (l.addSightseeingFee) out.push('sightseeing');
     if (l.addWaitingFee) out.push('waiting');
-    if ((l.category || 'transfer') === 'safari_wait') out.push('safari-wait');
+    if (l.addSafariWait) out.push('safari-wait');
   }
   return out;
 }
 
 // Map the tool's typed itinerary to the engine's QuoteRequest. Driving legs price/travel;
 // stay days become idle days for a chauffeur trip (the engine derives idle days from the date span).
-function toEngineRequest(req: ToolRequest): QuoteRequest {
+// `serviceOverride` forces the product (used by /estimate to price both services); when omitted,
+// an explicit body.service wins, else we fall back to deriving from legs (back-compat).
+function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauffeur'): QuoteRequest {
   const vehicle = VEHICLE_MAP[req.vehicle];
   if (!vehicle) throw new PriceError(`no rate is set for "${req.vehicle}" yet — pick Car or Van 6, or add its rate`, 400);
   const extras = collectExtras(req.legs);
   const driving = req.legs.filter(drives);
-  if (isChauffeur(req.legs)) {
+  const service = serviceOverride ?? req.service;
+  const chauffeur = service ? service === 'chauffeur' : isChauffeur(req.legs);
+  if (chauffeur) {
     // Every leg (driving AND stay) must carry a date, else an undated leg gets pinned to day 0 —
     // silently dropping a day rate + idle km (the confirmed underquote). No fallback.
     if (req.legs.some((l) => !l.date)) {
@@ -183,6 +187,12 @@ function toEngineRequest(req: ToolRequest): QuoteRequest {
 
 function money(cents: number) {
   return { cents, usd: usd(cents), lkr: lkr(cents), lkrAmount: toLkr(cents) };
+}
+
+// Compact per-service summary for the chooser (NOT the full breakdown).
+type ServiceSummary = { total: ReturnType<typeof money>; deposit: ReturnType<typeof money>; amountDueNow: ReturnType<typeof money> };
+function summary(result: QuoteResult): ServiceSummary {
+  return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
 }
 
 function shape(result: QuoteResult) {
@@ -243,28 +253,40 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
     const raw = await c.req.json().catch(() => null);
     try {
       const body = parseToolRequest(raw);
+      // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
       const { req, result } = await resolveAndPrice(body, deps.maps);
-      // V4: an honest car-vs-van comparison. For private trips, a tier smaller than the party
-      // requires is flagged as too small rather than silently upgraded by the engine (which
-      // would print a van9 price under a "Car" label). Chauffeur has no pax → keep both feasible.
-      const required = req.product === 'private' ? selectVehicle(req.pax, req.bags) : null;
-      const comparison: Record<string, (ReturnType<typeof shape> & { vehicle: string }) | { error: string }> = {};
-      for (const v of ['car', 'van'] as Vehicle[]) {
-        if (required && required !== 'too_big' && vehicleRank(v) < vehicleRank(required)) {
-          comparison[v] = { error: 'too small for this party' };
-          continue;
-        }
-        try {
-          comparison[v] = { ...shape(quote({ ...req, vehicle: v } as QuoteRequest)), vehicle: v };
-        } catch (e) {
-          comparison[v] = { error: e instanceof Error ? e.message : 'n/a' };
-        }
+      const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
+
+      // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
+      // reuse the selected result for its side; price only the OTHER service additionally.
+      const services: {
+        pointToPoint: ServiceSummary | { error: string };
+        chauffeur: ServiceSummary | { error: string };
+      } = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
+
+      // Point-to-point is always priceable (extras included, dates ignored).
+      services.pointToPoint = selected === 'private'
+        ? summary(result)
+        : summary((await resolveAndPrice(body, deps.maps, 'private')).result);
+
+      // Chauffeur is only offered when every driving+stay leg has a date AND the trip spans >1 date.
+      const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
+      const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
+      if (chauffeurLegs.some((l) => !l.date)) {
+        services.chauffeur = { error: 'add a date to every leg' };
+      } else if (distinctDates.size <= 1) {
+        services.chauffeur = { error: 'single-day — point-to-point only' };
+      } else {
+        services.chauffeur = selected === 'chauffeur'
+          ? summary(result)
+          : summary((await resolveAndPrice(body, deps.maps, 'chauffeur')).result);
       }
+
       return c.json({
         ...shape(result),
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req),
-        comparison,
+        services,
       });
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
