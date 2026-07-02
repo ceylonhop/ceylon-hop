@@ -36,6 +36,64 @@ describe('quote()', () => {
     expect(r.marginEstimateCents).toBe(43020);
   });
 
+  it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withExtras = quote({ ...base, extras: ['sightseeing', 'waiting'] });
+    const withoutExtras = quote(base);
+    expect(withExtras.totalCents).toBe(withoutExtras.totalCents);
+    expect(withExtras.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(withExtras.warnings.some((w) => w.includes('waiting') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: luggage is still charged (not an included extra)', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const withLuggage = quote({ ...base, extras: ['luggage'] });
+    expect(withLuggage.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+  });
+
+  it('chauffeur: sightseeing + luggage → only luggage added, sightseeing warned as included', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['sightseeing', 'luggage'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents + RATE_CARD.extras.luggage);
+    expect(r.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('chauffeur: safari-wait is included and not charged', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const, firstDate: '2026-02-14', lastDate: '2026-02-22',
+      travelDays: [
+        { date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 120 },
+      ],
+    };
+    const withoutExtras = quote(base);
+    const r = quote({ ...base, extras: ['safari-wait'] });
+    expect(r.totalCents).toBe(withoutExtras.totalCents);
+    expect(r.warnings.some((w) => w.includes('safari-wait') && w.includes('included in chauffeur day rate'))).toBe(true);
+  });
+
+  it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {
+    const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
+    expect(r.totalCents).toBe(4048 + 1000);
+    expect(r.warnings.some((w) => w.includes('included in chauffeur day rate'))).toBe(false);
+  });
+
   it('shared total (Hakan $22 incl pickup)', () => {
     const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: true }] });
     expect(r.totalCents).toBe(2200);

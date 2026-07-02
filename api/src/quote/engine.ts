@@ -1,11 +1,11 @@
 // api/src/quote/engine.ts
-import { RATE_CARD } from './rateCard';
+import { RATE_CARD, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
 import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
-import { priceExtras, depositCents } from './extrasDeposit';
+import { priceExtras, depositCents, EXTRA_LABELS } from './extrasDeposit';
 
 export function quote(req: QuoteRequest): QuoteResult {
   const lineItems: LineItem[] = [];
@@ -45,9 +45,19 @@ export function quote(req: QuoteRequest): QuoteResult {
     subtotalCents += c.subtotalCents;
     costCents += Math.round(c.meta.billableKm * RATE_CARD.costPerKmCents[req.vehicle]);
     if (req.extras?.length) {
-      const e = priceExtras(req.extras);
-      lineItems.push(...e.lineItems);
-      subtotalCents += e.subtotalCents;
+      // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
+      // already covered by the day rate and must never be charged again.
+      const included = req.extras.filter((code) => (CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(code));
+      const chargeable = req.extras.filter((code) => !(CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(code));
+      for (const code of included) {
+        warnings.push(`${code} included in chauffeur day rate`);
+        lineItems.push({ label: `${EXTRA_LABELS[code]} (included)`, amountCents: 0 });
+      }
+      if (chargeable.length) {
+        const e = priceExtras(chargeable);
+        lineItems.push(...e.lineItems);
+        subtotalCents += e.subtotalCents;
+      }
     }
   }
 

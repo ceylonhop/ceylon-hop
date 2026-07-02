@@ -1,7 +1,7 @@
 import { RATE_CARD, type ExtraCode } from './rateCard';
 import type { LineItem } from './types';
 
-const EXTRA_LABELS: Record<ExtraCode, string> = {
+export const EXTRA_LABELS: Record<ExtraCode, string> = {
   sightseeing: 'Sightseeing stops (up to 3h)',
   'safari-wait': 'Wait for Safari',
   luggage: 'Luggage rack',

@@ -2,6 +2,10 @@ export type Vehicle = 'car' | 'van' | 'van9' | 'van14' | 'custom';
 export const EXTRA_CODES = ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] as const;
 export type ExtraCode = typeof EXTRA_CODES[number];
 
+// A chauffeur-guide trip includes the vehicle (and driver) all day, so these extras are
+// already covered by the day rate and must never be charged again on a chauffeur quote.
+export const CHAUFFEUR_INCLUDED_EXTRAS = ['sightseeing', 'waiting', 'safari-wait'] as const;
+
 export const RATE_CARD = {
   version: '2026-06-28',
   currency: 'USD',
