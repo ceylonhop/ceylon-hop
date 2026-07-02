@@ -405,7 +405,7 @@ input, select, textarea, button { font-family: inherit; }
 @media (max-width: 720px) { .ch-cust-grid { grid-template-columns: 1fr 1fr; } }
 
 /* ---------- Dense itinerary rows ---------- */
-.ch-legs { display: flex; flex-direction: column; gap: 8px; }
+.ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
 /* .ch-leg also carries .ch-tl-item (e2e hook) whose legacy timeline rule sets
    display:grid — override it back to a plain block so the two rows stack. */
 .ch-leg.ch-tl-item { display: block; grid-template-columns: none; gap: 0; }
@@ -464,10 +464,20 @@ input, select, textarea, button { font-family: inherit; }
 /* second thin line: add-on toggles (only when the popover is open) */
 .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 
-/* dense-row responsive: stack route below controls on narrow */
-@media (max-width: 780px) {
+/* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
+   keep From→To readable alongside the date/distance/action controls, drop the
+   route onto its own full-width line below the controls. Keyed to the container
+   so it fires in the two-pane cockpit (editor ~590px) on any monitor size. */
+@container legs (max-width: 620px) {
   .ch-leg-main { flex-wrap: wrap; }
   .ch-leg-route { flex: 1 1 100%; order: 5; }
+}
+/* Fallback for browsers without container queries: key off the viewport. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1180px) {
+    .ch-leg-main { flex-wrap: wrap; }
+    .ch-leg-route { flex: 1 1 100%; order: 5; }
+  }
 }
 
 .ch-legs-add { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
