@@ -41,7 +41,7 @@ describe('quoteBreakdown', () => {
   it('private: 8 pax/2 bags with car requested is priced at van9 (capacity upgrade), not car (V3 regression)', () => {
     const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] };
     const b = quoteBreakdown(req);
-    expect(b.legs[0]).toEqual({ from: 'A', to: 'B', distanceKm: 140, billableKm: 154, priceCents: 15400, cls: 'van9', minApplied: false });
+    expect(b.legs[0]).toEqual({ from: 'A', to: 'B', distanceKm: 140, billableKm: 154, priceCents: 8470, cls: 'van9', minApplied: false });
   });
 
   // --- V2 fix: chauffeur per-leg prices are the km-charge share only, no per-leg floor ---

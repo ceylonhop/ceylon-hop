@@ -104,7 +104,7 @@ describe('internal quoting tool route', () => {
     const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
     expect(got.customerName).toBe('Maya');
-    expect(got.rateCardVersion).toBe('2026-06-28');
+    expect(got.rateCardVersion).toBe('2026-07-02');
   });
 
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
@@ -202,7 +202,7 @@ describe('internal quoting tool route', () => {
 
   it('van_9/van_14/custom are no longer gated — they price correctly (200, total > 0)', async () => {
     const cases: Array<{ vehicle: string; pax: number; expectedPerKmCents: number }> = [
-      { vehicle: 'van_9',  pax: 8,  expectedPerKmCents: 100 }, // 154 billableKm × 100¢ = 15400
+      { vehicle: 'van_9',  pax: 8,  expectedPerKmCents: 55 }, // 154 billableKm × 55¢ = 8470
       { vehicle: 'van_14', pax: 12, expectedPerKmCents: 130 }, // 154 × 130¢ = 20020
       { vehicle: 'custom', pax: 20, expectedPerKmCents: 175 }, // 154 × 175¢ = 26950
     ];
@@ -226,9 +226,9 @@ describe('internal quoting tool route', () => {
 
   it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers) + vehicle caps', async () => {
     const d = await (await createApp().request('/admin/quote/rate-card')).json();
-    expect(d.version).toBe('2026-06-28');
-    expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 100, van14: 130, custom: 175 });
-    expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 6500, van14: 8500, custom: 11000 });
+    expect(d.version).toBe('2026-07-02');
+    expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 55, van14: 130, custom: 175 });
+    expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
     expect(d.chauffeurDayRateCents).toBe(3500);
     expect(d.fxUsdToLkr).toBe(320);
     // V12 server half: expose vehicle capacity caps for client-side vehicle labelling

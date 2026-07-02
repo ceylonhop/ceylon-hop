@@ -110,10 +110,10 @@ describe('quote()', () => {
   });
 
   // New van9 / van14 / custom tier tests
-  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 100¢ = 15400¢', () => {
+  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 55¢ = 8470¢', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
-    expect(r.totalCents).toBe(15400); // 154km × 100¢
-    expect(r.marginEstimateCents).toBe(15400 - Math.round(154 * 80)); // 154 × 80¢ cost = 12320; margin = 3080
+    expect(r.totalCents).toBe(8470); // 154km × 55¢ (owner-provided rate)
+    expect(r.marginEstimateCents).toBe(8470 - Math.round(154 * 44)); // 154 × 44¢ cost
   });
 
   it('van14: 140km private → 154 billableKm × 130¢ = 20020¢', () => {
@@ -126,16 +126,15 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(26950); // 154km × 175¢
   });
 
-  it('van9: 20km private → floor 6500¢ applies (raw 22km × 100¢ = 2200 < 6500)', () => {
+  it('van9: 20km private → floor 5000¢ applies (raw 22km × 55¢ = 1210 < 5000)', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
-    expect(r.totalCents).toBe(6500); // floor
-    // costCents = round(22 * 80) = 1760; margin = 6500 - 1760 = 4740
-    expect(r.marginEstimateCents).toBe(6500 - Math.round(22 * 80));
+    expect(r.totalCents).toBe(5000); // floor
+    expect(r.marginEstimateCents).toBe(5000 - Math.round(22 * 44));
   });
 
   it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
-    expect(r.totalCents).toBe(15400); // van9 price
+    expect(r.totalCents).toBe(8470); // van9 price ($0.55/km)
     expect(r.warnings.some((w) => w.includes('vehicle set to van9'))).toBe(true);
   });
 

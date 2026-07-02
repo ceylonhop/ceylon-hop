@@ -7,13 +7,14 @@ export type ExtraCode = typeof EXTRA_CODES[number];
 export const CHAUFFEUR_INCLUDED_EXTRAS = ['sightseeing', 'waiting', 'safari-wait'] as const;
 
 export const RATE_CARD = {
-  version: '2026-06-28',
+  version: '2026-07-02',
   currency: 'USD',
   markupPct: 25,
-  // van9/van14/custom rates are placeholders pending real numbers (follow perKm = round(cost × 1.25))
-  perKmCents: { car: 46, van: 83, van9: 100, van14: 130, custom: 175 },
-  costPerKmCents: { car: 37, van: 66, van9: 80, van14: 104, custom: 140 }, // for margin reporting only
-  floorCents: { car: 2900, van: 5000, van9: 6500, van14: 8500, custom: 11000 },
+  // van9 = $0.55/km (owner-provided 2026-07-02). van14/custom still placeholders pending real
+  // numbers. cost = round(perKm / 1.25) to keep the 25% markup/margin model consistent.
+  perKmCents: { car: 46, van: 83, van9: 55, van14: 130, custom: 175 },
+  costPerKmCents: { car: 37, van: 66, van9: 44, van14: 104, custom: 140 }, // for margin reporting only
+  floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50 (confirm)
   chauffeur: { dayRateCents: 3500, idleMinKm: { car: 100, van: 150, van9: 150, van14: 200, custom: 200 } },
   deposit: { pct: 10, capCents: 5000 },
   vehicle: {
