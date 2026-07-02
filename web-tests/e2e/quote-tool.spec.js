@@ -126,8 +126,8 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
   await chBtn.click();
   await page.waitForTimeout(600);
 
-  // Turn leg 2 into a mid-itinerary stay day (category option exists under chauffeur).
-  await page.locator('.ch-tl-item').nth(1).locator('select[data-field="category"]').selectOption('stay_day');
+  // Turn leg 2 into a mid-itinerary stay day via the Travel|Stay switch (chauffeur only).
+  await page.locator('.ch-tl-item').nth(1).locator('[data-action="setLegKind"][data-kind="stay_day"]').click();
 
   // Priced chauffeur summary.
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });

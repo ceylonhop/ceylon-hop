@@ -1141,17 +1141,16 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('') : '';
 
-  // Category select options (R4: slim set). Stay day only under chauffeur (R3).
+  // The old 3-way category dropdown is gone — Transfer/Airport/Train all priced identically
+  // (labels with no behavior; the airport-timing flag keys off the place names). The only real
+  // distinction is travel vs stay day, so under chauffeur each leg gets a Travel | Stay switch.
   var isChauffeur = (state.service === 'chauffeur');
-  var cats = [
-    { id: 'transfer',      label: 'Transfer' },
-    { id: 'airport',       label: 'Airport pickup / drop-off' },
-    { id: 'train_support', label: 'Train / luggage support' },
-  ];
-  if (isChauffeur) cats.push({ id: 'stay_day', label: 'Stay day' });
-  var catOptions = cats.map(function(c) {
-    return '<option value="' + esc(c.id) + '"' + (leg.category === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>';
-  }).join('');
+  var legKindHtml = isChauffeur ? [
+    '<div class="ch-tl-cat"><div class="ch-seg sm" style="width:auto">',
+    '  <button class="ch-seg-btn' + (isStay ? '' : ' active') + '" data-action="setLegKind" data-kind="transfer" data-leg="' + esc(leg.id) + '">Travel</button>',
+    '  <button class="ch-seg-btn' + (isStay ? ' active' : '') + '" data-action="setLegKind" data-kind="stay_day" data-leg="' + esc(leg.id) + '">Stay</button>',
+    '</div></div>',
+  ].join('') : '';
 
   // Fees
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -1222,13 +1221,7 @@ function renderLegCard(leg, idx, total) {
     '    <div class="' + cardToneClass + '">',
     '      <div class="ch-tl-head">',
     '        <span class="ch-tl-tag tone-' + esc(tagTone) + '">' + tagLabel + '</span>',
-    '        <div class="ch-tl-cat">',
-    '          <div class="ch-input-wrap">',
-    '            <select class="ch-input ch-select" data-leg="' + esc(leg.id) + '" data-field="category">',
-    catOptions,
-    '            </select>',
-    '          </div>',
-    '        </div>',
+    legKindHtml,
     '        <div class="ch-tl-actions">',
     '          <button class="ch-icon-btn" title="Duplicate" data-action="dupLeg" data-leg="' + esc(leg.id) + '">⧉</button>',
     '          <button class="ch-icon-btn danger" title="Remove" data-action="removeLeg" data-leg="' + esc(leg.id) + '">×</button>',
@@ -2474,6 +2467,12 @@ function attachEventListeners() {
     } else if (action === 'setService') {
       if (el.disabled) return;
       setService(el.getAttribute('data-service'));
+    } else if (action === 'setLegKind') {
+      // Travel | Stay switch (chauffeur only). Stay days keep no route/distance.
+      var kind = el.getAttribute('data-kind') === 'stay_day' ? 'stay_day' : 'transfer';
+      delete _distCache[legId];
+      updateLeg(legId, { category: kind });
+      if (kind === 'transfer') scheduleAutoDistance(legId);
     } else if (action === 'manualDistance') {
       updateLeg(legId, { manualDistance: true });
     } else if (action === 'autoDistance') {
