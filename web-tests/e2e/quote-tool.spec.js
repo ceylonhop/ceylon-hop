@@ -148,7 +148,9 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const summaryTotal = await totalLineText(page);
 
-  // WhatsApp output checks.
+  // WhatsApp output checks. Output lives in a collapsed section in the money pane
+  // (cockpit layout) — open it before reading the tabs/pre.
+  await page.locator('[data-action="toggleOutput"]').click();
   await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
   const pre = page.locator('.ch-output-body .ch-pre');
   await expect(pre).toBeVisible({ timeout: 8000 });
@@ -176,9 +178,15 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
   await expect(chBtn).toBeDisabled();
 
-  // Point-to-point (default): sightseeing/waiting/safari add-on toggles are available.
+  // Point-to-point (default): the per-leg add-on control exists. In the cockpit
+  // layout the sightseeing/waiting/safari checkboxes live behind a per-leg popover
+  // (the ⧉ add-on button); open it, then the toggles are attached.
+  await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
+  await page.locator('[data-action="toggleAddons"]').first().click();
   await expect(page.locator('input[data-field="addSightseeingFee"]').first()).toBeAttached();
   await expect(page.locator('input[data-field="addSafariWait"]').first()).toBeAttached();
+  // Close the popover again so the later re-renders start clean.
+  await page.locator('[data-action="toggleAddons"]').first().click();
 
   // Date both ends across two days → chauffeur becomes enabled and shows a price.
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
@@ -191,17 +199,19 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(chBtn).toBeEnabled({ timeout: 10000 });
   await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
 
-  // Choose chauffeur → add-on toggles disappear, caption shows, stay-day add appears.
+  // Choose chauffeur → add-on control disappears entirely (no popover button either),
+  // caption shows, stay-day add appears.
   await chBtn.click();
   await page.waitForTimeout(600);
   await expect(page.locator('input[data-field="addSightseeingFee"]')).toHaveCount(0);
+  await expect(page.locator('[data-action="toggleAddons"]')).toHaveCount(0);
   await expect(page.locator('.ch-service-caption')).toContainText(/included/i);
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toBeAttached();
 
-  // Back to point-to-point → toggles return, stay-day add gone.
+  // Back to point-to-point → per-leg add-on control returns, stay-day add gone.
   await page.locator('[data-action="setService"][data-service="private"]').click();
   await page.waitForTimeout(600);
-  await expect(page.locator('input[data-field="addSightseeingFee"]').first()).toBeAttached();
+  await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0);
 });
 
@@ -276,6 +286,9 @@ test('status chosen before first save is synced on save (V5)', async ({ page }) 
   await page.locator('#btnSave').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
+  // Recent quotes now live in a slide-in drawer — open it via the header button.
+  await page.locator('#btnRecent').click();
+
   // Recent row for this customer should show status 'sent'
   const row = page.locator('.ch-recent-row', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
@@ -305,6 +318,9 @@ test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => 
   page.once('dialog', (d) => d.accept());
   await page.locator('#btnNew').click();
   await expect(page.locator('#f-customerName')).toHaveValue('');
+
+  // Recent quotes now live in a slide-in drawer — open it via the header button.
+  await page.locator('#btnRecent').click();
 
   // Click the Recent row itself (not the status select) to reopen
   const row = page.locator('.ch-recent-row', { hasText: custName });
