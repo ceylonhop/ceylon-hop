@@ -343,6 +343,8 @@ input, select, textarea, button { font-family: inherit; }
 .ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
 .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
 .ch-line.strong .ch-line-val { font-family: var(--serif); font-size: 21px; font-weight: 700; }
+/* USD-primary display: small muted LKR reference under a value */
+.ch-val-sub { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.3; text-align: right; }
 .ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
 /* ---------- Service chooser ---------- */
 .ch-service-seg .ch-seg-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 8px; height: auto; }
@@ -601,7 +603,7 @@ let state = {
   luggageCount: 2,
   vehicleType: 'van_6',
   service: 'private',
-  outputCurrency: 'LKR',
+  outputCurrency: 'USD',
   status: 'draft',
   internalNotes: '',
   legs: [newLeg()],
@@ -848,7 +850,7 @@ function newQuote() {
     luggageCount: 2,
     vehicleType: 'van_6',
     service: 'private',
-    outputCurrency: 'LKR',
+    outputCurrency: 'USD',
     status: 'draft',
     internalNotes: '',
     legs: [newLeg()],
@@ -1010,10 +1012,8 @@ function getLegBreakdownPrice(legIdx) {
   if (di < 0) return null; // stay day → no per-leg price
   var bleg = lastEstimate.breakdown.legs[di];
   if (!bleg) return null;
-  // cents → LKR display: round(cents × fx / 100)
-  var fx = lastEstimate.fxUsdToLkr || 320;
-  var lkrVal = Math.round(bleg.priceCents * fx / 100);
-  return 'LKR ' + lkrVal.toLocaleString('en-US');
+  // USD primary (engine-native); the Summary carries the LKR reference.
+  return fmtUsd(bleg.priceCents);
 }
 
 // ── Render leg card HTML ──────────────────────────────────────────────────────
@@ -1352,7 +1352,8 @@ function renderServiceCardBody() {
   var p2p = svc ? svc.pointToPoint : null;
   var chauf = svc ? svc.chauffeur : null;
 
-  var p2pPrice = (p2p && p2p.total) ? p2p.total.lkr : '—';
+  // Pre-escaped HTML (USD primary + LKR sub) — interpolated raw below.
+  var p2pPrice = (p2p && p2p.total) ? esc(fmtUsd(p2p.total.cents)) + '<span class="ch-val-sub">' + esc(p2p.total.lkr) + '</span>' : '—';
 
   // Chauffeur disabled reason: server error, or a visual pre-empt when the itinerary
   // has ≤1 distinct leg date (avoids a flash before the server error arrives).
@@ -1360,7 +1361,7 @@ function renderServiceCardBody() {
   if (!chaufErr && distinctLegDateCount() <= 1) {
     chaufErr = 'single-day — point-to-point only';
   }
-  var chaufPrice = (chauf && chauf.total) ? chauf.total.lkr : '—';
+  var chaufPrice = (chauf && chauf.total) ? esc(fmtUsd(chauf.total.cents)) + '<span class="ch-val-sub">' + esc(chauf.total.lkr) + '</span>' : '—';
   var chaufDisabled = !!chaufErr;
 
   var p2pActive = (state.service !== 'chauffeur');
@@ -1372,11 +1373,11 @@ function renderServiceCardBody() {
   parts.push('<div class="ch-seg ch-service-seg">');
   parts.push('  <button class="ch-seg-btn' + (p2pActive ? ' active' : '') + '" data-action="setService" data-service="private">');
   parts.push('    <span>Point-to-point</span>');
-  parts.push('    <span class="ch-seg-price">' + esc(p2pPrice) + '</span>');
+  parts.push('    <span class="ch-seg-price">' + p2pPrice + '</span>'); // pre-escaped above
   parts.push('  </button>');
   parts.push('  <button class="ch-seg-btn' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
   parts.push('    <span>Chauffeur-guide</span>');
-  parts.push('    <span class="ch-seg-price">' + esc(chaufDisabled ? '—' : chaufPrice) + '</span>');
+  parts.push('    <span class="ch-seg-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
   parts.push('  </button>');
   parts.push('</div>');
 
@@ -1421,30 +1422,30 @@ function renderSummaryCardBody() {
   lineItems.forEach(function(item) {
     lines.push('  <div class="ch-line">');
     lines.push('    <span class="ch-line-label">' + esc(item.label) + '</span>');
-    lines.push('    <span class="ch-line-val">' + esc(item.lkr) + '</span>');
+    lines.push('    <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
     lines.push('  </div>');
   });
 
   // Quote total (strong)
   lines.push('  <div class="ch-line strong">');
   lines.push('    <span class="ch-line-label">Quote total</span>');
-  lines.push('    <span class="ch-line-val">' + esc(est.total.lkr) + '</span>');
+  lines.push('    <span class="ch-line-val">' + usdWithLkr(est.total.cents, est.total.lkr) + '</span>');
   lines.push('  </div>');
 
   // Margin
   if (est.margin) {
-    lines.push('  <div class="ch-margin">Est. margin ' + esc(est.margin.lkr) + '</div>');
+    lines.push('  <div class="ch-margin">Est. margin ' + esc(fmtUsd(est.margin.cents)) + ' (' + esc(est.margin.lkr) + ')</div>');
   }
 
   // Chauffeur product: deposit + due now
   if (est.product === 'chauffeur' && est.deposit && est.amountDueNow) {
     lines.push('  <div class="ch-line">');
     lines.push('    <span class="ch-line-label">Deposit</span>');
-    lines.push('    <span class="ch-line-val">' + esc(est.deposit.lkr) + '</span>');
+    lines.push('    <span class="ch-line-val">' + usdWithLkr(est.deposit.cents, est.deposit.lkr) + '</span>');
     lines.push('  </div>');
     lines.push('  <div class="ch-line">');
     lines.push('    <span class="ch-line-label">Due now</span>');
-    lines.push('    <span class="ch-line-val">' + esc(est.amountDueNow.lkr) + '</span>');
+    lines.push('    <span class="ch-line-val">' + usdWithLkr(est.amountDueNow.cents, est.amountDueNow.lkr) + '</span>');
     lines.push('  </div>');
   }
 
@@ -1699,6 +1700,15 @@ function routeText(leg) {
 }
 
 // M(priceCents) — convert cents to display currency
+// USD display formatter (separators + always 2 decimals) — the internal-primary currency.
+function fmtUsd(cents) {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+// USD primary + small LKR reference (LKR string comes from the server response).
+function usdWithLkr(cents, lkrStr) {
+  return esc(fmtUsd(cents)) + (lkrStr ? '<span class="ch-val-sub">' + esc(lkrStr) + '</span>' : '');
+}
+
 function M(priceCents) {
   var cur = state.outputCurrency || 'LKR';
   var fx = (lastEstimate && lastEstimate.fxUsdToLkr) ? lastEstimate.fxUsdToLkr : 320;
@@ -1925,12 +1935,12 @@ function renderInternalView() {
 
   // line items from server
   var lineItemRows = blines.map(function(item) {
-    return '<tr class="sec"><td>' + esc(item.label) + '</td><td>' + esc(item.lkr) + '</td></tr>';
+    return '<tr class="sec"><td>' + esc(item.label) + '</td><td>' + esc(fmtUsd(item.amountCents)) + ' <span style="color:var(--muted-2)">(' + esc(item.lkr) + ')</span></td></tr>';
   }).join('');
 
   // Quote total
-  var totalRow = '<tr class="hi blue"><td>Quote total</td><td>' + esc(est.total.lkr) + '</td></tr>';
-  var marginRow = est.margin ? '<tr><td>Est. margin</td><td>' + esc(est.margin.lkr) + '</td></tr>' : '';
+  var totalRow = '<tr class="hi blue"><td>Quote total</td><td>' + esc(fmtUsd(est.total.cents)) + ' <span style="color:var(--muted-2)">(' + esc(est.total.lkr) + ')</span></td></tr>';
+  var marginRow = est.margin ? '<tr><td>Est. margin</td><td>' + esc(fmtUsd(est.margin.cents)) + ' <span style="color:var(--muted-2)">(' + esc(est.margin.lkr) + ')</span></td></tr>' : '';
 
   var tableHtml = [
     '<table class="ch-itable">',
@@ -1988,10 +1998,8 @@ function renderRecentPanel() {
     var opts = statusOpts.map(function(o) {
       return '<option value="' + o.value + '"' + (q.status === o.value ? ' selected' : '') + '>' + esc(o.label) + '</option>';
     }).join('');
-    // totalCents are USD cents; convert to LKR for display
-    var fx = (rateCard && rateCard.fxUsdToLkr) ? rateCard.fxUsdToLkr : 320;
-    var totalLkr = q.totalCents ? Math.round(q.totalCents * fx / 100) : 0;
-    var totalStr = totalLkr ? 'LKR ' + totalLkr.toLocaleString('en-US') : '—';
+    // USD primary (engine-native).
+    var totalStr = q.totalCents ? fmtUsd(q.totalCents) : '—';
     var displayName = q.customerName || q.name || 'Untitled';
     // V19: the row (except the status select) is clickable to reopen the draft.
     return [
@@ -2262,7 +2270,7 @@ function render() {
     '            <h2>Pricing Summary</h2>',
     '          </div>',
     '          <div class="ch-card-head-r">',
-    '            <span class="ch-badge tone-blue">LKR &middot; internal</span>',
+    '            <span class="ch-badge tone-blue">USD &middot; internal (LKR ref)</span>',
     '          </div>',
     '        </header>',
     '        <div class="ch-card-body">',

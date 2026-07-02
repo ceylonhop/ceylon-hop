@@ -15,9 +15,11 @@ async function pickPlace(page, input, query, resultText) {
   await page.locator('.ch-ac-menu .ch-ac-item', { hasText: resultText }).first().click();
 }
 
-// Helper: read the strong (total) line's value text.
+// Helper: read the strong (total) line's PRIMARY value (USD). The value element also
+// carries a small LKR reference sub-span, so strip everything from 'LKR' onward.
 async function totalLineText(page) {
-  return page.locator('.ch-line.strong .ch-line-val').first().textContent();
+  const raw = await page.locator('.ch-line.strong .ch-line-val').first().textContent();
+  return raw.split('LKR')[0].trim();
 }
 
 // The /estimate route 400s on a leg date that's present-but-not-YYYY-MM-DD, and the client
