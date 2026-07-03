@@ -1,8 +1,19 @@
 # Ceylon Hop — Ops Dashboard: status & resume notes
 
-**Last updated: 2026-06-22.** This is the canonical "where we are" record for the **ops
-dashboard (M12)**. We are pausing it here to go finish the **main customer site**, and will
-resume the ops work later. Read this top-to-bottom before resuming.
+**Last updated: 2026-07-03.** This is the canonical "where we are" record for the **ops
+dashboard (M12)**. Read this top-to-bottom before resuming.
+
+> **2026-07-03 — Slice 2 (reshape + wire-up) SHIPPED** on branch `m12s2-ops-dashboard`.
+> The backend now matches the agreed post-payment model in §1: `bookings.channel`
+> (website|whatsapp) added; ride fulfilment lifecycle simplified to
+> `paid → vehicle_confirmed → pickup_confirmed → on_trip → completed`; the whole coordinator
+> layer removed (repos, `/coordinators`, `/manifest`, `/rides`, `/bookings/:id/assign`; the
+> `coordinators` table + `ride_ops.coordinator_id` dropped via migrations 0011–0013). The
+> "Control Tower" UI is served at **`GET /ops`**, wired to `/admin/ops` with a session-cookie
+> **login screen** — no more static mock. Verified end-to-end against dev Supabase (login,
+> live queue, stage advance, flag/note persistence). Plan: `docs/superpowers/plans/2026-07-03-m12-ops-dashboard-slice-2.md`.
+> **Still TODO before real traffic:** deploy runbook below + the WhatsApp quote→PayHere-link
+> tool (§4, still does not exist).
 
 ---
 
@@ -142,7 +153,16 @@ What's there:
 ---
 
 ### Resume checklist (TL;DR)
-1. Re-open `_ops-preview.html` in the preview to refresh on the agreed UX.
-2. Reshape the backend (§3 steps 1–4), TDD + migration + deploy.
-3. Wire UI → `/admin/ops`, add a login screen, serve at `/ops` (§3 step 5).
-4. Build/locate the external WhatsApp quote→PayHere-link tool (§4).
+1. ~~Reshape the backend~~ ✅ DONE (Slice 2, 2026-07-03).
+2. ~~Wire UI → `/admin/ops`, login screen, serve at `/ops`~~ ✅ DONE (Slice 2).
+3. **Deploy** — apply migrations 0011→0012→0013 to live Supabase *before* the new image serves
+   traffic; set Render env vars (`OPS_SESSION_SECRET`, `OPS_FOUNDER_KEY`, `OPS_SUPPORT_KEY`,
+   `ADMIN_API_KEY`). See the deploy runbook in the Slice 2 plan / PR.
+   ⚠️ 0013 drops the `coordinators` table irreversibly — snapshot the prod DB first.
+4. Build/locate the external WhatsApp quote→PayHere-link tool (§4) — still the only path for
+   manual bookings to enter the DB; ops has no create-booking form by design.
+5. Retire the root `_ops-preview.html` mock (superseded by the live `/ops` UI).
+
+**Prod hardening carried forward** (out of Slice 2 scope): add `Secure` to the ops session
+cookie (currently httpOnly + SameSite=Lax + path=/ but not Secure) — fold into the queued
+permissions/roles slice.
