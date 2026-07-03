@@ -70,8 +70,8 @@ old `/routes/` + `/trip/`, and the internal-linking spine (each route page bread
 | `/trip/ella-to-mirissa-weligama-ahangama/` | `/trip/ella-to-mirissa/` |
 | `/trip/mirissa-weligama-to-airport-shared-ride/` | `/trip/mirissa-to-cmb-airport/` |
 | `/trip/private-transfer-airport-to-mirissa-weligama-ahangama/` | `/trip/cmb-airport-to-mirissa/` |
-| `/trip/island_loop_6_stops/`, `/trip/island_loop_6_stops_plus_arugambay/` | `tour.html?id=classic-hop` |
-| `/trip/island_loop_9_stops/`, `/trip/the-island-loop-9-stops-arugambay/` | `tour.html?id=grand-island-loop` |
+| `/trip/island_loop_6_stops/`, `/trip/island_loop_6_stops_plus_arugambay/` | `tours.html` (indexable; `tour.html?id=` is `noindex` so equity would be lost) |
+| `/trip/island_loop_9_stops/`, `/trip/the-island-loop-9-stops-arugambay/` | `tours.html` |
 | `/trip/`, `/routes/` | `/trip/` index |
 | `/about-us/` | `about.html` |
 | `/why-hop-with-us/` | `why.html` |
