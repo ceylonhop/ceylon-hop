@@ -8,6 +8,7 @@ export interface OpsBookingRow {
   route: string; travelDate: string | null; travelTime: string | null; pax: number;
   coordinatorId: string | null; fulfilmentStatus: string;
   vehiclePhotoReceived: boolean; customerUpdated: boolean;
+  channel: 'website' | 'whatsapp';
 }
 
 function route(b: Booking): string {
@@ -38,6 +39,7 @@ export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boo
     fulfilmentStatus: opts.rideOps?.fulfilmentStatus ?? 'unassigned',
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
+    channel: b.channel,
   };
 }
 

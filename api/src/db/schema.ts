@@ -25,6 +25,9 @@ export const bookings = pgTable('bookings', {
   amountDueNow: integer('amount_due_now'),
   currency: text('currency').notNull(),
   idempotencyKey: text('idempotency_key').unique(),
+  // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
+  // payment-link tool will write 'whatsapp'.
+  channel: text('channel').notNull().default('website'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

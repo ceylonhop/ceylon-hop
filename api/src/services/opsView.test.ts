@@ -4,7 +4,7 @@ import type { Booking } from '../db/bookingRepo';
 
 const base: Booking = {
   mode: 'single', id: 'b1', reference: 'CH-AAA11', status: 'paid', createdAt: '2026-06-21T00:00:00Z',
-  total: 12100, currency: 'USD',
+  total: 12100, currency: 'USD', channel: 'website',
   input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 1, bags: 2,
     date: '2026-06-22', time: '09:00',
     customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' } },
@@ -47,7 +47,7 @@ describe('opsView', () => {
 
   const trip: Booking = {
     mode: 'trip', id: 't1', reference: 'CH-TRIP1', status: 'paid', createdAt: '2026-06-21T00:00:00Z',
-    total: 60000, currency: 'USD',
+    total: 60000, currency: 'USD', channel: 'website',
     input: { stops: ['Colombo Airport', 'Kandy', 'Ella'], nights: [0, 2, 2], dates: ['2026-07-01', '2026-07-03'],
       pax: 4, vehicleType: 'van', serviceType: 'chauffeur',
       customer: { firstName: 'Sam', lastName: 'P', email: 's@x.com', whatsapp: '+1', country: 'US' } },
@@ -64,7 +64,7 @@ describe('opsView', () => {
 
   const shared: Booking = {
     mode: 'shared', id: 's1', reference: 'CH-SHR01', status: 'paid', createdAt: '2026-06-21T00:00:00Z',
-    total: 4000, currency: 'USD',
+    total: 4000, currency: 'USD', channel: 'website',
     input: { corridorId: 'cmb-galle', date: '2026-07-10', time: '08:00', seats: 3,
       customer: { firstName: 'Ana', lastName: 'R', email: 'a@x.com', whatsapp: '+2', country: 'PT' } },
   };
@@ -76,5 +76,10 @@ describe('opsView', () => {
     expect(row.travelDate).toBe('2026-07-10');
     expect(row.travelTime).toBe('08:00');
     expect(manifestLine(shared)).toContain('08:00');
+  });
+
+  it('exposes booking channel on the ops row', () => {
+    const row = toOpsRow({ ...base, channel: 'whatsapp' }, { paid: true });
+    expect(row.channel).toBe('whatsapp');
   });
 });

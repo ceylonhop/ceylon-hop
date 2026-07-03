@@ -78,6 +78,13 @@
       "when": 1783037200874,
       "tag": "0010_gl3_engine_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783081716076,
+      "tag": "0011_booking_channel",
+      "breakpoints": true
     }
   ]
 }

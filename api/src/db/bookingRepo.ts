@@ -4,6 +4,10 @@ import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
 
+// M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
+// payment-link tool will write 'whatsapp'.
+export type BookingChannel = 'website' | 'whatsapp';
+
 // A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
 // `mode`. `input.customer` is common to all three shapes. `amountDueNow` (GL-3) is what
 // checkout collects immediately — the chauffeur deposit, or the full total.
@@ -17,6 +21,7 @@ export type NewBooking =
       // Road distance + driving duration from the maps adapter (M8). Null when unresolved.
       distanceKm?: number | null;
       durationMin?: number | null;
+      channel?: BookingChannel;
     }
   | {
       mode: 'trip';
@@ -27,19 +32,28 @@ export type NewBooking =
       // Total road distance + driving duration summed across the trip's legs (M8).
       distanceKm?: number | null;
       durationMin?: number | null;
+      channel?: BookingChannel;
     }
-  | { mode: 'shared'; input: SharedInput; total: number; amountDueNow: number; currency: string };
+  | {
+      mode: 'shared';
+      input: SharedInput;
+      total: number;
+      amountDueNow: number;
+      currency: string;
+      channel?: BookingChannel;
+    };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel'> & {
   id: string;
   reference: string;
   status: BookingStatus;
   createdAt: string;
   // Null/absent on rows created before GL-3 — checkout falls back to charging the total.
   amountDueNow?: number | null;
+  channel: BookingChannel;
 };
 
 // The storage seam. The route layer depends only on this interface, so swapping the
@@ -89,6 +103,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       reference,
       status: 'draft',
       createdAt: new Date().toISOString(),
+      channel: b.channel ?? 'website',
     };
     this.byId.set(booking.id, booking);
     this.refs.add(reference);

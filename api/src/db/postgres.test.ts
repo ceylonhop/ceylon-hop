@@ -83,6 +83,14 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(b.id).toBe(a.id);
   });
 
+  it('defaults channel to website and persists an explicit whatsapp channel', async () => {
+    const a = await bookings.create(sample);
+    expect(a.channel).toBe('website');
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    expect(b.channel).toBe('whatsapp');
+    expect((await bookings.get(b.id))?.channel).toBe('whatsapp');
+  });
+
   it('enforces status transitions', async () => {
     const b = await bookings.create(sample);
     const moved = await bookings.setStatus(b.id, 'payment_pending');

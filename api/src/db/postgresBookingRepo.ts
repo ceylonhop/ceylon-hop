@@ -5,6 +5,7 @@ import {
   type BookingRepo,
   type NewBooking,
   type Booking,
+  type BookingChannel,
   BookingNotFoundError,
   generateReference,
 } from './bookingRepo';
@@ -33,6 +34,7 @@ export class PostgresBookingRepo implements BookingRepo {
       total: row.total,
       amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
       currency: row.currency,
+      channel: row.channel as BookingChannel,
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -124,6 +126,7 @@ export class PostgresBookingRepo implements BookingRepo {
           amountDueNow: b.amountDueNow,
           currency: b.currency,
           idempotencyKey: opts?.idempotencyKey ?? null,
+          channel: b.channel ?? 'website',
         })
         .returning();
       if (b.mode === 'trip') {
