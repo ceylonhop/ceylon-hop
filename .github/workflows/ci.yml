@@ -61,3 +61,19 @@ jobs:
           else
             echo "No api/ yet — skipping API checks."
           fi
+
+  web-tests:
+    name: web-tests unit (SEO codegen + invariants)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: run web-tests unit suite (no browser)
+        run: |
+          if [ -f web-tests/package.json ]; then
+            cd web-tests && npm ci && npm run test:unit
+          else
+            echo "No web-tests/ — skipping."
+          fi
