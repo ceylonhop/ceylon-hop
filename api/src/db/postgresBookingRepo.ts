@@ -31,6 +31,7 @@ export class PostgresBookingRepo implements BookingRepo {
       status: row.status as BookingStatus,
       createdAt: row.createdAt.toISOString(),
       total: row.total,
+      amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
       currency: row.currency,
     };
     if (row.mode === 'trip') {
@@ -120,6 +121,7 @@ export class PostgresBookingRepo implements BookingRepo {
           status: 'draft',
           mode: b.mode,
           total: b.total,
+          amountDueNow: b.amountDueNow,
           currency: b.currency,
           idempotencyKey: opts?.idempotencyKey ?? null,
         })

@@ -25,6 +25,7 @@ const sample: NewBooking = {
     customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
   },
   total: 5000,
+  amountDueNow: 5000,
   currency: 'USD',
 };
 
@@ -102,6 +103,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
       },
       total: 12000,
+      amountDueNow: 12000,
       currency: 'USD',
     };
     const created = await bookings.create(trip);
@@ -125,6 +127,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
       },
       total: 7000,
+      amountDueNow: 7000,
       currency: 'USD',
     };
     const created = await bookings.create(shared);

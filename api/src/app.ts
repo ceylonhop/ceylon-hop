@@ -94,7 +94,7 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
+  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));

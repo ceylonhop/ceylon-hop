@@ -94,6 +94,7 @@ describe('POST /admin/jobs/notifications', () => {
       mode: 'single',
       input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
       total: 5000,
+      amountDueNow: 5000,
       currency: 'USD',
     });
     await bookings.setStatus(b.id, 'payment_pending');

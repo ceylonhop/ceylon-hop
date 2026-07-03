@@ -14,16 +14,17 @@ const toTask = (r: Row): ConciergeTask => ({
   bookingId: r.bookingId,
   type: r.type as ConciergeTaskType,
   status: r.status as ConciergeTaskStatus,
+  note: r.note,
   createdAt: r.createdAt.toISOString(),
 });
 
 export class PostgresConciergeTaskRepo implements ConciergeTaskRepo {
   constructor(private readonly db: Db) {}
 
-  async create(t: { bookingId: string; type: ConciergeTaskType }): Promise<ConciergeTask> {
+  async create(t: { bookingId: string; type: ConciergeTaskType; note?: string }): Promise<ConciergeTask> {
     const [row] = await this.db
       .insert(conciergeTasks)
-      .values({ bookingId: t.bookingId, type: t.type, status: 'open' })
+      .values({ bookingId: t.bookingId, type: t.type, status: 'open', note: t.note ?? null })
       .returning();
     return toTask(row);
   }

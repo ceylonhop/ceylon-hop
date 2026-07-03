@@ -20,6 +20,9 @@ export const bookings = pgTable('bookings', {
   status: text('status').notNull(),
   mode: text('mode').notNull().default('single'),
   total: integer('total').notNull(),
+  // GL-3 — what checkout collects now (chauffeur deposit, else the total). Nullable: rows
+  // created before GL-3 have no value and are charged the full total.
+  amountDueNow: integer('amount_due_now'),
   currency: text('currency').notNull(),
   idempotencyKey: text('idempotency_key').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -65,6 +68,8 @@ export const conciergeTasks = pgTable('concierge_tasks', {
     .references(() => bookings.id),
   type: text('type').notNull(),
   status: text('status').notNull(),
+  // Optional free-text context for the staff member (GL-3, e.g. a price-mismatch detail).
+  note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

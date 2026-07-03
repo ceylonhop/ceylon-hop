@@ -113,9 +113,9 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<Pr
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
-// already server-authoritative, so no engine call. (The engine's Colombo-pickup surcharge
-// is not in the public payload; don't invent it.)
-export function priceShared(seats: number, seatPriceCents: number): PriceOutcome {
+// already server-authoritative, so no engine call and no unpriced arm. (The engine's
+// Colombo-pickup surcharge is not in the public payload; don't invent it.)
+export function priceShared(seats: number, seatPriceCents: number): Extract<PriceOutcome, { priced: true }> {
   const totalCents = seats * seatPriceCents;
   return { currency: 'USD', totalCents, amountDueNowCents: totalCents, priced: true };
 }

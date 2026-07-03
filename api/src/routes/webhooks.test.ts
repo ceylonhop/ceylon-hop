@@ -81,9 +81,9 @@ describe('POST /webhooks/payments', () => {
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
     await app.request('/webhooks/payments', { method: 'POST', body });
 
+    // the unresolvable test route also files an unpriced-booking flag — count pickups only
     const tasks = await conciergeTasks.listByBooking(b.id);
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0].type).toBe('confirm_pickup');
+    expect(tasks.filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
   });
 
   it('rejects a bad signature (401)', async () => {

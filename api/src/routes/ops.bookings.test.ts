@@ -9,7 +9,7 @@ const hdr = { 'x-admin-key': 'adminkey', 'content-type': 'application/json' }; /
 
 async function seed(bookings: InMemoryBookingRepo) {
   return bookings.create({
-    mode: 'single', total: 12100, currency: 'USD',
+    mode: 'single', total: 12100, amountDueNow: 12100, currency: 'USD',
     input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1,
       date: '2026-06-22', time: '09:00',
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' } },

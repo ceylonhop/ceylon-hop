@@ -13,7 +13,7 @@ describe('daily rides, coordinators, manifest', () => {
     bookings = new InMemoryBookingRepo(); rideOps = new InMemoryRideOpsRepo();
     app = createApp({ bookings, rideOps, coordinators: new InMemoryCoordinatorRepo(), auth, adminApiKey: 'adminkey' });
     bid = (await bookings.create({
-      mode: 'single', total: 9000, currency: 'USD',
+      mode: 'single', total: 9000, amountDueNow: 9000, currency: 'USD',
       input: { from: 'Galle', to: 'Mirissa', vehicleType: 'car', adults: 2, children: 0, bags: 0,
         date: '2026-06-25', time: '08:00',
         customer: { firstName: 'Sam', lastName: 'P', email: 's@x.com', whatsapp: '+1', country: 'US' } },

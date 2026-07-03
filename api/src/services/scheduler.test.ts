@@ -12,6 +12,7 @@ async function paidSingle(bookings: InMemoryBookingRepo, date: string, time = '0
     mode: 'single',
     input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, date, time, customer },
     total: 5000,
+    amountDueNow: 5000,
     currency: 'USD',
   });
   await bookings.setStatus(b.id, 'payment_pending');
@@ -62,6 +63,7 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
       mode: 'single',
       input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer },
       total: 5000,
+      amountDueNow: 5000,
       currency: 'USD',
     });
     await d.bookings.setStatus(b.id, 'payment_pending');

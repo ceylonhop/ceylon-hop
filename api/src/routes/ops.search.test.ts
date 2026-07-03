@@ -20,12 +20,12 @@ describe('ops bookings search / filter / detail', () => {
     app = createApp({ bookings, payments, rideOps: new InMemoryRideOpsRepo(), coordinators: new InMemoryCoordinatorRepo(), auth, adminApiKey: 'adminkey' });
 
     single = (await bookings.create({
-      mode: 'single', total: 12100, currency: 'USD',
+      mode: 'single', total: 12100, amountDueNow: 12100, currency: 'USD',
       input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: '2026-06-22', time: '09:00',
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34', country: 'ES' } },
     })).id;
     await bookings.create({
-      mode: 'shared', total: 4000, currency: 'USD',
+      mode: 'shared', total: 4000, amountDueNow: 4000, currency: 'USD',
       input: { corridorId: 'cmb-galle', date: '2026-06-25', time: '08:00', seats: 2,
         customer: { firstName: 'Ana', lastName: 'Rocha', email: 'ana@example.com', whatsapp: '+1', country: 'PT' } },
     });

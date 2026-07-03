@@ -5,12 +5,14 @@ import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
 
 // A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
-// `mode`. `input.customer` is common to all three shapes.
+// `mode`. `input.customer` is common to all three shapes. `amountDueNow` (GL-3) is what
+// checkout collects immediately — the chauffeur deposit, or the full total.
 export type NewBooking =
   | {
       mode: 'single';
       input: SingleTransferInput;
       total: number;
+      amountDueNow: number;
       currency: string;
       // Road distance + driving duration from the maps adapter (M8). Null when unresolved.
       distanceKm?: number | null;
@@ -20,18 +22,24 @@ export type NewBooking =
       mode: 'trip';
       input: TripInput;
       total: number;
+      amountDueNow: number;
       currency: string;
       // Total road distance + driving duration summed across the trip's legs (M8).
       distanceKm?: number | null;
       durationMin?: number | null;
     }
-  | { mode: 'shared'; input: SharedInput; total: number; currency: string };
+  | { mode: 'shared'; input: SharedInput; total: number; amountDueNow: number; currency: string };
 
-export type Booking = NewBooking & {
+// Omit that distributes over the NewBooking union, so each variant keeps its own fields.
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow'> & {
   id: string;
   reference: string;
   status: BookingStatus;
   createdAt: string;
+  // Null/absent on rows created before GL-3 — checkout falls back to charging the total.
+  amountDueNow?: number | null;
 };
 
 // The storage seam. The route layer depends only on this interface, so swapping the
