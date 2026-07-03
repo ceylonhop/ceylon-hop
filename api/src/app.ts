@@ -19,6 +19,7 @@ import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorR
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
+import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
@@ -44,6 +45,12 @@ export interface AppDeps {
   alerts?: AlertAdapter;
   // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
   resendWebhookSecret?: string;
+  // M17 — /health/deep runs this to prove DB connectivity (server passes SELECT 1;
+  // unset in unit tests / dev-in-memory → the deep check reports db:'skipped').
+  pingDb?: () => Promise<void>;
+  // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
+  alertLog?: AlertLogRepo;
+  digestTo?: string;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -115,6 +122,24 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
+  // M17: the uptime monitor's target — proves the DB answers, unlike the static /health
+  // (which stays fast for keep-warm pings and the booking page's warm-up call).
+  app.get('/health/deep', async (c) => {
+    if (!deps.pingDb) return c.json({ status: 'ok', db: 'skipped' });
+    try {
+      await deps.pingDb();
+      return c.json({ status: 'ok', db: 'ok' });
+    } catch (err) {
+      console.error('/health/deep DB check failed:', err);
+      void alerts.send({
+        severity: 'critical',
+        kind: 'db_down',
+        title: 'Database check failed on /health/deep',
+        body: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ status: 'degraded', db: 'down' }, 503);
+    }
+  });
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route(
@@ -134,7 +159,19 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
-  app.route('/admin', adminRoutes({ bookings, departures, email, notificationLog, adminApiKey }));
+  app.route(
+    '/admin',
+    adminRoutes({
+      bookings,
+      departures,
+      email,
+      notificationLog,
+      adminApiKey,
+      alerts,
+      alertLog: deps.alertLog,
+      digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+    }),
+  );
   return app;
 }
 

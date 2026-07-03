@@ -6,6 +6,10 @@ import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '../domain/status';
 import { sendCancellationConfirmation, sendRefundConfirmation } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { runWatchdog } from '../services/watchdog';
+import { buildDigest } from '../services/digest';
+import type { AlertAdapter } from '../adapters/alerts';
+import type { AlertLogRepo } from '../db/alertLogRepo';
 
 // Interim staff API guarded by a single shared key. Supabase Auth + RBAC replaces this
 // in M12 — do not bake the API-key assumption deep.
@@ -15,8 +19,13 @@ export function adminRoutes(deps: {
   email: EmailAdapter;
   notificationLog: NotificationLogRepo;
   adminApiKey: string;
+  // M17 — watchdog alert channel + digest inputs; all optional so existing callers work.
+  alerts?: AlertAdapter;
+  alertLog?: AlertLogRepo;
+  digestTo?: string;
 }) {
   const { bookings, departures, email, notificationLog, adminApiKey } = deps;
+  const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
 
   const authed = (c: Context) => Boolean(adminApiKey) && c.req.header('x-admin-key') === adminApiKey;
@@ -92,7 +101,27 @@ export function adminRoutes(deps: {
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
     }
-    return c.json({ ...result, staleSharedHolds }, 200);
+    // M17: the daily ops digest rides the same daily tick, best-effort — a digest
+    // failure must never block the customer notifications the caller asked for.
+    let digest = false;
+    if (deps.digestTo) {
+      try {
+        const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog });
+        await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text });
+        digest = true;
+      } catch (err) {
+        console.error('ops digest failed:', err);
+      }
+    }
+    return c.json({ ...result, staleSharedHolds, digest }, 200);
+  });
+
+  // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
+  // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
+  r.post('/jobs/watchdog', async (c) => {
+    if (!authed(c)) return c.json({ error: 'unauthorized' }, 401);
+    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts });
+    return c.json(result, 200);
   });
 
   return r;

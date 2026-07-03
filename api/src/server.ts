@@ -58,9 +58,10 @@ initTracking(config.SENTRY_DSN, {
   environment: config.NODE_ENV,
   release: process.env.RENDER_GIT_COMMIT,
 });
+const alertLog = new PostgresAlertLogRepo(db);
 const alerts = new ThrottledAlerts(
   config.ALERT_EMAIL ? new EmailAlertAdapter(email, config.ALERT_EMAIL) : new LogAlertAdapter(),
-  new PostgresAlertLogRepo(db),
+  alertLog,
 );
 
 const app = createApp({
@@ -76,6 +77,10 @@ const app = createApp({
   maps,
   email,
   alerts,
+  alertLog,
+  pingDb: async () => {
+    await sql`SELECT 1`;
+  },
   auth: {
     opsSupportKey: config.OPS_SUPPORT_KEY,
     opsFounderKey: config.OPS_FOUNDER_KEY,
