@@ -706,6 +706,16 @@ function chauffeurDayList(){
 }
 // chauffeur is only priced once the trip is fully dated (we charge per day)
 function chauffeurFee(){ return (isTrip && state.svc==='chauffeur' && tripDatesComplete()) ? (window.TRANSFERS.CHAUFFEUR_DAY_FEE * Math.max(1,tripDays)) : 0; }
+// GL-4 (owner decision 2026-07-02): chauffeur distance is billed in bulk across the
+// whole trip — buffered travel km plus a minimum km for every idle (no-travel) day —
+// at the per-km rate, with NO per-leg minimum fares. Mirrors api/src/quote/chauffeur.ts.
+function chauffeurDistanceCharge(){
+  const days = Math.max(1, tripDays);
+  const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
+  const idleKm = idleDays * (vehicleKey==='van' ? 150 : 100);
+  const bulkKm = Math.round(window.TRANSFERS.tripQuote(tripStops, vehicleKey).totalKm * 1.10) + idleKm;
+  return Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
+}
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // deposit applies for chauffeur (always) or a private trip booked far ahead and the user opts in
 function isDeposit(){
@@ -716,14 +726,19 @@ function isDeposit(){
 
 // ---- totals + render ----
 function calcTotal(){
-  let t = perVehicle ? unit : (unit*state.ad + unit*0.6*state.ch);
-  t += chauffeurFee();
+  // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
+  // charge across the whole trip — not the per-leg fares (which carry minimum floors)
+  let t = chauffeurFee()>0
+    ? chauffeurFee() + chauffeurDistanceCharge()
+    : (perVehicle ? unit : (unit*state.ad + unit*0.6*state.ch));
   if(isShared){ const free=Math.max(1,state.ad+state.ch); t += Math.max(0,state.bags-free)*10; }
   state.addons.forEach(a=>t+=addonPrices[a]);
   return t;
 }
-const DEPOSIT_PCT = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_PCT) || 0.20;
-function amountDueNow(){ return isDeposit() ? Math.round(calcTotal()*DEPOSIT_PCT) : calcTotal(); }
+const DEPOSIT_PCT = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_PCT) || 0.10;
+const DEPOSIT_CAP = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_CAP) || 50; // USD
+function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
+function amountDueNow(){ return isDeposit() ? depositDue() : calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 
 // price of an AC van for this journey (single transfer or whole trip)
@@ -855,7 +870,8 @@ function render(){
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
     document.getElementById('sum-adlabel').textContent = isTrip ? (vehicleKey==='van'?'Private AC van · all legs':'Private AC car · all legs') : vehicleLabel;
-    document.getElementById('sum-adamt').textContent=money(unit);
+    // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
+    document.getElementById('sum-adamt').textContent=money(chauffeurFee()>0 ? chauffeurDistanceCharge() : unit);
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travelers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
@@ -918,7 +934,7 @@ function render(){
     if(showChoice){
       choice.innerHTML=`
         <label class="pc-opt ${state.payPlan==='full'?'on':''}" data-plan="full"><input type="radio" name="pp" ${state.payPlan==='full'?'checked':''} onchange="setPayPlan('full')"><span><b>Pay in full today</b><small>${money(calcTotal())} — done and dusted</small></span></label>
-        <label class="pc-opt ${state.payPlan==='deposit'?'on':''}" data-plan="deposit"><input type="radio" name="pp" ${state.payPlan==='deposit'?'checked':''} onchange="setPayPlan('deposit')"><span><b>Pay ${Math.round(DEPOSIT_PCT*100)}% deposit now</b><small>${money(calcTotal()*DEPOSIT_PCT)} now, balance before arrival</small></span></label>`;
+        <label class="pc-opt ${state.payPlan==='deposit'?'on':''}" data-plan="deposit"><input type="radio" name="pp" ${state.payPlan==='deposit'?'checked':''} onchange="setPayPlan('deposit')"><span><b>Pay ${Math.round(DEPOSIT_PCT*100)}% deposit now</b><small>${money(depositDue())} now, balance before arrival</small></span></label>`;
     }
   }
 }
@@ -1116,7 +1132,9 @@ async function createApiBooking(){
       vehicleType: (vehicleKey==='van') ? 'van' : 'car',
       adults: state.ad, children: state.ch, bags: state.bags,
       customer,
-      quotedTotal
+      quotedTotal,
+      // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
+      extras: state.addons.size ? Array.from(state.addons) : undefined
     };
   }
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
