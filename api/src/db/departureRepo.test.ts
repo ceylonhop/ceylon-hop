@@ -34,4 +34,24 @@ describe('InMemoryDepartureRepo', () => {
     expect(held).toHaveLength(5); // exactly capacity succeed
     expect(Math.max(...held.map((r) => r!.seatsBooked))).toBe(5); // never exceeds total
   });
+
+  it('releases held seats so they can be booked again (GL-3)', async () => {
+    const repo = new InMemoryDepartureRepo();
+    await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 5 });
+    await repo.releaseSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 2 });
+    const next = await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 1 });
+    expect(next?.seatsBooked).toBe(4); // 5 − 2 released + 1
+  });
+
+  it('floors a release at zero and ignores an unknown departure', async () => {
+    const repo = new InMemoryDepartureRepo();
+    await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 3 });
+    await repo.releaseSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 10 });
+    const next = await repo.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 1 });
+    expect(next?.seatsBooked).toBe(1); // floored at 0, not negative
+    // releasing on a departure that was never held must be a harmless no-op
+    await expect(
+      repo.releaseSeats({ corridorId: 'hill-line', date: '2099-01-01', time: '08:00', seats: 1 }),
+    ).resolves.toBeUndefined();
+  });
 });

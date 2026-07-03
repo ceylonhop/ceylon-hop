@@ -100,7 +100,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
-  app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
+  app.route('/admin', adminRoutes({ bookings, departures, email, notificationLog, adminApiKey }));
   return app;
 }
 

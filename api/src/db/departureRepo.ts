@@ -28,6 +28,14 @@ export interface DepartureRepo {
     time: string;
     seats: number;
   }): Promise<SharedDeparture | null>;
+  // Give held seats back (GL-3: cancelled/refunded/stale shared bookings). Floors at 0;
+  // a departure that was never held is a harmless no-op.
+  releaseSeats(args: {
+    corridorId: string;
+    date: string;
+    time: string;
+    seats: number;
+  }): Promise<void>;
 }
 
 // Shared corridors — these MIRROR the frozen front-end (transfers-data.js `CORRIDORS`).
@@ -111,5 +119,16 @@ export class InMemoryDepartureRepo implements DepartureRepo {
     if (dep.seatsBooked + args.seats > dep.seatsTotal) return null;
     dep.seatsBooked += args.seats;
     return { ...dep };
+  }
+
+  async releaseSeats(args: {
+    corridorId: string;
+    date: string;
+    time: string;
+    seats: number;
+  }): Promise<void> {
+    const dep = this.departures.get(`${args.corridorId}|${args.date}|${args.time}`);
+    if (!dep) return; // never held → nothing to give back
+    dep.seatsBooked = Math.max(0, dep.seatsBooked - args.seats);
   }
 }

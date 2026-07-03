@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { runScheduledNotifications } from './scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds } from './scheduler';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 
@@ -102,5 +103,74 @@ describe('runScheduledNotifications — review request', () => {
     const d = deps();
     await paidSingle(d.bookings, '2026-07-02'); // future
     expect((await runScheduledNotifications(NOW, d)).reviews).toBe(0);
+  });
+});
+
+// GL-3 — abandoned shared checkouts must give their held seats back after 24h.
+describe('sweepStaleSharedHolds', () => {
+  const DEPARTURE = { corridorId: 'hill-line', date: '2026-07-20', time: '08:00' } as const;
+
+  async function heldShared(bookings: InMemoryBookingRepo, departures: InMemoryDepartureRepo, seats: number) {
+    await departures.holdSeats({ ...DEPARTURE, seats });
+    return bookings.create({
+      mode: 'shared',
+      input: { ...DEPARTURE, seats, customer },
+      total: seats * 2100,
+      amountDueNow: seats * 2100,
+      currency: 'USD',
+    });
+  }
+
+  const hoursFromNow = (h: number) => new Date(Date.now() + h * 3600 * 1000);
+
+  it('cancels a >24h-old shared draft and frees its seats', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 12); // the whole bus
+
+    const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(25) });
+    expect(r.swept).toBe(1);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+    // seats are back: the full bus can be held again
+    expect(await departures.holdSeats({ ...DEPARTURE, seats: 12 })).not.toBeNull();
+  });
+
+  it('sweeps a stale payment_pending hold too (checkout started, never paid)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 12);
+    await bookings.setStatus(b.id, 'payment_pending');
+
+    const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(25) });
+    expect(r.swept).toBe(1);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+    expect(await departures.holdSeats({ ...DEPARTURE, seats: 12 })).not.toBeNull();
+  });
+
+  it('leaves a fresh hold alone (2h old)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 12);
+
+    const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(2) });
+    expect(r.swept).toBe(0);
+    expect((await bookings.get(b.id))!.status).toBe('draft');
+    expect(await departures.holdSeats({ ...DEPARTURE, seats: 1 })).toBeNull(); // still full
+  });
+
+  it('never touches non-shared drafts, however old', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer },
+      total: 5000,
+      amountDueNow: 5000,
+      currency: 'USD',
+    });
+
+    const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(48) });
+    expect(r.swept).toBe(0);
+    expect((await bookings.get(b.id))!.status).toBe('draft');
   });
 });

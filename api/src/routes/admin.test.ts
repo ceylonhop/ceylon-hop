@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 
 const KEY = 'secret-key';
@@ -108,6 +109,94 @@ describe('POST /admin/jobs/notifications', () => {
   it('401 without the admin key', async () => {
     const { app } = makeApp();
     expect((await app.request('/admin/jobs/notifications', { method: 'POST' })).status).toBe(401);
+  });
+
+  it('sweeps stale shared holds alongside the notification tick (GL-3)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ adminApiKey: KEY, bookings, departures, email: new FakeEmailAdapter() });
+    await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    const b = await bookings.create({
+      mode: 'shared',
+      input: { corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12, customer: valid.customer },
+      total: 25200,
+      amountDueNow: 25200,
+      currency: 'USD',
+    });
+    // age the draft past the 24h hold window
+    (await bookings.get(b.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).staleSharedHolds).toBe(1);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+    expect(await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 })).not.toBeNull();
+  });
+});
+
+// GL-3 — cancelling/refunding a shared booking must give its seats back to the departure.
+describe('shared seat release on cancel/refund', () => {
+  const shared = {
+    corridorId: 'hill-line', // capacity 12
+    date: '2026-07-20',
+    time: '08:00',
+    seats: 12, // the whole bus, so a leaked hold is observable as a sold-out 409
+    customer: valid.customer,
+  };
+
+  function makeSharedApp() {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ adminApiKey: KEY, bookings, departures, email: new FakeEmailAdapter() });
+    return { app, bookings, departures };
+  }
+
+  function bookShared(app: ReturnType<typeof createApp>) {
+    return app.request('/bookings/shared', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(shared),
+    });
+  }
+
+  it('cancel releases the seats — the departure can be booked again', async () => {
+    const { app } = makeSharedApp();
+    const b = await (await bookShared(app)).json();
+    expect((await bookShared(app)).status).toBe(409); // full while held
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await bookShared(app)).status).toBe(201); // freed by the cancel
+  });
+
+  it('refund of a paid shared booking releases the seats', async () => {
+    const { app, bookings } = makeSharedApp();
+    const b = await (await bookShared(app)).json();
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await bookShared(app)).status).toBe(201);
+  });
+
+  it('refund after cancel does not release the seats twice', async () => {
+    const { app, bookings, departures } = makeSharedApp();
+    const b = await (await bookShared(app)).json();
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    // another traveller takes 3 of the freed seats between the cancel and the refund
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const other = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 3 });
+    expect(other?.seatsBooked).toBe(3);
+    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    // the other traveller's hold must survive — no second release
+    const after = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 1 });
+    expect(after?.seatsBooked).toBe(4);
+  });
+
+  it('cancelling a non-shared booking never touches departures', async () => {
+    const { app, departures } = makeSharedApp();
+    const b = await book(app); // a single transfer
+    const spy = vi.spyOn(departures, 'releaseSeats');
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 

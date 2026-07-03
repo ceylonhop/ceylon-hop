@@ -1,20 +1,22 @@
 import { Hono, type Context } from 'hono';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
+import type { DepartureRepo } from '../db/departureRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '../domain/status';
 import { sendCancellationConfirmation, sendRefundConfirmation } from '../services/notifications';
-import { runScheduledNotifications } from '../services/scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 
 // Interim staff API guarded by a single shared key. Supabase Auth + RBAC replaces this
 // in M12 — do not bake the API-key assumption deep.
 export function adminRoutes(deps: {
   bookings: BookingRepo;
+  departures: DepartureRepo;
   email: EmailAdapter;
   notificationLog: NotificationLogRepo;
   adminApiKey: string;
 }) {
-  const { bookings, email, notificationLog, adminApiKey } = deps;
+  const { bookings, departures, email, notificationLog, adminApiKey } = deps;
   const r = new Hono();
 
   const authed = (c: Context) => Boolean(adminApiKey) && c.req.header('x-admin-key') === adminApiKey;
@@ -51,6 +53,21 @@ export function adminRoutes(deps: {
       }
       throw err;
     }
+    // GL-3 — a cancelled/refunded shared booking gives its seats back. Refunding an
+    // already-cancelled booking must NOT release again (the cancel already did — a second
+    // decrement would free someone else's seats). Best-effort like the email below.
+    if (updated.mode === 'shared' && !(to === 'refunded' && booking.status === 'cancelled')) {
+      try {
+        await departures.releaseSeats({
+          corridorId: updated.input.corridorId,
+          date: updated.input.date,
+          time: updated.input.time,
+          seats: updated.input.seats,
+        });
+      } catch (err) {
+        console.error(`seat release failed for ${updated.reference}:`, err);
+      }
+    }
     try {
       await notify(updated, email);
     } catch (err) {
@@ -64,10 +81,18 @@ export function adminRoutes(deps: {
 
   // Cron tick — an external scheduler (cron-job.org / GitHub Actions) POSTs here on a
   // cadence; the work is idempotent via the notification log, so over-calling is harmless.
+  // The stale shared-hold sweep (GL-3) rides the same tick, best-effort: a sweep failure
+  // must never block the notifications the caller asked for.
   r.post('/jobs/notifications', async (c) => {
     if (!authed(c)) return c.json({ error: 'unauthorized' }, 401);
     const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email });
-    return c.json(result, 200);
+    let staleSharedHolds = 0;
+    try {
+      staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
+    } catch (err) {
+      console.error('stale shared-hold sweep failed:', err);
+    }
+    return c.json({ ...result, staleSharedHolds }, 200);
   });
 
   return r;
