@@ -9,6 +9,7 @@ import { PostgresCoordinatorRepo } from './postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
+import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
 import type { NewBooking } from './bookingRepo';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
@@ -64,6 +65,21 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await notifLog.wasSent(b.id, 'review_request')).toBe(false);
     await notifLog.markSent(b.id, 'trip_reminder'); // duplicate → no-op via unique constraint
     expect(await notifLog.wasSent(b.id, 'trip_reminder')).toBe(true);
+  });
+
+  it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
+    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const key = 'pgtest-' + Date.now(); // unique per run — the shared test DB persists rows
+    const t0 = new Date();
+    const COOLDOWN = 30 * 60_000;
+    expect(await alerts.shouldSend('pg_kind', key, COOLDOWN, t0)).toBe(true);
+    expect(await alerts.shouldSend('pg_kind', key, COOLDOWN, new Date(t0.getTime() + 10_000))).toBe(false);
+    // past the cooldown → delivers again
+    expect(await alerts.shouldSend('pg_kind', key, COOLDOWN, new Date(t0.getTime() + 31 * 60_000))).toBe(true);
+    // independent key delivers immediately
+    expect(await alerts.shouldSend('pg_kind', key + '-other', COOLDOWN, t0)).toBe(true);
+    const counts = await alerts.countsSince(new Date(t0.getTime() - 1000));
+    expect(counts['pg_kind']).toBeGreaterThanOrEqual(2);
   });
 
   it('persists and reads back a booking with customer + transfer', async () => {

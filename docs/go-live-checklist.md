@@ -25,6 +25,9 @@ comes up, so launch is a clean, mechanical switch-over.
 | `OPS_SESSION_SECRET` | `dev-ops-secret-change-me` (public default → forgeable cookies) | **strong random secret** (e.g. `openssl rand -hex 32`) |
 | `OPS_FOUNDER_KEY` | empty | the founder login key for the ops dashboard |
 | `OPS_SUPPORT_KEY` | empty | the support/agent login key for the ops dashboard |
+| `ALERT_EMAIL` | unset → alerts log-only | **your email** — ops alerts (payment failures, API errors, DB down) + the daily digest land here (M17) |
+| `SENTRY_DSN` | unset → error tracking dormant | DSN from the free Sentry project you create at launch (M17) |
+| `RESEND_WEBHOOK_SECRET` | unset → `/webhooks/resend` disabled | signing secret from the Resend dashboard webhook (M17, bounce/complaint alerts) |
 
 - [ ] `APP_BASE_URL` → apex
 - [ ] PayHere → live mode + live credentials
@@ -59,7 +62,14 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Confirm the front-end API URL:** `window.CEYLON_HOP_API` in `booking.html` defaults to the Render URL — update if the API moves to a custom domain.
 - [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
-- [ ] **Observability & alerting (M17) — strongly recommended before taking real payments.** Production today has **no error tracking, uptime alerting, or payment-failure alerts** (just `console.error` to ephemeral Render logs). At minimum wire: error tracking (Sentry, API + front-end), an uptime monitor on `/health` with alerts, and a payments watchdog (webhook failure / stuck `payment_pending` / paid-without-confirmation → WhatsApp/Slack). Full plan: [`observability-plan.md`](./observability-plan.md).
+- [ ] **Observability & alerting (M17) — BUILT (env-gated, dormant until keys set); activate at launch.** Code shipped 2026-07-03: throttled email alerts (30-min dedupe via `alert_log`), env-gated Sentry on the API, front-end error beacon → `/errors/client`, payment-webhook failure alerts, watchdog sweep, `/health/deep`, Resend bounce webhook, daily ops digest. Spec: [`superpowers/specs/2026-07-03-m17-observability-design.md`](./superpowers/specs/2026-07-03-m17-observability-design.md). **Launch activation steps:**
+  - [ ] set `ALERT_EMAIL` on Render (alerts + daily digest start flowing)
+  - [ ] create the free **Sentry** project → set `SENTRY_DSN` on Render
+  - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
+  - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage)
+  - [ ] **cron-job.org**: `POST /admin/jobs/watchdog` every 15 min with header `x-admin-key: <ADMIN_API_KEY>` (same service as the keep-warm pinger)
+  - [ ] **Resend dashboard**: add a webhook → `https://ceylon-hop-api.onrender.com/webhooks/resend` (events: bounced, complained) → set `RESEND_WEBHOOK_SECRET`
+  - [ ] **Supabase**: toggle the built-in DB alerts on
 
 ## 4. Verify after switching (smoke test on production)
 
