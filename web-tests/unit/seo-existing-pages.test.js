@@ -38,13 +38,23 @@ describe('existing-page head metadata (M16 PR3)', () => {
       expect(h, `${f} og:site_name`).toContain('property="og:site_name" content="Ceylon Hop"');
     }
   });
-  it('no aggregateRating markup and no stale 4.9 / 600 rating anywhere', () => {
+  it('no aggregateRating, no stale 4.9, and no 600-count rating claim anywhere', () => {
     for (const f of ['index.html', 'booking.html']) {
       const h = read(f);
       expect(h, `${f} aggregateRating`).not.toContain('aggregateRating');
       expect(h, `${f} 4.9`).not.toContain('4.9');
-      expect(h, `${f} 600`).not.toMatch(/600\+?\s*(reviews|travellers)/i);
+      // catches "600+ happy hoppers", "600+ reviews", "600 travellers" — but not font-weight:600
+      expect(h, `${f} 600 claim`).not.toMatch(/600\+|600\s*(reviews|travellers|happy)/i);
     }
+  });
+  it('every Tripadvisor link on the homepage points at the real listing (no bare homepage link)', () => {
+    const h = read('index.html');
+    expect(h, 'bare tripadvisor homepage link').not.toMatch(/href="https:\/\/www\.tripadvisor\.com\/"/);
+    // hero badge + reviews pill + JSON-LD sameAs
+    expect((h.match(/tripadvisor\.com\/Attraction_Review-g3736162-d33018957/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
+  it('homepage declares a real og:image for social shares', () => {
+    expect(read('index.html')).toContain('property="og:image" content="https://ceylonhop.com/og-cover.jpg"');
   });
   it('homepage JSON-LD links to the real Tripadvisor listing via sameAs', () => {
     const h = read('index.html');
