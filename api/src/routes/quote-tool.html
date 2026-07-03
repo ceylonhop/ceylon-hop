@@ -2900,7 +2900,11 @@ function attachAutoComplete() {
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });
         if (leg && !leg.manualDistance) {
-          // Update state for the field value (in case user typed without picking)
+          // Only react when the operator ACTUALLY changed the place text. A background
+          // estimate/distance re-render (render() swaps #app's innerHTML, then restores
+          // focus) makes this now-detached input fire a spurious async 'blur' with an
+          // unchanged value. Re-pricing on that looped render→blur→estimate→render — the
+          // destination field flickering and "calculating distance" forever.
           var currentVal = input.value;
           if (leg[field] !== currentVal) {
             delete _distCache[legId];
@@ -2908,9 +2912,9 @@ function attachAutoComplete() {
               return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; return p; })()) : l;
             });
             markDirty();
+            scheduleAutoDistance(legId);
+            refreshEstimate();
           }
-          scheduleAutoDistance(legId);
-          refreshEstimate();
         }
       }, 200);
     });
