@@ -6,7 +6,7 @@ export interface OpsBookingRow {
   paymentStatus: 'paid' | 'unpaid' | 'partial'; amount: number; currency: string;
   customerFirstName: string; customerName: string;
   route: string; travelDate: string | null; travelTime: string | null; pax: number;
-  coordinatorId: string | null; fulfilmentStatus: string;
+  fulfilmentStatus: string;
   vehiclePhotoReceived: boolean; customerUpdated: boolean;
   channel: 'website' | 'whatsapp';
 }
@@ -35,8 +35,7 @@ export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boo
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     route: route(b), travelDate: t.date, travelTime: t.time, pax: pax(b),
-    coordinatorId: opts.rideOps?.coordinatorId ?? null,
-    fulfilmentStatus: opts.rideOps?.fulfilmentStatus ?? 'unassigned',
+    fulfilmentStatus: opts.rideOps?.fulfilmentStatus ?? 'paid',
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     channel: b.channel,

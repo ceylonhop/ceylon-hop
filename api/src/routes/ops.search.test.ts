@@ -70,7 +70,7 @@ describe('ops bookings search / filter / detail', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.booking.id).toBe(single);
-    expect(body.ops.fulfilmentStatus).toBe('unassigned');
+    expect(body.ops.fulfilmentStatus).toBe('paid');
     expect(body.payments).toHaveLength(1);
     expect(body.payments[0].status).toBe('succeeded');
   });

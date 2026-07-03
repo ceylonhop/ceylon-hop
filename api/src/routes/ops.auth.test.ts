@@ -40,8 +40,7 @@ describe('ops authorization surface', () => {
     const calls: [string, string, unknown][] = [
       ['GET', '/admin/ops/bookings', null],
       ['GET', `/admin/ops/bookings/${bid}`, null],
-      ['POST', `/admin/ops/bookings/${bid}/assign`, { coordinatorId: 'c1' }],
-      ['POST', `/admin/ops/bookings/${bid}/status`, { to: 'assigned' }],
+      ['POST', `/admin/ops/bookings/${bid}/status`, { to: 'vehicle_confirmed' }],
       ['POST', `/admin/ops/bookings/${bid}/flags`, { vehiclePhotoReceived: true }],
       ['GET', '/admin/ops/coordinators', null],
       ['POST', '/admin/ops/coordinators', { name: 'X', whatsapp: '+1' }],

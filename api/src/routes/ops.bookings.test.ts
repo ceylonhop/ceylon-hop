@@ -29,16 +29,15 @@ describe('ops bookings endpoints', () => {
     const rows = await res.json();
     expect(rows).toHaveLength(1);
     expect(rows[0].route).toBe('Colombo Airport → Galle');
-    expect(rows[0].fulfilmentStatus).toBe('unassigned');
+    expect(rows[0].fulfilmentStatus).toBe('paid');
   });
 
-  it('assigns a coordinator and advances fulfilment to assigned', async () => {
-    const res = await app.request(`/admin/ops/bookings/${bid}/assign`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ coordinatorId: 'coord-1' }),
+  it('advances fulfilment status via the status endpoint', async () => {
+    const res = await app.request(`/admin/ops/bookings/${bid}/status`, {
+      method: 'POST', headers: hdr, body: JSON.stringify({ to: 'vehicle_confirmed' }),
     });
     const ops = await res.json();
-    expect(ops.coordinatorId).toBe('coord-1');
-    expect(ops.fulfilmentStatus).toBe('assigned');
+    expect(ops.fulfilmentStatus).toBe('vehicle_confirmed');
   });
 
   it('rejects an illegal status transition with 400', async () => {

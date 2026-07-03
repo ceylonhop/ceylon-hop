@@ -1,18 +1,19 @@
 export const RIDE_STATUSES = [
-  'unassigned', 'assigned', 'sent_to_coordinator', 'acknowledged',
-  'vehicle_confirmed', 'customer_updated', 'completed',
+  'paid',
+  'vehicle_confirmed',
+  'pickup_confirmed',
+  'on_trip',
+  'completed',
 ] as const;
 
 export type RideStatus = (typeof RIDE_STATUSES)[number];
 
-// Forward path, plus a couple of operational backtracks (re-assign / pull back to assign).
+// Forward path plus single-step operational backtracks (completed is terminal).
 const ALLOWED: Record<RideStatus, RideStatus[]> = {
-  unassigned: ['assigned'],
-  assigned: ['sent_to_coordinator', 'unassigned'],
-  sent_to_coordinator: ['acknowledged', 'assigned'],
-  acknowledged: ['vehicle_confirmed', 'assigned'],
-  vehicle_confirmed: ['customer_updated', 'assigned'],
-  customer_updated: ['completed', 'vehicle_confirmed'],
+  paid: ['vehicle_confirmed'],
+  vehicle_confirmed: ['pickup_confirmed', 'paid'],
+  pickup_confirmed: ['on_trip', 'vehicle_confirmed'],
+  on_trip: ['completed', 'pickup_confirmed'],
   completed: [],
 };
 

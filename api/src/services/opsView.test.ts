@@ -16,7 +16,7 @@ describe('opsView', () => {
     expect(row.route).toBe('Colombo Airport → Galle');
     expect(row.pax).toBe(3);
     expect(row.paymentStatus).toBe('paid');
-    expect(row.fulfilmentStatus).toBe('unassigned'); // default when no ride_ops
+    expect(row.fulfilmentStatus).toBe('paid'); // default when no ride_ops
     expect(row.customerFirstName).toBe('Maya');
   });
   it('marks unpaid bookings', () => {
@@ -30,16 +30,15 @@ describe('opsView', () => {
     expect(line).not.toMatch(/\$|121|USD/);
   });
 
-  it('carries ride_ops state (coordinator, status, flags) into the row', () => {
+  it('carries ride_ops state (status, flags) into the row', () => {
     const row = toOpsRow(base, {
       paid: true,
       rideOps: {
-        bookingId: 'b1', coordinatorId: 'c1', fulfilmentStatus: 'vehicle_confirmed',
+        bookingId: 'b1', fulfilmentStatus: 'vehicle_confirmed',
         vehiclePhotoReceived: true, customerUpdated: true, opsNotes: null,
-        assignedAt: null, sentAt: null, acknowledgedAt: null, vehicleConfirmedAt: null, updatedAt: '',
+        vehicleConfirmedAt: null, updatedAt: '',
       },
     });
-    expect(row.coordinatorId).toBe('c1');
     expect(row.fulfilmentStatus).toBe('vehicle_confirmed');
     expect(row.vehiclePhotoReceived).toBe(true);
     expect(row.customerUpdated).toBe(true);

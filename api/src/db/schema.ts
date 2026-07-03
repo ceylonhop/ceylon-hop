@@ -151,7 +151,7 @@ export const rideOps = pgTable('ride_ops', {
     .primaryKey()
     .references(() => bookings.id),
   coordinatorId: uuid('coordinator_id').references(() => coordinators.id),
-  fulfilmentStatus: text('fulfilment_status').notNull().default('unassigned'),
+  fulfilmentStatus: text('fulfilment_status').notNull().default('paid'),
   vehiclePhotoReceived: boolean('vehicle_photo_received').notNull().default(false),
   customerUpdated: boolean('customer_updated').notNull().default(false),
   opsNotes: text('ops_notes'),

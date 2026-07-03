@@ -2,26 +2,31 @@ import { describe, it, expect } from 'vitest';
 import { RIDE_STATUSES, canRideTransition, assertRideTransition } from './rideStatus';
 
 describe('ride fulfilment status', () => {
-  it('lists the seven states', () => {
-    expect(RIDE_STATUSES).toEqual([
-      'unassigned', 'assigned', 'sent_to_coordinator', 'acknowledged',
-      'vehicle_confirmed', 'customer_updated', 'completed',
-    ]);
+  it('has the fulfilment lifecycle statuses', () => {
+    expect(RIDE_STATUSES).toEqual(['paid', 'vehicle_confirmed', 'pickup_confirmed', 'on_trip', 'completed']);
   });
+
   it('allows the forward path', () => {
-    expect(canRideTransition('unassigned', 'assigned')).toBe(true);
-    expect(canRideTransition('assigned', 'sent_to_coordinator')).toBe(true);
-    expect(canRideTransition('vehicle_confirmed', 'customer_updated')).toBe(true);
+    expect(canRideTransition('paid', 'vehicle_confirmed')).toBe(true);
+    expect(canRideTransition('vehicle_confirmed', 'pickup_confirmed')).toBe(true);
+    expect(canRideTransition('pickup_confirmed', 'on_trip')).toBe(true);
+    expect(canRideTransition('on_trip', 'completed')).toBe(true);
   });
-  it('rejects skipping and going backwards', () => {
-    expect(canRideTransition('unassigned', 'completed')).toBe(false);
-    expect(canRideTransition('completed', 'assigned')).toBe(false);
+
+  it('allows single-step backtracks except from completed', () => {
+    expect(canRideTransition('vehicle_confirmed', 'paid')).toBe(true);
+    expect(canRideTransition('pickup_confirmed', 'vehicle_confirmed')).toBe(true);
+    expect(canRideTransition('on_trip', 'pickup_confirmed')).toBe(true);
+    expect(canRideTransition('completed', 'on_trip')).toBe(false);
   });
-  it('allows re-assigning a coordinator (assigned → assigned) and un-assigning', () => {
-    expect(canRideTransition('assigned', 'unassigned')).toBe(true);
-    expect(canRideTransition('sent_to_coordinator', 'assigned')).toBe(true); // re-assign after send
+
+  it('rejects skips and old statuses', () => {
+    expect(canRideTransition('paid', 'on_trip')).toBe(false);
+    // @ts-expect-error old status removed
+    expect(canRideTransition('assigned', 'vehicle_confirmed')).toBe(false);
   });
+
   it('assertRideTransition throws on an illegal move', () => {
-    expect(() => assertRideTransition('unassigned', 'completed')).toThrow();
+    expect(() => assertRideTransition('paid', 'on_trip')).toThrow();
   });
 });
