@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ceylon Hop · Ops Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
+    --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
+    --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+    --espresso:#1b1714;
+    --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+    --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
+    --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
+    --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
+    --wa:#1faf54;--wa-bg:#e9f8f0;--web:#0a8f86;--web-bg:#e3f3f0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--cream)}
+  body{font-family:var(--body);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
+  ::selection{background:var(--saffron);color:var(--ink)}
+  button{font-family:inherit;cursor:pointer;color:inherit}
+  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden}
+  .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2}
+  .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative}
+  .brand small{display:block;font-family:var(--body);font-size:.57rem;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);margin-top:2px}
+  .nav{display:flex;flex-direction:column;gap:3px;position:relative}
+  .nav-label{font-size:.61rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#897f72;padding:0 10px 7px}
+  .nav button{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:11px;color:#c5bcad;font-weight:600;font-size:.92rem;transition:.18s;text-align:left;position:relative}
+  .nav button svg{width:18px;height:18px;flex:none;stroke-width:2;opacity:.82}
+  .nav button:hover{background:rgba(255,255,255,.055);color:#fff}
+  .nav button.active{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;box-shadow:0 12px 28px -14px rgba(10,185,182,.75)}
+  .nav button.active svg{opacity:1}
+  .nav button .count{margin-left:auto;font-family:var(--mono);font-size:.68rem;font-weight:700;background:var(--alert);color:#fff;padding:1px 7px;border-radius:999px}
+  .nav button.active .count{background:rgba(255,255,255,.24)}
+  .rail-foot{margin-top:auto;display:flex;align-items:center;gap:11px;padding:11px 8px;border-top:1px solid rgba(255,255,255,.08);position:relative}
+  .avatar{width:35px;height:35px;border-radius:12px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:.74rem;flex:none;color:#fff;background:linear-gradient(140deg,var(--teal-deep),#0aa49d)}
+  .rail-foot b{font-size:.85rem;display:block;color:#f2ebdc}.rail-foot span{font-size:.69rem;color:#897f72}
+  .rail-foot .logout{margin-left:auto;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#c5bcad;border-radius:9px;padding:6px 10px;font-size:.72rem;font-weight:700;transition:.16s}
+  .rail-foot .logout:hover{background:rgba(255,255,255,.09);color:#fff;border-color:rgba(255,255,255,.22)}
+
+  .main{display:flex;flex-direction:column;overflow:hidden;position:relative;background:
+    radial-gradient(110% 55% at 100% 0%,rgba(249,164,41,.07),transparent 55%),
+    radial-gradient(85% 50% at -5% 105%,rgba(10,185,182,.06),transparent 60%),var(--cream)}
+  .main::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.4;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+  .topbar{display:flex;align-items:center;gap:12px;padding:14px 30px;border-bottom:1px solid var(--line);background:rgba(252,250,244,.78);backdrop-filter:blur(10px) saturate(1.15);flex-wrap:wrap;min-height:62px;position:relative;z-index:6}
+  .search{position:relative;flex:1;max-width:360px;min-width:190px}
+  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--ink-faint)}
+  .search input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:10px 12px 10px 38px;font:inherit;font-size:.9rem;color:var(--ink);transition:.18s}
+  .search input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 4px rgba(10,185,182,.13)}
+  .search input::placeholder{color:var(--ink-faint)}
+  .fchip{--fc:var(--ink);border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font:inherit;font-weight:700;font-size:.82rem;padding:8px 13px;border-radius:999px;transition:transform .16s,border-color .16s,background .16s,box-shadow .16s;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-s)}
+  .fchip .dot{width:8px;height:8px;border-radius:50%;background:var(--fc);transition:.16s}
+  .fchip .fc{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+  .fchip:hover{border-color:var(--fc);color:var(--ink);transform:translateY(-1px)}
+  .fchip.on{background:var(--fc);border-color:var(--fc);color:#fff;box-shadow:0 9px 20px -11px var(--fc)}
+  .fchip.on .dot{background:rgba(255,255,255,.92)}.fchip.on .fc{color:rgba(255,255,255,.8)}
+  .spacer{flex:1}
+  .sel{border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:9px 12px;font:inherit;font-weight:600;font-size:.84rem;color:var(--ink-soft);box-shadow:var(--shadow-s)}
+  .btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-weight:700;font-size:.82rem;padding:9px 14px;border-radius:10px;transition:.16s;display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow-s)}
+  .btn:hover{border-color:var(--ink-soft);transform:translateY(-1px)}.btn svg{width:14px;height:14px}
+  .btn-go{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:var(--teal-deep);color:#fff;box-shadow:0 12px 26px -13px rgba(8,147,143,.85)}
+  .btn-go::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .65s ease}
+  .btn-go:hover{filter:brightness(1.05);transform:translateY(-1px)}.btn-go:hover::after{transform:translateX(130%)}
+  .btn-wa{background:var(--wa);border-color:var(--wa);color:#fff}.btn-wa:hover{background:#178f44}
+  .btn-icon{padding:8px}.btn-lg{padding:12px 18px;font-size:.9rem;border-radius:12px}
+
+  .scroll{overflow-y:auto;padding:30px 32px 90px;position:relative;z-index:1}
+  .scroll::-webkit-scrollbar{width:11px}.scroll::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+  .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:-.025em;line-height:1}
+  .pagesub{color:var(--ink-soft);margin:9px 0 22px;font-size:.95rem}.pagesub b{color:var(--ink);font-weight:700}.pagesub .a{color:var(--alert);font-weight:700}
+  .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
+
+  /* ledger row — colour spine carries the stage; editorial type leads */
+  .tk{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:17px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 20px 16px 22px;margin-bottom:10px;transition:transform .17s cubic-bezier(.2,.7,.3,1),box-shadow .17s,border-color .17s;box-shadow:var(--shadow-s);cursor:pointer;overflow:hidden;animation:riseIn .44s cubic-bezier(.2,.7,.3,1) both}
+  .tk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--line));transition:width .17s}
+  .tk:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--cream-deep)}
+  .tk:hover::before{width:7px}
+  .tk.attn{background:linear-gradient(100deg,color-mix(in srgb,var(--cbg) 60%,var(--paper)),var(--paper) 36%)}
+  .chan{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;flex:none;border:1px solid}
+  .chan svg{width:16px;height:16px}
+  .chan.wa{background:var(--wa-bg);color:var(--wa);border-color:#cdeedd}.chan.web{background:var(--web-bg);color:var(--web);border-color:#cce8e2}
+  .tk-main{min-width:0}
+  .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:600;font-size:1.2rem;letter-spacing:-.015em;line-height:1.1;color:var(--ink)}
+  .tk-cust .id{font-family:var(--mono);font-size:.67rem;color:var(--ink-faint);font-weight:600;letter-spacing:0}
+  .tk-route{font-size:.92rem;color:var(--ink-soft);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .tk-route b{color:var(--ink);font-weight:700}.tk-route .md{color:var(--ink-faint)}
+  .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
+  .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
+  .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
+  .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
+  .pill .pd{width:7px;height:7px;border-radius:50%;background:var(--c,var(--ink-faint))}
+  .tk-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
+  .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+  .tk-right .val{font-family:var(--display);font-weight:600;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+  .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
+  .sec{margin:30px 0 13px;display:flex;align-items:center;gap:12px}
+  .sec h2{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
+  .sec.alert h2{color:var(--alert)}
+  .sec.alert h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 4px var(--alert-bg)}
+  .sec.warn h2{color:var(--wait)}
+  .sec.warn h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--wait);box-shadow:0 0 0 4px var(--wait-bg)}
+  .sec.now h2{color:var(--teal-deep)}
+  .sec.now h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 4px var(--go-bg)}
+  .sec .secnote{font-family:var(--mono);font-weight:600;font-size:.67rem;color:var(--ink-faint);letter-spacing:0;text-transform:none}
+  .sec .ln{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)} .sec .tag{font-family:var(--mono);font-size:.74rem;color:var(--ink-faint);font-weight:700}
+  .muted{color:var(--ink-faint);font-style:italic;padding:8px 2px}
+
+  /* slide-over */
+  .scrim{position:fixed;inset:0;background:rgba(27,23,20,.44);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:.28s;z-index:40}
+  .scrim.show{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;top:0;right:0;height:100vh;height:100dvh;width:548px;max-width:96vw;background:var(--cream);box-shadow:var(--shadow-lg);transform:translateX(103%);transition:transform .36s cubic-bezier(.22,.71,.25,1);z-index:50;display:flex;flex-direction:column}
+  .sheet.show{transform:none}
+  .sheet-h{padding:24px 28px 19px;border-bottom:1px solid var(--line);background:linear-gradient(162deg,color-mix(in srgb,var(--cbg) 72%,var(--paper)),var(--paper) 78%);position:relative}
+  .sheet-h::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--c);opacity:.55}
+  .sheet-h .x{float:right;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:7px 10px;font-weight:700;color:var(--ink-soft);transition:.15s}
+  .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft)}
+  .sheet-h .ey{font-size:.67rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:9px}
+  .sheet-h h2{font-family:var(--display);font-size:1.78rem;font-weight:600;margin:9px 0 0;line-height:1.04;letter-spacing:-.02em}
+  .sheet-h .rf{font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);font-weight:600;margin-top:6px;display:inline-block}
+  .sheet-b{overflow-y:auto;padding:6px 28px 36px;flex:1}
+  .sheet-b::-webkit-scrollbar{width:8px}.sheet-b::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
+  .block{padding:18px 0;border-bottom:1px solid var(--line)}
+  .block:last-child{border-bottom:0}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
+  .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .block h4{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}
+  .block h4 .lnk{font-size:.75rem;color:var(--teal-deep);font-weight:700;text-transform:none;letter-spacing:0;cursor:pointer}
+  .kv{display:flex;justify-content:space-between;gap:14px;padding:5px 0;font-size:.92rem}.kv .k{color:var(--ink-soft)}.kv .v{font-weight:600;text-align:right}
+  /* pipeline — connected stepper, current node glows */
+  .pipe{display:flex;align-items:flex-start;margin:4px 0 18px}
+  .pstep{flex:1;position:relative;text-align:center;font-size:.58rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);padding-top:21px;line-height:1.2}
+  .pstep::before{content:"";position:absolute;top:5px;left:50%;width:12px;height:12px;border-radius:50%;background:var(--cream-deep);transform:translateX(-50%);border:2px solid var(--cream);z-index:2;transition:.2s}
+  .pstep::after{content:"";position:absolute;top:11px;left:-50%;width:100%;height:2px;background:var(--cream-deep);z-index:1}
+  .pstep:first-child::after{display:none}
+  .pstep.done{color:var(--ink-soft)}.pstep.done::before{background:var(--c)}.pstep.done::after{background:var(--c)}
+  .pstep.cur{color:var(--c)}
+  .pstep.cur::before{background:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent);animation:nodepulse 2.1s ease-in-out infinite}
+  .pstep.cur::after{background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 35%,var(--cream-deep)))}
+  .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
+  .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+  .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
+  .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
+  .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
+  .switch.on{background:var(--ok)}.switch.on::after{left:22px}
+  .sheet-actions{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+  .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
+  .followup b{font-weight:700}
+  /* activity */
+  .act{position:relative;padding-left:23px;margin-bottom:15px}
+  .act::before{content:"";position:absolute;left:5px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--c,var(--teal));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--teal)) 16%,transparent)}
+  .act::after{content:"";position:absolute;left:9px;top:14px;bottom:-15px;width:2px;background:var(--line)}
+  .act:last-child::after{display:none}
+  .act .at{font-size:.76rem;color:var(--ink-faint)}
+  .act .am{font-size:.9rem;margin-top:2px}.act .am b{font-weight:700}
+  .notebox{display:flex;gap:8px;margin-top:6px}
+  .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
+  .notebox input:focus{outline:none;border-color:var(--teal)}
+
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:80;display:flex;align-items:center;gap:9px}
+  .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
+
+  /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
+  .login{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:radial-gradient(135% 90% at 18% -10%,#241d18,#161210 62%);opacity:0;pointer-events:none;transition:opacity .5s cubic-bezier(.2,.7,.3,1)}
+  .login.show{opacity:1;pointer-events:auto}
+  .login::before{content:"";position:absolute;inset:0;background:
+    radial-gradient(60% 42% at 50% -6%,rgba(10,185,182,.22),transparent 66%),
+    radial-gradient(48% 40% at 92% 108%,rgba(249,164,41,.10),transparent 62%);pointer-events:none}
+  .login::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+  .login-card{position:relative;width:392px;max-width:92vw;padding:40px 38px 34px;text-align:center;transform:translateY(14px);opacity:0;transition:transform .55s cubic-bezier(.2,.7,.3,1) .08s,opacity .55s ease .08s}
+  .login.show .login-card{transform:none;opacity:1}
+  .login-mark{width:56px;height:56px;margin:0 auto 22px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(150deg,rgba(255,255,255,.06),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.09);box-shadow:0 20px 50px -22px rgba(10,185,182,.6),inset 0 1px 0 rgba(255,255,255,.08)}
+  .login h1{font-family:var(--display);font-weight:600;font-size:2.1rem;letter-spacing:-.025em;color:#fbf6ea;line-height:1.05;margin:0}
+  .login .sub{color:#9c9284;font-size:.9rem;margin:9px 0 30px;font-weight:500}
+  .login .sub b{color:var(--teal);font-weight:700;letter-spacing:.02em}
+  .login form{display:flex;flex-direction:column;gap:12px}
+  .login .keywrap{position:relative}
+  .login input{width:100%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.045);color:#f4eede;border-radius:13px;padding:15px 16px;font:inherit;font-size:1rem;letter-spacing:.02em;text-align:center;transition:.22s cubic-bezier(.2,.7,.3,1)}
+  .login input::placeholder{color:#7d7466;letter-spacing:0}
+  .login input:focus{outline:none;border-color:var(--teal);background:rgba(10,185,182,.07);box-shadow:0 0 0 4px rgba(10,185,182,.14)}
+  .login button{position:relative;overflow:hidden;border:1px solid var(--teal-deep);background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-radius:13px;padding:15px 16px;font:inherit;font-weight:700;font-size:.98rem;letter-spacing:.01em;box-shadow:0 18px 40px -18px rgba(8,147,143,.9);transition:.2s cubic-bezier(.2,.7,.3,1)}
+  .login button::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .7s ease}
+  .login button:hover{filter:brightness(1.05);transform:translateY(-1px)}.login button:hover::after{transform:translateX(130%)}
+  .login button:disabled{opacity:.6;pointer-events:none}
+  .login .err{min-height:18px;font-size:.8rem;font-weight:700;color:#f2a78f;letter-spacing:.01em;transition:.2s}
+  .login .foot{margin-top:26px;font-size:.72rem;color:#6f6759;letter-spacing:.02em}
+  .login-card.shake{animation:shake .42s cubic-bezier(.36,.07,.19,.97)}
+
+  @keyframes riseIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+  @keyframes nodepulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--c) 7%,transparent)}}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="approot" hidden>
+  <aside class="rail">
+    <div class="brand"><svg viewBox="0 0 32 32" width="30" height="30" fill="none"><circle cx="16" cy="16" r="13" stroke="#0AB9B6" stroke-width="3"/><path d="M16 7v9l6 4" stroke="#08938f" stroke-width="3" stroke-linecap="round"/></svg><span>Ceylon Hop<small>Ops control</small></span></div>
+    <nav class="nav" id="nav">
+      <button data-route="tickets" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg> Bookings <span class="count" id="nav-attn">0</span></button>
+    </nav>
+    <div class="rail-foot" id="railfoot"></div>
+  </aside>
+  <main class="main"><div class="topbar" id="topbar"></div><div class="scroll" id="view"></div></main>
+</div>
+
+<div class="login" id="login">
+  <div class="login-card" id="login-card">
+    <div class="login-mark"><svg viewBox="0 0 32 32" width="30" height="30" fill="none"><circle cx="16" cy="16" r="13" stroke="#0AB9B6" stroke-width="3"/><path d="M16 7v9l6 4" stroke="#08938f" stroke-width="3" stroke-linecap="round"/></svg></div>
+    <h1>Ceylon Hop — Ops</h1>
+    <p class="sub">Control tower · <b>sign in to continue</b></p>
+    <form id="loginform" autocomplete="off">
+      <div class="keywrap"><input id="loginkey" type="password" placeholder="Access key" autocomplete="off" spellcheck="false"></div>
+      <button type="submit" id="loginbtn">Sign in</button>
+      <div class="err" id="loginerr"></div>
+    </form>
+    <div class="foot">Restricted operational console</div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div><aside class="sheet" id="sheet"></aside><div class="toast" id="toast"></div>
+
+<script>
+/* ── date helpers (today is computed client-side, per grouping spec) ── */
+const _pad=n=>String(n).padStart(2,'0');
+const isoOf=d=>`${d.getFullYear()}-${_pad(d.getMonth()+1)}-${_pad(d.getDate())}`;
+const TODAY=isoOf(new Date());
+const addDays=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return isoOf(d);};
+const TOMORROW=addDays(TODAY,1);
+const fmtFull=d=>new Date(d+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
+const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
+
+const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Completed'];
+const dayGroup=t=>{
+  if(t.stage==='completed')return 'Completed';
+  if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
+  if(t.date===TODAY)return 'Today';
+  if(t.date===TOMORROW)return 'Tomorrow';
+  return 'Upcoming';
+};
+const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Completed:'done'};
+
+/* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
+   channel, awaiting payment after a link was sent). Quoting/payment-link steps
+   live outside ops in WhatsApp/Notion. ── */
+const STAGES=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed','on_trip','completed'];
+const STAGE={
+  awaiting_payment:{label:'Awaiting payment',short:'Awaiting',c:'#c7841f',cbg:'#fbf0d8'},
+  paid:{label:'Paid',short:'Paid',c:'#2f9558',cbg:'#e6f4ec'},
+  vehicle_confirmed:{label:'Vehicle confirmed',short:'Vehicle',c:'#6d4fb8',cbg:'#efeafb'},
+  pickup_confirmed:{label:'Pickup confirmed',short:'Pickup',c:'#0a8f86',cbg:'#dff3ef'},
+  on_trip:{label:'On trip',short:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
+  completed:{label:'Completed',short:'Done',c:'#7c7a73',cbg:'#eeece4'},
+};
+const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
+/* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
+   payment arrives via the webhook; ops follows up instead. */
+const NEXT={
+  paid:{to:'vehicle_confirmed',label:'Confirm vehicle',act:'advance'},
+  vehicle_confirmed:{to:'pickup_confirmed',label:'Confirm pickup',act:'advance'},
+  pickup_confirmed:{to:'on_trip',label:'Mark on trip',act:'advance'},
+  on_trip:{to:'completed',label:'Mark completed',act:'advance'},
+  completed:null,
+};
+const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop',chauffeur:'Chauffeur'};
+
+/* The only surviving template: the payment-reminder copy an ops agent sends to nudge
+   an awaiting-payment customer. Interpolates the first name and the amount. */
+const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.\n\nHere's your secure link again to lock it in 🌴 Reply if you have any questions!`;
+
+/* attention logic — what an ops agent must act on */
+const reason=t=>{
+  if(t.stage==='awaiting_payment')return 'Payment link sent — follow up';
+  if(t.stage==='paid')return 'Vehicle not confirmed yet';
+  if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
+  return '';
+};
+const isAttn=t=>!!reason(t)&&t.stage!=='completed';
+
+const GROUPS=[
+  {id:'all',label:'All open',c:'#241f1d'},
+  {id:'pay',label:'Awaiting payment',c:'#c7841f'},
+  {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
+  {id:'ready',label:'Ready',c:'#0a8f86'},
+  {id:'trip',label:'On trip',c:'#1f6fd0'},
+  {id:'done',label:'Completed',c:'#7c7a73'},
+];
+const inGroup=(t,g)=>{
+  if(g==='all')return t.stage!=='completed';
+  if(g==='pay')return t.stage==='awaiting_payment';
+  if(g==='paid')return t.stage==='paid';
+  if(g==='ready')return ['vehicle_confirmed','pickup_confirmed'].includes(t.stage);
+  if(g==='trip')return t.stage==='on_trip';
+  if(g==='done')return t.stage==='completed';
+  return true;
+};
+const ICON={
+  wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>',
+  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+};
+const chanClass=c=>c==='whatsapp'?'wa':'web';
+const chanIcon=c=>c==='whatsapp'?ICON.wa:ICON.web;
+const chanLabel=c=>c==='whatsapp'?'WhatsApp booking':'Website booking';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s);
+/* Amount is integer minor units in the given currency; render major units. */
+const money=t=>{const v=(t.amount||0)/100;const sym=t.currency==='USD'?'$':t.currency==='EUR'?'€':(t.currency?t.currency+' ':'');return t.amount!=null?`${sym}${v.toLocaleString('en-US',{minimumFractionDigits:v%1?2:0,maximumFractionDigits:2})}`:'—';};
+
+/* ── API client — same-origin, session cookie; 401 → login overlay ── */
+const api={
+  async get(p){const r=await fetch('/admin/ops'+p,{credentials:'same-origin'});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
+  async post(p,body){const r=await fetch('/admin/ops'+p,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body??{})});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
+};
+
+/* ── row → ticket mapping (backend OpsBookingRow → view model) ── */
+function rowToTicket(row){
+  return {
+    id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName,
+    mode:row.mode, route:row.route, date:row.travelDate, time:row.travelTime, guests:row.pax,
+    amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
+    photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
+    notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
+  };
+}
+
+let tickets=[];
+let state={route:'tickets',q:'',group:'all',chan:'',detail:null,detailData:null};
+
+async function loadQueue(){const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();}
+
+function setNav(){document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.route===state.route));$('#nav-attn').textContent=tickets.filter(isAttn).length;}
+
+function ticketRow(t,i){
+  const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
+  return `<div class="tk ${attn?'attn':''}" style="${stVars(t.stage)};animation-delay:${(i||0)*42}ms" data-act="open" data-id="${esc(t.id)}">
+    <div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>
+    <div class="tk-main">
+      <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
+      <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
+      <div class="tk-meta">${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}</div>
+    </div>
+    <div class="tk-side">
+      <span class="pill"><span class="pd"></span>${st.label}</span>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+t.time:''}</div></div>
+    </div>
+  </div>`;
+}
+
+function viewTickets(){
+  $('#topbar').innerHTML=`
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
+    <div class="spacer"></div>
+    <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>`;
+  const q=state.q.trim().toLowerCase();
+  let list=tickets.filter(t=>{
+    if(!inGroup(t,state.group))return false;
+    if(state.chan&&t.chan!==state.chan)return false;
+    if(q&&!`${t.cust} ${t.ref} ${t.route}`.toLowerCase().includes(q))return false;
+    return true;
+  });
+  const tkey=t=>(t.date||'9999-99-99')+'T'+(t.time||'99:99');
+  const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
+  list.forEach(t=>buckets[dayGroup(t)].push(t));
+  let html=`<div class="pagehead"><h1>Bookings</h1></div>
+    <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · paid &amp; upcoming, website &amp; WhatsApp in one timeline · <span class="a">${tickets.filter(isAttn).length} need attention</span></p>
+    <div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`;
+  DAYGROUPS.forEach(g=>{
+    const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
+    if(!rows.length)return;
+    const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
+    html+=`<div class="sec${g==='Pending'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
+  });
+  if(!list.length)html+='<p class="muted">No bookings match.</p>';
+  $('#view').innerHTML=html;
+}
+
+/* ── build the activity timeline from the detail payload ── */
+function buildActivity(t,d){
+  const acts=[];
+  if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
+  (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push([`Payment · ${money({amount:p.amount,currency:p.currency})}`,'Payment received']);});
+  if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
+  if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  t.notes.forEach(n=>acts.push(['Note',n]));
+  return acts;
+}
+
+/* trip legs (mode 'trip') from the booking input's stops/dates */
+function legsHtmlFor(d){
+  const b=d?.booking;
+  if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
+    const stops=b.input.stops,dates=b.input.dates||[];
+    let rows='';
+    for(let i=0;i<stops.length-1;i++){
+      const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
+      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}</span></div>`;
+    }
+    return `<div class="legs">${rows}</div>`;
+  }
+  return '<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
+}
+
+/* detail */
+function renderSheet(){
+  const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
+  if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
+  const d=state.detailData;
+  const st=STAGE[t.stage],idx=STAGES.indexOf(t.stage),nx=NEXT[t.stage];
+  sh.style.setProperty('--c',st.c);sh.style.setProperty('--cbg',st.cbg);
+  const pipe=STAGES.map((s,i)=>`<span class="pstep ${i<idx?'done':i===idx?'cur':''}" style="${stVars(s)}">${STAGE[s].short}</span>`).join('');
+  const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
+  const cust=d?.booking?.input?.customer;
+  const isPending=t.stage==='awaiting_payment';
+  let pipeAction;
+  if(isPending){
+    pipeAction=`<div class="followup"><div><b>Payment link sent — follow up.</b> Payment lands automatically via the webhook. Nudge the customer if it's overdue.</div></div>
+      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
+  }else if(nx){
+    pipeAction=`<div class="sheet-actions" style="margin-top:12px"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button></div>`;
+  }else{pipeAction='';}
+  sh.innerHTML=`
+    <div class="sheet-h"><button class="x" data-act="close">✕</button>
+      <div class="ey"><span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}</div>
+      <h2>${esc(t.cust)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${st.label}</span>
+    </div>
+    <div class="sheet-b">
+      <div class="block"><h4>Pipeline</h4><div class="pipe">${pipe}</div>${pipeAction}</div>
+      <div class="block"><h4>Customer</h4>
+        <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
+        <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
+        <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
+      </div>
+      <div class="block"><h4>Trip</h4>
+        <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+t.time:''}</span></div>
+        <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
+        <div style="margin-top:10px">${legsHtmlFor(d)}</div>
+      </div>
+      <div class="block"><h4>Payment</h4>
+        <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
+        <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
+        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+      </div>
+      <div class="block"><h4>Vehicle &amp; pickup</h4>
+        <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
+        <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
+        <div class="togg"><span>Customer contacted · pickup confirmed</span><button class="switch ${t.updated?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="updated"></button></div>
+      </div>
+      <div class="block"><h4>Activity</h4>${acts}
+        <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div>
+      </div>
+    </div>`;
+  sc.classList.add('show');sh.classList.add('show');
+}
+
+async function openDetail(id){
+  state.detail=id;state.detailData=null;renderSheet();
+  try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
+  catch(e){if(e.message!=='auth')toast('Could not load details');}
+}
+
+let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* re-fetch the single row after a mutation and splice it in, then re-render */
+async function refreshRow(id){
+  try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)state.detail=null;render();}
+  catch(e){if(e.message!=='auth')toast('Refresh failed');}
+}
+
+function render(){setNav();viewTickets();renderSheet();}
+
+/* ── events ── */
+$('#scrim').addEventListener('click',()=>{state.detail=null;state.detailData=null;renderSheet();});
+document.addEventListener('input',e=>{if(e.target.id==='q'){state.q=e.target.value;viewTickets();}});
+document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
+document.addEventListener('click',async e=>{
+  const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
+  switch(act){
+    case 'open':await openDetail(id);break;
+    case 'close':state.detail=null;state.detailData=null;renderSheet();break;
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not advance');}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Update failed');}break;}
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not add note');}break;}
+    case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+  }
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state.detail=null;state.detailData=null;renderSheet();}});
+
+/* ── login / session ── */
+function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;const k=$('#loginkey');if(k){k.value='';setTimeout(()=>k.focus(),120);}}
+function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;}
+function bootApp(role){
+  hideLogin();
+  const initials=role==='founder'?'FO':'SU';
+  $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>Ops · ${role==='founder'?'Founder':'Support'}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
+  loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
+}
+
+$('#loginform').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#loginbtn'),errEl=$('#loginerr'),key=$('#loginkey').value.trim();
+  errEl.textContent='';if(!key)return;
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await fetch('/admin/ops/login',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({key})});
+    if(r.ok){const {role}=await r.json();bootApp(role);}
+    else{const card=$('#login-card');card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');errEl.textContent='Wrong key';$('#loginkey').value='';$('#loginkey').focus();}
+  }catch(_){errEl.textContent='Network error — try again';}
+  finally{btn.disabled=false;btn.textContent='Sign in';}
+});
+$('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
+document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;showLogin();}});
+
+/* boot: whoami → in-session boots the app, else show login */
+(async function(){
+  try{
+    const r=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
+    if(r.ok){const {role}=await r.json();bootApp(role);}else{showLogin();}
+  }catch(_){showLogin();}
+})();
+</script>
+</body>
+</html>
