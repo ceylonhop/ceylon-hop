@@ -13,6 +13,7 @@ import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
+import { clientErrorRoutes } from './routes/clientErrors';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
@@ -84,6 +85,8 @@ export function createApp(deps: AppDeps = {}) {
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
   app.use('/quote', rateLimit(rl));
+  // M17: public front-end error beacon — same per-IP write limit as other public endpoints.
+  app.use('/errors/*', rateLimit(rl));
   // /admin/quote/* fronts billed Google APIs (GET /places, POST /distance), 2-3 pricing
   // passes per /estimate, and DB writes on /save — its admin-key auth only enforces when
   // configured, so this is a hard backstop. 4x the booking cap: autocomplete legitimately
@@ -113,6 +116,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
+  app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
