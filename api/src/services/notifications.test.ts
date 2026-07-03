@@ -110,6 +110,27 @@ describe('sendBookingConfirmation — trip (chauffeur)', () => {
     expect(m.text).toContain('Colombo Airport → Kandy → Ella'); // text keeps the joined route
     expect(m.text).toContain('10 days');
   });
+
+  it('shows deposit paid + balance due when only the deposit was collected (GL-3)', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation({ ...trip, total: 90380, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Deposit paid');
+    expect(m.html).toContain('$50.00');
+    expect(m.html).toContain('Balance due');
+    expect(m.html).toContain('$853.80');
+    expect(m.html).not.toContain('Total paid');
+    expect(m.text).toContain('Deposit paid: $50.00');
+    expect(m.text).toContain('Balance due: $853.80');
+  });
+
+  it('keeps the single total line when paid in full', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation({ ...trip, amountDueNow: trip.total }, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Total paid');
+    expect(m.html).not.toContain('Balance due');
+  });
 });
 
 describe('sendBookingConfirmation — shared seat', () => {

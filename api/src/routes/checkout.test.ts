@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -37,5 +38,44 @@ describe('POST /bookings/:id/checkout', () => {
     const app = createApp();
     const res = await app.request('/bookings/nope/checkout', { method: 'POST' });
     expect(res.status).toBe(404);
+  });
+});
+
+// GL-3 — checkout collects amountDueNow (the chauffeur deposit), not always the total.
+describe('POST /bookings/:id/checkout — deposits', () => {
+  const chauffeur = {
+    stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+    nights: [1, 2, 0],
+    dates: ['2026-07-20', '2026-07-22'],
+    pax: 2,
+    vehicleType: 'car',
+    serviceType: 'chauffeur',
+    customer: valid.customer,
+  };
+
+  it('charges only the deposit for a chauffeur trip', async () => {
+    const app = createApp();
+    const b = await (
+      await app.request('/bookings/trip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(chauffeur),
+      })
+    ).json();
+    expect(b.total).toBe(25312); // engine: 3×3500 + round(322×46)
+    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).amount).toBe(2531); // 10% deposit, under the $50 cap
+  });
+
+  it('falls back to the full total for legacy rows without amountDueNow', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const b = await book(app);
+    // simulate a pre-GL-3 row: amount_due_now is null in the DB
+    (await bookings.get(b.id))!.amountDueNow = null;
+    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).amount).toBe(b.total);
   });
 });

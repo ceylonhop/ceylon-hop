@@ -233,6 +233,19 @@ function textShell(title: string, lede: string, booking: Booking, lines: string[
 }
 
 // ── Booking confirmation (→ paid) ──────────────────────────────────────────
+// GL-3: chauffeur trips only collect a deposit at checkout, so when less than the total
+// was paid the confirmation shows deposit + balance instead of a single total line.
+function paidRows(booking: Booking): [string, string][] {
+  const due = booking.amountDueNow;
+  if (due != null && due < booking.total) {
+    return [
+      ['Deposit paid', money(due, booking.currency)],
+      ['Balance due', money(booking.total - due, booking.currency)],
+    ];
+  }
+  return [['Total paid', money(booking.total, booking.currency)]];
+}
+
 function renderHtml(booking: Booking): string {
   const first = esc(booking.input.customer.firstName);
   return page(
@@ -246,7 +259,7 @@ function renderHtml(booking: Booking): string {
       refCard(booking, BADGE_PAID) +
       routeBlock(booking) +
       factsBlock(booking) +
-      totalBlock('Total paid', money(booking.total, booking.currency)) +
+      paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       infoBox(
         'What happens next',
         'Our team will message you on WhatsApp to confirm your exact pickup time and place. Reply there any time if something changes.',
@@ -259,7 +272,7 @@ function renderHtml(booking: Booking): string {
 function renderText(booking: Booking): string {
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
-    `Total paid: ${money(booking.total, booking.currency)}`,
+    ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     'What happens next: our team will message you on WhatsApp to confirm your exact pickup time and place.',
     cancellationPolicy(booking),

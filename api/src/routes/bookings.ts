@@ -242,10 +242,13 @@ export function bookingRoutes(deps: {
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the
   // booking to payment_pending, and returns checkout params. The checkout amount must
-  // equal the booking total — never present a charge that disagrees with the booking.
+  // equal what the booking says is due now (GL-3: the chauffeur deposit, else the total;
+  // pre-GL-3 rows have no amountDueNow and are charged the total) — never present a
+  // charge that disagrees with the booking.
   r.post('/:id/checkout', async (c) => {
     const booking = await bookings.get(c.req.param('id'));
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    const dueNow = booking.amountDueNow ?? booking.total;
 
     const idempotencyKey = `checkout:${booking.id}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
@@ -254,7 +257,7 @@ export function bookingRoutes(deps: {
         bookingId: booking.id,
         provider: adapter.provider,
         orderId: booking.reference,
-        amount: booking.total,
+        amount: dueNow,
         currency: booking.currency,
         idempotencyKey,
       });
@@ -275,7 +278,7 @@ export function bookingRoutes(deps: {
         country: cust.country,
       },
     });
-    if (params.amount !== booking.total) {
+    if (params.amount !== dueNow) {
       return c.json({ error: 'amount_mismatch' }, 409);
     }
     return c.json(params, 200);
