@@ -1,6 +1,8 @@
 // Records which scheduled notifications have already gone out, so the cron tick is
-// idempotent — a booking is never reminded or asked for a review twice.
-export type NotificationKind = 'trip_reminder' | 'review_request';
+// idempotent — a booking is never reminded or asked for a review twice. 'confirmation'
+// (M17) records the post-payment confirmation email so the watchdog can spot paid
+// bookings whose customer never got one.
+export type NotificationKind = 'trip_reminder' | 'review_request' | 'confirmation';
 
 export interface NotificationLogRepo {
   wasSent(bookingId: string, kind: NotificationKind): Promise<boolean>;

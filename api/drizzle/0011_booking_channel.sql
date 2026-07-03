@@ -1,1 +1,0 @@
-ALTER TABLE "bookings" ADD COLUMN "channel" text DEFAULT 'website' NOT NULL;

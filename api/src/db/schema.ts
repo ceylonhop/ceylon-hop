@@ -154,6 +154,21 @@ export const rideOps = pgTable('ride_ops', {
 
 // Dedup ledger for scheduled customer notifications (M14): one row per (booking, kind)
 // means the cron tick can run as often as it likes without ever double-sending.
+// M17 — ops-alert dedupe ledger. One row per (kind, dedupe_key); ThrottledAlerts only
+// delivers when last_sent_at is older than the cooldown, so alert storms collapse and a
+// restart/redeploy can't re-spam the founder. count tracks suppressed repeats.
+export const alertLog = pgTable(
+  'alert_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: text('kind').notNull(),
+    dedupeKey: text('dedupe_key').notNull(),
+    lastSentAt: timestamp('last_sent_at', { withTimezone: true }).notNull(),
+    count: integer('count').notNull().default(1),
+  },
+  (t) => ({ kindKey: unique().on(t.kind, t.dedupeKey) }),
+);
+
 export const notificationLog = pgTable(
   'notification_log',
   {

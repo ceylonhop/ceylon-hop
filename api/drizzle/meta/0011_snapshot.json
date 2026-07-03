@@ -1,9 +1,63 @@
 {
-  "id": "5da77d67-3d38-4a4e-884f-9012c6104e60",
+  "id": "edf530c2-f085-461c-824f-60fccb86662c",
   "prevId": "b473ba6f-c74e-4620-bbda-1ae87afabf09",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.alert_log": {
+      "name": "alert_log",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dedupe_key": {
+          "name": "dedupe_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_sent_at": {
+          "name": "last_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "alert_log_kind_dedupe_key_unique": {
+          "name": "alert_log_kind_dedupe_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "kind",
+            "dedupe_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.bookings": {
       "name": "bookings",
       "schema": "",
@@ -63,13 +117,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "channel": {
-          "name": "channel",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'website'"
         },
         "created_at": {
           "name": "created_at",

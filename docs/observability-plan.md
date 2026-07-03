@@ -1,9 +1,10 @@
 # Ceylon Hop — M17: Observability & Alerting
 
-**Status: NOT STARTED — recorded 2026-06-28.** Production monitoring/alerting for the live
-site. **Strongly recommended to land before taking real payments** — running live money with
-no error/payment visibility is the main operational risk at launch. Right-sized for a small
-SL transport business (free/cheap tools, not full APM).
+**Status: BUILT 2026-07-03 (API side; env-gated, dormant until launch keys).** Implemented per
+the approved design (`superpowers/specs/2026-07-03-m17-observability-design.md`): throttled
+email alerts, env-gated Sentry, `/errors/client` beacon, webhook failure alerts, watchdog
+sweep, `/health/deep`, Resend bounce webhook, daily digest. Launch activation steps live in
+the go-live checklist §3. This document remains the original gap analysis.
 
 ---
 
