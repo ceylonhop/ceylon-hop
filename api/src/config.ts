@@ -36,6 +36,13 @@ const Env = z.object({
   OPS_SESSION_SECRET: z.string().default('dev-ops-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
+  // M17 observability — all optional; every feature is dormant until its key is set.
+  // ALERT_EMAIL: where ops alerts + the daily digest land (email-only channel, O1).
+  ALERT_EMAIL: z.string().optional(),
+  // SENTRY_DSN: error tracking activates when the owner creates the Sentry project (O2).
+  SENTRY_DSN: z.string().optional(),
+  // RESEND_WEBHOOK_SECRET: enables POST /webhooks/resend (bounce/complaint alerts).
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export const config = Env.parse(process.env);

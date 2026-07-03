@@ -14,6 +14,9 @@ import { PostgresCoordinatorRepo } from './db/postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
+import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
+import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
+import { initTracking } from './observability/track';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -48,6 +51,18 @@ const email = config.RESEND_API_KEY
 
 const { db, sql } = createDb(config.DATABASE_URL);
 await seedCorridors(sql);
+
+// M17 — error tracking (dormant without SENTRY_DSN) + throttled ops alerts. Email-only
+// per the owner's O1 decision; log-only until ALERT_EMAIL is set at launch.
+initTracking(config.SENTRY_DSN, {
+  environment: config.NODE_ENV,
+  release: process.env.RENDER_GIT_COMMIT,
+});
+const alerts = new ThrottledAlerts(
+  config.ALERT_EMAIL ? new EmailAlertAdapter(email, config.ALERT_EMAIL) : new LogAlertAdapter(),
+  new PostgresAlertLogRepo(db),
+);
+
 const app = createApp({
   bookings: new PostgresBookingRepo(db),
   payments: new PostgresPaymentRepo(db),
@@ -60,6 +75,7 @@ const app = createApp({
   adapter,
   maps,
   email,
+  alerts,
   auth: {
     opsSupportKey: config.OPS_SUPPORT_KEY,
     opsFounderKey: config.OPS_FOUNDER_KEY,

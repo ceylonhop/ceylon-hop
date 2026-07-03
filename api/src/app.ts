@@ -17,6 +17,8 @@ import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
+import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
+import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 
@@ -36,6 +38,9 @@ export interface AppDeps {
   auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
+  // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
+  // tests inject FakeAlertAdapter. Defaults to log-only so alerts are always at least visible.
+  alerts?: AlertAdapter;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -51,6 +56,7 @@ export function createApp(deps: AppDeps = {}) {
   const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
+  const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
     supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
@@ -90,6 +96,16 @@ export function createApp(deps: AppDeps = {}) {
   // Never leak internals on an unexpected failure.
   app.onError((err, c) => {
     console.error(err);
+    // M17: report to Sentry (dormant without SENTRY_DSN) + alert the founder. Both are
+    // fire-and-forget — the 500 response is identical to before.
+    track(err, { route: c.req.path });
+    void alerts.send({
+      severity: 'critical',
+      kind: 'api_error',
+      title: `API error on ${c.req.path}: ${err.name}`,
+      body: `${c.req.method} ${c.req.path}\n${err.message}`,
+      dedupeKey: `${err.name}:${c.req.path}`,
+    });
     return c.json({ error: 'internal_error' }, 500);
   });
 
