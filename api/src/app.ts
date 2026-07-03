@@ -156,8 +156,9 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
   app.route('/ops', opsUiRoutes());
-  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
-  app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
+  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
+  // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
+  app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production', sessionSecret: opsAuthCfg.sessionSecret }));
   app.route(
     '/admin',
     adminRoutes({

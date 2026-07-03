@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { getCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,10 @@ import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import type { MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { verifySession } from '../lib/opsAuth';
+
+// Same session cookie as /admin/ops (ops.ts) — one login covers both surfaces.
+const COOKIE = 'ch_ops';
 
 // The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
 // Read per-request so edits hot-reload in dev without a server restart (success path only —
@@ -214,7 +219,7 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
   return maps.places(query);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string; allowNoKey?: boolean }) {
+export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string; allowNoKey?: boolean; sessionSecret?: string }) {
   const r = new Hono();
 
   // Open shell (a browser navigation can't send a header). The JS attaches the key to
@@ -228,19 +233,20 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
     return c.html(html);
   });
 
-  // GL-1c: fail CLOSED. The tool stores customer PII and exposes cost/margin, so with no
-  // key configured the data routes lock unless dev-openness was explicitly requested
-  // (allowNoKey — app.ts passes NODE_ENV !== 'production'). A misconfigured production
-  // deploy must lock, not expose. Prod sets ADMIN_API_KEY — see the go-live checklist.
+  // GL-1c + ops⇄quote merge T1: fail CLOSED. The tool stores customer PII and exposes
+  // cost/margin, so a data route unlocks only for (a) the legacy x-admin-key, (b) a valid
+  // FOUNDER ops-session cookie (same ch_ops login as /admin/ops), or (c) the explicit
+  // dev-only keyless bypass (allowNoKey — app.ts passes NODE_ENV !== 'production').
+  // A support session is never enough — margin/PII stay founder-only (403, even in dev).
+  // A misconfigured production deploy must lock, not expose — see the go-live checklist.
   r.use('*', async (c, next) => {
-    if (deps.adminKey) {
-      if (c.req.header('x-admin-key') !== deps.adminKey) {
-        return c.json({ error: 'unauthorized' }, 401);
-      }
-    } else if (!deps.allowNoKey) {
-      return c.json({ error: 'unauthorized' }, 401);
-    }
-    return next();
+    const key = c.req.header('x-admin-key');
+    if (deps.adminKey && key && key === deps.adminKey) return next(); // legacy admin key → founder
+    const role = verifySession(getCookie(c, COOKIE), deps.sessionSecret ?? '');
+    if (role === 'founder') return next(); // founder ops session
+    if (role === 'support') return c.json({ error: 'forbidden' }, 403); // support: never quote data
+    if (!deps.adminKey && deps.allowNoKey) return next(); // dev-only keyless bypass
+    return c.json({ error: 'unauthorized' }, 401);
   });
 
   // Autocomplete (delegated to the maps adapter; Google key/timeout live there now).

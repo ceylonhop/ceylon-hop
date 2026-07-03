@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { signSession } from '../lib/opsAuth';
 
 type App = ReturnType<typeof createApp>;
 function post(app: App, path: string, body: unknown) {
@@ -418,6 +419,61 @@ describe('quoting tool — admin-key auth', () => {
   it('leaves data routes open when no key is configured (dev/preview)', async () => {
     // createApp default ADMIN_API_KEY is '' → open (NODE_ENV !== 'production' under vitest)
     expect((await createApp().request('/admin/quote/places?q=kand')).status).toBe(200);
+  });
+});
+
+// Ops⇄quote merge T1: a founder ops-session cookie (ch_ops, same as /admin/ops) now unlocks
+// /admin/quote/* alongside the legacy x-admin-key. Support NEVER sees quote data (margin/PII)
+// — not even through the dev keyless bypass.
+describe('quoting tool — founder ops-session cookie auth', () => {
+  const SECRET = 'test-ops-session-secret';
+  const founder = `ch_ops=${signSession('founder', SECRET)}`;
+  const support = `ch_ops=${signSession('support', SECRET)}`;
+  const build = (over: Record<string, unknown> = {}) => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      adminKey: 'K', sessionSecret: SECRET, ...over,
+    }));
+    return a;
+  };
+
+  it('founder cookie authorizes reads AND the PII/margin routes (rate-card, list)', async () => {
+    const app = build();
+    for (const p of ['/admin/quote/rate-card', '/admin/quote/list']) {
+      expect((await app.request(p, { headers: { cookie: founder } })).status).toBe(200);
+    }
+  });
+
+  it('support cookie is forbidden (403) on every data route', async () => {
+    const app = build();
+    for (const p of ['/admin/quote/rate-card', '/admin/quote/list', '/admin/quote/x']) {
+      expect((await app.request(p, { headers: { cookie: support } })).status).toBe(403);
+    }
+    const est = await app.request('/admin/quote/estimate', {
+      method: 'POST', headers: { cookie: support, 'content-type': 'application/json' }, body: '{}',
+    });
+    expect(est.status).toBe(403);
+  });
+
+  it('legacy x-admin-key still works (200)', async () => {
+    expect((await build().request('/admin/quote/rate-card', { headers: { 'x-admin-key': 'K' } })).status).toBe(200);
+  });
+
+  it('no auth at all is 401', async () => {
+    expect((await build().request('/admin/quote/rate-card')).status).toBe(401);
+  });
+
+  it('a founder cookie signed with the wrong secret is 401 (forgery)', async () => {
+    const res = await build().request('/admin/quote/rate-card', {
+      headers: { cookie: `ch_ops=${signSession('founder', 'WRONG')}` },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('support cookie is still 403 even with no adminKey + allowNoKey:true (never falls through the dev bypass)', async () => {
+    const app = build({ adminKey: undefined, allowNoKey: true });
+    expect((await app.request('/admin/quote/rate-card', { headers: { cookie: support } })).status).toBe(403);
   });
 });
 

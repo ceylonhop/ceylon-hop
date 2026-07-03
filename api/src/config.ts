@@ -45,4 +45,21 @@ const Env = z.object({
   RESEND_WEBHOOK_SECRET: z.string().optional(),
 });
 
-export const config = Env.parse(process.env);
+// Ops⇄quote merge T1: the founder ops-session cookie now unlocks /admin/quote (margin +
+// customer PII), so a defaulted OPS_SESSION_SECRET in production would let anyone who reads
+// the repo mint a valid founder cookie. Fail CLOSED at boot; dev/test keep the default.
+const DEV_OPS_SECRET = 'dev-ops-secret-change-me';
+
+// Exported for tests: build (and validate) a config from an arbitrary env.
+export function buildConfig(env: Record<string, string | undefined>) {
+  const cfg = Env.parse(env);
+  if (cfg.NODE_ENV === 'production' && (!cfg.OPS_SESSION_SECRET || cfg.OPS_SESSION_SECRET === DEV_OPS_SECRET)) {
+    throw new Error(
+      'OPS_SESSION_SECRET must be set to a strong unique value in production ' +
+        '(the default would let anyone forge a founder session cookie) — refusing to boot',
+    );
+  }
+  return cfg;
+}
+
+export const config = buildConfig(process.env);
