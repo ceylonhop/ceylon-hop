@@ -19,6 +19,13 @@ export interface MapsAdapter {
 // stalls a request indefinitely.
 const FETCH_TIMEOUT_MS = 4000;
 
+// Sri Lanka is a ~430 km-tall island; its longest realistic point-to-point road trip
+// (roughly Jaffna → Kataragama) is ~650 km. A larger "distance" means the origin or
+// destination geocoded OUTSIDE the country — e.g. a half-typed name like "miris" matching
+// a place on another continent (Distance Matrix returned 10,284 km in the field). We reject
+// those as unresolved rather than let a fantasy distance flow into a price.
+const MAX_SL_ROAD_KM = 900;
+
 // Known-place coordinates, mirroring the front-end's place table (transfers-data.js). The
 // fake estimates road distance as crow-flies × 1.35 (Sri Lankan roads are slow & winding) and
 // duration at ~42 km/h — the same model the marketing site uses, so dev distances are realistic.
@@ -89,7 +96,7 @@ export class GoogleMapsAdapter implements MapsAdapter {
     const url =
       'https://maps.googleapis.com/maps/api/distancematrix/json' +
       `?origins=${encodeURIComponent(from)}&destinations=${encodeURIComponent(to)}` +
-      `&mode=driving&key=${this.apiKey}`;
+      `&mode=driving&region=lk&key=${this.apiKey}`;
     let res: Response;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -115,7 +122,12 @@ export class GoogleMapsAdapter implements MapsAdapter {
     }
     const el = data.rows?.[0]?.elements?.[0];
     if (!el || el.status !== 'OK' || !el.distance || !el.duration) return null;
-    return { km: Math.round(el.distance.value / 1000), durationMin: Math.round(el.duration.value / 60) };
+    const km = Math.round(el.distance.value / 1000);
+    if (km > MAX_SL_ROAD_KM) {
+      console.error(`[maps] implausible distance ${km} km for "${from}" → "${to}" — treating as unresolved (likely a bad geocode outside Sri Lanka)`);
+      return null;
+    }
+    return { km, durationMin: Math.round(el.duration.value / 60) };
   }
 
   // Places Autocomplete, mirroring the request the route used to make directly. Google is

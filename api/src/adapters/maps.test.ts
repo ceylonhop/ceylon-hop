@@ -65,6 +65,44 @@ describe('GoogleMapsAdapter', () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('REQUEST_DENIED'));
   });
 
+  it('biases geocoding to Sri Lanka (region=lk) on the Distance Matrix call', async () => {
+    let capturedUrl = '';
+    global.fetch = (async (url: string) => {
+      capturedUrl = String(url);
+      return new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 180000 }, duration: { value: 15420 } }] }] }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    await new GoogleMapsAdapter('my-key').distance('Colombo', 'Galle');
+    expect(capturedUrl).toContain('region=lk');
+  });
+
+  it('rejects an implausibly long distance (off-island bad geocode) as unresolved', async () => {
+    // A half-typed place like "miris" geocodes outside Sri Lanka and Google returns a
+    // ~10,284 km "route". No Sri Lankan road trip is that long, so treat it as unresolved
+    // (→ null → the tool asks for a manual km) rather than pricing a fantasy distance.
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 10_284_000 }, duration: { value: 805_980 } }] }] }),
+        { status: 200 },
+      )) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distance('Colombo Airport (CMB)', 'miris');
+    expect(r).toBeNull();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('implausible'));
+  });
+
+  it('accepts the longest realistic in-country distance (~640 km)', async () => {
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 640_000 }, duration: { value: 46_800 } }] }] }),
+        { status: 200 },
+      )) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distance('Jaffna', 'Kataragama');
+    expect(r).toEqual({ km: 640, durationMin: 780 });
+  });
+
   it('distance() calls fetch with an AbortSignal (timeout wiring)', async () => {
     let capturedInit: RequestInit | undefined;
     global.fetch = (async (_url: string, init?: RequestInit) => {
