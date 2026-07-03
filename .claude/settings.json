@@ -27,6 +27,7 @@
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
+      "Edit(*.html)",
       "Edit(site.css)",
       "Edit(favicon.svg)",
       "Edit(image-slots.state.json)",

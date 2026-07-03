@@ -1,7 +1,35 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "ceylon-hop-api", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "api", "run", "dev"], "port": 8787 },
-    { "name": "ceylon-hop-booking", "runtimeExecutable": "node", "runtimeArgs": ["serve-booking.js"], "port": 4173 }
+    {
+      "name": "ceylon-hop-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "api",
+        "run",
+        "dev"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "ceylon-hop-booking",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "serve-booking.js"
+      ],
+      "port": 4173
+    },
+    {
+      "name": "m12s2-ops-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/roshenw/claude_code/ceylon-hop-m12s2/api",
+        "run",
+        "dev"
+      ],
+      "port": 8787
+    }
   ]
 }

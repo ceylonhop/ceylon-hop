@@ -10,6 +10,12 @@
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
 <link rel="stylesheet" href="site.css">
+<script>
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
 <style>.nf{min-height:52vh;display:grid;place-items:center;text-align:center;padding:120px 0 60px}
   .nf h1{font-size:clamp(2.4rem,7vw,4rem);margin:0 0 .3rem}
   .nf .flex{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px}</style>

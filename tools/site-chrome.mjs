@@ -40,11 +40,23 @@ export function cmark(size = 34, color = 'currentColor') {
 
 const prefixFor = depth => '../'.repeat(depth);
 
+// M17 front-end error beacon: window errors + unhandled rejections → POST /errors/client
+// (the API forwards to Sentry + the founder's alert email). Self-contained and defensive:
+// capped at 5 beacons per page (hot-loop protection), payload truncated to the endpoint's
+// limits, and the whole send wrapped in try/catch — the reporter must never throw.
+export const errorBeaconSnippet = `<script>
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>`;
+
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
 export function headAssets(p) {
   return `<meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="${p}favicon.svg">
-<link rel="stylesheet" href="${p}site.css">`;
+<link rel="stylesheet" href="${p}site.css">
+${errorBeaconSnippet}`;
 }
 
 export function renderHeader(p, active = '') {
