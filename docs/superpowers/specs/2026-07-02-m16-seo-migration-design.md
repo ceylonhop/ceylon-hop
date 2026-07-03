@@ -127,3 +127,35 @@ top route pages · monitor Coverage/404s for 4–6 weeks.
 - The **real TripAdvisor listing URL** (for the hero badge + `sameAs`) — I'll locate it and
   confirm at PR review.
 - Whether to port the 6 blog posts later (S7 defers).
+- **Route photos** — see A3 below; real `<img>` content is deferred pending owner-supplied images.
+
+## Implementation addenda (discovered during scouting, 2026-07-02)
+
+These are mechanism-level findings that refine *how* the above is built; they do not change the
+approved scope.
+
+- **A1 — Freeze model must be refined first (new Step 0).** The local PreToolUse hook
+  (`.claude/hooks/protect-ui.sh`) blocks **every** `*.html` write *by basename*, so it would block
+  the new route pages, redirect stubs, and `terms/privacy/404.html` — not just the existing frozen
+  files. The CI gate (`.github/workflows/ci.yml`) is narrower — it only matches **root-level**
+  html (`^[^/]+\.html$`). Step 0 converts both guards from a blanket `*.html` rule to an **explicit
+  list of the existing live-site files** (the 10 current root html — `index, about, blog, booking,
+  plan, search, tour, tours, why, _ops-preview` — plus `site.css`, `favicon.svg`,
+  `image-slots.state.json`, and the frozen `*.js`). Every currently-protected file stays protected;
+  genuinely-new SEO files are permitted. This is a `.claude/` + `.github/` change (both allowed).
+  PR3's edits to the existing pages still require the labelled unfreeze.
+- **A2 — Route pages carry a self-contained header/footer.** `site.js` injects the nav/footer into
+  `data-header`/`data-footer` using **page-relative** hrefs (`href="index.html"`), which break from
+  `/trip/<slug>/`. Route pages therefore ship a **static header/footer emitted by the generator with
+  `../../`-relative links** (robust on the apex, github.io project path, and local file serving), plus
+  a tiny inline mobile-menu toggle. They still load `site.css` (`../../site.css`) so styling matches.
+  The generator owns this markup; regenerating re-syncs it.
+- **A3 — Real `<img>` is deferred (owner content dependency).** The site has no image files on disk;
+  imagery is data-URIs in the frozen `image-slots.state.json`, of which **only `hero-photo` is
+  filled**. Route pages ship with the site's CSS-gradient hero (no broken drop-zones, no 44× repeated
+  base64 blob). The P2 "real `<img alt>`" SEO item needs owner-supplied route photos — flagged as a
+  founder input; pages leave a documented hero area to slot them in later.
+- **A4 — Generator loads `transfers-data.js` via a `window` shim.** The file is a browser IIFE that
+  only assigns `window.TRANSFERS` (no DOM). The Node generator sets a `window` global, evaluates the
+  file in a sandbox, and reads `TRANSFERS` — the single source of prices/distances, so generated
+  pages can't diverge from the engine-parity rate card.
