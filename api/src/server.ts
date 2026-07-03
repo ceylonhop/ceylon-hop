@@ -10,7 +10,6 @@ import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
-import { PostgresCoordinatorRepo } from './db/postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
@@ -70,7 +69,6 @@ const app = createApp({
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   rideOps: new PostgresRideOpsRepo(db),
-  coordinators: new PostgresCoordinatorRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes: new PostgresQuoteRepo(db),
   adapter,

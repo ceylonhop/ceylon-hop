@@ -19,6 +19,7 @@ const single: Booking = {
   createdAt: new Date().toISOString(),
   total: 5000,
   currency: 'USD',
+  channel: 'website',
   input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 2, children: 0, bags: 2, customer },
 };
 
@@ -83,6 +84,7 @@ describe('sendBookingConfirmation — trip (chauffeur)', () => {
     createdAt: new Date().toISOString(),
     total: 60000,
     currency: 'USD',
+    channel: 'website',
     input: {
       stops: ['Colombo Airport', 'Kandy', 'Ella'],
       nights: [0, 2, 2],
@@ -142,6 +144,7 @@ describe('sendBookingConfirmation — shared seat', () => {
     createdAt: new Date().toISOString(),
     total: 4000,
     currency: 'USD',
+    channel: 'website',
     input: { corridorId: 'cmb-galle', date: '2026-07-10', time: '08:00', seats: 2, customer },
   };
 

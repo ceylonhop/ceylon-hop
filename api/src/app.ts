@@ -11,11 +11,11 @@ import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
+import { opsUiRoutes } from './routes/opsUi';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
-import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
@@ -33,7 +33,6 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
-  coordinators?: CoordinatorRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
@@ -63,7 +62,6 @@ export function createApp(deps: AppDeps = {}) {
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
-  const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
@@ -156,7 +154,8 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
-  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
+  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
+  app.route('/ops', opsUiRoutes());
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
   app.route(

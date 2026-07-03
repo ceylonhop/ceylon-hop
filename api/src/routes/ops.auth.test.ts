@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
-import { InMemoryCoordinatorRepo } from '../db/coordinatorRepo';
 
 const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
 
@@ -11,7 +10,6 @@ function makeApp() {
   const app = createApp({
     bookings,
     rideOps: new InMemoryRideOpsRepo(),
-    coordinators: new InMemoryCoordinatorRepo(),
     auth,
     adminApiKey: 'adminkey',
   });
@@ -40,11 +38,8 @@ describe('ops authorization surface', () => {
     const calls: [string, string, unknown][] = [
       ['GET', '/admin/ops/bookings', null],
       ['GET', `/admin/ops/bookings/${bid}`, null],
-      ['POST', `/admin/ops/bookings/${bid}/assign`, { coordinatorId: 'c1' }],
-      ['POST', `/admin/ops/bookings/${bid}/status`, { to: 'assigned' }],
+      ['POST', `/admin/ops/bookings/${bid}/status`, { to: 'vehicle_confirmed' }],
       ['POST', `/admin/ops/bookings/${bid}/flags`, { vehiclePhotoReceived: true }],
-      ['GET', '/admin/ops/coordinators', null],
-      ['POST', '/admin/ops/coordinators', { name: 'X', whatsapp: '+1' }],
       ['GET', '/admin/ops/finance/summary', null],
     ];
     for (const [method, path, body] of calls) {
@@ -66,7 +61,7 @@ describe('ops authorization surface', () => {
 
   it('rejects a session cookie signed with the wrong secret', async () => {
     // a real login on a DIFFERENT app (different secret) must not be honoured here
-    const other = createApp({ ...{ bookings: new InMemoryBookingRepo() }, rideOps: new InMemoryRideOpsRepo(), coordinators: new InMemoryCoordinatorRepo(), auth: { ...auth, opsSessionSecret: 'a-different-secret' }, adminApiKey: 'adminkey' });
+    const other = createApp({ ...{ bookings: new InMemoryBookingRepo() }, rideOps: new InMemoryRideOpsRepo(), auth: { ...auth, opsSessionSecret: 'a-different-secret' }, adminApiKey: 'adminkey' });
     const login = await other.request('/admin/ops/login', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sup' }),
     });

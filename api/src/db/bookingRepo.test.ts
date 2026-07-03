@@ -56,4 +56,16 @@ describe('InMemoryBookingRepo', () => {
     await expect(repo.setStatus(a.id, 'completed')).rejects.toThrow();
     expect((await repo.get(a.id))?.status).toBe('draft');
   });
+
+  it('defaults channel to website', async () => {
+    const repo = new InMemoryBookingRepo();
+    const b = await repo.create(sample);
+    expect(b.channel).toBe('website');
+  });
+
+  it('persists an explicit whatsapp channel', async () => {
+    const repo = new InMemoryBookingRepo();
+    const b = await repo.create({ ...sample, channel: 'whatsapp' });
+    expect(b.channel).toBe('whatsapp');
+  });
 });

@@ -8,14 +8,10 @@ type Row = typeof rideOps.$inferSelect;
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 const toRideOps = (r: Row): RideOps => ({
   bookingId: r.bookingId,
-  coordinatorId: r.coordinatorId,
   fulfilmentStatus: r.fulfilmentStatus as RideStatus,
   vehiclePhotoReceived: r.vehiclePhotoReceived,
   customerUpdated: r.customerUpdated,
   opsNotes: r.opsNotes,
-  assignedAt: iso(r.assignedAt),
-  sentAt: iso(r.sentAt),
-  acknowledgedAt: iso(r.acknowledgedAt),
   vehicleConfirmedAt: iso(r.vehicleConfirmedAt),
   updatedAt: r.updatedAt.toISOString(),
 });
@@ -35,25 +31,10 @@ export class PostgresRideOpsRepo implements RideOpsRepo {
     return row ? toRideOps(row) : null;
   }
 
-  async assign(bookingId: string, coordinatorId: string | null): Promise<RideOps> {
-    const r = await this.getOrCreate(bookingId);
-    const status: RideStatus = coordinatorId
-      ? (r.fulfilmentStatus === 'unassigned' ? 'assigned' : r.fulfilmentStatus)
-      : 'unassigned';
-    const [row] = await this.db
-      .update(rideOps)
-      .set({ coordinatorId, assignedAt: new Date(), fulfilmentStatus: status, updatedAt: new Date() })
-      .where(eq(rideOps.bookingId, bookingId))
-      .returning();
-    return toRideOps(row);
-  }
-
   async setStatus(bookingId: string, to: RideStatus): Promise<RideOps> {
     const r = await this.getOrCreate(bookingId);
     assertRideTransition(r.fulfilmentStatus, to);
     const set: Partial<Row> = { fulfilmentStatus: to, updatedAt: new Date() };
-    if (to === 'sent_to_coordinator') set.sentAt = new Date();
-    if (to === 'acknowledged') set.acknowledgedAt = new Date();
     if (to === 'vehicle_confirmed') set.vehicleConfirmedAt = new Date();
     const [row] = await this.db.update(rideOps).set(set).where(eq(rideOps.bookingId, bookingId)).returning();
     return toRideOps(row);

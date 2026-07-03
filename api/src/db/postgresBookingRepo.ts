@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
   type Booking,
+  type BookingChannel,
   BookingNotFoundError,
   generateReference,
 } from './bookingRepo';
@@ -33,6 +34,7 @@ export class PostgresBookingRepo implements BookingRepo {
       total: row.total,
       amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
       currency: row.currency,
+      channel: row.channel as BookingChannel,
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -124,6 +126,7 @@ export class PostgresBookingRepo implements BookingRepo {
           amountDueNow: b.amountDueNow,
           currency: b.currency,
           idempotencyKey: opts?.idempotencyKey ?? null,
+          channel: b.channel ?? 'website',
         })
         .returning();
       if (b.mode === 'trip') {
@@ -192,10 +195,15 @@ export class PostgresBookingRepo implements BookingRepo {
     return this.assemble(updated);
   }
 
-  async list(filter?: { status?: BookingStatus }): Promise<Booking[]> {
-    const rows = filter?.status
-      ? await this.db.select().from(bookings).where(eq(bookings.status, filter.status))
-      : await this.db.select().from(bookings);
+  async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
+    let rows: BookingRow[];
+    if (!filter?.status) {
+      rows = await this.db.select().from(bookings);
+    } else if (Array.isArray(filter.status)) {
+      rows = await this.db.select().from(bookings).where(inArray(bookings.status, filter.status));
+    } else {
+      rows = await this.db.select().from(bookings).where(eq(bookings.status, filter.status));
+    }
     return Promise.all(rows.map((r) => this.assemble(r)));
   }
 }
