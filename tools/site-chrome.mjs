@@ -41,15 +41,13 @@ export function cmark(size = 34, color = 'currentColor') {
 const prefixFor = depth => '../'.repeat(depth);
 
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
-export function headAssets(depth) {
-  const p = prefixFor(depth);
+export function headAssets(p) {
   return `<meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="${p}favicon.svg">
 <link rel="stylesheet" href="${p}site.css">`;
 }
 
-export function renderHeader(depth, active = '') {
-  const p = prefixFor(depth);
+export function renderHeader(p, active = '') {
   const links = NAVLINKS.map(([t, h]) => `<a href="${p}${h}"${active === h ? ' class="active"' : ''}>${t}</a>`).join('');
   const mlinks = NAVLINKS.map(([t, h]) => `<a href="${p}${h}">${t}</a>`).join('');
   return `<header class="nav" data-nav>
@@ -64,8 +62,7 @@ export function renderHeader(depth, active = '') {
 <div class="mobile-menu" data-mobile>${mlinks}</div>`;
 }
 
-export function renderFooter(depth) {
-  const p = prefixFor(depth);
+export function renderFooter(p) {
   return `<footer class="footer">
   <div class="wrap foot-grid">
     <div>
@@ -97,8 +94,12 @@ export const bootScript = `<script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>`;
 
-export function renderChrome({ depth = 2, active = '' } = {}) {
-  return { header: renderHeader(depth, active), footer: renderFooter(depth), headAssets: headAssets(depth), bootScript };
+// `absolute: true` uses root-absolute paths ('/site.css', '/plan.html') — required
+// for 404.html, which GitHub Pages serves for missing URLs at ANY depth, so relative
+// asset paths would break. Fixed-URL pages (routes, terms, privacy) use depth-relative.
+export function renderChrome({ depth = 2, active = '', absolute = false } = {}) {
+  const p = absolute ? '/' : prefixFor(depth);
+  return { header: renderHeader(p, active), footer: renderFooter(p), headAssets: headAssets(p), bootScript };
 }
 
 export { WA, WA_DISPLAY };

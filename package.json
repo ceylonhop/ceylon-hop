@@ -3,7 +3,9 @@
   "private": true,
   "description": "Static marketing/booking site + SEO route-page generator. (No type:module — serve-booking.js is CommonJS; the generator uses .mjs, which is ESM by extension.)",
   "scripts": {
-    "generate": "node tools/generate-route-pages.mjs",
+    "generate": "node tools/generate-route-pages.mjs && node tools/generate-static-pages.mjs && node tools/generate-redirects.mjs",
+    "generate:routes": "node tools/generate-route-pages.mjs",
+    "generate:static": "node tools/generate-static-pages.mjs",
     "generate:redirects": "node tools/generate-redirects.mjs"
   }
 }

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# Param-driven pages are canonicalised elsewhere and add no crawl value.
+Disallow: /search.html
+Disallow: /booking.html
+
+Sitemap: https://ceylonhop.com/sitemap.xml

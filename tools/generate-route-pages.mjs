@@ -260,8 +260,8 @@ export function generateAll() {
   return out;
 }
 
-// Extended by Unit 2 once terms.html/privacy.html exist.
-export const SITEMAP_EXTRA = [];
+// Static pages that live outside the route generator but belong in the sitemap.
+export const SITEMAP_EXTRA = ['terms.html', 'privacy.html'];
 
 // CLI: write every generated file to disk.
 if (import.meta.url === `file://${process.argv[1]}`) {
