@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -162,5 +165,115 @@ describe('POST /webhooks/payments', () => {
     const after = await (await app.request(`/bookings/${b.id}`)).json();
     expect(after.status).toBe('payment_pending'); // …but the booking must NOT be paid
     expect(email.sent).toHaveLength(0);
+  });
+});
+
+describe('payment webhook ops alerts (M17)', () => {
+  it('alerts on an invalid signature', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: '{"orderId":"x","amount":1,"currency":"USD","status":"succeeded","providerTxnId":"t","signature":"bad"}',
+    });
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].kind).toBe('payhere_signature');
+    expect(alerts.sent[0].severity).toBe('critical');
+  });
+
+  it('alerts on an amount mismatch with the order id', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    const tampered = adapter.simulateWebhook({ orderId: b.reference, amount: b.total + 1000, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body: tampered });
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].kind).toBe('payhere_amount');
+    expect(alerts.sent[0].dedupeKey).toBe(b.reference);
+  });
+
+  it('alerts when the booking is paid but the confirmation email fails', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const email = { send: async () => { throw new Error('provider down'); } };
+    const app = createApp({ adapter, alerts, email });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200); // webhook contract unchanged
+    expect(alerts.sent.map((a) => a.kind)).toContain('confirmation_email_failed');
+    expect(alerts.sent.find((a) => a.kind === 'confirmation_email_failed')?.body).toContain(b.reference);
+  });
+
+  it('records the confirmation send in the notification log (watchdog signal)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const notificationLog = new InMemoryNotificationLogRepo();
+    const app = createApp({ adapter, notificationLog });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(true);
+  });
+});
+
+describe('POST /webhooks/resend (M17)', () => {
+  const SECRET_KEY = Buffer.from('super-secret-signing-key').toString('base64');
+  const SECRET = 'whsec_' + SECRET_KEY;
+
+  const signed = (payload: object, opts?: { timestamp?: number; badSig?: boolean }) => {
+    const raw = JSON.stringify(payload);
+    const id = 'msg_test1';
+    const timestamp = String(opts?.timestamp ?? Math.floor(Date.now() / 1000));
+    const sig = createHmac('sha256', Buffer.from(SECRET_KEY, 'base64'))
+      .update(`${id}.${timestamp}.${raw}`)
+      .digest('base64');
+    return {
+      body: raw,
+      headers: {
+        'svix-id': id,
+        'svix-timestamp': timestamp,
+        'svix-signature': `v1,${opts?.badSig ? 'AAAA' + sig.slice(4) : sig}`,
+      },
+    };
+  };
+
+  it('does not exist (404) when RESEND_WEBHOOK_SECRET is unset', async () => {
+    const app = createApp();
+    const { body, headers } = signed({ type: 'email.bounced', data: { to: ['x@y.com'] } });
+    const res = await app.request('/webhooks/resend', { method: 'POST', body, headers });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects a bad signature (401), accepts a good one and alerts on a bounce', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts, resendWebhookSecret: SECRET });
+
+    const bad = signed({ type: 'email.bounced', data: { to: ['maya@example.com'] } }, { badSig: true });
+    expect((await app.request('/webhooks/resend', { method: 'POST', body: bad.body, headers: bad.headers })).status).toBe(401);
+    expect(alerts.sent).toHaveLength(0);
+
+    const good = signed({ type: 'email.bounced', data: { to: ['maya@example.com'], subject: 'Your booking' } });
+    const res = await app.request('/webhooks/resend', { method: 'POST', body: good.body, headers: good.headers });
+    expect(res.status).toBe(204);
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].kind).toBe('email_bounce');
+    expect(alerts.sent[0].title).toContain('maya@example.com');
+  });
+
+  it('rejects a stale timestamp (replay guard)', async () => {
+    const app = createApp({ resendWebhookSecret: SECRET });
+    const stale = signed({ type: 'email.bounced', data: {} }, { timestamp: Math.floor(Date.now() / 1000) - 600 });
+    const res = await app.request('/webhooks/resend', { method: 'POST', body: stale.body, headers: stale.headers });
+    expect(res.status).toBe(401);
+  });
+
+  it('acknowledges non-bounce events without alerting', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts, resendWebhookSecret: SECRET });
+    const ok = signed({ type: 'email.delivered', data: { to: ['maya@example.com'] } });
+    const res = await app.request('/webhooks/resend', { method: 'POST', body: ok.body, headers: ok.headers });
+    expect(res.status).toBe(204);
+    expect(alerts.sent).toHaveLength(0);
   });
 });

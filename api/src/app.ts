@@ -42,6 +42,8 @@ export interface AppDeps {
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
   // tests inject FakeAlertAdapter. Defaults to log-only so alerts are always at least visible.
   alerts?: AlertAdapter;
+  // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
+  resendWebhookSecret?: string;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -115,7 +117,19 @@ export function createApp(deps: AppDeps = {}) {
   app.get('/health', (c) => c.json({ status: 'ok' }));
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
-  app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
+  app.route(
+    '/webhooks',
+    webhookRoutes({
+      bookings,
+      payments,
+      adapter,
+      email,
+      conciergeTasks,
+      alerts,
+      notificationLog,
+      resendWebhookSecret: deps.resendWebhookSecret ?? config.RESEND_WEBHOOK_SECRET,
+    }),
+  );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
