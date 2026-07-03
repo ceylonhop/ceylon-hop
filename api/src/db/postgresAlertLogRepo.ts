@@ -11,15 +11,18 @@ export class PostgresAlertLogRepo implements AlertLogRepo {
   constructor(private readonly db: Db) {}
 
   async shouldSend(kind: string, dedupeKey: string, cooldownMs: number, now: Date): Promise<boolean> {
-    const cutoff = new Date(now.getTime() - cooldownMs);
+    // Raw Date params inside sql`` fragments bypass drizzle's column serialization and the
+    // postgres driver rejects them — pass ISO strings and cast to timestamptz explicitly.
+    const cutoffIso = new Date(now.getTime() - cooldownMs).toISOString();
+    const nowIso = now.toISOString();
     const rows = await this.db
       .insert(alertLog)
       .values({ kind, dedupeKey, lastSentAt: now, count: 1 })
       .onConflictDoUpdate({
         target: [alertLog.kind, alertLog.dedupeKey],
         set: {
-          count: dsql`CASE WHEN ${alertLog.lastSentAt} <= ${cutoff} THEN 1 ELSE ${alertLog.count} + 1 END`,
-          lastSentAt: dsql`CASE WHEN ${alertLog.lastSentAt} <= ${cutoff} THEN ${now} ELSE ${alertLog.lastSentAt} END`,
+          count: dsql`CASE WHEN ${alertLog.lastSentAt} <= ${cutoffIso}::timestamptz THEN 1 ELSE ${alertLog.count} + 1 END`,
+          lastSentAt: dsql`CASE WHEN ${alertLog.lastSentAt} <= ${cutoffIso}::timestamptz THEN ${nowIso}::timestamptz ELSE ${alertLog.lastSentAt} END`,
         },
       })
       .returning({ lastSentAt: alertLog.lastSentAt });
