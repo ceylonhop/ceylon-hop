@@ -14,7 +14,8 @@ export function renderStandalone({ title, description, canonicalPath = null, rob
 <meta property="og:title" content="${title.replace(/"/g, '&quot;')}">
 <meta property="og:description" content="${description.replace(/"/g, '&quot;')}">
 <meta property="og:url" content="${ORIGIN}${canonicalPath}">
-<meta property="og:site_name" content="Ceylon Hop">\n`
+<meta property="og:site_name" content="Ceylon Hop">
+<meta property="og:image" content="${ORIGIN}/og-cover.jpg">\n`
     : '';
   // Absolute-path pages (404) are served at any depth. On the apex, root-absolute
   // hrefs resolve fine; on the github.io PROJECT path they'd resolve outside

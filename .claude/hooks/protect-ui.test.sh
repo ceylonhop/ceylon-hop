@@ -23,4 +23,8 @@ done
 for f in api/src/x.ts docs/y.md .claude/settings.json .github/workflows/ci.yml; do
   check "$f" 0
 done
+# path-normalisation bypasses that MUST still be blocked (all resolve to a frozen file)
+for f in ./index.html trip/../index.html docs/../index.html /index.html Index.html BOOKING.JS ./site.css; do
+  check "$f" 2
+done
 [ "$fail" = 0 ] && echo "protect-ui: ALL PASS" || { echo "protect-ui: FAILURES"; exit 1; }

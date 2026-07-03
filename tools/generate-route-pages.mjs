@@ -6,6 +6,7 @@ import { renderChrome } from './site-chrome.mjs';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = 'https://ceylonhop.com';
+const OG_IMAGE = `${ORIGIN}/og-cover.jpg`;
 
 // The 22 curated corridors (spec §1). Each generates BOTH directions → 44 pages.
 // Content is keyed by this canonical order; the reverse page uses `back` for its intro.
@@ -115,7 +116,9 @@ function routePage(T, content, from, to, forward) {
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${url}">
 <meta property="og:site_name" content="Ceylon Hop">
+<meta property="og:image" content="${OG_IMAGE}">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
 <style>
   .route-hero{position:relative;color:#fff;padding:104px 0 44px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
@@ -212,6 +215,9 @@ function tripIndex(T, content) {
 <meta property="og:description" content="Fixed-price private transfers and daily shared rides on Sri Lanka's most popular routes.">
 <meta property="og:url" content="${url}">
 <meta property="og:site_name" content="Ceylon Hop">
+<meta property="og:image" content="${OG_IMAGE}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="${OG_IMAGE}">
 ${headAssets}
 <style>
   .trip-hero{background:linear-gradient(160deg,#0d8f8c,#0AB9B6 60%,#2aa9bf);color:#fff;padding:104px 0 40px;margin-top:-74px}
