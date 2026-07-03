@@ -22,7 +22,7 @@ jobs:
           head="${{ github.event.pull_request.head.sha }}"
           changed="$(git diff --name-only "$base" "$head")"
           echo "Changed files:"; echo "$changed"
-          frozen="$(echo "$changed" | grep -E '^([^/]+\.html|site\.css|favicon\.svg|image-slots\.state\.json|(booking|datepicker|image-slot|plan|routes-data|search|site|tours-data|transfers-data|tweaks)\.js)$' || true)"
+          frozen="$(echo "$changed" | grep -E '^(index|about|blog|booking|plan|search|tour|tours|why|_ops-preview)\.html$|^(site\.css|favicon\.svg|image-slots\.state\.json)$|^(booking|datepicker|image-slot|plan|routes-data|search|site|tours-data|transfers-data|tweaks)\.js$' || true)"
           if [ -n "$frozen" ] && [ "$ALLOW" != "true" ]; then
             echo "::error::This PR changes frozen front-end files:"
             echo "$frozen"
