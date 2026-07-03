@@ -81,9 +81,41 @@ describe('POST /webhooks/payments', () => {
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
     await app.request('/webhooks/payments', { method: 'POST', body });
 
+    // the unresolvable test route also files an unpriced-booking flag — count pickups only
     const tasks = await conciergeTasks.listByBooking(b.id);
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0].type).toBe('confirm_pickup');
+    expect(tasks.filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
+  });
+
+  it('marks a deposit-charged chauffeur booking paid on a deposit-amount webhook (GL-3)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adapter, email });
+    const b = await (
+      await app.request('/bookings/trip', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+          nights: [1, 2, 0],
+          dates: ['2026-07-20', '2026-07-22'],
+          pax: 2,
+          vehicleType: 'car',
+          serviceType: 'chauffeur',
+          customer: valid.customer,
+        }),
+      })
+    ).json();
+    const checkout = await (await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' })).json();
+    expect(checkout.amount).toBe(b.amountDueNow); // the deposit, not the total
+    expect(checkout.amount).toBeLessThan(b.total);
+
+    // PayHere notifies for what was actually charged — the deposit — and that settles it.
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: checkout.amount, currency: b.currency });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    const after = await (await app.request(`/bookings/${b.id}`)).json();
+    expect(after.status).toBe('paid');
+    expect(email.sent).toHaveLength(1);
   });
 
   it('rejects a bad signature (401)', async () => {

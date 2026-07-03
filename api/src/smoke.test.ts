@@ -45,7 +45,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const paid = await (await app.request(`/bookings/${b.id}`)).json();
     expect(paid.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
-    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(1);
+    expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
     const adminList = await (
       await app.request('/admin/bookings?status=paid', { headers: { 'x-admin-key': adminApiKey } })
@@ -87,7 +87,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const paid = await (await app.request(`/bookings/${b.id}`)).json();
     expect(paid.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
-    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(1);
+    expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
     const adminList = await (
       await app.request('/admin/bookings?status=paid', { headers: { 'x-admin-key': adminApiKey } })
@@ -126,6 +126,6 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const paid = await (await app.request(`/bookings/${b.id}`)).json();
     expect(paid.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
-    expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(1);
+    expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
   });
 });

@@ -2,12 +2,63 @@ import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
-import { quoteSingleTransfer, quoteTrip, quoteShared } from '../services/pricing';
-import type { BookingRepo } from '../db/bookingRepo';
+import {
+  priceSingle,
+  priceTrip,
+  priceShared,
+  quoteSingleTransfer,
+  quoteTrip,
+  type PriceOutcome,
+} from '../services/pricing';
+import { depositCents } from '../quote/extrasDeposit';
+import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
-import type { MapsAdapter } from '../adapters/maps';
+import type { MapsAdapter, DistanceResult } from '../adapters/maps';
+import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+
+// GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
+// flagged ($1 absorbs rounding differences, never a real disagreement).
+const MISMATCH_TOLERANCE_CENTS = 100;
+const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
+
+// One maps lookup per route pair per request: engine pricing and the M8 enrichment share
+// results, so going engine-first doesn't double the billed Google calls.
+function memoizeDistance(maps: MapsAdapter): MapsAdapter {
+  const cache = new Map<string, Promise<DistanceResult | null>>();
+  return {
+    provider: maps.provider,
+    places: (q) => maps.places(q),
+    distance(from, to) {
+      const key = `${from}|${to}`;
+      let hit = cache.get(key);
+      if (!hit) {
+        hit = maps.distance(from, to);
+        cache.set(key, hit);
+      }
+      return hit;
+    },
+  };
+}
+
+// What the booking stores, resolved engine-first (GL-3): the engine price wins whenever it
+// can price; otherwise the customer's quotedTotal, and as a last resort the placeholder
+// quote (API-only callers). Chauffeur trips only collect the deposit now, whatever priced.
+function resolveTotals(
+  outcome: PriceOutcome,
+  quotedTotal: number | undefined,
+  placeholderTotal: number,
+  chauffeur: boolean,
+): { total: number; amountDueNow: number; mismatch: boolean; unpriced: boolean } {
+  if (outcome.priced) {
+    const mismatch =
+      quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
+    return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
+  }
+  const total = quotedTotal ?? placeholderTotal;
+  return { total, amountDueNow: chauffeur ? depositCents(total) : total, mismatch: false, unpriced: true };
+}
 
 export function bookingRoutes(deps: {
   bookings: BookingRepo;
@@ -15,9 +66,35 @@ export function bookingRoutes(deps: {
   adapter: PaymentAdapter;
   departures: DepartureRepo;
   maps: MapsAdapter;
+  conciergeTasks: ConciergeTaskRepo;
 }) {
-  const { bookings, payments, adapter, departures, maps } = deps;
+  const { bookings, payments, adapter, departures, maps, conciergeTasks } = deps;
   const r = new Hono();
+
+  // Flag a booking for ops as a follow_up task. Best-effort: the booking is already
+  // created, so a task hiccup must never fail the request.
+  async function flagForOps(booking: Booking, note: string): Promise<void> {
+    try {
+      await conciergeTasks.create({ bookingId: booking.id, type: 'follow_up', note });
+    } catch (err) {
+      console.error(`concierge task failed for ${booking.reference}:`, err);
+    }
+  }
+
+  async function flagPricing(
+    booking: Booking,
+    resolved: { mismatch: boolean; unpriced: boolean; total: number },
+    quotedTotal: number | undefined,
+  ): Promise<void> {
+    if (resolved.mismatch) {
+      await flagForOps(
+        booking,
+        `price mismatch ${booking.reference}: site quoted ${quotedTotal}¢, engine priced ${resolved.total}¢`,
+      );
+    } else if (resolved.unpriced) {
+      await flagForOps(booking, UNPRICED_NOTE);
+    }
+  }
 
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
@@ -33,11 +110,14 @@ export function bookingRoutes(deps: {
       if (existing) return c.json(existing, 200);
     }
 
-    const { currency, total } = quoteSingleTransfer(parsed.data);
+    // GL-3 — the engine is the pricing truth; the client's quotedTotal is only a fallback.
+    const legMaps = memoizeDistance(maps);
+    const outcome = await priceSingle(parsed.data, legMaps);
+    const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total, false);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
     try {
-      distance = await maps.distance(parsed.data.from, parsed.data.to);
+      distance = await legMaps.distance(parsed.data.from, parsed.data.to);
     } catch {
       distance = null;
     }
@@ -45,13 +125,15 @@ export function bookingRoutes(deps: {
       {
         mode: 'single',
         input: parsed.data,
-        total: parsed.data.quotedTotal ?? total,
-        currency,
+        total: resolved.total,
+        amountDueNow: resolved.amountDueNow,
+        currency: 'USD',
         distanceKm: distance?.km ?? null,
         durationMin: distance?.durationMin ?? null,
       },
       { idempotencyKey: key },
     );
+    await flagPricing(booking, resolved, parsed.data.quotedTotal);
     return c.json(booking, 201);
   });
 
@@ -70,7 +152,15 @@ export function bookingRoutes(deps: {
       if (existing) return c.json(existing, 200);
     }
 
-    const { currency, total } = quoteTrip(parsed.data);
+    // GL-3 — engine-first; chauffeur trips only collect the deposit now (10%, $50 cap).
+    const legMaps = memoizeDistance(maps);
+    const outcome = await priceTrip(parsed.data, legMaps);
+    const resolved = resolveTotals(
+      outcome,
+      parsed.data.quotedTotal,
+      quoteTrip(parsed.data).total,
+      parsed.data.serviceType === 'chauffeur',
+    );
     // M8 — total road distance/duration across the trip's legs (best-effort; null if any
     // leg can't be resolved, since a partial sum would understate the trip).
     const stops = parsed.data.stops;
@@ -78,7 +168,7 @@ export function bookingRoutes(deps: {
     let tripMin: number | null = 0;
     try {
       for (let i = 0; i < stops.length - 1; i++) {
-        const leg = await maps.distance(stops[i], stops[i + 1]);
+        const leg = await legMaps.distance(stops[i], stops[i + 1]);
         if (!leg) {
           tripKm = null;
           tripMin = null;
@@ -95,13 +185,15 @@ export function bookingRoutes(deps: {
       {
         mode: 'trip',
         input: parsed.data,
-        total: parsed.data.quotedTotal ?? total,
-        currency,
+        total: resolved.total,
+        amountDueNow: resolved.amountDueNow,
+        currency: 'USD',
         distanceKm: tripKm === null ? null : Math.round(tripKm),
         durationMin: tripMin === null ? null : Math.round(tripMin),
       },
       { idempotencyKey: key },
     );
+    await flagPricing(booking, resolved, parsed.data.quotedTotal);
     return c.json(booking, 201);
   });
 
@@ -136,7 +228,12 @@ export function bookingRoutes(deps: {
     });
     if (!held) return c.json({ error: 'sold_out' }, 409);
 
-    const { currency, total } = quoteShared(req.seats, corridor.seatPrice);
+    // GL-3 — the corridor DB price is authoritative; the client's quotedTotal is never
+    // stored, only compared and flagged when it disagrees.
+    const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priceShared(
+      req.seats,
+      corridor.seatPrice,
+    );
     const input = {
       corridorId: corridor.id,
       date: req.date,
@@ -145,9 +242,15 @@ export function bookingRoutes(deps: {
       customer: req.customer,
     };
     const booking = await bookings.create(
-      { mode: 'shared', input, total: req.quotedTotal ?? total, currency },
+      { mode: 'shared', input, total, amountDueNow, currency },
       { idempotencyKey: key },
     );
+    if (req.quotedTotal !== undefined && Math.abs(req.quotedTotal - total) > MISMATCH_TOLERANCE_CENTS) {
+      await flagForOps(
+        booking,
+        `price mismatch ${booking.reference}: site quoted ${req.quotedTotal}¢, engine priced ${total}¢`,
+      );
+    }
     return c.json(booking, 201);
   });
 
@@ -160,10 +263,13 @@ export function bookingRoutes(deps: {
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the
   // booking to payment_pending, and returns checkout params. The checkout amount must
-  // equal the booking total — never present a charge that disagrees with the booking.
+  // equal what the booking says is due now (GL-3: the chauffeur deposit, else the total;
+  // pre-GL-3 rows have no amountDueNow and are charged the total) — never present a
+  // charge that disagrees with the booking.
   r.post('/:id/checkout', async (c) => {
     const booking = await bookings.get(c.req.param('id'));
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    const dueNow = booking.amountDueNow ?? booking.total;
 
     const idempotencyKey = `checkout:${booking.id}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
@@ -172,7 +278,7 @@ export function bookingRoutes(deps: {
         bookingId: booking.id,
         provider: adapter.provider,
         orderId: booking.reference,
-        amount: booking.total,
+        amount: dueNow,
         currency: booking.currency,
         idempotencyKey,
       });
@@ -193,7 +299,7 @@ export function bookingRoutes(deps: {
         country: cust.country,
       },
     });
-    if (params.amount !== booking.total) {
+    if (params.amount !== dueNow) {
       return c.json({ error: 'amount_mismatch' }, 409);
     }
     return c.json(params, 200);

@@ -47,4 +47,9 @@ describe('SingleTransferInput', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts known extras and rejects unknown codes (GL-3)', () => {
+    expect(SingleTransferInput.safeParse({ ...valid, extras: ['luggage', 'front'] }).success).toBe(true);
+    expect(SingleTransferInput.safeParse({ ...valid, extras: ['jetpack'] }).success).toBe(false);
+  });
 });

@@ -8,11 +8,13 @@ export interface ConciergeTask {
   bookingId: string;
   type: ConciergeTaskType;
   status: ConciergeTaskStatus;
+  // Optional free-text context for the staff member (GL-3, e.g. a price-mismatch detail).
+  note?: string | null;
   createdAt: string;
 }
 
 export interface ConciergeTaskRepo {
-  create(t: { bookingId: string; type: ConciergeTaskType }): Promise<ConciergeTask>;
+  create(t: { bookingId: string; type: ConciergeTaskType; note?: string }): Promise<ConciergeTask>;
   listByBooking(bookingId: string): Promise<ConciergeTask[]>;
   list(): Promise<ConciergeTask[]>;
 }
@@ -20,12 +22,13 @@ export interface ConciergeTaskRepo {
 export class InMemoryConciergeTaskRepo implements ConciergeTaskRepo {
   private tasks: ConciergeTask[] = [];
 
-  async create(t: { bookingId: string; type: ConciergeTaskType }): Promise<ConciergeTask> {
+  async create(t: { bookingId: string; type: ConciergeTaskType; note?: string }): Promise<ConciergeTask> {
     const task: ConciergeTask = {
       id: randomUUID(),
       bookingId: t.bookingId,
       type: t.type,
       status: 'open',
+      note: t.note ?? null,
       createdAt: new Date().toISOString(),
     };
     this.tasks.push(task);

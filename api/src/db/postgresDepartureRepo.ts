@@ -77,4 +77,18 @@ export class PostgresDepartureRepo implements DepartureRepo {
         }
       : null;
   }
+
+  async releaseSeats(args: {
+    corridorId: string;
+    date: string;
+    time: string;
+    seats: number;
+  }): Promise<void> {
+    // Same row-targeting as holdSeats; greatest() floors at 0 so a stray double release
+    // can never drive the count negative. No row (never held) is a harmless no-op.
+    await this.sql`
+      update shared_departure
+      set seats_booked = greatest(seats_booked - ${args.seats}, 0)
+      where corridor_id = ${args.corridorId} and date = ${args.date} and time = ${args.time}`;
+  }
 }

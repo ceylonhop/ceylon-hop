@@ -3,7 +3,18 @@ import type { Context, Next } from 'hono';
 // Per-IP sliding-window limiter for write endpoints. In-memory is fine: the API runs as a
 // single instance. By default only POST requests count (reads/preflight pass through); pass
 // `methods` to also throttle GETs (e.g. billed read endpoints like autocomplete). Behind
-// Render the real client IP is the first entry of x-forwarded-for.
+// Render the trusted proxy APPENDS the connecting IP to x-forwarded-for, so only the
+// RIGHTMOST entry can be trusted — everything left of it (and x-real-ip) is client-supplied
+// and trivially spoofable (GL-3).
+function clientKey(c: Context): string {
+  const fwd = c.req.header('x-forwarded-for') ?? '';
+  const entries = fwd.split(',').map((s) => s.trim()).filter(Boolean);
+  if (entries.length) return entries[entries.length - 1];
+  // No proxy header (direct connection / tests): the socket address via @hono/node-server.
+  const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
+  return env?.incoming?.socket?.remoteAddress ?? 'unknown';
+}
+
 export function rateLimit(opts: { windowMs: number; max: number; methods?: string[] }) {
   const hits = new Map<string, number[]>();
   const methods = opts.methods ?? ['POST'];
@@ -12,8 +23,7 @@ export function rateLimit(opts: { windowMs: number; max: number; methods?: strin
     if (!methods.includes(c.req.method)) return next();
 
     const now = Date.now();
-    const fwd = c.req.header('x-forwarded-for') ?? '';
-    const ip = fwd.split(',')[0].trim() || c.req.header('x-real-ip') || 'unknown';
+    const ip = clientKey(c);
 
     const recent = (hits.get(ip) ?? []).filter((t) => now - t < opts.windowMs);
     if (recent.length >= opts.max) {

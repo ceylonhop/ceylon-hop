@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
+import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 
 const valid = {
   from: 'Colombo Airport',
@@ -31,8 +32,37 @@ describe('POST /bookings/single', () => {
     const b = await res.json();
     expect(b.reference).toMatch(/^CH-/);
     expect(b.status).toBe('draft');
-    expect(b.total).toBe(5000); // car, 2 adults: 4000 + 1×1000
+    expect(b.total).toBe(5000); // unresolvable route, no quotedTotal → placeholder: 4000 + 1×1000
     expect(b.currency).toBe('USD');
+  });
+
+  it('prices a resolvable route with the engine, due in full now (GL-3)', async () => {
+    const app = createApp();
+    const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.total).toBe(9108); // km 180 → billable 198 → round(198×46)
+    expect(b.amountDueNow).toBe(9108);
+  });
+
+  it('prices payload extras through the engine (GL-3)', async () => {
+    const app = createApp();
+    const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['luggage', 'front'] });
+    const b = await res.json();
+    expect(b.total).toBe(10408); // 9108 + luggage 500 + child seat 800
+  });
+
+  it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
+    const fake = new FakeMapsAdapter();
+    let calls = 0;
+    const counting: MapsAdapter = {
+      provider: 'counting',
+      distance: (f, t) => { calls++; return fake.distance(f, t); },
+      places: (q) => fake.places(q),
+    };
+    const app = createApp({ maps: counting });
+    await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
+    expect(calls).toBe(1); // not 2 (engine + M8 enrichment)
   });
 
   it('enriches the booking with road distance + duration (maps adapter)', async () => {

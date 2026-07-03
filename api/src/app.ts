@@ -94,13 +94,13 @@ export function createApp(deps: AppDeps = {}) {
   });
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
-  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps }));
+  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
-  app.route('/admin', adminRoutes({ bookings, email, notificationLog, adminApiKey }));
+  app.route('/admin', adminRoutes({ bookings, departures, email, notificationLog, adminApiKey }));
   return app;
 }
 

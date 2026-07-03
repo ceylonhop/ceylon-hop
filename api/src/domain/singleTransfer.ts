@@ -21,6 +21,7 @@ export const QuotedTotal = z.number().int().min(100).max(100_000_000).optional()
 
 // The validated shape of a single-transfer booking request. `date`/`time` are optional —
 // an absent value means "flexible, confirm later" (matches the front-end's Decide-later).
+// `extras` are the engine's ExtraCode values (GL-3) — priced server-side, never by the client.
 export const SingleTransferInput = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
@@ -32,6 +33,7 @@ export const SingleTransferInput = z.object({
   bags: z.number().int().min(0),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
+  extras: z.array(z.enum(['sightseeing', 'luggage', 'front', 'flex', 'waiting', 'safari-wait'])).optional(),
 });
 
 export type SingleTransferInput = z.infer<typeof SingleTransferInput>;

@@ -25,6 +25,7 @@ const sample: NewBooking = {
     customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
   },
   total: 5000,
+  amountDueNow: 5000,
   currency: 'USD',
 };
 
@@ -102,6 +103,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
       },
       total: 12000,
+      amountDueNow: 12000,
       currency: 'USD',
     };
     const created = await bookings.create(trip);
@@ -125,6 +127,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
       },
       total: 7000,
+      amountDueNow: 7000,
       currency: 'USD',
     };
     const created = await bookings.create(shared);
@@ -153,6 +156,32 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     >`select seats_booked, seats_total from shared_departure where corridor_id = 'cap5' and date = ${date} and time = 't'`;
     expect(row.seats_booked).toBe(5);
     expect(row.seats_booked).toBeLessThanOrEqual(row.seats_total);
+  });
+
+  it('releases held seats, flooring at zero (GL-3)', async () => {
+    await sql`
+      insert into corridor (id, from_place, to_place, seat_price, seat_capacity)
+      values ('cap5', 'A', 'B', 1000, 5)
+      on conflict (id) do update set seat_capacity = 5`;
+    const date = `r-${Date.now()}`; // a fresh departure each run
+
+    await departures.holdSeats({ corridorId: 'cap5', date, time: 't', seats: 4 });
+    await departures.releaseSeats({ corridorId: 'cap5', date, time: 't', seats: 2 });
+    const [afterRelease] = await sql<
+      { seats_booked: number }[]
+    >`select seats_booked from shared_departure where corridor_id = 'cap5' and date = ${date} and time = 't'`;
+    expect(afterRelease.seats_booked).toBe(2);
+
+    await departures.releaseSeats({ corridorId: 'cap5', date, time: 't', seats: 10 }); // over-release
+    const [floored] = await sql<
+      { seats_booked: number }[]
+    >`select seats_booked from shared_departure where corridor_id = 'cap5' and date = ${date} and time = 't'`;
+    expect(floored.seats_booked).toBe(0); // floored, never negative
+
+    // a departure that was never held is a harmless no-op
+    await expect(
+      departures.releaseSeats({ corridorId: 'cap5', date: `${date}-none`, time: 't', seats: 1 }),
+    ).resolves.toBeUndefined();
   });
 
   it('persists a payment and a concierge task', async () => {

@@ -13,6 +13,7 @@ const sample: NewBooking = {
     customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
   },
   total: 4000,
+  amountDueNow: 4000,
   currency: 'USD',
 };
 

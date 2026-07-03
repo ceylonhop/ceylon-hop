@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 
 const valid = {
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
@@ -22,15 +23,41 @@ async function postTrip(app: ReturnType<typeof createApp>, body: unknown) {
 }
 
 describe('POST /bookings/trip', () => {
-  it('creates a trip draft (201) priced by quoteTrip', async () => {
+  it('creates a trip draft (201) priced by the placeholder when no stop resolves', async () => {
     const app = createApp();
     const res = await postTrip(app, valid);
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.mode).toBe('trip');
     expect(b.status).toBe('draft');
-    expect(b.total).toBe(12000); // 2 legs × (5000 + 1000 van)
+    expect(b.total).toBe(12000); // fallback stub: 2 legs × (5000 + 1000 van)
     expect(b.input.stops).toHaveLength(3);
+  });
+
+  it('prices a resolvable private trip with the engine, due in full now (GL-3)', async () => {
+    const app = createApp();
+    const res = await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.total).toBe(18426); // van legs: CMB→Kandy 10292 + Kandy→Ella 8134
+    expect(b.amountDueNow).toBe(18426);
+  });
+
+  it('prices a resolvable chauffeur trip with the engine and collects only the deposit (GL-3)', async () => {
+    const app = createApp();
+    const res = await postTrip(app, {
+      ...valid,
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
+      nights: [1, 2, 0],
+      vehicleType: 'car',
+      serviceType: 'chauffeur',
+      dates: ['2026-07-20', '2026-07-22'],
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    // 3 days × 3500 + round((222 buffered + 100 idle-min) × 46) = 10500 + 14812
+    expect(b.total).toBe(25312);
+    expect(b.amountDueNow).toBe(2531); // 10% deposit, under the $50 cap
   });
 
   it('rejects an invalid trip (400)', async () => {
@@ -53,6 +80,19 @@ describe('POST /bookings/trip', () => {
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.distanceKm).toBeNull();
+  });
+
+  it('resolves each leg once per request — pricing + enrichment share the billed lookups', async () => {
+    const fake = new FakeMapsAdapter();
+    let calls = 0;
+    const counting: MapsAdapter = {
+      provider: 'counting',
+      distance: (f, t) => { calls++; return fake.distance(f, t); },
+      places: (q) => fake.places(q),
+    };
+    const app = createApp({ maps: counting });
+    await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0] });
+    expect(calls).toBe(2); // one per leg, not doubled by the M8 enrichment
   });
 
   it('records chauffeur days + driver nights', async () => {

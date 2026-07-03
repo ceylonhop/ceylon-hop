@@ -1,4 +1,5 @@
 import type { BookingRepo, Booking } from '../db/bookingRepo';
+import type { DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
 import { sendTripReminder, sendReviewRequest } from './notifications';
@@ -71,4 +72,39 @@ export async function runScheduledNotifications(
   }
 
   return { reminders, reviews };
+}
+
+// GL-3 — an abandoned shared checkout holds real seats. After this long unpaid, the draft
+// is cancelled and its seats go back on sale.
+const STALE_HOLD_MS = 24 * 3600 * 1000;
+
+// Cancel shared bookings stuck in draft/payment_pending for over 24h and free their
+// seats. Pure over (now, repos) like runScheduledNotifications; the cron tick drives it.
+// Per-booking best-effort: one bad row must not strand the rest of the sweep.
+export async function sweepStaleSharedHolds(deps: {
+  bookings: BookingRepo;
+  departures: DepartureRepo;
+  now: Date;
+}): Promise<{ swept: number }> {
+  const { bookings, departures, now } = deps;
+  let swept = 0;
+  for (const status of ['draft', 'payment_pending'] as const) {
+    for (const b of await bookings.list({ status })) {
+      if (b.mode !== 'shared') continue;
+      if (now.getTime() - Date.parse(b.createdAt) <= STALE_HOLD_MS) continue;
+      try {
+        await bookings.setStatus(b.id, 'cancelled');
+        await departures.releaseSeats({
+          corridorId: b.input.corridorId,
+          date: b.input.date,
+          time: b.input.time,
+          seats: b.input.seats,
+        });
+        swept++;
+      } catch (err) {
+        console.error(`stale shared-hold sweep failed for ${b.reference}:`, err);
+      }
+    }
+  }
+  return { swept };
 }
