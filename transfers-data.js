@@ -123,13 +123,13 @@
   }
 
   // ---- Private quote: door-to-door, your own vehicle ----
+  // Engine rate-card parity (owner decision 2026-07-02): billable km = road km + 10%
+  // routing buffer, then a per-km rate with a minimum fare — mirrors api/src/quote/.
   function privateQuote(fromId, toId) {
     const km = roadKm(fromId, toId);
     const real = realLeg(fromId, toId);
-    const carBase = 22, carRate = 0.62;     // sedan, up to 3 pax
-    const vanRate = 0.86;                    // AC van, up to 6 pax
-    const car = Math.max(28, Math.round((carBase + km * carRate) / 1) );
-    const van = Math.max(38, Math.round((carBase + 8 + km * vanRate) / 1));
+    const car = legPrice(km, 'car');         // sedan, up to 3 pax
+    const van = legPrice(km, 'van');         // AC van, up to 6 pax
     return {
       km,
       duration: real ? minToText(real[1]) : durationText(km),
@@ -188,16 +188,19 @@
     if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
-  // per-leg private price by vehicle
+  // per-leg private price by vehicle — the engine formula: +10% km buffer, then a
+  // per-km rate (car $0.46 · van $0.83) with a minimum fare (car $29 · van $50)
   function legPrice(km, veh){
     if(km==null) return null;
-    const car = Math.max(28, Math.round(22 + km*0.62));
-    const van = Math.max(38, Math.round(22 + 8 + km*0.86));
+    const bkm = Math.round(km * 1.10);       // billable km: +10% routing buffer
+    const car = Math.max(29, Math.round(bkm * 0.46));
+    const van = Math.max(50, Math.round(bkm * 0.83));
     return veh==='van' ? van : car;
   }
   // chauffeur-guide: a driver-guide + car stays with the trip. Flat add-on per day.
   const CHAUFFEUR_DAY_FEE = 35;
-  const DEPOSIT_PCT = 0.20;
+  const DEPOSIT_PCT = 0.10;
+  const DEPOSIT_CAP = 50; // USD — deposits are 10% of the total, capped at $50
 
   // full multi-stop quote: an array of typed stop names + vehicle
   function tripQuote(stops, veh){
@@ -220,7 +223,7 @@
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
     resolvePlace, kmBetween, legPrice, tripQuote,
-    CHAUFFEUR_DAY_FEE, DEPOSIT_PCT,
+    CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
 })();

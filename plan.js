@@ -60,8 +60,11 @@ function durationText(km){
   return m>=8 ? `${h}h ${m}m` : `${h}h`;
 }
 function legPrice(km, veh){
-  const car=Math.max(28, Math.round(22+km*0.62));
-  const van=Math.max(38, Math.round(22+8+km*0.86));
+  // engine rate-card parity (owner decision 2026-07-02): +10% km buffer, per-km
+  // rate (car $0.46 · van $0.83), minimum fare (car $29 · van $50)
+  const bkm=Math.round(km*1.10);
+  const car=Math.max(29, Math.round(bkm*0.46));
+  const van=Math.max(50, Math.round(bkm*0.83));
   return veh==='van' ? van : car;
 }
 
