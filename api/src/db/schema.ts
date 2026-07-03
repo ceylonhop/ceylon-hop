@@ -137,20 +137,10 @@ export const sharedRequests = pgTable('shared_request', {
 
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
-export const coordinators = pgTable('coordinators', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  whatsapp: text('whatsapp').notNull(),
-  regions: text('regions').notNull().default(''),
-  active: boolean('active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
-
 export const rideOps = pgTable('ride_ops', {
   bookingId: uuid('booking_id')
     .primaryKey()
     .references(() => bookings.id),
-  coordinatorId: uuid('coordinator_id').references(() => coordinators.id),
   fulfilmentStatus: text('fulfilment_status').notNull().default('paid'),
   vehiclePhotoReceived: boolean('vehicle_photo_received').notNull().default(false),
   customerUpdated: boolean('customer_updated').notNull().default(false),

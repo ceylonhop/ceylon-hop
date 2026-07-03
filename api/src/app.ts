@@ -14,7 +14,6 @@ import { opsRoutes } from './routes/ops';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
-import { InMemoryCoordinatorRepo, type CoordinatorRepo } from './db/coordinatorRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { rateLimit } from './lib/rateLimit';
@@ -29,7 +28,6 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
-  coordinators?: CoordinatorRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
@@ -48,7 +46,6 @@ export function createApp(deps: AppDeps = {}) {
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
-  const coordinators = deps.coordinators ?? new InMemoryCoordinatorRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
@@ -97,7 +94,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route('/webhooks', webhookRoutes({ bookings, payments, adapter, email, conciergeTasks }));
-  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, coordinators, auth: opsAuthCfg }));
+  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
   app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
   app.route('/admin', adminRoutes({ bookings, departures, email, notificationLog, adminApiKey }));

@@ -92,6 +92,13 @@
       "when": 1783168116076,
       "tag": "0012_ops_fulfilment_reshape",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783096489398,
+      "tag": "0013_drop_coordinators",
+      "breakpoints": true
     }
   ]
 }

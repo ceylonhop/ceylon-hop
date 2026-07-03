@@ -5,7 +5,6 @@ import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
-import { PostgresCoordinatorRepo } from './postgresCoordinatorRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
@@ -35,7 +34,6 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let payments: PostgresPaymentRepo;
   let tasks: PostgresConciergeTaskRepo;
   let departures: PostgresDepartureRepo;
-  let coordinators: PostgresCoordinatorRepo;
   let rideOps: PostgresRideOpsRepo;
   let notifLog: PostgresNotificationLogRepo;
   let quotes: PostgresQuoteRepo;
@@ -50,7 +48,6 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     payments = new PostgresPaymentRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
     departures = new PostgresDepartureRepo(sql);
-    coordinators = new PostgresCoordinatorRepo(conn.db);
     rideOps = new PostgresRideOpsRepo(conn.db);
     notifLog = new PostgresNotificationLogRepo(conn.db);
     quotes = new PostgresQuoteRepo(conn.db);
@@ -262,10 +259,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await quotes.patch('00000000-0000-0000-0000-000000000000', { status: 'won' })).toBeNull();
   });
 
-  it('persists ops layer: coordinator + ride_ops status/flags', async () => {
-    const coord = await coordinators.create({ name: 'Nuwan', whatsapp: '+94770', regions: 'South' });
-    expect((await coordinators.get(coord.id))?.name).toBe('Nuwan');
-
+  it('persists ops layer: ride_ops status/flags', async () => {
     const b = await bookings.create(sample);
     const created = await rideOps.getOrCreate(b.id);
     expect(created.fulfilmentStatus).toBe('paid');

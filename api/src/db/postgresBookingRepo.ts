@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
@@ -195,10 +195,15 @@ export class PostgresBookingRepo implements BookingRepo {
     return this.assemble(updated);
   }
 
-  async list(filter?: { status?: BookingStatus }): Promise<Booking[]> {
-    const rows = filter?.status
-      ? await this.db.select().from(bookings).where(eq(bookings.status, filter.status))
-      : await this.db.select().from(bookings);
+  async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
+    let rows: BookingRow[];
+    if (!filter?.status) {
+      rows = await this.db.select().from(bookings);
+    } else if (Array.isArray(filter.status)) {
+      rows = await this.db.select().from(bookings).where(inArray(bookings.status, filter.status));
+    } else {
+      rows = await this.db.select().from(bookings).where(eq(bookings.status, filter.status));
+    }
     return Promise.all(rows.map((r) => this.assemble(r)));
   }
 }

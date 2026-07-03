@@ -3,7 +3,6 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
-import { InMemoryCoordinatorRepo } from '../db/coordinatorRepo';
 
 const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
 const hdr = { 'x-admin-key': 'adminkey', 'content-type': 'application/json' };
@@ -17,25 +16,29 @@ describe('ops bookings search / filter / detail', () => {
   beforeEach(async () => {
     bookings = new InMemoryBookingRepo();
     payments = new InMemoryPaymentRepo();
-    app = createApp({ bookings, payments, rideOps: new InMemoryRideOpsRepo(), coordinators: new InMemoryCoordinatorRepo(), auth, adminApiKey: 'adminkey' });
+    app = createApp({ bookings, payments, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
 
     single = (await bookings.create({
       mode: 'single', total: 12100, amountDueNow: 12100, currency: 'USD',
       input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: '2026-06-22', time: '09:00',
         customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34', country: 'ES' } },
     })).id;
-    await bookings.create({
+    await bookings.setStatus(single, 'payment_pending');
+    await bookings.setStatus(single, 'paid');
+
+    const shared = (await bookings.create({
       mode: 'shared', total: 4000, amountDueNow: 4000, currency: 'USD',
       input: { corridorId: 'cmb-galle', date: '2026-06-25', time: '08:00', seats: 2,
         customer: { firstName: 'Ana', lastName: 'Rocha', email: 'ana@example.com', whatsapp: '+1', country: 'PT' } },
-    });
+    })).id;
+    await bookings.setStatus(shared, 'payment_pending');
 
     // mark the single transfer paid
     const pay = await payments.create({ bookingId: single, provider: 'fake', orderId: 'O1', amount: 12100, currency: 'USD', idempotencyKey: 'k1' });
     await payments.markSucceeded(pay.id);
   });
 
-  it('lists all bookings across modes', async () => {
+  it('lists all queued bookings across modes', async () => {
     const rows = await (await app.request('/admin/ops/bookings', { headers: hdr })).json();
     expect(rows).toHaveLength(2);
     expect(rows.map((r: { mode: string }) => r.mode).sort()).toEqual(['shared', 'single']);
@@ -47,8 +50,8 @@ describe('ops bookings search / filter / detail', () => {
     expect(byRef[single]).toBe('paid');
   });
 
-  it('filters by mode', async () => {
-    const rows = await (await app.request('/admin/ops/bookings?mode=shared', { headers: hdr })).json();
+  it('filters by stage', async () => {
+    const rows = await (await app.request('/admin/ops/bookings?stage=awaiting_payment', { headers: hdr })).json();
     expect(rows).toHaveLength(1);
     expect(rows[0].mode).toBe('shared');
   });

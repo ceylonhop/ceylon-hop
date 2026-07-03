@@ -70,7 +70,7 @@ export interface BookingRepo {
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
   setStatus(id: string, to: BookingStatus): Promise<Booking>;
-  list(filter?: { status?: BookingStatus }): Promise<Booking[]>;
+  list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
 }
 
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
@@ -129,8 +129,10 @@ export class InMemoryBookingRepo implements BookingRepo {
     return updated;
   }
 
-  async list(filter?: { status?: BookingStatus }): Promise<Booking[]> {
+  async list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]> {
     const all = [...this.byId.values()];
-    return filter?.status ? all.filter((b) => b.status === filter.status) : all;
+    if (!filter?.status) return all;
+    const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
+    return all.filter((b) => statuses.includes(b.status));
   }
 }

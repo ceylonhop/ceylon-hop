@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toOpsRow, manifestLine } from './opsView';
+import { toOpsRow } from './opsView';
 import type { Booking } from '../db/bookingRepo';
 
 const base: Booking = {
@@ -16,32 +16,42 @@ describe('opsView', () => {
     expect(row.route).toBe('Colombo Airport → Galle');
     expect(row.pax).toBe(3);
     expect(row.paymentStatus).toBe('paid');
-    expect(row.fulfilmentStatus).toBe('paid'); // default when no ride_ops
+    expect(row.stage).toBe('paid'); // default when no ride_ops
     expect(row.customerFirstName).toBe('Maya');
   });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });
-  it('manifestLine excludes money', () => {
-    const line = manifestLine(base);
-    expect(line).toContain('CH-AAA11');
-    expect(line).toContain('09:00');
-    expect(line).toContain('Colombo Airport → Galle');
-    expect(line).not.toMatch(/\$|121|USD/);
+
+  it('stage is awaiting_payment when bookingStatus is payment_pending, regardless of ride_ops', () => {
+    const row = toOpsRow(
+      { ...base, status: 'payment_pending' },
+      {
+        paid: false,
+        rideOps: {
+          bookingId: 'b1', fulfilmentStatus: 'vehicle_confirmed',
+          vehiclePhotoReceived: false, customerUpdated: false, opsNotes: null,
+          vehicleConfirmedAt: null, updatedAt: '',
+        },
+      },
+    );
+    expect(row.stage).toBe('awaiting_payment');
   });
 
-  it('carries ride_ops state (status, flags) into the row', () => {
+  it('carries ride_ops state (stage, flags) into the row', () => {
     const row = toOpsRow(base, {
       paid: true,
       rideOps: {
         bookingId: 'b1', fulfilmentStatus: 'vehicle_confirmed',
-        vehiclePhotoReceived: true, customerUpdated: true, opsNotes: null,
+        vehiclePhotoReceived: true, customerUpdated: true, opsNotes: 'gate 4421',
         vehicleConfirmedAt: null, updatedAt: '',
       },
     });
-    expect(row.fulfilmentStatus).toBe('vehicle_confirmed');
+    expect(row.stage).toBe('vehicle_confirmed');
     expect(row.vehiclePhotoReceived).toBe(true);
     expect(row.customerUpdated).toBe(true);
+    expect(row.opsNotes).toBe('gate 4421');
   });
 
   const trip: Booking = {
@@ -58,7 +68,6 @@ describe('opsView', () => {
     expect(row.pax).toBe(4);
     expect(row.travelDate).toBe('2026-07-01');
     expect(row.travelTime).toBeNull();
-    expect(manifestLine(trip)).toContain('TBC'); // no per-leg time → TBC
   });
 
   const shared: Booking = {
@@ -74,7 +83,6 @@ describe('opsView', () => {
     expect(row.pax).toBe(3);
     expect(row.travelDate).toBe('2026-07-10');
     expect(row.travelTime).toBe('08:00');
-    expect(manifestLine(shared)).toContain('08:00');
   });
 
   it('exposes booking channel on the ops row', () => {

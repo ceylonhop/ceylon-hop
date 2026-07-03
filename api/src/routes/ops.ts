@@ -4,19 +4,21 @@ import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
-import type { CoordinatorRepo } from '../db/coordinatorRepo';
 import { signSession, verifySession, roleForKey, type OpsRole } from '../lib/opsAuth';
-import { toOpsRow } from '../services/opsView';
+import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 
 export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
-  coordinators: CoordinatorRepo;
   auth: { supportKey: string; founderKey: string; sessionSecret: string; adminApiKey: string };
 }
 
 const COOKIE = 'ch_ops';
+
+// The unified post-payment ops queue: everything still needing a human before it's
+// handed off (payment_pending) or in flight (paid, with ride_ops carrying the stage).
+const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
 
 export function opsRoutes(deps: OpsDeps) {
   const r = new Hono<{ Variables: { role: OpsRole } }>();
@@ -53,21 +55,27 @@ export function opsRoutes(deps: OpsDeps) {
   });
 
   r.get('/bookings', async (c) => {
-    const status = c.req.query('status'); const mode = c.req.query('mode');
-    const date = c.req.query('date'); const q = (c.req.query('q') ?? '').toLowerCase();
-    const all = await deps.bookings.list(status ? { status: status as never } : undefined);
+    const stage = c.req.query('stage'); const date = c.req.query('date');
+    const q = (c.req.query('q') ?? '').toLowerCase();
+    const all = await deps.bookings.list({ status: [...QUEUE_STATUSES] });
     const ops = await deps.rideOps.listByBookingIds(all.map((b) => b.id));
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
-    const rows = [];
+    const rows: OpsBookingRow[] = [];
     for (const b of all) {
-      if (mode && b.mode !== mode) continue;
       const paid = (await deps.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded');
       const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid });
+      if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;
       rows.push(row);
     }
-    rows.reverse(); // newest-first (list() returns insertion order)
+    // travelDate ascending, nulls last
+    rows.sort((a, b) => {
+      if (a.travelDate === b.travelDate) return 0;
+      if (a.travelDate === null) return 1;
+      if (b.travelDate === null) return -1;
+      return a.travelDate < b.travelDate ? -1 : 1;
+    });
     return c.json(rows);
   });
 
@@ -95,38 +103,6 @@ export function opsRoutes(deps: OpsDeps) {
       opsNotes: z.string().nullable().optional(),
     }).parse(await c.req.json());
     return c.json(await deps.rideOps.setFlags(c.req.param('id'), body));
-  });
-
-  // ---- daily rides, coordinators, manifest ----
-  function resolveDate(q: string | undefined): string {
-    if (q === 'today' || !q) return new Date().toISOString().slice(0, 10);
-    if (q === 'tomorrow') { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); }
-    return q;
-  }
-
-  async function rowsForDate(date: string) {
-    const all = await deps.bookings.list();
-    const ops = await deps.rideOps.listByBookingIds(all.map((b) => b.id));
-    const opsById = new Map(ops.map((o) => [o.bookingId, o]));
-    const out: { b: (typeof all)[number]; row: ReturnType<typeof toOpsRow> }[] = [];
-    for (const b of all) {
-      const paid = (await deps.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded');
-      const row = toOpsRow(b, { rideOps: opsById.get(b.id) ?? null, paid });
-      if (row.travelDate === date) out.push({ b, row });
-    }
-    return out;
-  }
-
-  r.get('/rides', async (c) => {
-    const date = resolveDate(c.req.query('date'));
-    const rows = (await rowsForDate(date)).map((x) => x.row);
-    return c.json({ date, rows });
-  });
-
-  r.get('/coordinators', async (c) => c.json(await deps.coordinators.list()));
-  r.post('/coordinators', async (c) => {
-    const body = z.object({ name: z.string().min(1), whatsapp: z.string().min(1), regions: z.string().optional() }).parse(await c.req.json());
-    return c.json(await deps.coordinators.create(body), 201);
   });
 
   return r;
