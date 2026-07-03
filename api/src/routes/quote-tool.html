@@ -937,7 +937,13 @@ async function errPayload(res) {
 // V9: one-shot flag so a 401 during autocomplete doesn't spam a toast per keystroke.
 var _authToastShown = false;
 
+// Client-side cache of autocomplete results (each query is a billed Google round-trip;
+// operators re-type and backtrack constantly, so caching makes repeats instant and stops
+// the dropdown feeling laggy / flickering when a slow response lands after a re-render).
+var _placeCache = {};
 async function apiPlaces(q) {
+  var key = (q || '').trim().toLowerCase();
+  if (_placeCache[key]) return _placeCache[key];
   try {
     var r = await api('/admin/quote/places?q=' + encodeURIComponent(q));
     if (!r.ok) {
@@ -949,7 +955,9 @@ async function apiPlaces(q) {
       return [];
     }
     var d = await jsonOrNull(r);
-    return (d && d.places) ? d.places : [];
+    var places = (d && d.places) ? d.places : [];
+    if (places.length) _placeCache[key] = places; // cache hits only; let empties retry
+    return places;
   } catch (e) { return []; }
 }
 
