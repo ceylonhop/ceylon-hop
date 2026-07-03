@@ -45,6 +45,27 @@ describe('rate limiting (booking writes)', () => {
       expect(r.status).toBe(404); // GET passes through, never 429
     }
   });
+
+  // GL-3 — only the RIGHTMOST x-forwarded-for entry is appended by the trusted proxy
+  // (Render); everything left of it is client-supplied and trivially spoofable.
+  it('keys on the rightmost forwarded entry — spoofed leftmost hops cannot evade the limit', async () => {
+    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } });
+    expect((await post(app, 'spoof-1, 8.8.8.8')).status).toBe(201);
+    expect((await post(app, 'spoof-2, 8.8.8.8')).status).toBe(429); // same trusted hop → same bucket
+    expect((await post(app, 'spoof-2, 7.7.0.1')).status).toBe(201); // a genuinely different client
+  });
+
+  it('ignores the spoofable x-real-ip header — unattributable requests share one bucket', async () => {
+    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } });
+    const hit = (realIp: string) =>
+      app.request('/bookings/single', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-real-ip': realIp },
+        body: JSON.stringify(body),
+      });
+    expect((await hit('1.1.1.1')).status).toBe(201);
+    expect((await hit('2.2.2.2')).status).toBe(429); // rotating x-real-ip buys nothing
+  });
 });
 
 describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', () => {
