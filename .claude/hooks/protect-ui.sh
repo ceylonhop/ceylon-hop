@@ -4,17 +4,41 @@
 # Reads the tool-call JSON on stdin; exit 2 blocks the call and feeds stderr back.
 
 input="$(cat)"
-path="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);process.stdout.write((j.tool_input&&j.tool_input.file_path)||"")}catch(e){process.stdout.write("")}})')"
 
-# Anything under these trees is fair game — never blocked.
-case "$path" in
-  */api/*|*/docs/*|*/.claude/*|*/.github/*) exit 0 ;;
+# Canonicalise the target to a repo-relative, lowercased path so path tricks can't
+# slip a frozen file past the match. We realpath BOTH the cwd and the target's
+# deepest existing ancestor (re-appending any not-yet-created tail), so symlinks
+# into the repo — including a symlinked cwd — resolve to the real frozen path.
+# "./index.html", "trip/../index.html", "docs/../index.html", "//index.html",
+# "Index.html" (APFS is case-insensitive), and "<symlink>/index.html" all normalise
+# to "index.html". Paths outside the repo come back starting with "..".
+rel="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const path=require("path"),fs=require("fs");let j;try{j=JSON.parse(d)}catch(e){process.stdout.write("__ERR__");return}const fp=(j.tool_input&&j.tool_input.file_path)||"";if(!fp){process.stdout.write("");return}try{const cwd=fs.realpathSync(process.cwd());let p=path.resolve(cwd,fp),tail=[];for(;;){try{p=fs.realpathSync(p);break}catch(e){tail.unshift(path.basename(p));const par=path.dirname(p);if(par===p)break;p=par}}const rel=path.relative(cwd,path.join(p,...tail));process.stdout.write(rel.toLowerCase())}catch(e){process.stdout.write("__ERR__")}})' 2>/dev/null)"
+
+# Fail closed if the resolver saw a path but could not canonicalise it.
+if [ "$rel" = "__ERR__" ]; then
+  echo "BLOCKED: protect-ui could not resolve the edit path; failing closed." >&2
+  exit 2
+fi
+
+# Empty (no file path — not a file edit) or outside the repo: not ours to guard.
+case "$rel" in
+  ""|..|../*) exit 0 ;;
 esac
 
-base="$(basename "$path")"
-case "$base" in
-  *.html|site.css|favicon.svg|image-slots.state.json|site.js|booking.js|plan.js|search.js|datepicker.js|image-slot.js|tours-data.js|transfers-data.js|routes-data.js|tweaks.js)
-    echo "BLOCKED: '$base' is a frozen front-end / live-site file. The UI is frozen (see CLAUDE.md rule 3). If this is the M7 wiring step, a human must make this change." >&2
+# These trees are always writable.
+case "$rel" in
+  api/*|docs/*|.claude/*|.github/*) exit 0 ;;
+esac
+
+# The frozen live-site surface — the EXISTING root files ONLY (M16 Step 0,
+# 2026-07-02). New SEO html (route pages under trip/, redirect stubs, and
+# terms/privacy/404) is intentionally allowed. To edit an existing page, use the
+# owner-authorized unfreeze + the 'allow-ui-change' PR label (see M16 PR3).
+case "$rel" in
+  index.html|about.html|blog.html|booking.html|plan.html|search.html|tour.html|tours.html|why.html|_ops-preview.html|\
+  site.css|favicon.svg|image-slots.state.json|\
+  booking.js|datepicker.js|image-slot.js|plan.js|routes-data.js|search.js|site.js|tours-data.js|transfers-data.js|tweaks.js)
+    echo "BLOCKED: '$rel' is a frozen front-end / live-site file (CLAUDE.md rule 3). New SEO files are allowed; to edit an existing page use the owner-authorized unfreeze + 'allow-ui-change' label." >&2
     exit 2 ;;
 esac
 

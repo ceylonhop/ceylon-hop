@@ -17,12 +17,37 @@ const TYPES = {
   '.webp': 'image/webp',
 };
 
+// Resolve a request path to a file the way GitHub Pages does: exact file →
+// directory index → extensionless ".html". Lets the e2e suite exercise clean
+// URLs like /trip/kandy-to-ella/ (route pages) and old /trip/foo/ redirect stubs.
+function resolve(rel) {
+  const base = path.join(ROOT, path.normalize(rel));
+  if (!base.startsWith(ROOT)) return null;
+  const candidates = [];
+  if (rel.endsWith('/')) {
+    candidates.push(path.join(base, 'index.html'));
+  } else if (path.extname(base)) {
+    candidates.push(base);
+  } else {
+    candidates.push(base + '.html', path.join(base, 'index.html'));
+  }
+  for (const c of candidates) {
+    try { if (fs.statSync(c).isFile()) return c; } catch { /* try next */ }
+  }
+  return null;
+}
+
 http.createServer((req, res) => {
   let rel = decodeURIComponent(req.url.split('?')[0]);
   if (rel === '/') rel = '/index.html';
-  const filePath = path.join(ROOT, path.normalize(rel));
-  if (!filePath.startsWith(ROOT)) {
-    res.writeHead(403).end('Forbidden');
+  const filePath = resolve(rel);
+  if (!filePath) {
+    // Serve the branded 404 page (GitHub Pages behaviour) when it exists.
+    const notFound = path.join(ROOT, '404.html');
+    fs.readFile(notFound, (err, data) => {
+      if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found'); return; }
+      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' }).end(data);
+    });
     return;
   }
   fs.readFile(filePath, (err, data) => {
