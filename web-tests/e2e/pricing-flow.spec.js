@@ -11,11 +11,12 @@ test('price holds at the quoted amount on load (no re-price from the pre-filled 
 });
 
 test('re-prices from real distance after the customer picks a new drop-off', async ({ page }) => {
-  await gotoBooking(page, { routeKm: 200 }); // legPrice(200,'car') = $146
+  // legPrice(200,'car') = max(29, round(round(200×1.10) × 0.46)) = round(220 × 0.46) = $101
+  await gotoBooking(page, { routeKm: 200 });
   await expect(page.locator('#sum-total')).toHaveText('$121');
 
   await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna');
 
-  await expect(page.locator('#sum-total')).toHaveText('$146');
+  await expect(page.locator('#sum-total')).toHaveText('$101');
   await expect(page.locator('#sum-name')).toContainText('Jaffna Result 1');
 });

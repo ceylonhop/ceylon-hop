@@ -23,13 +23,16 @@ describe('roadKm (distance basis for pricing)', () => {
 });
 
 describe('privateQuote (the fare customers see)', () => {
-  it('prices car/van from real distance with the agreed formula', () => {
+  it('prices car/van from real distance with the engine rate-card formula', () => {
     const q = T.privateQuote('cmb-airport', 'ella');
     expect(q.km).toBe(335);
-    expect(q.car).toBe(carFare(335)); // 230
-    expect(q.van).toBe(vanFare(335)); // 318
-    expect(q.car).toBe(230);
-    expect(q.van).toBe(318);
+    // billableKm = round(335 × 1.10) = round(368.5) = 369
+    // car = max(29, round(369 × 0.46)) = round(169.74) = 170
+    // van = max(50, round(369 × 0.83)) = round(306.27) = 306
+    expect(q.car).toBe(carFare(335)); // 170
+    expect(q.van).toBe(vanFare(335)); // 306
+    expect(q.car).toBe(170);
+    expect(q.van).toBe(306);
   });
 
   it('van is always pricier than car', () => {
@@ -46,14 +49,17 @@ describe('privateQuote (the fare customers see)', () => {
 
   it('honours the minimum fare floors on ultra-short hops', () => {
     const q = T.privateQuote('weligama', 'mirissa'); // 7km
-    expect(q.car).toBe(28); // floor
-    expect(q.van).toBe(38); // floor
+    // billableKm = round(7 × 1.10) = 8
+    // car raw = round(8 × 0.46) = round(3.68) = 4  → $29 floor
+    // van raw = round(8 × 0.83) = round(6.64) = 7  → $50 floor
+    expect(q.car).toBe(29); // floor
+    expect(q.van).toBe(50); // floor
   });
 
-  // Regression guard for this session's fix: hill-country must not collapse back to
-  // the haversine estimate that under-priced it ($134).
+  // Regression guard: hill-country must not collapse back to the haversine estimate
+  // (~181km), which would under-price it to ~$92; the real 335km drive prices at $170.
   it('REGRESSION: CMB->Ella is priced for the real 335km mountain drive', () => {
-    expect(T.privateQuote('cmb-airport', 'ella').car).toBeGreaterThanOrEqual(200);
+    expect(T.privateQuote('cmb-airport', 'ella').car).toBeGreaterThanOrEqual(150);
   });
 });
 
@@ -91,6 +97,15 @@ describe('tripQuote (multi-stop)', () => {
   it('van total exceeds car total', () => {
     const stops = ['cmb-airport', 'kandy', 'ella'];
     expect(T.tripQuote(stops, 'van').total).toBeGreaterThan(T.tripQuote(stops, 'car').total);
+  });
+});
+
+describe('chauffeur + deposit constants (engine parity)', () => {
+  it('deposit is 10% capped at $50, chauffeur day fee stays $35', () => {
+    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 3500
+    expect(T.DEPOSIT_PCT).toBe(0.10);
+    expect(T.DEPOSIT_CAP).toBe(50);
+    expect(T.CHAUFFEUR_DAY_FEE).toBe(35);
   });
 });
 

@@ -26,5 +26,9 @@ export const PLACE_IDS = [
 
 // Pricing formulas mirrored from transfers-data.js — the tests assert the
 // shipped functions match these, so a silent formula drift is caught.
-export const carFare = (km) => Math.max(28, Math.round(22 + km * 0.62));
-export const vanFare = (km) => Math.max(38, Math.round(30 + km * 0.86));
+// Engine rate-card parity (owner decision 2026-07-02, api/src/quote/rateCard.ts):
+//   billableKm = round(km × 1.10)   — +10% routing buffer
+//   fare       = max(floor, round(billableKm × rate))
+//   car: $0.46/km, $29 floor · van: $0.83/km, $50 floor
+export const carFare = (km) => Math.max(29, Math.round(Math.round(km * 1.10) * 0.46));
+export const vanFare = (km) => Math.max(50, Math.round(Math.round(km * 1.10) * 0.83));
