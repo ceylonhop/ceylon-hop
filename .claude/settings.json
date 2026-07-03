@@ -53,7 +53,10 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash .claude/hooks/protect-ui.sh" }
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/protect-ui.sh"
+          }
         ]
       }
     ]

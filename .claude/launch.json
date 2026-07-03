@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "ceylon-hop-api", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "api", "run", "dev"], "port": 8787 },
+    { "name": "ceylon-hop-booking", "runtimeExecutable": "node", "runtimeArgs": ["serve-booking.js"], "port": 4173 }
+  ]
+}
