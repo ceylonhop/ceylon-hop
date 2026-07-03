@@ -26,11 +26,19 @@ describe('redirects', () => {
     const tripTargets = map.filter(m => /^\/trip\/.+\//.test(m.to));
     expect(tripTargets.length).toBeGreaterThan(8);
   });
-  it('emits a Cloudflare CSV with a 301 row per mapping', () => {
+  it('emits a header-less Cloudflare CSV (scheme-less source) with a 301 row per mapping', () => {
     const csv = out.get('docs/cloudflare-redirects.csv');
-    expect(csv).toMatch(/^source,target,status/);
-    expect(csv.trim().split('\n').length).toBe(map.length + 1); // header + rows
-    expect(csv).toContain('https://ceylonhop.com/trip/kandy_to_ella/,https://ceylonhop.com/trip/kandy-to-ella/,301');
+    // Cloudflare Bulk Redirects forbids a header row.
+    expect(csv).not.toMatch(/^source,target,status/);
+    const rows = csv.trim().split('\n');
+    expect(rows.length).toBe(map.length);
+    expect(rows[0]).toMatch(/^ceylonhop\.com\//); // scheme-less source matches http+https in one hop
+    expect(csv).toContain('ceylonhop.com/trip/kandy_to_ella/,https://ceylonhop.com/trip/kandy-to-ella/,301');
+  });
+  it('island-loop tours redirect to the indexable /tours.html, never a noindex page', () => {
+    const island = map.filter(m => /island_loop|island-loop/.test(m.from));
+    expect(island.length).toBe(4);
+    for (const m of island) expect(m.to, m.from).toBe('/tours.html');
   });
   it('old underscore /trip/ stubs never collide with new hyphen route dirs', () => {
     const stubDirs = map.map(m => m.from);

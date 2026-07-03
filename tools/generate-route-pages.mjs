@@ -44,7 +44,7 @@ function faqItems(from, to, q, shared) {
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${q.car} and an air-conditioned van (up to 6 people) from $${q.van}, fixed and door to door — the price you see is the price you pay.${shared ? ` A daily shared seat is from $${shared.seat} per person.` : ''}`],
     shared
-      ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
+      ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel.replace(/\s*→\s*/g, '–')} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
       : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest daily service.`],
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
@@ -92,8 +92,11 @@ function routePage(T, content, from, to, forward) {
   const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2 });
   const p = '../../';
 
-  const title = `${fromName} to ${toName} — private transfer & shared ride | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price (${q.km} km, about ${q.duration}), door to door.${shared ? ` Or share a daily seat from $${shared.seat}.` : ''} Rated 5.0 on Tripadvisor.`;
+  // Title stays private-only (no "& shared ride") so private-only routes never
+  // promise a shared seat in the SERP; also keeps titles shorter. The shared option
+  // lives in the body/description where it can be stated accurately per route.
+  const title = `${fromName} to ${toName} — private transfer | Ceylon Hop`;
+  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a daily seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
@@ -146,7 +149,7 @@ ${header}
     <div class="wrap">
       <nav class="route-crumbs" aria-label="Breadcrumb" style="color:rgba(255,255,255,.8)"><a href="${p}index.html" style="color:inherit">Home</a> · <a href="${p}trip/" style="color:inherit">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
       <h1>${esc(fromName)} to ${esc(toName)}</h1>
-      <p class="sub">Private transfer &amp; shared ride — ${q.km} km, about ${q.duration} door to door.</p>
+      <p class="sub">Private transfer${shared ? ' &amp; shared ride' : ''} — ${q.km} km, about ${q.duration} door to door.</p>
       <div class="price-chips">${priceChips(q, shared)}</div>
       <div class="route-cta">
         <a class="btn btn-cta" href="${p}search.html?from=${from}&to=${to}">See prices &amp; book</a>

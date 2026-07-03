@@ -1,8 +1,7 @@
 User-agent: *
 Allow: /
 
-# Param-driven pages are canonicalised elsewhere and add no crawl value.
-Disallow: /search.html
-Disallow: /booking.html
+# search.html / booking.html / tour.html use `noindex, follow` in-page — they are
+# intentionally left crawlable so Google can see the noindex (a Disallow would hide it).
 
 Sitemap: https://ceylonhop.com/sitemap.xml

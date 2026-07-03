@@ -6,20 +6,21 @@ import { ROOT } from '../../tools/generate-route-pages.mjs';
 const read = p => readFileSync(join(ROOT, p), 'utf8');
 
 describe('site plumbing', () => {
-  it('robots allows crawling, blocks param pages, and points at the sitemap', () => {
+  it('robots allows crawling (no Disallow — noindex needs pages crawlable) and points at the sitemap', () => {
     const r = read('robots.txt');
     expect(r).toMatch(/User-agent:\s*\*/);
     expect(r).toMatch(/Allow:\s*\//);
-    expect(r).toContain('Disallow: /search.html');
-    expect(r).toContain('Disallow: /booking.html');
+    expect(r).not.toMatch(/^Disallow:/m); // a real Disallow would hide the in-page noindex from Google
     expect(r).toContain('Sitemap: https://ceylonhop.com/sitemap.xml');
   });
-  it('404 page is branded, noindex, and links home + /trip/', () => {
+  it('404 page is branded, noindex, links home + /trip/, and self-heals on the github.io project path', () => {
     const h = read('404.html');
     expect(h).toContain('Ceylon Hop');
     expect(h).toMatch(/name="robots"[^>]*noindex/);
     expect(h).toContain('href="/trip/"');
     expect(h).toContain('href="/"');
+    // root-absolute assets need a <base> on the github.io project path (served at any depth)
+    expect(h).toContain("endsWith('github.io')");
   });
   it('terms and privacy exist, self-canonical to the apex, in site chrome', () => {
     for (const slug of ['terms', 'privacy']) {

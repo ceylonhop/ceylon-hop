@@ -55,8 +55,11 @@ export function generateRedirects() {
     out.set(stubPath(from), stubHtml(to));
   }
 
-  const csv = ['source,target,status',
-    ...map.map(({ from, to }) => `${ORIGIN}${from},${ORIGIN}${to},301`)].join('\n') + '\n';
+  // Cloudflare Bulk Redirects CSV: positional columns, NO header row
+  // (developers.cloudflare.com/rules/url-forwarding/bulk-redirects/reference/csv-file-format/).
+  // Scheme-less sources match both http and https in one hop, per Cloudflare's examples.
+  const HOST = ORIGIN.replace(/^https?:\/\//, '');
+  const csv = map.map(({ from, to }) => `${HOST}${from},${ORIGIN}${to},301`).join('\n') + '\n';
   out.set('docs/cloudflare-redirects.csv', csv);
   return out;
 }

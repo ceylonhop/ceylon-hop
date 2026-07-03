@@ -4,26 +4,23 @@
 # Reads the tool-call JSON on stdin; exit 2 blocks the call and feeds stderr back.
 
 input="$(cat)"
-path="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);process.stdout.write((j.tool_input&&j.tool_input.file_path)||"")}catch(e){process.stdout.write("")}})')"
 
-# Normalize to a repo-relative path (the hook runs with cwd = project root, and
-# the tool passes an absolute file_path). This lets us protect the EXISTING root
-# files by exact path while allowing new nested pages that share a basename —
-# e.g. root index.html stays frozen, but trip/<slug>/index.html is permitted.
-rel="${path#"$PWD"/}"
+# Canonicalise the target to a repo-relative, lowercased path so path tricks can't
+# slip a frozen file past the match: "./index.html", "trip/../index.html",
+# "docs/../index.html", "//index.html", and "Index.html" (APFS is case-insensitive)
+# all normalise to "index.html". Paths outside the repo come back starting with "..".
+rel="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);const path=require("path"),fs=require("fs");let cwd=process.cwd();try{cwd=fs.realpathSync(cwd)}catch(e){}const fp=(j.tool_input&&j.tool_input.file_path)||"";if(!fp){process.stdout.write("");return}const rel=path.relative(cwd,path.resolve(cwd,fp));process.stdout.write(rel.toLowerCase())}catch(e){process.stdout.write("")}})')"
 
-# Anything under these trees is fair game — never blocked.
+# Outside the repo (or unparseable) — not ours to guard.
+case "$rel" in
+  ""|..|../*) exit 0 ;;
+esac
+
+# These trees are always writable.
 case "$rel" in
   api/*|docs/*|.claude/*|.github/*) exit 0 ;;
 esac
-case "$path" in
-  */api/*|*/docs/*|*/.claude/*|*/.github/*) exit 0 ;;
-esac
 
-# The frozen live-site surface — the EXISTING root files ONLY (M16 Step 0,
-# 2026-07-02). New SEO html (route pages under trip/, redirect stubs, and
-# terms/privacy/404) is intentionally allowed. PR3's edits to the existing pages
-# use the owner-authorized unfreeze + the 'allow-ui-change' PR label.
 # The frozen live-site surface — the EXISTING root files ONLY (M16 Step 0,
 # 2026-07-02). New SEO html (route pages under trip/, redirect stubs, and
 # terms/privacy/404) is intentionally allowed. To edit an existing page, use the

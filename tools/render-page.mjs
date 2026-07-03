@@ -16,6 +16,12 @@ export function renderStandalone({ title, description, canonicalPath = null, rob
 <meta property="og:url" content="${ORIGIN}${canonicalPath}">
 <meta property="og:site_name" content="Ceylon Hop">\n`
     : '';
+  // Absolute-path pages (404) are served at any depth. On the apex, root-absolute
+  // hrefs resolve fine; on the github.io PROJECT path they'd resolve outside
+  // /ceylon-hop/, so inject a <base> there. Must run before the stylesheet link.
+  const baseFix = absolute
+    ? `<script>if(location.hostname.endsWith('github.io'))document.write('<base href="/'+location.pathname.split('/')[1]+'/">')</script>\n`
+    : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,7 +29,7 @@ export function renderStandalone({ title, description, canonicalPath = null, rob
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <meta name="description" content="${description.replace(/"/g, '&quot;')}">
-${robotsTag}${canonical}${og}${headAssets}
+${robotsTag}${baseFix}${canonical}${og}${headAssets}
 ${style ? `<style>${style}</style>\n` : ''}</head>
 <body>
 ${header}

@@ -39,7 +39,7 @@
       "intro": "Just under three hours that climb from sea-level coconut groves to Kandy's lake: your driver meets you in arrivals and heads inland via Kegalle, with Pinnawala's elephants an easy stop en route. Go private for door-to-door ease, or take a cheaper seat on the daily shared shuttle into the Cultural Triangle.",
       "highlights": [
         "Pinnawala's elephants, an easy detour near Kegalle",
-        "Bible Rock views from the Kadugannawa climb",
+        "Bible Rock views at the Kadugannawa pass",
         "Temple of the Sacred Tooth Relic beside Kandy Lake",
         "Royal Botanic Gardens at Peradeniya, just before town"
       ],
@@ -49,7 +49,7 @@
       "intro": "Straight from the arrivals hall into the Cultural Triangle: the road runs through Kurunegala's coconut country before opening onto dry-zone plains, with Dambulla's cave temples a natural first stop before Sigiriya rock rises ahead. Book private for stops on demand, or split the cost on the daily shared run into the Cultural Triangle.",
       "highlights": [
         "Dambulla's painted cave temples, right on the route",
-        "First glimpse of Sigiriya rock across the plains",
+        "Sigiriya rock rising from the dry-zone plains",
         "Coconut-triangle scenery around Kurunegala",
         "Pidurangala rock for a sunrise climb",
         "Seasonal elephant gatherings at Minneriya nearby"
@@ -112,7 +112,7 @@
         "Coconut Triangle plantations around Giriulla and Kurunegala",
         "Athugala, the elephant-shaped rock above Kurunegala",
         "Dambulla's UNESCO-listed cave temples en route",
-        "First sight of Sigiriya rising sheer from the plains",
+        "Sigiriya rising sheer from the plains",
         "Minneriya's elephants a short drive beyond"
       ],
       "back": "Sigiriya to Negombo makes a tidy last leg before a flight: 148 km, about 3 hours 15 minutes, with time for Dambulla's caves on the way out if you leave after breakfast."
@@ -166,8 +166,8 @@
         "Dambulla's painted cave temples, just off the road",
         "Nalanda Gedige, an ancient stone shrine at the island's centre",
         "Spice gardens around Matale for cinnamon and pepper",
-        "Aluvihare Rock Temple on the final approach",
-        "Arrive beside Kandy Lake and the Temple of the Sacred Tooth"
+        "Aluvihare Rock Temple near Matale",
+        "Kandy Lake and the Temple of the Sacred Tooth"
       ],
       "back": "Northbound, you trade Kandy's hill air for dry-zone plains: down past Matale and through Dambulla's junction bustle, with Sigiriya's rock rising ahead in the final half hour."
     },
@@ -177,8 +177,8 @@
         "Ramboda Falls tumbling beside the A5",
         "Tea factory tours between Pussellawa and Nuwara Eliya",
         "Option to join the famous hill train for the last stretch",
-        "Ella Gap views as you descend into town",
-        "Nine Arch Bridge a short tuk-tuk ride from your drop-off"
+        "Ella Gap views on the hill road",
+        "Nine Arch Bridge a short tuk-tuk ride from Ella"
       ],
       "back": "Ella to Kandy reverses the climb: out through the Gap, up past Nuwara Eliya's tea terraces, then the long green descent to the lake city. Around four hours, with waterfall stops on request."
     },
@@ -188,21 +188,21 @@
         "Ramboda Falls and its roadside viewpoint",
         "Tea estates stacked above the road at Pussellawa",
         "Factory tastings at working estates along the A5",
-        "Gregory Lake and Victoria Park on arrival",
+        "Gregory Lake and Victoria Park in Nuwara Eliya",
         "Nuwara Eliya's 'Little England' post office and racecourse"
       ],
       "back": "Downhill from Little England, the return to Kandy unwinds the same hairpins in around two and a half hours — mist lifting off the valleys early on, tea pluckers at work beside the road."
     },
     "nuwara-eliya|ella": {
-      "intro": "The shortest hop in the hills, and one of the prettiest: 54 km, well under two hours, dropping from Nuwara Eliya's cool plateau past Hakgala and the vegetable terraces of Welimada into Ella's warmer air. A private car stops wherever you like; a daily shared hill-country seat is the budget option.",
+      "intro": "The shortest hop in the hills, and one of the prettiest: 54 km, just under two hours, dropping from Nuwara Eliya's cool plateau past Hakgala and the vegetable terraces of Welimada into Ella's warmer air. A private car stops wherever you like; a daily shared hill-country seat is the budget option.",
       "highlights": [
         "Seetha Amman Temple, tied to the Ramayana legend",
         "Hakgala Botanical Garden clinging to the mountainside",
         "Welimada's patchwork of vegetable farms",
-        "Ella Gap opening up on the final descent",
-        "Rawana Falls a short ride beyond town"
+        "Ella Gap views on the mountain road",
+        "Rawana Falls a short ride from Ella"
       ],
-      "back": "Climbing from Ella back to Nuwara Eliya takes well under two hours: through Welimada's farmland, past Hakgala's gardens, arriving as the temperature drops and the pines take over."
+      "back": "Climbing from Ella back to Nuwara Eliya takes just under two hours: through Welimada's farmland, past Hakgala's gardens, arriving as the temperature drops and the pines take over."
     },
     "ella|yala": {
       "intro": "Leave the tea country at the Ella Gap and watch the road spill downhill through hairpins into hot dry-zone plains — 126 km, about 3 hours 18 minutes. A private car can pause at Rawana Falls or Buduruwagala's rock Buddhas en route; a cheaper shared seat heads to Yala daily at 8:00am.",
@@ -227,7 +227,7 @@
     "ella|mirissa": {
       "intro": "Ella to Mirissa trades thousand-metre tea country for a palm-backed bay: the road drops to Wellawaya, then runs fast across the southern plains — 173 km, about 3 hours — to Mirissa's sweep of sand. Go private to break the trip where you fancy, or take the daily 8:30am shared ride to the south coast.",
       "highlights": [
-        "Rawana Falls on the descent through the Ella Gap",
+        "Rawana Falls in the Ella Gap",
         "Buffalo-curd and treacle stalls along the southern plains",
         "Coconut Tree Hill at the eastern end of Mirissa beach",
         "Blue-whale boats leaving Mirissa harbour at dawn (November to April)"
@@ -258,9 +258,9 @@
     "galle|ella": {
       "intro": "Two Sri Lankas in one afternoon. From Galle's ramparts the expressway carries you across the deep south, then the road turns inland near Hambantota, crosses dry scrubland to Wellawaya and climbs the Ella Gap — 198 km in about 3 hours 18 minutes. No shared ride runs here, so a door-to-door private car is the way.",
       "highlights": [
-        "A fast expressway leg out of Galle",
+        "A fast expressway leg across the deep south",
         "Buduruwagala's seven rock-cut figures, a short detour near Wellawaya",
-        "Rawana Falls beside the final climb into Ella",
+        "Rawana Falls in the Ella Gap",
         "Ella Gap hairpins with views back over the plains"
       ],
       "back": "It's a long descent to the coast: out through the Ella Gap, across the plains to the expressway, and into Galle in time for sunset on the ramparts — about 3 hours 18 minutes."
