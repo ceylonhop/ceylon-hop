@@ -15,13 +15,32 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
-import type { MapsAdapter } from '../adapters/maps';
+import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
 // flagged ($1 absorbs rounding differences, never a real disagreement).
 const MISMATCH_TOLERANCE_CENTS = 100;
 const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
+
+// One maps lookup per route pair per request: engine pricing and the M8 enrichment share
+// results, so going engine-first doesn't double the billed Google calls.
+function memoizeDistance(maps: MapsAdapter): MapsAdapter {
+  const cache = new Map<string, Promise<DistanceResult | null>>();
+  return {
+    provider: maps.provider,
+    places: (q) => maps.places(q),
+    distance(from, to) {
+      const key = `${from}|${to}`;
+      let hit = cache.get(key);
+      if (!hit) {
+        hit = maps.distance(from, to);
+        cache.set(key, hit);
+      }
+      return hit;
+    },
+  };
+}
 
 // What the booking stores, resolved engine-first (GL-3): the engine price wins whenever it
 // can price; otherwise the customer's quotedTotal, and as a last resort the placeholder
@@ -92,12 +111,13 @@ export function bookingRoutes(deps: {
     }
 
     // GL-3 — the engine is the pricing truth; the client's quotedTotal is only a fallback.
-    const outcome = await priceSingle(parsed.data, maps);
+    const legMaps = memoizeDistance(maps);
+    const outcome = await priceSingle(parsed.data, legMaps);
     const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total, false);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
     try {
-      distance = await maps.distance(parsed.data.from, parsed.data.to);
+      distance = await legMaps.distance(parsed.data.from, parsed.data.to);
     } catch {
       distance = null;
     }
@@ -133,7 +153,8 @@ export function bookingRoutes(deps: {
     }
 
     // GL-3 — engine-first; chauffeur trips only collect the deposit now (10%, $50 cap).
-    const outcome = await priceTrip(parsed.data, maps);
+    const legMaps = memoizeDistance(maps);
+    const outcome = await priceTrip(parsed.data, legMaps);
     const resolved = resolveTotals(
       outcome,
       parsed.data.quotedTotal,
@@ -147,7 +168,7 @@ export function bookingRoutes(deps: {
     let tripMin: number | null = 0;
     try {
       for (let i = 0; i < stops.length - 1; i++) {
-        const leg = await maps.distance(stops[i], stops[i + 1]);
+        const leg = await legMaps.distance(stops[i], stops[i + 1]);
         if (!leg) {
           tripKm = null;
           tripMin = null;

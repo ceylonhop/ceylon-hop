@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 
 const valid = {
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
@@ -79,6 +80,19 @@ describe('POST /bookings/trip', () => {
     expect(res.status).toBe(201);
     const b = await res.json();
     expect(b.distanceKm).toBeNull();
+  });
+
+  it('resolves each leg once per request — pricing + enrichment share the billed lookups', async () => {
+    const fake = new FakeMapsAdapter();
+    let calls = 0;
+    const counting: MapsAdapter = {
+      provider: 'counting',
+      distance: (f, t) => { calls++; return fake.distance(f, t); },
+      places: (q) => fake.places(q),
+    };
+    const app = createApp({ maps: counting });
+    await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0] });
+    expect(calls).toBe(2); // one per leg, not doubled by the M8 enrichment
   });
 
   it('records chauffeur days + driver nights', async () => {
