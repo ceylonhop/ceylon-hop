@@ -17,6 +17,12 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
 <link rel="stylesheet" href="site.css">
+<script>
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
 <script src="tweaks.js"></script>
 <script src="datepicker.js"></script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94779669662","priceRange":"$$","sameAs":["https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html"]}</script>

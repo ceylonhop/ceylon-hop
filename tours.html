@@ -14,6 +14,12 @@
 <meta property="og:title" content="Complete Sri Lanka tours — Ceylon Hop">
 <meta property="og:description" content="Complete Sri Lanka tours, end-to-end private transport. One AC vehicle and a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
 <link rel="stylesheet" href="site.css">
+<script>
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
 <script src="tweaks.js"></script>
 <style>
   /* themed, postcard hero rather than the flat teal page-head */
