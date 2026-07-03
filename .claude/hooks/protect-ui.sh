@@ -13,7 +13,9 @@ esac
 
 base="$(basename "$path")"
 case "$base" in
-  *.html|site.css|favicon.svg|image-slots.state.json|site.js|booking.js|plan.js|search.js|datepicker.js|image-slot.js|tours-data.js|transfers-data.js|routes-data.js|tweaks.js)
+  # GL-4 (2026-07-02): booking.js / plan.js / transfers-data.js TEMPORARILY unfrozen for the
+  # owner-authorized pricing-parity sync (engine rate card = truth). Restore after merge.
+  *.html|site.css|favicon.svg|image-slots.state.json|site.js|search.js|datepicker.js|image-slot.js|tours-data.js|routes-data.js|tweaks.js)
     echo "BLOCKED: '$base' is a frozen front-end / live-site file. The UI is frozen (see CLAUDE.md rule 3). If this is the M7 wiring step, a human must make this change." >&2
     exit 2 ;;
 esac
