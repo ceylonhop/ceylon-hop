@@ -27,4 +27,17 @@ done
 for f in ./index.html trip/../index.html docs/../index.html /index.html Index.html BOOKING.JS ./site.css; do
   check "$f" 2
 done
+# symlink-traversal: an absolute path through a symlink into the repo must still block
+# the frozen file, and still ALLOW new SEO files (realpath resolves the real target).
+checkabs() { # <absolute path> <expected-exit>
+  echo "{\"tool_input\":{\"file_path\":\"$1\"}}" | bash "$HOOK" >/dev/null 2>&1
+  local got=$?; [ "$got" = "$2" ] || { echo "FAIL (abs) $1: want $2 got $got"; fail=1; }
+}
+tmpd="$(mktemp -d)"
+ln -s "$PWD" "$tmpd/repolink"
+checkabs "$tmpd/repolink/index.html" 2                       # frozen via symlinked cwd → blocked
+checkabs "$tmpd/repolink/site.js" 2                          # frozen via symlinked cwd → blocked
+checkabs "$tmpd/repolink/trip/kandy-to-ella/index.html" 0    # existing new file via symlink → allowed
+checkabs "$tmpd/repolink/trip/brand-new-route/index.html" 0  # not-yet-created new file via symlink → allowed
+rm -rf "$tmpd"
 [ "$fail" = 0 ] && echo "protect-ui: ALL PASS" || { echo "protect-ui: FAILURES"; exit 1; }

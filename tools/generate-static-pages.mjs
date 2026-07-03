@@ -36,7 +36,8 @@ const notFoundPage = () => renderStandalone({
   style: `.nf{min-height:52vh;display:grid;place-items:center;text-align:center;padding:120px 0 60px}
   .nf h1{font-size:clamp(2.4rem,7vw,4rem);margin:0 0 .3rem}
   .nf .flex{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px}`,
-  bodyHtml: `<section class="nf"><div class="wrap"><span class="eyebrow">Error 404</span><h1>Page not found</h1><p class="lead">The page you were looking for has moved or never existed.</p><div class="flex"><a class="btn btn-cta" href="/">Back to home</a><a class="btn btn-primary" href="/trip/">Browse routes</a></div></div></section>`,
+  // Relative hrefs so the <base> (apex "/" or github.io "/<repo>/") applies.
+  bodyHtml: `<section class="nf"><div class="wrap"><span class="eyebrow">Error 404</span><h1>Page not found</h1><p class="lead">The page you were looking for has moved or never existed.</p><div class="flex"><a class="btn btn-cta" href="index.html">Back to home</a><a class="btn btn-primary" href="trip/">Browse routes</a></div></div></section>`,
 });
 
 export function generateStaticPages() {

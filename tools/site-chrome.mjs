@@ -94,11 +94,8 @@ export const bootScript = `<script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>`;
 
-// `absolute: true` uses root-absolute paths ('/site.css', '/plan.html') — required
-// for 404.html, which GitHub Pages serves for missing URLs at ANY depth, so relative
-// asset paths would break. Fixed-URL pages (routes, terms, privacy) use depth-relative.
-export function renderChrome({ depth = 2, active = '', absolute = false } = {}) {
-  const p = absolute ? '/' : prefixFor(depth);
+export function renderChrome({ depth = 2, active = '' } = {}) {
+  const p = prefixFor(depth);
   return { header: renderHeader(p, active), footer: renderFooter(p), headAssets: headAssets(p), bootScript };
 }
 

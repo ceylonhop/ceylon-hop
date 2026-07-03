@@ -6,12 +6,21 @@
 input="$(cat)"
 
 # Canonicalise the target to a repo-relative, lowercased path so path tricks can't
-# slip a frozen file past the match: "./index.html", "trip/../index.html",
-# "docs/../index.html", "//index.html", and "Index.html" (APFS is case-insensitive)
-# all normalise to "index.html". Paths outside the repo come back starting with "..".
-rel="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const j=JSON.parse(d);const path=require("path"),fs=require("fs");let cwd=process.cwd();try{cwd=fs.realpathSync(cwd)}catch(e){}const fp=(j.tool_input&&j.tool_input.file_path)||"";if(!fp){process.stdout.write("");return}const rel=path.relative(cwd,path.resolve(cwd,fp));process.stdout.write(rel.toLowerCase())}catch(e){process.stdout.write("")}})')"
+# slip a frozen file past the match. We realpath BOTH the cwd and the target's
+# deepest existing ancestor (re-appending any not-yet-created tail), so symlinks
+# into the repo — including a symlinked cwd — resolve to the real frozen path.
+# "./index.html", "trip/../index.html", "docs/../index.html", "//index.html",
+# "Index.html" (APFS is case-insensitive), and "<symlink>/index.html" all normalise
+# to "index.html". Paths outside the repo come back starting with "..".
+rel="$(printf '%s' "$input" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const path=require("path"),fs=require("fs");let j;try{j=JSON.parse(d)}catch(e){process.stdout.write("__ERR__");return}const fp=(j.tool_input&&j.tool_input.file_path)||"";if(!fp){process.stdout.write("");return}try{const cwd=fs.realpathSync(process.cwd());let p=path.resolve(cwd,fp),tail=[];for(;;){try{p=fs.realpathSync(p);break}catch(e){tail.unshift(path.basename(p));const par=path.dirname(p);if(par===p)break;p=par}}const rel=path.relative(cwd,path.join(p,...tail));process.stdout.write(rel.toLowerCase())}catch(e){process.stdout.write("__ERR__")}})' 2>/dev/null)"
 
-# Outside the repo (or unparseable) — not ours to guard.
+# Fail closed if the resolver saw a path but could not canonicalise it.
+if [ "$rel" = "__ERR__" ]; then
+  echo "BLOCKED: protect-ui could not resolve the edit path; failing closed." >&2
+  exit 2
+fi
+
+# Empty (no file path — not a file edit) or outside the repo: not ours to guard.
 case "$rel" in
   ""|..|../*) exit 0 ;;
 esac

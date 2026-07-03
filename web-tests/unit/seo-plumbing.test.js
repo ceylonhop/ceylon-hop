@@ -13,13 +13,15 @@ describe('site plumbing', () => {
     expect(r).not.toMatch(/^Disallow:/m); // a real Disallow would hide the in-page noindex from Google
     expect(r).toContain('Sitemap: https://ceylonhop.com/sitemap.xml');
   });
-  it('404 page is branded, noindex, links home + /trip/, and self-heals on the github.io project path', () => {
+  it('404 is branded, noindex, uses relative links + a <base> so it styles at any depth on both hosts', () => {
     const h = read('404.html');
     expect(h).toContain('Ceylon Hop');
     expect(h).toMatch(/name="robots"[^>]*noindex/);
-    expect(h).toContain('href="/trip/"');
-    expect(h).toContain('href="/"');
-    // root-absolute assets need a <base> on the github.io project path (served at any depth)
+    expect(h).toContain('href="trip/"');       // relative — resolved by the injected <base>
+    expect(h).toContain('href="index.html"');
+    expect(h).not.toContain('href="/site.css"'); // NOT root-absolute (base doesn't affect those)
+    expect(h).toContain("href=\"site.css\"");    // relative stylesheet
+    expect(h).toContain('document.write');       // <base> injected (apex "/" or github.io "/<repo>/")
     expect(h).toContain("endsWith('github.io')");
   });
   it('terms and privacy exist, self-canonical to the apex, in site chrome', () => {

@@ -6,7 +6,11 @@ const ORIGIN = 'https://ceylonhop.com';
 // depth 0 = repo root (relative prefix ''). Pass canonicalPath (e.g. '/terms.html')
 // for indexable pages, or robots: 'noindex, follow' for the 404.
 export function renderStandalone({ title, description, canonicalPath = null, robots = null, depth = 0, absolute = false, style = '', bodyHtml, active = '' }) {
-  const { header, footer, headAssets, bootScript } = renderChrome({ depth, active, absolute });
+  // `absolute` = served at any depth (the 404). Use RELATIVE hrefs + a <base> so
+  // links resolve from the site root regardless of the missing URL's depth, on both
+  // the apex (base "/") and the github.io project path (base "/<repo>/"). Relative is
+  // required — <base> does not affect root-absolute URLs.
+  const { header, footer, headAssets, bootScript } = renderChrome({ depth: absolute ? 0 : depth, active });
   const canonical = canonicalPath ? `<link rel="canonical" href="${ORIGIN}${canonicalPath}">\n` : '';
   const robotsTag = robots ? `<meta name="robots" content="${robots}">\n` : '';
   const og = canonicalPath
@@ -17,11 +21,10 @@ export function renderStandalone({ title, description, canonicalPath = null, rob
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:image" content="${ORIGIN}/og-cover.jpg">\n`
     : '';
-  // Absolute-path pages (404) are served at any depth. On the apex, root-absolute
-  // hrefs resolve fine; on the github.io PROJECT path they'd resolve outside
-  // /ceylon-hop/, so inject a <base> there. Must run before the stylesheet link.
+  // Inject the <base> before any relative URL is parsed (the stylesheet in headAssets).
+  // apex → "/", github.io project path → "/<repo>/".
   const baseFix = absolute
-    ? `<script>if(location.hostname.endsWith('github.io'))document.write('<base href="/'+location.pathname.split('/')[1]+'/">')</script>\n`
+    ? `<script>document.write('<base href="'+(location.hostname.endsWith('github.io')?'/'+location.pathname.split('/')[1]+'/':'/')+'">')</script>\n`
     : '';
   return `<!DOCTYPE html>
 <html lang="en">
