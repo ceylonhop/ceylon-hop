@@ -1,8 +1,21 @@
 import { describe, it, expect } from 'vitest';
+import { Hono } from 'hono';
 import { createApp } from './app';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeEmailAdapter } from './adapters/email';
 import { InMemoryConciergeTaskRepo } from './db/conciergeTaskRepo';
+import { issueSessionCookie } from './lib/opsMiddleware';
+
+// /admin/bookings now requires a session with bookings:read — x-admin-key resolves to
+// `system`, which per the capability matrix lacks bookings:read. Mint a founder cookie
+// so the ops-side smoke assertion still exercises the real admin-bookings read path.
+const opsAuth = { opsUsers: 'smoke@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'smoke-sek' };
+async function founderCookie() {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, 'smoke@x.com', 'smoke-sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
 
 // Standing end-to-end smoke for the whole stubbed pipeline. Re-run at every milestone
 // gate (npm run smoke); it grows as new booking types and the real PayHere land.
@@ -22,7 +35,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const email = new FakeEmailAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
     const adminApiKey = 'smoke-key';
-    const app = createApp({ adapter, email, conciergeTasks, adminApiKey });
+    const app = createApp({ adapter, email, conciergeTasks, adminApiKey, auth: opsAuth });
 
     const b = await (
       await app.request('/bookings/single', {
@@ -48,7 +61,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
     const adminList = await (
-      await app.request('/admin/bookings?status=paid', { headers: { 'x-admin-key': adminApiKey } })
+      await app.request('/admin/bookings?status=paid', { headers: { cookie: await founderCookie() } })
     ).json();
     expect(adminList.some((x: { id: string }) => x.id === b.id)).toBe(true);
   });
@@ -58,7 +71,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const email = new FakeEmailAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
     const adminApiKey = 'smoke-key';
-    const app = createApp({ adapter, email, conciergeTasks, adminApiKey });
+    const app = createApp({ adapter, email, conciergeTasks, adminApiKey, auth: opsAuth });
 
     const trip = {
       stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
@@ -90,7 +103,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
     const adminList = await (
-      await app.request('/admin/bookings?status=paid', { headers: { 'x-admin-key': adminApiKey } })
+      await app.request('/admin/bookings?status=paid', { headers: { cookie: await founderCookie() } })
     ).json();
     expect(adminList.some((x: { id: string }) => x.id === b.id)).toBe(true);
   });

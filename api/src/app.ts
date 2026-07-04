@@ -38,7 +38,7 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
-  auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string };
+  auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
   googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
@@ -74,7 +74,7 @@ export function createApp(deps: AppDeps = {}) {
     googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
     sessionSecret: deps.auth?.opsSessionSecret ?? config.OPS_SESSION_SECRET,
     adminApiKey,
-    nodeEnv: config.NODE_ENV,
+    nodeEnv: deps.auth?.nodeEnv ?? config.NODE_ENV,
   };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);

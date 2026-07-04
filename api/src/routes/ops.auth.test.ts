@@ -45,4 +45,22 @@ describe('ops authorization surface', () => {
     const res = await app.request('/admin/ops/bookings', { headers: { 'x-admin-key': 'adminkey' } });
     expect(res.status).toBe(403);
   });
+
+  // D5 revocation (spec §6/§7): role is re-resolved from OPS_USERS on every request, never
+  // cached in the cookie. A still-valid, correctly-signed cookie for an email that has since
+  // been removed from the allowlist must be rejected — not honored until natural expiry.
+  it('D5 revocation: a valid cookie for an email removed from OPS_USERS is rejected (403), not honored', async () => {
+    // Same session secret, but this app's allowlist no longer contains the email —
+    // simulates the email being removed from OPS_USERS between cookie issuance and use.
+    const revokedAuth = { opsUsers: 'someone-else@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
+    const revokedApp = createApp({
+      bookings: new InMemoryBookingRepo(),
+      rideOps: new InMemoryRideOpsRepo(),
+      auth: revokedAuth,
+      adminApiKey: 'adminkey',
+    });
+    const staleCookie = await cookie('op@x.com'); // valid signature, was allowlisted at mint time
+    const res = await revokedApp.request('/admin/ops/bookings', { headers: { cookie: staleCookie } });
+    expect(res.status).toBe(403);
+  });
 });

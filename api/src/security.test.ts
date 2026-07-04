@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import { Hono } from 'hono';
 import { createApp } from './app';
+import { issueSessionCookie } from './lib/opsMiddleware';
+
+// /admin/quote/* now requires a session with quote:manage (D-A) — the old
+// dev-keyless-bypass these rate-limit tests relied on is gone. Mint a founder
+// cookie so the requests actually reach the route and we're testing the
+// rate limiter, not the auth gate.
+const auth = { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+async function founderCookie() {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, 'f@x.com', 'sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
 
 const body = {
   from: 'Colombo Airport (CMB)',
@@ -70,9 +84,10 @@ describe('rate limiting (booking writes)', () => {
 
 describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', () => {
   it('GET /admin/quote/places 429s past 4x the configured max (autocomplete bursts GETs)', async () => {
-    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 } }); // effective GET/POST cap on /admin/quote/* = 8
+    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 }, auth, adminApiKey: 'k' }); // effective GET/POST cap on /admin/quote/* = 8
+    const cookie = await founderCookie();
     const hit = (i: number) =>
-      app.request(`/admin/quote/places?q=kand${i}`, { headers: { 'x-forwarded-for': '5.5.5.5' } });
+      app.request(`/admin/quote/places?q=kand${i}`, { headers: { 'x-forwarded-for': '5.5.5.5', cookie } });
     for (let i = 0; i < 8; i++) {
       expect((await hit(i)).status).toBe(200);
     }
@@ -83,12 +98,13 @@ describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', ()
   });
 
   it('POST /admin/quote/estimate 429s past 4x the configured max', async () => {
-    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } }); // effective cap = 4
+    const app = createApp({ rateLimit: { max: 1, windowMs: 60000 }, auth, adminApiKey: 'k' }); // effective cap = 4
+    const cookie = await founderCookie();
     const body = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 10 }] };
     const hit = () =>
       app.request('/admin/quote/estimate', {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-forwarded-for': '6.6.6.6' },
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '6.6.6.6', cookie },
         body: JSON.stringify(body),
       });
     for (let i = 0; i < 4; i++) {
