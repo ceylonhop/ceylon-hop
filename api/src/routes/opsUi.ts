@@ -24,8 +24,8 @@ function uiHtml(googleClientId: string, devLoginEnabled: boolean): string | null
   const raw = rawHtml();
   if (raw == null) return null;
   return raw
-    .replace('{{GOOGLE_CLIENT_ID}}', googleClientId)
-    .replace('{{DEV_LOGIN_ENABLED}}', String(devLoginEnabled));
+    .replaceAll('{{GOOGLE_CLIENT_ID}}', googleClientId)
+    .replaceAll('{{DEV_LOGIN_ENABLED}}', String(devLoginEnabled));
 }
 
 export function opsUiRoutes(googleClientId = '', devLoginEnabled = false): Hono {

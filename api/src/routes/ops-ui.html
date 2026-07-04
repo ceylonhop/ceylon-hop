@@ -1181,7 +1181,7 @@ function bootApp(identity){
   /* T6 deep-link (single source of truth for both the login and whoami-refresh paths):
      anyone with quote:manage can land on #quote (D-A: all 3 roles); otherwise bounce to
      Bookings + clear the hash. */
-  if(location.hash==='#quote'&&state.caps.includes('quote:manage'))state.route='quote';
+  if(location.hash==='#quote'&&state.caps&&state.caps.includes('quote:manage'))state.route='quote';
   else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
   const initials=identity.role.slice(0,2).toUpperCase();
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
@@ -1196,7 +1196,13 @@ function onGoogleCredential(resp){
   const errEl=$('#loginerr');errEl.textContent='';
   fetch('/admin/ops/login',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({credential:resp.credential})})
     .then(async r=>{
-      if(r.ok){bootApp(await r.json());}
+      if(r.ok){
+        /* /login returns {email,role} only — re-fetch whoami for the full {email,role,caps}
+           the app needs (mirrors the dev-login path; without this bootApp gets no caps). */
+        const who=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
+        if(who.ok)bootApp(await who.json());
+        else{errEl.textContent='Signed in, but could not load your session — retry';}
+      }
       else{const card=$('#login-card');card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');errEl.textContent="This Google account isn't authorised";}
     }).catch(()=>{errEl.textContent='Network error — try again';});
 }
