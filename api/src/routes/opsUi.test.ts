@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { gunzipSync } from 'node:zlib';
 import { createApp } from '../app';
 
 describe('ops UI shell', () => {
@@ -37,6 +38,27 @@ describe('ops UI shell', () => {
     expect(body).not.toContain('prompt(');
     expect(body).not.toContain("getElementById('app')");
     expect(body).toContain("querySelector('#quoteRoot .ch-app')"); // module renders into the ops container
+  });
+
+  it('gzip-compresses the /ops shell for clients that accept it', async () => {
+    const app = createApp();
+    const res = await app.request('/ops', { headers: { 'accept-encoding': 'gzip' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    // Body is genuinely gzip-encoded — decode it to confirm it's the real shell (and
+    // much smaller on the wire: the ~190KB shell compresses to well under a third).
+    const gz = Buffer.from(await res.arrayBuffer());
+    const body = gunzipSync(gz).toString('utf8');
+    expect(body).toContain('Ceylon Hop');
+    expect(body).toContain('id="quoteRoot"');
+    expect(gz.length).toBeLessThan(body.length / 2);
+  });
+
+  it('serves the shell uncompressed to clients that do not accept gzip', async () => {
+    const app = createApp();
+    const res = await app.request('/ops'); // no accept-encoding
+    expect(res.headers.get('content-encoding')).toBeNull();
+    expect((await res.text())).toContain('Ceylon Hop');
   });
 
   it('wires teardown, deep-linking, and focus handling on the merged ops+quote shell (T6)', async () => {
