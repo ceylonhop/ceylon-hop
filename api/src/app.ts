@@ -163,7 +163,7 @@ export function createApp(deps: AppDeps = {}) {
   // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
   app.use('/ops', compress());
-  app.route('/ops', opsUiRoutes());
+  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production'));
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
   // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2).

@@ -14,13 +14,52 @@ describe('ops UI shell', () => {
     expect(body).not.toContain('CH-TMRJR'); // no mock bookings shipped
   });
 
-  it('ships the founder-only Quote nav scaffold', async () => {
+  it('ships the Quote nav scaffold gated on the quote:manage capability (D-A: all 3 roles)', async () => {
     const app = createApp();
     const res = await app.request('/ops');
     const body = await res.text();
     expect(body).toContain('data-route="quote"'); // Quote nav button rendered by script
-    expect(body).toContain("state.role==='founder'"); // founder gate in the script
+    expect(body).toContain("state.caps.includes('quote:manage')"); // capability gate, not a hardcoded role
+    expect(body).not.toContain("state.role==='founder'"); // no leftover hardcoded founder gate
+    expect(body).not.toContain("role!=='founder'");
     expect(body).toContain('id="quoteRoot"'); // scoped quote container in .main
+  });
+
+  it('serves a Google Identity Services login (no password key field)', async () => {
+    const app = createApp();
+    const res = await app.request('/ops');
+    const body = await res.text();
+    expect(body).toContain('https://accounts.google.com/gsi/client'); // GIS script tag
+    expect(body).toContain('id="g_id_signin"'); // GIS button mount point
+    expect(body).not.toContain('id="loginkey"'); // password key field is gone
+    expect(body).not.toContain('type="password"');
+    expect(body).toContain("fetch('/admin/ops/login'"); // still posts to the same login route
+    expect(body).toContain('credential:'); // posts {credential} (Google ID token), not {key}
+  });
+
+  it('templates the real GOOGLE_OAUTH_CLIENT_ID into the served HTML', async () => {
+    const app = createApp({ auth: { opsUsers: '', googleClientId: 'test-client-id-123.apps.googleusercontent.com', opsSessionSecret: 'sek' } });
+    const res = await app.request('/ops');
+    const body = await res.text();
+    expect(body).toContain('test-client-id-123.apps.googleusercontent.com');
+    expect(body).not.toContain('{{GOOGLE_CLIENT_ID}}'); // placeholder always replaced, even if empty
+  });
+
+  it('shows the dev-login affordance only when dev bypass is enabled (non-production)', async () => {
+    const devApp = createApp({ auth: { opsUsers: '', googleClientId: '', opsSessionSecret: 'sek' } });
+    const devBody = await (await devApp.request('/ops')).text();
+    expect(devBody).toContain('id="devloginbtn"');
+    expect(devBody).toContain("fetch('/admin/ops/dev-login'");
+    expect(devBody).not.toContain('{{DEV_LOGIN_ENABLED}}');
+  });
+
+  it('consumes whoami as {email, role, caps} — no more bare-role bootApp(role)', async () => {
+    const app = createApp();
+    const body = await (await app.request('/ops')).text();
+    expect(body).toContain('function bootApp(identity)');
+    expect(body).toContain('state.caps=identity.caps');
+    expect(body).toContain('state.email=identity.email');
+    expect(body).not.toContain('function bootApp(role)');
   });
 
   it('mounts the quote tool as an encapsulated module on the ops session (T5)', async () => {
