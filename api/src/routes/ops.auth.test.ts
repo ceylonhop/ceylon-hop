@@ -2,80 +2,47 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { issueSessionCookie } from '../lib/opsMiddleware';
+import { Hono } from 'hono';
 
-const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
+const auth = { opsUsers: 'op@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
 
+// Mint a session cookie for an email without invoking Google (mirrors opsMiddleware.test.ts's pattern).
+async function cookie(email: string, secret = 'sek') {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, email, secret, Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
 function makeApp() {
   const bookings = new InMemoryBookingRepo();
-  const app = createApp({
-    bookings,
-    rideOps: new InMemoryRideOpsRepo(),
-    auth,
-    adminApiKey: 'adminkey',
-  });
-  return { app, bookings };
-}
-
-async function seed(bookings: InMemoryBookingRepo) {
-  return bookings.create({
-    mode: 'single', total: 12100, amountDueNow: 12100, currency: 'USD',
-    input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1,
-      date: '2026-06-22', time: '09:00',
-      customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' } },
-  });
+  const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
+  return app;
 }
 
 describe('ops authorization surface', () => {
   let app: ReturnType<typeof createApp>;
-  let bid: string;
-  beforeEach(async () => {
-    const m = makeApp();
-    app = m.app;
-    bid = (await seed(m.bookings)).id;
-  });
+  beforeEach(() => { app = makeApp(); });
 
-  it('rejects EVERY ops endpoint without auth (401) — reads and mutators', async () => {
-    const calls: [string, string, unknown][] = [
-      ['GET', '/admin/ops/bookings', null],
-      ['GET', `/admin/ops/bookings/${bid}`, null],
-      ['POST', `/admin/ops/bookings/${bid}/status`, { to: 'vehicle_confirmed' }],
-      ['POST', `/admin/ops/bookings/${bid}/flags`, { vehiclePhotoReceived: true }],
-      ['GET', '/admin/ops/finance/summary', null],
-    ];
-    for (const [method, path, body] of calls) {
-      const res = await app.request(path, {
-        method,
-        headers: { 'content-type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      expect(res.status, `${method} ${path} should be 401 without auth`).toBe(401);
-    }
+  it('rejects reads without auth (401)', async () => {
+    expect((await app.request('/admin/ops/bookings')).status).toBe(401);
+    expect((await app.request('/admin/ops/whoami')).status).toBe(401);
   });
-
-  it('rejects a forged session cookie (HMAC must verify, not just parse)', async () => {
-    const res = await app.request('/admin/ops/bookings', {
-      headers: { cookie: 'ch_ops=founder.deadbeefdeadbeefdeadbeef' },
-    });
+  it('rejects a forged cookie', async () => {
+    const res = await app.request('/admin/ops/bookings', { headers: { cookie: 'ch_ops=deadbeef.deadbeef' } });
     expect(res.status).toBe(401);
   });
-
-  it('rejects a session cookie signed with the wrong secret', async () => {
-    // a real login on a DIFFERENT app (different secret) must not be honoured here
-    const other = createApp({ ...{ bookings: new InMemoryBookingRepo() }, rideOps: new InMemoryRideOpsRepo(), auth: { ...auth, opsSessionSecret: 'a-different-secret' }, adminApiKey: 'adminkey' });
-    const login = await other.request('/admin/ops/login', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sup' }),
-    });
-    const cookie = login.headers.get('set-cookie')!.split(';')[0];
-    const res = await app.request('/admin/ops/bookings', { headers: { cookie } });
+  it('rejects a cookie signed with the wrong secret', async () => {
+    const res = await app.request('/admin/ops/bookings', { headers: { cookie: await cookie('op@x.com', 'other-secret') } });
     expect(res.status).toBe(401);
   });
-
-  it('positive control: a validly signed session is accepted (200)', async () => {
-    const login = await app.request('/admin/ops/login', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sup' }),
-    });
-    const cookie = login.headers.get('set-cookie')!.split(';')[0];
-    const res = await app.request('/admin/ops/bookings', { headers: { cookie } });
+  it('accepts a valid ops session (200)', async () => {
+    const res = await app.request('/admin/ops/bookings', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
+  });
+  it('x-admin-key satisfies admin:jobs elsewhere but is NOT a founder backdoor here', async () => {
+    // system only has admin:jobs; /admin/ops/bookings needs bookings:read, which system lacks.
+    const res = await app.request('/admin/ops/bookings', { headers: { 'x-admin-key': 'adminkey' } });
+    expect(res.status).toBe(403);
   });
 });

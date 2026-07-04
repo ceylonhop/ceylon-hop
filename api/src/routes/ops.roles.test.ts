@@ -1,21 +1,41 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
+import { issueSessionCookie } from '../lib/opsMiddleware';
+import { Hono } from 'hono';
 
-const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
-
-async function sessionCookie(app: ReturnType<typeof createApp>, key: string) {
-  const res = await app.request('/admin/ops/login', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key }),
-  });
+const auth = { opsUsers: 'f@x.com:founder,fin@x.com:finance,op@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
+async function cookie(email: string) {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, email, 'sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
   return res.headers.get('set-cookie')!.split(';')[0];
 }
 
-describe('founder gate', () => {
-  it('blocks support from the finance endpoint, allows founder', async () => {
+describe('ops capability gates', () => {
+  it('finance/summary is margin:view-gated — 403 for finance and ops, 200 for founder', async () => {
     const app = createApp({ auth, adminApiKey: 'adminkey' });
-    const support = await sessionCookie(app, 'sup');
-    const founder = await sessionCookie(app, 'fou');
-    expect((await app.request('/admin/ops/finance/summary', { headers: { cookie: support } })).status).toBe(403);
-    expect((await app.request('/admin/ops/finance/summary', { headers: { cookie: founder } })).status).toBe(200);
+    expect((await app.request('/admin/ops/finance/summary', { headers: { cookie: await cookie('op@x.com') } })).status).toBe(403);
+    expect((await app.request('/admin/ops/finance/summary', { headers: { cookie: await cookie('fin@x.com') } })).status).toBe(403);
+    expect((await app.request('/admin/ops/finance/summary', { headers: { cookie: await cookie('f@x.com') } })).status).toBe(200);
+  });
+
+  it('bookings:operate mutators reject finance (403) but allow ops and founder', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    const res = await app.request('/admin/ops/bookings/does-not-exist/status', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie('fin@x.com') },
+      body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('whoami returns {email, role, caps} — caps reflects the resolved role, not the cookie', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    const res = await app.request('/admin/ops/whoami', { headers: { cookie: await cookie('op@x.com') } });
+    const body = await res.json();
+    expect(body.email).toBe('op@x.com');
+    expect(body.role).toBe('ops');
+    expect(body.caps).toEqual(expect.arrayContaining(['quote:manage', 'bookings:operate', 'bookings:read']));
+    expect(body.caps).not.toContain('margin:view');
+    expect(body.caps).not.toContain('payments:act');
   });
 });

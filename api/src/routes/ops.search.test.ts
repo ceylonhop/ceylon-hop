@@ -3,9 +3,21 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { issueSessionCookie } from '../lib/opsMiddleware';
+import { Hono } from 'hono';
 
-const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
-const hdr = { 'x-admin-key': 'adminkey', 'content-type': 'application/json' };
+const auth = { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+
+async function cookie(email: string) {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, email, 'sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
+
+async function hdr() {
+  return { cookie: await cookie('f@x.com'), 'content-type': 'application/json' };
+}
 
 describe('ops bookings search / filter / detail', () => {
   let app: ReturnType<typeof createApp>;
@@ -39,37 +51,38 @@ describe('ops bookings search / filter / detail', () => {
   });
 
   it('lists all queued bookings across modes', async () => {
-    const rows = await (await app.request('/admin/ops/bookings', { headers: hdr })).json();
+    const rows = await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json();
     expect(rows).toHaveLength(2);
     expect(rows.map((r: { mode: string }) => r.mode).sort()).toEqual(['shared', 'single']);
   });
 
   it('reflects payment status (paid vs unpaid)', async () => {
-    const rows = await (await app.request('/admin/ops/bookings', { headers: hdr })).json();
+    const rows = await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json();
     const byRef = Object.fromEntries(rows.map((r: { id: string; paymentStatus: string }) => [r.id, r.paymentStatus]));
     expect(byRef[single]).toBe('paid');
   });
 
   it('filters by stage', async () => {
-    const rows = await (await app.request('/admin/ops/bookings?stage=awaiting_payment', { headers: hdr })).json();
+    const rows = await (await app.request('/admin/ops/bookings?stage=awaiting_payment', { headers: await hdr() })).json();
     expect(rows).toHaveLength(1);
     expect(rows[0].mode).toBe('shared');
   });
 
   it('searches by customer name and email', async () => {
-    expect(await (await app.request('/admin/ops/bookings?q=rocha', { headers: hdr })).json()).toHaveLength(1);
-    expect(await (await app.request('/admin/ops/bookings?q=maya@example', { headers: hdr })).json()).toHaveLength(1);
-    expect(await (await app.request('/admin/ops/bookings?q=zzz', { headers: hdr })).json()).toHaveLength(0);
+    const h = await hdr();
+    expect(await (await app.request('/admin/ops/bookings?q=rocha', { headers: h })).json()).toHaveLength(1);
+    expect(await (await app.request('/admin/ops/bookings?q=maya@example', { headers: h })).json()).toHaveLength(1);
+    expect(await (await app.request('/admin/ops/bookings?q=zzz', { headers: h })).json()).toHaveLength(0);
   });
 
   it('filters by travel date', async () => {
-    const rows = await (await app.request('/admin/ops/bookings?date=2026-06-25', { headers: hdr })).json();
+    const rows = await (await app.request('/admin/ops/bookings?date=2026-06-25', { headers: await hdr() })).json();
     expect(rows).toHaveLength(1);
     expect(rows[0].travelDate).toBe('2026-06-25');
   });
 
   it('returns booking detail with ops + payments', async () => {
-    const res = await app.request(`/admin/ops/bookings/${single}`, { headers: hdr });
+    const res = await app.request(`/admin/ops/bookings/${single}`, { headers: await hdr() });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.booking.id).toBe(single);
@@ -79,15 +92,14 @@ describe('ops bookings search / filter / detail', () => {
   });
 
   it('404s for an unknown booking', async () => {
-    const res = await app.request('/admin/ops/bookings/no-such-id', { headers: hdr });
+    const res = await app.request('/admin/ops/bookings/no-such-id', { headers: await hdr() });
     expect(res.status).toBe(404);
   });
 
   it('logout clears the session', async () => {
-    const login = await app.request('/admin/ops/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'sup' }) });
-    const cookie = login.headers.get('set-cookie')!.split(';')[0];
-    expect((await app.request('/admin/ops/whoami', { headers: { cookie } })).status).toBe(200);
-    const out = await app.request('/admin/ops/logout', { method: 'POST', headers: { cookie } });
+    const cookieHeader = await cookie('f@x.com');
+    expect((await app.request('/admin/ops/whoami', { headers: { cookie: cookieHeader } })).status).toBe(200);
+    const out = await app.request('/admin/ops/logout', { method: 'POST', headers: { cookie: cookieHeader } });
     expect(out.status).toBe(200);
   });
 });

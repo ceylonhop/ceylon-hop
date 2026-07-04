@@ -24,6 +24,7 @@ import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
+import type { JwtVerifier } from './lib/googleAuth';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -38,6 +39,7 @@ export interface AppDeps {
   quotes?: QuoteRepo;
   adminApiKey?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string };
+  googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
@@ -156,7 +158,7 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
-  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
+  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg, googleVerifier: deps.googleVerifier }));
   // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
   // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).

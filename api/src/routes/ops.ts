@@ -1,60 +1,84 @@
 import { Hono } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
-import { signSession, verifySession, roleForKey, type OpsRole } from '../lib/opsAuth';
+import { can, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
+import {
+  opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
+  type OpsAuthConfig,
+} from '../lib/opsMiddleware';
+import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 
 export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
-  auth: { supportKey: string; founderKey: string; sessionSecret: string; adminApiKey: string };
+  auth: OpsAuthConfig;
+  googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
 }
 
-const COOKIE = 'ch_ops';
+// Every action the capability matrix knows about — used only to compute whoami's `caps`
+// list from the resolved role, never to grant anything (can() remains the sole gate).
+const ALL_ACTIONS: OpsAction[] = [
+  'quote:manage', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs',
+];
 
-// The unified post-payment ops queue: everything still needing a human before it's
-// handed off (payment_pending) or in flight (paid, with ride_ops carrying the stage).
 const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
 
 export function opsRoutes(deps: OpsDeps) {
-  const r = new Hono<{ Variables: { role: OpsRole } }>();
+  const r = new Hono();
   const { auth } = deps;
+  const users = parseOpsUsers(auth.opsUsers);
 
+  // Google sign-in: the browser POSTs the Google ID token; we verify, allowlist-check, set cookie.
   r.post('/login', async (c) => {
-    const body = z.object({ key: z.string() }).safeParse(await c.req.json().catch(() => ({})));
-    const role = body.success ? roleForKey(body.data.key, { supportKey: auth.supportKey, founderKey: auth.founderKey }) : null;
-    if (!role) return c.json({ error: 'unauthorized' }, 401);
-    setCookie(c, COOKIE, signSession(role, auth.sessionSecret), {
-      httpOnly: true, sameSite: 'Lax', path: '/', maxAge: 60 * 60 * 12,
-    });
-    return c.json({ role }, 200);
+    const body = z.object({ credential: z.string() }).safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    if (!auth.googleClientId || !auth.opsUsers) return c.json({ error: 'login_unavailable' }, 503); // fail closed
+    let id;
+    try {
+      id = await verifyGoogleIdToken(body.data.credential, { clientId: auth.googleClientId, verifier: deps.googleVerifier });
+    } catch {
+      return c.json({ error: 'invalid_token' }, 401);
+    }
+    if (!id.emailVerified) return c.json({ error: 'email_unverified' }, 403);
+    const role = roleForEmail(id.email, users);
+    if (!role) return c.json({ error: 'not_authorised', email: id.email }, 403);
+    issueSessionCookie(c, id.email, auth.sessionSecret, Date.now());
+    return c.json({ email: id.email, role }, 200);
   });
 
-  r.post('/logout', (c) => { setCookie(c, COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 }); return c.json({ ok: true }); });
-
-  // auth middleware for everything below
-  r.use('*', async (c, next) => {
-    const headerRole = c.req.header('x-admin-key') && c.req.header('x-admin-key') === auth.adminApiKey ? 'founder' : null;
-    const role = headerRole ?? verifySession(getCookie(c, COOKIE), auth.sessionSecret);
-    if (!role) return c.json({ error: 'unauthorized' }, 401);
-    c.set('role', role);
-    await next();
+  // Dev-only bypass: mint a session for a chosen allowlisted email without Google.
+  // Refuses (404, no cookie) when NODE_ENV === 'production' — asserted in Task T-F.
+  r.post('/dev-login', async (c) => {
+    if (!devBypassEnabled(auth)) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({ email: z.string() }).safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    if (!roleForEmail(body.data.email, users)) return c.json({ error: 'not_authorised' }, 403);
+    issueSessionCookie(c, body.data.email, auth.sessionSecret, Date.now());
+    return c.json({ ok: true }, 200);
   });
 
-  r.get('/whoami', (c) => c.json({ role: c.get('role') }));
-
-  // Reserved founder-only surface. The real finance content lands in the finance slice;
-  // the gate is enforced now so revenue endpoints never leak to support.
-  r.get('/finance/summary', (c) => {
-    if (c.get('role') !== 'founder') return c.json({ error: 'forbidden' }, 403);
+  r.post('/logout', (c) => {
+    setCookie(c, OPS_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
     return c.json({ ok: true });
   });
 
-  r.get('/bookings', async (c) => {
+  // Identity + guards for everything below.
+  r.use('*', opsIdentity(auth));
+
+  r.get('/whoami', requireCap('bookings:read'), (c) => {
+    const identity = c.get('identity');
+    const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
+    return c.json({ email: identity.email, role: identity.role, caps });
+  });
+
+  r.get('/finance/summary', requireCap('margin:view'), (c) => c.json({ ok: true }));
+
+  r.get('/bookings', requireCap('bookings:read'), async (c) => {
     const stage = c.req.query('stage'); const date = c.req.query('date');
     const q = (c.req.query('q') ?? '').toLowerCase();
     const all = await deps.bookings.list({ status: [...QUEUE_STATUSES] });
@@ -79,7 +103,11 @@ export function opsRoutes(deps: OpsDeps) {
     return c.json(rows);
   });
 
-  r.get('/bookings/:id', async (c) => {
+  // Spec §3.1 [CORRECTED]: the payments row carries no cost/margin field (confirmed against
+  // db/paymentRepo.ts's Payment interface — amount/status/provider/orderId only). There is
+  // nothing to strip here. If cost tracking is ever added to this response, gate it behind
+  // can(identity.role, 'margin:view') and add a test on both sides before shipping it.
+  r.get('/bookings/:id', requireCap('bookings:read'), async (c) => {
     const b = await deps.bookings.get(c.req.param('id'));
     if (!b) return c.json({ error: 'not_found' }, 404);
     const ops = await deps.rideOps.getOrCreate(b.id);
@@ -87,7 +115,7 @@ export function opsRoutes(deps: OpsDeps) {
     return c.json({ booking: b, ops, payments });
   });
 
-  r.post('/bookings/:id/status', async (c) => {
+  r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {
     const body = z.object({ to: z.string() }).parse(await c.req.json());
     try {
       return c.json(await deps.rideOps.setStatus(c.req.param('id'), body.to as never));
@@ -96,7 +124,7 @@ export function opsRoutes(deps: OpsDeps) {
     }
   });
 
-  r.post('/bookings/:id/flags', async (c) => {
+  r.post('/bookings/:id/flags', requireCap('bookings:operate'), async (c) => {
     const body = z.object({
       vehiclePhotoReceived: z.boolean().optional(),
       customerUpdated: z.boolean().optional(),
