@@ -173,6 +173,9 @@ export function createApp(deps: AppDeps = {}) {
     auth: opsAuthCfg,
     allowedOrigins,
   }));
+  // T-E: cancel/refund require payments:act (founder or finance, human session only —
+  // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay
+  // machine-driven via admin:jobs (system or founder).
   app.route(
     '/admin',
     adminRoutes({
@@ -180,7 +183,7 @@ export function createApp(deps: AppDeps = {}) {
       departures,
       email,
       notificationLog,
-      adminApiKey,
+      auth: opsAuthCfg,
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,

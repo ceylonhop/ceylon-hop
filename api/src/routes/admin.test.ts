@@ -3,8 +3,19 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { issueSessionCookie } from '../lib/opsMiddleware';
+import { Hono } from 'hono';
 
 const KEY = 'secret-key';
+const auth = { opsUsers: 'f@x.com:founder,fin@x.com:finance,op@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
+
+async function cookie(email: string) {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, email, 'sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
+
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
@@ -25,39 +36,47 @@ async function book(app: ReturnType<typeof createApp>) {
 }
 
 describe('GET /admin/bookings', () => {
-  it('401 without a key', async () => {
-    const app = createApp({ adminApiKey: KEY });
+  it('401 without any identity', async () => {
+    const app = createApp({ adminApiKey: KEY, auth });
     expect((await app.request('/admin/bookings')).status).toBe(401);
   });
 
-  it('401 with a wrong key', async () => {
-    const app = createApp({ adminApiKey: KEY });
+  it('401 with a wrong key (no identity resolved)', async () => {
+    const app = createApp({ adminApiKey: KEY, auth });
     const res = await app.request('/admin/bookings', { headers: { 'x-admin-key': 'nope' } });
     expect(res.status).toBe(401);
   });
 
-  it('lists bookings with the key', async () => {
-    const app = createApp({ adminApiKey: KEY });
+  it('bookings:read — any of the 3 human roles works, no key needed', async () => {
+    const app = createApp({ adminApiKey: KEY, auth });
     await book(app);
-    const res = await app.request('/admin/bookings', { headers: { 'x-admin-key': KEY } });
+    const res = await app.request('/admin/bookings', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
     const list = await res.json();
     expect(Array.isArray(list)).toBe(true);
     expect(list).toHaveLength(1);
+  });
+
+  it('403 for the system key (x-admin-key lacks bookings:read)', async () => {
+    const app = createApp({ adminApiKey: KEY, auth });
+    const res = await app.request('/admin/bookings', { headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(403);
   });
 });
 
 function makeApp() {
   const bookings = new InMemoryBookingRepo();
   const email = new FakeEmailAdapter();
-  return { app: createApp({ adminApiKey: KEY, bookings, email }), bookings, email };
+  return { app: createApp({ adminApiKey: KEY, auth, bookings, email }), bookings, email };
 }
 
 describe('POST /admin/bookings/:id/cancel', () => {
-  it('cancels the booking, transitions it to cancelled, and emails the customer', async () => {
+  it('cancels the booking for a founder/finance session, transitions it to cancelled, and emails the customer', async () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
-    const res = await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('cancelled');
     expect((await bookings.get(b.id))!.status).toBe('cancelled');
@@ -66,15 +85,33 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(sent[0].to).toBe('maya@example.com');
   });
 
-  it('401 without the admin key', async () => {
+  it('401 without any identity', async () => {
     const { app } = makeApp();
     const b = await book(app);
     expect((await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST' })).status).toBe(401);
   });
 
+  it('403 for the system key — the machine key can no longer issue refunds/cancels (D6)', async () => {
+    const { app } = makeApp();
+    const b = await book(app);
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(403);
+  });
+
+  it('403 for an ops session (no payments:act)', async () => {
+    const { app } = makeApp();
+    const b = await book(app);
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it('404 for an unknown booking', async () => {
     const { app } = makeApp();
-    const res = await app.request('/admin/bookings/no-such/cancel', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request('/admin/bookings/no-such/cancel', {
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+    });
     expect(res.status).toBe(404);
   });
 
@@ -82,13 +119,15 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const { app, bookings } = makeApp();
     const b = await book(app);
     await bookings.setStatus(b.id, 'cancelled');
-    const res = await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+    });
     expect(res.status).toBe(409);
   });
 });
 
 describe('POST /admin/jobs/notifications', () => {
-  it('runs the scheduler and returns counts, sending a reminder for a booking due tomorrow', async () => {
+  it('runs the scheduler and returns counts, sending a reminder for a booking due tomorrow (system key)', async () => {
     const { app, bookings, email } = makeApp();
     const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
     const b = await bookings.create({
@@ -106,15 +145,31 @@ describe('POST /admin/jobs/notifications', () => {
     expect(email.sent.some((m) => /coming up/i.test(m.subject))).toBe(true);
   });
 
-  it('401 without the admin key', async () => {
+  it('401 without any identity', async () => {
     const { app } = makeApp();
     expect((await app.request('/admin/jobs/notifications', { method: 'POST' })).status).toBe(401);
+  });
+
+  it('403 for an ops session (no admin:jobs)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', {
+      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('200 for a founder session (founder also has admin:jobs)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', {
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+    });
+    expect(res.status).toBe(200);
   });
 
   it('sweeps stale shared holds alongside the notification tick (GL-3)', async () => {
     const bookings = new InMemoryBookingRepo();
     const departures = new InMemoryDepartureRepo();
-    const app = createApp({ adminApiKey: KEY, bookings, departures, email: new FakeEmailAdapter() });
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email: new FakeEmailAdapter() });
     await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
     const b = await bookings.create({
       mode: 'shared',
@@ -134,6 +189,22 @@ describe('POST /admin/jobs/notifications', () => {
   });
 });
 
+describe('POST /admin/jobs/watchdog', () => {
+  it('403 for a finance session (no admin:jobs)', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/watchdog', {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('200 for the system key', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+  });
+});
+
 // GL-3 — cancelling/refunding a shared booking must give its seats back to the departure.
 describe('shared seat release on cancel/refund', () => {
   const shared = {
@@ -147,7 +218,7 @@ describe('shared seat release on cancel/refund', () => {
   function makeSharedApp() {
     const bookings = new InMemoryBookingRepo();
     const departures = new InMemoryDepartureRepo();
-    const app = createApp({ adminApiKey: KEY, bookings, departures, email: new FakeEmailAdapter() });
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email: new FakeEmailAdapter() });
     return { app, bookings, departures };
   }
 
@@ -163,7 +234,7 @@ describe('shared seat release on cancel/refund', () => {
     const { app } = makeSharedApp();
     const b = await (await bookShared(app)).json();
     expect((await bookShared(app)).status).toBe(409); // full while held
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     expect((await bookShared(app)).status).toBe(201); // freed by the cancel
   });
 
@@ -172,7 +243,7 @@ describe('shared seat release on cancel/refund', () => {
     const b = await (await bookShared(app)).json();
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
-    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     expect((await bookShared(app)).status).toBe(201);
   });
 
@@ -182,10 +253,10 @@ describe('shared seat release on cancel/refund', () => {
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
     // another traveller takes 3 of the freed seats between the cancel and the refund
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     const other = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 3 });
     expect(other?.seatsBooked).toBe(3);
-    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     // the other traveller's hold must survive — no second release
     const after = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 1 });
     expect(after?.seatsBooked).toBe(4);
@@ -195,18 +266,20 @@ describe('shared seat release on cancel/refund', () => {
     const { app, departures } = makeSharedApp();
     const b = await book(app); // a single transfer
     const spy = vi.spyOn(departures, 'releaseSeats');
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     expect(spy).not.toHaveBeenCalled();
   });
 });
 
 describe('POST /admin/bookings/:id/refund', () => {
-  it('refunds a paid booking, transitions it to refunded, and emails the customer', async () => {
+  it('refunds a paid booking for a founder/finance session, transitions it to refunded, and emails the customer', async () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
-    const res = await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request(`/admin/bookings/${b.id}/refund`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('refunded');
     expect((await bookings.get(b.id))!.status).toBe('refunded');
@@ -216,7 +289,18 @@ describe('POST /admin/bookings/:id/refund', () => {
   it('409 when the booking cannot be refunded (still a draft)', async () => {
     const { app } = makeApp();
     const b = await book(app);
-    const res = await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request(`/admin/bookings/${b.id}/refund`, {
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+    });
     expect(res.status).toBe(409);
+  });
+
+  it('403 for the system key — the machine key can no longer issue refunds (D6)', async () => {
+    const { app, bookings } = makeApp();
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const res = await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(403);
   });
 });
