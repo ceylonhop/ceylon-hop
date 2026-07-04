@@ -787,7 +787,7 @@
   container-type: inline-size;   /* .ch-cockpit / .ch-main breakpoints query the PANE width */
   container-name: qv;
 }
-.qv .ch-app { min-height: 0; height: 100%; }  /* kill min-height:100vh — it would overflow .main */
+.qv .ch-app { min-height: 100%; }  /* kill min-height:100vh (overflows .main) but grow with content so padding-bottom holds */
 </style>
 </head>
 <body>
