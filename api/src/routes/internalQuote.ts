@@ -224,7 +224,14 @@ export function internalQuoteRoutes(deps: {
   // they carry no writes, and /places autocomplete must stay fast.
   const csrf: MiddlewareHandler = async (c, next) => {
     const site = c.req.header('sec-fetch-site');
-    if (site && site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
+    if (site) {
+      // Sec-Fetch-Site is a browser-set forbidden header a page cannot spoof. When present it
+      // is authoritative: same-origin/none pass regardless of Origin (so a same-origin /ops
+      // POST works even if its exact host isn't in ALLOWED_ORIGINS); anything cross-site is CSRF.
+      if (site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
+      return next();
+    }
+    // No Sec-Fetch-Site (older browser or non-browser): fall back to the Origin allow-list.
     const origin = c.req.header('origin');
     if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
     return next();

@@ -620,6 +620,13 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     expect(res.status).toBe(200);
   });
 
+  it('passes on Sec-Fetch-Site: same-origin even when Origin is not allow-listed', async () => {
+    // A same-origin /ops POST from a host not in ALLOWED_ORIGINS (e.g. a preview port) must
+    // still work — Sec-Fetch-Site is authoritative and pre-empts the Origin allow-list.
+    const res = await estimate({ 'sec-fetch-site': 'same-origin', origin: 'http://localhost:59999' });
+    expect(res.status).toBe(200);
+  });
+
   it('passes with neither header (non-browser caller; the auth guard still protects)', async () => {
     const res = await estimate({});
     expect(res.status).toBe(200);
