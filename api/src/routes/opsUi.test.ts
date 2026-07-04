@@ -38,4 +38,13 @@ describe('ops UI shell', () => {
     expect(body).not.toContain("getElementById('app')");
     expect(body).toContain("querySelector('#quoteRoot .ch-app')"); // module renders into the ops container
   });
+
+  it('wires teardown, deep-linking, and focus handling on the merged ops+quote shell (T6)', async () => {
+    const app = createApp();
+    const res = await app.request('/ops');
+    const body = await res.text();
+    expect(body).toContain('QuoteView.teardown()'); // logout tears down the quote module (no stale beforeunload)
+    expect(body).toContain("location.hash==='#quote'"); // boot sequence deep-links a founder into the quote view
+    expect(body).toContain('_lastRenderedRoute'); // focus only moves on an actual route transition
+  });
 });

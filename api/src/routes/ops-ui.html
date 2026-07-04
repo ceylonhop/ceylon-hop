@@ -1080,6 +1080,12 @@ async function refreshRow(id){
   catch(e){if(e.message!=='auth')toast('Refresh failed');}
 }
 
+/* T6: #view and #quoteRoot are each persistent DOM nodes (only [hidden] toggles, never
+   removed/re-created) with their own independent scroller (.scroll{overflow-y:auto} /
+   #quoteRoot{overflow-y:auto} — see CSS above), so each element's scrollTop is preserved
+   natively by the browser across hide/show; verified there is no shared scroller whose
+   position could leak between routes, so no manual scrollTop save/restore is needed. */
+
 /* ── quote view panel — mounts QuoteView into #quoteRoot: .ch-app render target + SIBLING #ch-toast (innerHTML swaps never destroy the toast) ── */
 function showQuoteView(){
   if(state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
@@ -1093,11 +1099,33 @@ function showQuoteView(){
 }
 function hideQuoteView(){$('#quoteRoot').hidden=true;$('#view').hidden=false;$('#topbar').hidden=false;}
 
+/* T6: only move focus on an actual route TRANSITION, not on every render() while
+   already settled on a route (render() also runs after toggles/notes/queue refresh
+   while staying on Bookings — re-focusing #q on each of those would steal focus from
+   whatever the operator is doing). _lastRenderedRoute tracks the previous paint. */
+let _lastRenderedRoute=null;
 function render(){
   if(state.route==='quote'&&state.role!=='founder')state.route='tickets';
+  const entering=state.route!==_lastRenderedRoute;
   setNav();
-  if(state.route==='quote'){showQuoteView();}
-  else{hideQuoteView();viewTickets();renderSheet();}
+  if(state.route==='quote'){
+    showQuoteView();
+    if(entering){
+      /* Quote entry: the cockpit's own fields render async inside QuoteView.init(), so we
+         don't reach into its DOM — focus the nav button instead. Guarantees the keyboard
+         never lands on a now-hidden Bookings element. */
+      const navBtn=document.querySelector('#nav [data-route="quote"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else{
+    hideQuoteView();viewTickets();renderSheet();
+    if(entering){
+      /* Bookings entry: viewTickets() just rebuilt #topbar, so #q is fresh. */
+      const qInput=$('#q');
+      if(qInput)qInput.focus({preventScroll:true});
+    }
+  }
+  _lastRenderedRoute=state.route;
 }
 
 /* ── events ── */
@@ -1156,14 +1184,21 @@ $('#loginform').addEventListener('submit',async e=>{
   finally{btn.disabled=false;btn.textContent='Sign in';}
 });
 $('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
-document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;showLogin();}});
+document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);showLogin();}});
 
 /* boot: whoami → in-session boots the app, else show login */
 (async function(){
   localStorage.removeItem('chAdminKey'); /* T5: stale secret from the quote tool's admin-key era */
   try{
     const r=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
-    if(r.ok){const {role}=await r.json();bootApp(role);}else{showLogin();}
+    if(r.ok){
+      const {role}=await r.json();
+      /* T6: deep-link — a founder can refresh/bookmark straight into #quote; support (or
+         a stale hash left from a founder session) bounces to Bookings and the hash is cleared. */
+      if(location.hash==='#quote'&&role==='founder')state.route='quote';
+      else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
+      bootApp(role);
+    }else{showLogin();}
   }catch(_){showLogin();}
 })();
 </script>
