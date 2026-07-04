@@ -36,4 +36,30 @@ describe('ops Google login route', () => {
     });
     expect(res.status).toBe(401);
   });
+
+  it('403s a token whose email is not verified (email_verified:false)', async () => {
+    // A signature-valid token for an allowlisted email, but Google says the email is unverified.
+    const googleVerifier = async () => ({ payload: {
+      iss: 'https://accounts.google.com', aud: 'cid', email: 'f@x.com', email_verified: false,
+    } });
+    const app = createApp({ auth, adminApiKey: 'k', googleVerifier });
+    const res = await app.request('/admin/ops/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ credential: 'tok' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('fails closed (503 login_unavailable) when GOOGLE_OAUTH_CLIENT_ID or OPS_USERS is unset', async () => {
+    const googleVerifier = async () => ({ payload: {
+      iss: 'https://accounts.google.com', aud: 'cid', email: 'f@x.com', email_verified: true,
+    } });
+    for (const bad of [{ ...auth, googleClientId: '' }, { ...auth, opsUsers: '' }]) {
+      const app = createApp({ auth: bad, adminApiKey: 'k', googleVerifier });
+      const res = await app.request('/admin/ops/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ credential: 'tok' }),
+      });
+      expect(res.status).toBe(503);
+      expect((await res.json()).error).toBe('login_unavailable');
+    }
+  });
 });
