@@ -1089,6 +1089,8 @@ async function refreshRow(id){
 /* ── quote view panel — mounts QuoteView into #quoteRoot: .ch-app render target + SIBLING #ch-toast (innerHTML swaps never destroy the toast) ── */
 function showQuoteView(){
   if(state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
+  /* close any open Bookings detail sheet + scrim so its fixed overlay doesn't float over the cockpit */
+  if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
   const qr=$('#quoteRoot');
   qr.hidden=false;$('#view').hidden=true;$('#topbar').hidden=true;
   if(!qr.querySelector('.ch-app')){
@@ -1164,10 +1166,14 @@ function bootApp(role){
   state.role=role;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
   window.opsGoBookings=()=>{state.route='tickets';render();}; /* quote module bounces a 403 (non-founder) back to Bookings */
-  if(state.route==='quote'&&state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);hideQuoteView();}
+  /* T6 deep-link (single source of truth for both the form-login and whoami-refresh paths):
+     a founder can land on #quote; support (or a stale hash) bounces to Bookings + the hash is cleared. */
+  if(location.hash==='#quote'&&role==='founder')state.route='quote';
+  else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
   const initials=role==='founder'?'FO':'SU';
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>Ops · ${role==='founder'?'Founder':'Support'}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
   setNav();
+  if(state.route==='quote')render(); /* mount the quote view immediately — it needs no booking data; loadQueue populates Bookings in the background */
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
@@ -1193,11 +1199,7 @@ document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteV
     const r=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
     if(r.ok){
       const {role}=await r.json();
-      /* T6: deep-link — a founder can refresh/bookmark straight into #quote; support (or
-         a stale hash left from a founder session) bounces to Bookings and the hash is cleared. */
-      if(location.hash==='#quote'&&role==='founder')state.route='quote';
-      else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
-      bootApp(role);
+      bootApp(role); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and form-login paths) */
     }else{showLogin();}
   }catch(_){showLogin();}
 })();
