@@ -22,7 +22,7 @@ export interface QuoteResult {
   totalCents: number;
   depositCents: number;
   amountDueNowCents: number;
-  marginEstimateCents: number | null; // total − cost basis; null for shared (cost not modelled); surfaced to internal/ops callers only
+  marginEstimateCents: number | null; // total − cost basis; null for shared (cost not modelled). FOUNDER-ONLY (margin:view): stripped server-side (incl. nested in a persisted quote's `result`) for finance/ops — see internalQuote.ts stripQuoteMargin()
   rateCardVersion: string;
   warnings: string[];
 }

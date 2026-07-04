@@ -1,26 +1,54 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
-import { createApp } from '../app';
+import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signSession } from '../lib/opsAuth';
 
-type App = ReturnType<typeof createApp>;
+// Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
+// AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
+// OpsAuthConfig shape internalQuoteRoutes() itself takes (used when mounting the router
+// directly on a bare Hono app, bypassing createApp).
+const AUTH = { opsUsers: 'f@x.com:founder,fin@x.com:finance,op@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
+const OPS_AUTH_CFG = { opsUsers: AUTH.opsUsers, googleClientId: AUTH.googleClientId, sessionSecret: AUTH.opsSessionSecret, adminApiKey: 'k', nodeEnv: 'test' };
+
+// Synchronous session-cookie builder — the same signSession primitive issueSessionCookie
+// wraps, called directly so every pre-existing pricing/CSRF test below can attach a real
+// ch_ops cookie without an async round trip through a throwaway Hono app.
+function cookie(email: string, secret = AUTH.opsSessionSecret): string {
+  return `ch_ops=${signSession({ email, exp: Date.now() + 60_000 }, secret)}`;
+}
+const FOUNDER_COOKIE = cookie('f@x.com');
+
+// Default test app: quote:manage requires a session (D-A: all 3 roles get it) — the
+// pre-existing pricing/CSRF tests below aren't testing auth, so they run as founder by
+// default. createApp() (no override) is reserved for the explicit "no auth" assertions.
+type App = ReturnType<typeof realCreateApp>;
+function createApp(deps: AppDeps = {}): App {
+  return realCreateApp({ auth: AUTH, adminApiKey: 'k', ...deps });
+}
+function authedGet(app: App, path: string) {
+  return app.request(path, { headers: { cookie: FOUNDER_COOKIE } });
+}
 function post(app: App, path: string, body: unknown) {
-  return app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return app.request(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+    body: JSON.stringify(body),
+  });
 }
 const leg = (o: Record<string, unknown>) => ({ category: 'transfer', from: 'A', to: 'B', ...o });
 
 describe('internal quoting tool route', () => {
   it('GET /places filters the offline known-place list', async () => {
-    const res = await createApp().request('/admin/quote/places?q=kand');
+    const res = await authedGet(createApp(), '/admin/quote/places?q=kand');
     expect(res.status).toBe(200);
     expect((await res.json()).places).toEqual(['Kandy']);
   });
 
   it('GET /places returns [] for a too-short query', async () => {
-    expect((await (await createApp().request('/admin/quote/places?q=k')).json()).places).toEqual([]);
+    expect((await (await authedGet(createApp(), '/admin/quote/places?q=k')).json()).places).toEqual([]);
   });
 
   it('POST /distance returns km + duration for known places', async () => {
@@ -102,7 +130,7 @@ describe('internal quoting tool route', () => {
     const saved = await res.json();
     expect(saved.reference).toMatch(/^Q-[A-HJ-NP-Z2-9]{5}$/); // 5 chars, unambiguous alphabet (no 0/O/1/I)
     expect(saved.status).toBe('draft');
-    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
     expect(got.customerName).toBe('Maya');
     expect(got.rateCardVersion).toBe('2026-07-02');
@@ -114,7 +142,7 @@ describe('internal quoting tool route', () => {
       vehicle: 'car', passengerCount: 1, luggageCount: 0, total: 999999, totalCents: 999999, legs: [leg({ distanceKm: 80 })],
     });
     const saved = await res.json();
-    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(4048); // engine price, not the bogus client total
   });
 
@@ -126,17 +154,17 @@ describe('internal quoting tool route', () => {
   });
 
   const patch = (app: App, path: string, body: unknown) =>
-    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE }, body: JSON.stringify(body) });
 
   it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
     const app = createApp();
     const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
     await new Promise((r) => setTimeout(r, 5)); // distinct createdAt — same-ms ties order by reference, not insertion
     const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
-    const list = await (await app.request('/admin/quote/list')).json();
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
     await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
-    const won = await (await app.request('/admin/quote/list?status=won')).json();
+    const won = await (await authedGet(app, '/admin/quote/list?status=won')).json();
     expect(won.quotes.map((q: { id: string }) => q.id)).toEqual([a.id]);
   });
 
@@ -155,7 +183,7 @@ describe('internal quoting tool route', () => {
 
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
-    const res = await app.request('/admin/quote/places?q=kand');
+    const res = await authedGet(app, '/admin/quote/places?q=kand');
     expect((await res.json()).places).toEqual(['Kandy']);
   });
 
@@ -226,7 +254,7 @@ describe('internal quoting tool route', () => {
   });
 
   it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers) + vehicle caps', async () => {
-    const d = await (await createApp().request('/admin/quote/rate-card')).json();
+    const d = await (await authedGet(createApp(), '/admin/quote/rate-card')).json();
     expect(d.version).toBe('2026-07-02');
     expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 55, van14: 130, custom: 175 });
     expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
@@ -376,7 +404,7 @@ describe('internal quoting tool route', () => {
     const res = await post(app, '/admin/quote/save', body);
     expect(res.status).toBe(201);
     const saved = await res.json();
-    const got = await (await app.request(`/admin/quote/${saved.id}`)).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.request.tool.legs[0].from).toBe('Colombo City');
     expect(got.request.engine).toBeTruthy();
     expect(got.request.engine.product).toBe('private');
@@ -395,86 +423,142 @@ describe('internal quoting tool route', () => {
   });
 });
 
-describe('quoting tool — admin-key auth', () => {
-  const keyed = () => {
-    const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), adminKey: 'secret' }));
-    return a;
-  };
-
-  // Ops⇄quote merge T2: the standalone shell is retired — the tool lives in /ops now.
-  it('GET / redirects to /ops (302) without needing a key', async () => {
-    const res = await keyed().request('/admin/quote');
+// D-A (2026-07-04): the quote tool opens to ALL THREE roles via quote:manage — reverts #14's
+// founder-only gate. x-admin-key resolves to `system`, which lacks quote:manage (403) — a
+// behavior change from pre-reconciliation, where the key was a founder backdoor here.
+describe('quote tool authorization (D-A: all 3 roles get quote:manage)', () => {
+  it('GET / redirects to /ops (302) without needing auth', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const res = await app.request('/admin/quote');
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/ops');
   });
 
-  it('401s a data route without the key and 200s with it', async () => {
-    const app = keyed();
+  it('rejects the data routes without a session (401)', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    expect((await app.request('/admin/quote/list')).status).toBe(401);
     expect((await app.request('/admin/quote/places?q=kand')).status).toBe(401);
-    const ok = await app.request('/admin/quote/places?q=kand', { headers: { 'x-admin-key': 'secret' } });
-    expect(ok.status).toBe(200);
-    expect((await ok.json()).places).toEqual(['Kandy']);
   });
 
-  it('leaves data routes open when no key is configured (dev/preview)', async () => {
-    // createApp default ADMIN_API_KEY is '' → open (NODE_ENV !== 'production' under vitest)
-    expect((await createApp().request('/admin/quote/places?q=kand')).status).toBe(200);
-  });
-});
-
-// Ops⇄quote merge T1: a founder ops-session cookie (ch_ops, same as /admin/ops) now unlocks
-// /admin/quote/* alongside the legacy x-admin-key. Support NEVER sees quote data (margin/PII)
-// — not even through the dev keyless bypass.
-describe('quoting tool — founder ops-session cookie auth', () => {
-  const SECRET = 'test-ops-session-secret';
-  const founder = `ch_ops=${signSession('founder', SECRET)}`;
-  const support = `ch_ops=${signSession('support', SECRET)}`;
-  const build = (over: Record<string, unknown> = {}) => {
-    const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({
-      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
-      adminKey: 'K', sessionSecret: SECRET, ...over,
-    }));
-    return a;
-  };
-
-  it('founder cookie authorizes reads AND the PII/margin routes (rate-card, list)', async () => {
-    const app = build();
-    for (const p of ['/admin/quote/rate-card', '/admin/quote/list']) {
-      expect((await app.request(p, { headers: { cookie: founder } })).status).toBe(200);
-    }
-  });
-
-  it('support cookie is forbidden (403) on every data route', async () => {
-    const app = build();
-    for (const p of ['/admin/quote/rate-card', '/admin/quote/list', '/admin/quote/x']) {
-      expect((await app.request(p, { headers: { cookie: support } })).status).toBe(403);
-    }
-    const est = await app.request('/admin/quote/estimate', {
-      method: 'POST', headers: { cookie: support, 'content-type': 'application/json' }, body: '{}',
-    });
-    expect(est.status).toBe(403);
-  });
-
-  it('legacy x-admin-key still works (200)', async () => {
-    expect((await build().request('/admin/quote/rate-card', { headers: { 'x-admin-key': 'K' } })).status).toBe(200);
-  });
-
-  it('no auth at all is 401', async () => {
-    expect((await build().request('/admin/quote/rate-card')).status).toBe(401);
-  });
-
-  it('a founder cookie signed with the wrong secret is 401 (forgery)', async () => {
-    const res = await build().request('/admin/quote/rate-card', {
-      headers: { cookie: `ch_ops=${signSession('founder', 'WRONG')}` },
-    });
+  it('rejects a forged/garbage cookie (401)', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const res = await app.request('/admin/quote/list', { headers: { cookie: 'ch_ops=deadbeef.deadbeef' } });
     expect(res.status).toBe(401);
   });
 
-  it('support cookie is still 403 even with no adminKey + allowNoKey:true (never falls through the dev bypass)', async () => {
-    const app = build({ adminKey: undefined, allowNoKey: true });
-    expect((await app.request('/admin/quote/rate-card', { headers: { cookie: support } })).status).toBe(403);
+  it('rejects a cookie signed with the wrong secret (401)', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const res = await app.request('/admin/quote/list', { headers: { cookie: await cookie('f@x.com', 'wrong-secret') } });
+    expect(res.status).toBe(401);
+  });
+
+  it('x-admin-key is REJECTED on quote routes (system lacks quote:manage) — behavior change from pre-reconciliation', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const res = await app.request('/admin/quote/list', { headers: { 'x-admin-key': 'k' } });
+    expect(res.status).toBe(403);
+  });
+
+  it('founder, finance, and ops sessions all reach /rate-card (quote:manage, not founder-only)', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    for (const email of ['f@x.com', 'fin@x.com', 'op@x.com']) {
+      const res = await app.request('/admin/quote/rate-card', { headers: { cookie: await cookie(email) } });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it('founder, finance, and ops sessions all reach /list', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    for (const email of ['f@x.com', 'fin@x.com', 'op@x.com']) {
+      const res = await app.request('/admin/quote/list', { headers: { cookie: await cookie(email) } });
+      expect(res.status).toBe(200);
+    }
+  });
+});
+
+describe('quote tool — margin stripped for non-margin:view roles (server-side, per response)', () => {
+  const estimateBody = { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [leg({ distanceKm: 100 })] };
+
+  it('omits margin from /estimate for finance and ops sessions, includes it for founder', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    for (const email of ['fin@x.com', 'op@x.com']) {
+      const res = await app.request('/admin/quote/estimate', {
+        method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify(estimateBody),
+      });
+      const body = await res.json();
+      expect(body).not.toHaveProperty('margin');
+    }
+    const fRes = await app.request('/admin/quote/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') }, body: JSON.stringify(estimateBody),
+    });
+    expect(await fRes.json()).toHaveProperty('margin');
+  });
+
+  it('omits margin from /save\'s persisted quote when read back (/:id) for finance and ops, includes it for founder', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const saveOnce = async (email: string) => {
+      const res = await app.request('/admin/quote/save', {
+        method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify(estimateBody),
+      });
+      expect(res.status).toBe(201);
+      return res.json();
+    };
+    for (const email of ['fin@x.com', 'op@x.com']) {
+      const saved = await saveOnce(email);
+      const body = await (await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie(email) } })).json();
+      expect(body).not.toHaveProperty('marginCents');
+      // The persisted `result` is a full QuoteResult; its marginEstimateCents is the same
+      // cost figure — it must NOT leak nested for finance/ops (regression: shallow strip left it).
+      expect(body.result?.marginEstimateCents ?? null).toBeNull();
+    }
+    const saved = await saveOnce('f@x.com');
+    const body = await (await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie('f@x.com') } })).json();
+    expect(body).toHaveProperty('marginCents');
+    expect(body.result.marginEstimateCents).toBeGreaterThan(0); // founder still sees nested margin
+  });
+
+  it('omits margin from PATCH /:id\'s updated quote for finance and ops, includes it for founder', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const save = async (email: string) => {
+      const res = await app.request('/admin/quote/save', {
+        method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify(estimateBody),
+      });
+      return res.json();
+    };
+    const patchStatus = async (id: string, email: string) =>
+      app.request(`/admin/quote/${id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify({ status: 'sent' }),
+      });
+    for (const email of ['fin@x.com', 'op@x.com']) {
+      const saved = await save(email);
+      const res = await patchStatus(saved.id, email);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).not.toHaveProperty('marginCents'); // routine status edit must not leak cost/margin
+      expect(body.result?.marginEstimateCents ?? null).toBeNull(); // nor nested in result
+    }
+    const saved = await save('f@x.com');
+    const res = await patchStatus(saved.id, 'f@x.com');
+    const body = await res.json();
+    expect(body).toHaveProperty('marginCents');
+    expect(body.result.marginEstimateCents).toBeGreaterThan(0);
+  });
+
+  // [CORRECTED 2026-07-04 during T-D]: QuoteSummary (GET /list's return type, db/quoteRepo.ts)
+  // carries no marginCents field at all — toSummary() never populates one. So /list has
+  // nothing to strip, for ANY role; this test documents that invariant rather than asserting
+  // a founder-vs-non-founder difference that doesn't exist. If marginCents is ever added to
+  // QuoteSummary, this test must be updated to assert the per-role strip (see the code
+  // comment above GET /list in internalQuote.ts).
+  it('never exposes marginCents via /list, for any role (QuoteSummary carries no such field)', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    await app.request('/admin/quote/save', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') }, body: JSON.stringify(estimateBody),
+    });
+    for (const email of ['fin@x.com', 'op@x.com', 'f@x.com']) {
+      const list = await (await app.request('/admin/quote/list', { headers: { cookie: await cookie(email) } })).json();
+      expect(list.quotes.length).toBeGreaterThan(0);
+      for (const q of list.quotes) expect(q).not.toHaveProperty('marginCents');
+    }
   });
 });
 
@@ -482,14 +566,14 @@ describe('quoting tool — founder ops-session cookie auth', () => {
 describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
   const openApp = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
-  const estimate = (body: unknown) =>
+  const estimate = async (body: unknown) =>
     openApp().request('/admin/quote/estimate', {
       method: 'POST',
       body: JSON.stringify(body),
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
     });
 
   it('van_14 + customRatePerKmCents prices at the overridden rate', async () => {
@@ -514,17 +598,16 @@ describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
   });
 });
 
-// GL-1c: the tool stores customer PII and exposes cost/margin. With no key configured the
-// guard must fail CLOSED unless dev-openness is explicitly requested (allowNoKey) — a
-// misconfigured production deploy must lock, not expose.
-describe('quoting tool — fail-closed when no key is configured', () => {
+// GL-1c: the tool stores customer PII and exposes cost/margin. The guard must fail CLOSED —
+// no auth at all (no session, no x-admin-key) never reaches a data route.
+describe('quoting tool — fail-closed with no auth', () => {
   const locked = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
 
-  it('401s data routes when no adminKey is set and allowNoKey is absent (production default)', async () => {
+  it('401s data routes with no session and no key', async () => {
     const app = locked();
     expect((await app.request('/admin/quote/places?q=kand')).status).toBe(401);
     expect((await app.request('/admin/quote/list')).status).toBe(401);
@@ -538,10 +621,11 @@ describe('quoting tool — fail-closed when no key is configured', () => {
     expect(res.headers.get('location')).toBe('/ops');
   });
 
-  it('allowNoKey: true keeps data routes open without a key (dev/preview)', async () => {
+  it('a valid session (any of the 3 roles) unlocks the data routes via quote:manage', async () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
-    expect((await a.request('/admin/quote/places?q=kand')).status).toBe(200);
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    const res = await a.request('/admin/quote/places?q=kand', { headers: { cookie: await cookie('op@x.com') } });
+    expect(res.status).toBe(200);
   });
 });
 
@@ -549,8 +633,8 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns whatever the injected adapter.places() yields (Google now lives in the adapter)', async () => {
     const a = new Hono();
     const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
-    const res = await a.request('/admin/quote/places?q=colombo');
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    const res = await a.request('/admin/quote/places?q=colombo', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
     expect((await res.json()).places).toEqual(['Stubbed']);
   });
@@ -559,8 +643,8 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
     const a = new Hono();
     let called = false;
     const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), allowNoKey: true }));
-    const res = await a.request('/admin/quote/places?q=c');
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    const res = await a.request('/admin/quote/places?q=c', { headers: { cookie: await cookie('op@x.com') } });
     expect((await res.json()).places).toEqual([]);
     expect(called).toBe(false);
   });
@@ -582,14 +666,13 @@ describe('quoting tool — GET / redirects to /ops', () => {
 // Neither header present = non-browser caller (curl/fetch from scripts) — the auth guard still
 // applies. GET reads stay CSRF-exempt: autocomplete must stay fast and reads carry no writes.
 describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
-  const SECRET = 'test-ops-session-secret';
-  const founder = `ch_ops=${signSession('founder', SECRET)}`;
   const OWN_ORIGIN = 'http://localhost:4173'; // in the app's default ALLOWED_ORIGINS
+  const founder = FOUNDER_COOKIE;
   const build = () => {
     const a = new Hono();
     a.route('/admin/quote', internalQuoteRoutes({
       maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
-      adminKey: 'K', sessionSecret: SECRET, allowedOrigins: [OWN_ORIGIN],
+      auth: OPS_AUTH_CFG, allowedOrigins: [OWN_ORIGIN],
     }));
     return a;
   };
@@ -652,14 +735,15 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   });
 
   it('app-level wiring: createApp passes its allow-list into the mount', async () => {
-    // Default ALLOWED_ORIGINS includes http://localhost:4173; the dev keyless bypass opens
-    // auth under vitest, so a CSRF 403 here can only come from the mounted allow-list.
+    // Default ALLOWED_ORIGINS includes http://localhost:4173. A cross-site Origin must 403
+    // regardless of auth; the allow-listed origin needs a real founder session to reach 200
+    // now that quote:manage is enforced (no more dev keyless bypass).
     const app = createApp();
-    const post = (origin?: string) => app.request('/admin/quote/estimate', {
+    const postWithOrigin = (origin?: string) => app.request('/admin/quote/estimate', {
       method: 'POST', body: estimateBody,
-      headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+      headers: { 'content-type': 'application/json', cookie: founder, ...(origin ? { origin } : {}) },
     });
-    expect((await post('https://evil.example')).status).toBe(403);
-    expect((await post(OWN_ORIGIN)).status).toBe(200);
+    expect((await postWithOrigin('https://evil.example')).status).toBe(403);
+    expect((await postWithOrigin(OWN_ORIGIN)).status).toBe(200);
   });
 });

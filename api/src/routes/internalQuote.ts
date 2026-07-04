@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import type { MiddlewareHandler } from 'hono';
-import { getCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
@@ -10,10 +9,8 @@ import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import type { MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { verifySession } from '../lib/opsAuth';
-
-// Same session cookie as /admin/ops (ops.ts) — one login covers both surfaces.
-const COOKIE = 'ch_ops';
+import { can } from '../lib/opsAuth';
+import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -180,17 +177,37 @@ function summary(result: QuoteResult): ServiceSummary {
   return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
 }
 
-function shape(result: QuoteResult) {
-  return {
+// D-A / spec §3.1: margin is stripped from the wire response unless the caller has
+// margin:view (founder only) — finance/ops price customers without ever seeing cost.
+function shape(result: QuoteResult, canMargin: boolean) {
+  const base = {
     product: result.product,
     total: money(result.totalCents),
     deposit: money(result.depositCents),
     amountDueNow: money(result.amountDueNowCents),
-    margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents),
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
     lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: li.meta })),
   };
+  if (!canMargin) return base;
+  return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
+}
+
+// Strip persisted margin from a stored quote for non-margin:view roles (spec §3.1) —
+// used by GET /:id and PATCH /:id, which echo the full SavedQuote from the repo.
+// The top-level marginCents is NOT the only copy: the persisted `result` JSON is a full
+// QuoteResult, and QuoteResult.marginEstimateCents is the same cost/margin figure. A shallow
+// delete of marginCents alone leaks it nested. Strip both. (breakdown/lineItems carry only
+// customer-facing prices, so no other nested field needs stripping — see quote/types.ts.)
+function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents'> {
+  const rest: Record<string, unknown> = { ...q };
+  delete rest.marginCents;
+  if (rest.result && typeof rest.result === 'object') {
+    const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
+    delete safeResult.marginEstimateCents;
+    rest.result = safeResult;
+  }
+  return rest as Omit<T, 'marginCents'>;
 }
 
 // Place suggestions via the maps adapter (Google/offline fallback now lives in the adapter).
@@ -203,9 +220,7 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
-  adminKey?: string;
-  allowNoKey?: boolean;
-  sessionSecret?: string;
+  auth: OpsAuthConfig;
   allowedOrigins?: string[];
 }) {
   const r = new Hono();
@@ -237,21 +252,13 @@ export function internalQuoteRoutes(deps: {
     return next();
   };
 
-  // GL-1c + ops⇄quote merge T1: fail CLOSED. The tool stores customer PII and exposes
-  // cost/margin, so a data route unlocks only for (a) the legacy x-admin-key, (b) a valid
-  // FOUNDER ops-session cookie (same ch_ops login as /admin/ops), or (c) the explicit
-  // dev-only keyless bypass (allowNoKey — app.ts passes NODE_ENV !== 'production').
-  // A support session is never enough — margin/PII stay founder-only (403, even in dev).
-  // A misconfigured production deploy must lock, not expose — see the go-live checklist.
-  r.use('*', async (c, next) => {
-    const key = c.req.header('x-admin-key');
-    if (deps.adminKey && key && key === deps.adminKey) return next(); // legacy admin key → founder
-    const role = verifySession(getCookie(c, COOKIE), deps.sessionSecret ?? '');
-    if (role === 'founder') return next(); // founder ops session
-    if (role === 'support') return c.json({ error: 'forbidden' }, 403); // support: never quote data
-    if (!deps.adminKey && deps.allowNoKey) return next(); // dev-only keyless bypass
-    return c.json({ error: 'unauthorized' }, 401);
-  });
+  // D-A (2026-07-04): the quote tool opens to ALL THREE roles via quote:manage — reverts
+  // the earlier founder-only gate. Cost/margin is stripped server-side per-response for
+  // any role without margin:view (see shape()/stripQuoteMargin() below), so finance/ops
+  // can quote customers without ever seeing driver cost. system (x-admin-key) does NOT
+  // have quote:manage — a leaked cron key cannot see customer PII or issue quotes (D6).
+  r.use('*', opsIdentity(deps.auth));
+  r.use('*', (c, next) => (c.req.path === '/admin/quote' ? next() : requireCap('quote:manage')(c, next)));
 
   // Autocomplete (delegated to the maps adapter; Google key/timeout live there now).
   r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.maps) }));
@@ -268,6 +275,7 @@ export function internalQuoteRoutes(deps: {
     const raw = await c.req.json().catch(() => null);
     try {
       const body = parseToolRequest(raw);
+      const canMargin = can(c.get('identity').role, 'margin:view');
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
       const { req, result } = await resolveAndPrice(body, deps.maps);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
@@ -298,7 +306,7 @@ export function internalQuoteRoutes(deps: {
       }
 
       return c.json({
-        ...shape(result),
+        ...shape(result, canMargin),
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req),
         services,
@@ -355,6 +363,12 @@ export function internalQuoteRoutes(deps: {
 
   // List quotes (newest first), optionally filtered by status/product/from/to.
   // MUST be registered before /:id so that /list doesn't match the param route.
+  // Margin note [CORRECTED 2026-07-04 during T-D]: the plan's A-5 assumed QuoteSummary (this
+  // endpoint's return type) carries marginCents. As of the current db/quoteRepo.ts, it does
+  // NOT — QuoteSummary has no marginCents field and toSummary() never populates one, so there
+  // is nothing to strip here (an inert strip is worse than none — false security theater, per
+  // spec §3.1's own correction elsewhere). If marginCents is ever added to QuoteSummary, gate
+  // it behind can(identity.role, 'margin:view') via stripQuoteMargin() below and test both sides.
   r.get('/list', async (c) => {
     const status = c.req.query('status') as QuoteStatus | undefined;
     if (status && !QUOTE_STATUSES.includes(status)) return c.json({ error: 'bad_status' }, 400);
@@ -367,10 +381,14 @@ export function internalQuoteRoutes(deps: {
     return c.json({ quotes: quotesList });
   });
 
-  // Full quote (incl. request/result JSON) for re-opening in the tool.
+  // Full quote (incl. request/result JSON) for re-opening in the tool. marginCents is
+  // stripped for non-margin:view roles — /save persists it regardless (storage, not
+  // exposure over the wire), but this read path must never echo it back to finance/ops.
   r.get('/:id', async (c) => {
     const q = await deps.quotes.get(c.req.param('id'));
-    return q ? c.json(q) : c.json({ error: 'not_found' }, 404);
+    if (!q) return c.json({ error: 'not_found' }, 404);
+    const canMargin = can(c.get('identity').role, 'margin:view');
+    return c.json(canMargin ? q : stripQuoteMargin(q));
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
@@ -383,7 +401,11 @@ export function internalQuoteRoutes(deps: {
       lostReason: body.lostReason,
       notes: body.notes,
     });
-    return updated ? c.json(updated) : c.json({ error: 'not_found' }, 404);
+    if (!updated) return c.json({ error: 'not_found' }, 404);
+    // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine
+    // status/notes edit by finance/ops must not echo cost/margin back to them.
+    const canMargin = can(c.get('identity').role, 'margin:view');
+    return c.json(canMargin ? updated : stripQuoteMargin(updated));
   });
 
   return r;

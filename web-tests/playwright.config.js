@@ -6,10 +6,11 @@ import { defineConfig, devices } from '@playwright/test';
 //
 // The quote-tool and ops-ui specs are the exception: they exercise the real
 // merged ops⇄quote dashboard served by the API at /ops (the quoting tool is a
-// founder-only view mounted inside it — see api/src/routes/ops-ui.html), which
-// needs a reachable DATABASE_URL and writes rows to that DB. Those specs are
-// skipped unless you opt in with CH_E2E_API=1, which also boots the API
-// webServer below (see package.json's "test:e2e:tool"/"test:e2e:ops" scripts).
+// view mounted inside it, open to all 3 roles per spec D-A — see
+// api/src/routes/ops-ui.html), which needs a reachable DATABASE_URL and writes
+// rows to that DB. Those specs are skipped unless you opt in with CH_E2E_API=1,
+// which also boots the API webServer below (see package.json's
+// "test:e2e:tool"/"test:e2e:ops" scripts).
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -39,7 +40,7 @@ export default defineConfig({
     ...(process.env.CH_E2E_API === '1' ? [
       {
         // The API serves the merged ops⇄quote dashboard at /ops (see quote-tool.spec.js
-        // and ops-ui.spec.js) — the quoting tool is a founder-only view inside it.
+        // and ops-ui.spec.js) — the quoting tool is a view inside it open to all 3 roles.
         // Needs DATABASE_URL (api/.env) — only booted when CH_E2E_API=1.
         command: 'npm --prefix ../api run dev',
         url: 'http://localhost:8787/health',
@@ -50,11 +51,13 @@ export default defineConfig({
           // Parallel specs share one IP; the /admin/quote rate limiter (RATE_LIMIT_MAX*4)
           // saturates near the tail of a full run. Raise the cap for the test server only.
           RATE_LIMIT_MAX: '200',
-          // The booted API needs founder/support keys + a session secret for the /ops
-          // login flow the specs drive. Dev defaults so the suite runs out of the box;
-          // pass through process.env values (e.g. from api/.env) if already set.
-          OPS_FOUNDER_KEY: process.env.OPS_FOUNDER_KEY || 'dev-founder',
-          OPS_SUPPORT_KEY: process.env.OPS_SUPPORT_KEY || 'dev-support',
+          // The booted API needs an allowlist + a session secret for the /ops dev-login
+          // flow the specs drive (Google Sign-In isn't usable in e2e). Dev defaults so
+          // the suite runs out of the box; pass through process.env values (e.g. from
+          // api/.env) if already set. NODE_ENV must NOT be 'production' or the API 404s
+          // POST /admin/ops/dev-login (devBypassEnabled() in api/src/lib/opsMiddleware.ts).
+          NODE_ENV: process.env.NODE_ENV === 'production' ? 'development' : (process.env.NODE_ENV || 'development'),
+          OPS_USERS: process.env.OPS_USERS || 'founder@e2e.test:founder,finance@e2e.test:finance,ops@e2e.test:ops',
           OPS_SESSION_SECRET: process.env.OPS_SESSION_SECRET || 'dev-ops-secret-change-me',
         },
       },

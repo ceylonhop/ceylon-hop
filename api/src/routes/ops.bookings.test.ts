@@ -2,9 +2,21 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
+import { issueSessionCookie } from '../lib/opsMiddleware';
+import { Hono } from 'hono';
 
-const auth = { opsSupportKey: 'sup', opsFounderKey: 'fou', opsSessionSecret: 'sek' };
-const hdr = { 'x-admin-key': 'adminkey', 'content-type': 'application/json' }; // founder via header
+const auth = { opsUsers: 'f@x.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+
+async function cookie(email: string) {
+  const c = new Hono();
+  c.get('/', (ctx) => { issueSessionCookie(ctx, email, 'sek', Date.now()); return ctx.text('ok'); });
+  const res = await c.request('/');
+  return res.headers.get('set-cookie')!.split(';')[0];
+}
+
+async function hdr() {
+  return { cookie: await cookie('f@x.com'), 'content-type': 'application/json' }; // founder session
+}
 
 function bookingInput(overrides: { travelDate?: string } = {}) {
   return {
@@ -29,7 +41,7 @@ describe('ops bookings endpoints', () => {
   });
 
   it('lists bookings as ops rows', async () => {
-    const res = await app.request('/admin/ops/bookings', { headers: hdr });
+    const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
     const rows = await res.json();
     expect(rows).toHaveLength(1);
     expect(rows[0].route).toBe('Colombo Airport → Galle');
@@ -39,7 +51,7 @@ describe('ops bookings endpoints', () => {
   it('advances fulfilment status via the status endpoint', async () => {
     await bookings.setStatus(bid, 'paid');
     const res = await app.request(`/admin/ops/bookings/${bid}/status`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ to: 'vehicle_confirmed' }),
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
     });
     const ops = await res.json();
     expect(ops.fulfilmentStatus).toBe('vehicle_confirmed');
@@ -48,14 +60,14 @@ describe('ops bookings endpoints', () => {
   it('rejects an illegal status transition with 400', async () => {
     await bookings.setStatus(bid, 'paid');
     const res = await app.request(`/admin/ops/bookings/${bid}/status`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ to: 'completed' }),
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'completed' }),
     });
     expect(res.status).toBe(400);
   });
 
   it('toggles flags', async () => {
     const res = await app.request(`/admin/ops/bookings/${bid}/flags`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ vehiclePhotoReceived: true }),
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ vehiclePhotoReceived: true }),
     });
     expect((await res.json()).vehiclePhotoReceived).toBe(true);
   });
@@ -78,7 +90,7 @@ describe('ops bookings endpoints', () => {
     await bookings.setStatus(completed.id, 'in_progress');
     await bookings.setStatus(completed.id, 'completed'); // excluded (booking-level)
 
-    const res = await app.request('/admin/ops/bookings', { headers: hdr });
+    const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
     const rows = await res.json();
     // Queue = bid (payment_pending, travelDate 2026-06-22, from beforeEach) + paid + pending.
     // draft and completed are excluded. Sorted by travelDate ascending.
@@ -101,7 +113,7 @@ describe('ops bookings endpoints', () => {
     const app2 = createApp({ bookings, rideOps, auth, adminApiKey: 'adminkey' });
     await rideOps.getOrCreate(b.id);
     await rideOps.setStatus(b.id, 'vehicle_confirmed');
-    const res = await app2.request('/admin/ops/bookings', { headers: hdr });
+    const res = await app2.request('/admin/ops/bookings', { headers: await hdr() });
     const rows = await res.json();
     expect(rows.find((r: { id: string }) => r.id === b.id).stage).toBe('vehicle_confirmed');
   });
@@ -111,18 +123,18 @@ describe('ops bookings endpoints', () => {
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
     const res = await app.request(`/admin/ops/bookings/${b.id}/status`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ to: 'vehicle_confirmed' }),
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
     });
     expect(res.status).toBe(200);
     const bad = await app.request(`/admin/ops/bookings/${b.id}/status`, {
-      method: 'POST', headers: hdr, body: JSON.stringify({ to: 'completed' }),
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'completed' }),
     });
     expect(bad.status).toBe(400);
   });
 
   it('has no coordinator, manifest, or rides routes', async () => {
     for (const path of ['/admin/ops/coordinators', '/admin/ops/manifest', '/admin/ops/rides']) {
-      const res = await app.request(path, { headers: hdr });
+      const res = await app.request(path, { headers: await hdr() });
       expect(res.status).toBe(404);
     }
   });

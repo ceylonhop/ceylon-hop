@@ -80,8 +80,8 @@ const app = createApp({
     await sql`SELECT 1`;
   },
   auth: {
-    opsSupportKey: config.OPS_SUPPORT_KEY,
-    opsFounderKey: config.OPS_FOUNDER_KEY,
+    opsUsers: config.OPS_USERS,
+    googleClientId: config.GOOGLE_OAUTH_CLIENT_ID,
     opsSessionSecret: config.OPS_SESSION_SECRET,
   },
 });

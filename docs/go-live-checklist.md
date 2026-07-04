@@ -21,10 +21,10 @@ comes up, so launch is a clean, mechanical switch-over.
 | `DATABASE_URL` | dev password (leaked in-session) | **rotated** password |
 | `GOOGLE_MAPS_API_KEY` | unset → fake/haversine distances | **real server key (required)** — the quote tool's live distances/autocomplete and server-side repricing of typed addresses depend on it. Restrict to Distance Matrix + Places, no referrer restriction (server-side) |
 | `RESEND_API_KEY` | ✅ set | (already fine) |
-| `ADMIN_API_KEY` | empty → **ops endpoints return 401 (locked out)** | strong secret so staff can use the ops endpoints |
-| `OPS_SESSION_SECRET` | `dev-ops-secret-change-me` (public default → forgeable cookies) | **strong random secret** (e.g. `openssl rand -hex 32`) |
-| `OPS_FOUNDER_KEY` | empty | the founder login key for the ops dashboard |
-| `OPS_SUPPORT_KEY` | empty | the support/agent login key for the ops dashboard |
+| `ADMIN_API_KEY` | empty → **ops endpoints return 401 (locked out)** | strong secret — **machines only** (cron/watchdog, `admin:jobs`). Since the 2026-07-04 RBAC reconciliation this is **no longer a human/founder login**: it resolves to the narrow `system` identity, which is rejected (403) on `/admin/quote/*` and on cancel/refund (`payments:act`). A leaked cron key can no longer see customer PII, issue quotes, or move money (D6) |
+| `OPS_SESSION_SECRET` | `dev-ops-secret-change-me` (public default → forgeable cookies) | **strong random secret** (e.g. `openssl rand -hex 32`) — signs the identity-only session cookie (email, no role; role is re-resolved from `OPS_USERS` on every request) |
+| `OPS_USERS` | empty (dev bypass mints sessions for any allowlisted-in-config email) | `"email:role,email:role,email:role"` — **exactly the 3 staff Google accounts**, roles `founder\|finance\|ops`. Replaces the old `OPS_FOUNDER_KEY`/`OPS_SUPPORT_KEY` shared-key logins entirely |
+| `GOOGLE_OAUTH_CLIENT_ID` | empty | the Web OAuth client ID from Google Cloud Console (see the **Google OAuth setup** step below) — public, not a secret |
 | `ALERT_EMAIL` | unset → alerts log-only | **your email** — ops alerts (payment failures, API errors, DB down) + the daily digest land here (M17) |
 | `SENTRY_DSN` | unset → error tracking dormant | DSN from the free Sentry project you create at launch (M17) |
 | `RESEND_WEBHOOK_SECRET` | unset → `/webhooks/resend` disabled | signing secret from the Resend dashboard webhook (M17, bounce/complaint alerts) |
@@ -35,8 +35,10 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] real server `GOOGLE_MAPS_API_KEY` (required — quote tool + server repricing)
-- [ ] strong `ADMIN_API_KEY` set (ops endpoints are locked out until then) — **also mirror it as a GitHub Actions repo secret `ADMIN_API_KEY`** so the `scheduled-notifications` workflow (daily reminders + review requests) can authenticate
-- [ ] `ADMIN_API_KEY` also gates the internal quoting tool (`/admin/quote/*`), which stores customer PII and exposes cost/margin. ~~fails OPEN when unset~~ **Fixed 2026-07-02 (GL-1c): the tool now fails CLOSED in production** — an unset key means staff are locked out (401) until it's set, never exposed.
+- [ ] strong `ADMIN_API_KEY` set (cron/watchdog jobs are locked out until then) — **also mirror it as a GitHub Actions repo secret `ADMIN_API_KEY`** so the `scheduled-notifications` workflow (daily reminders + review requests) can authenticate. **Behavior change (2026-07-04 RBAC reconciliation, D6):** this key no longer logs a human into the ops dashboard or the quoting tool, and no longer authorises cancel/refund — it only satisfies `admin:jobs` (the cron endpoints). Any script that previously used it against `/admin/quote/*` or `/admin/bookings/:id/{cancel,refund}` will now get 403 and must switch to a real staff Google sign-in.
+- [x] ~~`ADMIN_API_KEY` also gates the internal quoting tool~~ **Superseded 2026-07-04:** the quoting tool (`/admin/quote/*`) now requires a Google-signed-in session with `quote:manage` (founder, finance, and ops all qualify — D-A); `x-admin-key` is rejected there. Cost/margin fields are stripped server-side for everyone except `margin:view` (founder only).
+- [ ] **Google OAuth setup (one-time, ~10 min) — required before staff can sign in to `/ops`.** In the existing Google Cloud project (where the Maps keys live): APIs & Services → Credentials → **Create OAuth client ID → Web application**. Authorised JavaScript origins = the API's production origin + `https://ceylonhop.com` + `http://localhost:<dev-port>` (no redirect URIs needed — Google Identity Services' ID-token flow is origin-based). **Consent screen:** if the 3 staff use personal `@gmail.com` accounts (not a Google Workspace domain), choose **External** and add the 3 emails as **test users** — an app in "testing" needs no Google verification review at 3 users and works indefinitely. Copy the client ID into `GOOGLE_OAUTH_CLIENT_ID` (public, not a secret). Set `OPS_USERS="alice@gmail.com:founder,bob@gmail.com:finance,carol@gmail.com:ops"` (the real 3 emails/roles) on Render. **Confirm all 3 Google accounts have 2-step verification enabled first** — those inboxes are now the security boundary for the ops dashboard and quoting tool.
+- [ ] Remove any leftover `OPS_FOUNDER_KEY`/`OPS_SUPPORT_KEY` values from Render's env — no longer read by the API.
 
 ## 2. DNS / external consoles
 
@@ -93,4 +95,4 @@ comes up, so launch is a clean, mechanical switch-over.
 
 ---
 
-_Last updated: 2026-07-02 (GL-3 + GL-4 merged: engine-authoritative bookings, deposit-correct checkout, seat-hold release, rate-limiter hardening, front-end pricing parity). Add new items as they arise — don't rely on memory._
+_Last updated: 2026-07-04 (ops permissions & roles reconciliation: Google Sign-In + founder/finance/ops capability roles replace the `OPS_FOUNDER_KEY`/`OPS_SUPPORT_KEY` shared-key logins; `ADMIN_API_KEY` narrowed to machines-only). Previously: 2026-07-02 (GL-3 + GL-4 merged: engine-authoritative bookings, deposit-correct checkout, seat-hold release, rate-limiter hardening, front-end pricing parity). Add new items as they arise — don't rely on memory._

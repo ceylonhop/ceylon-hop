@@ -814,14 +814,18 @@
     <div class="login-mark"><svg viewBox="0 0 32 32" width="30" height="30" fill="none"><circle cx="16" cy="16" r="13" stroke="#0AB9B6" stroke-width="3"/><path d="M16 7v9l6 4" stroke="#08938f" stroke-width="3" stroke-linecap="round"/></svg></div>
     <h1>Ceylon Hop — Ops</h1>
     <p class="sub">Control tower · <b>sign in to continue</b></p>
-    <form id="loginform" autocomplete="off">
-      <div class="keywrap"><input id="loginkey" type="password" placeholder="Access key" autocomplete="off" spellcheck="false"></div>
-      <button type="submit" id="loginbtn">Sign in</button>
-      <div class="err" id="loginerr"></div>
-    </form>
+    <div id="g_id_signin"></div>
+    <div class="err" id="loginerr"></div>
+    <div class="foot" id="devlogin-foot" data-dev-login-enabled="{{DEV_LOGIN_ENABLED}}">
+      <form id="devloginform" autocomplete="off" style="display:none">
+        <input id="devloginemail" type="email" placeholder="Allowlisted email (dev only)" autocomplete="off" spellcheck="false">
+        <button type="submit" id="devloginbtn">Dev sign-in (local only)</button>
+      </form>
+    </div>
     <div class="foot">Restricted operational console</div>
   </div>
 </div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <div class="scrim" id="scrim"></div><aside class="sheet" id="sheet"></aside><div class="toast" id="toast"></div>
 
@@ -938,7 +942,8 @@ let state={route:'tickets',q:'',group:'all',chan:'',detail:null,detailData:null,
 
 async function loadQueue(){const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();}
 
-/* nav is rendered per-role: Bookings always; Quote only for founders */
+/* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
+   (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
 const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
@@ -946,7 +951,7 @@ const NAV_ICONS={
 function setNav(){
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}">${NAV_ICONS.tickets} Bookings <span class="count" id="nav-attn">${tickets.filter(isAttn).length}</span></button>`+
-    (state.role==='founder'?`<button data-route="quote" class="${state.route==='quote'?'active':''}">${NAV_ICONS.quote} Quote</button>`:'');
+    (state.caps&&state.caps.includes('quote:manage')?`<button data-route="quote" class="${state.route==='quote'?'active':''}">${NAV_ICONS.quote} Quote</button>`:'');
 }
 
 function ticketRow(t,i){
@@ -1095,7 +1100,7 @@ async function refreshRow(id){
 
 /* ── quote view panel — mounts QuoteView into #quoteRoot: .ch-app render target + SIBLING #ch-toast (innerHTML swaps never destroy the toast) ── */
 function showQuoteView(){
-  if(state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
+  if(!state.caps||!state.caps.includes('quote:manage')){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
   /* close any open Bookings detail sheet + scrim so its fixed overlay doesn't float over the cockpit */
   if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
   const qr=$('#quoteRoot');
@@ -1114,7 +1119,7 @@ function hideQuoteView(){$('#quoteRoot').hidden=true;$('#view').hidden=false;$('
    whatever the operator is doing). _lastRenderedRoute tracks the previous paint. */
 let _lastRenderedRoute=null;
 function render(){
-  if(state.route==='quote'&&state.role!=='founder')state.route='tickets';
+  if(state.route==='quote'&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -1141,7 +1146,7 @@ function render(){
 document.addEventListener('click',e=>{
   const btn=e.target.closest('#nav [data-route]');if(!btn)return;
   let route=btn.dataset.route;
-  if(route==='quote'&&state.role!=='founder')route='tickets';
+  if(route==='quote'&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   state.route=route;
   if(route==='quote')location.hash='quote';
   else if(location.hash)history.replaceState(null,'',location.pathname+location.search);
@@ -1166,47 +1171,77 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state.detail=null;state.detailData=null;renderSheet();}});
 
 /* ── login / session ── */
-function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;const k=$('#loginkey');if(k){k.value='';setTimeout(()=>k.focus(),120);}}
+function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;}
 function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;}
-function bootApp(role){
+function bootApp(identity){
   hideLogin();
-  state.role=role;
+  state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
-  window.opsGoBookings=()=>{state.route='tickets';render();}; /* quote module bounces a 403 (non-founder) back to Bookings */
-  /* T6 deep-link (single source of truth for both the form-login and whoami-refresh paths):
-     a founder can land on #quote; support (or a stale hash) bounces to Bookings + the hash is cleared. */
-  if(location.hash==='#quote'&&role==='founder')state.route='quote';
+  window.opsGoBookings=()=>{state.route='tickets';render();}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
+  /* T6 deep-link (single source of truth for both the login and whoami-refresh paths):
+     anyone with quote:manage can land on #quote (D-A: all 3 roles); otherwise bounce to
+     Bookings + clear the hash. */
+  if(location.hash==='#quote'&&state.caps&&state.caps.includes('quote:manage'))state.route='quote';
   else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
-  const initials=role==='founder'?'FO':'SU';
-  $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>Ops · ${role==='founder'?'Founder':'Support'}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
+  const initials=identity.role.slice(0,2).toUpperCase();
+  const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
+  $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>${esc(identity.email)} · ${esc(roleLabel)}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
   setNav();
   if(state.route==='quote')render(); /* mount the quote view immediately — it needs no booking data; loadQueue populates Bookings in the background */
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
-$('#loginform').addEventListener('submit',async e=>{
+/* Google Identity Services calls this with the signed ID token credential. */
+function onGoogleCredential(resp){
+  const errEl=$('#loginerr');errEl.textContent='';
+  fetch('/admin/ops/login',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({credential:resp.credential})})
+    .then(async r=>{
+      if(r.ok){
+        /* /login returns {email,role} only — re-fetch whoami for the full {email,role,caps}
+           the app needs (mirrors the dev-login path; without this bootApp gets no caps). */
+        const who=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
+        if(who.ok)bootApp(await who.json());
+        else{errEl.textContent='Signed in, but could not load your session — retry';}
+      }
+      else{const card=$('#login-card');card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');errEl.textContent="This Google account isn't authorised";}
+    }).catch(()=>{errEl.textContent='Network error — try again';});
+}
+window.onGoogleCredential=onGoogleCredential;
+
+/* Dev-only bypass (NODE_ENV!=='production'): mints a session for an allowlisted email
+   without going through Google, for local dev + e2e. The server 404s /dev-login in
+   production, and the form itself is only unhidden when the server tells us (via the
+   templated devlogin-foot flag) that dev bypass is enabled — never shown in prod. */
+const devLoginForm=$('#devloginform');
+if(devLoginForm)devLoginForm.addEventListener('submit',async e=>{
   e.preventDefault();
-  const btn=$('#loginbtn'),errEl=$('#loginerr'),key=$('#loginkey').value.trim();
-  errEl.textContent='';if(!key)return;
-  btn.disabled=true;btn.textContent='Signing in…';
+  const errEl=$('#loginerr'),email=$('#devloginemail').value.trim();
+  errEl.textContent='';if(!email)return;
   try{
-    const r=await fetch('/admin/ops/login',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({key})});
-    if(r.ok){const {role}=await r.json();bootApp(role);}
-    else{const card=$('#login-card');card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');errEl.textContent='Wrong key';$('#loginkey').value='';$('#loginkey').focus();}
+    const r=await fetch('/admin/ops/dev-login',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({email})});
+    if(r.ok){
+      const who=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
+      if(who.ok)bootApp(await who.json());
+    }else{errEl.textContent='Not authorised for dev sign-in';}
   }catch(_){errEl.textContent='Network error — try again';}
-  finally{btn.disabled=false;btn.textContent='Sign in';}
 });
+
 $('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
 document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);showLogin();}});
 
-/* boot: whoami → in-session boots the app, else show login */
+/* boot: whoami → in-session boots the app, else show login (+ init the GIS button) */
 (async function(){
   localStorage.removeItem('chAdminKey'); /* T5: stale secret from the quote tool's admin-key era */
+  if(window.google&&google.accounts&&google.accounts.id){
+    google.accounts.id.initialize({client_id:'{{GOOGLE_CLIENT_ID}}',callback:onGoogleCredential});
+    google.accounts.id.renderButton($('#g_id_signin'),{theme:'filled_black',size:'large',shape:'pill'});
+  }
+  const devFoot=$('#devlogin-foot');
+  if(devFoot&&devFoot.dataset.devLoginEnabled==='true'&&devLoginForm)devLoginForm.style.display='';
   try{
     const r=await fetch('/admin/ops/whoami',{credentials:'same-origin'});
     if(r.ok){
-      const {role}=await r.json();
-      bootApp(role); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and form-login paths) */
+      bootApp(await r.json()); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and login paths) */
     }else{showLogin();}
   }catch(_){showLogin();}
 })();

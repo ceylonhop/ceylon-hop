@@ -24,6 +24,7 @@ import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
+import type { JwtVerifier } from './lib/googleAuth';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -37,7 +38,8 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
-  auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
+  auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
+  googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
@@ -68,10 +70,11 @@ export function createApp(deps: AppDeps = {}) {
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
-    supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
-    founderKey: deps.auth?.opsFounderKey ?? config.OPS_FOUNDER_KEY,
+    opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
+    googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
     sessionSecret: deps.auth?.opsSessionSecret ?? config.OPS_SESSION_SECRET,
     adminApiKey,
+    nodeEnv: deps.auth?.nodeEnv ?? config.NODE_ENV,
   };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
@@ -155,22 +158,24 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
-  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
+  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg, googleVerifier: deps.googleVerifier }));
   // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
   // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
   app.use('/ops', compress());
-  app.route('/ops', opsUiRoutes());
-  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
-  // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
-  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2).
+  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production'));
+  // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
+  // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
+  // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
+  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes,
-    adminKey: adminApiKey,
-    allowNoKey: config.NODE_ENV !== 'production',
-    sessionSecret: opsAuthCfg.sessionSecret,
+    auth: opsAuthCfg,
     allowedOrigins,
   }));
+  // T-E: cancel/refund require payments:act (founder or finance, human session only —
+  // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay
+  // machine-driven via admin:jobs (system or founder).
   app.route(
     '/admin',
     adminRoutes({
@@ -178,7 +183,7 @@ export function createApp(deps: AppDeps = {}) {
       departures,
       email,
       notificationLog,
-      adminApiKey,
+      auth: opsAuthCfg,
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
