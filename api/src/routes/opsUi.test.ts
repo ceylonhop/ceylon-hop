@@ -12,4 +12,13 @@ describe('ops UI shell', () => {
     expect(body).toContain('/admin/ops'); // wired to the real API, not mock data
     expect(body).not.toContain('CH-TMRJR'); // no mock bookings shipped
   });
+
+  it('ships the founder-only Quote nav scaffold', async () => {
+    const app = createApp();
+    const res = await app.request('/ops');
+    const body = await res.text();
+    expect(body).toContain('data-route="quote"'); // Quote nav button rendered by script
+    expect(body).toContain("state.role==='founder'"); // founder gate in the script
+    expect(body).toContain('id="quoteRoot"'); // scoped quote container in .main
+  });
 });

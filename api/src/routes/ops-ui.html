@@ -71,6 +71,11 @@
 
   .scroll{overflow-y:auto;padding:30px 32px 90px;position:relative;z-index:1}
   .scroll::-webkit-scrollbar{width:11px}.scroll::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+  /* quote view — own scoped scroller, sibling of #view (the .app is 100vh/overflow:hidden) */
+  #quoteRoot{height:100%;overflow-y:auto;position:relative;z-index:1}
+  #quoteRoot::-webkit-scrollbar{width:11px}#quoteRoot::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+  /* [hidden] must win over .topbar{display:flex} etc. when routes swap panels */
+  #topbar[hidden],#view[hidden],#quoteRoot[hidden]{display:none}
   .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:-.025em;line-height:1}
   .pagesub{color:var(--ink-soft);margin:9px 0 22px;font-size:.95rem}.pagesub b{color:var(--ink);font-weight:700}.pagesub .a{color:var(--alert);font-weight:700}
   .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
@@ -202,12 +207,10 @@
 <div class="app" id="approot" hidden>
   <aside class="rail">
     <div class="brand"><svg viewBox="0 0 32 32" width="30" height="30" fill="none"><circle cx="16" cy="16" r="13" stroke="#0AB9B6" stroke-width="3"/><path d="M16 7v9l6 4" stroke="#08938f" stroke-width="3" stroke-linecap="round"/></svg><span>Ceylon Hop<small>Ops control</small></span></div>
-    <nav class="nav" id="nav">
-      <button data-route="tickets" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg> Bookings <span class="count" id="nav-attn">0</span></button>
-    </nav>
+    <nav class="nav" id="nav"><!-- rendered by setNav(): Bookings always, Quote for founders --></nav>
     <div class="rail-foot" id="railfoot"></div>
   </aside>
-  <main class="main"><div class="topbar" id="topbar"></div><div class="scroll" id="view"></div></main>
+  <main class="main"><div class="topbar" id="topbar"></div><div class="scroll" id="view"></div><div class="qv" id="quoteRoot" hidden></div></main>
 </div>
 
 <div class="login" id="login">
@@ -335,11 +338,20 @@ function rowToTicket(row){
 }
 
 let tickets=[];
-let state={route:'tickets',q:'',group:'all',chan:'',detail:null,detailData:null};
+let state={route:'tickets',q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 
 async function loadQueue(){const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();}
 
-function setNav(){document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.route===state.route));$('#nav-attn').textContent=tickets.filter(isAttn).length;}
+/* nav is rendered per-role: Bookings always; Quote only for founders */
+const NAV_ICONS={
+  tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg>',
+  quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
+};
+function setNav(){
+  $('#nav').innerHTML=
+    `<button data-route="tickets" class="${state.route==='tickets'?'active':''}">${NAV_ICONS.tickets} Bookings <span class="count" id="nav-attn">${tickets.filter(isAttn).length}</span></button>`+
+    (state.role==='founder'?`<button data-route="quote" class="${state.route==='quote'?'active':''}">${NAV_ICONS.quote} Quote</button>`:'');
+}
 
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
@@ -479,9 +491,30 @@ async function refreshRow(id){
   catch(e){if(e.message!=='auth')toast('Refresh failed');}
 }
 
-function render(){setNav();viewTickets();renderSheet();}
+/* ── quote view panel — empty scaffold; the quote module mounts into #quoteRoot later ── */
+function showQuoteView(){
+  if(state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
+  $('#quoteRoot').hidden=false;$('#view').hidden=true;$('#topbar').hidden=true;
+}
+function hideQuoteView(){$('#quoteRoot').hidden=true;$('#view').hidden=false;$('#topbar').hidden=false;}
+
+function render(){
+  if(state.route==='quote'&&state.role!=='founder')state.route='tickets';
+  setNav();
+  if(state.route==='quote'){showQuoteView();}
+  else{hideQuoteView();viewTickets();renderSheet();}
+}
 
 /* ── events ── */
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('#nav [data-route]');if(!btn)return;
+  let route=btn.dataset.route;
+  if(route==='quote'&&state.role!=='founder')route='tickets';
+  state.route=route;
+  if(route==='quote')location.hash='quote';
+  else if(location.hash)history.replaceState(null,'',location.pathname+location.search);
+  render();
+});
 $('#scrim').addEventListener('click',()=>{state.detail=null;state.detailData=null;renderSheet();});
 document.addEventListener('input',e=>{if(e.target.id==='q'){state.q=e.target.value;viewTickets();}});
 document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
@@ -505,8 +538,12 @@ function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true
 function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;}
 function bootApp(role){
   hideLogin();
+  state.role=role;
+  window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
+  if(state.route==='quote'&&state.role!=='founder'){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);hideQuoteView();}
   const initials=role==='founder'?'FO':'SU';
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>Ops · ${role==='founder'?'Founder':'Support'}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
+  setNav();
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
