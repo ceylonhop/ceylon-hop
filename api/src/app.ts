@@ -37,7 +37,7 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
-  auth?: { opsSupportKey: string; opsFounderKey: string; opsSessionSecret: string };
+  auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string };
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
@@ -68,10 +68,11 @@ export function createApp(deps: AppDeps = {}) {
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
-    supportKey: deps.auth?.opsSupportKey ?? config.OPS_SUPPORT_KEY,
-    founderKey: deps.auth?.opsFounderKey ?? config.OPS_FOUNDER_KEY,
+    opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
+    googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
     sessionSecret: deps.auth?.opsSessionSecret ?? config.OPS_SESSION_SECRET,
     adminApiKey,
+    nodeEnv: config.NODE_ENV,
   };
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
