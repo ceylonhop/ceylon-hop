@@ -97,11 +97,12 @@ describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', ()
     expect((await hit()).status).toBe(429);
   });
 
-  it('GET /admin/quote (the HTML shell) is NOT throttled — only subpaths match', async () => {
+  it('GET /admin/quote (the 302 redirect to /ops) is NOT throttled — only subpaths match', async () => {
     const app = createApp({ rateLimit: { max: 1, windowMs: 60000 } });
     for (let i = 0; i < 10; i++) {
       const r = await app.request('/admin/quote', { headers: { 'x-forwarded-for': '7.7.7.7' } });
-      expect(r.status).toBe(200);
+      expect(r.status).toBe(302);
+      expect(r.headers.get('location')).toBe('/ops');
     }
   });
 });

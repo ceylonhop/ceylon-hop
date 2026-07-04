@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { z } from 'zod';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
@@ -15,24 +14,6 @@ import { verifySession } from '../lib/opsAuth';
 
 // Same session cookie as /admin/ops (ops.ts) — one login covers both surfaces.
 const COOKIE = 'ch_ops';
-
-// The single-page tool UI (served same-origin so it can call /admin/quote/estimate without CORS).
-// Read per-request so edits hot-reload in dev without a server restart (success path only —
-// a missing/unreadable file must not 500 every load with zero diagnostics). On a failed read we
-// fall back to the last-good copy cached from a prior successful read; if we've never had a
-// good read yet, `toolHtml()` returns null and the route serves a minimal unavailable body.
-let cachedHtml: string | null = null;
-const toolHtml = (): string | null => {
-  try {
-    const html = readFileSync(fileURLToPath(new URL('./quote-tool.html', import.meta.url)), 'utf8');
-    cachedHtml = html;
-    return html;
-  } catch (e) {
-    console.error('toolHtml: failed to read quote-tool.html', e);
-    if (cachedHtml) return cachedHtml;
-    return null;
-  }
-};
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -219,19 +200,35 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
   return maps.places(query);
 }
 
-export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo; adminKey?: string; allowNoKey?: boolean; sessionSecret?: string }) {
+export function internalQuoteRoutes(deps: {
+  maps: MapsAdapter;
+  quotes: QuoteRepo;
+  adminKey?: string;
+  allowNoKey?: boolean;
+  sessionSecret?: string;
+  allowedOrigins?: string[];
+}) {
   const r = new Hono();
 
-  // Open shell (a browser navigation can't send a header). The JS attaches the key to
-  // its fetches; the guard below protects every data/XHR route.
-  r.get('/', (c) => {
-    const html = toolHtml();
-    if (html == null) {
-      console.error('GET /admin/quote: no cached quote-tool.html available — serving fallback');
-      return c.html('<h1>quote tool unavailable</h1>', 500);
-    }
-    return c.html(html);
-  });
+  // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
+  // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
+  // Registered above the guard: a bare browser navigation carries no auth, and the redirect
+  // itself exposes nothing — /ops runs its own login.
+  r.get('/', (c) => c.redirect('/ops', 302));
+
+  // Ops⇄quote merge T2: CSRF on state-changing routes. The founder's ch_ops cookie is ambient
+  // browser state, so a cross-site page could otherwise fire authenticated mutations. Check
+  // Sec-Fetch-Site first (modern browsers always send it); fall back to the Origin allow-list
+  // (older browsers send Origin on POST/PATCH). Both absent = a non-browser caller (curl,
+  // scripts) — let it through; the auth guard below still applies. GET reads are exempt:
+  // they carry no writes, and /places autocomplete must stay fast.
+  const csrf: MiddlewareHandler = async (c, next) => {
+    const site = c.req.header('sec-fetch-site');
+    if (site && site !== 'same-origin' && site !== 'none') return c.json({ error: 'bad_origin' }, 403);
+    const origin = c.req.header('origin');
+    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) return c.json({ error: 'bad_origin' }, 403);
+    return next();
+  };
 
   // GL-1c + ops⇄quote merge T1: fail CLOSED. The tool stores customer PII and exposes
   // cost/margin, so a data route unlocks only for (a) the legacy x-admin-key, (b) a valid
@@ -253,14 +250,14 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
   r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.maps) }));
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
-  r.post('/distance', async (c) => {
+  r.post('/distance', csrf, async (c) => {
     const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
     const d = await deps.maps.distance(b.from, b.to);
     return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
   });
 
-  r.post('/estimate', async (c) => {
+  r.post('/estimate', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     try {
       const body = parseToolRequest(raw);
@@ -306,7 +303,7 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
   });
 
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
-  r.post('/save', async (c) => {
+  r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     try {
       const body = parseToolRequest(raw);
@@ -370,7 +367,7 @@ export function internalQuoteRoutes(deps: { maps: MapsAdapter; quotes: QuoteRepo
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
-  r.patch('/:id', async (c) => {
+  r.patch('/:id', csrf, async (c) => {
     const body = (await c.req.json().catch(() => null)) as { status?: string; lostReason?: string | null; notes?: string | null } | null;
     if (!body) return c.json({ error: 'bad_request' }, 400);
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
