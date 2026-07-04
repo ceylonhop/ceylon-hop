@@ -194,10 +194,19 @@ function shape(result: QuoteResult, canMargin: boolean) {
 }
 
 // Strip persisted margin from a stored quote for non-margin:view roles (spec §3.1) —
-// used by GET /:id, which echoes marginCents straight from the repo.
-function stripQuoteMargin<T extends { marginCents: unknown }>(q: T): Omit<T, 'marginCents'> {
+// used by GET /:id and PATCH /:id, which echo the full SavedQuote from the repo.
+// The top-level marginCents is NOT the only copy: the persisted `result` JSON is a full
+// QuoteResult, and QuoteResult.marginEstimateCents is the same cost/margin figure. A shallow
+// delete of marginCents alone leaks it nested. Strip both. (breakdown/lineItems carry only
+// customer-facing prices, so no other nested field needs stripping — see quote/types.ts.)
+function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents'> {
   const rest: Record<string, unknown> = { ...q };
   delete rest.marginCents;
+  if (rest.result && typeof rest.result === 'object') {
+    const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
+    delete safeResult.marginEstimateCents;
+    rest.result = safeResult;
+  }
   return rest as Omit<T, 'marginCents'>;
 }
 

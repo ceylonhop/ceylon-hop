@@ -504,12 +504,16 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
     };
     for (const email of ['fin@x.com', 'op@x.com']) {
       const saved = await saveOnce(email);
-      const got = await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie(email) } });
-      expect(await got.json()).not.toHaveProperty('marginCents');
+      const body = await (await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie(email) } })).json();
+      expect(body).not.toHaveProperty('marginCents');
+      // The persisted `result` is a full QuoteResult; its marginEstimateCents is the same
+      // cost figure — it must NOT leak nested for finance/ops (regression: shallow strip left it).
+      expect(body.result?.marginEstimateCents ?? null).toBeNull();
     }
     const saved = await saveOnce('f@x.com');
-    const got = await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie('f@x.com') } });
-    expect(await got.json()).toHaveProperty('marginCents');
+    const body = await (await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: await cookie('f@x.com') } })).json();
+    expect(body).toHaveProperty('marginCents');
+    expect(body.result.marginEstimateCents).toBeGreaterThan(0); // founder still sees nested margin
   });
 
   it('omits margin from PATCH /:id\'s updated quote for finance and ops, includes it for founder', async () => {
@@ -528,11 +532,15 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
       const saved = await save(email);
       const res = await patchStatus(saved.id, email);
       expect(res.status).toBe(200);
-      expect(await res.json()).not.toHaveProperty('marginCents'); // routine status edit must not leak cost/margin
+      const body = await res.json();
+      expect(body).not.toHaveProperty('marginCents'); // routine status edit must not leak cost/margin
+      expect(body.result?.marginEstimateCents ?? null).toBeNull(); // nor nested in result
     }
     const saved = await save('f@x.com');
     const res = await patchStatus(saved.id, 'f@x.com');
-    expect(await res.json()).toHaveProperty('marginCents');
+    const body = await res.json();
+    expect(body).toHaveProperty('marginCents');
+    expect(body.result.marginEstimateCents).toBeGreaterThan(0);
   });
 
   // [CORRECTED 2026-07-04 during T-D]: QuoteSummary (GET /list's return type, db/quoteRepo.ts)
