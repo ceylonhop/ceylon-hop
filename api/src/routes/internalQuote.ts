@@ -392,7 +392,11 @@ export function internalQuoteRoutes(deps: {
       lostReason: body.lostReason,
       notes: body.notes,
     });
-    return updated ? c.json(updated) : c.json({ error: 'not_found' }, 404);
+    if (!updated) return c.json({ error: 'not_found' }, 404);
+    // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine
+    // status/notes edit by finance/ops must not echo cost/margin back to them.
+    const canMargin = can(c.get('identity').role, 'margin:view');
+    return c.json(canMargin ? updated : stripQuoteMargin(updated));
   });
 
   return r;

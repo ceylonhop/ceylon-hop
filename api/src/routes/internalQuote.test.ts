@@ -512,6 +512,29 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
     expect(await got.json()).toHaveProperty('marginCents');
   });
 
+  it('omits margin from PATCH /:id\'s updated quote for finance and ops, includes it for founder', async () => {
+    const app = createApp({ auth: AUTH, adminApiKey: 'k' });
+    const save = async (email: string) => {
+      const res = await app.request('/admin/quote/save', {
+        method: 'POST', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify(estimateBody),
+      });
+      return res.json();
+    };
+    const patchStatus = async (id: string, email: string) =>
+      app.request(`/admin/quote/${id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify({ status: 'sent' }),
+      });
+    for (const email of ['fin@x.com', 'op@x.com']) {
+      const saved = await save(email);
+      const res = await patchStatus(saved.id, email);
+      expect(res.status).toBe(200);
+      expect(await res.json()).not.toHaveProperty('marginCents'); // routine status edit must not leak cost/margin
+    }
+    const saved = await save('f@x.com');
+    const res = await patchStatus(saved.id, 'f@x.com');
+    expect(await res.json()).toHaveProperty('marginCents');
+  });
+
   // [CORRECTED 2026-07-04 during T-D]: QuoteSummary (GET /list's return type, db/quoteRepo.ts)
   // carries no marginCents field at all — toSummary() never populates one. So /list has
   // nothing to strip, for ANY role; this test documents that invariant rather than asserting
