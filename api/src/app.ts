@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { compress } from 'hono/compress';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
@@ -155,6 +156,10 @@ export function createApp(deps: AppDeps = {}) {
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
+  // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
+  // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
+  // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
+  app.use('/ops', compress());
   app.route('/ops', opsUiRoutes());
   // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
   // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
