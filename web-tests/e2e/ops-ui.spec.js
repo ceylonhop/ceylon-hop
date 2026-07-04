@@ -2,20 +2,24 @@ import { test, expect } from '@playwright/test';
 
 // Browser coverage for the merged ops⇄quote dashboard (api/src/routes/ops-ui.html).
 // These promote the manual verification checklist from the ops-quote merge into
-// permanent automated assertions: founder-only Quote nav, lazy-mounted quote
-// module, API-level 403 for support, CSS scoping (the quote view's :root tokens
-// must not leak into the ops shell), deep-linking, and logout teardown.
+// permanent automated assertions: Quote nav visible to all 3 roles (spec D-A —
+// quote:manage is granted to founder/finance/ops, not founder-only), lazy-mounted
+// quote module, CSS scoping (the quote view's :root tokens must not leak into the
+// ops shell), deep-linking, and logout teardown.
 //
-// Needs a real DATABASE_URL + OPS_FOUNDER_KEY/OPS_SUPPORT_KEY on the booted API
-// — only runs with CH_E2E_API=1 (see playwright.config.js's webServer.env and
-// package.json's "test:e2e:tool"/"test:e2e:ops" scripts).
+// Needs a real DATABASE_URL + OPS_USERS (email:role allowlist) + OPS_SESSION_SECRET
+// on the booted API — only runs with CH_E2E_API=1 (see playwright.config.js's
+// webServer.env and package.json's "test:e2e:tool"/"test:e2e:ops" scripts). Login
+// goes through the dev-login bypass (#devloginemail/#devloginform) since Google
+// Sign-In needs a real OAuth client and can't be driven in e2e.
 test.skip(process.env.CH_E2E_API !== '1', 'ops-ui e2e needs the API — run with CH_E2E_API=1');
 
 const OPS = 'http://localhost:8787/ops';
-const FOUNDER_KEY = process.env.OPS_FOUNDER_KEY || 'dev-founder';
-const SUPPORT_KEY = process.env.OPS_SUPPORT_KEY || 'dev-support';
 
-test.skip(!FOUNDER_KEY || !SUPPORT_KEY, 'OPS_FOUNDER_KEY/OPS_SUPPORT_KEY are empty — cannot log in');
+// Matches playwright.config.js's OPS_USERS default for the CH_E2E_API webServer.
+const FOUNDER_EMAIL = 'founder@e2e.test';
+const FINANCE_EMAIL = 'finance@e2e.test';
+const OPS_EMAIL = 'ops@e2e.test';
 
 // GET /admin/ops/bookings does a per-row assemble() (customer + mode-specific lookups)
 // PLUS a sequential per-row payments.findByBookingId() in ops.ts — against a remote dev
@@ -23,28 +27,40 @@ test.skip(!FOUNDER_KEY || !SUPPORT_KEY, 'OPS_FOUNDER_KEY/OPS_SUPPORT_KEY are emp
 // end. Bookings-queue assertions need real headroom, not the default 5s/10s.
 const BOOKINGS_TIMEOUT = 30000;
 
-async function login(page, key) {
+// Dev-login helper: fills the allowlisted email into #devloginemail and submits
+// #devloginform directly via requestSubmit() (avoids click-target/visibility flakiness
+// on the overlay's transition), then waits for the login overlay to hide and the app
+// shell (#approot) to boot.
+async function login(page, email) {
   await page.goto(OPS);
   await page.waitForLoadState('networkidle');
-  await page.locator('#loginkey').fill(key);
-  await page.locator('#loginform').evaluate((form) => form.requestSubmit());
+  await expect(page.locator('#login')).toHaveClass(/show/);
+  await page.fill('#devloginemail', email);
+  await page.evaluate(() => document.getElementById('devloginform').requestSubmit());
+  await expect(page.locator('#login')).not.toHaveClass(/show/);
   await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
 }
 
 test('founder login renders the Bookings queue', async ({ page }) => {
-  await login(page, FOUNDER_KEY);
+  await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 });
 
-test('founder sees the Quote nav; support does not', async ({ page }) => {
-  await login(page, FOUNDER_KEY);
+test('Quote nav is visible to founder, finance, and ops (D-A: quote:manage is not founder-only)', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
 
   await page.locator('#logoutbtn').click();
   await expect(page.locator('#login')).toHaveClass(/show/);
 
-  await login(page, SUPPORT_KEY);
-  await expect(page.locator('#nav button[data-route="quote"]')).toHaveCount(0);
+  await login(page, FINANCE_EMAIL);
+  await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
+
+  await page.locator('#logoutbtn').click();
+  await expect(page.locator('#login')).toHaveClass(/show/);
+
+  await login(page, OPS_EMAIL);
+  await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
 });
 
 test('quote module lazy-mounts: /admin/quote/rate-card is not requested until Quote is opened', async ({ page }) => {
@@ -53,7 +69,7 @@ test('quote module lazy-mounts: /admin/quote/rate-card is not requested until Qu
     if (req.url().includes('/admin/quote/rate-card')) rateCardRequests.push(req.url());
   });
 
-  await login(page, FOUNDER_KEY);
+  await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
   // Give any errant eager fetch a moment to fire before we assert its absence.
   await page.waitForTimeout(500);
@@ -64,18 +80,23 @@ test('quote module lazy-mounts: /admin/quote/rate-card is not requested until Qu
   await expect.poll(() => rateCardRequests.length, { timeout: 5000 }).toBeGreaterThan(0);
 });
 
-test('support session gets a 403 from the API on /admin/quote/rate-card', async ({ page }) => {
-  await login(page, SUPPORT_KEY);
+// NOTE: the old "support session gets a 403 on /admin/quote/rate-card" test is gone —
+// it assumed a founder-only quote:manage gate. Per D-A all 3 human roles (founder/
+// finance/ops) hold quote:manage, so there is no human role left that should 403 here.
+// Margin/pricing visibility (margin:view, founder-only) is a separate, still-true gate
+// covered by the API-level tests in api/ (not loosened by this change).
+test('finance session reaches /admin/quote/rate-card (quote:manage, not founder-only)', async ({ page }) => {
+  await login(page, FINANCE_EMAIL);
   // Same-origin fetch from within the authenticated page carries the ops session cookie.
   const status = await page.evaluate(async () => {
     const res = await fetch('/admin/quote/rate-card', { credentials: 'same-origin' });
     return res.status;
   });
-  expect(status).toBe(403);
+  expect(status).toBe(200);
 });
 
 test('ops ink colour does not leak from the quote view CSS on the Bookings screen', async ({ page }) => {
-  await login(page, FOUNDER_KEY);
+  await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
   // Wait for at least one ticket row (.tk) to render, or fall back to the pagehead if the
   // dev DB has no bookings — either way something in #view carries the ops --ink color.
@@ -85,11 +106,15 @@ test('ops ink colour does not leak from the quote view CSS on the Bookings scree
   expect(color).toBe('rgb(36, 31, 29)'); // ops --ink: #241f1d
 });
 
-test('deep-link /ops#quote lands founder on Quote, bounces support to Bookings', async ({ page }) => {
+// D-A: all 3 roles have quote:manage, so the deep-link resolution (bootApp() in
+// ops-ui.html) lands EVERY role on Quote for /ops#quote — there is no longer a role
+// among founder/finance/ops that gets bounced back to Bookings from this hash.
+test('deep-link /ops#quote lands founder and finance on Quote', async ({ page }) => {
   await page.goto(`${OPS}#quote`);
   await page.waitForLoadState('networkidle');
-  await page.locator('#loginkey').fill(FOUNDER_KEY);
-  await page.locator('#loginform').evaluate((form) => form.requestSubmit());
+  await expect(page.locator('#login')).toHaveClass(/show/);
+  await page.fill('#devloginemail', FOUNDER_EMAIL);
+  await page.evaluate(() => document.getElementById('devloginform').requestSubmit());
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('#quoteRoot')).not.toHaveAttribute('hidden', '');
 
@@ -98,14 +123,15 @@ test('deep-link /ops#quote lands founder on Quote, bounces support to Bookings',
 
   await page.goto(`${OPS}#quote`);
   await page.waitForLoadState('networkidle');
-  await page.locator('#loginkey').fill(SUPPORT_KEY);
-  await page.locator('#loginform').evaluate((form) => form.requestSubmit());
-  await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
-  await expect(page.locator('#quoteRoot')).toHaveAttribute('hidden', '');
+  await expect(page.locator('#login')).toHaveClass(/show/);
+  await page.fill('#devloginemail', FINANCE_EMAIL);
+  await page.evaluate(() => document.getElementById('devloginform').requestSubmit());
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#quoteRoot')).not.toHaveAttribute('hidden', '');
 });
 
 test('logout returns the login overlay and empties/hides #quoteRoot with no beforeunload dialog', async ({ page }) => {
-  await login(page, FOUNDER_KEY);
+  await login(page, FOUNDER_EMAIL);
   await page.locator('#nav button[data-route="quote"]').click();
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
 
@@ -125,7 +151,7 @@ test('logout returns the login overlay and empties/hides #quoteRoot with no befo
 });
 
 test('Bookings → Quote → Bookings round-trip shows a single toast, no duplicates', async ({ page }) => {
-  await login(page, FOUNDER_KEY);
+  await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 
   await page.locator('#nav button[data-route="quote"]').click();

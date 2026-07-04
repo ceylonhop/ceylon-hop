@@ -1,25 +1,34 @@
 import { test, expect } from '@playwright/test';
 
-// The internal quoting tool is now a founder-only view mounted inside the ops
-// dashboard (api/src/routes/ops-ui.html), not a standalone page — the old
-// /admin/quote shell was retired (it 302s to /ops now). These specs need a
-// real DATABASE_URL — they only run with CH_E2E_API=1 (see playwright.config.js
-// and package.json's "test:e2e:tool" script), and need OPS_FOUNDER_KEY set on
-// the booted API (playwright.config.js's webServer.env supplies a dev default).
+// The internal quoting tool is a view mounted inside the ops dashboard
+// (api/src/routes/ops-ui.html), not a standalone page — the old /admin/quote
+// shell was retired (it 302s to /ops now). Per spec D-A, quote:manage (and so
+// the Quote nav) is granted to all 3 human roles (founder/finance/ops), not
+// founder-only — these specs still drive the tool as founder since that's the
+// superset role and none of the assertions here are role-gating checks (those
+// live in ops-ui.spec.js). These specs need a real DATABASE_URL — they only run
+// with CH_E2E_API=1 (see playwright.config.js and package.json's "test:e2e:tool"
+// script), and need OPS_USERS (allowlisting founder@e2e.test) set on the booted
+// API (playwright.config.js's webServer.env supplies a dev default). Login goes
+// through the dev-login bypass (#devloginemail/#devloginform) since Google
+// Sign-In needs a real OAuth client and can't be driven in e2e.
 test.skip(process.env.CH_E2E_API !== '1', 'quote-tool e2e needs the API — run with CH_E2E_API=1');
 
 const OPS = 'http://localhost:8787/ops';
-const FOUNDER_KEY = process.env.OPS_FOUNDER_KEY || 'dev-founder';
 
-test.skip(!FOUNDER_KEY, 'OPS_FOUNDER_KEY is empty — cannot log in as founder');
+// Matches playwright.config.js's OPS_USERS default for the CH_E2E_API webServer.
+const FOUNDER_EMAIL = 'founder@e2e.test';
 
-// Helper: log in to /ops as founder and open the Quote view. Every spec starts
-// here instead of goto'ing the old standalone /admin/quote page.
+// Helper: log in to /ops as founder (via the dev-login bypass) and open the
+// Quote view. Every spec starts here instead of goto'ing the old standalone
+// /admin/quote page.
 async function loginFounderAndOpenQuote(page) {
   await page.goto(OPS);
   await page.waitForLoadState('networkidle');
-  await page.locator('#loginkey').fill(FOUNDER_KEY);
-  await page.locator('#loginform').evaluate((form) => form.requestSubmit());
+  await expect(page.locator('#login')).toHaveClass(/show/);
+  await page.fill('#devloginemail', FOUNDER_EMAIL);
+  await page.evaluate(() => document.getElementById('devloginform').requestSubmit());
+  await expect(page.locator('#login')).not.toHaveClass(/show/);
   // App shell becomes visible post-login (Bookings renders first).
   await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
   await page.locator('#nav button[data-route="quote"]').click();
