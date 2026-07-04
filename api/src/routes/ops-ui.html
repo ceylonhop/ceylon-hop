@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ceylon Hop · Ops Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&family=Bodoni+Moda:wght@500;600;700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
@@ -201,6 +201,593 @@
   @keyframes nodepulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--c) 7%,transparent)}}
   @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     QUOTE COCKPIT — ported verbatim from quote-tool.html, EVERY rule scoped
+     under .qv (the #quoteRoot pane) so nothing here can restyle the ops app.
+     :root → .qv (tokens), body → .qv (base + opaque cream background).
+     The .ch-main (1080px) and .ch-cockpit (960px) viewport breakpoints became
+     @container qv queries — the pane is viewport − 254px, so viewport media
+     queries would fire at the wrong widths. Containment overrides at the end.
+     ══════════════════════════════════════════════════════════════════════════ */
+
+/* Ceylon Hop Ops — base + layout + components CSS */
+/* quote design tokens — rehomed from :root to .qv so they scope to the
+   quote subtree and never override the ops :root (different --ink/--cream/--line/--paper) */
+.qv {
+  --blue: #63BFD6;
+  --blue-d: #3da6c0;
+  --black: #3A3739;
+  --cream: #F0EEE5;
+  --cream-d: #e6e3d6;
+  --orange: #F9A429;
+  --red: #EC3A24;
+  --teal: #0AB9B6;
+  --teal-d: #089a97;
+
+  --paper: #ffffff;
+  --ink: #3A3739;
+  --muted: #8b8780;
+  --muted-2: #b4afa6;
+  --line: #e7e3d8;
+  --line-soft: #efece2;
+
+  --r-lg: 18px;
+  --r-md: 13px;
+  --r-sm: 9px;
+  --shadow-card: 0 1px 2px rgba(58,55,57,.04), 0 8px 24px rgba(58,55,57,.06);
+  --shadow-pop: 0 12px 40px rgba(58,55,57,.16);
+  --serif: "Bodoni Moda", "Didot", Georgia, serif;
+  --sans: "Poppins", system-ui, sans-serif;
+}
+
+.qv, .qv * { box-sizing: border-box; }
+/* (quote's `html, body { margin: 0 }` dropped — ops already sets it; .qv is a div) */
+/* quote body-level rules rehomed onto .qv — the pane, not the page, is the "body".
+   background: var(--cream) (quote cream #F0EEE5) is OPAQUE and fully occludes the
+   ops .main gradient/noise; the radial tints layer on top of it. */
+.qv {
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--cream);
+  background-image: radial-gradient(circle at 18% -8%, rgba(99,191,214,.10), transparent 42%),
+                    radial-gradient(circle at 100% 0%, rgba(249,164,41,.07), transparent 38%);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.qv h1, .qv h2, .qv h3 { margin: 0; font-weight: 600; }
+.qv input, .qv select, .qv textarea, .qv button { font-family: inherit; }
+
+/* ---------- App shell ---------- */
+.qv .ch-app { min-height: 100vh; padding-bottom: 64px; }
+.qv .ch-container { max-width: 1340px; margin: 0 auto; padding: 0 22px; }
+
+/* ---------- Header ---------- */
+.qv .ch-header {
+  position: sticky; top: 0; z-index: 50;
+  background: rgba(255,255,255,.82);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.qv .ch-header-in { max-width: 1340px; margin: 0 auto; padding: 12px 22px; display: flex; align-items: center; gap: 18px; }
+.qv .ch-brand { display: flex; align-items: center; gap: 11px; }
+.qv .ch-mark {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--blue); color: #fff;
+  display: grid; place-items: center;
+  font-family: var(--serif); font-weight: 700; font-size: 18px;
+  box-shadow: 0 3px 0 var(--blue-d);
+}
+.qv .ch-brand-txt { line-height: 1.05; }
+.qv .ch-brand-txt b { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; display: block; }
+.qv .ch-brand-txt span { font-size: 10.5px; text-transform: uppercase; letter-spacing: 2.2px; color: var(--muted); }
+.qv .ch-header-spacer { flex: 1; }
+.qv .ch-header-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------- Status select ---------- */
+.qv .ch-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: 999px; padding: 5px 6px 5px 12px;
+  border: 1px solid var(--line); background: #fff;
+  font-size: 12.5px; font-weight: 500;
+}
+.qv .ch-status .dot { width: 9px; height: 9px; border-radius: 50%; }
+.qv .ch-status select { border: none; background: none; font-weight: 600; font-size: 12.5px; outline: none; cursor: pointer; color: var(--ink); }
+
+/* ---------- Layout grid ---------- */
+.qv .ch-main { padding-top: 22px; display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, .92fr); gap: 20px; align-items: start; }
+.qv .ch-col-l { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.qv .ch-col-r { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 86px; }
+.qv .ch-output-wrap { margin-top: 20px; }
+@container qv (max-width: 1080px) {
+  .qv .ch-main { grid-template-columns: 1fr; }
+  .qv .ch-col-r { position: static; }}
+
+/* ---------- Card ---------- */
+.qv .ch-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+.qv .ch-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--line-soft); }
+.qv .ch-card-head-l { display: flex; align-items: center; gap: 11px; }
+.qv .ch-card-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
+.qv .ch-card-head-l { min-width: 0; }
+.qv .ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--black); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
+.qv .ch-card-head-r { display: flex; align-items: center; gap: 10px; }
+.qv .ch-chev { font-size: 19px; color: var(--muted); transition: transform .2s; line-height: 1; }
+.qv .ch-chev.open { transform: rotate(180deg); }
+.qv .ch-card-body { padding: 18px; }
+.qv .ch-card-body.nopad { padding: 0; }
+.qv .ch-head-tools { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Fields ---------- */
+.qv .ch-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.qv .ch-row:last-child { margin-bottom: 0; }
+.qv .ch-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 0; }
+.qv .ch-field-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; align-items: center; gap: 3px; }
+.qv .ch-field-label .req { color: var(--red); font-style: normal; }
+.qv .ch-field-hint { font-size: 11px; color: var(--red); }
+.qv .ch-card-body > .ch-field { margin-top: 14px; }
+
+.qv .ch-input-wrap { display: flex; align-items: center; gap: 0; background: #fff; border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 0 10px; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-input-wrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+.qv .ch-input-wrap.invalid { border-color: var(--red); }
+.qv .ch-input { width: 100%; border: none; background: none; outline: none; padding: 9px 0; font-size: 14px; color: var(--ink); min-width: 0; }
+.qv .ch-input::placeholder { color: var(--muted-2); }
+.qv .ch-input-prefix, .qv .ch-input-suffix { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.qv .ch-input-prefix { padding-right: 6px; }
+.qv .ch-input-suffix { padding-left: 6px; }
+.qv .ch-textarea { padding: 9px 10px; resize: vertical; border: 1.5px solid var(--line); border-radius: var(--r-sm); line-height: 1.5; }
+.qv .ch-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+
+.qv .ch-select-wrap { position: relative; padding-right: 0; }
+.qv .ch-select { appearance: none; padding-right: 26px; cursor: pointer; background: none; }
+.qv .ch-select-chev { position: absolute; right: 10px; pointer-events: none; color: var(--muted); font-size: 15px; }
+
+/* ---------- Segmented ---------- */
+.qv .ch-seg { display: inline-flex; background: var(--cream); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px; gap: 3px; width: 100%; }
+.qv .ch-seg-btn { flex: 1; border: none; background: none; padding: 7px 10px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+.qv .ch-seg-btn.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(58,55,57,.12); }
+.qv .ch-seg.sm .ch-seg-btn { padding: 5px 8px; font-size: 12px; }
+
+/* ---------- Toggle ---------- */
+.qv .ch-toggle-row { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; padding: 0; }
+.qv .ch-toggle { width: 38px; height: 22px; border-radius: 999px; background: var(--cream-d); position: relative; transition: background .18s; flex: none; border: 1px solid var(--line); }
+.qv .ch-toggle.on[data-tone="blue"] { background: var(--blue); border-color: var(--blue); }
+.qv .ch-toggle.on[data-tone="teal"] { background: var(--teal); border-color: var(--teal); }
+.qv .ch-toggle-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.qv .ch-toggle.on .ch-toggle-knob { transform: translateX(16px); }
+.qv .ch-toggle-label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+
+/* ---------- Check ---------- */
+.qv .ch-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.qv .ch-check input { display: none; }
+.qv .ch-check-box { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line); display: grid; place-items: center; color: #fff; font-size: 12px; background: #fff; transition: all .15s; }
+.qv .ch-check input:checked + .ch-check-box { background: var(--blue); border-color: var(--blue); }
+
+/* ---------- Buttons ---------- */
+.qv .ch-btn { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: var(--r-sm); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
+.qv .ch-btn:disabled { opacity: .45; cursor: not-allowed; }
+.qv .ch-btn-icon { font-size: 13px; line-height: 1; }
+.qv .ch-btn-sm { padding: 6px 10px; font-size: 12px; }
+.qv .ch-btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-d); }
+.qv .ch-btn-primary:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.qv .ch-btn-teal { background: var(--teal); color: #fff; box-shadow: 0 2px 0 var(--teal-d); }
+.qv .ch-btn-dark { background: var(--black); color: #fff; }
+.qv .ch-btn-dark:hover { filter: brightness(1.2); }
+.qv .ch-btn-outline { background: #fff; color: var(--ink); border: 1.5px solid var(--line); }
+.qv .ch-btn-outline:hover { border-color: var(--blue); color: var(--blue-d); }
+.qv .ch-btn-ghost { background: var(--cream); color: var(--ink); }
+.qv .ch-btn-ghost:hover { background: var(--cream-d); }
+.qv .ch-btn-ghostdanger { background: none; color: var(--muted); padding: 6px 9px; }
+.qv .ch-btn-ghostdanger:hover { background: rgba(236,58,36,.1); color: var(--red); }
+.qv .ch-btn-dashed { background: #fff; color: var(--muted); border: 1.5px dashed var(--line); }
+.qv .ch-btn-dashed:hover { border-color: var(--orange); color: var(--orange); background: #fffdf8; }
+
+/* ---------- Badge ---------- */
+.qv .ch-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.qv .ch-badge.tone-slate { background: var(--cream); color: var(--muted); }
+.qv .ch-badge.tone-blue { background: rgba(99,191,214,.16); color: var(--blue-d); }
+.qv .ch-badge.tone-teal { background: rgba(10,185,182,.14); color: var(--teal-d); }
+.qv .ch-badge.tone-orange { background: rgba(249,164,41,.16); color: #c47d12; }
+.qv .ch-badge.tone-red { background: rgba(236,58,36,.13); color: var(--red); }
+
+/* ---------- Rate settings ---------- */
+.qv .ch-lock-note { background: var(--cream); border-radius: var(--r-md); padding: 11px 14px; font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+.qv .ch-rate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.qv .ch-rate-grid.disabled { opacity: .55; pointer-events: none; }
+.qv .ch-rate-col { display: flex; flex-direction: column; gap: 3px; }
+.qv .ch-rate-group-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--blue-d); margin: 12px 0 4px; }
+.qv .ch-rate-col .ch-rate-group-title:first-child { margin-top: 0; }
+.qv .ch-rate-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.qv .ch-rate-label { font-size: 13px; font-weight: 500; display: flex; flex-direction: column; }
+.qv .ch-rate-hint { font-size: 10.5px; color: var(--muted-2); }
+.qv .ch-rate-control { width: 132px; flex: none; }
+@media (max-width: 620px) { .qv .ch-rate-grid { grid-template-columns: 1fr; gap: 8px; }}
+
+/* ---------- Itinerary (premium timeline) ---------- */
+.qv .ch-empty { padding: 48px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.qv .ch-empty-icon { font-size: 34px; }
+.qv .ch-empty-title { color: var(--muted); font-size: 14px; }
+
+.qv .ch-timeline-wrap { padding: 22px 24px 8px; }
+.qv .ch-timeline { position: relative; }
+
+.qv .ch-tl-item { position: relative; display: grid; grid-template-columns: 30px 1fr; gap: 16px; }
+.qv .ch-tl-rail { position: relative; display: flex; justify-content: center; }
+/* continuous line down the rail */
+.qv .ch-tl-item:not(:last-child) .ch-tl-rail::before { content: ''; position: absolute; top: 6px; bottom: -6px; left: 50%; transform: translateX(-50%); width: 2px; border-left: 2px dotted var(--muted-2); opacity: .55; }
+.qv .ch-marker { position: relative; z-index: 1; width: 18px; height: 18px; border-radius: 50%; margin-top: 4px; display: grid; place-items: center; font-size: 9px; color: #fff; box-shadow: 0 0 0 4px var(--paper); flex: none; }
+.qv .ch-marker.tone-teal { background: var(--teal); }
+.qv .ch-marker.tone-red { background: var(--red); }
+.qv .ch-marker.tone-blue { background: var(--blue); }
+.qv .ch-marker.ring { background: #fff; border: 2.5px solid var(--blue); }
+.qv .ch-marker.stay { background: #fff; border: 2px dashed var(--muted-2); color: var(--muted); }
+
+.qv .ch-tl-body { min-width: 0; padding-bottom: 8px; }
+
+/* card */
+.qv .ch-tl-card { background: var(--paper); border: 1.5px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-tl-card:hover { border-color: var(--cream-d); box-shadow: var(--shadow-card); }
+.qv .ch-tl-card.tone-teal { border-top: 3px solid var(--teal); }
+.qv .ch-tl-card.tone-red { border-top: 3px solid var(--red); }
+.qv .ch-tl-card.tone-blue { border-top: 3px solid var(--blue); }
+
+.qv .ch-tl-head { display: flex; align-items: center; gap: 10px; }
+.qv .ch-tl-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; padding: 4px 10px; border-radius: 999px; flex: none; }
+.qv .ch-tl-tag.tone-teal { background: rgba(10,185,182,.13); color: var(--teal-d); }
+.qv .ch-tl-tag.tone-red { background: rgba(236,58,36,.11); color: var(--red); }
+.qv .ch-tl-tag.tone-blue { background: rgba(99,191,214,.16); color: var(--blue-d); }
+.qv .ch-tl-cat { width: 175px; }
+.qv .ch-tl-cat .ch-input-wrap { padding: 0 10px; }
+.qv .ch-tl-cat .ch-input { padding: 6px 0; font-size: 12.5px; font-weight: 500; }
+.qv .ch-tl-actions { margin-left: auto; display: flex; gap: 6px; }
+.qv .ch-icon-btn { width: 30px; height: 30px; border: 1.5px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--muted); display: grid; place-items: center; transition: all .15s; }
+.qv .ch-icon-btn:hover { border-color: var(--blue); color: var(--blue-d); }
+.qv .ch-icon-btn.danger:hover { border-color: var(--red); color: var(--red); background: rgba(236,58,36,.06); }
+
+.qv .ch-tl-title-field { display: flex; flex-direction: column; gap: 4px; }
+.qv .ch-tl-title-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: var(--muted-2); }
+.qv .ch-tl-route { display: flex; align-items: flex-end; gap: 12px; }
+.qv .ch-tl-route .ch-tl-title-field { flex: 1 1 0; min-width: 0; }
+.qv .ch-route-sep { font-size: 22px; color: var(--muted-2); padding-bottom: 9px; flex: none; }
+@media (max-width: 560px) { .qv .ch-tl-route { flex-direction: column; align-items: stretch; gap: 8px; } .qv .ch-route-sep { display: none; }}
+
+/* place autocomplete */
+.qv .ch-ac { position: relative; }
+.qv .ch-tl-title-field .ch-ac { width: 100%; }
+.qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; }
+.qv .ch-ac-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); font-family: var(--sans); }
+.qv .ch-ac-item:hover, .qv .ch-ac-item.hi { background: var(--cream); }
+.qv .ch-ac-pin { font-size: 13px; flex: none; opacity: .85; }
+.qv .ch-ac-name { font-weight: 400; color: var(--muted); }
+.qv .ch-ac-name b { font-weight: 700; color: var(--ink); }
+.qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: #fff; outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-tl-title:hover { border-color: var(--cream-d); }
+.qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.18); }
+.qv .ch-tl-title::placeholder { color: var(--muted-2); font-style: italic; font-weight: 600; }
+
+.qv .ch-tl-from { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -4px; }
+.qv .ch-from-lbl { font-size: 12px; color: var(--muted); }
+.qv .ch-from-in { border: none; border-bottom: 1.5px solid var(--line); background: none; padding: 2px 2px; font-size: 13.5px; font-weight: 500; color: var(--ink); outline: none; min-width: 80px; max-width: 180px; }
+.qv .ch-from-in:focus { border-bottom-color: var(--blue); }
+.qv .ch-from-in::placeholder { color: var(--muted-2); font-weight: 400; }
+
+.qv .ch-tl-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.qv .ch-meta-date { display: inline-flex; align-items: center; gap: 6px; background: var(--cream); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; }
+.qv .ch-meta-date .ch-meta-ic { font-size: 12px; opacity: .8; }
+.qv .ch-meta-date input { border: none; background: none; outline: none; font-family: inherit; font-size: 12.5px; color: var(--ink); font-weight: 500; }
+.qv .ch-meta-dist { display: flex; align-items: center; }
+.qv .ch-dist-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--cream); color: var(--ink); }
+.qv .ch-dist-pill.auto { background: rgba(99,191,214,.12); color: var(--blue-d); }
+.qv .ch-dist-pill.warn { background: rgba(249,164,41,.13); color: #b9760f; }
+.qv .ch-dist-manual { display: flex; align-items: center; gap: 7px; }
+.qv .ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
+.qv .ch-link:hover { opacity: 1; }
+.qv .ch-meta-price { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; flex: none; }
+.qv .ch-price-lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted-2); white-space: nowrap; }
+.qv .ch-price-val { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); }
+
+/* driver / car stay toggles */
+.qv .ch-tl-stays { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.qv .ch-stay-toggle { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); background: #fff; border-radius: 10px; padding: 7px 12px; cursor: pointer; transition: all .15s; }
+.qv .ch-stay-toggle:hover { border-color: var(--muted-2); }
+.qv .ch-stay-ic { font-size: 15px; filter: grayscale(.4); opacity: .7; }
+.qv .ch-stay-lb { font-size: 13px; font-weight: 600; color: var(--muted); }
+.qv .ch-stay-state { font-size: 9px; font-weight: 800; letter-spacing: .6px; color: var(--muted-2); background: var(--cream); border-radius: 5px; padding: 2px 5px; }
+.qv .ch-stay-toggle.on { background: #fff; }
+.qv .ch-stay-toggle.on .ch-stay-ic { filter: none; opacity: 1; }
+.qv .ch-stay-toggle.on .ch-stay-lb { color: var(--ink); }
+.qv .ch-stay-toggle.on.tone-teal { border-color: var(--teal); background: rgba(10,185,182,.07); }
+.qv .ch-stay-toggle.on.tone-teal .ch-stay-state { background: var(--teal); color: #fff; }
+.qv .ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(99,191,214,.08); }
+.qv .ch-stay-toggle.on.tone-blue .ch-stay-state { background: var(--blue); color: #fff; }
+.qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
+
+.qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.qv .ch-fee { display: inline-flex; align-items: center; gap: 9px; }
+.qv .ch-note-in { border: 1px solid var(--line); background: #fcfbf7; border-radius: var(--r-sm); padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; color: var(--ink); width: 100%; }
+.qv .ch-note-in:focus { border-color: var(--blue); background: #fff; }
+
+.qv .ch-timeline-add { display: flex; gap: 10px; padding: 6px 0 4px 46px; flex-wrap: wrap; }
+.qv .ch-timeline-hint { padding: 12px 24px 18px 46px; font-size: 12px; color: var(--muted); }
+.qv .ch-timeline-hint b { color: var(--ink); font-weight: 600; }
+
+.qv .ch-cur-toggle { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.qv .ch-cur-toggle .ch-seg { width: 100px; }
+
+/* ---------- Summary ---------- */
+/* .ch-km base kept — the money-pane km line reuses .ch-km.hero (overridden there). */
+.qv .ch-km b { font-family: var(--serif); font-weight: 700; line-height: 1; }
+.qv .ch-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 13px; }
+.qv .ch-line-label { color: var(--muted); white-space: nowrap; }
+.qv .ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
+.qv .ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qv .ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
+.qv .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
+.qv .ch-line.strong .ch-line-val { font-family: var(--serif); font-size: 21px; font-weight: 700; }
+/* USD-primary display: small muted LKR reference under a value */
+.qv .ch-val-sub { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.3; text-align: right; }
+.qv .ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
+.qv .ch-tip { background: rgba(99,191,214,.1); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; color: var(--black); margin-top: 13px; line-height: 1.5; }
+.qv .ch-tip b { color: var(--blue-d); }
+
+/* ---------- Flags ---------- */
+.qv .ch-flags-clear { color: var(--teal-d); font-size: 13px; font-weight: 500; padding: 4px 0; }
+.qv .ch-flags { display: flex; flex-direction: column; gap: 9px; }
+.qv .ch-flag { display: flex; gap: 11px; padding: 11px 13px; border-radius: var(--r-md); }
+.qv .ch-flag-mark { font-size: 13px; line-height: 1.4; flex: none; }
+.qv .ch-flag.tone-red { background: rgba(236,58,36,.08); }
+.qv .ch-flag.tone-red .ch-flag-mark { color: var(--red); }
+.qv .ch-flag.tone-orange { background: rgba(249,164,41,.1); }
+.qv .ch-flag.tone-orange .ch-flag-mark { color: var(--orange); }
+.qv .ch-flag.tone-blue { background: rgba(99,191,214,.1); }
+.qv .ch-flag.tone-blue .ch-flag-mark { color: var(--blue-d); }
+.qv .ch-flag-title { font-weight: 600; font-size: 13px; }
+.qv .ch-flag-detail { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+
+/* ---------- Output ---------- */
+.qv .ch-tabs { display: flex; gap: 4px; background: var(--cream); padding: 4px; border-radius: var(--r-md); margin-bottom: 14px; }
+.qv .ch-tab { flex: 1; border: none; background: none; padding: 9px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .15s; }
+.qv .ch-tab.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(58,55,57,.12); }
+.qv .ch-output-body { min-height: 120px; }
+.qv .ch-pre { font-family: var(--sans); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--cream); border-radius: var(--r-md); padding: 16px 18px; margin: 0; color: var(--ink); }
+.qv .ch-pre.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.qv .ch-email-subject { font-size: 13px; margin-bottom: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.qv .ch-email-subject span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted-2); margin-right: 8px; }
+.qv .ch-internal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.qv .ch-internal-grid > div { background: var(--cream); border-radius: var(--r-sm); padding: 9px 11px; }
+.qv .ch-internal-grid span { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted-2); display: block; }
+.qv .ch-internal-grid b { font-size: 13.5px; }
+.qv .ch-itable { width: 100%; border-collapse: collapse; }
+.qv .ch-itable td { padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--line-soft); }
+.qv .ch-itable td:last-child { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.qv .ch-itable tr.sec td { color: var(--muted); }
+.qv .ch-itable tr.hi td { font-weight: 700; }
+.qv .ch-itable tr.hi.blue td:last-child { color: var(--blue-d); }
+.qv .ch-itable tr.hi.teal td:last-child { color: var(--teal-d); }
+.qv .ch-internal-note { font-size: 11.5px; color: var(--muted-2); margin-top: 12px; font-style: italic; }
+@media (max-width: 520px) { .qv .ch-internal-grid { grid-template-columns: repeat(2, 1fr); }}
+
+/* ---------- Toast ---------- */
+.qv .ch-toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 100; display: flex; align-items: center; gap: 8px; }
+.qv .ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.qv .ch-toast .tick { color: var(--teal); }
+
+/* ---------- Recent quotes ---------- */
+.qv .ch-recent-panel { margin-top: 18px; }
+.qv .ch-recent-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted-2); margin-bottom: 8px; }
+.qv .ch-recent-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); flex-wrap: wrap; }
+.qv .ch-recent-row:last-child { border-bottom: none; }
+.qv .ch-recent-ref { font-size: 12px; font-weight: 700; color: var(--teal-d); min-width: 70px; cursor: pointer; }
+.qv .ch-recent-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 80px; }
+.qv .ch-recent-total { font-size: 12.5px; font-weight: 600; color: var(--muted); min-width: 90px; text-align: right; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   COCKPIT LAYOUT (two-pane) — reuses every brand token above
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* header extras */
+.qv .ch-header-tools .ch-btn-sm { padding: 7px 11px; }
+
+/* two-pane grid */
+.qv .ch-cockpit { padding-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+.qv .ch-editor { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.qv .ch-money { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 0; }
+@container qv (max-width: 960px) {
+  .qv .ch-cockpit { grid-template-columns: 1fr; }
+  .qv .ch-money { position: static; }}
+
+/* section micro-label (matches the customer-strip label style — no serif floaters) */
+.qv .ch-sec { }
+.qv .ch-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 6px 0 10px; }
+.qv .ch-sec-head h2 { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.qv .ch-sec-head-r { display: flex; align-items: center; gap: 8px; }
+
+/* ---------- Customer strip (one compact row) ---------- */
+.qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; }
+.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(120px, 1.4fr) 84px 84px minmax(140px, 1fr); gap: 12px; align-items: end; }
+.qv .ch-cust-grid .ch-field { gap: 4px; }
+.qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
+.qv .ch-cust-grid .ch-input { padding: 7px 0; }
+@media (max-width: 720px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
+
+/* ---------- Dense itinerary rows ---------- */
+.qv .ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
+/* .ch-leg also carries .ch-tl-item (e2e hook) whose legacy timeline rule sets
+   display:grid — override it back to a plain block so the two rows stack. */
+.qv .ch-leg.ch-tl-item { display: block; grid-template-columns: none; gap: 0; }
+.qv .ch-leg { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); overflow: visible; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-leg:hover { border-color: var(--cream-d); }
+.qv .ch-leg.tone-teal { border-left: 3px solid var(--teal); }
+.qv .ch-leg.tone-red { border-left: 3px solid var(--red); }
+.qv .ch-leg.tone-blue { border-left: 3px solid var(--blue); }
+.qv .ch-leg.tone-stay { border-left: 3px dashed var(--muted-2); }
+
+/* main compact row (~56px) */
+.qv .ch-leg-main { display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 56px; }
+.qv .ch-leg-reorder { display: flex; flex-direction: column; gap: 2px; flex: none; }
+.qv .ch-mini-btn { width: 22px; height: 20px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--muted); display: grid; place-items: center; line-height: 1; padding: 0; transition: all .15s; }
+.qv .ch-mini-btn:hover { border-color: var(--blue); color: var(--blue-d); }
+.qv .ch-mini-btn:disabled { opacity: .3; cursor: default; }
+.qv .ch-mini-btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+.qv .ch-leg-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.qv .ch-leg-dot.tone-teal { background: var(--teal); }
+.qv .ch-leg-dot.tone-red { background: var(--red); }
+.qv .ch-leg-dot.tone-blue { background: var(--blue); }
+.qv .ch-leg-dot.tone-stay { background: #fff; border: 2px dashed var(--muted-2); }
+
+.qv .ch-leg-kind { flex: none; }
+.qv .ch-leg-kind .ch-seg { padding: 2px; }
+.qv .ch-leg-kind .ch-seg-btn { padding: 4px 8px; font-size: 11px; }
+
+/* route inputs — normal 14px, not the 21px serif */
+.qv .ch-leg-route { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; }
+.qv .ch-leg-ac { position: relative; flex: 1 1 0; min-width: 60px; }
+.qv .ch-leg-in { width: 100%; border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 7px 9px; font-size: 14px; font-weight: 500; color: var(--ink); outline: none; font-family: var(--sans); transition: border-color .15s, box-shadow .15s; min-width: 0; }
+.qv .ch-leg-in:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,191,214,.16); }
+.qv .ch-leg-in::placeholder { color: var(--muted-2); }
+.qv .ch-leg-arrow { color: var(--muted-2); font-size: 14px; flex: none; }
+
+.qv .ch-leg-date { flex: none; }
+.qv .ch-leg-date input { border: 1px solid var(--line); background: var(--cream); border-radius: 7px; padding: 6px 8px; font-size: 12px; font-family: inherit; color: var(--ink); outline: none; }
+.qv .ch-leg-date input:focus { border-color: var(--blue); background: #fff; }
+
+.qv .ch-leg-dist { flex: none; display: flex; align-items: center; gap: 4px; }
+.qv .ch-leg-price { flex: none; font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--ink); min-width: 54px; text-align: right; }
+.qv .ch-leg-price.empty { color: var(--muted-2); font-family: var(--sans); font-size: 12px; font-weight: 500; }
+.qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
+
+/* second thin line: add-ons chip row (always present on point-to-point driving legs) */
+.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; }
+/* empty state: a quiet inline text action, not an orphaned button */
+.qv .ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
+.qv .ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
+/* active state: a solid pill naming the fees */
+.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.qv .ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
+.qv .ch-dist-time { color: var(--muted); font-weight: 400; margin-left: 5px; padding-left: 6px; border-left: 1px solid currentColor; opacity: .55; }
+
+/* second thin line: add-on toggles (only when the popover is open) */
+.qv .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+
+/* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
+   keep From→To readable alongside the date/distance/action controls, drop the
+   route onto its own full-width line below the controls. Keyed to the container
+   so it fires in the two-pane cockpit (editor ~590px) on any monitor size. */
+@container legs (max-width: 620px) {
+  .qv .ch-leg-main { flex-wrap: wrap; }
+  .qv .ch-leg-route { flex: 1 1 100%; order: 5; }}
+/* Fallback for browsers without container queries: key off the viewport. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1180px) {
+    .qv .ch-leg-main { flex-wrap: wrap; }
+    .qv .ch-leg-route { flex: 1 1 100%; order: 5; }}}
+
+.qv .ch-legs-add { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Money pane — ONE cohesive card, tight vertical rhythm
+   ══════════════════════════════════════════════════════════════════════════ */
+.qv .ch-money-card { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
+
+/* shared hairline divider inside the card */
+.qv .ch-money-rule { height: 1px; background: var(--line-soft); margin: 0; }
+
+/* micro-label (matches the customer-strip label style) */
+.qv .ch-money-micro { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+
+/* --- 1. Service chooser = the card head (two price boxes that ARE the chooser) --- */
+.qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
+.qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
+.qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
+.qv .ch-svc-box.active { border-color: var(--teal); background: rgba(10,185,182,.06); box-shadow: 0 0 0 1px var(--teal) inset; }
+.qv .ch-svc-box:disabled { cursor: not-allowed; background: var(--cream); border-color: var(--line); }
+.qv .ch-svc-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.qv .ch-svc-box.active .ch-svc-lbl { color: var(--teal-d); }
+.qv .ch-svc-price { font-family: var(--serif); font-size: 20px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.qv .ch-svc-box:not(.active) .ch-svc-price { color: var(--muted); }
+.qv .ch-svc-box:disabled .ch-svc-price { color: var(--muted-2); }
+.qv .ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
+.qv .ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
+.qv .ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
+.qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
+
+/* --- 2. km line — one text line, not tiles --- */
+.qv .ch-money-body { padding: 14px 16px; }
+.qv .ch-km-line { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; margin-bottom: 10px; line-height: 1.4; }
+.qv .ch-km-line .ch-km.hero { font-family: var(--serif); font-weight: 700; font-size: 14px; color: var(--ink); background: none; padding: 0; border-radius: 0; display: inline; }
+
+/* build-up lines (tightened) */
+.qv .ch-money-body .ch-line { padding: 4px 0; }
+
+/* quote total — the big serif moment */
+.qv .ch-total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.qv .ch-total-lbl { font-size: 11px; font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .5px; }
+.qv .ch-total-val { text-align: right; line-height: 1.05; }
+.qv .ch-total-usd { font-family: var(--serif); font-size: 30px; font-weight: 700; color: var(--ink); }
+.qv .ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
+
+/* deposit / due-now highlighted chip row (chauffeur) */
+.qv .ch-deposit-chip { margin-top: 12px; background: rgba(10,185,182,.08); border: 1px solid rgba(10,185,182,.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.qv .ch-deposit-chip .dep-lbl { font-size: 12px; color: var(--teal-d); font-weight: 600; }
+.qv .ch-deposit-chip .dep-val { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--teal-d); font-variant-numeric: tabular-nums; }
+.qv .ch-deposit-note { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+
+/* margin — small teal line */
+.qv .ch-money-body .ch-margin { margin-top: 8px; }
+
+/* empty / error state */
+.qv .ch-money-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 22px 0; }
+
+/* --- FLAGS — slim severity rows inside the same card, under a hairline --- */
+.qv .ch-flags-mini { padding: 12px 16px; }
+.qv .ch-flags-mini .ch-flags { gap: 7px; }
+.qv .ch-flags-mini .ch-flag { padding: 8px 11px; }
+.qv .ch-flags-mini .ch-flags-clear { padding: 2px 2px; }
+
+/* --- OUTPUT — tab bar + copy at the card foot --- */
+.qv .ch-out-collapse { border-top: 1px solid var(--line-soft); }
+.qv .ch-out-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; background: none; border: none; cursor: pointer; font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.qv .ch-out-toggle:hover { color: var(--ink); }
+.qv .ch-out-toggle .ch-chev { font-size: 16px; }
+.qv .ch-out-panel { padding: 0 16px 16px; }
+.qv .ch-out-panel .ch-tabs { margin-bottom: 12px; }
+
+/* ---------- Slide-in drawer (Recent) ---------- */
+.qv .ch-scrim { position: fixed; inset: 0; background: rgba(58,55,57,.32); backdrop-filter: blur(2px); z-index: 90; opacity: 0; transition: opacity .2s; }
+.qv .ch-scrim.show { opacity: 1; }
+.qv .ch-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 90vw; background: var(--paper); box-shadow: var(--shadow-pop); z-index: 91; display: flex; flex-direction: column; transform: translateX(100%); transition: transform .24s cubic-bezier(.4,0,.2,1); }
+.qv .ch-drawer.show { transform: translateX(0); }
+.qv .ch-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.qv .ch-drawer-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; }
+.qv .ch-drawer-body { padding: 8px 20px 24px; overflow-y: auto; flex: 1; }
+.qv .ch-x-btn { width: 32px; height: 32px; border: 1px solid var(--line); background: #fff; border-radius: 8px; cursor: pointer; font-size: 16px; color: var(--muted); display: grid; place-items: center; line-height: 1; }
+.qv .ch-x-btn:hover { border-color: var(--red); color: var(--red); }
+.qv .ch-drawer-empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+
+/* ---------- Modal overlay (Rate Settings) ---------- */
+.qv .ch-modal { position: fixed; inset: 0; z-index: 92; display: grid; place-items: center; padding: 24px; }
+.qv .ch-modal-card { position: relative; z-index: 93; background: var(--paper); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); width: min(680px, 100%); max-height: 86vh; overflow: hidden; display: flex; flex-direction: column; }
+.qv .ch-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.qv .ch-modal-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; }
+.qv .ch-modal-body { padding: 18px 20px 22px; overflow-y: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTAINMENT — the cockpit above was authored for a full viewport; here it
+   lives inside the ops .main pane (viewport − 254px rail). .qv is the pane:
+   its own scroll box, positioning context, opaque surface, and the query
+   container for the two layout-governing breakpoints converted above.
+   ══════════════════════════════════════════════════════════════════════════ */
+.qv {
+  position: relative;            /* positioning context (T5 re-homes the toast here) */
+  height: 100%;                  /* single self-scrolling box — same element as #quoteRoot, */
+  overflow-y: auto;              /* so this reconciles with (not nests inside) that rule    */
+  border-left: 1px solid #e8e3d4;/* pane divider in the OPS --line colour (hardcoded:
+                                    inside .qv, var(--line) resolves to the QUOTE value) */
+  container-type: inline-size;   /* .ch-cockpit / .ch-main breakpoints query the PANE width */
+  container-name: qv;
+}
+.qv .ch-app { min-height: 0; height: 100%; }  /* kill min-height:100vh — it would overflow .main */
 </style>
 </head>
 <body>
