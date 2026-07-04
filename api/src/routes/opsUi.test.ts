@@ -37,6 +37,16 @@ describe('ops UI shell', () => {
     expect(body).toContain('credential:'); // posts {credential} (Google ID token), not {key}
   });
 
+  it('renders the Google button on GIS script load, not only at boot (async race)', async () => {
+    // The GIS client script is async — a one-shot boot-time `if(window.google)` check races
+    // it and usually loses (blank login card). The button must (re)render from the script's onload.
+    const app = createApp();
+    const body = await (await app.request('/ops')).text();
+    expect(body).toContain('function initGoogleButton()');      // extracted, reusable renderer
+    expect(body).toContain('onload="window.initGoogleButton');  // GIS script calls it on load
+    expect(body).toContain('childElementCount>0');              // idempotent guard — render once
+  });
+
   it('templates the real GOOGLE_OAUTH_CLIENT_ID into the served HTML', async () => {
     const app = createApp({ auth: { opsUsers: '', googleClientId: 'test-client-id-123.apps.googleusercontent.com', opsSessionSecret: 'sek' } });
     const res = await app.request('/ops');

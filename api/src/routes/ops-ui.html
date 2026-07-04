@@ -825,7 +825,7 @@
     <div class="foot">Restricted operational console</div>
   </div>
 </div>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="window.initGoogleButton&&window.initGoogleButton()"></script>
 
 <div class="scrim" id="scrim"></div><aside class="sheet" id="sheet"></aside><div class="toast" id="toast"></div>
 
@@ -1229,13 +1229,23 @@ if(devLoginForm)devLoginForm.addEventListener('submit',async e=>{
 $('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
 document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);showLogin();}});
 
+/* Render the Google Sign-In button. The GIS script is `async defer`, so it may load
+   BEFORE or AFTER this inline script — so this is called from BOTH the script's onload
+   AND the boot sequence; whichever runs once `window.google` exists wins. The
+   childElementCount guard makes the double-call idempotent (renders exactly once). */
+function initGoogleButton(){
+  if(!(window.google&&google.accounts&&google.accounts.id))return;
+  const el=$('#g_id_signin');
+  if(!el||el.childElementCount>0)return; /* already rendered */
+  google.accounts.id.initialize({client_id:'{{GOOGLE_CLIENT_ID}}',callback:onGoogleCredential});
+  google.accounts.id.renderButton(el,{theme:'filled_black',size:'large',shape:'pill'});
+}
+window.initGoogleButton=initGoogleButton;
+
 /* boot: whoami → in-session boots the app, else show login (+ init the GIS button) */
 (async function(){
   localStorage.removeItem('chAdminKey'); /* T5: stale secret from the quote tool's admin-key era */
-  if(window.google&&google.accounts&&google.accounts.id){
-    google.accounts.id.initialize({client_id:'{{GOOGLE_CLIENT_ID}}',callback:onGoogleCredential});
-    google.accounts.id.renderButton($('#g_id_signin'),{theme:'filled_black',size:'large',shape:'pill'});
-  }
+  initGoogleButton(); /* if GIS already loaded; else the script's onload calls it */
   const devFoot=$('#devlogin-foot');
   if(devFoot&&devFoot.dataset.devLoginEnabled==='true'&&devLoginForm)devLoginForm.style.display='';
   try{
