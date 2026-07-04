@@ -164,14 +164,13 @@ export function createApp(deps: AppDeps = {}) {
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
   app.use('/ops', compress());
   app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production'));
-  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
-  // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
-  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2).
+  // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
+  // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
+  // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
+  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
     maps, quotes,
-    adminKey: adminApiKey,
-    allowNoKey: config.NODE_ENV !== 'production',
-    sessionSecret: opsAuthCfg.sessionSecret,
+    auth: opsAuthCfg,
     allowedOrigins,
   }));
   app.route(
