@@ -9,6 +9,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:tool": "CH_E2E_API=1 playwright test quote-tool",
+    "test:e2e:ops": "CH_E2E_API=1 playwright test ops-ui",
     "test:all": "vitest run && playwright test"
   },
   "devDependencies": {

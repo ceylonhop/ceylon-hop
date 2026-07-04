@@ -98,8 +98,8 @@ export function createApp(deps: AppDeps = {}) {
   // passes per /estimate, and DB writes on /save — its admin-key auth only enforces when
   // configured, so this is a hard backstop. 4x the booking cap: autocomplete legitimately
   // bursts GETs while typing. Subpaths only — Hono's '/admin/quote/*' also matches the bare
-  // parent path, so we explicitly pass the exact shell path through untouched, keeping
-  // GET /admin/quote (the HTML shell) unthrottled, intentionally.
+  // parent path, so we explicitly pass the exact parent path through untouched, keeping
+  // GET /admin/quote (now a bare 302 redirect to /ops — T2) unthrottled, intentionally.
   const adminQuoteLimiter = rateLimit({ ...rl, max: rl.max * 4, methods: ['POST', 'GET'] });
   app.use('/admin/quote/*', (c, next) => (c.req.path === '/admin/quote' ? next() : adminQuoteLimiter(c, next)));
 
@@ -156,8 +156,16 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg }));
   app.route('/ops', opsUiRoutes());
-  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c)
-  app.route('/admin/quote', internalQuoteRoutes({ maps, quotes, adminKey: adminApiKey, allowNoKey: config.NODE_ENV !== 'production' }));
+  // internal quoting tool — keyless access is a dev-only convenience; production fails closed (GL-1c).
+  // sessionSecret: a founder ops-session cookie (same login as /admin/ops) also unlocks it (T1).
+  // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2).
+  app.route('/admin/quote', internalQuoteRoutes({
+    maps, quotes,
+    adminKey: adminApiKey,
+    allowNoKey: config.NODE_ENV !== 'production',
+    sessionSecret: opsAuthCfg.sessionSecret,
+    allowedOrigins,
+  }));
   app.route(
     '/admin',
     adminRoutes({

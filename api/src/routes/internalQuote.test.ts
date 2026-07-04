@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { signSession } from '../lib/opsAuth';
 
 type App = ReturnType<typeof createApp>;
 function post(app: App, path: string, body: unknown) {
@@ -401,10 +402,11 @@ describe('quoting tool — admin-key auth', () => {
     return a;
   };
 
-  it('serves the HTML shell without a key', async () => {
+  // Ops⇄quote merge T2: the standalone shell is retired — the tool lives in /ops now.
+  it('GET / redirects to /ops (302) without needing a key', async () => {
     const res = await keyed().request('/admin/quote');
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/ops');
   });
 
   it('401s a data route without the key and 200s with it', async () => {
@@ -418,6 +420,61 @@ describe('quoting tool — admin-key auth', () => {
   it('leaves data routes open when no key is configured (dev/preview)', async () => {
     // createApp default ADMIN_API_KEY is '' → open (NODE_ENV !== 'production' under vitest)
     expect((await createApp().request('/admin/quote/places?q=kand')).status).toBe(200);
+  });
+});
+
+// Ops⇄quote merge T1: a founder ops-session cookie (ch_ops, same as /admin/ops) now unlocks
+// /admin/quote/* alongside the legacy x-admin-key. Support NEVER sees quote data (margin/PII)
+// — not even through the dev keyless bypass.
+describe('quoting tool — founder ops-session cookie auth', () => {
+  const SECRET = 'test-ops-session-secret';
+  const founder = `ch_ops=${signSession('founder', SECRET)}`;
+  const support = `ch_ops=${signSession('support', SECRET)}`;
+  const build = (over: Record<string, unknown> = {}) => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      adminKey: 'K', sessionSecret: SECRET, ...over,
+    }));
+    return a;
+  };
+
+  it('founder cookie authorizes reads AND the PII/margin routes (rate-card, list)', async () => {
+    const app = build();
+    for (const p of ['/admin/quote/rate-card', '/admin/quote/list']) {
+      expect((await app.request(p, { headers: { cookie: founder } })).status).toBe(200);
+    }
+  });
+
+  it('support cookie is forbidden (403) on every data route', async () => {
+    const app = build();
+    for (const p of ['/admin/quote/rate-card', '/admin/quote/list', '/admin/quote/x']) {
+      expect((await app.request(p, { headers: { cookie: support } })).status).toBe(403);
+    }
+    const est = await app.request('/admin/quote/estimate', {
+      method: 'POST', headers: { cookie: support, 'content-type': 'application/json' }, body: '{}',
+    });
+    expect(est.status).toBe(403);
+  });
+
+  it('legacy x-admin-key still works (200)', async () => {
+    expect((await build().request('/admin/quote/rate-card', { headers: { 'x-admin-key': 'K' } })).status).toBe(200);
+  });
+
+  it('no auth at all is 401', async () => {
+    expect((await build().request('/admin/quote/rate-card')).status).toBe(401);
+  });
+
+  it('a founder cookie signed with the wrong secret is 401 (forgery)', async () => {
+    const res = await build().request('/admin/quote/rate-card', {
+      headers: { cookie: `ch_ops=${signSession('founder', 'WRONG')}` },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('support cookie is still 403 even with no adminKey + allowNoKey:true (never falls through the dev bypass)', async () => {
+    const app = build({ adminKey: undefined, allowNoKey: true });
+    expect((await app.request('/admin/quote/rate-card', { headers: { cookie: support } })).status).toBe(403);
   });
 });
 
@@ -475,10 +532,10 @@ describe('quoting tool — fail-closed when no key is configured', () => {
     expect(est.status).toBe(401);
   });
 
-  it('still serves the HTML shell when locked (browser navigation cannot send a header)', async () => {
+  it('still redirects GET / to /ops when locked (the redirect carries no quote data)', async () => {
     const res = await locked().request('/admin/quote');
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/ops');
   });
 
   it('allowNoKey: true keeps data routes open without a key (dev/preview)', async () => {
@@ -509,67 +566,100 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   });
 });
 
-// Fix (S4): toolHtml() resilience. readFileSync is mocked so we can force the "missing/unreadable
-// file" path without touching the real quote-tool.html. Each test re-imports the module fresh
-// (vi.resetModules) so the in-module cache var starts empty, matching a freshly-booted server.
-describe('quoting tool — GET / (toolHtml) resilience to a failing read', () => {
-  const okContent = '<html><body>tool v1</body></html>';
+// Ops⇄quote merge T2: the standalone quote shell is retired — GET / is a plain 302 to /ops
+// (where the tool now lives). The old toolHtml()/readFileSync resilience suite went with it.
+describe('quoting tool — GET / redirects to /ops', () => {
+  it('app-level: GET /admin/quote → 302 with location /ops', async () => {
+    const res = await createApp().request('/admin/quote');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/ops');
+  });
+});
 
-  beforeEach(() => {
-    vi.resetModules();
-    vi.doUnmock('node:fs');
+// Ops⇄quote merge T2: CSRF on the state-changing routes. A founder's browser holds an ambient
+// ch_ops cookie, so a cross-site page could otherwise fire authenticated POSTs. Mutations check
+// Sec-Fetch-Site first (modern browsers), then fall back to the Origin allow-list (older ones).
+// Neither header present = non-browser caller (curl/fetch from scripts) — the auth guard still
+// applies. GET reads stay CSRF-exempt: autocomplete must stay fast and reads carry no writes.
+describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
+  const SECRET = 'test-ops-session-secret';
+  const founder = `ch_ops=${signSession('founder', SECRET)}`;
+  const OWN_ORIGIN = 'http://localhost:4173'; // in the app's default ALLOWED_ORIGINS
+  const build = () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      adminKey: 'K', sessionSecret: SECRET, allowedOrigins: [OWN_ORIGIN],
+    }));
+    return a;
+  };
+  const estimateBody = JSON.stringify({
+    vehicle: 'car', passengerCount: 1, luggageCount: 0,
+    legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80 }],
+  });
+  const estimate = (headers: Record<string, string>) =>
+    build().request('/admin/quote/estimate', {
+      method: 'POST', body: estimateBody,
+      headers: { cookie: founder, 'content-type': 'application/json', ...headers },
+    });
+
+  it('403 bad_origin on Sec-Fetch-Site: cross-site, even with a valid founder cookie', async () => {
+    const res = await estimate({ 'sec-fetch-site': 'cross-site' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
   });
 
-  it('serves the file normally on a healthy read (no caching concern on the happy path)', async () => {
-    vi.doMock('node:fs', () => ({ readFileSync: vi.fn(() => okContent) }));
-    const { internalQuoteRoutes: routes } = await import('./internalQuote');
-    const a = new Hono();
-    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
-    const res = await a.request('/admin/quote');
+  it('403 bad_origin on a disallowed Origin when Sec-Fetch-Site is absent (older browsers)', async () => {
+    const res = await estimate({ origin: 'https://evil.example' });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
+  });
+
+  it('passes with an allow-listed Origin (the app\'s own serving origin)', async () => {
+    const res = await estimate({ origin: OWN_ORIGIN });
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe(okContent);
   });
 
-  it('serves the last-good cached copy (with a console.error) when a later read fails', async () => {
-    let shouldFail = false;
-    vi.doMock('node:fs', () => ({
-      readFileSync: vi.fn(() => {
-        if (shouldFail) throw new Error('ENOENT: no such file');
-        return okContent;
-      }),
-    }));
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { internalQuoteRoutes: routes } = await import('./internalQuote');
-    const a = new Hono();
-    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
-
-    const first = await a.request('/admin/quote');
-    expect(first.status).toBe(200);
-    expect(await first.text()).toBe(okContent); // warms the cache
-
-    shouldFail = true;
-    const second = await a.request('/admin/quote');
-    expect(second.status).toBe(200); // cached copy, not a 500
-    expect(await second.text()).toBe(okContent);
-    expect(errSpy).toHaveBeenCalled();
-    errSpy.mockRestore();
+  it('passes on Sec-Fetch-Site: same-origin even when Origin is not allow-listed', async () => {
+    // A same-origin /ops POST from a host not in ALLOWED_ORIGINS (e.g. a preview port) must
+    // still work — Sec-Fetch-Site is authoritative and pre-empts the Origin allow-list.
+    const res = await estimate({ 'sec-fetch-site': 'same-origin', origin: 'http://localhost:59999' });
+    expect(res.status).toBe(200);
   });
 
-  it('returns a minimal 500 body and console.errors when the read fails with no cache warmed yet', async () => {
-    vi.doMock('node:fs', () => ({
-      readFileSync: vi.fn(() => {
-        throw new Error('ENOENT: no such file');
-      }),
-    }));
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { internalQuoteRoutes: routes } = await import('./internalQuote');
-    const a = new Hono();
-    a.route('/admin/quote', routes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo() }));
+  it('passes with neither header (non-browser caller; the auth guard still protects)', async () => {
+    const res = await estimate({});
+    expect(res.status).toBe(200);
+  });
 
-    const res = await a.request('/admin/quote');
-    expect(res.status).toBe(500);
-    expect(await res.text()).toContain('quote tool unavailable');
-    expect(errSpy).toHaveBeenCalled();
-    errSpy.mockRestore();
+  it('covers every mutation: POST /distance, POST /save, PATCH /:id all 403 cross-site', async () => {
+    const app = build();
+    const bad = { cookie: founder, 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' };
+    const dist = await app.request('/admin/quote/distance', { method: 'POST', headers: bad, body: '{"from":"A","to":"B"}' });
+    expect(dist.status).toBe(403);
+    expect((await dist.json()).error).toBe('bad_origin');
+    const save = await app.request('/admin/quote/save', { method: 'POST', headers: bad, body: estimateBody });
+    expect(save.status).toBe(403);
+    const patch = await app.request('/admin/quote/some-id', { method: 'PATCH', headers: bad, body: '{"status":"won"}' });
+    expect(patch.status).toBe(403);
+  });
+
+  it('GET reads are exempt — a cross-site Sec-Fetch-Site still reads /rate-card and /list', async () => {
+    const app = build();
+    const headers = { cookie: founder, 'sec-fetch-site': 'cross-site' };
+    expect((await app.request('/admin/quote/rate-card', { headers })).status).toBe(200);
+    expect((await app.request('/admin/quote/list', { headers })).status).toBe(200);
+  });
+
+  it('app-level wiring: createApp passes its allow-list into the mount', async () => {
+    // Default ALLOWED_ORIGINS includes http://localhost:4173; the dev keyless bypass opens
+    // auth under vitest, so a CSRF 403 here can only come from the mounted allow-list.
+    const app = createApp();
+    const post = (origin?: string) => app.request('/admin/quote/estimate', {
+      method: 'POST', body: estimateBody,
+      headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+    });
+    expect((await post('https://evil.example')).status).toBe(403);
+    expect((await post(OWN_ORIGIN)).status).toBe(200);
   });
 });

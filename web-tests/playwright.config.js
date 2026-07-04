@@ -4,17 +4,24 @@ import { defineConfig, devices } from '@playwright/test';
 // e2e specs against it. Google Maps, PayHere and the API are stubbed per-test
 // (see e2e/_stubs.js) so the suite is deterministic and fully offline BY DEFAULT.
 //
-// The quote-tool specs are the one exception: they exercise the real internal
-// quoting tool served by the API at /admin/quote, which needs a reachable
-// DATABASE_URL and writes rows to that DB. Those specs are skipped unless you
-// opt in with CH_E2E_API=1, which also boots the API webServer below (see
-// package.json's "test:e2e:tool" script).
+// The quote-tool and ops-ui specs are the exception: they exercise the real
+// merged ops⇄quote dashboard served by the API at /ops (the quoting tool is a
+// founder-only view mounted inside it — see api/src/routes/ops-ui.html), which
+// needs a reachable DATABASE_URL and writes rows to that DB. Those specs are
+// skipped unless you opt in with CH_E2E_API=1, which also boots the API
+// webServer below (see package.json's "test:e2e:tool"/"test:e2e:ops" scripts).
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
+  // The quote-tool/ops-ui specs share one Supabase session-mode pool (pool_size: 15 —
+  // see api/.env's DATABASE_URL). Each Playwright worker opens its own browser and fires
+  // concurrent DB-backed requests (loadQueue, /admin/quote/*), so a full 8-worker fan-out
+  // can exhaust the pool and 500 on /admin/ops/bookings. Cap workers only for the
+  // CH_E2E_API run; the offline default suite is unaffected.
+  workers: process.env.CH_E2E_API === '1' ? 4 : undefined,
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
@@ -31,15 +38,25 @@ export default defineConfig({
     },
     ...(process.env.CH_E2E_API === '1' ? [
       {
-        // The API serves the internal quoting tool at /admin/quote (see quote-tool.spec.js).
+        // The API serves the merged ops⇄quote dashboard at /ops (see quote-tool.spec.js
+        // and ops-ui.spec.js) — the quoting tool is a founder-only view inside it.
         // Needs DATABASE_URL (api/.env) — only booted when CH_E2E_API=1.
         command: 'npm --prefix ../api run dev',
         url: 'http://localhost:8787/health',
         reuseExistingServer: true,
         timeout: 60000,
-        // Parallel specs share one IP; the /admin/quote rate limiter (RATE_LIMIT_MAX*4)
-        // saturates near the tail of a full run. Raise the cap for the test server only.
-        env: { ...process.env, RATE_LIMIT_MAX: '200' },
+        env: {
+          ...process.env,
+          // Parallel specs share one IP; the /admin/quote rate limiter (RATE_LIMIT_MAX*4)
+          // saturates near the tail of a full run. Raise the cap for the test server only.
+          RATE_LIMIT_MAX: '200',
+          // The booted API needs founder/support keys + a session secret for the /ops
+          // login flow the specs drive. Dev defaults so the suite runs out of the box;
+          // pass through process.env values (e.g. from api/.env) if already set.
+          OPS_FOUNDER_KEY: process.env.OPS_FOUNDER_KEY || 'dev-founder',
+          OPS_SUPPORT_KEY: process.env.OPS_SUPPORT_KEY || 'dev-support',
+          OPS_SESSION_SECRET: process.env.OPS_SESSION_SECRET || 'dev-ops-secret-change-me',
+        },
       },
     ] : []),
   ],

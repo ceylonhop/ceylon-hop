@@ -1,11 +1,30 @@
 import { test, expect } from '@playwright/test';
 
-// The internal quoting tool is served by the API (not the static site) and
-// needs a real DATABASE_URL — these specs only run with CH_E2E_API=1 (see
-// playwright.config.js and package.json's "test:e2e:tool" script).
+// The internal quoting tool is now a founder-only view mounted inside the ops
+// dashboard (api/src/routes/ops-ui.html), not a standalone page — the old
+// /admin/quote shell was retired (it 302s to /ops now). These specs need a
+// real DATABASE_URL — they only run with CH_E2E_API=1 (see playwright.config.js
+// and package.json's "test:e2e:tool" script), and need OPS_FOUNDER_KEY set on
+// the booted API (playwright.config.js's webServer.env supplies a dev default).
 test.skip(process.env.CH_E2E_API !== '1', 'quote-tool e2e needs the API — run with CH_E2E_API=1');
 
-const TOOL = 'http://localhost:8787/admin/quote';
+const OPS = 'http://localhost:8787/ops';
+const FOUNDER_KEY = process.env.OPS_FOUNDER_KEY || 'dev-founder';
+
+test.skip(!FOUNDER_KEY, 'OPS_FOUNDER_KEY is empty — cannot log in as founder');
+
+// Helper: log in to /ops as founder and open the Quote view. Every spec starts
+// here instead of goto'ing the old standalone /admin/quote page.
+async function loginFounderAndOpenQuote(page) {
+  await page.goto(OPS);
+  await page.waitForLoadState('networkidle');
+  await page.locator('#loginkey').fill(FOUNDER_KEY);
+  await page.locator('#loginform').evaluate((form) => form.requestSubmit());
+  // App shell becomes visible post-login (Bookings renders first).
+  await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
+  await page.locator('#nav button[data-route="quote"]').click();
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+}
 
 // Helper: pick a place from the live autocomplete menu for a leg's from/to field.
 async function pickPlace(page, input, query, resultText) {
@@ -31,7 +50,7 @@ async function fillFirstLegDate(page, iso) {
 
 // Fix 1: there is no default vehicle anymore — ops must choose one before any
 // estimate is priced. Every spec that expects a priced summary must call this
-// right after goto + networkidle.
+// right after opening the quote view.
 async function chooseVehicle(page, value) {
   await page.locator('#f-vehicleType').selectOption(value);
   // Choosing a vehicle kicks off a debounced estimate that render()s ~350ms later,
@@ -40,11 +59,12 @@ async function chooseVehicle(page, value) {
   await page.waitForTimeout(600);
 }
 
+test.beforeEach(async ({ page }) => {
+  await loginFounderAndOpenQuote(page);
+});
+
 // Spec 1: Timeline autocomplete → auto-distance → priced summary → save
 test('timeline autocomplete → priced LKR summary → save reference toast', async ({ page }) => {
-  await page.goto(TOOL);
-  // Wait for the page to fully initialise (rate card fetch + render complete)
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   // Fill first leg: "From" field (first .ch-tl-title with data-field="pickupLocation")
@@ -81,9 +101,6 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
 
 // Spec 2: Car + 4 bags triggers the luggage flag
 test('car + 4 bags raises the luggage flag', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
-
   // Select Car in the vehicle dropdown
   const vehicleSel = page.locator('#f-vehicleType');
   await vehicleSel.selectOption('car');
@@ -104,8 +121,6 @@ test('car + 4 bags raises the luggage flag', async ({ page }) => {
 // line, keeps the LAST transfer's row (the old alignment bug dropped it), and the
 // total matches the Summary card.
 test('stay day renders unpriced in WhatsApp output with deposit line (V1)', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   // Leg 1 (transfer): Kandy → Ella, dated. (Settle waits: render() replaces #app
@@ -171,8 +186,6 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
 
 // Spec 3b (reflow): the service chooser gates chauffeur and the per-leg add-ons.
 test('service chooser: chauffeur gated by dates, add-ons only in point-to-point', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   // Undated single leg → chauffeur disabled.
@@ -223,8 +236,6 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
 // Spec 4 (V5): Save→status sync — setting the status before the first save must
 // be persisted (via the post-save PATCH) so the Recent list reflects it.
 test('status chosen before first save is synced on save (V5)', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -256,8 +267,6 @@ test('status chosen before first save is synced on save (V5)', async ({ page }) 
 // Spec 5 (V19): Reopen — clicking a Recent row (not its status select) reopens
 // the saved quote and repopulates the customer name.
 test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -291,8 +300,6 @@ test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => 
 
 // Spec 6 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
 test('legs can be reordered and out-of-order dates raise a flag', async ({ page }) => {
-  await page.goto(TOOL);
-  await page.waitForLoadState('networkidle');
   await chooseVehicle(page, 'van_6');
 
   const outOfOrderFlag = page.locator('.ch-flag', { hasText: /Dates out of order/i });
