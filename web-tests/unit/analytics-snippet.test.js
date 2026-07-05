@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { headAssets, analyticsSnippet } from '../../tools/site-chrome.mjs';
+import { generateAll } from '../../tools/generate-route-pages.mjs';
+import { generateStaticPages } from '../../tools/generate-static-pages.mjs';
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 // The 10 HAND-AUTHORED pages. Generated pages (terms/privacy/404/trip/*) get the
@@ -55,5 +57,19 @@ describe('privacy disclosure', () => {
     const src = read('tools/legal/privacy.body.html').toLowerCase();
     expect(src).toContain('analytics');
     expect(src).toContain('cookie');
+  });
+});
+
+describe('generated pages carry the analytics snippet', () => {
+  it('a route page and the generated privacy page include GTM', () => {
+    const all = new Map([...generateAll(), ...generateStaticPages()]);
+    const route = all.get('trip/kandy-to-ella/index.html');
+    expect(route, 'route page missing').toBeTruthy();
+    expect(route).toContain('GTM-NL6K22CM');
+    expect(all.get('privacy.html')).toContain('GTM-NL6K22CM');
+  });
+  it('the regenerated privacy page carries the analytics disclosure', () => {
+    const all = new Map([...generateStaticPages()]);
+    expect(all.get('privacy.html').toLowerCase()).toContain('analytics');
   });
 });
