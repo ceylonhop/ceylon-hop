@@ -34,15 +34,10 @@ esac
 # 2026-07-02). New SEO html (route pages under trip/, redirect stubs, and
 # terms/privacy/404) is intentionally allowed. To edit an existing page, use the
 # owner-authorized unfreeze + the 'allow-ui-change' PR label (see M16 PR3).
-#
-# 2026-07-05 (owner-authorized): booking.html / booking.js / routes-data.js /
-# transfers-data.js TEMPORARILY unfrozen for the quote-drift acknowledgement +
-# step-2 copy reframe. The final commit on this branch restores the freeze; CI's
-# protect-ui gate stays — the PR carries the 'allow-ui-change' label.
 case "$rel" in
-  index.html|about.html|blog.html|plan.html|search.html|tour.html|tours.html|why.html|_ops-preview.html|\
+  index.html|about.html|blog.html|booking.html|plan.html|search.html|tour.html|tours.html|why.html|_ops-preview.html|\
   site.css|favicon.svg|image-slots.state.json|\
-  datepicker.js|image-slot.js|plan.js|search.js|site.js|tours-data.js|tweaks.js)
+  booking.js|datepicker.js|image-slot.js|plan.js|routes-data.js|search.js|site.js|tours-data.js|transfers-data.js|tweaks.js)
     echo "BLOCKED: '$rel' is a frozen front-end / live-site file (CLAUDE.md rule 3). New SEO files are allowed; to edit an existing page use the owner-authorized unfreeze + 'allow-ui-change' label." >&2
     exit 2 ;;
 esac
