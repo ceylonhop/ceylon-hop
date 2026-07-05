@@ -49,3 +49,11 @@ describe('analytics snippet present on every hand-authored root page', () => {
     }
   });
 });
+
+describe('privacy disclosure', () => {
+  it('the privacy source fragment mentions analytics cookies and opt-out', () => {
+    const src = read('tools/legal/privacy.body.html').toLowerCase();
+    expect(src).toContain('analytics');
+    expect(src).toContain('cookie');
+  });
+});
