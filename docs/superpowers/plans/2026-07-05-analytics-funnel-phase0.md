@@ -24,10 +24,11 @@
 - Create: `analytics.js` (chTrack + chIsProd helper)
 - Create: `consent.js`, plus consent-banner CSS in `site.css`
 - Modify: `tools/site-chrome.mjs` (export `analyticsSnippet`, add to `headAssets`)
-- Modify: 13 root HTML pages (inline snippet + `<script src>` includes)
+- Modify: 10 hand-authored root HTML pages (inline snippet + `<script src>` includes). Generated pages (`terms/privacy/404`, `trip/*`) get it via `headAssets` + `npm run generate` (Task 9b).
 - Modify: `search.js` (search / view_item_list / select_item)
 - Modify: `booking.js` (begin_checkout / checkout_step / add_payment_info / payment_initiated / payment_dismissed / payment_failed / reprice_shown / reprice_accepted / purchase)
-- Modify: `privacy.html` (disclose analytics cookies)
+- Modify: `tools/legal/privacy.body.html` (disclose analytics cookies — SOURCE of generated privacy.html)
+- Regenerate + commit generated pages (Task 9b)
 - Create: `web-tests/unit/analytics-helper.test.js`, `web-tests/unit/analytics-snippet.test.js`, `web-tests/unit/consent.test.js`
 - Create: `web-tests/e2e/analytics-funnel.spec.js`
 - Create: `docs/analytics/gtm-container-checklist.md` (GTM/GA4 UI config — no code)
@@ -237,10 +238,12 @@ git commit -m "feat(analytics): consent-mode + GTM snippet in site-chrome headAs
 
 ---
 
-### Task 3: Inline the snippet + helper scripts into the 13 root pages
+### Task 3: Inline the snippet + helper scripts into the 10 hand-authored root pages
+
+> **Generated vs hand-authored (important):** `terms.html`, `privacy.html`, `404.html`, and all `trip/*` route pages are **generated** by `tools/generate-*.mjs` via `headAssets` — they must NOT be hand-edited (Task 2 already put the snippet in `headAssets`; they pick it up when regenerated in Task 9b). This task edits ONLY the 10 hand-authored root pages.
 
 **Files:**
-- Modify: `index.html`, `booking.html`, `search.html`, `plan.html`, `about.html`, `blog.html`, `why.html`, `tours.html`, `tour.html`, `manage.html`, `privacy.html`, `terms.html`, `404.html`
+- Modify: `index.html`, `booking.html`, `search.html`, `plan.html`, `about.html`, `blog.html`, `why.html`, `tours.html`, `tour.html`, `manage.html`
 - Test: `web-tests/unit/analytics-snippet.test.js` (extend from Task 2)
 
 **Interfaces:**
@@ -252,12 +255,15 @@ git commit -m "feat(analytics): consent-mode + GTM snippet in site-chrome headAs
 ```js
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-const ROOT = join(__dirname, '..', '..');
+import { fileURLToPath } from 'node:url';
+const ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
-const PAGES = ['index.html','booking.html','search.html','plan.html','about.html','blog.html','why.html','tours.html','tour.html','manage.html','privacy.html','terms.html','404.html'];
+// The 10 HAND-AUTHORED pages. Generated pages (terms/privacy/404/trip/*) get the
+// snippet via headAssets + `npm run generate` (Task 9b), covered by seo-codegen.
+const PAGES = ['index.html','booking.html','search.html','plan.html','about.html','blog.html','why.html','tours.html','tour.html','manage.html'];
 
-describe('analytics snippet present on every root page', () => {
-  it('has GTM + consent default + helper includes on all 13 pages', () => {
+describe('analytics snippet present on every hand-authored root page', () => {
+  it('has GTM + consent default + helper includes on all 10 pages', () => {
     for (const p of PAGES) {
       const html = read(p);
       expect(html.includes('GTM-NL6K22CM'), `${p} missing GTM`).toBe(true);
@@ -276,7 +282,7 @@ Expected: FAIL — pages missing `GTM-NL6K22CM`.
 
 - [ ] **Step 3: Implement — inline the block into each page's `<head>`**
 
-In EACH of the 13 files, insert this block in `<head>` immediately **before** the existing error-beacon `<script>` (search each file for `errors/client` to locate it; the block goes just above that `<script>`). Paste verbatim (root pages use no path prefix):
+In EACH of the 10 hand-authored files listed above (NOT terms/privacy/404 — those are generated), insert this block in `<head>` immediately **before** the existing error-beacon `<script>` (search each file for `errors/client` to locate it; the block goes just above that `<script>`). Paste verbatim (root pages use no path prefix):
 
 ```html
 <script>
@@ -741,23 +747,25 @@ git commit -m "feat(analytics): prod-gated purchase event on booking finalize"
 
 ---
 
-### Task 8: `privacy.html` — disclose analytics cookies
+### Task 8: Privacy disclosure — edit the generated page's SOURCE
+
+> `privacy.html` is GENERATED (`tools/generate-static-pages.mjs` → `legalPage(...)` reads `tools/legal/privacy.body.html`). Editing `privacy.html` directly would be overwritten and would break the drift guard. Edit the **source fragment**; Task 9b regenerates `privacy.html` from it.
 
 **Files:**
-- Modify: `privacy.html`
-- Test: `web-tests/unit/analytics-snippet.test.js` (add one assertion)
+- Modify: `tools/legal/privacy.body.html`
+- Test: `web-tests/unit/analytics-snippet.test.js` (add one assertion against the source fragment)
 
 **Interfaces:**
-- Produces: privacy copy mentioning analytics/cookies + how to opt out, satisfying the Consent Mode disclosure requirement.
+- Produces: privacy copy mentioning analytics/cookies + opt-out in the source fragment; the served `privacy.html` picks it up when regenerated (Task 9b).
 
 - [ ] **Step 1: Write the failing test** (append to `analytics-snippet.test.js`)
 
 ```js
 describe('privacy disclosure', () => {
-  it('privacy.html mentions analytics cookies and opt-out', () => {
-    const html = read('privacy.html').toLowerCase();
-    expect(html).toContain('analytics');
-    expect(html).toContain('cookie');
+  it('the privacy source fragment mentions analytics cookies and opt-out', () => {
+    const src = read('tools/legal/privacy.body.html').toLowerCase();
+    expect(src).toContain('analytics');
+    expect(src).toContain('cookie');
   });
 });
 ```
@@ -765,9 +773,9 @@ describe('privacy disclosure', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd web-tests && npx vitest run unit/analytics-snippet.test.js -t "privacy disclosure"`
-Expected: FAIL — privacy.html has no analytics/cookie copy.
+Expected: FAIL — the source fragment has no analytics/cookie copy.
 
-- [ ] **Step 3: Implement** — add a bullet to the existing privacy list in `privacy.html` (match the surrounding markup; it is a short bulleted list):
+- [ ] **Step 3: Implement** — open `tools/legal/privacy.body.html` and add a bullet to the existing list (match the surrounding markup — read the file first to see whether it uses `<ul><li>` or `<p>`; place this alongside the existing points):
 
 ```html
 <li>We use cookies and third-party analytics (Google Analytics and Microsoft Clarity) to understand how visitors use the site and improve it. These are off by default until you accept them in the cookie banner, and you can decline at any time without affecting your booking.</li>
@@ -778,12 +786,76 @@ Expected: FAIL — privacy.html has no analytics/cookie copy.
 Run: `cd web-tests && npx vitest run unit/analytics-snippet.test.js -t "privacy disclosure"`
 Expected: PASS.
 
+Note: `seo-codegen` will still show `privacy.html` as drifted here — that is expected and resolved in Task 9b (regenerate). Do NOT run `npm run generate` in this task.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add privacy.html web-tests/unit/analytics-snippet.test.js
-git commit -m "docs(privacy): disclose GA4 + Clarity analytics cookies and opt-out"
+git add tools/legal/privacy.body.html web-tests/unit/analytics-snippet.test.js
+git commit -m "docs(privacy): disclose GA4 + Clarity analytics cookies and opt-out (source)"
 ```
+
+---
+
+### Task 9b: Regenerate generated pages (route + static) to carry the snippet
+
+> Task 2 changed `headAssets`; Task 8 changed the privacy source. The committed generated pages (`trip/*`, `trip/index.html`, `terms.html`, `privacy.html`, `404.html`, sitemap) are now stale, so the `seo-codegen` drift guard is RED. This task regenerates them — which is also how the generated landing pages (route/SEO pages, the funnel's `page_view` entry surfaces) get the analytics snippet. Run this AFTER Tasks 2, 4, and 8 are all committed.
+
+**Files:**
+- Modify (regenerated, do not hand-edit): all files emitted by `npm run generate` — `trip/**`, `terms.html`, `privacy.html`, `404.html`, `sitemap.xml`, redirect stubs.
+- Test: `web-tests/unit/seo-codegen.test.js` (existing drift guard) + one new assertion in `analytics-snippet.test.js`.
+
+**Interfaces:**
+- Consumes: the updated `headAssets` (Task 2) and `privacy.body.html` (Task 8).
+- Produces: committed generated pages that match the generators (drift guard green) and carry the GTM snippet.
+
+- [ ] **Step 1: Add a guard assertion** (append to `analytics-snippet.test.js`) — proves regenerated output carries the snippet:
+
+```js
+import { generateAll } from '../../tools/generate-route-pages.mjs';
+import { generateStaticPages } from '../../tools/generate-static-pages.mjs';
+
+describe('generated pages carry the analytics snippet', () => {
+  it('a route page and the generated privacy page include GTM', () => {
+    const all = new Map([...generateAll(), ...generateStaticPages()]);
+    const route = all.get('trip/kandy-to-ella/index.html');
+    expect(route, 'route page missing').toBeTruthy();
+    expect(route).toContain('GTM-NL6K22CM');
+    expect(all.get('privacy.html')).toContain('GTM-NL6K22CM');
+  });
+  it('the regenerated privacy page carries the analytics disclosure', () => {
+    const all = new Map([...generateStaticPages()]);
+    expect(all.get('privacy.html').toLowerCase()).toContain('analytics');
+  });
+});
+```
+
+- [ ] **Step 2: Run the new assertion + confirm the drift guard is currently RED**
+
+Run: `cd web-tests && npx vitest run unit/analytics-snippet.test.js -t "generated pages carry"`
+Expected: PASS (the generators already emit the snippet).
+Run: `cd web-tests && npx vitest run unit/seo-codegen.test.js`
+Expected: FAIL (committed files are stale — this is what we fix next).
+
+- [ ] **Step 3: Regenerate**
+
+Run: `cd /Users/roshenw/claude_code/ceylon-hop && npm run generate`
+This rewrites the committed generated files from the current generators.
+
+- [ ] **Step 4: Confirm the drift guard is now GREEN**
+
+Run: `cd web-tests && npx vitest run unit/seo-codegen.test.js`
+Expected: PASS (all generated files match).
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/roshenw/claude_code/ceylon-hop
+git add -A
+git commit -m "chore(analytics): regenerate route + static pages with GTM snippet"
+```
+
+Note: review the `git status` before committing to confirm only generated artifacts (`trip/**`, `terms.html`, `privacy.html`, `404.html`, `sitemap.xml`, redirect stubs) changed — no source files.
 
 ---
 
