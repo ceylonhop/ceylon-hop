@@ -60,10 +60,15 @@ built-in funnel exploration, Ads conversion import, and Meta Pixel all consume o
 Currency is **USD** across the pricing engine (`rateCard.ts`, `types.ts`); all monetary
 events use `currency: 'USD'`.
 
+**The funnel starts at the landing page**, not at checkout. A visitor's path is
+Landing → Search → Results → Select → Checkout(×4 steps) → Purchase. Entry is not only the
+homepage: people also land directly on route/SEO pages (`/trip/...`) and tour pages, so
+step 1 is a landing view on **any** entry surface and step 2 is the first search intent.
+
 | # | Stage | Fires from | GA4 event | Params |
 |---|-------|-----------|-----------|--------|
-| 1 | Any page view | GTM auto (History Change for SPA-ish nav) | `page_view` | page_location, page_referrer |
-| 2 | Homepage quick-quote submitted | `index.html` hero form submit | `generate_lead` | from, to, date, pax |
+| 1 | Landing / any page view (funnel entry) | GTM auto on every page (`session_start` marks the entry) | `page_view` | page_location, page_referrer, landing_type (home/route/tour/other) |
+| 2 | Route searched | `index.html` hero form submit **or** a route/tour page CTA into search | `search` | from, to, date, pax, source (home/route/tour) |
 | 3 | Results shown | `search.html` render (private + shared cards) | `view_item_list` | item_list_id=route, items[] |
 | 4 | Option chosen | click a result card → booking | `select_item` | mode (private/shared/trip) |
 | 5 | Enter checkout | `booking.html` load | `begin_checkout` | value, currency, items[] |
@@ -86,9 +91,19 @@ events use `currency: 'USD'`.
   price: <per-unit USD>, quantity: <pax> }
 ```
 
-**Reported funnel** = steps 5 → 11 (checkout conversion), with two business-branch metrics:
-**deposit-vs-full split** (`payment_type` on 9/10/11) and **reprice acceptance**
-(`reprice_shown` → `reprice_accepted`).
+**Reported funnels** (built in GA4 Funnel Exploration off these events):
+- **Macro / end-to-end** = 1 → 11: `page_view` (landing) → `search` → `view_item_list` →
+  `select_item` → `begin_checkout` → `checkout_progress`×3 → `add_payment_info` →
+  `payment_initiated` → `purchase`. This is the headline conversion rate from a visitor
+  landing to a paid booking.
+- **Checkout sub-funnel** = 5 → 11, for diagnosing drop-off *inside* the booking form.
+- **Business branches:** **deposit-vs-full split** (`payment_type` on 9/10/11) and
+  **reprice acceptance** (`reprice_shown` → `reprice_accepted`).
+
+Because entry surfaces differ (home vs route vs tour page), the macro funnel's step 1 is
+"any landing `page_view`" and step 2 accepts `search` from any source — GA4's
+"is one of / any" step matching handles the multiple on-ramps. `landing_type` / `source`
+params let you segment conversion by entry surface (e.g. SEO route pages vs homepage).
 
 ## 4. Architecture
 
@@ -154,7 +169,7 @@ Inside `GTM-NL6K22CM`, add (all gated by a Consent Mode check / consent-initiali
 trigger):
 1. **GA4 Configuration** tag → `G-XEW62ZD7B3`.
 2. **GA4 Event** tags for each custom `dataLayer` event in §3 (Custom Event triggers on
-   `generate_lead`, `view_item_list`, `select_item`, `begin_checkout`, `checkout_progress`,
+   `search`, `view_item_list`, `select_item`, `begin_checkout`, `checkout_progress`,
    `add_payment_info`, `payment_initiated`, `purchase`, `payment_dismissed`,
    `payment_failed`, `reprice_shown`, `reprice_accepted`), forwarding the params via
    dataLayer variables.
