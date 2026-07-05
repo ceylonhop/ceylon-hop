@@ -197,6 +197,19 @@
     const van = Math.max(50, Math.round(bkm * 0.83));
     return veh==='van' ? van : car;
   }
+  // Decide what to do when a live routed distance comes back for a customer-set
+  // route, given the price currently shown. Keeps the "fixed price" promise:
+  //  - cheaper/equal, or no baseline → 'apply' (adopt the new price)
+  //  - dearer but within the +10% buffer already charged → 'hold' (keep anchor)
+  //  - dearer AND past the buffer → 'confirm' (needs a heads-up before it changes)
+  // Buffer mirrors legPrice's round(km × 1.10). No new rates — reuse legPrice.
+  function repriceDecision(anchorKm, routedKm, currentUnit, veh){
+    const newPrice = legPrice(routedKm, veh);
+    if(newPrice == null) return { action:'hold', price: currentUnit };
+    if(!anchorKm || newPrice <= currentUnit) return { action:'apply', price: newPrice };
+    if(routedKm <= Math.round(anchorKm * 1.10)) return { action:'hold', price: currentUnit };
+    return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
+  }
   // chauffeur-guide: a driver-guide + car stays with the trip. Flat add-on per day.
   const CHAUFFEUR_DAY_FEE = 35;
   const DEPOSIT_PCT = 0.10;
@@ -222,7 +235,7 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
-    resolvePlace, kmBetween, legPrice, tripQuote,
+    resolvePlace, kmBetween, legPrice, tripQuote, repriceDecision,
     CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
