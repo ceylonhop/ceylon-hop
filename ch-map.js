@@ -1,7 +1,7 @@
 // Shared Google Maps (JavaScript API) route renderer used by booking.js + plan.js.
-// Draws a clean route line — no directions panel, no markers — and shows a loading
-// skeleton while the API loads and the route resolves. Falls back to the caller's SVG
-// placeholder when there's no key, the API isn't enabled, or routing fails.
+// Draws a clean route line with a pick-up + drop-off pin, fits the whole route in view,
+// and shows a loading skeleton while the API loads and the route resolves. Falls back to
+// the caller's SVG placeholder when there's no key, the API isn't enabled, or routing fails.
 (function () {
   let loaderPromise = null;
 
@@ -102,6 +102,36 @@
             renderer.setDirections(res);
             done = true;
             wrap.classList.add('ready');
+
+            // Brand pins at the true routed endpoints (the renderer's default A/B pins are
+            // suppressed). Teal = pick-up, orange = drop-off — matches the summary markers.
+            try {
+              const rlegs = res.routes[0].legs;
+              const pin = (fill) => ({
+                path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
+                fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
+                scale: 1.5, anchor: new google.maps.Point(12, 22),
+              });
+              new google.maps.Marker({ map, position: rlegs[0].start_location, icon: pin('#0a7d6f'), title: 'Pick-up', zIndex: 5 });
+              new google.maps.Marker({ map, position: rlegs[rlegs.length - 1].end_location, icon: pin('#e8623a'), title: 'Drop-off', zIndex: 5 });
+            } catch (e) { /* markers are non-essential */ }
+
+            // Fit the whole route in view, and re-fit if the container gains its size later:
+            // the map can be created while its step panel is still collapsed (0-width), which
+            // otherwise leaves grey tiles + a tiny un-fitted route.
+            const fit = () => { if (res.routes[0].bounds) map.fitBounds(res.routes[0].bounds, 36); };
+            fit();
+            if (window.ResizeObserver) {
+              let lastW = mapDiv.offsetWidth;
+              const ro = new ResizeObserver(() => {
+                if (mapDiv.offsetWidth && mapDiv.offsetWidth !== lastW) {
+                  lastW = mapDiv.offsetWidth;
+                  google.maps.event.trigger(map, 'resize');
+                  fit();
+                }
+              });
+              ro.observe(mapDiv);
+            }
             // report the REAL road distance + drive time so callers can show a
             // figure that matches the route on the map (not an offline estimate).
             if (opts.onRoute) {
