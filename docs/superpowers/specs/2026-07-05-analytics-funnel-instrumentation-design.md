@@ -1,7 +1,8 @@
 # Analytics & Funnel Instrumentation — Design
 
 **Date:** 2026-07-05
-**Status:** Approved (brainstorming) → ready for implementation plan
+**Status:** Approved (brainstorming), **Phase 0 scope** → ready for implementation plan
+(see §7 for the Phase 0 / Phase 1 split; Phase 0 is what we build now)
 **Owner:** Roshen
 
 ## 1. Problem & context
@@ -37,11 +38,13 @@ new funnel data lands alongside historical data (decision confirmed 2026-07-05).
   existing `GTM-NL6K22CM` container.
 - A deterministic, code-driven funnel event schema (`view_item_list` → `purchase`) that
   powers GA4 funnel reports, Google Ads conversions, and the Meta Pixel from one source.
-- **Reliable purchase conversions**: fire `purchase` both client-side (fast attribution)
-  and server-side from the PayHere webhook (accurate even when the tab closes), deduped by
-  booking reference.
+- **Reliable purchase conversions**: fire `purchase` client-side on PayHere `onCompleted`,
+  **gated to prod** so test bookings never pollute GA4. (Server-side deduped `purchase` via
+  MP/CAPI is the **Phase 1** target — see §7.)
 - **Consent Mode v2** + a lightweight consent banner, so EU/UK visitors are handled
   compliantly and Google Ads/GA data stays usable.
+- **Session replay via Microsoft Clarity** — the highest-value, volume-independent signal
+  for a brand-new funnel.
 - Zero regressions to the existing Vitest/Playwright suites; tracking is fully no-op when
   GTM/consent are absent (test + local dev stay clean).
 
@@ -72,9 +75,9 @@ step 1 is a landing view on **any** entry surface and step 2 is the first search
 | 3 | Results shown | `search.html` render (private + shared cards) | `view_item_list` | item_list_id=route, items[] |
 | 4 | Option chosen | click a result card → booking | `select_item` | mode (private/shared/trip) |
 | 5 | Enter checkout | `booking.html` load | `begin_checkout` | value, currency, items[] |
-| 6 | When complete | `booking.js` step 1 → 2 | `checkout_progress` `{checkout_step:'when'}` | date, flex_date, flex_time |
-| 7 | Where complete | step 2 → 3 | `checkout_progress` `{checkout_step:'where'}` | pickup, dropoff |
-| 8 | Travelers complete | step 3 → 4 | `checkout_progress` `{checkout_step:'pax'}` | adults, children, bags |
+| 6 | When complete | `booking.js` step 1 → 2 | `checkout_step` (custom) `{step:'when'}` | date, flex_date, flex_time |
+| 7 | Where complete | step 2 → 3 | `checkout_step` (custom) `{step:'where'}` | pickup, dropoff |
+| 8 | Travelers complete | step 3 → 4 | `checkout_step` (custom) `{step:'pax'}` | adults, children, bags |
 | 9 | Payment info | step 4: plan chosen + contact valid | `add_payment_info` | payment_type (full/deposit) |
 | 10 | PayHere opened | `runPayment()` | `payment_initiated` | value, currency, payment_type |
 | 11 | **Purchase** | PayHere `onCompleted` **and** server webhook | `purchase` | transaction_id=reference, value, currency, payment_type, items[] |
@@ -82,6 +85,13 @@ step 1 is a landing view on **any** entry surface and step 2 is the first search
 | — | Payment error | PayHere `onError` | `payment_failed` | reference, reason |
 | — | Reprice shown | `booking.js` reprice note render | `reprice_shown` | extra_km, delta |
 | — | Reprice accepted | `acceptReprice()` | `reprice_accepted` | extra_km, new_value |
+
+Note: `checkout_step` is a **custom** event — GA4 has no standard `checkout_progress`
+(that was Universal Analytics). GA4's standard checkout events used here are
+`begin_checkout`, `add_payment_info`, and `purchase`; the intermediate when/where/pax
+transitions are the custom `checkout_step` event with a `step` param. `page_view` /
+`session_start` are auto-collected by the GA4 config tag on real page loads (this is a
+multi-page static site, so no History-Change trigger is needed).
 
 **`items[]` shape** (shared across `view_item_list`/`select_item`/`begin_checkout`/`purchase`):
 ```
@@ -93,7 +103,7 @@ step 1 is a landing view on **any** entry surface and step 2 is the first search
 
 **Reported funnels** (built in GA4 Funnel Exploration off these events):
 - **Macro / end-to-end** = 1 → 11: `page_view` (landing) → `search` → `view_item_list` →
-  `select_item` → `begin_checkout` → `checkout_progress`×3 → `add_payment_info` →
+  `select_item` → `begin_checkout` → `checkout_step`×3 → `add_payment_info` →
   `payment_initiated` → `purchase`. This is the headline conversion rate from a visitor
   landing to a paid booking.
 - **Checkout sub-funnel** = 5 → 11, for diagnosing drop-off *inside* the booking form.
@@ -169,7 +179,7 @@ Inside `GTM-NL6K22CM`, add (all gated by a Consent Mode check / consent-initiali
 trigger):
 1. **GA4 Configuration** tag → `G-XEW62ZD7B3`.
 2. **GA4 Event** tags for each custom `dataLayer` event in §3 (Custom Event triggers on
-   `search`, `view_item_list`, `select_item`, `begin_checkout`, `checkout_progress`,
+   `search`, `view_item_list`, `select_item`, `begin_checkout`, `checkout_step`,
    `add_payment_info`, `payment_initiated`, `purchase`, `payment_dismissed`,
    `payment_failed`, `reprice_shown`, `reprice_accepted`), forwarding the params via
    dataLayer variables.
@@ -189,24 +199,48 @@ committed to `docs/analytics/` for reference/versioning.
   expected event+params (spy on `window.dataLayer.push`).
 - **Guard test:** the analytics snippet string is present and identical across all root
   HTML pages + `site-chrome.mjs` output (prevents per-page drift).
-- **Server (api tests):** webhook `POST /payments` on first success triggers the MP/CAPI
-  senders exactly once; a duplicate webhook does not re-send (idempotency); senders are
-  no-ops when secrets are unset; a sender throw does not change booking status or block the
-  confirmation email.
+- **Server (api tests) — Phase 1:** webhook `POST /payments` on first success triggers the
+  MP/CAPI senders exactly once; a duplicate webhook does not re-send (idempotency); senders
+  are no-ops when secrets are unset; a sender throw does not change booking status or block
+  the confirmation email. (Not built in Phase 0.)
 - **E2E (Playwright):** drive a sandbox booking; assert the ordered `dataLayer` sequence
-  `begin_checkout → checkout_progress×3 → add_payment_info → payment_initiated → purchase`;
+  `begin_checkout → checkout_step×3 → add_payment_info → payment_initiated → purchase`;
   assert consent-denied state suppresses tag network calls until Accept.
 - Run `npm run test:all` green before merge (per project test policy).
 
-## 7. Rollout / sequencing
+## 7. Rollout / sequencing (phased — Phase 0 is the current scope)
 
-1. Ship `chTrack` + funnel call sites + the shared snippet + consent banner + privacy
-   update (client), behind the existing container — verify events in GA4 DebugView.
-2. Add server-side MP/CAPI senders on the webhook; verify deduped `purchase` in GA4.
-3. Configure GTM tags (GA4 events, Ads, Meta, Clarity) + GA4 key-event/custom dims.
-4. Google Ads enhanced-conversions wiring (server) once 1–3 are verified.
-- This is **pre-apex-cutover** work; the M16 migration inherits a fully instrumented app,
-  so no measurement gap at cutover.
+**Rationale for phasing:** the business is still in launch-hardening (test data in DB,
+email unverified, PayHere not yet on apex, app not yet on `ceylonhop.com`). Funnel
+*statistics* need traffic to be meaningful, and the server-side ad-conversion stack only
+pays off once there is real ad spend and enough conversions (~30/mo) for smart bidding to
+use the signal. So we ship the cheap, volume-independent foundation now and defer the rest.
+
+### Phase 0 — NOW (build this)
+- **Microsoft Clarity** on the new site — session replay is volume-independent and the best
+  tool for a brand-new funnel; may be turned on immediately (even pre-cutover), as it has
+  none of the cross-domain/pollution concerns that purchase tracking has.
+- **GA4 + client-side funnel events**: `chTrack` helper + the shared snippet (Consent Mode
+  defaults → GTM) + the funnel call sites (§3 steps 1–11, **client-side `purchase` on
+  `onCompleted`**).
+- **`purchase` gated to prod only** — never fires from sandbox/localhost, so GA4 revenue
+  isn't polluted by test bookings. Gate on hostname + PayHere live-mode.
+- **Minimal consent**: Consent Mode v2 defaults + a lightweight Accept/Reject banner +
+  `privacy.html` update. (A fuller CMP is not needed at this volume.)
+- **Ships with / ready for the M16 apex cutover** so meaningful data lands on the real
+  domain. Building now is cheap; full activation rides the cutover to avoid collecting on a
+  dead Pages URL and to preserve GA4 historical continuity.
+
+### Phase 1 — DEFER until apex cutover done + real ad spend + conversion volume
+- Server-side `purchase` via GA4 **Measurement Protocol** + **Meta CAPI** (webhook, §4.3),
+  deduped with the client event by `reference`.
+- **Google Ads** enhanced/offline conversions (server).
+- These are idle until there is volume/spend to consume them, so there is no cost to
+  waiting — and every reason to (accurate server attribution matters most once you're
+  paying for clicks).
+
+> Note: the server-side unit (§4.3) and its env vars (§9) remain in this design as the
+> Phase 1 target; they are **not** built in Phase 0.
 
 ## 8. Risks & mitigations
 
