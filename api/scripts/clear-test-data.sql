@@ -31,11 +31,13 @@ TRUNCATE TABLE
   transfer_request,
   trip_request,
   shared_request,
+  quotes,
   payments,
   concierge_tasks,
   shared_departure,   -- resets seat inventory: test holds no longer pre-consume real availability
   ride_ops,
-  coordinators
+  notification_log,
+  alert_log
 RESTART IDENTITY CASCADE;
 
 COMMIT;
