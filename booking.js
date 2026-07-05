@@ -1266,8 +1266,18 @@ function finalizeBooking(apiBooking){
   document.getElementById('psteps').style.display='none';
   document.getElementById('confirm').style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
+  // funnel: purchase — PROD only, and only for a real backend booking, so sandbox/demo
+  // and pre-cutover Pages traffic never pollute GA4 revenue. Deduped later (Phase 1) by ref.
+  if (apiBooking && typeof window.chTrack === 'function' && typeof window.chIsProd === 'function' && window.chIsProd()) {
+    window.chTrack('purchase', {
+      transaction_id: apiBooking.reference,
+      currency: 'USD', value: calcTotal(),
+      payment_type: state.payPlan
+    });
+  }
   return true;
 }
+window.finalizeBooking = finalizeBooking;
 
 // single transfer: pre-select the pick-up time if one was chosen upstream,
 // or when a shared ride runs a single fixed departure

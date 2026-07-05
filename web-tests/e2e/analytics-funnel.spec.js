@@ -46,3 +46,29 @@ test.describe('booking checkout funnel events', () => {
     expect(evs).toContain('add_payment_info');
   });
 });
+
+test.describe('purchase gating', () => {
+  test('purchase does NOT fire on non-prod host (localhost) even after finalize', async ({ page }) => {
+    await page.goto('/booking.html?mode=private&from=kandy&to=ella&pax=2');
+    await page.waitForFunction(() => typeof window.chIsProd === 'function');
+    // sanity: the test host is not prod
+    expect(await page.evaluate(() => window.chIsProd())).toBe(false);
+    // simulate a completed real booking
+    await page.evaluate(() => window.finalizeBooking && window.finalizeBooking({ reference: 'CH-TEST-2026' }));
+    const evs = await page.evaluate(() => (window.dataLayer || []).map(e => e && e.event));
+    expect(evs).not.toContain('purchase');
+  });
+
+  test('purchase fires once when prod + real booking (chIsProd stubbed true)', async ({ page }) => {
+    await page.goto('/booking.html?mode=private&from=kandy&to=ella&pax=2');
+    await page.waitForFunction(() => typeof window.finalizeBooking === 'function');
+    await page.evaluate(() => {
+      window.chIsProd = () => true;                     // stub prod
+      window.finalizeBooking({ reference: 'CH-REAL-2026' });
+    });
+    const purchases = await page.evaluate(() =>
+      (window.dataLayer || []).filter(e => e && e.event === 'purchase'));
+    expect(purchases.length).toBe(1);
+    expect(purchases[0].transaction_id).toBe('CH-REAL-2026');
+  });
+});
