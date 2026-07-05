@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your booking · Ceylon Hop</title>
+<link rel="stylesheet" href="site.css">
+<script>
+window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
+<style>
+  body{max-width:640px;margin:0 auto;padding:32px 18px;font-family:system-ui,sans-serif}
+  .card{border:1px solid #e8e3d4;border-radius:16px;padding:22px;margin-top:16px}
+  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0ece1}
+  .ref{font-weight:700;font-size:1.3rem}
+  .muted{color:#6b645f}
+  .err{text-align:center;padding:40px 16px}
+</style>
+</head>
+<body>
+<div id="app"><p class="muted">Loading your booking…</p></div>
+<script>
+(function(){
+  var app = document.getElementById('app');
+  var t = new URLSearchParams(location.search).get('t');
+  var A = window.CEYLON_HOP_API.replace(/\/$/, '');
+  function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
+  function money(cents,cur){return (cur||'USD')+' '+ (cents/100).toFixed(2).replace(/\.00$/,'');}
+  function errView(msg){app.innerHTML='<div class="err"><h2>We couldn’t open this booking</h2><p class="muted">'+esc(msg)+'</p><p><a href="https://wa.me/94770000000">Message us on WhatsApp</a> and we’ll pull it up for you.</p></div>';}
+  if(!t){ errView('This link isn’t valid.'); return; }
+  fetch(A+'/bookings/view?t='+encodeURIComponent(t)).then(function(res){
+    if(res.status===401) throw new Error('This link isn’t valid or has changed.');
+    if(res.status===404) throw new Error('We couldn’t find this booking.');
+    if(!res.ok) throw new Error('Something went wrong. Please try again.');
+    return res.json();
+  }).then(function(v){
+    var rows = [
+      ['Route', esc(v.from)+' → '+esc(v.to)],
+      ['Date', esc(v.date)], ['Pick-up time', esc(v.time)],
+      ['Travellers', esc(v.travellers)],
+      ['Vehicle', v.vehicleType?esc(v.vehicleType):'—'],
+      ['Total', money(v.totalCents,v.currency)],
+      ['Balance due', money(v.balanceDueCents,v.currency)],
+    ].map(function(x){return '<div class="row"><span class="muted">'+x[0]+'</span><span>'+x[1]+'</span></div>';}).join('');
+    app.innerHTML = '<p class="muted">Hi '+esc(v.firstName)+', here’s your booking.</p>'
+      + '<div class="card"><div class="ref">'+esc(v.reference)+'</div>'
+      + '<p class="muted">Status: '+esc(v.status)+'</p>'+rows+'</div>';
+  }).catch(function(e){ errView(e.message); });
+})();
+</script>
+</body>
+</html>
