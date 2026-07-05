@@ -81,6 +81,8 @@ export async function gotoBooking(page, opts = {}) {
     bookingStatus = 201,
     checkout = 'fake',
     payhere = 'completed',
+    bookingTotal = 12100,            // server-authoritative total (minor units) from /bookings/single
+    bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -98,7 +100,9 @@ export async function gotoBooking(page, opts = {}) {
   // booking creation
   await page.route('**/bookings/single', (r) => {
     if (bookingStatus !== 201) return r.fulfill({ status: bookingStatus, contentType: 'application/json', body: '{"error":"boom"}' });
-    return r.fulfill(json({ id: 'e2e-booking-1', reference: 'CH-E2E01', status: 'draft', total: 12100, currency: 'USD', mode: 'single' }));
+    const b = { id: 'e2e-booking-1', reference: 'CH-E2E01', status: 'draft', total: bookingTotal, currency: 'USD', mode: 'single' };
+    if (bookingAmountDueNow !== undefined) b.amountDueNow = bookingAmountDueNow;
+    return r.fulfill(json(b));
   });
   await page.route('**/bookings/trip', (r) => r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip' })));
   await page.route('**/bookings/shared', (r) => r.fulfill(json({ id: 'e2e-shared-1', reference: 'CH-E2ES1', status: 'draft', mode: 'shared' })));
