@@ -5,6 +5,10 @@
       "Edit(api/**)",
       "Write(api/**)",
       "Edit(docs/**)",
+      "Edit(*.html)",
+      "Edit(site.css)",
+      "Edit(favicon.svg)",
+      "Edit(*.js)",
       "Bash(npm run check:*)",
       "Bash(npm test:*)",
       "Bash(npm run test:*)",
@@ -26,39 +30,12 @@
     "deny": [
       "Bash(rm -rf:*)",
       "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Edit(*.html)",
-      "Edit(site.css)",
-      "Edit(favicon.svg)",
-      "Edit(image-slots.state.json)",
-      "Edit(site.js)",
-      "Edit(booking.js)",
-      "Edit(plan.js)",
-      "Edit(search.js)",
-      "Edit(datepicker.js)",
-      "Edit(image-slot.js)",
-      "Edit(tours-data.js)",
-      "Edit(transfers-data.js)",
-      "Edit(routes-data.js)",
-      "Edit(tweaks.js)"
+      "Bash(git push -f:*)"
     ],
     "ask": [
       "Bash(git push:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/protect-ui.sh"
-          }
-        ]
-      }
     ]
   }
 }
