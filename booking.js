@@ -295,6 +295,7 @@ function renderRouteMap(){
             // Material upward drift — park the new price, warn, don't touch the total yet.
             state.pendingReprice = { km, extraKm: dec.extraKm,
               prices: { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') } };
+            if(typeof window.chTrack==='function') window.chTrack('reprice_shown',{extra_km:dec.extraKm});
           } else {
             // 'hold' — firm floor: the quoted price never drops, so keep it and clear
             // any pending notice (e.g. the customer picked a closer/within-buffer spot).
@@ -657,6 +658,7 @@ window.acceptReprice=function(){
   const p=state.pendingReprice; if(!p) return;
   vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
   state.anchorKm=p.km; state.pendingReprice=null;
+  if(typeof window.chTrack==='function') window.chTrack('reprice_accepted',{extra_km:p.extraKm,new_value:calcTotal()});
   render(); checkWhere();
 };
 window.dismissReprice=function(){
@@ -717,7 +719,8 @@ const addonPrices={sightseeing:10,luggage:5,front:8,flex:12};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
 
 window.payMethod=function(el){document.querySelectorAll('.pm').forEach(x=>x.classList.remove('on'));el.classList.add('on');};
-window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render(); };
+window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
+  if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
 
 // chauffeur-guide fee + deposit helpers
 // the whole trip fits in one day when there are no overnight stays and every dated leg is the same day
@@ -1057,6 +1060,7 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
 // customer always sees what happened where they expect it — never a stray note on
 // the form. The overlay opens immediately so clicking Pay always shows feedback.
 async function runPayment(){
+  if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
   // No backend configured → demo mode: simulated interstitial, then confirm.
@@ -1149,9 +1153,11 @@ function startPayHere(checkout, booking){
 }
 
 function showPayFailed(){
+  if(typeof window.chTrack==='function') window.chTrack('payment_failed',{});
   phShowEnd('error','Your payment didn’t go through — no charge was made. Please try again.');
 }
 function showPayDismissed(){
+  if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{});
   phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
 }
 
@@ -1289,11 +1295,27 @@ if(isCustom){document.getElementById('pay-btn').firstChild.textContent='Confirm 
 })();
 render(); checkWhere(); renderRouteMap();
 
+// funnel: entering the booking flow (Phase 0 analytics)
+if (typeof window.chTrack === 'function') {
+  window.chTrack('begin_checkout', {
+    currency: 'USD', value: calcTotal(),
+    mode: isTrip ? 'trip' : (r && r.type === 'shared' ? 'shared' : 'private'),
+    route: (r && r.stops) ? r.stops[0] + '→' + r.stops[r.stops.length - 1] : ''
+  });
+}
+
 // ---- clickable progress + summary edit: jump back to any step reached ----
 (function(){
   let maxStep=1;
   const _go=window.goStep;
-  window.goStep=function(n){ maxStep=Math.max(maxStep,n); _go(n); paintSteps(); };
+  var STEP_NAME = { 1: 'when', 2: 'where', 3: isTrip ? 'service' : 'pax', 4: 'payment' };
+  window.goStep=function(n){
+    var advanced = n > maxStep;                 // only a genuine forward move counts
+    maxStep=Math.max(maxStep,n); _go(n); paintSteps();
+    if (advanced && typeof window.chTrack === 'function' && STEP_NAME[n]) {
+      window.chTrack('checkout_step', { step: n, name: STEP_NAME[n] });
+    }
+  };
   function paintSteps(){
     document.querySelectorAll('.pstep').forEach(ps=>{
       const s=+ps.dataset.s, can=s<=maxStep;
