@@ -17,6 +17,17 @@ export function loadTransfers() {
   return window.TRANSFERS;
 }
 
+// routes-data.js is a browser IIFE that assigns `window.ROUTES` — same trick.
+export function loadRoutes() {
+  if (typeof window === 'undefined') {
+    throw new Error('loadRoutes requires the jsdom environment (vitest environment: jsdom).');
+  }
+  const src = readFileSync(path.resolve(__dirname, '../../routes-data.js'), 'utf8');
+  // eslint-disable-next-line no-new-func
+  new Function(src)();
+  return window.ROUTES;
+}
+
 // The 16 known places that carry an id (the bookable catalogue).
 export const PLACE_IDS = [
   'cmb-airport', 'colombo', 'negombo', 'bentota', 'hikkaduwa', 'galle',
