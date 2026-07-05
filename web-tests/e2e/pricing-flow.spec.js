@@ -10,15 +10,17 @@ test('price holds at the quoted amount on load (no re-price from the pre-filled 
   await expect(page.locator('#sum-total')).toHaveText('$121');
 });
 
-test('re-prices from real distance after the customer picks a new drop-off', async ({ page }) => {
-  // legPrice(200,'car') = max(29, round(round(200×1.10) × 0.46)) = round(220 × 0.46) = $101
+test('firm floor: a cheaper new drop-off never drops the quoted price', async ({ page }) => {
+  // legPrice(200,'car') = round(220 × 0.46) = $101, which is LESS than the quoted $121.
+  // The quote is a firm floor, so it must HOLD at $121 (no drop, no heads-up needed).
   await gotoBooking(page, { routeKm: 200 });
   await expect(page.locator('#sum-total')).toHaveText('$121');
 
   await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna');
 
-  await expect(page.locator('#sum-total')).toHaveText('$101');
-  await expect(page.locator('#sum-name')).toContainText('Jaffna Result 1');
+  await expect(page.locator('#sum-name')).toContainText('Jaffna Result 1'); // drop-off did change
+  await expect(page.locator('#reprice-note')).toHaveCount(0);                // but no notice (cheaper)
+  await expect(page.locator('#sum-total')).toHaveText('$121');               // firm floor held
 });
 
 test('warns before a material price increase and holds the total until accepted', async ({ page }) => {

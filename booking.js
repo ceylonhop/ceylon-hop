@@ -296,13 +296,9 @@ function renderRouteMap(){
             state.pendingReprice = { km, extraKm: dec.extraKm,
               prices: { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') } };
           } else {
-            // 'apply' (cheaper/equal) or 'hold' (within buffer): clear any pending notice.
+            // 'hold' — firm floor: the quoted price never drops, so keep it and clear
+            // any pending notice (e.g. the customer picked a closer/within-buffer spot).
             state.pendingReprice = null;
-            if(dec.action==='apply'){
-              vehPrices = { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') };
-              if(dec.price!=null){ unit = dec.price; r.price = dec.price; }
-              state.anchorKm = km; // the accepted route becomes the new baseline
-            }
           }
           render(); checkWhere();
         }
@@ -938,7 +934,9 @@ function render(){
   // block progressing past Travelers while over the vehicle's seat OR luggage limit —
   // we can't accommodate it, so the traveller must upgrade or message us first
   const overCap = perVehicle && (paxOver || bagsOver);
-  const n4=document.getElementById('n4'); if(n4) n4.disabled = overCap;
+  // over-capacity blocks Continue — dim it so the disabled state is visible (mirrors n2)
+  const n4=document.getElementById('n4');
+  if(n4){ n4.disabled = overCap; n4.style.opacity = overCap ? '.45' : ''; n4.style.cursor = overCap ? 'not-allowed' : ''; }
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';

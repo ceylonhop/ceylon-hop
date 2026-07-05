@@ -198,15 +198,16 @@
     return veh==='van' ? van : car;
   }
   // Decide what to do when a live routed distance comes back for a customer-set
-  // route, given the price currently shown. Keeps the "fixed price" promise:
-  //  - cheaper/equal, or no baseline → 'apply' (adopt the new price)
-  //  - dearer but within the +10% buffer already charged → 'hold' (keep anchor)
-  //  - dearer AND past the buffer → 'confirm' (needs a heads-up before it changes)
+  // route, given the price currently shown. The quoted price is a FIRM FLOOR — it
+  // never drops:
+  //  - cheaper/equal, within the +10% buffer already charged, or no baseline
+  //    → 'hold' (keep the quoted price)
+  //  - MATERIALLY dearer (past the buffer) → 'confirm' (needs a heads-up before it changes)
   // Buffer mirrors legPrice's round(km × 1.10). No new rates — reuse legPrice.
   function repriceDecision(anchorKm, routedKm, currentUnit, veh){
     const newPrice = legPrice(routedKm, veh);
-    if(newPrice == null) return { action:'hold', price: currentUnit };
-    if(!anchorKm || newPrice <= currentUnit) return { action:'apply', price: newPrice };
+    if(newPrice == null || !anchorKm) return { action:'hold', price: currentUnit };
+    if(newPrice <= currentUnit) return { action:'hold', price: currentUnit };
     if(routedKm <= Math.round(anchorKm * 1.10)) return { action:'hold', price: currentUnit };
     return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
   }
