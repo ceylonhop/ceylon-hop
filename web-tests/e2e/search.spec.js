@@ -48,3 +48,14 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await expect(page.locator('#srch-bar')).toBeHidden();
   await expect(page.locator('#srch-locked')).toBeVisible();
 });
+
+test('a route with no shared service shows the "no shared seats" panel in the grid, beside the private card', async ({ page }) => {
+  // Weligama -> Sigiriya has no daily shared corridor, so the shared slot shows the fallback panel.
+  await gotoBooking(page, { path: '/search.html', query: 'from=weligama&to=sigiriya&pax=1' });
+
+  await expect(page.getByText('No shared seats on this route')).toBeVisible();
+  // It occupies the shared card's slot — a child of the two-up results grid, not a full-width block below it.
+  await expect(page.locator('.opt-grid .noshare')).toBeVisible();
+  // and the grid keeps its normal two-column layout (no single-column 'solo' fallback)
+  await expect(page.locator('.opt-grid.solo')).toHaveCount(0);
+});
