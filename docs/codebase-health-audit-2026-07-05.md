@@ -49,6 +49,15 @@ are deferred with rationale.
 Backend is otherwise exceptionally clean (`tsc --noEmit` + `eslint` pass, no TODOs/dead
 code/`as any`, tidy migrations). But five error paths don't reach the Sentry seam
 `track()` or skip validation — worth a dedicated follow-up PR:
+- `api/src/routes/admin.ts:71-80` — a **seat-release failure on cancel/refund is swallowed**
+  (no `track()`, no alert); shared-ride inventory can silently drift out of sync. **High —
+  customer-impacting.**
+- `api/src/routes/admin.ts:82-86` — a **cancellation/refund confirmation email failure is
+  swallowed** (no `track()`/alert), so the customer is never told their booking was
+  cancelled/refunded — inconsistent with `webhooks.ts` which alerts on the booking-
+  confirmation email case. **High — customer-impacting.**
+- `api/src/adapters/payments.ts:48` — reads `process.env.FAKE_PAYMENT_SECRET` directly,
+  bypassing `config.ts` (the one place env is validated). *(Med)*
 - `api/src/routes/ops.ts:118-125` — catch-all reports non-transition errors as a generic
   `illegal_transition` and **bypasses `track()`**; narrow to `instanceof
   IllegalTransitionError` (as `admin.ts` does) so real errors surface in Sentry. *(Med)*
