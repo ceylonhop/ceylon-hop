@@ -197,7 +197,7 @@ document.getElementById('results').innerHTML =
   ];
   if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: pax });
 
-  window.chTrack('search', { from: fromId, to: toId, pax: pax, source: 'search' });
+  window.chTrack('search', { from: fromId, to: toId, date: date, pax: pax, source: 'search' });
   window.chTrack('view_item_list', { item_list_id: listId, currency: 'USD', items: items });
 
   // select_item: delegate on the results container; read mode/vehicle from the CTA href.
