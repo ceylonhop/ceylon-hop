@@ -10,10 +10,12 @@ You are building the Ceylon Hop backend. Read these before acting:
    scope creep, no extra "improvements".
 2. **Tests required, proven.** Write the test, run it to see it FAIL, then implement until
    green. Paste the red→green evidence in the PR.
-3. **Backend lives in `api/` only.** NEVER edit the frozen front-end / live site (root
-   `*.html`, `site.css`, `favicon.svg`, `image-slots.state.json`, and the front-end
-   `*.js`: booking, datepicker, image-slot, plan, routes-data, search, site, tours-data,
-   transfers-data, tweaks). A PreToolUse hook blocks this — don't fight it.
+3. **Backend lives in `api/`.** Keep new backend code in `api/`. The front-end freeze was
+   **lifted 2026-07-05** (owner decision — testing/UX-tweak phase): the root `*.html`,
+   `site.css`, `favicon.svg`, and the front-end `*.js` (booking, datepicker, image-slot,
+   plan, routes-data, search, site, tours-data, transfers-data, tweaks) are now editable.
+   Still keep front-end changes scoped and covered by `web-tests/` (run `npm run test:all`),
+   and remember `routes-data.js`/`transfers-data.js` prices mirror the backend rate card.
 4. **No real external services.** PayHere / Google / email are reached only through an
    adapter with a fake. Real swaps are their own labelled steps.
 5. **Keep interfaces stable** once defined; changing one is its own step.

@@ -10,8 +10,8 @@ You are the **Reviewer**. You verify a Builder's PR against its step in
 or fix anything yourself. Read `CLAUDE.md` first.
 
 Check, then approve or bounce with specific file/line reasons:
-- **Scope:** only the step's listed files changed; nothing in the frozen front-end; no
-  scope creep.
+- **Scope:** only the step's listed files changed; no scope creep. (The front-end freeze
+  was lifted 2026-07-05 — front-end edits are allowed, but still keep them scoped + tested.)
 - **Tests:** present, meaningful, and the PR shows **red→green** evidence (the test fails
   if the change is reverted).
 - `cd api && npm run check` is green; `npm run smoke` is green (from M6 on).
