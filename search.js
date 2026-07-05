@@ -74,6 +74,28 @@ document.getElementById('route-meta').innerHTML =
   `<span>${ICONS.cal} ${dateText}</span>` +
   `<span>${ICONS.seat} ${pax} traveler${pax > 1 ? 's' : ''}</span>`;
 
+// ---- locked search summary (Kayak/Expedia pattern) ----
+// The chosen search shows read-only; the edit fields stay collapsed until the
+// customer clicks "Edit search". Changing a param is a deliberate act (then Update).
+document.getElementById('sl-route').innerHTML =
+  `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
+document.getElementById('sl-meta').textContent =
+  `${dateText} · ${pax} traveler${pax > 1 ? 's' : ''}`;
+window.editSearch = function () {
+  document.getElementById('srch-locked').hidden = true;
+  document.getElementById('srch-bar').hidden = false;
+  document.getElementById('sl-cancel').hidden = false;
+  const f = document.getElementById('e-from');
+  if (f) f.focus();
+};
+window.cancelEdit = function () {
+  document.getElementById('srch-bar').hidden = true;
+  document.getElementById('sl-cancel').hidden = true;
+  const err = document.getElementById('srch-err');
+  if (err) err.hidden = true;
+  document.getElementById('srch-locked').hidden = false;
+};
+
 // grow this transfer into a multi-stop trip without starting over
 (function(){
   const a=document.getElementById('add-stops'); if(!a) return;
