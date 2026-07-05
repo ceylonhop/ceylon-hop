@@ -187,6 +187,29 @@ if (shared) {
 document.getElementById('results').innerHTML =
   `<div class="opt-grid">${privateCard}${shared ? sharedCard : noShare}</div>`;
 
+// ---- funnel: search + results view (Phase 0 analytics) ----
+(function () {
+  if (typeof window.chTrack !== 'function') return;
+  var listId = fromId + '_' + toId;
+  var items = [
+    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'car', price: quote.car, quantity: pax },
+    { item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'private', item_variant: 'van', price: quote.van, quantity: pax }
+  ];
+  if (shared) items.push({ item_id: fromId + '_' + toId, item_name: fromP.name + ' → ' + toP.name, item_category: 'shared', item_variant: 'seat', price: shared.seat, quantity: pax });
+
+  window.chTrack('search', { from: fromId, to: toId, pax: pax, source: 'search' });
+  window.chTrack('view_item_list', { item_list_id: listId, currency: 'USD', items: items });
+
+  // select_item: delegate on the results container; read mode/vehicle from the CTA href.
+  var box = document.getElementById('results');
+  if (box) box.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href*="booking.html"]') : null;
+    if (!a) return;
+    var q = new URLSearchParams(a.getAttribute('href').split('?')[1] || '');
+    window.chTrack('select_item', { item_list_id: listId, mode: q.get('mode') || '', item_variant: q.get('vehicle') || 'seat' });
+  }, true); // capture: fires before navigation starts
+})();
+
 // breadcrumbs
 mountBreadcrumbs([['Home','index.html'],['Search'],[`${fromP.name} → ${toP.name}`]]);
 
