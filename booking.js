@@ -717,8 +717,24 @@ function chauffeurDistanceCharge(){
   return Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
+// Server-authoritative price. Until the booking is created the wizard shows a best-effort
+// estimate (priced off the browser's measured distance); the API reprices from its own
+// server-side Distance Matrix, so the two can drift by a few percent. Once /bookings/* returns,
+// we adopt its amounts (minor units → USD) so the pay overlay, PayHere and the confirmation pass
+// all show EXACTLY what is charged — the customer is never billed a number they weren't shown.
+let serverQuote = null; // { total, dueNow } in USD, or null before the booking exists
+function adoptServerQuote(b){
+  if(!b) return;
+  const t = typeof b.total === 'number' ? b.total/100 : null;
+  const d = typeof b.amountDueNow === 'number' ? b.amountDueNow/100 : t;
+  if(t==null && d==null) return;
+  serverQuote = { total: t!=null?t:d, dueNow: d!=null?d:t };
+}
+
 // deposit applies for chauffeur (always) or a private trip booked far ahead and the user opts in
 function isDeposit(){
+  // once the server has priced it, deposit-ness is simply "charged now < full total"
+  if(serverQuote) return serverQuote.dueNow < serverQuote.total - 0.005;
   if(isTrip && state.svc==='chauffeur') return true;
   if(state.payPlan==='deposit' && daysUntilStart()>30) return true;
   return false;
@@ -726,6 +742,7 @@ function isDeposit(){
 
 // ---- totals + render ----
 function calcTotal(){
+  if(serverQuote) return serverQuote.total;
   // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
   // charge across the whole trip — not the per-leg fares (which carry minimum floors)
   let t = chauffeurFee()>0
@@ -738,7 +755,7 @@ function calcTotal(){
 const DEPOSIT_PCT = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_PCT) || 0.10;
 const DEPOSIT_CAP = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_CAP) || 50; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ return isDeposit() ? depositDue() : calcTotal(); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return isDeposit() ? depositDue() : calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 
 // price of an AC van for this journey (single transfer or whole trip)
@@ -1001,6 +1018,11 @@ async function runPayment(){
   clearTimeout(slow);
   if(!booking){ return simulatePayThenConfirm(null); }
 
+  // Adopt the server's authoritative price so the overlay, PayHere and confirmation all show
+  // exactly what is charged — not the wizard's browser-distance estimate.
+  adoptServerQuote(booking);
+  const _amt=document.getElementById('ph-amt'); if(_amt) _amt.textContent=money(amountDueNow());
+
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
   let checkout=null;
   try{
@@ -1200,6 +1222,15 @@ document.getElementById('ch-n').textContent=state.ch;
 document.getElementById('bg-n').textContent=state.bags;
 // single mode: nothing to gate at init beyond the Where step's locations.
 if(isCustom){document.getElementById('pay-btn').firstChild.textContent='Confirm request ';}
+// Pay-step disclaimer: honest per mode. With a backend the Pay button hands off to the real
+// PayHere gateway (sandbox until go-live, which PayHere's own modal flags); ?api=off / no
+// backend is the simulated demo flow.
+(function(){
+  const d=document.getElementById('pay-disclaimer'); if(!d) return;
+  d.innerHTML = window.CEYLON_HOP_API
+    ? '🔒 Secure checkout — card payments are processed by <b>PayHere</b>, Sri Lanka’s Central Bank-approved payment gateway.'
+    : '🔒 Demo checkout — the PayHere step is simulated, no real payment is taken.';
+})();
 render(); checkWhere(); renderRouteMap();
 
 // ---- clickable progress + summary edit: jump back to any step reached ----

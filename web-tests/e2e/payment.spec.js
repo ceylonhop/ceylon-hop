@@ -47,3 +47,29 @@ test('demo mode (api=off) completes to a confirmation reference', async ({ page 
     { timeout: 8000 },
   ).toMatch(/CH-/);
 });
+
+// The wizard's on-page estimate comes from the URL price / browser-measured distance; the API
+// reprices from its own server-side distance and that is what PayHere actually charges. The
+// confirmation must reflect the SERVER amount, so the customer is never billed a figure they
+// weren't shown at the moment of payment. Here the URL says $121 but the API returns $115.
+test('confirmation shows the server-authoritative amount, not the wizard estimate (fake gateway)', async ({ page }) => {
+  await gotoBooking(page, { bookingTotal: 11500 });
+  await fillContact(page);
+  await page.click('#pay-btn');
+  await expect.poll(
+    () => page.locator('#pass-ref').textContent(),
+    { timeout: 8000 },
+  ).toMatch(/CH-/);
+  await expect(page.locator('#pass-paid')).toHaveText('$115');
+});
+
+test('server-authoritative amount also flows through the real PayHere path', async ({ page }) => {
+  await gotoBooking(page, { checkout: 'payhere', payhere: 'completed', bookingTotal: 11500 });
+  await fillContact(page);
+  await page.click('#pay-btn');
+  await expect.poll(
+    () => page.locator('#pass-ref').textContent(),
+    { timeout: 8000 },
+  ).toMatch(/CH-/);
+  await expect(page.locator('#pass-paid')).toHaveText('$115');
+});
