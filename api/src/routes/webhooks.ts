@@ -7,7 +7,7 @@ import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { AlertAdapter } from '../adapters/alerts';
-import { sendBookingConfirmation } from '../services/notifications';
+import { sendBookingConfirmation, manageUrl } from '../services/notifications';
 
 export function webhookRoutes(deps: {
   bookings: BookingRepo;
@@ -20,8 +20,11 @@ export function webhookRoutes(deps: {
   notificationLog?: NotificationLogRepo;
   // Enables POST /webhooks/resend (bounce/complaint alerts). Unset → endpoint 404s.
   resendWebhookSecret?: string;
+  // Signs the customer's "manage my booking" link in the confirmation email.
+  baseUrl: string;
+  linkSecret: string;
 }) {
-  const { bookings, payments, adapter, email, conciergeTasks, notificationLog } = deps;
+  const { bookings, payments, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
 
@@ -68,7 +71,7 @@ export function webhookRoutes(deps: {
       // Confirmation email is best-effort: the booking is already paid, so a mail
       // provider hiccup must NOT fail the webhook (which would make PayHere retry).
       try {
-        await sendBookingConfirmation(paid, email);
+        await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
         // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
         await notificationLog?.markSent(paid.id, 'confirmation');
       } catch (err) {

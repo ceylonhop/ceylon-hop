@@ -2,7 +2,7 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
-import { sendTripReminder, sendReviewRequest } from './notifications';
+import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
 // review request once travel is this far in the past. The cron tick is idempotent via
@@ -31,9 +31,16 @@ const TRAVELLED_STATUSES = ['paid', 'confirmed', 'in_progress', 'completed'];
 // tests; the cron endpoint calls it with the real clock.
 export async function runScheduledNotifications(
   now: Date,
-  deps: { bookings: BookingRepo; log: NotificationLogRepo; email: EmailAdapter },
+  deps: {
+    bookings: BookingRepo;
+    log: NotificationLogRepo;
+    email: EmailAdapter;
+    // Signs the customer's "manage my booking" link in the trip reminder email.
+    baseUrl: string;
+    linkSecret: string;
+  },
 ): Promise<{ reminders: number; reviews: number }> {
-  const { bookings, log, email } = deps;
+  const { bookings, log, email, baseUrl, linkSecret } = deps;
   const all = await bookings.list();
   let reminders = 0;
   let reviews = 0;
@@ -47,7 +54,7 @@ export async function runScheduledNotifications(
     if ((b.status === 'paid' || b.status === 'confirmed') && ms > 0 && ms <= REMINDER_LEAD_MS) {
       if (!(await log.wasSent(b.id, 'trip_reminder'))) {
         try {
-          await sendTripReminder(b, email);
+          await sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) });
           await log.markSent(b.id, 'trip_reminder');
           reminders++;
         } catch (err) {

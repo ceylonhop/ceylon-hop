@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeEmailAdapter } from './adapters/email';
 import { InMemoryConciergeTaskRepo } from './db/conciergeTaskRepo';
+import { InMemoryBookingRepo } from './db/bookingRepo';
 import { issueSessionCookie } from './lib/opsMiddleware';
 
 // /admin/bookings now requires a session with bookings:read — x-admin-key resolves to
@@ -34,8 +35,9 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const bookings = new InMemoryBookingRepo();
     const adminApiKey = 'smoke-key';
-    const app = createApp({ adapter, email, conciergeTasks, adminApiKey, auth: opsAuth });
+    const app = createApp({ adapter, email, conciergeTasks, bookings, adminApiKey, auth: opsAuth });
 
     const b = await (
       await app.request('/bookings/single', {
@@ -55,8 +57,8 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     });
     expect(wh.status).toBe(200);
 
-    const paid = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(paid.status).toBe('paid');
+    const paid = await bookings.get(b.id);
+    expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
@@ -70,8 +72,9 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const bookings = new InMemoryBookingRepo();
     const adminApiKey = 'smoke-key';
-    const app = createApp({ adapter, email, conciergeTasks, adminApiKey, auth: opsAuth });
+    const app = createApp({ adapter, email, conciergeTasks, bookings, adminApiKey, auth: opsAuth });
 
     const trip = {
       stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
@@ -97,8 +100,8 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
     });
 
-    const paid = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(paid.status).toBe('paid');
+    const paid = await bookings.get(b.id);
+    expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
 
@@ -112,7 +115,8 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
-    const app = createApp({ adapter, email, conciergeTasks, adminApiKey: 'smoke-key' });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, conciergeTasks, bookings, adminApiKey: 'smoke-key' });
 
     const shared = {
       corridorId: 'hill-line',
@@ -136,8 +140,8 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
     });
 
-    const paid = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(paid.status).toBe('paid');
+    const paid = await bookings.get(b.id);
+    expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect((await conciergeTasks.listByBooking(b.id)).filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
   });

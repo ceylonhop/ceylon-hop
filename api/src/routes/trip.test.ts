@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 
 const valid = {
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
@@ -96,11 +97,13 @@ describe('POST /bookings/trip', () => {
   });
 
   it('records chauffeur days + driver nights', async () => {
-    const app = createApp();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
     const res = await postTrip(app, { ...valid, serviceType: 'chauffeur', days: 3, driverNights: 2 });
     expect(res.status).toBe(201);
     const b = await res.json();
-    const got = await (await app.request(`/bookings/${b.id}`)).json();
+    const got = await bookings.get(b.id);
+    if (!got || got.mode !== 'trip') throw new Error('expected a trip booking');
     expect(got.input.days).toBe(3);
     expect(got.input.driverNights).toBe(2);
   });
@@ -108,7 +111,8 @@ describe('POST /bookings/trip', () => {
   it('flows through checkout → webhook → paid → email', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
 
     const b = await (await postTrip(app, valid)).json();
     await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
@@ -116,8 +120,8 @@ describe('POST /bookings/trip', () => {
     const wh = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(wh.status).toBe(200);
 
-    const paid = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(paid.status).toBe('paid');
+    const paid = await bookings.get(b.id);
+    expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].html).toContain('Sigiriya'); // trip route line
   });

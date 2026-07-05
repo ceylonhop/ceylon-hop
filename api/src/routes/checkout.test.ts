@@ -23,15 +23,16 @@ async function book(app: ReturnType<typeof createApp>) {
 
 describe('POST /bookings/:id/checkout', () => {
   it('returns checkout params matching the booking and moves it to payment_pending', async () => {
-    const app = createApp();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
     const b = await book(app);
     const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
     expect(res.status).toBe(200);
     const params = await res.json();
     expect(params.amount).toBe(b.total);
     expect(params.orderId).toBe(b.reference);
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).toBe('payment_pending');
+    const after = await bookings.get(b.id);
+    expect(after!.status).toBe('payment_pending');
   });
 
   it('404 for an unknown booking', async () => {

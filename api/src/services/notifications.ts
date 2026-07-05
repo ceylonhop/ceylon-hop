@@ -1,5 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import type { EmailAdapter } from '../adapters/email';
+import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette (kept inline — email clients ignore <style>/external CSS).
 const TEAL = '#0AB9B6';
@@ -133,6 +134,18 @@ function refCard(booking: Booking, badge: Badge): string {
   </td></tr>`;
 }
 
+// Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
+export function manageUrl(booking: Booking, baseUrl: string, secret: string): string {
+  return `${baseUrl.replace(/\/$/, '')}/manage.html?t=${signBookingToken(booking.id, secret)}`;
+}
+
+// A CTA block consistent with the other block helpers (returns a table row for page()).
+function manageButton(url: string): string {
+  return `<tr><td style="padding:4px 32px 26px">`
+    + `<a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;`
+    + `padding:12px 24px;border-radius:999px;font-weight:700;font-size:.95rem">View your booking</a></td></tr>`;
+}
+
 function routeBlock(booking: Booking): string {
   const stopsHtml = journey(booking)
     .map(
@@ -246,7 +259,7 @@ function paidRows(booking: Booking): [string, string][] {
   return [['Total paid', money(booking.total, booking.currency)]];
 }
 
-function renderHtml(booking: Booking): string {
+function renderHtml(booking: Booking, manageLink?: string): string {
   const first = esc(booking.input.customer.firstName);
   return page(
     brandHeader() +
@@ -257,6 +270,7 @@ function renderHtml(booking: Booking): string {
         'Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.',
       ) +
       refCard(booking, BADGE_PAID) +
+      (manageLink ? manageButton(manageLink) : '') +
       routeBlock(booking) +
       factsBlock(booking) +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
@@ -269,22 +283,27 @@ function renderHtml(booking: Booking): string {
   );
 }
 
-function renderText(booking: Booking): string {
+function renderText(booking: Booking, manageLink?: string): string {
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
     'What happens next: our team will message you on WhatsApp to confirm your exact pickup time and place.',
     cancellationPolicy(booking),
+    ...(manageLink ? ['', `View your booking: ${manageLink}`] : []),
   ]);
 }
 
-export async function sendBookingConfirmation(booking: Booking, email: EmailAdapter): Promise<void> {
+export async function sendBookingConfirmation(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
   await email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
-    html: renderHtml(booking),
-    text: renderText(booking),
+    html: renderHtml(booking, links.manage),
+    text: renderText(booking, links.manage),
   });
 }
 
@@ -356,7 +375,11 @@ export async function sendRefundConfirmation(booking: Booking, email: EmailAdapt
 }
 
 // ── Pre-trip reminder (scheduled, ~24–48h before travel) ───────────────────
-export async function sendTripReminder(booking: Booking, email: EmailAdapter): Promise<void> {
+export async function sendTripReminder(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
   const first = esc(booking.input.customer.firstName);
   const html = page(
     brandHeader() +
@@ -367,6 +390,7 @@ export async function sendTripReminder(booking: Booking, email: EmailAdapter): P
         'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
       ) +
       refCard(booking, BADGE_PAID) +
+      (links.manage ? manageButton(links.manage) : '') +
       routeBlock(booking) +
       factsBlock(booking) +
       infoBox(
@@ -379,6 +403,7 @@ export async function sendTripReminder(booking: Booking, email: EmailAdapter): P
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
     "We'll share your driver's details on WhatsApp shortly before pickup.",
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
   await email.send({
     to: booking.input.customer.email,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  manageUrl,
   sendBookingConfirmation,
   sendCancellationConfirmation,
   sendRefundConfirmation,
@@ -208,6 +209,24 @@ describe('sendReviewRequest', () => {
     expect(m.html.toLowerCase()).toContain('review');
     expect(m.html).toContain('g.page/ceylonhop');
     expect(m.text).not.toContain('<');
+  });
+});
+
+describe('manage-booking link', () => {
+  it('builds a signed manage URL from the base + secret', () => {
+    const url = manageUrl(single, 'https://ceylonhop.com', 'sek');
+    expect(url).toMatch(/^https:\/\/ceylonhop\.com\/manage\.html\?t=.+\..+$/);
+  });
+
+  it('renders a View-your-booking link when provided, and omits it otherwise', async () => {
+    const withLink = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, withLink, { manage: 'https://ceylonhop.com/manage.html?t=TOK' });
+    expect(withLink.sent[0].html).toContain('https://ceylonhop.com/manage.html?t=TOK');
+    expect(withLink.sent[0].text).toContain('https://ceylonhop.com/manage.html?t=TOK');
+
+    const noLink = new FakeEmailAdapter();
+    await sendBookingConfirmation(single, noLink);
+    expect(noLink.sent[0].html).not.toContain('manage.html');
   });
 });
 
