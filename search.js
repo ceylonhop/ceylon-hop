@@ -181,8 +181,11 @@ if (shared) {
   </div>`;
 }
 
+// When there's no shared service, the "no shared seats" panel takes the shared card's
+// slot in the right column (instead of spanning full-width below) so the two-up layout
+// reads the same whether or not a shared option exists.
 document.getElementById('results').innerHTML =
-  `<div class="opt-grid ${shared ? '' : 'solo'}">${privateCard}${sharedCard}</div>${noShare}`;
+  `<div class="opt-grid">${privateCard}${shared ? sharedCard : noShare}</div>`;
 
 // breadcrumbs
 mountBreadcrumbs([['Home','index.html'],['Search'],[`${fromP.name} → ${toP.name}`]]);
