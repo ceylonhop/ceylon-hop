@@ -30,7 +30,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var A = window.CEYLON_HOP_API.replace(/\/$/, '');
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
   function money(cents,cur){return (cur||'USD')+' '+ (cents/100).toFixed(2).replace(/\.00$/,'');}
-  function errView(msg){app.innerHTML='<div class="err"><h2>We couldn’t open this booking</h2><p class="muted">'+esc(msg)+'</p><p><a href="https://wa.me/94770000000">Message us on WhatsApp</a> and we’ll pull it up for you.</p></div>';}
+  function errView(msg){app.innerHTML='<div class="err"><h2>We couldn’t open this booking</h2><p class="muted">'+esc(msg)+'</p><p><a href="https://wa.me/94779669662">Message us on WhatsApp</a> and we’ll pull it up for you.</p></div>';}
   if(!t){ errView('This link isn’t valid.'); return; }
   fetch(A+'/bookings/view?t='+encodeURIComponent(t)).then(function(res){
     if(res.status===401) throw new Error('This link isn’t valid or has changed.');
