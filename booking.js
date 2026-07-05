@@ -1,7 +1,6 @@
 /* ============================================================
    CEYLON HOP — booking flow logic
    ============================================================ */
-initChrome ? null : null;
 mountWA();
 document.getElementById('bk-brand').innerHTML = cmark(30,'var(--accent)') + '<span>Ceylon Hop</span>';
 document.getElementById('conf-wa').innerHTML = ICON.wa + ' Message us on WhatsApp';
@@ -633,7 +632,6 @@ window.pickSvc=function(svc){
   state.payPlan = svc==='chauffeur' ? 'deposit' : state.payPlan;
   render();
 };
-window.pickDep=function(t){state.dep=t;state.flexTime=false;render();checkWhen();};
 function renderRepriceNote(){
   let el=document.getElementById('reprice-note');
   const p=state.pendingReprice;
