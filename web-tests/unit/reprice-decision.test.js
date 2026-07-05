@@ -1,17 +1,19 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTransfers } from './_load.js';
 
-// repriceDecision keeps the "fixed price" promise: cheaper/equal routes apply,
-// dearer-but-within-buffer holds the anchor, dearer-past-buffer needs a heads-up.
-// Buffer is the +10% already priced into every leg (legPrice does round(km×1.10)).
+// repriceDecision enforces a FIRM FLOOR: the quoted price never drops. Cheaper/equal
+// routes and within-buffer changes hold the quote; only a material increase past the
+// +10% buffer prompts a heads-up. Buffer is the +10% already priced into every leg
+// (legPrice does round(km×1.10)).
 let T;
 beforeAll(() => { T = loadTransfers(); });
 
 describe('repriceDecision', () => {
-  it('applies a cheaper routed price (good news)', () => {
-    // legPrice(200,'car') = round(round(200×1.10)×0.46) = round(220×0.46) = 101
+  it('holds the quote for a cheaper routed price (firm floor — never drops)', () => {
+    // legPrice(200,'car') = round(round(200×1.10)×0.46) = round(220×0.46) = 101 < 121,
+    // but the firm floor keeps the quoted $121.
     const d = T.repriceDecision(240, 200, 121, 'car');
-    expect(d).toEqual({ action: 'apply', price: 101 });
+    expect(d).toEqual({ action: 'hold', price: 121 });
   });
 
   it('holds the anchor when dearer but inside the +10% buffer', () => {
@@ -45,8 +47,8 @@ describe('repriceDecision', () => {
     expect(d.extraKm).toBeGreaterThanOrEqual(1);
   });
 
-  it('falls back to apply when there is no baseline distance', () => {
+  it('holds the quote when there is no baseline distance (firm floor)', () => {
     const d = T.repriceDecision(null, 300, 101, 'car');
-    expect(d).toEqual({ action: 'apply', price: 152 });
+    expect(d).toEqual({ action: 'hold', price: 101 });
   });
 });
