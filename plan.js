@@ -481,13 +481,14 @@ function renderMap(){
 // ---- continue into the booking flow ----
 document.querySelector('#sum-wa .ic').innerHTML=ICON.wa;
 // ---- step 2: “When” — add an optional date to each transfer / stay ----
-let __legKey=0;
+// No drag-to-reorder here: the dates step keeps the route in the order it was built on the
+// route step. Reordering legs whose pick-up/drop-off are fixed would unchain the itinerary
+// (a leg's drop-off ≠ the next leg's pick-up), which corrupts the stop list handed to booking.
+// Reordering lives on the route step; here you only assign dates.
 function renderDatesStep(){
   clearLegDatePops();
   const list=document.getElementById('dates-list');
   list.innerHTML='';
-  let datesDragEl=null;
-  const DRAG_ICO='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
   const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
   const flags=outOfOrderFlags();
   state.legs.forEach((leg,i)=>{
@@ -499,46 +500,28 @@ function renderDatesStep(){
     const row=document.createElement('div');
     row.className='date-row'+(isStay?' stay':'')+(bad?' dr-flagged':'');
     row.dataset.i=i;
-    leg.__k = leg.__k || (++__legKey); row.dataset.k=leg.__k;
-    row.setAttribute('draggable','true');
     row.innerHTML=`
       <div class="dr-info">
-        <span class="drag" title="Drag to reorder">${DRAG_ICO}</span>
         <span class="dr-badge ${isStay?'stay':''}">${isStay?`Stay ${i+1}`:`Leg ${i+1}`}</span>
         <span class="dr-route">${routeTxt}</span>
       </div>
       <div class="dr-date">
         <input type="date" class="dates-step-input" data-placeholder="${isStay?'Arrival date':'Travel date'}" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
       </div>
-      ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or drag the cards to reorder.</span></div>`:''}`;
+      ${bad?`<div class="dr-warn" role="status"><span class="dr-warn-ic">${WARN_ICO}</span><span><b>Dates out of order.</b> This ${isStay?'stay':'leg'} is dated before an earlier stop in your trip — double-check the date, or go back to reorder your route.</span></div>`:''}`;
     list.appendChild(row);
     const inp=row.querySelector('input');
     if(leg.date) inp.value=fmtISO(leg.date);
     enhanceLegDate(inp);
     inp.addEventListener('change',()=>{ state.legs[i].date = inp.value ? new Date(inp.value+'T00:00:00') : null; renderDatesStep(); });
-    row.addEventListener('dragstart',e=>{ datesDragEl=row; row.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
-    row.addEventListener('dragend',()=>{ row.classList.remove('dragging'); commitDatesOrder(); });
   });
-  list.ondragover=e=>{
-    e.preventDefault();
-    if(!datesDragEl) return;
-    const rows=[...list.querySelectorAll('.date-row')].filter(r=>r!==datesDragEl);
-    const after=rows.find(r=>{ const b=r.getBoundingClientRect(); return e.clientY < b.top+b.height/2; });
-    if(after) list.insertBefore(datesDragEl, after); else list.appendChild(datesDragEl);
-  };
   // gate the "Continue to booking" CTA while any leg is dated out of order — the customer
-  // must fix the dates or reorder before we hand the (now non-chronological) route to booking
+  // must fix the dates (or reorder on the route step) before we hand the route to booking
   const hasOOO=flags.size>0;
   const cont=document.getElementById('dates-continue');
   if(cont){ cont.classList.toggle('cta-disabled',hasOOO); cont.setAttribute('aria-disabled',hasOOO?'true':'false'); }
   const oooHint=document.getElementById('dates-order-hint');
   if(oooHint) oooHint.hidden=!hasOOO;
-}
-// reorder the underlying legs to match the dragged date-tile order, then re-render
-function commitDatesOrder(){
-  const els=[...document.querySelectorAll('#dates-list .date-row')];
-  state.legs=els.map(el=>state.legs[+el.dataset.i]);
-  renderDatesStep();
 }
 // A leg dated earlier than a stop that comes before it in the route reads as a mistake
 // (the journey runs forward). We deliberately no longer silently reorder the customer's

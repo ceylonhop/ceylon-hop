@@ -305,10 +305,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dates-list{display:grid;gap:10px;max-width:720px}
   .date-row{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:14px 18px}
   .date-row.stay{background:#fffdf6;border-color:color-mix(in srgb,var(--saffron) 32%,var(--line))}
-  .date-row.dragging{opacity:.55;box-shadow:var(--shadow)}
-  .date-row .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
-  .date-row .drag:active{cursor:grabbing}
-  .date-row .drag svg{width:16px;height:16px}
   .date-row{position:relative}
   .date-row.dr-flagged{background:#fffdf6;border-color:#f3dca8}
   .dr-info{display:flex;align-items:center;gap:12px;min-width:0}
@@ -522,7 +518,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
       <button class="btn btn-cta btn-lg" id="dates-continue">Continue to booking →</button>
     </div>
-    <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or drag the cards) so your trip runs forward before continuing.</p>
+    <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
   </div>
 </div>
 <div class="plan-modal" id="modal" style="display:none">

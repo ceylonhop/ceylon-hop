@@ -26,6 +26,10 @@ test('out-of-order leg dates raise a flag and never reorder the itinerary', asyn
   await expect(rows).toHaveCount(2);
   const warn = page.locator('.dr-warn');
 
+  // Drag-to-reorder is removed from the dates step (reordering there unchains the route).
+  await expect(page.locator('#dates-list .date-row[draggable="true"]')).toHaveCount(0);
+  await expect(page.locator('#dates-list .date-row .drag')).toHaveCount(0);
+
   // In chronological order → no flag.
   await setLegDate(page, 0, '2026-08-10');
   await setLegDate(page, 1, '2026-08-20');
