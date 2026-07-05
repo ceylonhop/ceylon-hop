@@ -10,6 +10,6 @@
   };
   // Production only: apex or www. Keeps sandbox/Pages/localhost out of GA4.
   window.chIsProd = function () {
-    return /(^|\.)ceylonhop\.com$/.test(window.location.hostname);
+    return /^(www\.)?ceylonhop\.com$/.test(window.location.hostname);
   };
 })(window);

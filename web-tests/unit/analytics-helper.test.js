@@ -44,5 +44,6 @@ describe('chIsProd', () => {
     expect(at('ceylonhop.github.io')).toBe(false);
     expect(at('localhost')).toBe(false);
     expect(at('127.0.0.1')).toBe(false);
+    expect(at('staging.ceylonhop.com')).toBe(false);
   });
 });
