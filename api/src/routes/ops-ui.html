@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ceylon Hop · Ops Control</title>
+<script>
+/* M17 parity: client-error beacon for the ops dashboard. The customer pages have this; the
+   ops UI did not, so a JS bug in the staff dashboard vanished silently. Forwards to the same
+   /errors/client sink (same-origin) → Sentry + founder alert. Prefixed [ops-ui] so ops-tooling
+   errors are distinguishable from customer-site ones. Placed first so it catches early errors. */
+(function(){var n=0;
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>

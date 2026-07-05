@@ -118,4 +118,15 @@ describe('ops UI shell', () => {
     expect(body).toContain("location.hash==='#quote'"); // boot sequence deep-links a founder into the quote view
     expect(body).toContain('_lastRenderedRoute'); // focus only moves on an actual route transition
   });
+
+  it('ships a client-error beacon so ops-dashboard JS errors are captured (M17 parity)', async () => {
+    // The customer pages beacon uncaught JS errors to /errors/client; the ops UI did not, so a
+    // render bug in the staff dashboard vanished silently. It must forward to the same sink.
+    const app = createApp();
+    const body = await (await app.request('/ops')).text();
+    expect(body).toContain("addEventListener('error'");            // global error handler wired
+    expect(body).toContain("addEventListener('unhandledrejection'"); // + promise rejections
+    expect(body).toContain('/errors/client');                       // same sink as the customer pages
+    expect(body).toContain('[ops-ui]');                             // tagged distinctly from customer errors
+  });
 });
