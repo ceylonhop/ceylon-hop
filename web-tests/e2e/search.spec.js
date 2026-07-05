@@ -16,3 +16,35 @@ test('search prices on real distance and carries that price into booking', async
   // booking holds the quoted price on load
   await expect(page.locator('#sum-total')).toHaveText('$170');
 });
+
+test('search choices stay locked until Edit, then Update applies (Kayak/Expedia pattern)', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
+
+  // Locked by default: the edit form is collapsed, a read-only summary is shown.
+  await expect(page.locator('#srch-bar')).toBeHidden();
+  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-route')).not.toBeEmpty();
+  await expect(page.locator('#sl-meta')).toContainText('2 travelers');
+
+  // Click Edit → the form reveals, pre-filled with the current search.
+  await page.locator('#sl-edit').click();
+  await expect(page.locator('#srch-bar')).toBeVisible();
+  await expect(page.locator('#srch-locked')).toBeHidden();
+  await expect(page.locator('#e-from')).toHaveValue('cmb-airport');
+  await expect(page.locator('#e-to')).toHaveValue('ella');
+  await expect(page.locator('#e-pax')).toHaveValue('2');
+
+  // Cancel collapses back to the locked summary without changing anything.
+  await page.locator('#sl-cancel').click();
+  await expect(page.locator('#srch-bar')).toBeHidden();
+  await expect(page.locator('#srch-locked')).toBeVisible();
+
+  // Edit again, change the drop-off, and Update → a deliberate new search navigation.
+  await page.locator('#sl-edit').click();
+  await page.locator('#e-to').selectOption('kandy');
+  await page.locator('#srch-bar button[type="submit"]').click();
+  await page.waitForURL('**/search.html?**to=kandy**');
+  // The new search loads locked again.
+  await expect(page.locator('#srch-bar')).toBeHidden();
+  await expect(page.locator('#srch-locked')).toBeVisible();
+});

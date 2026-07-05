@@ -34,6 +34,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-top .back-link{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:.4rem;margin-bottom:14px;white-space:nowrap}
   .srch-top .back-link:hover{color:var(--ink)}
   .srch-bar{display:grid;grid-template-columns:1fr auto 1fr .9fr .9fr auto;gap:10px;align-items:end;background:var(--cream-deep);border-radius:var(--r);padding:14px}
+  .srch-bar[hidden]{display:none}
   .srch-bar .field{margin:0}
   .srch-bar label{font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;display:block;margin-bottom:.3rem}
   .srch-bar select,.srch-bar input{width:100%;padding:.7rem .8rem;border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-size:.92rem;color:var(--ink)}
@@ -41,6 +42,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-bar .swap2 svg{width:16px;height:16px}
   .srch-bar .go{height:42px;white-space:nowrap}
   @media(max-width:860px){.srch-bar{grid-template-columns:1fr 1fr;gap:10px}.srch-bar .swap2{display:none}.srch-bar .go{grid-column:1/-1}}
+  /* locked summary (Kayak/Expedia pattern): the chosen search shows read-only until you click Edit */
+  .srch-locked{display:flex;align-items:center;gap:16px;background:var(--cream-deep);border-radius:var(--r);padding:14px 18px;flex-wrap:wrap}
+  .srch-locked[hidden]{display:none}
+  .srch-locked .sl-main{flex:1;min-width:200px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .srch-locked .sl-route{font-weight:700;font-size:1rem;color:var(--ink);display:inline-flex;align-items:center;gap:.5rem}
+  .srch-locked .sl-route .arr{color:var(--accent-deep);display:inline-flex}
+  .srch-locked .sl-route .arr svg{width:18px;height:18px}
+  .srch-locked .sl-dot{color:var(--ink-soft)}
+  .srch-locked .sl-meta{color:var(--ink-soft);font-size:.9rem;font-weight:600}
+  .srch-locked .sl-edit{background:var(--white);border:1.5px solid var(--line);color:var(--ink);border-radius:10px;padding:.6rem 1.1rem;font:inherit;font-weight:600;font-size:.9rem;cursor:pointer;display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap}
+  .srch-locked .sl-edit:hover{border-color:var(--accent-deep);color:var(--accent-deep)}
+  .srch-locked .sl-edit svg{width:15px;height:15px}
+  .sl-cancel{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.88rem;cursor:pointer;margin-top:12px;padding:0;text-decoration:underline}
+  .sl-cancel:hover{color:var(--ink)}
+  .sl-cancel[hidden]{display:none}
 
   /* route head */
   .route-head{margin-bottom:8px}
@@ -131,7 +147,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="srch-top">
   <div class="wrap">
     <a class="back-link" href="index.html"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Start a new search</a>
-    <form class="srch-bar" id="srch-bar" onsubmit="return updateSearch(event)">
+    <div class="srch-locked" id="srch-locked">
+      <div class="sl-main">
+        <span class="sl-route" id="sl-route"></span>
+        <span class="sl-dot" aria-hidden="true">·</span>
+        <span class="sl-meta" id="sl-meta"></span>
+      </div>
+      <button type="button" class="sl-edit" id="sl-edit" onclick="editSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit search</button>
+    </div>
+    <form class="srch-bar" id="srch-bar" hidden onsubmit="return updateSearch(event)">
       <div class="field"><label for="e-from">Pick-up</label><select id="e-from" required></select></div>
       <button type="button" class="swap2" id="e-swap" aria-label="Swap pick-up and drop-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button>
       <div class="field"><label for="e-to">Drop-off</label><select id="e-to" required></select></div>
@@ -139,6 +163,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="field"><label for="e-pax">Travelers</label><select id="e-pax"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6+</option></select></div>
       <button class="btn btn-primary go" type="submit">Update</button>
     </form>
+    <button type="button" class="sl-cancel" id="sl-cancel" hidden onclick="cancelEdit()">Cancel</button>
     <p class="srch-err" id="srch-err" role="alert" hidden></p>
   </div>
 </section>
