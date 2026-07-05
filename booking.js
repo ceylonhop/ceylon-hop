@@ -100,6 +100,10 @@ const state={
   locFromGeo: null,   // {name,address,lat,lng} when picked from Google Places
   locToGeo: null
 };
+// Baseline "standard route" distance for the pre-filled endpoints — used to judge
+// how far a customer's exact pick-up/drop-off drifts before we re-price.
+state.anchorKm = (window.TRANSFERS ? window.TRANSFERS.kmBetween(r.stops[0], r.stops[r.stops.length-1]) : null);
+state.pendingReprice = null; // {km, extraKm, prices:{car,van}} while awaiting acknowledgement
 
 // ---- summary setup ----
 const typeLabel={loop:'Island loop',shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
@@ -285,10 +289,22 @@ function renderRouteMap(){
         // re-price single private transfers from the REAL driving distance so the
         // summary total always matches the route actually shown on the map.
         if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice){
+          const dec = T.repriceDecision(state.anchorKm, km, unit, vehicleKey);
           state.routeKm = km;
-          vehPrices = { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') };
-          const np = vehPrices[vehicleKey];
-          if(np!=null){ unit = np; r.price = np; render(); }
+          if(dec.action==='confirm'){
+            // Material upward drift — park the new price, warn, don't touch the total yet.
+            state.pendingReprice = { km, extraKm: dec.extraKm,
+              prices: { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') } };
+          } else {
+            // 'apply' (cheaper/equal) or 'hold' (within buffer): clear any pending notice.
+            state.pendingReprice = null;
+            if(dec.action==='apply'){
+              vehPrices = { car: T.legPrice(km,'car'), van: T.legPrice(km,'van') };
+              if(dec.price!=null){ unit = dec.price; r.price = dec.price; }
+              state.anchorKm = km; // the accepted route becomes the new baseline
+            }
+          }
+          render(); checkWhere();
         }
       },
     });
@@ -621,9 +637,50 @@ window.pickSvc=function(svc){
   render();
 };
 window.pickDep=function(t){state.dep=t;state.flexTime=false;render();checkWhen();};
+function renderRepriceNote(){
+  let el=document.getElementById('reprice-note');
+  const p=state.pendingReprice;
+  if(!p){ if(el) el.remove(); return; }
+  const newPrice = p.prices[vehicleKey];
+  if(!el){
+    el=document.createElement('div'); el.id='reprice-note'; el.className='reprice-note';
+    const wrap=document.getElementById('loc-wrap');
+    if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(el, wrap.nextSibling);
+    else { const panel=document.querySelector('[data-panel="2"]'); if(panel) panel.appendChild(el); }
+  }
+  el.innerHTML =
+    '<b>Heads up — this trip is longer than the standard route.</b> '+
+    'Your exact stops add about '+p.extraKm+' km, so the fixed price updates from '+
+    money(unit)+' to '+money(newPrice)+'.'+
+    '<div class="rn-actions">'+
+      '<button type="button" class="btn btn-primary btn-sm" onclick="acceptReprice()">Got it — use '+money(newPrice)+'</button>'+
+      '<button type="button" class="rn-change" onclick="dismissReprice()">Change location</button>'+
+    '</div>';
+}
+window.acceptReprice=function(){
+  const p=state.pendingReprice; if(!p) return;
+  vehPrices=p.prices; unit=p.prices[vehicleKey]; r.price=unit;
+  state.anchorKm=p.km; state.pendingReprice=null;
+  render(); checkWhere();
+};
+window.dismissReprice=function(){
+  state.pendingReprice=null; render(); checkWhere();
+  const to=document.getElementById('loc-to'); if(to) to.focus();
+};
+// one-time styles (site.css is frozen — keep this self-contained)
+(function injectRepriceCss(){
+  if(document.getElementById('reprice-css')) return;
+  const s=document.createElement('style'); s.id='reprice-css';
+  s.textContent='.reprice-note{margin:.75rem 0 0;padding:.85rem 1rem;border:1px solid #f0c07a;'+
+    'background:#fff7ea;border-radius:12px;font-size:.9rem;line-height:1.4;color:#5c4a2a}'+
+    '.reprice-note b{color:#8a5a12}'+
+    '.reprice-note .rn-actions{display:flex;gap:.75rem;align-items:center;margin-top:.6rem;flex-wrap:wrap}'+
+    '.reprice-note .rn-change{background:none;border:0;color:#8a5a12;text-decoration:underline;cursor:pointer;font:inherit;padding:0}';
+  document.head.appendChild(s);
+})();
 function checkWhere(){
   const haveWhere = isTrip ? true : (state.locFrom && state.locTo);
-  document.getElementById('n1').disabled = !haveWhere;
+  document.getElementById('n1').disabled = !haveWhere || !!state.pendingReprice;
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
@@ -791,6 +848,7 @@ function cancelText(){
     : 'Free cancellation up to 24 hours before';
 }
 function render(){
+  renderRepriceNote();
   // live route from the actual entered locations
   const _sf=document.getElementById('sum-from'); if(_sf) _sf.textContent = state.locFrom || r.stops[0];
   const _stp=document.getElementById('sum-to'); if(_stp) _stp.textContent = state.locTo || r.stops[r.stops.length-1];
