@@ -17,6 +17,7 @@ import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import { verifyBookingToken } from '../lib/bookingToken';
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
 // flagged ($1 absorbs rounding differences, never a real disagreement).
@@ -60,6 +61,80 @@ function resolveTotals(
   return { total, amountDueNow: chauffeur ? depositCents(total) : total, mismatch: false, unpriced: true };
 }
 
+// Customer-safe view of a booking (allow-list). Only display fields + first name — never the
+// raw id, channel, or contact details — so a forwarded link reveals nothing the confirmation
+// email doesn't already. Driver/fulfilment lives in RideOps (not loaded); margin is on quotes.
+export interface CustomerBookingView {
+  reference: string;
+  status: string;
+  mode: 'single' | 'trip' | 'shared';
+  firstName: string;
+  from: string;
+  to: string;
+  date: string; // ISO date or 'to confirm'
+  time: string; // HH:mm or 'to confirm'
+  travellers: number;
+  bags: number | null;
+  vehicleType: string | null;
+  currency: string;
+  totalCents: number;
+  amountDueNowCents: number;
+  balanceDueCents: number;
+}
+
+export function projectBooking(b: Booking): CustomerBookingView {
+  const dueNow = b.amountDueNow ?? b.total;
+  const base = {
+    reference: b.reference,
+    status: b.status,
+    mode: b.mode,
+    firstName: b.input.customer.firstName,
+    currency: b.currency,
+    totalCents: b.total,
+    amountDueNowCents: dueNow,
+    balanceDueCents: Math.max(0, b.total - dueNow),
+  };
+  if (b.mode === 'single') {
+    return {
+      ...base,
+      from: b.input.from,
+      to: b.input.to,
+      date: b.input.date ?? 'to confirm',
+      time: b.input.time ?? 'to confirm',
+      travellers: b.input.adults + b.input.children,
+      bags: b.input.bags,
+      vehicleType: b.input.vehicleType,
+    };
+  }
+  if (b.mode === 'trip') {
+    const stops = b.input.stops;
+    return {
+      ...base,
+      from: stops[0],
+      to: stops[stops.length - 1],
+      date: b.input.dates?.[0] ?? 'to confirm',
+      time: 'to confirm',
+      travellers: b.input.pax,
+      bags: null,
+      vehicleType: b.input.vehicleType,
+    };
+  }
+  // Shared (corridor) bookings store only a corridorId — not from/to strings — and the
+  // repo that resolves corridor names (DepartureRepo) isn't loaded here, so the
+  // customer-safe view surfaces the fixed pickup/drop-off wording used elsewhere for
+  // unresolved fields, plus the date/time the customer picked (SharedInput has both).
+  return {
+    ...base,
+    from: 'Pickup',
+    to: 'Drop-off',
+    date: b.input.date,
+    time: b.input.time,
+    travellers: b.input.seats,
+    bags: null,
+    vehicleType: null,
+  };
+}
+
 export function bookingRoutes(deps: {
   bookings: BookingRepo;
   payments: PaymentRepo;
@@ -67,6 +142,7 @@ export function bookingRoutes(deps: {
   departures: DepartureRepo;
   maps: MapsAdapter;
   conciergeTasks: ConciergeTaskRepo;
+  linkSecret: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks } = deps;
   const r = new Hono();
@@ -254,11 +330,15 @@ export function bookingRoutes(deps: {
     return c.json(booking, 201);
   });
 
-  // 1.5 — read a booking back.
-  r.get('/:id', async (c) => {
-    const booking = await bookings.get(c.req.param('id'));
+  // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
+  // old unauthenticated GET /:id (nothing calls it: the site uses POST /:id/checkout and
+  // internal callers use the repo). Returns only a customer-safe projection.
+  r.get('/view', async (c) => {
+    const id = verifyBookingToken(c.req.query('t'), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
-    return c.json(booking, 200);
+    return c.json(projectBooking(booking), 200);
   });
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the

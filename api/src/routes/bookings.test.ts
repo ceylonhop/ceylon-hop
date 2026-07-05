@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { signBookingToken } from '../lib/bookingToken';
 
 const valid = {
   from: 'Colombo Airport',
@@ -94,18 +96,49 @@ describe('POST /bookings/single', () => {
   });
 });
 
-describe('GET /bookings/:id', () => {
-  it('returns a created booking', async () => {
-    const app = createApp();
-    const created = await (await post(app, valid)).json();
-    const res = await app.request(`/bookings/${created.id}`);
+describe('GET /bookings/view (tokenized customer view)', () => {
+  const SECRET = 'dev-booking-link-secret-change-me';
+
+  it('returns a customer-safe projection for a valid token', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const created = await bookings.create({
+      mode: 'single',
+      total: 6000,
+      amountDueNow: 6000,
+      currency: 'USD',
+      input: {
+        from: 'Colombo Airport (CMB)',
+        to: 'Kandy',
+        vehicleType: 'car',
+        adults: 2,
+        children: 0,
+        bags: 1,
+        customer: { firstName: 'Maya', lastName: 'Fernandez', email: 'maya@example.com', whatsapp: '+94771234567', country: 'Spain' },
+      },
+    });
+    const app = createApp({ bookings });
+    const res = await app.request(`/bookings/view?t=${signBookingToken(created.id, SECRET)}`);
     expect(res.status).toBe(200);
-    expect((await res.json()).id).toBe(created.id);
+    const body = await res.json();
+    expect(body.reference).toBe(created.reference);
+    expect(body.from).toBe('Colombo Airport (CMB)');
+    expect(body.firstName).toBe('Maya');
+    expect(body.totalCents).toBe(6000);
+    // Allow-list: never leak the id, channel, or contact details.
+    for (const leak of ['id', 'channel', 'email', 'whatsapp', 'country', 'lastName']) {
+      expect(JSON.stringify(body)).not.toContain(leak === 'email' ? 'maya@example.com' : leak === 'whatsapp' ? '+94771234567' : leak === 'country' ? 'Spain' : leak === 'lastName' ? 'Fernandez' : `"${leak}"`);
+    }
   });
 
-  it('404 for an unknown id', async () => {
+  it('401s a missing or invalid token', async () => {
     const app = createApp();
-    const res = await app.request('/bookings/does-not-exist');
+    expect((await app.request('/bookings/view')).status).toBe(401);
+    expect((await app.request('/bookings/view?t=garbage')).status).toBe(401);
+  });
+
+  it('404s a valid signature for an unknown booking', async () => {
+    const app = createApp();
+    const res = await app.request(`/bookings/view?t=${signBookingToken('no-such-id', SECRET)}`);
     expect(res.status).toBe(404);
   });
 });

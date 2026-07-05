@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 
 const valid = {
   corridorId: 'hill-line', // Kandy → Nuwara Eliya → Ella, $21/seat
@@ -72,7 +73,8 @@ describe('POST /bookings/shared', () => {
   it('flows through checkout → webhook → paid', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
 
     const b = await (await postShared(app, valid)).json();
     await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
@@ -80,8 +82,8 @@ describe('POST /bookings/shared', () => {
       method: 'POST',
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
     });
-    const paid = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(paid.status).toBe('paid');
+    const paid = await bookings.get(b.id);
+    expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
   });
 });

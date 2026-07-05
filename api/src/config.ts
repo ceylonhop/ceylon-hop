@@ -35,6 +35,10 @@ const Env = z.object({
   OPS_USERS: z.string().default(''),
   GOOGLE_OAUTH_CLIENT_ID: z.string().default(''),
   OPS_SESSION_SECRET: z.string().default('dev-ops-secret-change-me'),
+  // Signs the view-only "manage my booking" link tokens (customer-facing #2). A DEDICATED
+  // secret (not OPS_SESSION_SECRET) so customer links and ops sessions can't cross-replay.
+  // Set to a strong unique value at launch — see docs/go-live-checklist.md.
+  BOOKING_LINK_SECRET: z.string().default('dev-booking-link-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
   // M17 observability — all optional; every feature is dormant until its key is set.

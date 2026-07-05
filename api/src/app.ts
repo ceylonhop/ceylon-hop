@@ -38,6 +38,8 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
+  // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
+  bookingLinkSecret?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
   googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
@@ -142,7 +144,18 @@ export function createApp(deps: AppDeps = {}) {
       return c.json({ status: 'degraded', db: 'down' }, 503);
     }
   });
-  app.route('/bookings', bookingRoutes({ bookings, payments, adapter, departures, maps, conciergeTasks }));
+  app.route(
+    '/bookings',
+    bookingRoutes({
+      bookings,
+      payments,
+      adapter,
+      departures,
+      maps,
+      conciergeTasks,
+      linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+    }),
+  );
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
   app.route(
     '/webhooks',

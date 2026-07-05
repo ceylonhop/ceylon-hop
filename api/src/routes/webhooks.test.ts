@@ -6,6 +6,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -33,15 +34,16 @@ describe('POST /webhooks/payments', () => {
   it('marks the booking paid and emails the customer on a valid webhook', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
     const b = await bookAndCheckout(app);
 
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
     const res = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(res.status).toBe(200);
 
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).toBe('paid');
+    const after = await bookings.get(b.id);
+    expect(after!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].to).toBe('maya@example.com');
     // the branded confirmation actually flows end-to-end through the webhook
@@ -53,14 +55,15 @@ describe('POST /webhooks/payments', () => {
   it('marks paid and returns 200 even if the confirmation email fails (best-effort)', async () => {
     const adapter = new FakePaymentAdapter();
     const email = { send: async () => { throw new Error('provider down'); } };
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
     const b = await bookAndCheckout(app);
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
 
     const res = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(res.status).toBe(200);
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).toBe('paid');
+    const after = await bookings.get(b.id);
+    expect(after!.status).toBe('paid');
   });
 
   it('is idempotent — a duplicate webhook does not re-pay or re-email', async () => {
@@ -92,7 +95,8 @@ describe('POST /webhooks/payments', () => {
   it('marks a deposit-charged chauffeur booking paid on a deposit-amount webhook (GL-3)', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
     const b = await (
       await app.request('/bookings/trip', {
         method: 'POST',
@@ -116,8 +120,8 @@ describe('POST /webhooks/payments', () => {
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: checkout.amount, currency: b.currency });
     const res = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(res.status).toBe(200);
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).toBe('paid');
+    const after = await bookings.get(b.id);
+    expect(after!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
   });
 
@@ -145,25 +149,27 @@ describe('POST /webhooks/payments', () => {
 
   it('rejects a currency mismatch (400) and leaves the booking unpaid', async () => {
     const adapter = new FakePaymentAdapter();
-    const app = createApp({ adapter });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, bookings });
     const b = await bookAndCheckout(app); // priced in USD
     const wrongCurrency = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: 'EUR' });
     const res = await app.request('/webhooks/payments', { method: 'POST', body: wrongCurrency });
     expect(res.status).toBe(400);
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).not.toBe('paid');
+    const after = await bookings.get(b.id);
+    expect(after!.status).not.toBe('paid');
   });
 
   it('does NOT mark the booking paid when the payment failed (acknowledge, no email)', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
-    const app = createApp({ adapter, email });
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
     const b = await bookAndCheckout(app);
     const failed = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed' });
     const res = await app.request('/webhooks/payments', { method: 'POST', body: failed });
     expect(res.status).toBe(200); // acknowledged so PayHere won't retry…
-    const after = await (await app.request(`/bookings/${b.id}`)).json();
-    expect(after.status).toBe('payment_pending'); // …but the booking must NOT be paid
+    const after = await bookings.get(b.id);
+    expect(after!.status).toBe('payment_pending'); // …but the booking must NOT be paid
     expect(email.sent).toHaveLength(0);
   });
 });
