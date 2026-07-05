@@ -26,8 +26,11 @@ export function adminRoutes(deps: {
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
+  baseUrl: string;
+  linkSecret: string;
 }) {
-  const { bookings, departures, email, notificationLog, auth } = deps;
+  const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
   r.use('*', opsIdentity(auth));
@@ -92,7 +95,7 @@ export function adminRoutes(deps: {
   // The stale shared-hold sweep (GL-3) rides the same tick, best-effort: a sweep failure
   // must never block the notifications the caller asked for.
   r.post('/jobs/notifications', requireCap('admin:jobs'), async (c) => {
-    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email });
+    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret });
     let staleSharedHolds = 0;
     try {
       staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;

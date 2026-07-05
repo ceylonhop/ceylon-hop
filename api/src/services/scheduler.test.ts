@@ -22,7 +22,13 @@ async function paidSingle(bookings: InMemoryBookingRepo, date: string, time = '0
 }
 
 function deps() {
-  return { bookings: new InMemoryBookingRepo(), log: new InMemoryNotificationLogRepo(), email: new FakeEmailAdapter() };
+  return {
+    bookings: new InMemoryBookingRepo(),
+    log: new InMemoryNotificationLogRepo(),
+    email: new FakeEmailAdapter(),
+    baseUrl: 'https://ceylonhop.com',
+    linkSecret: 'test-link-secret',
+  };
 }
 
 describe('runScheduledNotifications — pre-trip reminder', () => {
@@ -80,9 +86,9 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
     let calls = 0;
     const flaky = { send: async () => { calls++; if (calls === 1) throw new Error('provider down'); } };
     await paidSingle(bookings, '2026-07-02');
-    const r1 = await runScheduledNotifications(NOW, { bookings, log, email: flaky });
+    const r1 = await runScheduledNotifications(NOW, { bookings, log, email: flaky, baseUrl: 'https://ceylonhop.com', linkSecret: 'test-link-secret' });
     expect(r1.reminders).toBe(0); // send threw → swallowed, NOT counted, NOT marked
-    const r2 = await runScheduledNotifications(NOW, { bookings, log, email: flaky });
+    const r2 = await runScheduledNotifications(NOW, { bookings, log, email: flaky, baseUrl: 'https://ceylonhop.com', linkSecret: 'test-link-secret' });
     expect(r2.reminders).toBe(1); // retried on the next tick and succeeded
   });
 });
