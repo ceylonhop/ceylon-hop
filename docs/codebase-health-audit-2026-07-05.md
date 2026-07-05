@@ -45,7 +45,37 @@ are deferred with rationale.
 - `site.css` — a handful of selectors spot-checked with zero HTML hits; needs a full JS+HTML
   grep before any deletion (class names are also built in JS template strings). *(Low, careful)*
 
+**Backend — observability & validation gaps (highest-value deferred items)**
+Backend is otherwise exceptionally clean (`tsc --noEmit` + `eslint` pass, no TODOs/dead
+code/`as any`, tidy migrations). But five error paths don't reach the Sentry seam
+`track()` or skip validation — worth a dedicated follow-up PR:
+- `api/src/routes/ops.ts:118-125` — catch-all reports non-transition errors as a generic
+  `illegal_transition` and **bypasses `track()`**; narrow to `instanceof
+  IllegalTransitionError` (as `admin.ts` does) so real errors surface in Sentry. *(Med)*
+- `api/src/adapters/maps.ts` (`GoogleMapsAdapter`) — all real-adapter failures only
+  `console.error`, never `track()`; a **systemic Google Maps outage would be invisible in
+  Sentry**. Route them through `track()`. *(Med)*
+- `api/src/routes/admin.ts` — best-effort catches (cancel/refund email, concierge-task,
+  sweep) log to console only with no `track()`/alert, **inconsistent with `webhooks.ts`**
+  which alerts on the identical confirmation-email-failure case. *(Med)*
+- `api/src/routes/internalQuote.ts:396-403` — PATCH `/admin/quote/:id` has **no Zod
+  validation** on `notes`/`lostReason` (manual `as` cast), unlike every other mutating
+  route there. *(Med)*
+- `api/src/routes/ops.ts:119,128-132` — uses throwing `.parse()` instead of the codebase's
+  dominant `.safeParse()` + friendly-400 convention. *(Low)*
+
+These are all in `api/` (a separate concern from this front-end-focused branch) and touch
+error paths, so they belong in their own backend PR with red→green tests — not folded into
+the hygiene cleanup.
+
 **Tooling / docs**
+- `README.md` still says "no backend / simulated payment" — **actively misleading** now
+  that Supabase+PayHere is live and sandbox-verified. Update it. *(High — doc, low risk)*
+- `docs/backend-spec.md` / `docs/build-plan.md` are frozen at mid-June dates and miss
+  M11–M17; add a "current status" pointer or refresh. *(Med)*
+- `.github/workflows/ci.yml` runs only `test:unit` — the e2e specs never run in CI. Consider
+  adding a Playwright job. *(Med)*
+- `tools/site-chrome.mjs:23` — dead `WA_ICON` constant, safe to remove. *(Low)*
 - `_ops-preview.html` is committed at repo root, but `docs/ops-dashboard-status.md` states
   twice that it is "NOT committed to git." Resolve the contradiction: either `git rm` the
   preview (it's an internal mockup, no page links to it) or correct the doc. *Not auto-done
