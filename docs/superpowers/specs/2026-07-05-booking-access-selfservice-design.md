@@ -114,6 +114,27 @@ customer clicks
 - Page turns every failure into human-readable copy with a WhatsApp fallback.
 - Token verify never throws (fails closed to `null`).
 
+## Access model (no login — why this is safe)
+
+The site has no customer accounts, and we deliberately don't add one. **The signed link is
+the credential** (a "capability URL" — the same model as an airline "Manage My Booking"
+link, an Uber/DoorDash order-tracking link, or a password-reset link). The customer receives
+it in the confirmation email sent to the address they booked with, so their **email inbox is
+the trust boundary** — something they already control.
+
+On link forwarding/sharing (owner decision 2026-07-05: **link-only**, no challenge, no
+expiry):
+- The link is **view-only, single-booking** — a holder can read one booking and cannot
+  change, pay, cancel, or reach any other booking (no enumeration).
+- The projection deliberately omits contact details (email, phone, country, last name),
+  so a forwarded link reveals only first name + trip facts + amounts.
+- **It exposes nothing the confirmation email itself doesn't already contain**, and that
+  email is equally forwardable — so the page is not a new exposure surface beyond what we
+  already send. This is why link-only is acceptable here.
+- Reconsider a last-name challenge and/or link expiry only if the projection later grows to
+  include sensitive data, or if bookings start carrying data the customer shouldn't be able
+  to re-share.
+
 ## Security notes
 - HMAC signature is unforgeable without `BOOKING_LINK_SECRET`; UUIDs can't be enumerated
   into valid tokens.
