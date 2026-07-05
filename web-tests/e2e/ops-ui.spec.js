@@ -14,7 +14,9 @@ import { test, expect } from '@playwright/test';
 // Sign-In needs a real OAuth client and can't be driven in e2e.
 test.skip(process.env.CH_E2E_API !== '1', 'ops-ui e2e needs the API — run with CH_E2E_API=1');
 
-const OPS = 'http://localhost:8787/ops';
+// Base defaults to the config's webServer (8787); override with OPS_BASE to run against an
+// API booted on another port — needed when a second worktree already holds 8787.
+const OPS = (process.env.OPS_BASE || 'http://localhost:8787') + '/ops';
 
 // Matches playwright.config.js's OPS_USERS default for the CH_E2E_API webServer.
 const FOUNDER_EMAIL = 'founder@e2e.test';
@@ -165,4 +167,64 @@ test('Bookings → Quote → Bookings round-trip shows a single toast, no duplic
 
   // No stray toast left over from the round-trip (only relevant if anything shows one).
   await expect(page.locator('.toast.show')).toHaveCount(0);
+});
+
+// ── Quotes tab (quote builder split into "Generate Quote" + a "Quotes" list) ──
+// The quote-builder nav is relabelled "Generate Quote" and a sibling "Quotes" tab is
+// added — a full-page saved-quotes list (fed by GET /admin/quote/list) that lives in the
+// ops shell #view, with status filter chips and click-to-reopen into the builder. Gated on
+// quote:manage like the builder itself. These assertions read the dev DB's saved quotes
+// (at least one exists) and never write, so they don't mutate booking/quote state.
+test('quote-builder tab is relabelled "Generate Quote" and a Quotes tab is added', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
+  // Same data-route="quote" button, new label.
+  await expect(page.locator('#nav button[data-route="quote"]')).toContainText('Generate Quote');
+  // New sibling tab.
+  await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
+});
+
+test('Quotes tab is gated on quote:manage — visible to founder, finance, and ops', async ({ page }) => {
+  for (const email of [FOUNDER_EMAIL, FINANCE_EMAIL, OPS_EMAIL]) {
+    await login(page, email);
+    await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
+    await page.locator('#logoutbtn').click();
+    await expect(page.locator('#login')).toHaveClass(/show/);
+  }
+});
+
+test('Quotes tab renders the saved-quotes list with status filter chips', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await expect(page.locator('#view h1')).toHaveText('Quotes');
+  await expect(page.locator('#view .filterbar button[data-qstatus="all"]')).toBeVisible();
+  // The dev DB carries at least one saved quote, so the list paints rows once loaded.
+  await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
+  // The quote view must NOT mount the builder cockpit — it's an ops-shell list.
+  await expect(page.locator('#quoteRoot')).toHaveAttribute('hidden', '');
+});
+
+test('a status filter chip narrows the Quotes list', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
+  const allCount = await page.locator('#view .qrow').count();
+  // Selecting a status chip marks it active and filters to rows of that status only —
+  // every visible row's status <select> should read the selected status.
+  await page.locator('#view .filterbar button[data-qstatus="draft"]').click();
+  await expect(page.locator('#view .filterbar button[data-qstatus="draft"]')).toHaveClass(/on/);
+  const draftCount = await page.locator('#view .qrow').count();
+  expect(draftCount).toBeLessThanOrEqual(allCount);
+  for (let i = 0; i < draftCount; i++) {
+    await expect(page.locator('#view .qrow .qstatsel').nth(i)).toHaveValue('draft');
+  }
+});
+
+test('clicking a quote row reopens it in the Generate Quote builder', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
+  await page.locator('#view .qrow').first().click();
+  // Reopen switches to the builder route and mounts the cockpit.
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#nav button[data-route="quote"]')).toHaveClass(/active/);
 });
