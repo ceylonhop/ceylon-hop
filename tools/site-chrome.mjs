@@ -51,11 +51,23 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>`;
 
+// Phase 0 analytics: Consent Mode v2 defaults (deny until the banner grants) then the
+// GTM loader. GA4 + Clarity + Ads + Meta are all tags configured INSIDE GTM-NL6K22CM
+// (see docs/analytics/gtm-container-checklist.md) — no per-tag code lives in the repo.
+export const analyticsSnippet = `<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
+
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
 export function headAssets(p) {
   return `<meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="${p}favicon.svg">
 <link rel="stylesheet" href="${p}site.css">
+${analyticsSnippet}
+<script src="${p}analytics.js"></script>
+<script src="${p}consent.js" defer></script>
 ${errorBeaconSnippet}`;
 }
 
