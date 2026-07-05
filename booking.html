@@ -458,8 +458,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div>
     <!-- STEP 2 — WHERE -->
     <div class="stepcard panel" data-panel="2">
-      <h2 id="s1-title">Where are we picking you up?</h2>
-      <p class="sub" id="s1-sub">Enter your exact pickup and drop-off — a hotel, address or landmark. We&rsquo;ll set your date &amp; time next.</p>
+      <h2 id="s1-title">Add your exact pick-up &amp; drop-off</h2>
+      <p class="sub" id="s1-sub">Your hotel, an address or a landmark — the more exact, the better we find you. Your fixed price covers this exact route; we&rsquo;ll confirm the time on WhatsApp.</p>
 
       <!-- service chooser (multi-day trips only) -->
       <div class="svc-chooser" id="svc-chooser" style="display:none">
@@ -484,19 +484,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div id="loc-wrap">
         <div class="loc-block">
           <div class="loc-field from"><span class="pin"></span>
-            <div class="ac-wrap"><label>Pickup location</label>
-              <input id="loc-from" autocomplete="off" placeholder="Hotel, address or place…">
+            <div class="ac-wrap"><label>Pick-up — your hotel or address</label>
+              <input id="loc-from" autocomplete="off" placeholder="Add your hotel, address or landmark…">
               <div class="ac-menu" id="ac-from"></div>
             </div>
           </div>
           <div class="loc-field to"><span class="pin"></span>
-            <div class="ac-wrap"><label>Drop-off location</label>
-              <input id="loc-to" autocomplete="off" placeholder="Hotel, address or place…">
+            <div class="ac-wrap"><label>Drop-off — your hotel or address</label>
+              <input id="loc-to" autocomplete="off" placeholder="Add your hotel, address or landmark…">
               <div class="ac-menu" id="ac-to"></div>
             </div>
           </div>
         </div>
-        <p class="loc-powered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg> Powered by maps — start typing to find your exact spot</p>
+        <p class="loc-powered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg> Powered by maps — start typing your hotel or exact spot</p>
         <div class="route-map" id="route-map" hidden>
           <div class="rm-canvas" id="rm-canvas"></div>
           <div class="rm-bar" id="rm-bar"></div>

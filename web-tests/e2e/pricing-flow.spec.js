@@ -40,3 +40,10 @@ test('warns before a material price increase and holds the total until accepted'
   await expect(page.locator('#reprice-note')).toHaveCount(0);
   await expect(page.locator('#n1')).toBeEnabled();
 });
+
+test('step 2 invites an exact hotel / pick-up location', async ({ page }) => {
+  await gotoBooking(page); // default private route (cmb-airport → hikkaduwa)
+  await expect(page.locator('#s1-title')).toHaveText('Add your exact pick-up & drop-off');
+  await expect(page.locator('#loc-from')).toHaveAttribute('placeholder', 'Add your hotel, address or landmark…');
+  await expect(page.locator('#loc-to')).toHaveAttribute('placeholder', 'Add your hotel, address or landmark…');
+});
