@@ -480,3 +480,11 @@ body::after{
 .bg-postcard .card,.bg-teal .card,.bg-green .card,.bg-saffron .card,.bg-sky .card{
   border:1px solid rgba(255,255,255,.6);
 }
+
+/* Consent banner (Phase 0 analytics) */
+.ch-consent{position:fixed;left:16px;right:16px;bottom:16px;z-index:9999;max-width:520px;margin:0 auto;
+  background:var(--white,#fff);border:1px solid var(--line,#e5e7eb);border-radius:14px;
+  box-shadow:var(--shadow-lg,0 10px 40px rgba(0,0,0,.18));padding:14px 16px;
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.9rem}
+.ch-consent p{margin:0;flex:1 1 240px}
+.ch-consent-btns{display:flex;gap:8px;margin-left:auto}
