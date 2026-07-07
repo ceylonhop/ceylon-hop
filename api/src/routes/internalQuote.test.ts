@@ -44,7 +44,9 @@ describe('internal quoting tool route', () => {
   it('GET /places filters the offline known-place list', async () => {
     const res = await authedGet(createApp(), '/admin/quote/places?q=kand');
     expect(res.status).toBe(200);
-    expect((await res.json()).places).toEqual(['Kandy']);
+    const body = await res.json();
+    expect(body.places).toEqual(['Kandy']);
+    expect(body.suggestions).toEqual([{ label: 'Kandy', source: 'known' }]);
   });
 
   it('GET /places returns [] for a too-short query', async () => {
@@ -630,13 +632,16 @@ describe('quoting tool — fail-closed with no auth', () => {
 });
 
 describe('quoting tool — /places delegates to the maps adapter', () => {
-  it('returns whatever the injected adapter.places() yields (Google now lives in the adapter)', async () => {
+  it('returns local known places before adapter-backed Google suggestions', async () => {
     const a = new Hono();
     const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
     a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=colombo', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
-    expect((await res.json()).places).toEqual(['Stubbed']);
+    const body = await res.json();
+    expect(body.places.slice(0, 2)).toEqual(['Colombo Airport (CMB)', 'Colombo City']);
+    expect(body.suggestions[0]).toEqual({ label: 'Colombo Airport (CMB)', source: 'known' });
+    expect(body.suggestions.some((p: { label: string; source: string }) => p.label === 'Stubbed' && p.source === 'google')).toBe(true);
   });
 
   it('returns [] for a too-short query without touching the adapter', async () => {

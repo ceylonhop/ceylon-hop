@@ -142,6 +142,68 @@
     if(T){ T.PLACES.forEach(p=>set.add(p.name)); (T.EXTRA||[]).forEach(e=>set.add(e[0])); }
     return [...set];
   };
+  function nPlace(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+  window.placeSourceLabel = function(source){
+    if(source==='google') return 'Google';
+    return source==='known' ? 'Popular Route' : 'Popular place';
+  };
+  window.resolvePlaceInput = function(value){
+    const T=window.TRANSFERS;
+    const text=String(value||'').trim();
+    if(!T || !text) return { id:null, name:text, known:false };
+    const direct=T.place(text);
+    if(direct) return { id:direct.id, name:direct.name, known:true };
+    const found=T.PLACES.find(p=>nPlace(p.name)===nPlace(text));
+    if(found) return { id:found.id, name:found.name, known:true };
+    const extra=(T.EXTRA||[]).find(e=>nPlace(e[0])===nPlace(text));
+    return extra ? { id:null, name:extra[0], known:false, popular:true } : { id:null, name:text, known:false };
+  };
+  window.attachLocalPlaceAutocomplete = function(input, opts={}){
+    const T=window.TRANSFERS; if(!input || !T || input.dataset.placeAc==='1') return;
+    input.dataset.placeAc='1';
+    input.setAttribute('autocomplete','off');
+    input.setAttribute('spellcheck','false');
+    const limit=opts.limit||6;
+    let menu=null, items=[], active=-1;
+    function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function close(reset=true){ if(menu) menu.remove(); menu=null; if(reset) active=-1; }
+    function choose(item){
+      input.value=item.label;
+      input.dataset.placeId=item.id||'';
+      input.dataset.placeSource=item.source||'';
+      close(false);
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+      if(typeof opts.onPick==='function') opts.onPick(item, input);
+    }
+    function paint(){
+      close();
+      const q=input.value.trim();
+      items=(T.placeSuggestions?T.placeSuggestions(q,limit):[]).filter(Boolean);
+      if(!items.length) return;
+      menu=document.createElement('div');
+      menu.className='place-menu';
+      menu.setAttribute('role','listbox');
+      menu.innerHTML=items.map((p,i)=>`<button type="button" class="place-option${i===active?' hi':''}" role="option"><span>${esc(p.label)}</span><small>${esc(window.placeSourceLabel(p.source))}</small></button>`).join('');
+      menu.addEventListener('mousedown',e=>e.preventDefault());
+      menu.addEventListener('click',e=>{
+        const btn=e.target.closest('.place-option'); if(!btn) return;
+        const idx=[...menu.querySelectorAll('.place-option')].indexOf(btn);
+        if(items[idx]) choose(items[idx]);
+      });
+      input.parentNode.appendChild(menu);
+    }
+    input.addEventListener('focus',paint);
+    input.addEventListener('input',()=>{ input.dataset.placeId=''; input.dataset.placeSource=''; paint(); if(typeof opts.onInput==='function') opts.onInput(input); });
+    input.addEventListener('change',()=>{ const r=window.resolvePlaceInput(input.value); input.dataset.placeId=r.id||''; input.dataset.placeSource=r.known?'known':(r.popular?'extra':''); if(typeof opts.onInput==='function') opts.onInput(input); });
+    input.addEventListener('keydown',e=>{
+      if(!menu) return;
+      if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(active+1,items.length-1); paint(); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); active=Math.max(active-1,0); paint(); }
+      else if(e.key==='Enter' && active>=0 && items[active]){ e.preventDefault(); choose(items[active]); }
+      else if(e.key==='Escape'){ close(); }
+    });
+    input.addEventListener('blur',()=>setTimeout(close,160));
+  };
   // Fill a <datalist> with destinations. variants=true adds “— your hotel” etc.
   window.mountPlacesDatalist = function(id, variants){
     const dl=document.getElementById(id); if(!dl) return;

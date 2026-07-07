@@ -40,7 +40,9 @@ async function pickPlace(page, input, query, resultText) {
   await input.click();
   await page.keyboard.type(query, { delay: 40 });
   await expect(page.locator('.ch-ac-menu').first()).toBeVisible({ timeout: 5000 });
-  await page.locator('.ch-ac-menu .ch-ac-item', { hasText: resultText }).first().click();
+  const item = page.locator('.ch-ac-menu .ch-ac-item', { hasText: resultText }).first();
+  await expect(item).toContainText('Popular Route');
+  await item.click();
 }
 
 // Helper: read the strong (total) line's PRIMARY value (USD). The value element also

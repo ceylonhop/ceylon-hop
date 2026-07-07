@@ -6,7 +6,7 @@ import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
-import type { MapsAdapter } from '../adapters/maps';
+import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { can } from '../lib/opsAuth';
@@ -210,11 +210,28 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   return rest as Omit<T, 'marginCents'>;
 }
 
-// Place suggestions via the maps adapter (Google/offline fallback now lives in the adapter).
-async function suggestPlaces(q: string, maps: MapsAdapter): Promise<string[]> {
+type PlaceSuggestion = { label: string; source: 'known' | 'google' };
+
+function normPlace(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Place suggestions via local known places first, then the maps adapter (Google/offline fallback lives there).
+async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggestion[]> {
   const query = (q || '').trim();
   if (query.length < 2) return [];
-  return maps.places(query);
+  const ql = query.toLowerCase();
+  const local: PlaceSuggestion[] = KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).map((label) => ({ label, source: 'known' }));
+  const seen = new Set(local.map((p) => normPlace(p.label)));
+  const remote: PlaceSuggestion[] = (await maps.places(query))
+    .filter((label) => {
+      const key = normPlace(label);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((label) => ({ label, source: 'google' as const }));
+  return local.concat(remote).slice(0, 6);
 }
 
 export function internalQuoteRoutes(deps: {
@@ -261,7 +278,10 @@ export function internalQuoteRoutes(deps: {
   r.use('*', (c, next) => (c.req.path === '/admin/quote' ? next() : requireCap('quote:manage')(c, next)));
 
   // Autocomplete (delegated to the maps adapter; Google key/timeout live there now).
-  r.get('/places', async (c) => c.json({ places: await suggestPlaces(c.req.query('q') || '', deps.maps) }));
+  r.get('/places', async (c) => {
+    const suggestions = await suggestPlaces(c.req.query('q') || '', deps.maps);
+    return c.json({ places: suggestions.map((p) => p.label), suggestions });
+  });
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
   r.post('/distance', csrf, async (c) => {

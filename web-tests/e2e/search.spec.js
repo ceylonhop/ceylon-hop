@@ -30,8 +30,8 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await page.locator('#sl-edit').click();
   await expect(page.locator('#srch-bar')).toBeVisible();
   await expect(page.locator('#srch-locked')).toBeHidden();
-  await expect(page.locator('#e-from')).toHaveValue('cmb-airport');
-  await expect(page.locator('#e-to')).toHaveValue('ella');
+  await expect(page.locator('#e-from')).toHaveValue('Colombo Airport (CMB)');
+  await expect(page.locator('#e-to')).toHaveValue('Ella');
   await expect(page.locator('#e-pax')).toHaveValue('2');
 
   // Cancel collapses back to the locked summary without changing anything.
@@ -41,12 +41,36 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
 
   // Edit again, change the drop-off, and Update → a deliberate new search navigation.
   await page.locator('#sl-edit').click();
-  await page.locator('#e-to').selectOption('kandy');
+  await page.locator('#e-to').fill('Kand');
+  await expect(page.locator('.place-option', { hasText: 'Kandy' }).first()).toBeVisible();
+  await page.locator('.place-option', { hasText: 'Kandy' }).first().click();
   await page.locator('#srch-bar button[type="submit"]').click();
   await page.waitForURL('**/search.html?**to=kandy**');
   // The new search loads locked again.
   await expect(page.locator('#srch-bar')).toBeHidden();
   await expect(page.locator('#srch-locked')).toBeVisible();
+});
+
+test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  await page.locator('#q-from').fill('CMB');
+  await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('.place-option').first()).toContainText('Popular Route');
+  await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
+
+  await page.locator('#q-to').fill('Ella');
+  await page.locator('.place-option', { hasText: 'Ella' }).first().click();
+  await page.locator('#go-btn').click();
+  await page.waitForURL('**/search.html?**from=cmb-airport**to=ella**');
+
+  await page.goto('/index.html');
+  await page.locator('#q-from').fill('Hilton Colombo');
+  await expect(page.locator('.place-option', { hasText: 'Use exact place' })).toHaveCount(0);
+  await page.locator('#q-to').fill('Ella');
+  await page.locator('.place-option', { hasText: 'Ella' }).first().click();
+  await page.locator('#go-btn').click();
+  await page.waitForURL('**/plan.html?**stops=Hilton+Colombo%7CElla**');
 });
 
 test('a route with no shared service shows the "no shared seats" panel in the grid, beside the private card', async ({ page }) => {

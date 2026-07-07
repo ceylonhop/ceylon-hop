@@ -31,30 +31,39 @@ if (!T.place(toId) || toId === fromId) toId = 'ella';
 
 // ---- populate the edit bar ----
 (function () {
-  const groups = {};
-  T.PLACES.forEach(p => (groups[p.area] = groups[p.area] || []).push(p));
-  const opts = Object.keys(groups).map(area =>
-    `<optgroup label="${area}">` + groups[area].map(p => `<option value="${p.id}">${p.name}</option>`).join('') + `</optgroup>`
-  ).join('');
   const ef = document.getElementById('e-from'), et = document.getElementById('e-to');
-  ef.innerHTML = opts; et.innerHTML = opts;
-  ef.value = fromId; et.value = toId;
+  ef.value = T.place(fromId).name; et.value = T.place(toId).name;
+  ef.dataset.placeId = fromId; et.dataset.placeId = toId;
+  attachLocalPlaceAutocomplete(ef);
+  attachLocalPlaceAutocomplete(et);
   document.getElementById('e-date').value = date;
   document.getElementById('e-pax').value = String(Math.min(6, pax));
   document.getElementById('e-swap').addEventListener('click', () => {
-    const a = ef.value; ef.value = et.value; et.value = a;
+    const a = ef.value, aid = ef.dataset.placeId || '', asrc = ef.dataset.placeSource || '';
+    ef.value = et.value; ef.dataset.placeId = et.dataset.placeId || ''; ef.dataset.placeSource = et.dataset.placeSource || '';
+    et.value = a; et.dataset.placeId = aid; et.dataset.placeSource = asrc;
   });
 })();
 window.updateSearch = function (e) {
   e.preventDefault();
-  const f = document.getElementById('e-from').value, t = document.getElementById('e-to').value;
+  const fromEl = document.getElementById('e-from'), toEl = document.getElementById('e-to');
+  const f = resolvePlaceInput(fromEl.value), t = resolvePlaceInput(toEl.value);
   const err = document.getElementById('srch-err');
-  if (f === t) {
+  if (!f.name || !t.name) {
+    if(err){ err.textContent = 'Choose both pick-up and drop-off places.'; err.hidden = false; }
+    return false;
+  }
+  if (f.name === t.name) {
     if(err){ err.textContent = 'Pick-up and drop-off are the same — choose two different places.'; err.hidden = false; }
     return false;
   }
   if(err) err.hidden = true;
-  const p = new URLSearchParams({ from: f, to: t, date: document.getElementById('e-date').value || '', pax: document.getElementById('e-pax').value });
+  if(!f.known || !t.known){
+    const p = new URLSearchParams({ stops: [f.name, t.name].join('|') });
+    location.href = 'plan.html?' + p.toString();
+    return false;
+  }
+  const p = new URLSearchParams({ from: f.id, to: t.id, date: document.getElementById('e-date').value || '', pax: document.getElementById('e-pax').value });
   location.href = 'search.html?' + p.toString();
   return false;
 };

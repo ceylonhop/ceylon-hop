@@ -489,6 +489,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-ac-pin { font-size: 13px; flex: none; opacity: .85; }
 .qv .ch-ac-name { font-weight: 400; color: var(--muted); }
 .qv .ch-ac-name b { font-weight: 700; color: var(--ink); }
+.qv .ch-ac-source { margin-left: auto; flex: none; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
 .qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: #fff; outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; }
 .qv .ch-tl-title:hover { border-color: var(--cream-d); }
 .qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
@@ -1734,7 +1735,9 @@ async function apiPlaces(q) {
     // T5: a 401 already surfaced the ops login via api() — nothing extra to toast.
     if (!r.ok) return [];
     var d = await jsonOrNull(r);
-    var places = (d && d.places) ? d.places : [];
+    var places = (d && d.suggestions && d.suggestions.length)
+      ? d.suggestions
+      : ((d && d.places) ? d.places.map(function(name) { return { label: name, source: 'google' }; }) : []);
     if (places.length) _placeCache[key] = places; // cache hits only; let empties retry
     return places;
   } catch (e) { return []; }
@@ -3550,10 +3553,11 @@ function acClose() {
   _ac.menuEl = null;
 }
 
-function acPick(name) {
+function acPick(item) {
   var legId = _ac.legId;
   var field = _ac.field;
   if (!legId || !field) { acClose(); return; }
+  var name = (typeof item === 'string') ? item : (item && item.label) || '';
 
   // Update the input value without a full re-render so cursor stays correct
   if (_ac.inputEl) _ac.inputEl.value = name;
@@ -3586,7 +3590,10 @@ function acRenderMenu(inputEl, items, query) {
   var menu = document.createElement('div');
   menu.className = 'ch-ac-menu';
 
-  items.forEach(function(name, idx) {
+  items.forEach(function(item, idx) {
+    var name = (typeof item === 'string') ? item : (item && item.label) || '';
+    var source = (typeof item === 'string') ? 'google' : ((item && item.source) || 'google');
+    var sourceLabel = source === 'known' ? 'Popular Route' : 'Google';
     var btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'ch-ac-item' + (idx === _ac.hiIdx ? ' hi' : '');
@@ -3595,10 +3602,10 @@ function acRenderMenu(inputEl, items, query) {
     var escapedQuery = esc(query);
     var re = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
     var highlighted = escaped.replace(re, '<b>$1</b>');
-    btn.innerHTML = '<span class="ch-ac-pin">📍</span><span class="ch-ac-name">' + highlighted + '</span>';
+    btn.innerHTML = '<span class="ch-ac-pin">📍</span><span class="ch-ac-name">' + highlighted + '</span><span class="ch-ac-source">' + sourceLabel + '</span>';
     btn.addEventListener('mousedown', function(e) {
       e.preventDefault(); // prevent blur before click
-      acPick(name);
+      acPick(item);
     });
     menu.appendChild(btn);
   });
