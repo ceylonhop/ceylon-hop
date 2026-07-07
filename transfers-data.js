@@ -166,6 +166,9 @@
     ['Kitulgala', 6.99, 80.41]
   ];
   function nrm(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z]/g,'').trim(); }
+  function words(s){
+    return (s||'').toLowerCase().replace(/\(.*?\)/g,' ').split(/[^a-z0-9]+/).filter(w => w.length > 1);
+  }
   // build a lookup of normalized-name → {lat,lng,name}
   const GEO = {};
   PLACES.forEach(p => { GEO[nrm(p.name)] = { lat:p.lat, lng:p.lng, name:p.name, id:p.id }; });
@@ -175,8 +178,11 @@
     const k = nrm(text);
     if(!k) return null;
     if(GEO[k]) return GEO[k];
-    for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
     if(k.includes('airport') || k.includes('cmb')) return GEO[nrm('Colombo Airport')];
+    const ws = words(text);
+    if(ws.length === 1){
+      for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
+    }
     return null;
   }
   // distance between two arbitrary points (ids or typed names)
@@ -213,6 +219,14 @@
     if(aliases.some(a => a === q)) return 100;
     if(aliases.some(a => a.startsWith(q))) return 80;
     if(aliases.some(a => a.includes(q))) return 60;
+    const qWords = words(query);
+    if(qWords.length > 1){
+      const wantsAirport = qWords.some(w => ['cmb', 'airport', 'bandaranaike'].includes(w));
+      if(item.id === 'cmb-airport' && wantsAirport) return 95;
+      if(item.id === 'colombo' && qWords.includes('colombo') && !wantsAirport) return 90;
+      const aliasWords = new Set(aliases.flatMap(words));
+      if(qWords.some(w => aliasWords.has(w))) return 45;
+    }
     return 0;
   }
   function placeSuggestions(query, limit){
@@ -221,7 +235,10 @@
     const known = PLACES.map(p => ({ label:p.name, id:p.id, source:'known', area:p.area }));
     const extras = EXTRA.map(([name]) => ({ label:name, id:null, source:'extra', area:'Popular places' }));
     return known.concat(extras)
-      .map((item, idx) => ({ item, idx, score: rankSuggestion(item, q) + (item.source === 'known' ? 10 : 0) }))
+      .map((item, idx) => {
+        const rank = rankSuggestion(item, query);
+        return { item, idx, score: rank ? rank + (item.source === 'known' ? 10 : 0) : 0 };
+      })
       .filter(x => x.score > 0)
       .sort((a,b) => (b.score - a.score) || (a.idx - b.idx) || a.item.label.localeCompare(b.item.label))
       .slice(0, limit || 8)

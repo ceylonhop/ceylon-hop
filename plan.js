@@ -36,14 +36,17 @@ const EXTRA = [
 EXTRA.forEach(([key,label,lat,lng]) => { const k=norm(key); if(!GEO[k]) GEO[k]={label,lat,lng,id:null}; });
 
 function norm(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z]/g,'').trim(); }
+function words(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,' ').split(/[^a-z0-9]+/).filter(w=>w.length>1); }
 
 // resolve a typed name to a geo point (fuzzy) — stands in for a Google Places match
 function resolve(name){
   const k = norm(name);
   if(!k) return null;
   if(GEO[k]) return GEO[k];
-  for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
   if(k.includes('airport') || k.includes('cmb')) return GEO[norm('Colombo Airport')];
+  if(words(name).length===1){
+    for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
+  }
   return null;
 }
 
@@ -111,18 +114,30 @@ function closePlaceMenus(except){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
 }
 function placeSourceLabel(source){
+  if(source==='exact') return 'Exact place';
   return source==='known' ? 'Known route' : 'Popular';
+}
+function exactPlaceSuggestion(q, items){
+  const text=q.trim();
+  if(text.length<3) return null;
+  if(text.length<5 && items.length) return null;
+  const nq=norm(text);
+  if(!nq) return null;
+  if(items.some(p=>norm(p.label)===nq)) return null;
+  return { label:text, source:'exact', id:null };
 }
 function renderPlaceMenu(input){
   const q=input.value.trim();
   closePlaceMenus();
   if(q.length<1) return;
-  const items=(T.placeSuggestions?T.placeSuggestions(q,8):[]).filter(Boolean);
+  const baseItems=(T.placeSuggestions?T.placeSuggestions(q,6):[]).filter(Boolean);
+  const exact=exactPlaceSuggestion(q, baseItems);
+  const items=exact ? [exact].concat(baseItems).slice(0,7) : baseItems;
   if(!items.length) return;
   const menu=document.createElement('div');
   menu.className='place-menu';
   menu.setAttribute('role','listbox');
-  menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}" role="option" data-place="${escAttr(p.label)}"><span>${escAttr(p.label)}</span><small>${placeSourceLabel(p.source)}</small></button>`).join('');
+  menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}${p.source==='exact'?' exact':''}" role="option" data-place="${escAttr(p.label)}"><span>${p.source==='exact'?'Use exact place: ':''}${escAttr(p.label)}</span><small>${placeSourceLabel(p.source)}</small></button>`).join('');
   menu.addEventListener('mousedown',e=>e.preventDefault());
   menu.addEventListener('click',e=>{
     const opt=e.target.closest('.place-option'); if(!opt) return;

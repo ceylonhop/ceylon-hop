@@ -128,6 +128,24 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
 });
 
+test('planner place search treats hotel text as an exact place, not a broad known-route list', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Sigiriya%20%2F%20Dambulla%7CColombo%20city&pax=1&vehicle=car');
+
+  const to = page.locator('#rail .leg-card').first().locator('.leg-to');
+  await to.click();
+  await to.fill('hilton colombo');
+
+  const options = page.locator('.place-option');
+  await expect(options.first()).toContainText('Use exact place: hilton colombo');
+  await expect(options.nth(1)).toContainText('Colombo city');
+  await expect(page.locator('.place-option', { hasText: 'Galle' })).toHaveCount(0);
+
+  await options.first().click();
+  await expect(to).toHaveValue('hilton colombo');
+  await expect(page.locator('#rail [data-dist]')).toContainText('Pick both points');
+});
+
 test('planner dates step keeps a durable URL for browser back', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);

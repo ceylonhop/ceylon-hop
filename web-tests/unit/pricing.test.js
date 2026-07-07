@@ -96,6 +96,13 @@ describe('placeSuggestions (planner hybrid autocomplete)', () => {
     expect(labels.indexOf('Colombo Airport (CMB)')).toBeLessThan(labels.indexOf('Colombo city'));
     expect(labels).toContain('Colombo city');
   });
+
+  it('keeps hotel searches focused on the matching city instead of broad route suggestions', () => {
+    const labels = T.placeSuggestions('hilton colombo').map((p) => p.label);
+    expect(labels[0]).toBe('Colombo city');
+    expect(labels).not.toContain('Galle');
+    expect(T.kmBetween('Sigiriya / Dambulla', 'hilton colombo')).toBeNull();
+  });
 });
 
 describe('tripQuote (multi-stop)', () => {
