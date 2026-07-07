@@ -180,26 +180,47 @@ function attachAC(input, menu, which){
   }
 
   function localList(qs){
+    if(window.TRANSFERS && window.TRANSFERS.placeSuggestions){
+      const local = window.TRANSFERS.placeSuggestions(qs, 6).map(p=>({
+        kind:'local',
+        label:p.label,
+        main:p.label,
+        secondary:p.source==='known' ? 'Known route' : 'Popular place'
+      }));
+      if(local.length) return local;
+    }
     const ql=qs.toLowerCase();
     const matches=(qs?ACPLACES.filter(p=>p.toLowerCase().includes(ql)):ACPLACES.slice(0,6)).slice(0,6);
-    return matches.map(m=>({kind:'local', label:m, main:m}));
+    return matches.map(m=>({kind:'local', label:m, main:m, secondary:'Popular place'}));
+  }
+  function shouldAskGoogle(qs, local){
+    if(!window.CH_MAP || !window.CH_MAP.suggest || !window.CEYLON_MAPS_KEY || qs.length<2) return false;
+    const exactLocal = local.some(p => (p.label||'').toLowerCase() === qs.toLowerCase());
+    const oneWord = !/\s/.test(qs.trim());
+    return !exactLocal && !(oneWord && local.length>=3);
   }
 
   async function build(){
     const qs=input.value.trim();
     const mySeq=++seq;
-    // live Google suggestions when available; fall back to the offline list
-    if(window.CH_MAP && window.CH_MAP.suggest && window.CEYLON_MAPS_KEY && qs.length>=2){
+    const local = localList(qs);
+    data = local;
+    renderMenu();
+    // Ceylon Hop known/popular suggestions always stay first. Google fills in
+    // hotels/landmarks/exact places when the local catalogue is weak.
+    if(shouldAskGoogle(qs, local)){
       let sug=[];
       try{ sug=await window.CH_MAP.suggest(qs); }catch(e){ sug=[]; }
       if(mySeq!==seq) return;            // a newer keystroke already fired
       if(sug.length){
-        data = sug.slice(0,6).map(s=>({kind:'google', label:s.text, main:s.main, secondary:s.secondary, item:s}));
+        const seen=new Set(local.map(x=>(x.label||'').toLowerCase()));
+        data = local.concat(sug.map(s=>({kind:'google', label:s.text, main:s.main, secondary:s.secondary || 'Google', item:s}))
+          .filter(x=>!seen.has((x.label||'').toLowerCase()))).slice(0,8);
         renderMenu(); return;
       }
     }
     if(mySeq!==seq) return;
-    data = localList(qs);
+    data = local;
     renderMenu();
   }
 

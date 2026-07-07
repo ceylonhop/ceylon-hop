@@ -115,6 +115,7 @@ function closePlaceMenus(except){
 }
 function placeSourceLabel(source){
   if(source==='exact') return 'Exact place';
+  if(source==='google') return 'Google';
   return source==='known' ? 'Known route' : 'Popular';
 }
 function exactPlaceSuggestion(q, items){
@@ -126,27 +127,70 @@ function exactPlaceSuggestion(q, items){
   if(items.some(p=>norm(p.label)===nq)) return null;
   return { label:text, source:'exact', id:null };
 }
+function googlePlaceSuggestions(q, localItems){
+  const text=q.trim();
+  const localStrong = localItems.some(p=>p.source==='known' && norm(p.label)===norm(text));
+  const localEnough = localItems.length >= 3 && words(text).length <= 1;
+  if(!window.CH_MAP || !window.CH_MAP.suggest || !window.CEYLON_MAPS_KEY || text.length<2 || localStrong || localEnough){
+    return Promise.resolve([]);
+  }
+  return window.CH_MAP.suggest(text).then(list => (list||[]).map(s=>({
+    label:s.text || s.main,
+    main:s.main || s.text,
+    secondary:s.secondary,
+    source:'google',
+    id:null,
+    item:s
+  }))).catch(()=>[]);
+}
+function mergePlaceSuggestions(localItems, googleItems, exact){
+  const seen=new Set();
+  const out=[];
+  function add(p){
+    const key=norm(p.label || p.main);
+    if(!key || seen.has(key)) return;
+    seen.add(key); out.push(p);
+  }
+  localItems.forEach(add);
+  googleItems.forEach(add);
+  if(exact) add(exact);
+  return out.slice(0,8);
+}
+let placeMenuSeq=0;
 function renderPlaceMenu(input){
   const q=input.value.trim();
+  const seq=++placeMenuSeq;
   closePlaceMenus();
-  if(q.length<1) return;
   const baseItems=(T.placeSuggestions?T.placeSuggestions(q,6):[]).filter(Boolean);
   const exact=exactPlaceSuggestion(q, baseItems);
-  const items=exact ? [exact].concat(baseItems).slice(0,7) : baseItems;
-  if(!items.length) return;
-  const menu=document.createElement('div');
-  menu.className='place-menu';
-  menu.setAttribute('role','listbox');
-  menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}${p.source==='exact'?' exact':''}" role="option" data-place="${escAttr(p.label)}"><span>${p.source==='exact'?'Use exact place: ':''}${escAttr(p.label)}</span><small>${placeSourceLabel(p.source)}</small></button>`).join('');
-  menu.addEventListener('mousedown',e=>e.preventDefault());
-  menu.addEventListener('click',e=>{
-    const opt=e.target.closest('.place-option'); if(!opt) return;
-    input.value=opt.dataset.place||'';
+  const paint=(items)=>{
+    if(seq!==placeMenuSeq) return;
     closePlaceMenus();
-    input.dispatchEvent(new Event('input',{bubbles:true}));
-    input.dispatchEvent(new Event('change',{bubbles:true}));
+    if(!items.length) return;
+    const menu=document.createElement('div');
+    menu.className='place-menu';
+    menu.setAttribute('role','listbox');
+    menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}${p.source==='exact'?' exact':''}" role="option" data-place="${escAttr(p.label)}"><span>${p.source==='exact'?'Use exact place: ':''}${escAttr(p.main||p.label)}</span><small>${placeSourceLabel(p.source)}</small>${p.secondary?`<em>${escAttr(p.secondary)}</em>`:''}</button>`).join('');
+    menu.addEventListener('mousedown',e=>e.preventDefault());
+    menu.addEventListener('click',async e=>{
+      const opt=e.target.closest('.place-option'); if(!opt) return;
+      const picked=items[[...menu.querySelectorAll('.place-option')].indexOf(opt)];
+      input.value=opt.dataset.place||'';
+      closePlaceMenus();
+      if(picked && picked.source==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
+        const geo=await window.CH_MAP.resolvePick(picked.item);
+        if(geo && geo.name) input.value=geo.name;
+      }
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+      input.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    input.parentNode.appendChild(menu);
+  };
+  paint(mergePlaceSuggestions(baseItems, [], exact));
+  googlePlaceSuggestions(q, baseItems).then(googleItems=>{
+    if(seq!==placeMenuSeq || !googleItems.length) return;
+    paint(mergePlaceSuggestions(baseItems, googleItems, exact));
   });
-  input.parentNode.appendChild(menu);
 }
 function wirePlaceSearch(input){
   input.setAttribute('autocomplete','off');

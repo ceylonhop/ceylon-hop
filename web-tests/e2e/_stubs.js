@@ -131,9 +131,9 @@ export async function fillContact(page) {
 
 // Pick a place from the live autocomplete dropdown for a given input id.
 // The pickup/drop-off fields live on the "Pick-up & drop-off" step (panel 2).
-export async function pickPlace(page, inputId, menuId, text) {
+export async function pickPlace(page, inputId, menuId, text, index = 0) {
   await page.evaluate(() => window.goStep && window.goStep(2));
   await page.fill(inputId, text);
   await page.waitForSelector(`#${menuId} .ac-item`);
-  await page.click(`#${menuId} .ac-item >> nth=0`);
+  await page.click(`#${menuId} .ac-item >> nth=${index}`);
 }

@@ -231,9 +231,9 @@
   }
   function placeSuggestions(query, limit){
     const q = nrm(query);
-    if(!q) return [];
     const known = PLACES.map(p => ({ label:p.name, id:p.id, source:'known', area:p.area }));
     const extras = EXTRA.map(([name]) => ({ label:name, id:null, source:'extra', area:'Popular places' }));
+    if(!q) return known.concat(extras).slice(0, limit || 8);
     return known.concat(extras)
       .map((item, idx) => {
         const rank = rankSuggestion(item, query);

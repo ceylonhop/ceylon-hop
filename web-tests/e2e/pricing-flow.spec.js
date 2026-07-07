@@ -16,9 +16,11 @@ test('firm floor: a cheaper new drop-off never drops the quoted price', async ({
   await gotoBooking(page, { routeKm: 200 });
   await expect(page.locator('#sum-total')).toHaveText('$121');
 
-  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna');
+  // Known places are intentionally listed before Google. Pick the Google row
+  // explicitly so this test continues to exercise live-distance repricing.
+  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna hotel', 1);
 
-  await expect(page.locator('#sum-name')).toContainText('Jaffna Result 1'); // drop-off did change
+  await expect(page.locator('#sum-name')).toContainText('Jaffna hotel Result 1'); // drop-off did change
   await expect(page.locator('#reprice-note')).toHaveCount(0);                // but no notice (cheaper)
   await expect(page.locator('#sum-total')).toHaveText('$121');               // firm floor held
 });
@@ -29,7 +31,7 @@ test('warns before a material price increase and holds the total until accepted'
   await expect(page.locator('#sum-total')).toHaveText('$121');
 
   // Customer picks a far-off drop-off → material upward drift.
-  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna');
+  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna hotel', 1);
 
   // Heads-up appears; total is NOT changed yet; Continue is gated.
   await expect(page.locator('#reprice-note')).toBeVisible();
@@ -53,7 +55,7 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
   await gotoBooking(page, { routeKm: 400 });
 
   // Car drift notice appears: from the quoted $121 to legPrice(400,'car')=$202. Total held, gated.
-  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna');
+  await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna hotel', 1);
   await expect(page.locator('#reprice-note')).toBeVisible();
   await expect(page.locator('#reprice-note')).toContainText('$121');
   await expect(page.locator('#reprice-note')).toContainText('$202');

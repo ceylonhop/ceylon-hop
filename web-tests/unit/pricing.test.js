@@ -91,6 +91,11 @@ describe('placeSuggestions (planner hybrid autocomplete)', () => {
     expect(T.placeSuggestions('airport')[0].label).toBe('Colombo Airport (CMB)');
   });
 
+  it('shows popular known places for an empty focused field', () => {
+    const labels = T.placeSuggestions('').map((p) => p.label);
+    expect(labels.slice(0, 3)).toEqual(['Colombo Airport (CMB)', 'Colombo city', 'Negombo']);
+  });
+
   it('returns known places before extras for broad matches', () => {
     const labels = T.placeSuggestions('col').map((p) => p.label);
     expect(labels.indexOf('Colombo Airport (CMB)')).toBeLessThan(labels.indexOf('Colombo city'));
