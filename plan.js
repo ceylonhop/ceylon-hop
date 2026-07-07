@@ -103,13 +103,50 @@ state.legs.forEach(l=>{
 });
 if(state.pax>3) state.vehicle='van';
 
-// ---- datalist for Google-style place predictions ----
-const dl=document.createElement('datalist'); dl.id='plan-places';
-const allNames=new Set(); T.PLACES.forEach(p=>allNames.add(p.name)); EXTRA.forEach(e=>allNames.add(e[1]));
-dl.innerHTML=[...allNames].sort().map(n=>`<option value="${n}"></option>`).join('');
-document.body.appendChild(dl);
-// styled-select options (same place list) for the leg pick-up / drop-off dropdowns
-const PLACE_OPTS=[...allNames].sort().map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+// ---- hybrid place search: known Ceylon Hop places first, popular extras second ----
+function escAttr(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function closePlaceMenus(except){
+  document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
+}
+function placeSourceLabel(source){
+  return source==='known' ? 'Known route' : 'Popular';
+}
+function renderPlaceMenu(input){
+  const q=input.value.trim();
+  closePlaceMenus();
+  if(q.length<1) return;
+  const items=(T.placeSuggestions?T.placeSuggestions(q,8):[]).filter(Boolean);
+  if(!items.length) return;
+  const menu=document.createElement('div');
+  menu.className='place-menu';
+  menu.setAttribute('role','listbox');
+  menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}" role="option" data-place="${escAttr(p.label)}"><span>${escAttr(p.label)}</span><small>${placeSourceLabel(p.source)}</small></button>`).join('');
+  menu.addEventListener('mousedown',e=>e.preventDefault());
+  menu.addEventListener('click',e=>{
+    const opt=e.target.closest('.place-option'); if(!opt) return;
+    input.value=opt.dataset.place||'';
+    closePlaceMenus();
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  input.parentNode.appendChild(menu);
+}
+function wirePlaceSearch(input){
+  input.setAttribute('autocomplete','off');
+  input.addEventListener('focus',()=>renderPlaceMenu(input));
+  input.addEventListener('input',()=>renderPlaceMenu(input));
+  input.addEventListener('blur',()=>setTimeout(()=>closePlaceMenus(),120));
+  input.addEventListener('keydown',e=>{
+    const menu=input.parentNode.querySelector('.place-menu');
+    if(e.key==='Escape'){ closePlaceMenus(); return; }
+    if(e.key==='Enter' && menu){
+      const first=menu.querySelector('.place-option');
+      if(first){ e.preventDefault(); first.click(); }
+    }
+  });
+}
 
 // ---- top controls ---- (dates are collected in the separate “When” step)
 const paxSel=document.getElementById('pax');
@@ -270,10 +307,10 @@ function render(){
           <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
           <div class="rb-fields">
             <div class="rb-field"><label>Pick-up</label>
-              <select class="leg-from" required><option value="" disabled selected>Choose a place…</option>${PLACE_OPTS}</select></div>
+              <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>
             <div class="rb-divider"><button type="button" class="rb-swap" aria-label="Swap pick-up and drop-off" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></div>
             <div class="rb-field"><label>Drop-off</label>
-              <select class="leg-to" required><option value="" disabled selected>Where to next…</option>${PLACE_OPTS}</select></div>
+              <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>
           </div>
         </div>`;
 
@@ -281,7 +318,7 @@ function render(){
         <div class="loc-row stay">
           <span class="pin stay"></span>
           <div class="loc-f"><label>Staying in</label>
-            <select class="leg-from" required><option value="" disabled selected>Where you’re based…</option>${PLACE_OPTS}</select></div>
+            <input class="leg-from place-input" required placeholder="Where you’re based…" value="${escAttr(leg.from)}"></div>
         </div>
         <div class="leg-foot">
           <div class="stay-nights-ctrl">
@@ -313,12 +350,7 @@ function render(){
 
     const card=wrap.querySelector('.leg-card');
     const fromI=wrap.querySelector('.leg-from'), toI=wrap.querySelector('.leg-to');
-    // pre-select each leg's saved place (inject an option if a value isn't in the list)
-    [[fromI,leg.from],[toI,leg.to]].forEach(([sel,val])=>{
-      if(!sel) return;
-      if(val){ sel.value=val; if(sel.value!==val){ const o=document.createElement('option'); o.value=val; o.textContent=val; sel.appendChild(o); sel.value=val; } }
-      else sel.value='';
-    });
+    [fromI,toI].forEach(input=>{ if(input) wirePlaceSearch(input); });
 
     if(!isStay){
       // transfer wiring — live distance recompute without re-render (keeps focus)

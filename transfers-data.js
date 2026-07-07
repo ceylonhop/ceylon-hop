@@ -197,6 +197,36 @@
     const van = Math.max(50, Math.round(bkm * 0.83));
     return veh==='van' ? van : car;
   }
+  // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
+  // then popular extras. Google exact-place suggestions can be appended later by a
+  // backend adapter without changing the ranking contract below.
+  function suggestionAliases(label, id){
+    const aliases = [label, id || '', label.replace(/\(.*?\)/g, '')];
+    if(id === 'cmb-airport') aliases.push('cmb', 'airport', 'colombo airport', 'bandaranaike');
+    if(id === 'colombo') aliases.push('colombo city', 'colombo');
+    return aliases.map(nrm).filter(Boolean);
+  }
+  function rankSuggestion(item, query){
+    const q = nrm(query);
+    if(!q) return 0;
+    const aliases = suggestionAliases(item.label, item.id);
+    if(aliases.some(a => a === q)) return 100;
+    if(aliases.some(a => a.startsWith(q))) return 80;
+    if(aliases.some(a => a.includes(q))) return 60;
+    return 0;
+  }
+  function placeSuggestions(query, limit){
+    const q = nrm(query);
+    if(!q) return [];
+    const known = PLACES.map(p => ({ label:p.name, id:p.id, source:'known', area:p.area }));
+    const extras = EXTRA.map(([name]) => ({ label:name, id:null, source:'extra', area:'Popular places' }));
+    return known.concat(extras)
+      .map((item, idx) => ({ item, idx, score: rankSuggestion(item, q) + (item.source === 'known' ? 10 : 0) }))
+      .filter(x => x.score > 0)
+      .sort((a,b) => (b.score - a.score) || (a.idx - b.idx) || a.item.label.localeCompare(b.item.label))
+      .slice(0, limit || 8)
+      .map(x => x.item);
+  }
   // Decide what to do when a live routed distance comes back for a customer-set
   // route, given the price currently shown. The quoted price is a FIRM FLOOR — it
   // never drops:
@@ -236,7 +266,7 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
-    resolvePlace, kmBetween, legPrice, tripQuote, repriceDecision,
+    resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
     CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };

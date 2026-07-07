@@ -18,6 +18,13 @@ async function setLegDate(page, legIndex, iso) {
   await page.waitForTimeout(150);
 }
 
+async function pickPlannerPlace(page, field, query, label) {
+  await field.click();
+  await field.fill(query);
+  await expect(page.locator('.place-menu')).toBeVisible();
+  await page.locator('.place-option', { hasText: label }).first().click();
+}
+
 test('out-of-order leg dates raise a flag and never reorder the itinerary', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
@@ -86,7 +93,7 @@ test('added planner legs and dates survive refresh', async ({ page }) => {
 
   await page.locator('#add-stop').click();
   await expect(page.locator('#rail .leg-card')).toHaveCount(2);
-  await page.locator('#rail .leg-card').nth(1).locator('.leg-to').selectOption('Ella');
+  await pickPlannerPlace(page, page.locator('#rail .leg-card').nth(1).locator('.leg-to'), 'Ella', 'Ella');
 
   await page.locator('#request-btn').click();
   await setLegDate(page, 0, '2026-08-08');
@@ -99,6 +106,26 @@ test('added planner legs and dates survive refresh', async ({ page }) => {
   await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-08');
   await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-09');
   await expect(page.locator('.date-row[data-i="1"] .dr-route')).toContainText('Ella');
+});
+
+test('planner place search ranks CMB as airport and prices the baked CMB to Sigiriya route', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Colombo%20city%7CSigiriya%20%2F%20Dambulla&pax=2&vehicle=car');
+
+  const from = page.locator('#rail .leg-card').first().locator('.leg-from');
+  await from.click();
+  await from.fill('CMB');
+  await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
+  await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
+
+  await expect(from).toHaveValue('Colombo Airport (CMB)');
+  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $77');
+
+  await page.reload();
+
+  await expect(page.locator('#rail .leg-card').first().locator('.leg-from')).toHaveValue('Colombo Airport (CMB)');
+  await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
 });
 
 test('planner dates step keeps a durable URL for browser back', async ({ page }) => {

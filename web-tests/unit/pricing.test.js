@@ -85,6 +85,19 @@ describe('kmBetween (planner / typed-place distance)', () => {
   });
 });
 
+describe('placeSuggestions (planner hybrid autocomplete)', () => {
+  it('ranks Colombo Airport above Colombo city for CMB and airport queries', () => {
+    expect(T.placeSuggestions('cmb')[0].label).toBe('Colombo Airport (CMB)');
+    expect(T.placeSuggestions('airport')[0].label).toBe('Colombo Airport (CMB)');
+  });
+
+  it('returns known places before extras for broad matches', () => {
+    const labels = T.placeSuggestions('col').map((p) => p.label);
+    expect(labels.indexOf('Colombo Airport (CMB)')).toBeLessThan(labels.indexOf('Colombo city'));
+    expect(labels).toContain('Colombo city');
+  });
+});
+
 describe('tripQuote (multi-stop)', () => {
   it('sums real-distance leg fares', () => {
     const stops = ['cmb-airport', 'kandy', 'ella'];
