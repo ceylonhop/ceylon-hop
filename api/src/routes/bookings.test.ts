@@ -38,6 +38,30 @@ describe('POST /bookings/single', () => {
     expect(b.currency).toBe('USD');
   });
 
+  it('accepts split phone fields while preserving the WhatsApp contact', async () => {
+    const app = createApp();
+    const res = await post(app, {
+      ...valid,
+      customer: {
+        ...valid.customer,
+        phoneCountryCode: '+94',
+        phoneNumber: '771234567',
+        whatsapp: '+94771234567',
+        country: 'Sri Lanka',
+      },
+    });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.customer).toMatchObject({
+      firstName: 'Maya',
+      lastName: 'Silva',
+      phoneCountryCode: '+94',
+      phoneNumber: '771234567',
+      whatsapp: '+94771234567',
+      country: 'Sri Lanka',
+    });
+  });
+
   it('prices a resolvable route with the engine, due in full now (GL-3)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });

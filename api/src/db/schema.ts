@@ -5,6 +5,8 @@ export const customers = pgTable('customers', {
   firstName: text('first_name').notNull(),
   lastName: text('last_name').notNull(),
   email: text('email').notNull(),
+  phoneCountryCode: text('phone_country_code'),
+  phoneNumber: text('phone_number'),
   whatsapp: text('whatsapp').notNull(),
   country: text('country').notNull(),
   marketingOptIn: boolean('marketing_opt_in'),

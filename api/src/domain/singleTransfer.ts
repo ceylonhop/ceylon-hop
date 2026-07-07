@@ -5,6 +5,8 @@ export const CustomerInput = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
+  phoneCountryCode: z.string().min(1).optional(),
+  phoneNumber: z.string().min(1).optional(),
   whatsapp: z.string().min(1),
   country: z.string().min(1),
   marketingOptIn: z.boolean().optional(),
