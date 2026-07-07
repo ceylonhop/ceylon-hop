@@ -158,12 +158,12 @@ describe('GoogleMapsAdapter', () => {
       expect(r).toEqual(['Kandy']);
     });
 
-    it('returns [] and logs when top-level status is OVER_QUERY_LIMIT', async () => {
+    it('falls back to KNOWN_PLACES filter and logs when top-level status is OVER_QUERY_LIMIT', async () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       global.fetch = (async () =>
         new Response(JSON.stringify({ status: 'OVER_QUERY_LIMIT', predictions: [] }), { status: 200 })) as typeof fetch;
       const r = await new GoogleMapsAdapter('test-key').places('kandy');
-      expect(r).toEqual([]);
+      expect(r).toEqual(['Kandy']);
       expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('OVER_QUERY_LIMIT'));
     });
 

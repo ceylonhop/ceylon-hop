@@ -3276,6 +3276,9 @@ function restoreEditorFocus(snap) {
   if (snap.start != null) {
     try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
   }
+  if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title')) {
+    requestAutocomplete(el, snap.leg, snap.field, (el.value || '').trim());
+  }
 }
 
 // ── Event delegation ──────────────────────────────────────────────────────────
@@ -3626,29 +3629,7 @@ function attachAutoComplete() {
 
     // Debounced input handler — fetch suggestions
     input.addEventListener('input', function() {
-      var q = input.value.trim();
-      clearTimeout(_ac.timer);
-
-      if (q.length < 2) {
-        acClose();
-        return;
-      }
-
-      // Track which input is active
-      _ac.legId = legId;
-      _ac.field = field;
-      _ac.inputEl = input;
-      _ac.hiIdx = -1;
-
-      _ac.timer = setTimeout(function() {
-        apiPlaces(q).then(function(places) {
-          // Guard: input must still be the active one
-          if (_ac.inputEl !== input) return;
-          var limited = places.slice(0, 6);
-          _ac.items = limited;
-          acRenderMenu(input, limited, q);
-        });
-      }, 220);
+      requestAutocomplete(input, legId, field, input.value.trim());
     });
 
     // Keyboard navigation
@@ -3699,6 +3680,39 @@ function attachAutoComplete() {
     });
   });
 
+}
+
+function requestAutocomplete(input, legId, field, q) {
+  clearTimeout(_ac.timer);
+
+  if (q.length < 2) {
+    acClose();
+    return;
+  }
+
+  // Track which input is active
+  _ac.legId = legId;
+  _ac.field = field;
+  _ac.inputEl = input;
+  _ac.hiIdx = -1;
+
+  _ac.timer = setTimeout(function() {
+    apiPlaces(q).then(function(places) {
+      // Guard: input must still be the active one. A background estimate/distance
+      // render can replace this DOM node while the autocomplete request is in flight;
+      // re-anchor to the fresh focused field instead of dropping valid suggestions.
+      var targetInput = input;
+      if (_ac.inputEl !== input) {
+        var fresh = document.querySelector('#quoteRoot .ch-app [data-leg="' + legId + '"][data-field="' + field + '"]');
+        if (!fresh || document.activeElement !== fresh || (fresh.value || '').trim() !== q) return;
+        _ac.inputEl = fresh;
+        targetInput = fresh;
+      }
+      var limited = places.slice(0, 6);
+      _ac.items = limited;
+      acRenderMenu(targetInput, limited, q);
+    });
+  }, 220);
 }
 
 // Close autocomplete on outside click — registered once, not per render

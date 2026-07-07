@@ -161,7 +161,7 @@ export class GoogleMapsAdapter implements MapsAdapter {
     const data = (await res.json()) as { status?: string; predictions?: { description: string }[] };
     if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
       console.error('[maps] places error: ' + data.status);
-      return [];
+      return offlineFallback();
     }
     const out = (data.predictions || []).slice(0, 6).map((p) => p.description);
     if (out.length) return out;
