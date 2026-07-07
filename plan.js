@@ -114,18 +114,8 @@ function closePlaceMenus(except){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
 }
 function placeSourceLabel(source){
-  if(source==='exact') return 'Exact place';
   if(source==='google') return 'Google';
-  return source==='known' ? 'Known route' : 'Popular';
-}
-function exactPlaceSuggestion(q, items){
-  const text=q.trim();
-  if(text.length<3) return null;
-  if(text.length<5 && items.length) return null;
-  const nq=norm(text);
-  if(!nq) return null;
-  if(items.some(p=>norm(p.label)===nq)) return null;
-  return { label:text, source:'exact', id:null };
+  return source==='known' ? 'Popular Route' : 'Popular place';
 }
 function googlePlaceSuggestions(q, localItems){
   const text=q.trim();
@@ -143,7 +133,7 @@ function googlePlaceSuggestions(q, localItems){
     item:s
   }))).catch(()=>[]);
 }
-function mergePlaceSuggestions(localItems, googleItems, exact){
+function mergePlaceSuggestions(localItems, googleItems){
   const seen=new Set();
   const out=[];
   function add(p){
@@ -153,7 +143,6 @@ function mergePlaceSuggestions(localItems, googleItems, exact){
   }
   localItems.forEach(add);
   googleItems.forEach(add);
-  if(exact) add(exact);
   return out.slice(0,8);
 }
 let placeMenuSeq=0;
@@ -162,7 +151,6 @@ function renderPlaceMenu(input){
   const seq=++placeMenuSeq;
   closePlaceMenus();
   const baseItems=(T.placeSuggestions?T.placeSuggestions(q,6):[]).filter(Boolean);
-  const exact=exactPlaceSuggestion(q, baseItems);
   const paint=(items)=>{
     if(seq!==placeMenuSeq) return;
     closePlaceMenus();
@@ -170,7 +158,7 @@ function renderPlaceMenu(input){
     const menu=document.createElement('div');
     menu.className='place-menu';
     menu.setAttribute('role','listbox');
-    menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}${p.source==='exact'?' exact':''}" role="option" data-place="${escAttr(p.label)}"><span>${p.source==='exact'?'Use exact place: ':''}${escAttr(p.main||p.label)}</span><small>${placeSourceLabel(p.source)}</small>${p.secondary?`<em>${escAttr(p.secondary)}</em>`:''}</button>`).join('');
+    menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}" role="option" data-place="${escAttr(p.label)}"><span>${escAttr(p.main||p.label)}</span><small>${placeSourceLabel(p.source)}</small>${p.secondary?`<em>${escAttr(p.secondary)}</em>`:''}</button>`).join('');
     menu.addEventListener('mousedown',e=>e.preventDefault());
     menu.addEventListener('click',async e=>{
       const opt=e.target.closest('.place-option'); if(!opt) return;
@@ -186,10 +174,10 @@ function renderPlaceMenu(input){
     });
     input.parentNode.appendChild(menu);
   };
-  paint(mergePlaceSuggestions(baseItems, [], exact));
+  paint(mergePlaceSuggestions(baseItems, []));
   googlePlaceSuggestions(q, baseItems).then(googleItems=>{
     if(seq!==placeMenuSeq || !googleItems.length) return;
-    paint(mergePlaceSuggestions(baseItems, googleItems, exact));
+    paint(mergePlaceSuggestions(baseItems, googleItems));
   });
 }
 function wirePlaceSearch(input){

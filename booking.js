@@ -185,7 +185,7 @@ function attachAC(input, menu, which){
         kind:'local',
         label:p.label,
         main:p.label,
-        secondary:p.source==='known' ? 'Known route' : 'Popular place'
+        secondary:p.source==='known' ? 'Popular Route' : 'Popular place'
       }));
       if(local.length) return local;
     }

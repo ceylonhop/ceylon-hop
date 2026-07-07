@@ -172,7 +172,7 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
 });
 
-test('planner place search layers known, Google, then exact-place results for hotel text', async ({ page }) => {
+test('planner place search layers popular route then Google results for hotel text', async ({ page }) => {
   await installGooglePlacesStub(page);
   await page.goto('/plan.html?stops=Sigiriya%20%2F%20Dambulla%7CColombo%20city&pax=1&vehicle=car');
 
@@ -182,8 +182,10 @@ test('planner place search layers known, Google, then exact-place results for ho
 
   const options = page.locator('.place-option');
   await expect(options.first()).toContainText('Colombo city');
+  await expect(options.first()).toContainText('Popular Route');
   await expect(options.nth(1)).toContainText('hilton colombo Hotel');
-  await expect(options.last()).toContainText('Use exact place: hilton colombo');
+  await expect(page.locator('.place-option', { hasText: 'Use exact place' })).toHaveCount(0);
+  await expect(page.locator('.place-option', { hasText: 'Exact place' })).toHaveCount(0);
   await expect(page.locator('.place-option', { hasText: 'Galle' })).toHaveCount(0);
 
   await options.nth(1).click();
