@@ -79,3 +79,41 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
   await cont.click({ force: true });
   await expect(page).toHaveURL(/booking\.html/);
 });
+
+test('added planner legs and dates survive refresh', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
+
+  await page.locator('#add-stop').click();
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  await page.locator('#rail .leg-card').nth(1).locator('.leg-to').selectOption('Ella');
+
+  await page.locator('#request-btn').click();
+  await setLegDate(page, 0, '2026-08-08');
+  await setLegDate(page, 1, '2026-08-09');
+  await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
+
+  await page.reload();
+
+  await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-08');
+  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-09');
+  await expect(page.locator('.date-row[data-i="1"] .dr-route')).toContainText('Ella');
+});
+
+test('planner dates step keeps a durable URL for browser back', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
+
+  await setLegDate(page, 0, '2026-08-10');
+  await setLegDate(page, 1, '2026-08-20');
+
+  const url = new URL(page.url());
+  expect(url.pathname).toContain('plan.html');
+  expect(url.searchParams.get('step')).toBe('dates');
+  expect(url.searchParams.get('dates')).toBe('2026-08-10,2026-08-20');
+  await expect(page.locator('#dates-wrap')).toBeVisible();
+  await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-10');
+  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-20');
+});
