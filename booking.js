@@ -877,8 +877,8 @@ function render(){
   // service-chooser tags (trip mode)
   if(isTrip){
     const pvt=document.getElementById('svc-private-tag'), chf=document.getElementById('svc-chauffeur-tag');
-    if(pvt) pvt.textContent='Pay in full today';
-    if(chf) chf.textContent='+ $'+window.TRANSFERS.CHAUFFEUR_DAY_FEE+'/day · pay deposit';
+    if(pvt) pvt.textContent='Priced per leg · pay in full';
+    if(chf) chf.textContent='Day rate + trip distance · deposit';
 
     // chauffeur is billed per day, so it needs every leg dated before we can quote it
     const cx=document.getElementById('chauffeur-extra');
@@ -959,7 +959,9 @@ function render(){
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
-    document.getElementById('sum-adlabel').textContent = isTrip ? (vehicleKey==='van'?'Private AC van · all legs':'Private AC car · all legs') : vehicleLabel;
+    document.getElementById('sum-adlabel').textContent = (isTrip && state.svc==='chauffeur')
+      ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
+      : (isTrip ? (vehicleKey==='van'?'Private AC van · per leg':'Private AC car · per leg') : vehicleLabel);
     // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
     document.getElementById('sum-adamt').textContent=money(chauffeurFee()>0 ? chauffeurDistanceCharge() : unit);
     chrow.style.display='flex';
@@ -998,9 +1000,9 @@ function render(){
   const pvtNote=document.getElementById('pvt-note'), pvtTx=document.getElementById('pvt-note-tx');
   if(pvtNote && pvtTx){
     if(isTrip && state.svc==='chauffeur'){
-      pvtTx.innerHTML='<b>One car &amp; driver-guide for the whole trip.</b> Your chauffeur-guide stays with you from start to finish — same friendly face every day, flexible stops along the way.';
+      pvtTx.innerHTML='<b>One car &amp; driver-guide for the whole trip.</b> Priced as a retained driver-guide: daily rate plus total trip distance. Your chauffeur-guide stays with you from start to finish — same friendly face every day, flexible stops along the way.';
     } else if(isTrip){
-      pvtTx.innerHTML='<b>Door-to-door pick-ups &amp; drop-offs, every leg.</b> Each leg of your trip is a private transfer booked fresh, so you may not have the exact same car or driver every day.';
+      pvtTx.innerHTML='<b>Door-to-door pick-ups &amp; drop-offs, every leg.</b> Each leg is priced as its own private transfer and booked fresh, so you may not have the exact same car or driver every day.';
     } else {
       pvtTx.innerHTML='<b>It’s a door-to-door pick-up &amp; drop-off.</b> A private transfer covers this one journey — we pick you up at your spot and drop you at your destination.';
     }
