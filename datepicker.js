@@ -13,12 +13,16 @@
   const fmt=d=>d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
   const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   function parseISO(s){ if(!s) return null; const p=s.split('-').map(Number); if(!p[0]) return null; return new Date(p[0],p[1]-1,p[2]); }
+  function addMonths(d,n){ return new Date(d.getFullYear(), d.getMonth()+n, d.getDate()); }
   const monthStart=d=>new Date(d.getFullYear(),d.getMonth(),1);
 
   function enhance(input){
     if(input.__dp) return; input.__dp=true;
     const today=new Date(); today.setHours(0,0,0,0);
     const minDate = input.dataset.min ? parseISO(input.dataset.min) : today;
+    const maxDate = input.dataset.max ? parseISO(input.dataset.max) : addMonths(today, 12);
+    input.min = iso(minDate);
+    input.max = iso(maxDate);
     const placeholder = input.getAttribute('data-placeholder') || 'Select a date';
     let sel = parseISO(input.value);
     let view = monthStart(sel||today);
@@ -45,11 +49,12 @@
       const first=new Date(y,m,1).getDay();
       const days=new Date(y,m+1,0).getDate();
       const prevOff = monthStart(view) <= monthStart(minDate);
-      let h=`<div class="dp-head"><button type="button" class="dp-nav" data-d="-1" ${prevOff?'disabled':''} aria-label="Previous month">‹</button><b>${MN[m]} ${y}</b><button type="button" class="dp-nav" data-d="1" aria-label="Next month">›</button></div><div class="dp-grid">`;
+      const nextOff = monthStart(new Date(view.getFullYear(), view.getMonth()+1, 1)) > monthStart(maxDate);
+      let h=`<div class="dp-head"><button type="button" class="dp-nav" data-d="-1" ${prevOff?'disabled':''} aria-label="Previous month">‹</button><b>${MN[m]} ${y}</b><button type="button" class="dp-nav" data-d="1" ${nextOff?'disabled':''} aria-label="Next month">›</button></div><div class="dp-grid">`;
       DOW.forEach(d=>h+=`<span class="dp-dow">${d}</span>`);
       for(let i=0;i<first;i++) h+='<span></span>';
       for(let d=1;d<=days;d++){
-        const date=new Date(y,m,d); const off=date<minDate; const on=sel&&date.getTime()===sel.getTime();
+        const date=new Date(y,m,d); const off=date<minDate || date>maxDate; const on=sel&&date.getTime()===sel.getTime();
         h+=`<button type="button" class="dp-day${off?' off':''}${on?' sel':''}" ${off?'disabled':''} data-day="${d}">${d}</button>`;
       }
       pop.innerHTML = h+'</div>';
