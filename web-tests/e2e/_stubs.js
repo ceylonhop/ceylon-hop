@@ -124,7 +124,8 @@ export async function fillContact(page) {
   await page.fill('#f-first', 'Roshen');
   await page.fill('#f-last', 'W');
   await page.fill('#f-email', 'roshenw@gmail.com');
-  await page.fill('#f-wa', '19176005055');
+  await page.selectOption('#f-phone-code', '+1');
+  await page.fill('#f-phone', '9176005055');
   await page.check('#agree');
 }
 

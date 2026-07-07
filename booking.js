@@ -728,6 +728,14 @@ window.payMethod=function(el){document.querySelectorAll('.pm').forEach(x=>x.clas
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
   if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
 
+function phoneParts(){
+  const codeEl=document.getElementById('f-phone-code');
+  const phoneEl=document.getElementById('f-phone');
+  const code=(codeEl&&codeEl.value?codeEl.value:'+94').trim();
+  const number=(phoneEl&&phoneEl.value?phoneEl.value:'').replace(/[^\d]/g,'').replace(/^0+/,'');
+  return { code, number, whatsapp: code + number };
+}
+
 // chauffeur-guide fee + deposit helpers
 // the whole trip fits in one day when there are no overnight stays and every dated leg is the same day
 function isSingleDayTrip(){
@@ -1043,16 +1051,16 @@ window.goStep=function(n){
 document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // validate the lead traveller's contact details before payment
   const first=document.getElementById('f-first'), last=document.getElementById('f-last'),
-        email=document.getElementById('f-email'), wa=document.getElementById('f-wa');
+        email=document.getElementById('f-email'), phone=document.getElementById('f-phone');
   const derr=document.getElementById('details-error');
-  [first,last,email,wa].forEach(el=>el.classList.remove('inp-bad'));
+  [first,last,email,phone].forEach(el=>el.classList.remove('inp-bad'));
   if(derr) derr.hidden=true;
   const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} el.focus(); };
   const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if(!first.value.trim()) return fail(first,'Please add the lead traveller’s first name.');
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
   if(!emailRe.test(email.value.trim())) return fail(email,'Enter a valid email so we can send your confirmation.');
-  if(wa.value.replace(/[^\d]/g,'').length<7) return fail(wa,'Enter a valid WhatsApp number, including country code.');
+  if(phoneParts().number.length<7) return fail(phone,'Enter a valid WhatsApp number.');
   if(!document.getElementById('agree').checked){
     document.getElementById('agree').closest('.addon').style.borderColor='var(--tomato)';
     return;
@@ -1175,11 +1183,14 @@ function showPayDismissed(){
 async function createApiBooking(){
   const API = window.CEYLON_HOP_API;
   if(!API) return null;
+  const phone = phoneParts();
   const customer = {
     firstName: document.getElementById('f-first').value.trim(),
     lastName: document.getElementById('f-last').value.trim(),
     email: document.getElementById('f-email').value.trim(),
-    whatsapp: document.getElementById('f-wa').value.trim(),
+    phoneCountryCode: phone.code,
+    phoneNumber: phone.number,
+    whatsapp: phone.whatsapp,
     country: document.getElementById('f-country').value
   };
   // the price the customer was shown (minor units) — the backend records this, so the
