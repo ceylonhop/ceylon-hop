@@ -169,7 +169,7 @@ if(addStayBtn) addStayBtn.addEventListener('click',()=>{
 });
 
 // ---- helpers ----
-function fmtISO(d){ return d.toISOString().slice(0,10); }
+function fmtISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 function fmtDate(d){ return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); }
 function money(n){ return '$'+Math.round(n); }

@@ -513,33 +513,41 @@ document.title='Book '+r.name+' — Ceylon Hop';
 // ---- Calendar ----
 let viewMonth = state.date ? new Date(state.date.getFullYear(),state.date.getMonth(),1) : (()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);})();
 const today=new Date();today.setHours(0,0,0,0);
+const maxBookDate=new Date(today.getFullYear(),today.getMonth()+12,today.getDate());
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function fmtISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
 function buildCal(){
   const y=viewMonth.getFullYear(), m=viewMonth.getMonth();
   const first=new Date(y,m,1).getDay();
   const days=new Date(y,m+1,0).getDate();
   const prevDisabled = (y===today.getFullYear()&&m===today.getMonth());
+  const nextMonth=new Date(y,m+1,1);
+  const nextDisabled = new Date(nextMonth.getFullYear(),nextMonth.getMonth(),1) > new Date(maxBookDate.getFullYear(),maxBookDate.getMonth(),1);
   let html=`<div class="cal-head">
     <button ${prevDisabled?'disabled style=opacity:.3':''} onclick="calMove(-1)">‹</button>
     <b>${MN[m]} ${y}</b>
-    <button onclick="calMove(1)">›</button></div>
+    <button ${nextDisabled?'disabled style=opacity:.3':''} onclick="calMove(1)">›</button></div>
     <div class="cal-grid">`;
   ['S','M','T','W','T','F','S'].forEach(d=>html+=`<div class="dow">${d}</div>`);
   for(let i=0;i<first;i++)html+='<div></div>';
   for(let d=1;d<=days;d++){
     const date=new Date(y,m,d);
-    const off = date<today;
+    const off = date<today || date>maxBookDate;
     const sel = state.date && date.getTime()===state.date.getTime();
     html+=`<div class="cal-day ${off?'off':''} ${sel?'sel':''}" ${off?'':`onclick="pickDate(${y},${m},${d})"`}>${d}</div>`;
   }
   html+='</div>';
-  document.getElementById('cal').innerHTML=html;
+  const cal=document.getElementById('cal');
+  cal.dataset.maxDate=fmtISO(maxBookDate);
+  cal.innerHTML=html;
 }
 window.calMove=function(dir){viewMonth=new Date(viewMonth.getFullYear(),viewMonth.getMonth()+dir,1);buildCal();};
 
 window.pickDate=function(y,m,d){
-  state.date=new Date(y,m,d); state.flexDate=false;
+  const picked=new Date(y,m,d);
+  if(picked<today || picked>maxBookDate) return;
+  state.date=picked; state.flexDate=false;
   const fd=document.getElementById('flex-date'); if(fd) fd.checked=false;
   document.getElementById('cal').classList.remove('dim');
   document.getElementById('flex-date-pill').classList.remove('show');
@@ -1198,7 +1206,7 @@ async function createApiBooking(){
       corridorId: sharedCorridorId || undefined,
       from: state.locFrom || r.stops[0],
       to: state.locTo || r.stops[r.stops.length-1],
-      date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
+      date: (state.flexDate || !state.date) ? undefined : fmtISO(state.date),
       time: state.dep || undefined,
       seats: state.ad + state.ch,
       customer,
@@ -1209,7 +1217,7 @@ async function createApiBooking(){
     payload = {
       from: state.locFrom || r.stops[0],
       to: state.locTo || r.stops[r.stops.length-1],
-      date: (state.flexDate || !state.date) ? undefined : state.date.toISOString().slice(0,10),
+      date: (state.flexDate || !state.date) ? undefined : fmtISO(state.date),
       time: (state.flexTime || !state.dep) ? undefined : state.dep,
       vehicleType: (vehicleKey==='van') ? 'van' : 'car',
       adults: state.ad, children: state.ch, bags: state.bags,
