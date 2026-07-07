@@ -210,6 +210,21 @@ function routeSeqDetailed(){
   const dates=[]; for(let i=0;i<Math.max(0,seq.length-1);i++) dates.push(wires[i]||'');
   return { seq, dates };
 }
+function syncPlanUrl(){
+  const { seq, dates } = routeSeqDetailed();
+  if(seq.length){
+    const p=new URLSearchParams(location.search);
+    p.set('stops', seq.map(s=>s.place).join('|'));
+    p.set('nights', seq.map(s=>s.nights).join(','));
+    p.set('dates', dates.join(','));
+    p.set('pax', String(state.pax));
+    p.set('vehicle', state.vehicle);
+    const datesWrap=document.getElementById('dates-wrap');
+    if(datesWrap && !datesWrap.hidden) p.set('step','dates');
+    else p.delete('step');
+    history.replaceState(null, '', location.pathname+'?'+p.toString());
+  }
+}
 // ordered list of place names along the whole route
 function points(){ return routeSeq().map(s=>s.place); }
 
@@ -369,6 +384,7 @@ function render(){
   document.getElementById('stop-count').textContent =
     `${transfers} transfer${transfers!==1?'s':''}${stays?` · ${stays} stay${stays!==1?'s':''}`:''}`;
   syncVehBtns();
+  syncPlanUrl();
 }
 
 // rebuild leg order from the DOM after a drag
@@ -522,6 +538,7 @@ function renderDatesStep(){
   if(cont){ cont.classList.toggle('cta-disabled',hasOOO); cont.setAttribute('aria-disabled',hasOOO?'true':'false'); }
   const oooHint=document.getElementById('dates-order-hint');
   if(oooHint) oooHint.hidden=!hasOOO;
+  syncPlanUrl();
 }
 // A leg dated earlier than a stop that comes before it in the route reads as a mistake
 // (the journey runs forward). We deliberately no longer silently reorder the customer's
