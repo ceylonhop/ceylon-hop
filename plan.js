@@ -47,25 +47,20 @@ function resolve(name){
   return null;
 }
 
-// haversine → road km (Sri Lankan winding factor 1.35) — stands in for Google Distance Matrix
+// haversine fallback for places that are not in the shared transfer table
 function roadKm(a,b){
+  const sharedKm = T.kmBetween(a.id || a.label, b.id || b.label);
+  if(sharedKm!=null) return sharedKm;
   const R=6371,toR=d=>d*Math.PI/180;
   const dLat=toR(b.lat-a.lat),dLng=toR(b.lng-a.lng);
   const s=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
   return Math.round(2*R*Math.asin(Math.sqrt(s))*1.35);
 }
 function durationText(km){
-  const hrs=km/42, h=Math.floor(hrs), m=Math.round((hrs-h)*60);
-  if(h<=0) return `${Math.max(20,m)} min`;
-  return m>=8 ? `${h}h ${m}m` : `${h}h`;
+  return T.durationText ? T.durationText(km) : `${km} km`;
 }
 function legPrice(km, veh){
-  // engine rate-card parity (owner decision 2026-07-02): +10% km buffer, per-km
-  // rate (car $0.46 · van $0.83), minimum fare (car $29 · van $50)
-  const bkm=Math.round(km*1.10);
-  const car=Math.max(29, Math.round(bkm*0.46));
-  const van=Math.max(50, Math.round(bkm*0.83));
-  return veh==='van' ? van : car;
+  return T.legPrice(km, veh);
 }
 
 // ---- state: an ordered list of transfer legs ----
@@ -463,11 +458,10 @@ function renderMap(){
   const W=344, H=250, padX=80, padY=44;
   const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
   const proj=(lat,lng)=>({ x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX), y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY) });
-  const seen=new Set();
   const pts=points().map(name=>{
     if(!name) return null; const g=T.resolvePlace(name); if(!g) return null;
     return {name, ...proj(g.lat,g.lng)};
-  }).filter(Boolean).filter(p=>{ const k=p.name; if(seen.has(k)) return false; seen.add(k); return true; });
+  }).filter(Boolean);
   const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
   if(pts.length<2){
     host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map">${island}</svg>`+
