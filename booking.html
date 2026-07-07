@@ -319,6 +319,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-choice .pc-opt input{margin-top:3px;accent-color:var(--accent)}
   .pay-choice .pc-opt b{font-size:.92rem}
   .pay-choice .pc-opt small{display:block;color:var(--ink-soft);font-size:.8rem;margin-top:1px}
+  .terms-consent{cursor:pointer}
+  .terms-consent input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
+  .terms-consent span{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
 
   /* steppers / addons */
   .stepper{display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:12px}
@@ -439,6 +442,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   .summary .s-row.editable{cursor:pointer}
   .summary .s-row.editable:hover b{color:var(--accent-deep)}
+  @media(max-width:880px){
+    .layout{gap:18px;margin:24px auto 64px;padding:0 16px}
+    .layout > aside{order:-1}
+    .summary{max-height:none}
+    .summary .s-route{padding:14px 16px}
+    .summary .s-body{padding:16px}
+  }
+  @media(max-width:520px){
+    .stepcard{padding:22px 18px}
+    .pay-summary-row{align-items:flex-start;gap:10px}
+    .pay-summary-row .amt{font-size:1.35rem;text-align:right}
+    .pay-methods{flex-wrap:wrap}
+    .pay-methods .pm{min-height:44px}
+    .terms-consent{align-items:flex-start;min-height:48px}
+    .terms-consent input{margin-top:1px}
+    .nav-btns{align-items:stretch}
+    .nav-btns .btn{white-space:normal}
+  }
 </style>
 </head>
 <body>
@@ -608,7 +629,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </div>
       </div>
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
-      <label class="addon" style="cursor:pointer"><input type="checkbox" id="agree" style="width:auto"><span style="font-size:.85rem;color:var(--ink-soft)">I agree to the Terms &amp; cancellation policy and confirm my travel details are correct.</span></label>
+      <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the Terms &amp; cancellation policy and confirm my travel details are correct.</span></label>
       <div class="concierge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
         <div><b>A real person will reach out — fast</b><p>As soon as you book, our Ceylon Hop concierge team confirms your pickup details personally on WhatsApp. We&rsquo;re on during Sri&nbsp;Lanka hours (GMT+5:30, ~8am&ndash;9pm) — if you book overnight, you&rsquo;ll hear from us first thing.</p></div>
