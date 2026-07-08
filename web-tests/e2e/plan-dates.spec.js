@@ -305,3 +305,59 @@ test('planner dates step keeps a durable URL for browser back', async ({ page })
   await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-10');
   await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-20');
 });
+
+test('two-digit leg badges do not overflow in planner or booking review', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+
+  const stops = [
+    'Negombo',
+    'Sigiriya / Dambulla',
+    'Kandy',
+    'Nuwara Eliya',
+    'Ella',
+    'Yala',
+    'Mirissa',
+    'Galle',
+    'Bentota',
+    'Colombo city',
+    'Colombo Airport (CMB)',
+  ];
+  const encodedStops = encodeURIComponent(stops.join('|'));
+
+  await page.goto(`/plan.html?stops=${encodedStops}&pax=2&vehicle=car`);
+  await expect(page.locator('#rail .leg-badge', { hasText: 'Leg 10' })).toBeVisible();
+
+  const plannerRouteOverflow = await page.locator('#rail .leg-badge').evaluateAll((badges) => badges.map((badge) => ({
+    text: badge.textContent.trim(),
+    scrollWidth: badge.scrollWidth,
+    clientWidth: badge.clientWidth,
+  })));
+  expect(plannerRouteOverflow.filter((b) => b.scrollWidth > b.clientWidth + 1)).toEqual([]);
+
+  await page.goto(`/plan.html?step=dates&stops=${encodedStops}&pax=2&vehicle=car`);
+  await expect(page.locator('#dates-list .dr-badge', { hasText: 'Leg 10' })).toBeVisible();
+  const plannerDateOverflow = await page.locator('#dates-list .dr-badge').evaluateAll((badges) => badges.map((badge) => ({
+    text: badge.textContent.trim(),
+    scrollWidth: badge.scrollWidth,
+    clientWidth: badge.clientWidth,
+  })));
+  expect(plannerDateOverflow.filter((b) => b.scrollWidth > b.clientWidth + 1)).toEqual([]);
+
+  const params = new URLSearchParams({
+    mode: 'trip',
+    stops: stops.join('|'),
+    dates: Array(stops.length - 1).fill('').join(','),
+    kms: Array(stops.length - 1).fill('80').join(','),
+    pax: '2',
+    vehicle: 'car',
+  });
+  await page.goto(`/booking.html?${params.toString()}`);
+  await expect(page.locator('#trip-route .tr-leg-badge', { hasText: 'Leg 10' })).toBeVisible();
+  const bookingOverflow = await page.locator('#trip-route .tr-leg-badge').evaluateAll((badges) => badges.map((badge) => ({
+    text: badge.textContent.trim(),
+    scrollWidth: badge.scrollWidth,
+    clientWidth: badge.clientWidth,
+  })));
+  expect(bookingOverflow.filter((b) => b.scrollWidth > b.clientWidth + 1)).toEqual([]);
+});

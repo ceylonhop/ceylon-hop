@@ -188,7 +188,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-card.dragging{opacity:.55;box-shadow:var(--shadow)}
   .leg-card.leg-bad{border-color:var(--tomato);box-shadow:0 0 0 3px rgba(236,58,36,.16)}
   .leg-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-  .leg-badge{font-size:.67rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 11px;white-space:nowrap}
+  .leg-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.67rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .leg-head .leg-rm{flex:none;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;flex:none}
   .leg-head .leg-rm:hover{border-color:var(--tomato);color:var(--tomato)}
   .leg-head .leg-rm.hide{display:none}
@@ -325,7 +325,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .date-row{position:relative}
   .date-row.dr-flagged{background:#fffdf6;border-color:#f3dca8}
   .dr-info{display:flex;align-items:center;gap:12px;min-width:0}
-  .dr-badge{font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 11px;white-space:nowrap}
+  .dr-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
   .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;color:var(--ink);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
   .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
