@@ -104,6 +104,20 @@ test('home search uses popular route autocomplete and sends unknown places to pl
   await page.waitForURL('**/plan.html?**stops=Hilton+Colombo%7CElla**');
 });
 
+test('home autocomplete ignores delayed Google results after a local place is selected', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '', googleDelay: 550 });
+
+  await page.locator('#q-to').fill('Kitulgala');
+  await expect(page.locator('.place-option', { hasText: 'Searching Google' })).toBeVisible();
+  await page.locator('.place-option', { hasText: 'Kitulgala' }).first().click();
+
+  await expect(page.locator('#q-to')).toHaveValue('Kitulgala');
+  await expect(page.locator('.place-menu')).toHaveCount(0);
+  await page.waitForTimeout(700);
+  await expect(page.locator('#q-to')).toHaveValue('Kitulgala');
+  await expect(page.locator('.place-menu')).toHaveCount(0);
+});
+
 test('mobile home search keeps unselected booking tabs readable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await gotoBooking(page, { path: '/index.html', query: '' });
@@ -129,12 +143,22 @@ test('home multi-stop toggle does not open autocomplete until the user types', a
   await expect(page.locator('.place-option').first()).toContainText('Colombo');
 });
 
+test('home autocomplete closes on scroll instead of floating detached', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  await page.locator('#q-to').fill('Ki');
+  await expect(page.locator('.place-menu')).toBeVisible();
+
+  await page.mouse.wheel(0, 420);
+  await expect(page.locator('.place-menu')).toHaveCount(0);
+});
+
 test('home autocomplete is not clipped behind the trust bar', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
   await page.setViewportSize({ width: 1424, height: 768 });
 
-  await page.locator('#q-from').fill('Kalpitiya');
-  await page.locator('#q-to').click();
+  await page.locator('#q-to').fill('Kalpitiya');
 
   const menu = page.locator('.place-menu').first();
   await expect(menu).toBeVisible();

@@ -164,10 +164,12 @@
     input.setAttribute('autocomplete','off');
     input.setAttribute('spellcheck','false');
     const limit=opts.limit||6;
-    let menu=null, items=[], active=-1, seq=0;
+    let menu=null, items=[], active=-1, seq=0, committed=false, openedAt=0;
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-    function close(reset=true){ if(menu) menu.remove(); menu=null; if(reset) active=-1; }
+    function close(reset=true, invalidate=true){ if(menu) menu.remove(); menu=null; if(reset) active=-1; if(invalidate) seq++; }
     function choose(item){
+      committed=true;
+      seq++;
       input.value=item.label;
       input.dataset.placeId=item.id||'';
       input.dataset.placeSource=item.source||'';
@@ -193,14 +195,15 @@
       const oneWord=!/\s/.test(q);
       return !exactLocal && !(oneWord && local.length>=3);
     }
-    function paint(nextItems){
-      close(false);
+    function paint(nextItems, opts={}){
+      close(false, false);
       items=nextItems || [];
-      if(!items.length) return;
+      if(!items.length && !opts.loading) return;
       menu=document.createElement('div');
       menu.className='place-menu';
       menu.setAttribute('role','listbox');
-      menu.innerHTML=items.map((p,i)=>`<button type="button" class="place-option${i===active?' hi':''}" role="option"><span>${esc(p.label)}</span><small>${esc(window.placeSourceLabel(p.source))}</small></button>`).join('');
+      menu.innerHTML=items.map((p,i)=>`<button type="button" class="place-option${i===active?' hi':''}" role="option"><span>${esc(p.label)}</span><small>${esc(window.placeSourceLabel(p.source))}</small></button>`).join('')+
+        (opts.loading ? `<button type="button" class="place-option loading" disabled aria-disabled="true"><span>Searching Google…</span><small>Google</small></button>` : '');
       const r=input.getBoundingClientRect();
       const menuW=Math.min(r.width, window.innerWidth-24);
       const left=Math.min(Math.max(12,r.left), window.innerWidth-menuW-12);
@@ -215,21 +218,24 @@
       menu.addEventListener('mousedown',e=>e.preventDefault());
       menu.addEventListener('click',e=>{
         const btn=e.target.closest('.place-option'); if(!btn) return;
+        if(btn.disabled || btn.classList.contains('loading')) return;
         const idx=[...menu.querySelectorAll('.place-option')].indexOf(btn);
         if(items[idx]) choose(items[idx]);
       });
       document.body.appendChild(menu);
+      openedAt=Date.now();
     }
     function refresh(){
       const q=input.value.trim();
       if(!q){ close(); return; }
       const mySeq=++seq;
+      committed=false;
       active=-1;
       const local=(T.placeSuggestions?T.placeSuggestions(q,limit):[]).filter(Boolean);
-      paint(local);
       if(shouldAskGoogle(q, local)){
+        paint(local, { loading:true });
         window.CH_MAP.suggest(q).then(list=>{
-          if(mySeq!==seq) return;
+          if(mySeq!==seq || committed || document.activeElement!==input) return;
           const google=(list||[]).map(s=>({
             label:s.text || s.main,
             main:s.main || s.text,
@@ -239,7 +245,10 @@
             item:s
           }));
           if(google.length) paint(mergeSuggestions(local, google));
+          else paint(local);
         }).catch(()=>{});
+      } else {
+        paint(local);
       }
     }
     input.addEventListener('focus',refresh);
@@ -253,6 +262,9 @@
       else if(e.key==='Escape'){ close(); }
     });
     input.addEventListener('blur',()=>setTimeout(close,160));
+    window.addEventListener('scroll',()=>{ if(Date.now()-openedAt>250) close(); },true);
+    window.addEventListener('wheel',()=>close(),{passive:true});
+    window.addEventListener('touchmove',()=>close(),{passive:true});
   };
   // Fill a <datalist> with destinations. variants=true adds “— your hotel” etc.
   window.mountPlacesDatalist = function(id, variants){

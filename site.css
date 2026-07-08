@@ -281,8 +281,11 @@ p{margin:0 0 1rem}
 .place-menu{position:fixed;z-index:1000;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;max-height:min(280px,calc(100vh - 24px));overflow:auto}
 .place-option{width:100%;border:0;background:none;color:var(--ink);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;text-align:left;padding:10px 12px;border-radius:9px;font:inherit}
 .place-option:hover,.place-option.hi{background:rgba(10,185,182,.12)}
+.place-option.loading{cursor:default;color:var(--ink-soft)}
+.place-option.loading:hover{background:none}
 .place-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .place-option small{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:var(--accent-deep);white-space:nowrap}
+.place-option.loading small{color:var(--ink-soft)}
 .field .hint{font-size:.78rem;color:var(--ink-soft);margin-top:.35rem}
 
 /* ---------- Custom select caret (consistent, premium chevron) ---------- */

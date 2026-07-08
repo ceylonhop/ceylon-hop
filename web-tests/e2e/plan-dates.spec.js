@@ -40,7 +40,9 @@ async function installGooglePlacesStub(page) {
       AutocompleteSessionToken: function () {},
       AutocompleteSuggestion: {
         fetchAutocompleteSuggestions: async ({ input }) => ({
-          suggestions: [{
+          suggestions: await new Promise((resolve) => {
+            const delay = Number(window.__E2E_GOOGLE_DELAY || 0);
+            setTimeout(() => resolve([{
             placePrediction: {
               text: { text: `${input} Hotel, Colombo, Sri Lanka` },
               mainText: { text: `${input} Hotel` },
@@ -52,7 +54,8 @@ async function installGooglePlacesStub(page) {
                 formattedAddress: `${input} Hotel, Colombo, Sri Lanka`,
               }),
             },
-          }],
+            }]), delay);
+          }),
         }),
       },
     };
@@ -265,6 +268,25 @@ test('planner place search layers popular route then Google results for hotel te
   await expect(page.locator('#rail [data-dist]')).toContainText('from $51');
   await expect(page.locator('#st-drive')).toContainText('100 km');
   await expect(page.locator('#sum-amt')).toContainText('$50–$100');
+});
+
+test('planner place search ignores delayed Google results after a popular place is selected', async ({ page }) => {
+  await installGooglePlacesStub(page);
+  await page.addInitScript(() => { window.__E2E_GOOGLE_DELAY = 550; });
+  await page.goto('/plan.html?stops=Polonnaruwa%7CKandy&pax=1&vehicle=car');
+
+  const to = page.locator('#rail .leg-card').first().locator('.leg-to');
+  await to.click();
+  await to.fill('Kitulgala');
+
+  await expect(page.locator('.place-option', { hasText: 'Searching Google' })).toBeVisible();
+  await page.locator('.place-option', { hasText: 'Kitulgala' }).first().click();
+
+  await expect(to).toHaveValue('Kitulgala');
+  await expect(page.locator('.place-menu')).toHaveCount(0);
+  await page.waitForTimeout(700);
+  await expect(to).toHaveValue('Kitulgala');
+  await expect(page.locator('.place-menu')).toHaveCount(0);
 });
 
 test('planner dates step keeps a durable URL for browser back', async ({ page }) => {

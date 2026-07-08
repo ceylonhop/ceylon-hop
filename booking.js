@@ -189,13 +189,15 @@ function onLoc(){
 // Google suggestions restricted to Sri Lanka; otherwise we fall back to the
 // built-in list of known places so the field still works offline.
 function attachAC(input, menu, which){
-  let active=-1, els=[], data=[], seq=0;
+  let active=-1, els=[], data=[], seq=0, committed=false, openedAt=0;
   const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
-  function close(){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; }
+  function close(invalidate=true){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; if(invalidate) seq++; }
   function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
 
   async function choose(i){
     const d=data[i]; if(!d) return;
+    committed=true;
+    seq++;
     userSetLocation=true; // a deliberate selection — now the price may re-price
     input.value=d.label; onLoc(); close();
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
@@ -209,14 +211,15 @@ function attachAC(input, menu, which){
     }
   }
 
-  function renderMenu(){
-    if(!data.length){ close(); return; }
+  function renderMenu(opts={}){
+    if(!data.length && !opts.loading){ close(false); return; }
     menu.innerHTML = data.map(d=>{
       const sub = d.secondary ? `<small>${acEsc(d.secondary)}</small>` : '';
       return `<div class="ac-item"><span class="ac-ic">${pinIco}</span><span class="ac-tx"><b>${acEsc(d.main||d.label)}</b>${sub}</span></div>`;
-    }).join('');
+    }).join('') + (opts.loading ? `<div class="ac-item loading" aria-disabled="true"><span class="ac-ic">${pinIco}</span><span class="ac-tx"><b>Searching Google…</b><small>Google</small></span></div>` : '');
     menu.classList.add('open');
-    els=[...menu.querySelectorAll('.ac-item')]; active=-1;
+    openedAt=Date.now();
+    els=[...menu.querySelectorAll('.ac-item:not(.loading)')]; active=-1;
     els.forEach((it,i)=>{
       it.addEventListener('mousedown',e=>{ e.preventDefault(); choose(i); });
       it.addEventListener('mouseenter',()=>{ active=i; paint(); });
@@ -247,15 +250,17 @@ function attachAC(input, menu, which){
   async function build(){
     const qs=input.value.trim();
     const mySeq=++seq;
+    committed=false;
     const local = localList(qs);
     data = local;
-    renderMenu();
+    const loading = shouldAskGoogle(qs, local);
+    renderMenu({ loading });
     // Ceylon Hop known/popular suggestions always stay first. Google fills in
     // hotels/landmarks/exact places when the local catalogue is weak.
     if(shouldAskGoogle(qs, local)){
       let sug=[];
       try{ sug=await window.CH_MAP.suggest(qs); }catch(e){ sug=[]; }
-      if(mySeq!==seq) return;            // a newer keystroke already fired
+      if(mySeq!==seq || committed || document.activeElement!==input) return;            // a newer keystroke already fired
       if(sug.length){
         const seen=new Set(local.map(x=>(x.label||'').toLowerCase()));
         data = local.concat(sug.map(s=>({kind:'google', label:s.text, main:s.main, secondary:s.secondary || 'Google', item:s}))
@@ -278,6 +283,9 @@ function attachAC(input, menu, which){
     else if(e.key==='Escape'){ close(); }
   });
   input.addEventListener('blur',()=>setTimeout(close,150));
+  window.addEventListener('scroll',()=>{ if(Date.now()-openedAt>250) close(); },true);
+  window.addEventListener('wheel',()=>close(),{passive:true});
+  window.addEventListener('touchmove',()=>close(),{passive:true});
 }
 attachAC(locFrom, document.getElementById('ac-from'), 'from');
 attachAC(locTo, document.getElementById('ac-to'), 'to');

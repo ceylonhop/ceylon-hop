@@ -166,8 +166,9 @@ if(state.pax>3) state.vehicle='van';
 function escAttr(s){
   return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
-function closePlaceMenus(except){
+function closePlaceMenus(except, invalidate=true){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
+  if(!except && invalidate) placeMenuSeq++;
 }
 function placeSourceLabel(source){
   if(source==='google') return 'Google';
@@ -202,25 +203,30 @@ function mergePlaceSuggestions(localItems, googleItems){
   return out.slice(0,8);
 }
 let placeMenuSeq=0;
+let placeMenuOpenedAt=0;
 function renderPlaceMenu(input){
   const q=input.value.trim();
   const seq=++placeMenuSeq;
-  closePlaceMenus();
+  closePlaceMenus(null, false);
   const baseItems=(T.placeSuggestions?T.placeSuggestions(q,6):[]).filter(Boolean);
-  const paint=(items)=>{
+  const paint=(items, opts={})=>{
     if(seq!==placeMenuSeq) return;
-    closePlaceMenus();
-    if(!items.length) return;
+    closePlaceMenus(null, false);
+    if(!items.length && !opts.loading) return;
     const menu=document.createElement('div');
     menu.className='place-menu';
     menu.setAttribute('role','listbox');
-    menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}" role="option" data-place="${escAttr(p.label)}"><span>${escAttr(p.main||p.label)}</span><small>${placeSourceLabel(p.source)}</small>${p.secondary?`<em>${escAttr(p.secondary)}</em>`:''}</button>`).join('');
+    menu.innerHTML=items.map((p,idx)=>`<button type="button" class="place-option${idx===0?' hi':''}" role="option" data-place="${escAttr(p.label)}"><span>${escAttr(p.main||p.label)}</span><small>${placeSourceLabel(p.source)}</small>${p.secondary?`<em>${escAttr(p.secondary)}</em>`:''}</button>`).join('')+
+      (opts.loading ? `<button type="button" class="place-option loading" disabled aria-disabled="true"><span>Searching Google…</span><small>Google</small></button>` : '');
     menu.addEventListener('mousedown',e=>e.preventDefault());
     menu.addEventListener('click',async e=>{
       const opt=e.target.closest('.place-option'); if(!opt) return;
+      if(opt.disabled || opt.classList.contains('loading')) return;
       const picked=items[[...menu.querySelectorAll('.place-option')].indexOf(opt)];
       input.value=opt.dataset.place||'';
-      closePlaceMenus();
+      input.dataset.placeCommitted='1';
+      placeMenuSeq++;
+      closePlaceMenus(null, false);
       if(picked && picked.source==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
         const geo=await window.CH_MAP.resolvePick(picked.item);
         if(geo && geo.name) input.value=geo.name;
@@ -229,17 +235,30 @@ function renderPlaceMenu(input){
       input.dispatchEvent(new Event('change',{bubbles:true}));
     });
     input.parentNode.appendChild(menu);
+    placeMenuOpenedAt=Date.now();
   };
-  paint(mergePlaceSuggestions(baseItems, []));
+  const text=q.trim();
+  const localStrong = baseItems.some(p=>p.source==='known' && norm(p.label)===norm(text));
+  const localEnough = baseItems.length >= 3 && words(text).length <= 1;
+  const askGoogle = !!(window.CH_MAP && window.CH_MAP.suggest && window.CEYLON_MAPS_KEY && text.length>=2 && !localStrong && !localEnough);
+  paint(mergePlaceSuggestions(baseItems, []), { loading:askGoogle });
   googlePlaceSuggestions(q, baseItems).then(googleItems=>{
-    if(seq!==placeMenuSeq || !googleItems.length) return;
+    if(document.activeElement!==input || input.dataset.placeCommitted==='1') return;
+    if(seq!==placeMenuSeq) return;
+    if(!googleItems.length){ paint(mergePlaceSuggestions(baseItems, [])); return; }
     paint(mergePlaceSuggestions(baseItems, googleItems));
   });
 }
 function wirePlaceSearch(input){
   input.setAttribute('autocomplete','off');
   input.addEventListener('focus',()=>renderPlaceMenu(input));
-  input.addEventListener('input',()=>renderPlaceMenu(input));
+  input.addEventListener('input',()=>{
+    if(input.dataset.placeCommitted==='1'){
+      delete input.dataset.placeCommitted;
+      return;
+    }
+    renderPlaceMenu(input);
+  });
   input.addEventListener('blur',()=>setTimeout(()=>closePlaceMenus(),120));
   input.addEventListener('keydown',e=>{
     const menu=input.parentNode.querySelector('.place-menu');
@@ -250,6 +269,9 @@ function wirePlaceSearch(input){
     }
   });
 }
+window.addEventListener('scroll',()=>{ if(Date.now()-placeMenuOpenedAt>250) closePlaceMenus(); },true);
+window.addEventListener('wheel',()=>closePlaceMenus(),{passive:true});
+window.addEventListener('touchmove',()=>closePlaceMenus(),{passive:true});
 
 // ---- top controls ---- (dates are collected in the separate “When” step)
 const paxSel=document.getElementById('pax');

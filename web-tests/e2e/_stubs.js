@@ -19,7 +19,9 @@ function installStubs() {
     AutocompleteSessionToken: function () {},
     AutocompleteSuggestion: {
       fetchAutocompleteSuggestions: async ({ input }) => ({
-        suggestions: [1, 2, 3].map((n) => ({
+        suggestions: await new Promise((resolve) => {
+          const delay = Number(window.__E2E_GOOGLE_DELAY || 0);
+          setTimeout(() => resolve([1, 2, 3].map((n) => ({
           placePrediction: {
             text: { text: `${input} Result ${n}` },
             mainText: { text: `${input} Result ${n}` },
@@ -31,7 +33,8 @@ function installStubs() {
               formattedAddress: `${input} Result ${n}, Sri Lanka`,
             }),
           },
-        })),
+          }))), delay);
+        }),
       }),
     },
   };
@@ -83,6 +86,7 @@ export async function gotoBooking(page, opts = {}) {
     payhere = 'completed',
     bookingTotal = 12100,            // server-authoritative total (minor units) from /bookings/single
     bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
+    googleDelay = 0,
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -90,6 +94,9 @@ export async function gotoBooking(page, opts = {}) {
     window.__E2E_ROUTE_KM = km;
     window.__E2E_PAYHERE = ph;
   }, [routeKm, payhere]);
+  await page.addInitScript((delay) => {
+    window.__E2E_GOOGLE_DELAY = delay;
+  }, googleDelay);
 
   // never hit the network for these
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
