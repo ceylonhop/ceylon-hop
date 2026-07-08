@@ -104,6 +104,19 @@ test('home search uses popular route autocomplete and sends unknown places to pl
   await page.waitForURL('**/plan.html?**stops=Hilton+Colombo%7CElla**');
 });
 
+test('mobile home search keeps unselected booking tabs readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  const inactiveTab = page.locator('#tab-multi');
+  await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
+  await expect(inactiveTab).toHaveCSS('color', 'rgb(44, 42, 43)');
+
+  await inactiveTab.click();
+  await expect(page.locator('#tab-single')).toHaveAttribute('aria-selected', 'false');
+  await expect(page.locator('#tab-single')).toHaveCSS('color', 'rgb(44, 42, 43)');
+});
+
 test('home autocomplete is not clipped behind the trust bar', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
   await page.setViewportSize({ width: 1424, height: 768 });
