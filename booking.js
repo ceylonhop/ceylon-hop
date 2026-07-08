@@ -36,7 +36,7 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripLegs=[], tripDays=0, tripBase=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
@@ -73,6 +73,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripNights=(params.get('nights')||'').split(',').map(n=>parseInt(n)||0);
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
+  tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
   // Chauffeur is billed by the days the car is kept = trip date span (start→end inclusive).
@@ -80,7 +81,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripDays=chauffeurDuration().days||tripNights.reduce((a,b)=>a+b,0)||tripStops.length;
   const q=tripQuoteWithKms(vehicleKey);
   tripLegs=q.legs;
-  tripBase=q.total;
+  tripBase=q.total || tripFallbackPrice;
   r={
     id:'trip', type:'trip',
     name:'Multi-stop trip · '+tripStops.length+' stops',
@@ -850,8 +851,11 @@ function chauffeurDistanceCharge(){
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
   const idleKm = idleDays * (vehicleKey==='van' ? 150 : 100);
-  const bulkKm = Math.round(tripQuoteWithKms(vehicleKey).totalKm * 1.10) + idleKm;
-  return Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
+  const tripKm = tripQuoteWithKms(vehicleKey).totalKm || 0;
+  if(tripKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
+  const bulkKm = Math.round(tripKm * 1.10) + idleKm;
+  const charge = Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
+  return Math.max(charge, tripBase || unit || 0);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // Server-authoritative price. Until the booking is created the wizard shows a best-effort
@@ -877,7 +881,7 @@ function calcTotal(){
   if(serverQuote) return serverQuote.total;
   // chauffeur-guide trips use the engine's bulk model: day rate × days + ONE distance
   // charge across the whole trip — not the per-leg fares (which carry minimum floors)
-  let t = chauffeurFee()>0
+  let t = (isTrip && state.svc==='chauffeur')
     ? chauffeurFee() + chauffeurDistanceCharge()
     : (perVehicle ? unit : (unit*state.ad + unit*0.6*state.ch));
   if(isShared){ const free=Math.max(1,state.ad+state.ch); t += Math.max(0,state.bags-free)*10; }
@@ -1025,7 +1029,7 @@ function render(){
       ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
       : (isTrip ? (vehicleKey==='van'?'Private AC van · per leg':'Private AC car · per leg') : vehicleLabel);
     // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
-    document.getElementById('sum-adamt').textContent=money(chauffeurFee()>0 ? chauffeurDistanceCharge() : unit);
+    document.getElementById('sum-adamt').textContent=money((isTrip && state.svc==='chauffeur') ? chauffeurDistanceCharge() : unit);
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travelers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
