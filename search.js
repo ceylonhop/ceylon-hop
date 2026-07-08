@@ -47,6 +47,7 @@ if (!T.place(toId) || toId === fromId) toId = 'ella';
 window.updateSearch = function (e) {
   e.preventDefault();
   const fromEl = document.getElementById('e-from'), toEl = document.getElementById('e-to');
+  const paxEl = document.getElementById('e-pax');
   const f = resolvePlaceInput(fromEl.value), t = resolvePlaceInput(toEl.value);
   const err = document.getElementById('srch-err');
   if (!f.name || !t.name) {
@@ -58,12 +59,24 @@ window.updateSearch = function (e) {
     return false;
   }
   if(err) err.hidden = true;
+  const selectedPax = paxEl ? paxEl.value : '';
+  const selectedDate = document.getElementById('e-date').value || '';
+  if(selectedPax === '6'){
+    const msg = [
+      'Hi Ceylon Hop! I need help with a group transfer quote.',
+      'Route: ' + f.name + ' to ' + t.name,
+      selectedDate ? ('Date: ' + selectedDate) : 'Date: flexible',
+      'Travelers: 6+'
+    ].join('\n');
+    location.href = 'https://wa.me/94779669662?text=' + encodeURIComponent(msg);
+    return false;
+  }
   if(!f.known || !t.known){
     const p = new URLSearchParams({ stops: [f.name, t.name].join('|') });
     location.href = 'plan.html?' + p.toString();
     return false;
   }
-  const p = new URLSearchParams({ from: f.id, to: t.id, date: document.getElementById('e-date').value || '', pax: document.getElementById('e-pax').value });
+  const p = new URLSearchParams({ from: f.id, to: t.id, date: selectedDate, pax: selectedPax });
   location.href = 'search.html?' + p.toString();
   return false;
 };

@@ -66,6 +66,22 @@ test('search edit bar shows Google suggestions for non-local places without cove
   await expect(page.locator('#srch-locked')).toBeVisible();
 });
 
+test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quote', async ({ page }) => {
+  await page.route('https://wa.me/**', (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<title>WhatsApp</title>' }));
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=trincomalee&pax=1' });
+
+  await page.locator('#sl-edit').click();
+  await page.locator('#e-pax').selectOption('6');
+  await page.locator('#srch-bar button[type="submit"]').click();
+
+  await page.waitForURL('https://wa.me/94779669662?text=*');
+  const url = new URL(page.url());
+  const text = decodeURIComponent(url.searchParams.get('text') || '');
+  expect(text).toContain('group transfer quote');
+  expect(text).toContain('Route: Colombo Airport (CMB) to Trincomalee');
+  expect(text).toContain('Travelers: 6+');
+});
+
 test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 
