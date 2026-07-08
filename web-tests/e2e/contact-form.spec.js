@@ -38,9 +38,8 @@ test('contact form submits split phone fields while preserving WhatsApp', async 
   await page.fill('#f-first', 'Maya');
   await page.fill('#f-last', 'Silva');
   await page.fill('#f-email', 'maya@example.com');
-  await page.selectOption('#f-phone-code', '+94');
-  await page.fill('#f-phone', '77 123 4567');
   await page.selectOption('#f-country', 'Sri Lanka');
+  await page.fill('#f-phone', '77 123 4567');
   await page.check('#agree');
 
   await page.click('#pay-btn');
@@ -58,14 +57,14 @@ test('contact form submits split phone fields while preserving WhatsApp', async 
   });
 });
 
-test('contact form offers a full country and calling-code list', async ({ page }) => {
+test('contact form uses one full country list and derives the phone code', async ({ page }) => {
   await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car');
   await page.evaluate(() => window.goStep && window.goStep(4));
 
-  await expect.poll(() => page.locator('#f-phone-code option').count()).toBeGreaterThan(150);
+  await expect(page.locator('#f-phone-code')).toHaveCount(0);
   await expect.poll(() => page.locator('#f-country option').count()).toBeGreaterThan(150);
-  await expect(page.locator('#f-phone-code')).toContainText('Argentina +54');
-  await expect(page.locator('#f-phone-code')).toContainText('South Africa +27');
+  await expect(page.locator('#f-country')).toContainText('Argentina');
+  await expect(page.locator('#f-country')).toContainText('South Africa');
   await expect(page.locator('#f-country')).toContainText('Zimbabwe');
 });
 
