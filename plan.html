@@ -393,6 +393,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* ready-made route templates (tours → planner) */
   .tpl-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:0 2px 16px}
+  .tpl-strip[hidden]{display:none}
   .tpl-lbl{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);white-space:nowrap}
   .tpl-chips{display:flex;flex-wrap:wrap;gap:8px}
   .tpl-chip{display:inline-flex;align-items:baseline;gap:.45rem;background:var(--white);border:1.5px solid var(--line);border-radius:999px;padding:.5rem .95rem;font-family:inherit;font-size:.86rem;font-weight:700;color:var(--ink);cursor:pointer;transition:border-color .15s, background .15s}

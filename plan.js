@@ -146,7 +146,8 @@ const DAY_FEE = (window.TRANSFERS && window.TRANSFERS.CHAUFFEUR_DAY_FEE) || 55;
 const state = {
   pax: Math.min(6, Math.max(1, parseInt(params.get('pax'))||2)),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
-  legs: buildLegs(startStops, nightsParam)
+  legs: buildLegs(startStops, nightsParam),
+  hideTemplates: params.has('stops') || params.has('nights') || params.has('dates')
 };
 // Restore the travel dates the customer already chose: the booking step passes them back
 // as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
@@ -276,10 +277,19 @@ function syncVehBtns(){
     else { note.style.display='none'; }
   }
 }
+function syncTemplateStrip(){
+  const strip=document.getElementById('tpl-strip');
+  if(strip) strip.hidden=!!state.hideTemplates;
+}
+function markRouteCustomized(){
+  state.hideTemplates=true;
+  syncTemplateStrip();
+}
 
 // ---- add another transfer leg (pre-fills pick-up from the previous drop-off) ----
 document.getElementById('add-stop').addEventListener('click',()=>{
   if(state.legs.length>=10) return;
+  markRouteCustomized();
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
   state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1 });
   render();
@@ -295,6 +305,7 @@ document.getElementById('add-stop').addEventListener('click',()=>{
 const addStayBtn=document.getElementById('add-stay');
 if(addStayBtn) addStayBtn.addEventListener('click',()=>{
   if(state.legs.length>=10) return;
+  markRouteCustomized();
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
   state.legs.push({ type:'stay', from:prevTo, to:prevTo, date:null, nights:1 });
   render();
@@ -458,6 +469,7 @@ function render(){
       // transfer wiring — live distance recompute without re-render (keeps focus)
       const distEl=wrap.querySelector('[data-dist]');
       function recompute(){
+        markRouteCustomized();
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
         const k=legKm(fromI.value,toI.value);
         const pr=k!=null?legPrice(k,state.vehicle):null;
@@ -477,24 +489,24 @@ function render(){
       }
       fromI.addEventListener('input',recompute);
       toI.addEventListener('input',recompute);
-      fromI.addEventListener('change',()=>{ state.legs[i].from=fromI.value; render(); });
-      toI.addEventListener('change',()=>{ state.legs[i].to=toI.value; render(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; render(); });
+      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; render(); });
       const swap=wrap.querySelector('.rb-swap');
-      if(swap) swap.addEventListener('click',()=>{ const t=state.legs[i].from; state.legs[i].from=state.legs[i].to; state.legs[i].to=t; render(); });
+      if(swap) swap.addEventListener('click',()=>{ markRouteCustomized(); const t=state.legs[i].from; state.legs[i].from=state.legs[i].to; state.legs[i].to=t; render(); });
     } else {
       // stay wiring — one place (mirrors to drop-off so chaining continues)
-      fromI.addEventListener('input',()=>{ state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; updateSummary(); });
-      fromI.addEventListener('change',()=>{ state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; render(); });
+      fromI.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; updateSummary(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; render(); });
       const up=wrap.querySelector('.sn-up'), dn=wrap.querySelector('.sn-dn');
-      if(up) up.addEventListener('click',()=>{ state.legs[i].nights=(state.legs[i].nights||0)+1; render(); });
-      if(dn) dn.addEventListener('click',()=>{ if((state.legs[i].nights||0)>0){ state.legs[i].nights--; render(); } });
+      if(up) up.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].nights=(state.legs[i].nights||0)+1; render(); });
+      if(dn) dn.addEventListener('click',()=>{ if((state.legs[i].nights||0)>0){ markRouteCustomized(); state.legs[i].nights--; render(); } });
     }
 
     // remove
-    wrap.querySelector('.leg-rm').addEventListener('click',()=>{ if(state.legs.length>1){ state.legs.splice(i,1); render(); } });
+    wrap.querySelector('.leg-rm').addEventListener('click',()=>{ if(state.legs.length>1){ markRouteCustomized(); state.legs.splice(i,1); render(); } });
 
     // drag to reorder
-    card.addEventListener('dragstart',e=>{ dragEl=wrap; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    card.addEventListener('dragstart',e=>{ markRouteCustomized(); dragEl=wrap; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
     card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); commitOrder(); dragEl=null; });
 
     // connector between cards
@@ -522,6 +534,7 @@ function render(){
   document.getElementById('stop-count').textContent =
     `${transfers} transfer${transfers!==1?'s':''}${stays?` · ${stays} stay${stays!==1?'s':''}`:''}`;
   syncVehBtns();
+  syncTemplateStrip();
   syncPlanUrl();
 }
 
@@ -816,11 +829,12 @@ const datesContinue=document.getElementById('dates-continue'); if(datesContinue)
   chips.addEventListener('click',e=>{
     const b=e.target.closest('.tpl-chip'); if(!b) return;
     const t=window.getTour(b.dataset.id); if(!t) return;
+    markRouteCustomized();
     state.legs = buildLegs(t.stops);
     render();
     window.scrollTo({top:0,behavior:'smooth'});
   });
-  strip.hidden=false;
+  syncTemplateStrip();
 })();
 
 // ---- go ----

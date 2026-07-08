@@ -195,6 +195,22 @@ test('added planner legs and dates survive refresh', async ({ page }) => {
   await expect(page.locator('.date-row[data-i="1"] .dr-route')).toContainText('Ella');
 });
 
+test('ready-made route starters hide once the itinerary has legs from the customer', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+
+  await page.goto('/plan.html');
+  await expect(page.locator('#tpl-strip')).toBeVisible();
+
+  await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
+  await expect(page.locator('#tpl-strip')).toBeHidden();
+
+  await page.goto('/plan.html');
+  await expect(page.locator('#tpl-strip')).toBeVisible();
+  await page.locator('#add-stop').click();
+  await expect(page.locator('#rail .leg-card')).toHaveCount(3);
+  await expect(page.locator('#tpl-strip')).toBeHidden();
+});
+
 test('planner place search ranks CMB as airport and prices the baked CMB to Sigiriya route', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20city%7CSigiriya%20%2F%20Dambulla&pax=2&vehicle=car');
