@@ -112,6 +112,14 @@ function minutesText(min){
 function legPrice(km, veh){
   return T.legPrice(km, veh);
 }
+function minLegPrice(veh){
+  return veh==='van' ? 50 : 29;
+}
+function guidePriceRange(totalPrice, veh){
+  const lo=Math.max(minLegPrice(veh), Math.floor(totalPrice/50)*50);
+  const hi=Math.ceil((totalPrice+1)/50)*50;
+  return lo===hi ? `~$${lo}` : `$${lo}–$${hi}`;
+}
 
 // ---- state: an ordered list of transfer legs ----
 const params=new URLSearchParams(location.search);
@@ -573,8 +581,7 @@ function updateSummary(){
 
   const amt=document.getElementById('sum-amt');
   if(totalPrice>0 && resolvedLegs>=1){
-    const lo=Math.floor(totalPrice/50)*50, hi=Math.ceil((totalPrice+1)/50)*50;
-    amt.textContent = lo===hi ? `~$${lo}` : `$${lo}–$${hi}`;
+    amt.textContent = guidePriceRange(totalPrice, state.vehicle);
   } else {
     amt.textContent='~$—';
   }

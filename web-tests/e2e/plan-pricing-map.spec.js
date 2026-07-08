@@ -24,6 +24,19 @@ test('planner prices country-suffixed popular places without waiting for Google'
   await expect(page.locator('#st-drive')).toContainText('km');
 });
 
+test('planner guide range never rounds a priced car transfer down to zero', async ({ page }) => {
+  await gotoBooking(page, {
+    path: '/plan.html',
+    query: 'stops=Yatiyanthota%2C%20Sri%20Lanka%7CRatnapura%2C%20Sri%20Lanka&pax=2&vehicle=car',
+    routeKm: 52,
+  });
+
+  await expect(page.locator('#rail [data-dist]')).toContainText('52 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $29');
+  await expect(page.locator('#sum-amt')).toHaveText(/\$29[-\u2013]\$50/);
+  await expect(page.locator('#sum-amt')).not.toContainText('$0');
+});
+
 test('search add-stops handoff preserves the equivalent base route price', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
 
