@@ -361,3 +361,50 @@ test('two-digit leg badges do not overflow in planner or booking review', async 
   })));
   expect(bookingOverflow.filter((b) => b.scrollWidth > b.clientWidth + 1)).toEqual([]);
 });
+
+test('long route names clamp to two lines on mobile review rows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+
+  const stops = [
+    'Colombo Airport (CMB)',
+    'Platinum One Suites, Bagatelle Road, Colombo, Sri Lanka',
+    'Jetwing Saman Villas Bentota Beachfront Resort and Spa',
+  ];
+  const encodedStops = encodeURIComponent(stops.join('|'));
+
+  const twoLineClamp = async (locator) => locator.evaluate((el) => {
+    const styles = window.getComputedStyle(el);
+    const lineHeight = parseFloat(styles.lineHeight);
+    return {
+      clientHeight: el.clientHeight,
+      maxTwoLines: lineHeight * 2,
+      lineClamp: styles.webkitLineClamp,
+      overflow: styles.overflow,
+    };
+  });
+
+  await page.goto(`/plan.html?step=dates&stops=${encodedStops}&pax=2&vehicle=car`);
+  const plannerRoute = page.locator('#dates-list .date-row').first().locator('.dr-route');
+  await expect(plannerRoute).toContainText('Platinum One Suites');
+  const plannerClamp = await twoLineClamp(plannerRoute);
+  expect(plannerClamp.lineClamp).toBe('2');
+  expect(plannerClamp.overflow).toBe('hidden');
+  expect(plannerClamp.clientHeight).toBeLessThanOrEqual(plannerClamp.maxTwoLines + 3);
+
+  const params = new URLSearchParams({
+    mode: 'trip',
+    stops: stops.join('|'),
+    dates: ',',
+    kms: '37,75',
+    pax: '2',
+    vehicle: 'car',
+  });
+  await page.goto(`/booking.html?${params.toString()}`);
+  const bookingRoute = page.locator('#trip-route .tr-leg-title').first();
+  await expect(bookingRoute).toContainText('Platinum One Suites');
+  const bookingClamp = await twoLineClamp(bookingRoute);
+  expect(bookingClamp.lineClamp).toBe('2');
+  expect(bookingClamp.overflow).toBe('hidden');
+  expect(bookingClamp.clientHeight).toBeLessThanOrEqual(bookingClamp.maxTwoLines + 3);
+});
