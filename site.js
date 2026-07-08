@@ -164,7 +164,7 @@
     input.setAttribute('autocomplete','off');
     input.setAttribute('spellcheck','false');
     const limit=opts.limit||6;
-    let menu=null, items=[], active=-1;
+    let menu=null, items=[], active=-1, seq=0;
     function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function close(reset=true){ if(menu) menu.remove(); menu=null; if(reset) active=-1; }
     function choose(item){
@@ -175,10 +175,27 @@
       input.dispatchEvent(new Event('change',{bubbles:true}));
       if(typeof opts.onPick==='function') opts.onPick(item, input);
     }
-    function paint(){
-      close();
-      const q=input.value.trim();
-      items=(T.placeSuggestions?T.placeSuggestions(q,limit):[]).filter(Boolean);
+    function mergeSuggestions(local, google){
+      const seen=new Set();
+      const out=[];
+      function add(p){
+        const key=nPlace(p.label || p.main);
+        if(!key || seen.has(key)) return;
+        seen.add(key); out.push(p);
+      }
+      local.forEach(add);
+      google.forEach(add);
+      return out.slice(0,limit);
+    }
+    function shouldAskGoogle(q, local){
+      if(!window.CH_MAP || !window.CH_MAP.suggest || !window.CEYLON_MAPS_KEY || q.length<2) return false;
+      const exactLocal=local.some(p=>p.source==='known' && nPlace(p.label)===nPlace(q));
+      const oneWord=!/\s/.test(q);
+      return !exactLocal && !(oneWord && local.length>=3);
+    }
+    function paint(nextItems){
+      close(false);
+      items=nextItems || [];
       if(!items.length) return;
       menu=document.createElement('div');
       menu.className='place-menu';
@@ -192,13 +209,34 @@
       });
       input.parentNode.appendChild(menu);
     }
-    input.addEventListener('focus',paint);
-    input.addEventListener('input',()=>{ input.dataset.placeId=''; input.dataset.placeSource=''; paint(); if(typeof opts.onInput==='function') opts.onInput(input); });
+    function refresh(){
+      const q=input.value.trim();
+      const mySeq=++seq;
+      active=-1;
+      const local=(T.placeSuggestions?T.placeSuggestions(q,limit):[]).filter(Boolean);
+      paint(local);
+      if(shouldAskGoogle(q, local)){
+        window.CH_MAP.suggest(q).then(list=>{
+          if(mySeq!==seq) return;
+          const google=(list||[]).map(s=>({
+            label:s.text || s.main,
+            main:s.main || s.text,
+            secondary:s.secondary,
+            source:'google',
+            id:null,
+            item:s
+          }));
+          if(google.length) paint(mergeSuggestions(local, google));
+        }).catch(()=>{});
+      }
+    }
+    input.addEventListener('focus',refresh);
+    input.addEventListener('input',()=>{ input.dataset.placeId=''; input.dataset.placeSource=''; refresh(); if(typeof opts.onInput==='function') opts.onInput(input); });
     input.addEventListener('change',()=>{ const r=window.resolvePlaceInput(input.value); input.dataset.placeId=r.id||''; input.dataset.placeSource=r.known?'known':(r.popular?'extra':''); if(typeof opts.onInput==='function') opts.onInput(input); });
     input.addEventListener('keydown',e=>{
       if(!menu) return;
-      if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(active+1,items.length-1); paint(); }
-      else if(e.key==='ArrowUp'){ e.preventDefault(); active=Math.max(active-1,0); paint(); }
+      if(e.key==='ArrowDown'){ e.preventDefault(); active=Math.min(active+1,items.length-1); paint(items); }
+      else if(e.key==='ArrowUp'){ e.preventDefault(); active=Math.max(active-1,0); paint(items); }
       else if(e.key==='Enter' && active>=0 && items[active]){ e.preventDefault(); choose(items[active]); }
       else if(e.key==='Escape'){ close(); }
     });

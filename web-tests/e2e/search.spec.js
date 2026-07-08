@@ -51,6 +51,21 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await expect(page.locator('#srch-locked')).toBeVisible();
 });
 
+test('search edit bar shows Google suggestions for non-local places without covering Cancel', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=trincomalee&pax=1' });
+
+  await page.locator('#sl-edit').click();
+  await page.locator('#e-to').fill('madampalla');
+
+  const googleOption = page.locator('.place-option', { hasText: 'madampalla Result 1' }).first();
+  await expect(googleOption).toBeVisible();
+  await expect(googleOption).toContainText('Google');
+
+  await page.locator('#sl-cancel').click();
+  await expect(page.locator('#srch-bar')).toBeHidden();
+  await expect(page.locator('#srch-locked')).toBeVisible();
+});
+
 test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 

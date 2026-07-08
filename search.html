@@ -15,6 +15,7 @@
 <meta property="og:title" content="Your transfer options — Ceylon Hop">
 <meta property="og:description" content="Compare a private AC transfer with a shared seat for your Sri Lanka route — fixed prices, free cancellation and WhatsApp support 7 days a week.">
 <link rel="stylesheet" href="site.css">
+<script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -47,8 +48,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-bar select,.srch-bar input{width:100%;padding:.7rem .8rem;border:1.5px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;font-size:.92rem;color:var(--ink)}
   .srch-bar .swap2{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;margin-bottom:1px}
   .srch-bar .swap2 svg{width:16px;height:16px}
+  .srch-actions{display:flex;align-items:center;gap:10px}
   .srch-bar .go{height:42px;white-space:nowrap}
-  @media(max-width:860px){.srch-bar{grid-template-columns:1fr 1fr;gap:10px}.srch-bar .swap2{display:none}.srch-bar .go{grid-column:1/-1}}
+  @media(max-width:860px){.srch-bar{grid-template-columns:1fr 1fr;gap:10px}.srch-bar .swap2{display:none}.srch-actions{grid-column:1/-1}.srch-bar .go{flex:1}}
   /* locked summary (Kayak/Expedia pattern): the chosen search shows read-only until you click Edit */
   .srch-locked{display:flex;align-items:center;gap:16px;background:var(--cream-deep);border-radius:var(--r);padding:14px 18px;flex-wrap:wrap}
   .srch-locked[hidden]{display:none}
@@ -61,7 +63,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-locked .sl-edit{background:var(--white);border:1.5px solid var(--line);color:var(--ink);border-radius:10px;padding:.6rem 1.1rem;font:inherit;font-weight:600;font-size:.9rem;cursor:pointer;display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap}
   .srch-locked .sl-edit:hover{border-color:var(--accent-deep);color:var(--accent-deep)}
   .srch-locked .sl-edit svg{width:15px;height:15px}
-  .sl-cancel{position:relative;z-index:100;background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.88rem;cursor:pointer;margin-top:12px;padding:0;text-decoration:underline}
+  .sl-cancel{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.88rem;cursor:pointer;padding:.5rem .2rem;text-decoration:underline;white-space:nowrap}
   .sl-cancel:hover{color:var(--ink)}
   .sl-cancel[hidden]{display:none}
 
@@ -168,9 +170,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="field place-field"><label for="e-to">Drop-off</label><input id="e-to" required placeholder="Where to?" autocomplete="off"></div>
       <div class="field"><label for="e-date">Date</label><input type="date" id="e-date" data-datepicker data-placeholder="Any date" aria-label="Travel date"></div>
       <div class="field"><label for="e-pax">Travelers</label><select id="e-pax"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6+</option></select></div>
-      <button class="btn btn-primary go" type="submit">Update</button>
+      <div class="srch-actions">
+        <button class="btn btn-primary go" type="submit">Update</button>
+        <button type="button" class="sl-cancel" id="sl-cancel" hidden onclick="cancelEdit()">Cancel</button>
+      </div>
     </form>
-    <button type="button" class="sl-cancel" id="sl-cancel" hidden onclick="cancelEdit()">Cancel</button>
     <p class="srch-err" id="srch-err" role="alert" hidden></p>
   </div>
 </section>
@@ -197,6 +201,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js"></script>
 <script src="routes-data.js"></script>
 <script src="transfers-data.js"></script>
+<script src="ch-map.js"></script>
 <script src="search.js"></script>
 </body>
 </html>
