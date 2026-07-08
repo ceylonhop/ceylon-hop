@@ -12,6 +12,24 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
 });
 
+test('planner vehicle switch updates prices without rebuilding the route map', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
+
+  const mapSvg = page.locator('#trip-map svg').first();
+  await expect(mapSvg).toBeVisible();
+  await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
+
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $69');
+  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
+
+  await page.locator('.veh-btn[data-veh="van"]').click();
+
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $125');
+  await expect(page.locator('#sum-amt')).toHaveText(/\$100[-\u2013]\$150/);
+  await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
+});
+
 test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');

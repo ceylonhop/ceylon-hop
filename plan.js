@@ -261,8 +261,9 @@ paxSel.addEventListener('change',()=>{
 });
 document.getElementById('veh').addEventListener('click',e=>{
   const b=e.target.closest('.veh-btn'); if(!b || b.disabled) return;
+  if(b.dataset.veh===state.vehicle) return;
   state.vehicle=b.dataset.veh;
-  render();
+  refreshVehiclePricing();
 });
 function syncVehBtns(){
   const lockCar = state.pax>3;
@@ -540,6 +541,23 @@ function render(){
   syncPlanUrl();
 }
 
+function refreshVehiclePricing(){
+  document.querySelectorAll('#rail .leg').forEach(el=>{
+    const i=+el.dataset.i;
+    const leg=state.legs[i];
+    if(!leg || leg.type==='stay') return;
+    const distEl=el.querySelector('[data-dist]');
+    if(!distEl) return;
+    const km=legKm(leg.from,leg.to);
+    const price=km!=null?legPrice(km,state.vehicle):null;
+    distEl.innerHTML=distHtml(km,price);
+    distEl.classList.toggle('on', km!=null);
+  });
+  updateSummary({ refreshMap:false });
+  syncVehBtns();
+  syncPlanUrl();
+}
+
 // rebuild leg order from the DOM after a drag
 function commitOrder(){
   const els=[...document.querySelectorAll('#rail .leg')];
@@ -570,7 +588,8 @@ function flagIncompleteLeg(i){
   setTimeout(()=>card.classList.remove('leg-bad'),2200);
 }
 
-function updateSummary(){
+function updateSummary(opts={}){
+  const refreshMap = opts.refreshMap !== false;
   let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
   state.legs.forEach(l=>{
     if(l.type==='stay'){ stayNights+=(l.nights||0); return; }
@@ -592,7 +611,7 @@ function updateSummary(){
   document.getElementById('sum-route').innerHTML =
     seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
 
-  renderMap();
+  if(refreshMap) renderMap();
 
   const amt=document.getElementById('sum-amt');
   if(totalPrice>0 && resolvedLegs>=1){
