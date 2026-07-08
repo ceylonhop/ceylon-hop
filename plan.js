@@ -382,9 +382,9 @@ function distHtml(km, price){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
   }
   return `<span class="lm-dist"><b>${km} km</b> · ~${durationText(km)}</span>`+
+         `<span class="lm-src" title="Distance &amp; time estimated by Google">Google distance</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from <b>${money(price)}</b></span>`+
-         `<span class="lm-src" title="Distance &amp; time estimated by Google">via Google</span>`;
+         `<span class="lm-price">from <b>${money(price)}</b></span>`;
 }
 
 // remove any portaled date popovers left over from the previous render

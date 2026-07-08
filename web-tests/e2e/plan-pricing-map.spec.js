@@ -6,8 +6,12 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
 
   await expect(page.locator('#rail .leg-card')).toHaveCount(1);
-  await expect(page.locator('#rail [data-dist]')).toContainText('136 km');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $69');
+  const legMeta = page.locator('#rail [data-dist]');
+  await expect(legMeta).toContainText('136 km');
+  await expect(legMeta).toContainText('Google distance');
+  await expect(legMeta).toContainText('from $69');
+  await expect(legMeta.locator('.lm-src')).toHaveText('Google distance');
+  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $69');
   await expect(page.locator('#st-drive')).toContainText('136 km');
   await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
 });
