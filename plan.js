@@ -103,6 +103,12 @@ function requestLiveKm(a,b,cb){
 function durationText(km){
   return T.durationText ? T.durationText(km) : `${km} km`;
 }
+function drivingMinutes(km){ return Math.round((km/42)*60); }
+function minutesText(min){
+  const h=Math.floor(min/60), m=Math.round(min%60);
+  if(h<=0) return `${Math.max(20,m)} min`;
+  return m>=8 ? `${h}h ${m}m` : `${h}h`;
+}
 function legPrice(km, veh){
   return T.legPrice(km, veh);
 }
@@ -631,6 +637,7 @@ function renderDatesStep(){
   list.innerHTML='';
   const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
   const flags=outOfOrderFlags();
+  const driveIssue=sameDayDrivingIssue();
   state.legs.forEach((leg,i)=>{
     const isStay=leg.type==='stay';
     const bad=flags.has(i);
@@ -658,10 +665,22 @@ function renderDatesStep(){
   // gate the "Continue to booking" CTA while any leg is dated out of order — the customer
   // must fix the dates (or reorder on the route step) before we hand the route to booking
   const hasOOO=flags.size>0;
+  const hardDriveBlock=driveIssue && driveIssue.level==='block';
   const cont=document.getElementById('dates-continue');
-  if(cont){ cont.classList.toggle('cta-disabled',hasOOO); cont.setAttribute('aria-disabled',hasOOO?'true':'false'); }
+  if(cont){ cont.classList.toggle('cta-disabled',hasOOO||hardDriveBlock); cont.setAttribute('aria-disabled',(hasOOO||hardDriveBlock)?'true':'false'); }
   const oooHint=document.getElementById('dates-order-hint');
   if(oooHint) oooHint.hidden=!hasOOO;
+  const driveHint=document.getElementById('dates-drive-hint');
+  if(driveHint){
+    driveHint.hidden=!driveIssue;
+    driveHint.classList.toggle('is-blocking', !!hardDriveBlock);
+    if(driveIssue){
+      driveHint.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> `+
+        (hardDriveBlock
+          ? `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers. It is too much for one day, so we cannot proceed with those dates. Please split the route across another day.`
+          : `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers. It is a long travel day, so we recommend splitting it if your schedule allows.`);
+    }
+  }
   syncPlanUrl();
 }
 // A leg dated earlier than a stop that comes before it in the route reads as a mistake
@@ -677,6 +696,26 @@ function outOfOrderFlags(){
     if(!runningMax || leg.date > runningMax) runningMax=leg.date;
   });
   return flags;
+}
+function sameDayDrivingIssue(){
+  const byDate=new Map();
+  state.legs.forEach(leg=>{
+    if(leg.type==='stay' || !leg.date) return;
+    const km=legKm(leg.from, leg.to);
+    if(km==null) return;
+    const key=fmtISO(leg.date);
+    const day=byDate.get(key) || { minutes:0, count:0 };
+    day.minutes += drivingMinutes(km);
+    day.count += 1;
+    byDate.set(key, day);
+  });
+  let issue=null;
+  byDate.forEach(day=>{
+    if(day.count<2 || day.minutes<=7*60) return;
+    const level=day.minutes>10*60 ? 'block' : 'warn';
+    if(!issue || day.minutes>issue.minutes || level==='block') issue={...day, level};
+  });
+  return issue;
 }
 // ---- journey progress bar (Route · Dates here; Service · Travelers · Payment on booking) ----
 function setJourney(step){
@@ -736,6 +775,8 @@ function goToBooking(){
   // with a non-chronological / reordered route corrupts the stop list handed to booking
   const ooo=outOfOrderFlags();
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
+  const driveIssue=sameDayDrivingIssue();
+  if(driveIssue && driveIssue.level==='block') return;
   const { seq, dates } = routeSeqDetailed();
   if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
   const stops=seq.map(s=>s.place);

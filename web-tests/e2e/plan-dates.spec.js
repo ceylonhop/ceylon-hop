@@ -131,6 +131,49 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
   await expect(page).toHaveURL(/booking\.html/);
 });
 
+test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?step=dates&stops=Colombo%20city%7CKandy%7CTrincomalee&pax=2&vehicle=car');
+
+  const cont = page.locator('#dates-continue');
+  const hint = page.locator('#dates-drive-hint');
+
+  await expect(cont).toContainText('Continue to select service');
+  await setLegDate(page, 0, '2026-08-10');
+  await setLegDate(page, 1, '2026-08-10');
+
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(/long travel day/i);
+  await expect(cont).not.toHaveClass(/cta-disabled/);
+  await cont.click({ force: true });
+  await expect(page).toHaveURL(/booking\.html/);
+});
+
+test('same-day legs over 10 hours block continuing', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?step=dates&stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
+
+  const cont = page.locator('#dates-continue');
+  const hint = page.locator('#dates-drive-hint');
+
+  await setLegDate(page, 0, '2026-08-10');
+  await setLegDate(page, 1, '2026-08-10');
+
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText(/too much for one day/i);
+  await expect(cont).toHaveClass(/cta-disabled/);
+  await expect(cont).toHaveAttribute('aria-disabled', 'true');
+  await cont.click({ force: true });
+  await page.waitForTimeout(200);
+  await expect(page).toHaveURL(/plan\.html/);
+
+  await setLegDate(page, 1, '2026-08-11');
+  await expect(hint).toBeHidden();
+  await expect(cont).not.toHaveClass(/cta-disabled/);
+});
+
 test('added planner legs and dates survive refresh', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
