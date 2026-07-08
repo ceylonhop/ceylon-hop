@@ -240,7 +240,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:.82rem;color:var(--ink-soft);min-width:0}
   .leg-meta .lm-dist b{color:var(--ink);font-weight:700}
   .leg-meta .lm-sep{opacity:.4}
-  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:800;margin-left:.1rem}
+  .leg-meta .lm-price{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .leg-meta .lm-veh{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pc-teal);color:var(--teal-deep);flex:none}
+  .leg-meta .lm-veh svg{width:12px;height:12px;display:block}
+  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:800}
   .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);white-space:nowrap}
   .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
   @media(max-width:540px){.leg-meta .lm-src{display:none}}

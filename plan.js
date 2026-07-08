@@ -398,6 +398,11 @@ function points(){ return routeSeq().map(s=>s.place); }
 
 const PIN_GOOGLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
 const CAR_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg>';
+const VAN_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>';
+function vehiclePriceIcon(){
+  const isVan=state.vehicle==='van';
+  return `<span class="lm-veh" title="${isVan?'Private AC van':'Private AC car'}" aria-label="${isVan?'Private AC van':'Private AC car'}">${isVan?VAN_ICO:CAR_ICO}</span>`;
+}
 
 function distHtml(km, price){
   if(km==null){
@@ -406,7 +411,7 @@ function distHtml(km, price){
   return `<span class="lm-dist"><b>${km} km</b> · ~${durationText(km)}</span>`+
          `<span class="lm-src" title="Distance &amp; time estimated by Google">Google distance</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from <b>${money(price)}</b></span>`;
+         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(price)}</b></span>`;
 }
 
 // remove any portaled date popovers left over from the previous render

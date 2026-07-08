@@ -12,6 +12,7 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   await expect(legMeta).toContainText('from $69');
   await expect(legMeta.locator('.lm-src')).toHaveText('Google distance');
   await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $69');
+  await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#st-drive')).toContainText('136 km');
   await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
 });
@@ -25,11 +26,13 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
 
   await expect(page.locator('#rail [data-dist]')).toContainText('from $69');
+  await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
 
   await page.locator('.veh-btn[data-veh="van"]').click();
 
   await expect(page.locator('#rail [data-dist]')).toContainText('from $125');
+  await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
   await expect(page.locator('#sum-amt')).toHaveText(/\$100[-\u2013]\$150/);
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
