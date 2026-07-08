@@ -51,6 +51,53 @@ test('selected booking date is displayed and submitted as the same local date', 
   await expect.poll(api.capturedSingle).toMatchObject({ date: '2026-08-18' });
 });
 
+test('reusable datepicker defaults to tomorrow as the earliest selectable date', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/search.html?from=Colombo%20Airport%20(CMB)&to=Kandy');
+
+  const dates = await page.evaluate(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return {
+      min: document.getElementById('e-date').min,
+      tomorrow: iso(tomorrow),
+    };
+  });
+
+  expect(dates.min).toBe(dates.tomorrow);
+});
+
+test('booking calendar rejects today and accepts tomorrow', async ({ page }) => {
+  await bootBooking(page);
+
+  const result = await page.evaluate(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const label = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    window.pickDate(today.getFullYear(), today.getMonth(), today.getDate());
+    const afterToday = document.getElementById('sum-date').textContent;
+
+    window.pickDate(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+    const afterTomorrow = document.getElementById('sum-date').textContent;
+
+    return {
+      min: document.getElementById('cal').dataset.minDate,
+      tomorrow: iso(tomorrow),
+      todayLabel: label(today),
+      tomorrowLabel: label(tomorrow),
+      afterToday,
+      afterTomorrow,
+    };
+  });
+
+  expect(result.min).toBe(result.tomorrow);
+  expect(result.afterToday).not.toContain(result.todayLabel);
+  expect(result.afterTomorrow).toContain(result.tomorrowLabel);
+});
+
 test('booking calendar disables dates more than 12 months out', async ({ page }) => {
   await bootBooking(page);
 

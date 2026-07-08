@@ -19,7 +19,8 @@
   function enhance(input){
     if(input.__dp) return; input.__dp=true;
     const today=new Date(); today.setHours(0,0,0,0);
-    const minDate = input.dataset.min ? parseISO(input.dataset.min) : today;
+    const tomorrow=new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+    const minDate = input.dataset.min ? parseISO(input.dataset.min) : tomorrow;
     const maxDate = input.dataset.max ? parseISO(input.dataset.max) : addMonths(today, 12);
     input.min = iso(minDate);
     input.max = iso(maxDate);

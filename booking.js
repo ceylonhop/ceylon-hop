@@ -584,6 +584,7 @@ document.title='Book '+r.name+' — Ceylon Hop';
 // ---- Calendar ----
 let viewMonth = state.date ? new Date(state.date.getFullYear(),state.date.getMonth(),1) : (()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);})();
 const today=new Date();today.setHours(0,0,0,0);
+const minBookDate=new Date(today);minBookDate.setDate(minBookDate.getDate()+1);
 const maxBookDate=new Date(today.getFullYear(),today.getMonth()+12,today.getDate());
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function fmtISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
@@ -592,7 +593,7 @@ function buildCal(){
   const y=viewMonth.getFullYear(), m=viewMonth.getMonth();
   const first=new Date(y,m,1).getDay();
   const days=new Date(y,m+1,0).getDate();
-  const prevDisabled = (y===today.getFullYear()&&m===today.getMonth());
+  const prevDisabled = new Date(y,m,1) <= new Date(minBookDate.getFullYear(),minBookDate.getMonth(),1);
   const nextMonth=new Date(y,m+1,1);
   const nextDisabled = new Date(nextMonth.getFullYear(),nextMonth.getMonth(),1) > new Date(maxBookDate.getFullYear(),maxBookDate.getMonth(),1);
   let html=`<div class="cal-head">
@@ -604,12 +605,13 @@ function buildCal(){
   for(let i=0;i<first;i++)html+='<div></div>';
   for(let d=1;d<=days;d++){
     const date=new Date(y,m,d);
-    const off = date<today || date>maxBookDate;
+    const off = date<minBookDate || date>maxBookDate;
     const sel = state.date && date.getTime()===state.date.getTime();
     html+=`<div class="cal-day ${off?'off':''} ${sel?'sel':''}" ${off?'':`onclick="pickDate(${y},${m},${d})"`}>${d}</div>`;
   }
   html+='</div>';
   const cal=document.getElementById('cal');
+  cal.dataset.minDate=fmtISO(minBookDate);
   cal.dataset.maxDate=fmtISO(maxBookDate);
   cal.innerHTML=html;
 }
@@ -617,7 +619,7 @@ window.calMove=function(dir){viewMonth=new Date(viewMonth.getFullYear(),viewMont
 
 window.pickDate=function(y,m,d){
   const picked=new Date(y,m,d);
-  if(picked<today || picked>maxBookDate) return;
+  if(picked<minBookDate || picked>maxBookDate) return;
   state.date=picked; state.flexDate=false;
   const fd=document.getElementById('flex-date'); if(fd) fd.checked=false;
   document.getElementById('cal').classList.remove('dim');
