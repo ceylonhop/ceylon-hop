@@ -222,6 +222,7 @@
     }
     function refresh(){
       const q=input.value.trim();
+      if(!q){ close(); return; }
       const mySeq=++seq;
       active=-1;
       const local=(T.placeSuggestions?T.placeSuggestions(q,limit):[]).filter(Boolean);

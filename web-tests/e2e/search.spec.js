@@ -117,6 +117,18 @@ test('mobile home search keeps unselected booking tabs readable', async ({ page 
   await expect(page.locator('#tab-single')).toHaveCSS('color', 'rgb(44, 42, 43)');
 });
 
+test('home multi-stop toggle does not open autocomplete until the user types', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  await page.locator('#tab-multi').click();
+  await expect(page.locator('.mid-stop input')).toBeFocused();
+  await expect(page.locator('.place-menu')).toHaveCount(0);
+
+  await page.locator('.mid-stop input').fill('Colombo');
+  await expect(page.locator('.place-menu')).toBeVisible();
+  await expect(page.locator('.place-option').first()).toContainText('Colombo');
+});
+
 test('home autocomplete is not clipped behind the trust bar', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
   await page.setViewportSize({ width: 1424, height: 768 });
