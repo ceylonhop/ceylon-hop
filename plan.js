@@ -59,6 +59,44 @@ function roadKm(a,b){
   const s=Math.sin(dLat/2)**2+Math.cos(toR(a.lat))*Math.cos(toR(b.lat))*Math.sin(dLng/2)**2;
   return Math.round(2*R*Math.asin(Math.sqrt(s))*1.35);
 }
+const liveKmCache = new Map();
+const liveKmPending = new Set();
+const liveKmWaiters = new Map();
+function liveKmKey(a,b){ return norm(a)+'|'+norm(b); }
+function legKm(a,b){
+  const g1=resolve(a), g2=resolve(b);
+  if(g1&&g2) return roadKm(g1,g2);
+  const key=liveKmKey(a,b);
+  return liveKmCache.has(key) ? liveKmCache.get(key) : null;
+}
+function requestLiveKm(a,b,cb){
+  if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
+  if(resolve(a)&&resolve(b)) return;
+  const key=liveKmKey(a,b);
+  if(typeof cb==='function'){
+    if(!liveKmWaiters.has(key)) liveKmWaiters.set(key, []);
+    liveKmWaiters.get(key).push(cb);
+  }
+  if(liveKmCache.has(key)){
+    const km=liveKmCache.get(key);
+    if(km!=null && typeof cb==='function') cb(km);
+    return;
+  }
+  if(liveKmPending.has(key)) return;
+  liveKmPending.add(key);
+  window.CH_MAP.routeStats([a,b]).then(stats=>{
+    liveKmPending.delete(key);
+    const km=stats && stats.km ? stats.km : null;
+    liveKmCache.set(key, km);
+    const waiters=liveKmWaiters.get(key)||[];
+    liveKmWaiters.delete(key);
+    if(km!=null) waiters.forEach(fn=>fn(km));
+  }).catch(()=>{
+    liveKmPending.delete(key);
+    liveKmCache.set(key, null);
+    liveKmWaiters.delete(key);
+  });
+}
 function durationText(km){
   return T.durationText ? T.durationText(km) : `${km} km`;
 }
@@ -340,8 +378,8 @@ function render(){
 
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
-    const g1=resolve(leg.from), g2=resolve(leg.to);
-    const km=(!isStay && g1&&g2)?roadKm(g1,g2):null;
+    const km=!isStay?legKm(leg.from,leg.to):null;
+    if(!isStay && km==null && leg.from && leg.to) requestLiveKm(leg.from, leg.to, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = isStay ? `Stay ${i+1}` : `Leg ${i+1}`;
 
@@ -404,11 +442,20 @@ function render(){
       const distEl=wrap.querySelector('[data-dist]');
       function recompute(){
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
-        const a=resolve(fromI.value), b=resolve(toI.value);
-        const k=(a&&b)?roadKm(a,b):null;
+        const k=legKm(fromI.value,toI.value);
         const pr=k!=null?legPrice(k,state.vehicle):null;
         distEl.innerHTML=distHtml(k,pr);
         distEl.classList.toggle('on', k!=null);
+        if(k==null && fromI.value && toI.value){
+          requestLiveKm(fromI.value, toI.value, liveK=>{
+            if(state.legs[i] && state.legs[i].from===fromI.value && state.legs[i].to===toI.value){
+              const livePrice=legPrice(liveK,state.vehicle);
+              distEl.innerHTML=distHtml(liveK,livePrice);
+              distEl.classList.add('on');
+              updateSummary();
+            }
+          });
+        }
         updateSummary();
       }
       fromI.addEventListener('input',recompute);
@@ -496,8 +543,8 @@ function updateSummary(){
   state.legs.forEach(l=>{
     if(l.type==='stay'){ stayNights+=(l.nights||0); return; }
     transferLegs++;
-    const a=resolve(l.from), b=resolve(l.to);
-    if(a&&b){ const km=roadKm(a,b); totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
+    const km=legKm(l.from,l.to);
+    if(km!=null){ totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
   });
 
   const dated=state.legs.filter(l=>l.date).map(l=>l.date).sort((a,b)=>a-b);
@@ -537,12 +584,13 @@ function renderMap(){
   const W=344, H=250, padX=80, padY=44;
   const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
   const proj=(lat,lng)=>({ x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX), y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY) });
-  const pts=points().map(name=>{
+  const names=points().filter(Boolean);
+  const pts=names.map(name=>{
     if(!name) return null; const g=T.resolvePlace(name); if(!g) return null;
     return {name, ...proj(g.lat,g.lng)};
   }).filter(Boolean);
   const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
-  if(pts.length<2){
+  if(pts.length<2 && !(window.CH_MAP && names.length>=2)){
     host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map">${island}</svg>`+
       `<div class="tm-empty">Add a pick-up and drop-off to see your route mapped.</div>`;
     return;
@@ -563,7 +611,7 @@ function renderMap(){
   }).join('');
   const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
   // Clean Google map (JS API: route line + waypoints, no panel/markers) with a loading state.
-  if(window.CH_MAP){ window.CH_MAP.renderRoute(host, pts.map(p=>p.name), { onFail(){ host.innerHTML=svg; } }); }
+  if(window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
   else { host.innerHTML=svg; }
 }
 

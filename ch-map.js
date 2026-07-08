@@ -156,6 +156,43 @@
     }
   }
 
+  async function routeStats(names) {
+    const key = window.CEYLON_MAPS_KEY;
+    const stops = (names || []).filter(Boolean);
+    if (!key || stops.length < 2) return null;
+    try {
+      await loadJs(key);
+      return await new Promise((resolve) => {
+        const svc = new google.maps.DirectionsService();
+        svc.route(
+          {
+            origin: toLoc(stops[0]),
+            destination: toLoc(stops[stops.length - 1]),
+            waypoints: stops.slice(1, -1).map((s) => ({ location: toLoc(s), stopover: true })),
+            travelMode: google.maps.TravelMode.DRIVING,
+            region: 'LK',
+          },
+          (res, status) => {
+            if (status !== 'OK' || !res || !res.routes || !res.routes[0]) return resolve(null);
+            try {
+              const legs = res.routes[0].legs || [];
+              let meters = 0, secs = 0;
+              legs.forEach((l) => {
+                meters += l.distance ? l.distance.value : 0;
+                secs += l.duration ? l.duration.value : 0;
+              });
+              resolve({ km: Math.round(meters / 1000), durationMin: Math.round(secs / 60) });
+            } catch (e) {
+              resolve(null);
+            }
+          },
+        );
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ---- Places autocomplete (new Places API) ----
   let placesReady = null;
   let sessionToken = null;
@@ -214,5 +251,5 @@
     }
   }
 
-  window.CH_MAP = { renderRoute, suggest, resolvePick };
+  window.CH_MAP = { renderRoute, suggest, resolvePick, routeStats };
 })();

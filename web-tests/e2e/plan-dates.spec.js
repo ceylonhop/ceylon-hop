@@ -190,7 +190,10 @@ test('planner place search layers popular route then Google results for hotel te
 
   await options.nth(1).click();
   await expect(to).toHaveValue('hilton colombo Hotel');
-  await expect(page.locator('#rail [data-dist]')).toContainText('Pick both points');
+  await expect(page.locator('#rail [data-dist]')).toContainText('100 km');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $51');
+  await expect(page.locator('#st-drive')).toContainText('100 km');
+  await expect(page.locator('#sum-amt')).toContainText('$50–$100');
 });
 
 test('planner dates step keeps a durable URL for browser back', async ({ page }) => {
