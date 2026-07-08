@@ -697,6 +697,7 @@ window.toggleFlexDate=function(){
 };
 // service chooser (trip mode)
 window.pickSvc=function(svc){
+  if(isTrip && svc==='chauffeur' && !tripDatesComplete()) return;
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
   state.payPlan = 'full';
@@ -817,9 +818,11 @@ function isSingleDayTrip(){
 // a multi-stop trip is fully dated when every leg (stop-to-stop) carries a travel date
 function tripDatesComplete(){
   if(!isTrip || tripStops.length<2) return false;
-  // chauffeur is billed per day from the trip START plus the nights at each stop, so we only
-  // need a start anchor to price it — intermediate legs may stay flexible and still quote
-  return !!((tripDates[0]||'').trim() || (startParam||'').trim());
+  const wires = Math.max(0, tripStops.length-1);
+  for(let i=0;i<wires;i++){
+    if(!(tripDates[i]||'').trim()) return false;
+  }
+  return true;
 }
 // Chauffeur duration from the trip dates: nights on the road = (last date − first date),
 // days the car is kept = nights + 1. Driver accommodation = one night per night away.
@@ -944,16 +947,26 @@ function render(){
   if(isTrip){
     const pvt=document.getElementById('svc-private-tag'), chf=document.getElementById('svc-chauffeur-tag');
     if(pvt) pvt.textContent='Priced per leg · pay in full';
-    if(chf) chf.textContent='Day rate + trip distance · pay in full';
 
     // chauffeur is billed per day, so it needs every leg dated before we can quote it
     const cx=document.getElementById('chauffeur-extra');
     const datesOK=tripDatesComplete();
+    const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
+    if(chf) chf.textContent=datesOK ? 'Day rate + trip distance · pay in full' : 'Add all dates to quote';
+    if(chBtn && chBtn.style.display!=='none'){
+      chBtn.disabled=!datesOK;
+      chBtn.setAttribute('aria-disabled', datesOK?'false':'true');
+      chBtn.classList.toggle('disabled', !datesOK);
+    }
+    if(!datesOK && state.svc==='chauffeur'){
+      state.svc='private';
+      document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
+    }
     if(cx){
-      if(state.svc==='chauffeur' && !datesOK){
+      if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add your start date to price this</b></div>'+
-          '<p>A driver-guide is charged per day, so we can only quote it once we know when your trip begins. Set your start date in the planner, then come back to see your rate.</p>'+
+        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
+          '<p>A driver-guide is charged by calendar days, so we can only quote it once every transfer leg has a date.</p>'+
           '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();

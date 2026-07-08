@@ -33,6 +33,32 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#sum-adamt')).not.toHaveText('$0');
 });
 
+test('chauffeur service is unavailable until every trip leg has a date', async ({ page }) => {
+  const query = [
+    'mode=trip',
+    'stops=Negombo%7CSigiriya%7CKandy%7CElla',
+    'nights=0,0,0,0',
+    'dates=2026-08-08,,',
+    'pax=4',
+    'vehicle=van',
+  ].join('&');
+
+  await gotoBooking(page, { query });
+
+  const chauffeur = page.locator('[data-svc="chauffeur"]');
+  await expect(chauffeur).toBeDisabled();
+  await expect(page.locator('#svc-chauffeur-tag')).toHaveText('Add all dates to quote');
+  await expect(page.locator('#chauffeur-extra')).toContainText('Add all leg dates to quote chauffeur-guide');
+  await expect(page.locator('#chauffeur-extra')).toContainText('every transfer leg has a date');
+
+  await chauffeur.click({ force: true });
+
+  await expect(chauffeur).not.toHaveClass(/on/);
+  await expect(page.locator('[data-svc="private"]')).toHaveClass(/on/);
+  await expect(page.locator('#sum-adlabel')).toHaveText(/Private AC van · per leg/);
+  await expect(page.locator('#sum-adlabel')).not.toHaveText(/Chauffeur distance/);
+});
+
 test('trip booking review shows planner-provided Google distances for exact-place legs', async ({ page }) => {
   const query = [
     'mode=trip',
