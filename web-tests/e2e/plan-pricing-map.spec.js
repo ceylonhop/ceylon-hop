@@ -37,6 +37,19 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
+test('mobile planner keeps unselected vehicle option text readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
+
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
+
+  await page.locator('.veh-btn[data-veh="van"]').click();
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
+});
+
 test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
