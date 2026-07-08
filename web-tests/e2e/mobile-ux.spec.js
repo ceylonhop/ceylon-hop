@@ -32,3 +32,24 @@ test('mobile terms consent has a reliable touch target and can be checked', asyn
   await page.locator('label:has(#agree)').click();
   await expect(page.locator('#agree')).toBeChecked();
 });
+
+test('mobile progress steps keep descriptive labels visible', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoBooking(page);
+
+  const labels = page.locator('#psteps .lbl');
+  await expect(labels.nth(0)).toContainText('When');
+  await expect(labels.nth(1)).toContainText('Pick-up');
+  await expect(labels.nth(2)).toContainText('Travelers');
+  await expect(labels.nth(3)).toContainText('Details');
+  for (let i = 0; i < 4; i += 1) {
+    await expect(labels.nth(i)).toBeVisible();
+  }
+
+  await page.goto('/plan.html?step=dates&stops=Colombo%20Airport%20(CMB)%7CKandy');
+  const plannerLabels = page.locator('#journey .jlbl');
+  await expect(plannerLabels).toHaveText(['Route', 'Dates', 'Service', 'Payment']);
+  for (let i = 0; i < 4; i += 1) {
+    await expect(plannerLabels.nth(i)).toBeVisible();
+  }
+});

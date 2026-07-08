@@ -299,7 +299,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .jstep.jnav:hover .jdot{border-color:var(--accent)}
   .jline{height:2px;flex:1;background:var(--cream-deep);margin:0 8px;min-width:14px}
   .jline.done{background:var(--teal-deep)}
-  @media(max-width:760px){.jstep .jlbl{display:none}.jline{min-width:10px}}
+  @media(max-width:760px){
+    .journey{align-items:flex-start;margin-top:18px;padding:0 12px}
+    .jstep{flex-direction:column;gap:5px;text-align:center;min-width:46px}
+    .jstep .jlbl{display:block;white-space:normal;max-width:62px;font-size:.68rem;line-height:1.15}
+    .jstep .jdot{width:28px;height:28px}
+    .jline{min-width:8px;margin:14px 2px 0}
+  }
 
   /* ---- step 2: “When” dates ---- */
   .dates-wrap{position:relative;z-index:2;padding:40px 0 90px}

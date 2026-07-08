@@ -468,7 +468,7 @@ if(isTrip){
         '<div class="pline"></div>'+
         '<div class="pstep active" data-s="3"><span class="dot">3</span><span class="lbl">Service</span></div>'+
         '<div class="pline"></div>'+
-        '<div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Payment</span></div>';
+        '<div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Pay</span></div>';
       // the two leading nodes jump back to the planner (Route / Dates live there)
       steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=editUrl; }); });
     }
