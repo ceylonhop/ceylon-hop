@@ -62,6 +62,7 @@ test('contact form uses one full country list and derives the phone code', async
   await page.evaluate(() => window.goStep && window.goStep(4));
 
   await expect(page.locator('#f-phone-code')).toHaveCount(0);
+  await expect(page.locator('label[for="f-country"]')).toHaveText('Country code');
   await expect.poll(() => page.locator('#f-country option').count()).toBeGreaterThan(150);
   await expect(page.locator('#f-country')).toContainText('Argentina');
   await expect(page.locator('#f-country')).toContainText('South Africa');
