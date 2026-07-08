@@ -486,10 +486,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; }
 .qv .ch-ac-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); font-family: var(--sans); }
 .qv .ch-ac-item:hover, .qv .ch-ac-item.hi { background: var(--cream); }
+.qv .ch-ac-item.loading { cursor: default; color: var(--muted); }
+.qv .ch-ac-item.loading:hover { background: none; }
 .qv .ch-ac-pin { font-size: 13px; flex: none; opacity: .85; }
 .qv .ch-ac-name { font-weight: 400; color: var(--muted); }
 .qv .ch-ac-name b { font-weight: 700; color: var(--ink); }
 .qv .ch-ac-source { margin-left: auto; flex: none; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--accent); }
+.qv .ch-ac-item.loading .ch-ac-source { color: var(--muted); }
 .qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: #fff; outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; }
 .qv .ch-tl-title:hover { border-color: var(--cream-d); }
 .qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
@@ -3539,9 +3542,13 @@ var _ac = {
   inputEl: null,
   menuEl: null,
   timer: null,
+  seq: 0,
+  committed: false,
+  openedAt: 0,
 };
 
-function acClose() {
+function acClose(invalidate) {
+  if (invalidate !== false) _ac.seq++;
   if (_ac.menuEl && _ac.menuEl.parentNode) {
     _ac.menuEl.parentNode.removeChild(_ac.menuEl);
   }
@@ -3551,6 +3558,7 @@ function acClose() {
   _ac.hiIdx = -1;
   _ac.inputEl = null;
   _ac.menuEl = null;
+  _ac.committed = false;
 }
 
 function acPick(item) {
@@ -3558,10 +3566,12 @@ function acPick(item) {
   var field = _ac.field;
   if (!legId || !field) { acClose(); return; }
   var name = (typeof item === 'string') ? item : (item && item.label) || '';
+  _ac.committed = true;
+  _ac.seq++;
 
   // Update the input value without a full re-render so cursor stays correct
   if (_ac.inputEl) _ac.inputEl.value = name;
-  acClose();
+  acClose(false);
 
   // Patch leg state (this calls render(), wiping the menu — already gone)
   var patch = {};
@@ -3579,13 +3589,16 @@ function acPick(item) {
   render();
 }
 
-function acRenderMenu(inputEl, items, query) {
+function acRenderMenu(inputEl, items, query, opts) {
+  opts = opts || {};
+  items = items || [];
+  _ac.items = items;
   // Remove any existing menu
   if (_ac.menuEl && _ac.menuEl.parentNode) {
     _ac.menuEl.parentNode.removeChild(_ac.menuEl);
     _ac.menuEl = null;
   }
-  if (!items || items.length === 0) return;
+  if (items.length === 0 && !opts.loading) return;
 
   var menu = document.createElement('div');
   menu.className = 'ch-ac-menu';
@@ -3610,16 +3623,27 @@ function acRenderMenu(inputEl, items, query) {
     menu.appendChild(btn);
   });
 
+  if (opts.loading) {
+    var loading = document.createElement('button');
+    loading.type = 'button';
+    loading.className = 'ch-ac-item loading';
+    loading.disabled = true;
+    loading.setAttribute('aria-disabled', 'true');
+    loading.innerHTML = '<span class="ch-ac-pin">⌕</span><span class="ch-ac-name">Searching Google…</span><span class="ch-ac-source">Google</span>';
+    menu.appendChild(loading);
+  }
+
   // Position under the input
   var wrap = inputEl.parentNode;
   wrap.style.position = 'relative';
   wrap.appendChild(menu);
   _ac.menuEl = menu;
+  _ac.openedAt = Date.now();
 }
 
 function acUpdateHighlight() {
   if (!_ac.menuEl) return;
-  var btns = _ac.menuEl.querySelectorAll('.ch-ac-item');
+  var btns = _ac.menuEl.querySelectorAll('.ch-ac-item:not(.loading)');
   btns.forEach(function(b, i) {
     b.classList.toggle('hi', i === _ac.hiIdx);
   });
@@ -3702,9 +3726,13 @@ function requestAutocomplete(input, legId, field, q) {
   _ac.field = field;
   _ac.inputEl = input;
   _ac.hiIdx = -1;
+  _ac.committed = false;
+  var requestSeq = ++_ac.seq;
+  acRenderMenu(input, [], q, { loading: true });
 
   _ac.timer = setTimeout(function() {
     apiPlaces(q).then(function(places) {
+      if (requestSeq !== _ac.seq || _ac.committed) return;
       // Guard: input must still be the active one. A background estimate/distance
       // render can replace this DOM node while the autocomplete request is in flight;
       // re-anchor to the fresh focused field instead of dropping valid suggestions.
@@ -3714,6 +3742,8 @@ function requestAutocomplete(input, legId, field, q) {
         if (!fresh || document.activeElement !== fresh || (fresh.value || '').trim() !== q) return;
         _ac.inputEl = fresh;
         targetInput = fresh;
+      } else if (document.activeElement !== input || (input.value || '').trim() !== q) {
+        return;
       }
       var limited = places.slice(0, 6);
       _ac.items = limited;
@@ -3728,6 +3758,11 @@ document.addEventListener('mousedown', function(e) {
     acClose();
   }
 });
+document.addEventListener('scroll', function() {
+  if (_ac.menuEl && Date.now() - _ac.openedAt > 250) acClose();
+}, true);
+window.addEventListener('wheel', function() { if (_ac.menuEl) acClose(); }, { passive: true });
+window.addEventListener('touchmove', function() { if (_ac.menuEl) acClose(); }, { passive: true });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // T5: no self-invoke — the ops shell calls QuoteView.init() when the founder

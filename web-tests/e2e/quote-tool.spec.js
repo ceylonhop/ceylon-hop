@@ -110,6 +110,37 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
   await expect(toastMsg).toContainText('Q-', { timeout: 8000 });
 });
 
+test('ops autocomplete shows pending search and stays closed after scroll', async ({ page }) => {
+  await chooseVehicle(page, 'van_6');
+
+  let delayedPlaces = 0;
+  await page.route('**/admin/quote/places?q=Kitulgala', async (route) => {
+    delayedPlaces += 1;
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        places: ['Kitulgala'],
+        suggestions: [{ label: 'Kitulgala', source: 'known' }],
+      }),
+    });
+  });
+
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await toInput.click();
+  await toInput.fill('Kitulgala');
+
+  await expect(page.locator('.ch-ac-menu .ch-ac-item.loading')).toContainText('Searching Google');
+  await page.mouse.wheel(0, 300);
+  await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
+
+  await page.waitForTimeout(700);
+  expect(delayedPlaces).toBeGreaterThan(0);
+  await expect(toInput).toHaveValue('Kitulgala');
+  await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
+});
+
 // Spec 2: Car + 4 bags triggers the luggage flag
 test('car + 4 bags raises the luggage flag', async ({ page }) => {
   // Select Car in the vehicle dropdown
