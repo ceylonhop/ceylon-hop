@@ -44,7 +44,7 @@ describe('POST /bookings/trip', () => {
     expect(b.amountDueNow).toBe(18426);
   });
 
-  it('prices a resolvable chauffeur trip with the engine and collects only the deposit (GL-3)', async () => {
+  it('prices a resolvable chauffeur trip with the engine and collects the full amount now', async () => {
     const app = createApp();
     const res = await postTrip(app, {
       ...valid,
@@ -58,7 +58,7 @@ describe('POST /bookings/trip', () => {
     const b = await res.json();
     // 3 days × 3500 + round((222 buffered + 100 idle-min) × 46) = 10500 + 14812
     expect(b.total).toBe(25312);
-    expect(b.amountDueNow).toBe(2531); // 10% deposit, under the $50 cap
+    expect(b.amountDueNow).toBe(25312);
   });
 
   it('rejects an invalid trip (400)', async () => {

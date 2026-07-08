@@ -246,8 +246,8 @@ function textShell(title: string, lede: string, booking: Booking, lines: string[
 }
 
 // ── Booking confirmation (→ paid) ──────────────────────────────────────────
-// GL-3: chauffeur trips only collect a deposit at checkout, so when less than the total
-// was paid the confirmation shows deposit + balance instead of a single total line.
+// Historical/ops-safe: when less than the total was paid, show deposit + balance instead
+// of a single total line. Public bookings currently pay in full.
 function paidRows(booking: Booking): [string, string][] {
   const due = booking.amountDueNow;
   if (due != null && due < booking.total) {

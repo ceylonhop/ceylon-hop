@@ -128,10 +128,10 @@ test('car + 4 bags raises the luggage flag', async ({ page }) => {
 });
 
 // Spec 3 (V1 + reflow): a chauffeur trip (chosen via the service chooser) with a
-// mid-itinerary stay day renders the stay UNpriced in WhatsApp, keeps the deposit
+// mid-itinerary stay day renders the stay UNpriced in WhatsApp, keeps the full-payment
 // line, keeps the LAST transfer's row (the old alignment bug dropped it), and the
 // total matches the Summary card.
-test('stay day renders unpriced in WhatsApp output with deposit line (V1)', async ({ page }) => {
+test('stay day renders unpriced in WhatsApp output with full-payment line (V1)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
   // Leg 1 (transfer): Kandy → Ella, dated. (Settle waits: render() replaces #app
@@ -191,7 +191,7 @@ test('stay day renders unpriced in WhatsApp output with deposit line (V1)', asyn
   expect(stayLine, waText).toBeTruthy();
   expect(stayLine).not.toMatch(/LKR|\$/); // stay day carries no price
   expect(waText).toContain('Mirissa'); // the transfer AFTER the stay is not dropped (old V1 bug)
-  expect(waText).toMatch(/Deposit to confirm/);
+  expect(waText).toMatch(/Pay in full to confirm/);
   expect(waText).toContain(summaryTotal.trim());
 });
 

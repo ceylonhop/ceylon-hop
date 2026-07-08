@@ -72,7 +72,7 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(r.status).toBe(400);
   });
 
-  it('a chauffeur trip falling back to quotedTotal still only collects the deposit now', async () => {
+  it('a chauffeur trip falling back to quotedTotal still collects the full amount now', async () => {
     const { app } = appWithTasks();
     const r = await post(app, '/bookings/trip', {
       stops: ['Nowhere', 'Elsewhere'], // unresolvable → quotedTotal fallback
@@ -86,7 +86,7 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(r.status).toBe(201);
     const b = await r.json();
     expect(b.total).toBe(40000);
-    expect(b.amountDueNow).toBe(4000); // 10% deposit, under the $50 cap
+    expect(b.amountDueNow).toBe(40000);
   });
 
   it('shared seats always store the server corridor price; a divergent quotedTotal is flagged', async () => {

@@ -80,7 +80,7 @@ export function quote(req: QuoteRequest): QuoteResult {
 
   const totalCents = subtotalCents;
   const deposit = depositCents(totalCents);
-  const amountDueNowCents = req.product === 'chauffeur' ? deposit : totalCents;
+  const amountDueNowCents = totalCents;
   const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
 
   return {

@@ -94,7 +94,7 @@ const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || '';
 
-// trip start date (for deposit-window logic + chauffeur day count)
+// trip start date (chauffeur day count)
 const startParam = params.get('start') || params.get('date');
 const timeParam = params.get('time') || '';
 const state={
@@ -103,7 +103,7 @@ const state={
   flexDate: false,
   flexTime: false,
   svc: 'private',          // 'private' | 'chauffeur' (trip mode only)
-  payPlan: 'full',         // 'full' | 'deposit'
+  payPlan: 'full',
   ad: Math.max(1, parseInt(params.get('ad'))||parseInt(params.get('pax'))||1),
   ch: Math.max(0, parseInt(params.get('ch'))||0),
   addons: new Set(),
@@ -670,8 +670,7 @@ window.toggleFlexDate=function(){
 window.pickSvc=function(svc){
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
-  // chauffeur is always deposit; private trips default full
-  state.payPlan = svc==='chauffeur' ? 'deposit' : state.payPlan;
+  state.payPlan = 'full';
   render();
 };
 function renderRepriceNote(){
@@ -776,7 +775,7 @@ function phoneParts(){
   return { code, number, whatsapp };
 }
 
-// chauffeur-guide fee + deposit helpers
+// chauffeur-guide fee helpers
 // the whole trip fits in one day when there are no overnight stays and every dated leg is the same day
 function isSingleDayTrip(){
   const nights = tripNights.reduce((a,b)=>a+(parseInt(b)||0),0);
@@ -841,12 +840,7 @@ function adoptServerQuote(b){
   serverQuote = { total: t!=null?t:d, dueNow: d!=null?d:t };
 }
 
-// deposit applies for chauffeur (always) or a private trip booked far ahead and the user opts in
 function isDeposit(){
-  // once the server has priced it, deposit-ness is simply "charged now < full total"
-  if(serverQuote) return serverQuote.dueNow < serverQuote.total - 0.005;
-  if(isTrip && state.svc==='chauffeur') return true;
-  if(state.payPlan==='deposit' && daysUntilStart()>30) return true;
   return false;
 }
 
@@ -865,7 +859,7 @@ function calcTotal(){
 const DEPOSIT_PCT = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_PCT) || 0.10;
 const DEPOSIT_CAP = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_CAP) || 50; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
-function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return isDeposit() ? depositDue() : calcTotal(); }
+function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}
 
 // price of an AC van for this journey (single transfer or whole trip)
@@ -918,7 +912,7 @@ function render(){
   if(isTrip){
     const pvt=document.getElementById('svc-private-tag'), chf=document.getElementById('svc-chauffeur-tag');
     if(pvt) pvt.textContent='Priced per leg · pay in full';
-    if(chf) chf.textContent='Day rate + trip distance · deposit';
+    if(chf) chf.textContent='Day rate + trip distance · pay in full';
 
     // chauffeur is billed per day, so it needs every leg dated before we can quote it
     const cx=document.getElementById('chauffeur-extra');
@@ -1020,15 +1014,10 @@ function render(){
   document.getElementById('sum-addons').innerHTML=addonHtml;
   document.getElementById('sum-total').textContent=money(calcTotal());
 
-  // deposit messaging in the summary
+  // Deposit messaging is disabled for now: every customer booking pays in full.
   let depEl=document.getElementById('s-deposit');
   if(!depEl){ depEl=document.createElement('div'); depEl.id='s-deposit'; depEl.className='s-deposit'; document.getElementById('sum-total').closest('.s-body').appendChild(depEl); }
-  if(isDeposit()){
-    depEl.style.display='block';
-    depEl.innerHTML = (isTrip && state.svc==='chauffeur')
-      ? `Secure your chauffeur-guide with a <b>${money(amountDueNow())} deposit</b> today · balance before you travel.`
-      : `Booking early — pay a <b>${money(amountDueNow())} deposit</b> now, balance due before arrival.`;
-  } else { depEl.style.display='none'; }
+  depEl.style.display='none';
 
   // cancellation language adapts to the service (24h transfers · 10 days chauffeur-guide)
   const perk=document.getElementById('perk-cancel');
@@ -1048,26 +1037,15 @@ function render(){
     }
   }
 
-  // payment step: due-now row + early-booking pay choice
+  // payment step: all customer bookings pay in full for now
   const payDue=document.getElementById('pay-due');
   if(payDue){
-    payDue.innerHTML = `<span class="lbl">Due now${isDeposit()?' (deposit)':''}<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
-      `<span class="amt">${money(amountDueNow())}${isDeposit()?`<small>of ${money(calcTotal())} total</small>`:''}</span>`;
+    payDue.innerHTML = `<span class="lbl">Due now<b>${(isTrip&&state.svc==='chauffeur')?'Chauffeur-guide':(isTrip?'Private transfer':r.name)}</b></span>`+
+      `<span class="amt">${money(amountDueNow())}</span>`;
   }
-  // show the full/deposit choice only for a private trip booked >30 days out
   let choice=document.getElementById('pay-choice');
-  const showChoice = isTrip && state.svc!=='chauffeur' && daysUntilStart()>30;
-  if(showChoice && !choice){
-    choice=document.createElement('div'); choice.id='pay-choice'; choice.className='pay-choice';
-    document.getElementById('pay-due').after(choice);
-  }
   if(choice){
-    choice.style.display = showChoice ? 'grid' : 'none';
-    if(showChoice){
-      choice.innerHTML=`
-        <label class="pc-opt ${state.payPlan==='full'?'on':''}" data-plan="full"><input type="radio" name="pp" ${state.payPlan==='full'?'checked':''} onchange="setPayPlan('full')"><span><b>Pay in full today</b><small>${money(calcTotal())} — done and dusted</small></span></label>
-        <label class="pc-opt ${state.payPlan==='deposit'?'on':''}" data-plan="deposit"><input type="radio" name="pp" ${state.payPlan==='deposit'?'checked':''} onchange="setPayPlan('deposit')"><span><b>Pay ${Math.round(DEPOSIT_PCT*100)}% deposit now</b><small>${money(depositDue())} now, balance before arrival</small></span></label>`;
-    }
+    choice.style.display = 'none';
   }
 }
 
@@ -1311,14 +1289,13 @@ function finalizeBooking(apiBooking){
   document.getElementById('pass-pax').textContent=`${state.ad} adult${state.ad>1?'s':''}${state.ch?', '+state.ch+' child':''}`;
   document.getElementById('pass-pickup').textContent=isTrip ? ((state.svc==='chauffeur')?'Chauffeur-guide':'Private transfer') : (state.locFrom||r.stops[0]);
   document.getElementById('pass-name').textContent=(first+' '+last).trim();
-  document.getElementById('pass-paid').textContent= isDeposit()? `${money(amountDueNow())} dep.` : money(calcTotal());
+  document.getElementById('pass-paid').textContent=money(calcTotal());
   document.getElementById('pass-ref').textContent=ref;
-  // tailor the confirmation concierge note to flexible/deposit
+  // tailor the confirmation concierge note to flexible timing
   const cc=document.getElementById('conf-concierge');
   if(cc){
     let extra='';
     if(state.flexDate||state.flexTime) extra=' Just let us know your exact date & time any time up to 12 hours before — a quick WhatsApp is all it takes.';
-    if(isDeposit()) extra+=' We’ll send a secure link for the balance closer to your travel date.';
     cc.innerHTML=`A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You’ll hear from us first thing in the morning.${extra}`;
   }
   document.getElementById('main-layout').style.display='none';

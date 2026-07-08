@@ -42,8 +42,7 @@ describe('POST /bookings/:id/checkout', () => {
   });
 });
 
-// GL-3 — checkout collects amountDueNow (the chauffeur deposit), not always the total.
-describe('POST /bookings/:id/checkout — deposits', () => {
+describe('POST /bookings/:id/checkout — due now amount', () => {
   const chauffeur = {
     stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
     nights: [1, 2, 0],
@@ -54,7 +53,7 @@ describe('POST /bookings/:id/checkout — deposits', () => {
     customer: valid.customer,
   };
 
-  it('charges only the deposit for a chauffeur trip', async () => {
+  it('charges the full amount for a chauffeur trip', async () => {
     const app = createApp();
     const b = await (
       await app.request('/bookings/trip', {
@@ -66,7 +65,7 @@ describe('POST /bookings/:id/checkout — deposits', () => {
     expect(b.total).toBe(25312); // engine: 3×3500 + round(322×46)
     const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
     expect(res.status).toBe(200);
-    expect((await res.json()).amount).toBe(2531); // 10% deposit, under the $50 cap
+    expect((await res.json()).amount).toBe(25312);
   });
 
   it('falls back to the full total for legacy rows without amountDueNow', async () => {

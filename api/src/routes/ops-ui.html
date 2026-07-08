@@ -759,7 +759,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-total-usd { font-family: var(--serif); font-size: 30px; font-weight: 700; color: var(--ink); }
 .qv .ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
 
-/* deposit / due-now highlighted chip row (chauffeur) */
+/* due-now highlighted chip row (chauffeur) */
 .qv .ch-deposit-chip { margin-top: 12px; background: rgba(10,185,182,.08); border: 1px solid rgba(10,185,182,.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .qv .ch-deposit-chip .dep-lbl { font-size: 12px; color: var(--teal-d); font-weight: 600; }
 .qv .ch-deposit-chip .dep-val { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--teal-d); font-variant-numeric: tabular-nums; }
@@ -2334,7 +2334,7 @@ function renderServiceChooser() {
 
 // ── Summary card body (money-pane core) ──────────────────────────────────────
 // Composition (top→bottom): km line → cost build-up rows → big serif total →
-// deposit chip (chauffeur) → margin. km hero number keeps .ch-km.hero for e2e.
+// due-now chip (chauffeur) → margin. km hero number keeps .ch-km.hero for e2e.
 function renderSummaryCardBody() {
   // Error / gated-vehicle / loading state
   if (lastEstimateError) {
@@ -2375,13 +2375,13 @@ function renderSummaryCardBody() {
     + '</span>');
   lines.push('</div>');
 
-  // Chauffeur product: deposit + balance as a subtle highlighted chip/row.
+  // Chauffeur product: full due-now amount as a subtle highlighted chip/row.
   if (est.product === 'chauffeur' && est.amountDueNow) {
     lines.push('<div class="ch-deposit-chip">');
-    lines.push('  <span class="dep-lbl">Deposit to confirm</span>');
+    lines.push('  <span class="dep-lbl">Pay in full to confirm</span>');
     lines.push('  <span class="dep-val">' + esc(fmtUsd(est.amountDueNow.cents)) + '</span>');
     lines.push('</div>');
-    lines.push('<div class="ch-deposit-note">' + esc(est.amountDueNow.lkr || '') + ' &middot; balance after the trip</div>');
+    lines.push('<div class="ch-deposit-note">' + esc(est.amountDueNow.lkr || '') + ' &middot; no balance due after checkout</div>');
   }
 
   // Margin — the small teal line.
@@ -2754,7 +2754,7 @@ function whatsappMessage() {
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
     var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Deposit to confirm: ' + M(dueCents) + ' (balance on/after the trip).');
+    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
   } else {
     // PRIVATE: per driving leg (date — route — price), then extras, then total.
     privateLegRows().forEach(function(r) {
@@ -2792,7 +2792,7 @@ function emailMessage() {
     });
     lines.push('', 'Total: ' + M(totalCents));
     var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
-    lines.push('', 'Deposit to confirm: ' + M(dueCents) + ' (balance on/after the trip).');
+    lines.push('', 'Pay in full to confirm: ' + M(dueCents) + '.');
   } else {
     privateLegRows().forEach(function(r) {
       lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));
@@ -3127,7 +3127,7 @@ function render() {
 
     '        <div class="ch-money-rule"></div>',
 
-    // Core: km line → build-up → total → deposit → margin
+    // Core: km line → build-up → total → due now → margin
     '        <div class="ch-money-body">',
     renderSummaryCardBody(),
     '        </div>',

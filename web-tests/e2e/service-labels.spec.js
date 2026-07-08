@@ -16,7 +16,7 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#svc-chooser')).toBeVisible();
   await expect(page.locator('#svc-private-tag')).toHaveText('Priced per leg · pay in full');
   await expect(page.locator('#svc-chauffeur-tag')).toContainText('Day rate + trip distance');
-  await expect(page.locator('#svc-chauffeur-tag')).toContainText('deposit');
+  await expect(page.locator('#svc-chauffeur-tag')).toContainText('pay in full');
 
   await expect(page.locator('#trip-route .tr-leg')).toHaveCount(2);
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Leg 1');

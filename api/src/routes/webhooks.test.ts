@@ -92,7 +92,7 @@ describe('POST /webhooks/payments', () => {
     expect(tasks.filter((t) => t.type === 'confirm_pickup')).toHaveLength(1);
   });
 
-  it('marks a deposit-charged chauffeur booking paid on a deposit-amount webhook (GL-3)', async () => {
+  it('marks a chauffeur booking paid on a full-amount webhook', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
     const bookings = new InMemoryBookingRepo();
@@ -113,10 +113,10 @@ describe('POST /webhooks/payments', () => {
       })
     ).json();
     const checkout = await (await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' })).json();
-    expect(checkout.amount).toBe(b.amountDueNow); // the deposit, not the total
-    expect(checkout.amount).toBeLessThan(b.total);
+    expect(checkout.amount).toBe(b.amountDueNow);
+    expect(checkout.amount).toBe(b.total);
 
-    // PayHere notifies for what was actually charged — the deposit — and that settles it.
+    // PayHere notifies for what was actually charged and that settles it.
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: checkout.amount, currency: b.currency });
     const res = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(res.status).toBe(200);

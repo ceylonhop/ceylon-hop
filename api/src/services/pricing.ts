@@ -17,14 +17,13 @@ function unpriced(reason: string): PriceOutcome {
 
 // Run the engine, translating any engine rejection (TOO_BIG, NO_LEGS, …) into an
 // unpriced outcome — a pricing hiccup must never take the booking flow down.
-function runEngine(req: QuoteRequest, isChauffeur: boolean): PriceOutcome {
+function runEngine(req: QuoteRequest): PriceOutcome {
   try {
     const result = quote(req);
     return {
       currency: 'USD',
       totalCents: result.totalCents,
-      // Chauffeur trips pay the deposit now (10%, $50 cap); everything else pays in full.
-      amountDueNowCents: isChauffeur ? result.amountDueNowCents : result.totalCents,
+      amountDueNowCents: result.totalCents,
       priced: true,
     };
   } catch (err) {
@@ -49,7 +48,6 @@ export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter)
       legs: [{ from: input.from, to: input.to, distanceKm: distance.km }],
       extras: input.extras,
     },
-    false,
   );
 }
 
@@ -106,10 +104,10 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<Pr
 
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
   if (input.serviceType === 'chauffeur') {
-    return runEngine({ product: 'chauffeur', vehicle, ...chauffeurDates(input, legs) }, true);
+    return runEngine({ product: 'chauffeur', vehicle, ...chauffeurDates(input, legs) });
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
-  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, false);
+  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs });
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —

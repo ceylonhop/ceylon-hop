@@ -189,7 +189,7 @@ describe('internal quoting tool route', () => {
     expect((await res.json()).places).toEqual(['Kandy']);
   });
 
-  it('chauffeur: stay days become idle days; amountDueNow is the capped deposit', async () => {
+  it('chauffeur: stay days become idle days; amountDueNow is the full total', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [
         { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
@@ -200,7 +200,7 @@ describe('internal quoting tool route', () => {
     expect(res.status).toBe(200);
     const d = await res.json();
     expect(d.product).toBe('chauffeur');
-    expect(d.amountDueNow.cents).toBe(d.deposit.cents); // chauffeur pays the deposit now
+    expect(d.amountDueNow.cents).toBe(d.total.cents);
     expect(d.deposit.cents).toBeLessThanOrEqual(5000); // cap
   });
 
@@ -337,7 +337,7 @@ describe('internal quoting tool route', () => {
     expect(d.services.pointToPoint.total.cents).toBeGreaterThan(0);
     expect(d.services.chauffeur.total.cents).toBeGreaterThan(0);
     expect(d.services.chauffeur.deposit.cents).toBeLessThanOrEqual(5000); // chauffeur deposit cap
-    expect(d.services.chauffeur.amountDueNow.cents).toBe(d.services.chauffeur.deposit.cents);
+    expect(d.services.chauffeur.amountDueNow.cents).toBe(d.services.chauffeur.total.cents);
     expect(d.comparison).toBeUndefined();
   });
 

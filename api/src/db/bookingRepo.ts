@@ -9,8 +9,8 @@ import { assertTransition, type BookingStatus } from '../domain/status';
 export type BookingChannel = 'website' | 'whatsapp';
 
 // A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
-// `mode`. `input.customer` is common to all three shapes. `amountDueNow` (GL-3) is what
-// checkout collects immediately — the chauffeur deposit, or the full total.
+// `mode`. `input.customer` is common to all three shapes. `amountDueNow` is what
+// checkout collects immediately; customer bookings currently pay the full total.
 export type NewBooking =
   | {
       mode: 'single';

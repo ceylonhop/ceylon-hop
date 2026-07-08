@@ -18,7 +18,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(4048 + 1000);
   });
 
-  it('chauffeur → amountDueNow is the capped deposit (Emma $903.80 → $50)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $903.80)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -30,7 +30,7 @@ describe('quote()', () => {
       ],
     });
     expect(r.totalCents).toBe(90380);
-    expect(r.amountDueNowCents).toBe(5000);
+    expect(r.amountDueNowCents).toBe(90380);
     // billableKm: Math.round(800 * 1.1) = 880 travel + (4 idle days × 100 idle min km) = 1280
     // costCents: Math.round(1280 × 37¢/km) = 47360 → margin = 90380 − 47360 = 43020
     expect(r.marginEstimateCents).toBe(43020);

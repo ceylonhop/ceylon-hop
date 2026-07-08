@@ -10,7 +10,6 @@ import {
   quoteTrip,
   type PriceOutcome,
 } from '../services/pricing';
-import { depositCents } from '../quote/extrasDeposit';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
@@ -45,12 +44,11 @@ function memoizeDistance(maps: MapsAdapter): MapsAdapter {
 
 // What the booking stores, resolved engine-first (GL-3): the engine price wins whenever it
 // can price; otherwise the customer's quotedTotal, and as a last resort the placeholder
-// quote (API-only callers). Chauffeur trips only collect the deposit now, whatever priced.
+// quote (API-only callers). Customer bookings currently collect the full amount now.
 function resolveTotals(
   outcome: PriceOutcome,
   quotedTotal: number | undefined,
   placeholderTotal: number,
-  chauffeur: boolean,
 ): { total: number; amountDueNow: number; mismatch: boolean; unpriced: boolean } {
   if (outcome.priced) {
     const mismatch =
@@ -58,7 +56,7 @@ function resolveTotals(
     return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
   }
   const total = quotedTotal ?? placeholderTotal;
-  return { total, amountDueNow: chauffeur ? depositCents(total) : total, mismatch: false, unpriced: true };
+  return { total, amountDueNow: total, mismatch: false, unpriced: true };
 }
 
 // Customer-safe view of a booking (allow-list). Only display fields + first name — never the
@@ -186,10 +184,10 @@ export function bookingRoutes(deps: {
       if (existing) return c.json(existing, 200);
     }
 
-    // GL-3 — the engine is the pricing truth; the client's quotedTotal is only a fallback.
+    // The engine is the pricing truth; the client's quotedTotal is only a fallback.
     const legMaps = memoizeDistance(maps);
     const outcome = await priceSingle(parsed.data, legMaps);
-    const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total, false);
+    const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
     try {
@@ -228,14 +226,13 @@ export function bookingRoutes(deps: {
       if (existing) return c.json(existing, 200);
     }
 
-    // GL-3 — engine-first; chauffeur trips only collect the deposit now (10%, $50 cap).
+    // Engine-first; customer bookings currently collect the full amount now.
     const legMaps = memoizeDistance(maps);
     const outcome = await priceTrip(parsed.data, legMaps);
     const resolved = resolveTotals(
       outcome,
       parsed.data.quotedTotal,
       quoteTrip(parsed.data).total,
-      parsed.data.serviceType === 'chauffeur',
     );
     // M8 — total road distance/duration across the trip's legs (best-effort; null if any
     // leg can't be resolved, since a partial sum would understate the trip).
@@ -343,8 +340,8 @@ export function bookingRoutes(deps: {
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the
   // booking to payment_pending, and returns checkout params. The checkout amount must
-  // equal what the booking says is due now (GL-3: the chauffeur deposit, else the total;
-  // pre-GL-3 rows have no amountDueNow and are charged the total) — never present a
+  // equal what the booking says is due now (currently the full total; pre-GL-3 rows
+  // have no amountDueNow and are charged the total) — never present a
   // charge that disagrees with the booking.
   r.post('/:id/checkout', async (c) => {
     const booking = await bookings.get(c.req.param('id'));
