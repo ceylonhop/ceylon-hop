@@ -58,6 +58,17 @@ test('contact form submits split phone fields while preserving WhatsApp', async 
   });
 });
 
+test('contact form offers a full country and calling-code list', async ({ page }) => {
+  await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car');
+  await page.evaluate(() => window.goStep && window.goStep(4));
+
+  await expect.poll(() => page.locator('#f-phone-code option').count()).toBeGreaterThan(150);
+  await expect.poll(() => page.locator('#f-country option').count()).toBeGreaterThan(150);
+  await expect(page.locator('#f-phone-code')).toContainText('Argentina +54');
+  await expect(page.locator('#f-phone-code')).toContainText('South Africa +27');
+  await expect(page.locator('#f-country')).toContainText('Zimbabwe');
+});
+
 test('contact validation rejects a missing phone number', async ({ page }) => {
   await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car');
   await page.evaluate(() => window.goStep && window.goStep(4));

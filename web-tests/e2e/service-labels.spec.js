@@ -18,6 +18,13 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#svc-chauffeur-tag')).toContainText('Day rate + trip distance');
   await expect(page.locator('#svc-chauffeur-tag')).toContainText('deposit');
 
+  await expect(page.locator('#trip-route .tr-leg')).toHaveCount(2);
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Leg 1');
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Kandy');
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('Sat 8 Aug');
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('km');
+
   await expect(page.locator('#pvt-note-tx')).toContainText('Each leg is priced as its own private transfer');
 
   await page.locator('[data-svc="chauffeur"]').click();
