@@ -104,6 +104,22 @@ test('home search uses popular route autocomplete and sends unknown places to pl
   await page.waitForURL('**/plan.html?**stops=Hilton+Colombo%7CElla**');
 });
 
+test('home autocomplete is not clipped behind the trust bar', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '' });
+  await page.setViewportSize({ width: 1424, height: 768 });
+
+  await page.locator('#q-from').fill('Kalpitiya');
+  await page.locator('#q-to').click();
+
+  const menu = page.locator('.place-menu').first();
+  await expect(menu).toBeVisible();
+  const box = await menu.boundingBox();
+  const trustTop = await page.locator('.trust-row').evaluate((el) => el.getBoundingClientRect().top);
+
+  expect(box.y + box.height).toBeLessThanOrEqual(768);
+  expect(box.y + box.height).toBeLessThan(trustTop);
+});
+
 test('a route with no shared service shows the "no shared seats" panel in the grid, beside the private card', async ({ page }) => {
   // Weligama -> Sigiriya has no daily shared corridor, so the shared slot shows the fallback panel.
   await gotoBooking(page, { path: '/search.html', query: 'from=weligama&to=sigiriya&pax=1' });

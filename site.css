@@ -278,7 +278,7 @@ p{margin:0 0 1rem}
 }
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
 .place-field{position:relative}
-.place-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:90;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;max-height:280px;overflow:auto}
+.place-menu{position:fixed;z-index:1000;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;max-height:min(280px,calc(100vh - 24px));overflow:auto}
 .place-option{width:100%;border:0;background:none;color:var(--ink);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;text-align:left;padding:10px 12px;border-radius:9px;font:inherit}
 .place-option:hover,.place-option.hi{background:rgba(10,185,182,.12)}
 .place-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -201,13 +201,24 @@
       menu.className='place-menu';
       menu.setAttribute('role','listbox');
       menu.innerHTML=items.map((p,i)=>`<button type="button" class="place-option${i===active?' hi':''}" role="option"><span>${esc(p.label)}</span><small>${esc(window.placeSourceLabel(p.source))}</small></button>`).join('');
+      const r=input.getBoundingClientRect();
+      const menuW=Math.min(r.width, window.innerWidth-24);
+      const left=Math.min(Math.max(12,r.left), window.innerWidth-menuW-12);
+      const below=r.bottom+6;
+      const maxBelow=window.innerHeight-below-12;
+      const preferredH=Math.min(280, Math.max(96, items.length*50+16));
+      const top=maxBelow>=Math.min(180, preferredH) ? below : Math.max(12, r.top-6-preferredH);
+      menu.style.left=left+'px';
+      menu.style.top=top+'px';
+      menu.style.width=menuW+'px';
+      menu.style.maxHeight=Math.max(96, Math.min(280, window.innerHeight-top-12))+'px';
       menu.addEventListener('mousedown',e=>e.preventDefault());
       menu.addEventListener('click',e=>{
         const btn=e.target.closest('.place-option'); if(!btn) return;
         const idx=[...menu.querySelectorAll('.place-option')].indexOf(btn);
         if(items[idx]) choose(items[idx]);
       });
-      input.parentNode.appendChild(menu);
+      document.body.appendChild(menu);
     }
     function refresh(){
       const q=input.value.trim();
