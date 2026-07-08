@@ -37,6 +37,22 @@ test('planner guide range never rounds a priced car transfer down to zero', asyn
   await expect(page.locator('#sum-amt')).not.toContainText('$0');
 });
 
+test('planner passes Google-measured leg distance into booking handoff', async ({ page }) => {
+  await gotoBooking(page, {
+    path: '/plan.html',
+    query: 'stops=Yatiyanthota%2C%20Sri%20Lanka%7CRatnapura%2C%20Sri%20Lanka&pax=2&vehicle=car',
+    routeKm: 52,
+  });
+
+  await expect(page.locator('#rail [data-dist]')).toContainText('52 km');
+  await page.locator('#request-btn').click();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+
+  const url = new URL(page.url());
+  expect(url.searchParams.get('kms')).toBe('52');
+});
+
 test('search add-stops handoff preserves the equivalent base route price', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
 

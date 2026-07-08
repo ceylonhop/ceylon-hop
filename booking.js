@@ -36,8 +36,35 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripDays=0, tripBase=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripLegs=[], tripDays=0, tripBase=0, tripEditUrl='';
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
+function parsedKmList(v){
+  return (v||'').split(',').map(s=>{
+    const n=parseInt((s||'').trim(),10);
+    return Number.isFinite(n) && n>0 ? n : null;
+  });
+}
+function tripQuoteWithKms(veh){
+  const T=window.TRANSFERS;
+  const baked=T.tripQuote(tripStops, veh);
+  if(!tripKms.some(km=>km!=null)) return baked;
+  const legs=[];
+  let total=0, totalKm=0, hasEst=false;
+  for(let i=0;i<Math.max(0,tripStops.length-1);i++){
+    const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:''};
+    const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
+    const price=km!=null ? T.legPrice(km, veh) : 0;
+    if(km!=null){ totalKm+=km; total+=price; hasEst=true; }
+    legs.push({
+      from:bakedLeg.from || tripStops[i],
+      to:bakedLeg.to || tripStops[i+1],
+      km,
+      duration:km!=null ? T.durationText(km) : bakedLeg.duration,
+      price,
+    });
+  }
+  return { legs, total, totalKm, hasEst, vehicle:veh };
+}
 
 if(mode==='trip' && window.TRANSFERS){
   const T=window.TRANSFERS;
@@ -45,12 +72,14 @@ if(mode==='trip' && window.TRANSFERS){
   tripStops=(params.get('stops')||'').split('|').map(s=>s.trim()).filter(Boolean);
   tripNights=(params.get('nights')||'').split(',').map(n=>parseInt(n)||0);
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
+  tripKms=parsedKmList(params.get('kms'));
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
   // Chauffeur is billed by the days the car is kept = trip date span (start→end inclusive).
   // Fall back to per-stop nights, then stop count, when the trip isn't fully dated.
   tripDays=chauffeurDuration().days||tripNights.reduce((a,b)=>a+b,0)||tripStops.length;
-  const q=T.tripQuote(tripStops, vehicleKey);
+  const q=tripQuoteWithKms(vehicleKey);
+  tripLegs=q.legs;
   tripBase=q.total;
   r={
     id:'trip', type:'trip',
@@ -354,9 +383,8 @@ if(isTrip){
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
   const fmtLeg=(iso)=>{ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); };
-  const qTrip=window.TRANSFERS.tripQuote(tripStops, vehicleKey);
   let html='<div class="tr-leg-list">';
-  qTrip.legs.forEach((leg,i)=>{
+  tripLegs.forEach((leg,i)=>{
     const dt=fmtLeg(tripDates[i]);
     const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
     html+=`<div class="tr-leg">`+
@@ -367,7 +395,7 @@ if(isTrip){
       `</div></div>`;
   });
   html+='</div>';
-  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   const datesUrl=editUrl+'&step=dates';
@@ -442,7 +470,7 @@ if(isTrip){
             vehicleLabel = key==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
             maxBags=(VEH_CAP[key]||VEH_CAP.car).bags; vehPax=(VEH_CAP[key]||VEH_CAP.car).pax;
             if(state.bags>maxBags) state.bags=maxBags;
-            const q=window.TRANSFERS.tripQuote(tripStops, key); tripBase=q.total; unit=tripBase; r.price=tripBase;
+            const q=tripQuoteWithKms(key); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
             paintVeh(); render();
           });
         });
@@ -822,7 +850,7 @@ function chauffeurDistanceCharge(){
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
   const idleKm = idleDays * (vehicleKey==='van' ? 150 : 100);
-  const bulkKm = Math.round(window.TRANSFERS.tripQuote(tripStops, vehicleKey).totalKm * 1.10) + idleKm;
+  const bulkKm = Math.round(tripQuoteWithKms(vehicleKey).totalKm * 1.10) + idleKm;
   return Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
@@ -864,13 +892,13 @@ function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/
 
 // price of an AC van for this journey (single transfer or whole trip)
 function vanPrice(){
-  if(isTrip) return window.TRANSFERS.tripQuote(tripStops,'van').total;
+  if(isTrip) return tripQuoteWithKms('van').total;
   if(vehPrices) return vehPrices.van;
   return null;
 }
 // price of an AC car for this journey (single transfer or whole trip)
 function carPrice(){
-  if(isTrip) return window.TRANSFERS.tripQuote(tripStops,'car').total;
+  if(isTrip) return tripQuoteWithKms('car').total;
   if(vehPrices) return vehPrices.car;
   return null;
 }

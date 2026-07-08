@@ -31,3 +31,23 @@ test('trip service labels distinguish per-leg private pricing from chauffeur pri
   await expect(page.locator('#pvt-note-tx')).toContainText('Priced as a retained driver-guide: daily rate plus total trip distance.');
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
 });
+
+test('trip booking review shows planner-provided Google distances for exact-place legs', async ({ page }) => {
+  const query = [
+    'mode=trip',
+    'stops=Yatiyanthota%2C%20Sri%20Lanka%7CRatnapura%2C%20Sri%20Lanka%7CKankesanturai',
+    'nights=0,0,0',
+    'dates=2026-07-10,2026-07-11',
+    'kms=52,236',
+    'pax=2',
+    'vehicle=car',
+  ].join('&');
+
+  await gotoBooking(page, { query });
+
+  await expect(page.locator('#trip-route .tr-leg')).toHaveCount(2);
+  await expect(page.locator('#trip-route .tr-leg').first()).toContainText('52 km');
+  await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('236 km');
+  await expect(page.locator('#trip-route')).not.toContainText('Distance on request');
+  await expect(page.locator('#sum-total')).toHaveText('$149');
+});

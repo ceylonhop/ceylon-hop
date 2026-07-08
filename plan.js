@@ -803,12 +803,19 @@ function goToBooking(){
   if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
+  const kms=[];
+  state.legs.forEach(l=>{
+    if(l.type==='stay') return;
+    const km=legKm(l.from,l.to);
+    kms.push(km!=null ? String(km) : '');
+  });
   const firstDated=dates.find(Boolean) || (state.legs.find(l=>l.date)?fmtISO(state.legs.find(l=>l.date).date):'');
   const p=new URLSearchParams({
     mode:'trip',
     stops:stops.join('|'),
     nights:nights.join(','),
     dates:dates.join(','),     // one date per leg/wire (empty = flexible)
+    kms:kms.join(','),          // planner-measured Google distances for exact-place legs
     pax:String(state.pax),
     vehicle:state.vehicle,
     start: firstDated || ''
