@@ -533,6 +533,8 @@ function render(){
   const stays=state.legs.filter(l=>l.type==='stay').length;
   document.getElementById('stop-count').textContent =
     `${transfers} transfer${transfers!==1?'s':''}${stays?` · ${stays} stay${stays!==1?'s':''}`:''}`;
+  const reorderHint=document.getElementById('reorder-hint');
+  if(reorderHint) reorderHint.hidden=state.legs.length<=1;
   syncVehBtns();
   syncTemplateStrip();
   syncPlanUrl();

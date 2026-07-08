@@ -211,6 +211,18 @@ test('ready-made route starters hide once the itinerary has legs from the custom
   await expect(page.locator('#tpl-strip')).toBeHidden();
 });
 
+test('reorder hint only appears when there is more than one itinerary card', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
+
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+  await expect(page.locator('#reorder-hint')).toBeHidden();
+
+  await page.locator('#add-stop').click();
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  await expect(page.locator('#reorder-hint')).toBeVisible();
+});
+
 test('planner place search ranks CMB as airport and prices the baked CMB to Sigiriya route', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20city%7CSigiriya%20%2F%20Dambulla&pax=2&vehicle=car');

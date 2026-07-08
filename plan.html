@@ -176,6 +176,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .add-stop-btn svg{width:16px;height:16px}
 
   .reorder-hint{font-size:.78rem;color:var(--ink-soft);margin:10px 0 0;display:flex;align-items:center;justify-content:center;gap:.4rem}
+  .reorder-hint[hidden]{display:none}
   .reorder-hint svg{width:14px;height:14px;opacity:.6}
 
   /* ---- itinerary rail ---- */
@@ -471,7 +472,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="add-row">
         <button class="add-stop-btn" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add another transfer</button>
       </div>
-      <p class="reorder-hint"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg> Drag a card to reorder · Google fills in each distance automatically</p>
+      <p class="reorder-hint" id="reorder-hint"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg> Drag a card to reorder · Google fills in each distance automatically</p>
     </div>
 
     <!-- RIGHT: summary -->
