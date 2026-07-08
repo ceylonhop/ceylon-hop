@@ -12,6 +12,18 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
 });
 
+test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kalpitiya%2C%20Sri%20Lanka%7CJaffna%7CTrincomalee&pax=2&vehicle=car');
+
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  const firstLegDistance = page.locator('#rail .leg-card').first().locator('[data-dist]');
+  await expect(firstLegDistance).toContainText('km');
+  await expect(firstLegDistance).toContainText('from $');
+  await expect(firstLegDistance).not.toContainText('Pick both points');
+  await expect(page.locator('#st-drive')).toContainText('km');
+});
+
 test('search add-stops handoff preserves the equivalent base route price', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
 

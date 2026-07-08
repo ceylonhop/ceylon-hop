@@ -37,12 +37,15 @@ EXTRA.forEach(([key,label,lat,lng]) => { const k=norm(key); if(!GEO[k]) GEO[k]={
 
 function norm(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z]/g,'').trim(); }
 function words(s){ return (s||'').toLowerCase().replace(/\(.*?\)/g,' ').split(/[^a-z0-9]+/).filter(w=>w.length>1); }
+function countrylessKey(s){ return words(s).filter(w=>w!=='sri' && w!=='lanka').join(''); }
 
 // resolve a typed name to a geo point (fuzzy) — stands in for a Google Places match
 function resolve(name){
   const k = norm(name);
   if(!k) return null;
   if(GEO[k]) return GEO[k];
+  const ck = countrylessKey(name);
+  if(ck && ck!==k && GEO[ck]) return GEO[ck];
   if(k.includes('airport') || k.includes('cmb')) return GEO[norm('Colombo Airport')];
   if(words(name).length===1){
     for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
