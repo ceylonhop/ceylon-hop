@@ -79,3 +79,27 @@ test('mobile primary cards keep a visible edge gutter', async ({ page }) => {
   expect(legCard.x).toBeGreaterThanOrEqual(18);
   expect(390 - (legCard.x + legCard.width)).toBeGreaterThanOrEqual(18);
 });
+
+test('mobile home hero and footer keep a visible edge gutter', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/index.html');
+
+  const heroCopy = await page.locator('.hero-copy').boundingBox();
+  const heroCard = await page.locator('.hero-card').boundingBox();
+  expect(heroCopy).toBeTruthy();
+  expect(heroCard).toBeTruthy();
+  expect(heroCopy.x).toBeGreaterThanOrEqual(18);
+  expect(heroCard.x).toBeGreaterThanOrEqual(18);
+  expect(390 - (heroCard.x + heroCard.width)).toBeGreaterThanOrEqual(18);
+
+  await page.locator('.footer').scrollIntoViewIfNeeded();
+  const footerBrand = await page.locator('.foot-grid .brand').boundingBox();
+  const footerExplore = await page.locator('.foot-grid h4', { hasText: 'Explore' }).boundingBox();
+  const footerCopy = await page.locator('.foot-bottom span').first().boundingBox();
+  expect(footerBrand).toBeTruthy();
+  expect(footerExplore).toBeTruthy();
+  expect(footerCopy).toBeTruthy();
+  expect(footerBrand.x).toBeGreaterThanOrEqual(18);
+  expect(footerExplore.x).toBeGreaterThanOrEqual(18);
+  expect(footerCopy.x).toBeGreaterThanOrEqual(18);
+});
