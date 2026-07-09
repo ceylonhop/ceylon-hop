@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
+import { isoToday, isPastIsoDate, firstPastDate } from '../domain/dateRules';
 import {
   priceSingle,
   priceTrip,
@@ -177,6 +178,10 @@ export function bookingRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    // No past dates — a trip can't be booked for a day that has already passed (Asia/Colombo).
+    if (isPastIsoDate(parsed.data.date, isoToday())) {
+      return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
+    }
 
     const key = c.req.header('Idempotency-Key');
     if (key) {
@@ -218,6 +223,10 @@ export function bookingRoutes(deps: {
     const parsed = TripInput.safeParse(body);
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+    }
+    // No past dates — reject if any leg date has already passed (Asia/Colombo).
+    if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
+      return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
     }
 
     const key = c.req.header('Idempotency-Key');
@@ -279,6 +288,10 @@ export function bookingRoutes(deps: {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
     const req = parsed.data;
+    // No past dates — a seat can't be booked for a departure that has already passed.
+    if (isPastIsoDate(req.date, isoToday())) {
+      return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
+    }
 
     const key = c.req.header('Idempotency-Key');
     if (key) {

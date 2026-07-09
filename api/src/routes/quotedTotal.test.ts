@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import { isoToday } from '../domain/dateRules';
+
+// A date safely in the future (past-date rejection floors bookings at today, Asia/Colombo).
+const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
 
 const customer = {
   firstName: 'Maya',
@@ -93,7 +97,7 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     const { app, conciergeTasks } = appWithTasks();
     const r = await post(app, '/bookings/shared', {
       corridorId: 'hill-line',
-      date: '2026-07-20',
+      date: SOON,
       time: '08:00',
       seats: 2,
       quotedTotal: 9000,

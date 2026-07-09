@@ -110,6 +110,17 @@ describe('POST /bookings/single', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a past date (400 date_in_past); a future date is accepted', async () => {
+    const app = createApp();
+    const past = await post(app, { ...valid, date: '2020-01-01' });
+    expect(past.status).toBe(400);
+    expect((await past.json()).error).toBe('date_in_past');
+    // a clearly-future date passes the guard (Asia/Colombo today floor)
+    const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const ok = await post(app, { ...valid, date: soon });
+    expect(ok.status).toBe(201);
+  });
+
   it('is idempotent on Idempotency-Key — one booking, second call returns it', async () => {
     const app = createApp();
     const r1 = await post(app, valid, { 'Idempotency-Key': 'abc' });
@@ -164,5 +175,29 @@ describe('GET /bookings/view (tokenized customer view)', () => {
     const app = createApp();
     const res = await app.request(`/bookings/view?t=${signBookingToken('no-such-id', SECRET)}`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /bookings — no past dates (trip + shared)', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('trip rejects a past leg date (400 date_in_past)', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Kandy'], nights: [1, 0], dates: ['2020-01-01'],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('date_in_past');
+  });
+
+  it('shared rejects a past date (400 date_in_past)', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/shared', {
+      corridorId: 'hill-line', date: '2020-01-01', time: '08:00', seats: 2, customer: valid.customer,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('date_in_past');
   });
 });

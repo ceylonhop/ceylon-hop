@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { isoToday } from '../domain/dateRules';
+
+// Dates safely in the future (past-date rejection floors bookings at today, Asia/Colombo).
+const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
+const SOON2 = isoToday('Asia/Colombo', new Date(Date.now() + 32 * 86_400_000));
 
 const valid = {
   from: 'Colombo Airport',
@@ -46,7 +51,7 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
   const chauffeur = {
     stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
     nights: [1, 2, 0],
-    dates: ['2026-07-20', '2026-07-22'],
+    dates: [SOON, SOON2],
     pax: 2,
     vehicleType: 'car',
     serviceType: 'chauffeur',
