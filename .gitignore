@@ -16,3 +16,7 @@ playwright-report/
 # Superpowers scratch (SDD ledgers, audit reports, review packages)
 .superpowers/
 
+# Local backups (not versioned)
+.claude.backup/
+*.backup
+
