@@ -1,16 +1,20 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   renderPricingBlock,
   injectPricingBlock,
   applySharedPrices,
-  readPayload,
   PRICING_BEGIN,
   PRICING_END,
 } from '../../tools/generate-pricing.mjs';
 import { loadTransfers } from './_load.js';
+// Import the REAL payload builder straight from api/ — vitest/esbuild transpiles the TS, so this
+// needs no `tsx` and no api node_modules (rateCard.ts + departureRepo.ts import nothing external).
+// The generator's own readPayload() shells out to `npm run dump:pricing` at generate time, which is
+// fine there (tsx is available); the CI web-tests job has no api deps, so the test must not shell out.
+import { buildPricingPayload } from '../../api/src/quote/pricingPayload.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const routesPath = path.resolve(__dirname, '../../routes-data.js');
@@ -74,12 +78,7 @@ describe('applySharedPrices', () => {
 // or hand-edits a generated value, these fail in CI. `readPayload()` runs the actual api dump.
 describe('codegen freshness + parity (enforcement)', () => {
   const transfersPath = path.resolve(__dirname, '../../transfers-data.js');
-  let backendPayload;
-  // Runs the api dump in the test context (NOT at collection — execFileSync during vitest
-  // collection corrupts the jsdom env). Generous timeout: a cold tsx compile can be slow in CI.
-  beforeAll(() => {
-    backendPayload = readPayload();
-  }, 30000);
+  const backendPayload = buildPricingPayload(); // pure, in-process — no subprocess, safe at collection
 
   it('FRESHNESS: committed transfers-data.js pricing block matches the backend', () => {
     const src = readFileSync(transfersPath, 'utf8');
