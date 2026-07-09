@@ -43,11 +43,15 @@ test('mobile planner keeps unselected vehicle option text readable', async ({ pa
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
 
   await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(44, 42, 43)');
   await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(8, 147, 143)');
 
   await page.locator('.veh-btn[data-veh="van"]').click();
   await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(44, 42, 43)');
   await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(8, 147, 143)');
 });
 
 test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {

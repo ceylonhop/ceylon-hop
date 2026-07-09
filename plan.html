@@ -59,19 +59,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .setup-head b{display:block;font-family:var(--display);font-size:1.05rem;color:var(--ink);line-height:1.15}
   .setup-head span{font-size:.8rem;color:var(--ink-soft)}
   /* selected vehicle reads clearly: white pill + accent ring + accent label on the cream track */
-  .setup-card .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s)}
-  .setup-card .veh-btn.on b{color:var(--accent-deep)}
+  .setup-card .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s);color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
+  .setup-card .veh-btn.on b{color:inherit}
 
   /* trip controls */
   .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
   .controls .field label{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;display:block;margin-bottom:5px}
   .controls input,.controls select{width:100%;padding:.7rem .8rem;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
   .veh-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--cream-deep);border-radius:12px;padding:5px}
-  .veh-btn{border:none;background:none;border-radius:9px;padding:.55rem .4rem;cursor:pointer;text-align:center;font-family:inherit;transition:.15s}
-  .veh-btn b{display:block;font-size:.92rem;color:var(--ink)}
+  .veh-btn{border:none;background:none;border-radius:9px;padding:.55rem .4rem;cursor:pointer;text-align:center;font-family:inherit;transition:.15s;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+  .veh-btn b{display:block;font-size:.92rem;color:inherit;-webkit-text-fill-color:currentColor}
   .veh-btn small{font-size:.72rem;color:var(--ink-soft)}
   .veh-btn.on{background:var(--white);box-shadow:var(--shadow-s)}
-  .veh-btn.on b{color:var(--accent-deep)}
+  .veh-btn.on{color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
+  .veh-btn.on b{color:inherit}
 
   .board-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:22px 2px 12px}
   .board-h h2{font-size:1.3rem;margin:0}
