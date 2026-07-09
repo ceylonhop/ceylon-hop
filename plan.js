@@ -90,14 +90,16 @@ function requestLiveKm(a,b,cb){
   window.CH_MAP.routeStats([a,b]).then(stats=>{
     liveKmPending.delete(key);
     const km=stats && stats.km ? stats.km : null;
-    liveKmCache.set(key, km);
     const waiters=liveKmWaiters.get(key)||[];
     liveKmWaiters.delete(key);
-    if(km!=null) waiters.forEach(fn=>fn(km));
+    // Only cache a SUCCESS. routeStats collapses transient failures (over-quota, network,
+    // non-OK Directions status) to null (see ch-map.js), so caching null would poison the
+    // leg — it would stay unpriceable for the whole session with no retry. Leaving the key
+    // uncached lets the next render re-request.
+    if(km!=null){ liveKmCache.set(key, km); waiters.forEach(fn=>fn(km)); }
   }).catch(()=>{
     liveKmPending.delete(key);
-    liveKmCache.set(key, null);
-    liveKmWaiters.delete(key);
+    liveKmWaiters.delete(key); // hard failure (e.g. script load) — don't poison the cache either
   });
 }
 function durationText(km){
