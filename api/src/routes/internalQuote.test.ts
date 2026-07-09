@@ -165,6 +165,8 @@ describe('internal quoting tool route', () => {
     const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await authedGet(app, '/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
+    // reach 'won' the legal way: draft → ready (founder self-approve) → won
+    await patch(app, `/admin/quote/${a.id}`, { status: 'ready' });
     await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
     const won = await (await authedGet(app, '/admin/quote/list?status=won')).json();
     expect(won.quotes.map((q: { id: string }) => q.id)).toEqual([a.id]);
@@ -173,6 +175,7 @@ describe('internal quoting tool route', () => {
   it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
     const app = createApp();
     const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    await patch(app, `/admin/quote/${q.id}`, { status: 'ready' }); // draft → ready (self-approve)
     const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
     expect(sent.status).toBe('sent');
     expect(sent.sentAt).not.toBeNull();
@@ -181,6 +184,44 @@ describe('internal quoting tool route', () => {
     expect(lost.lostReason).toBe('too expensive');
     expect((await patch(app, '/admin/quote/00000000-0000-0000-0000-000000000000', { status: 'won' })).status).toBe(404);
     expect((await patch(app, `/admin/quote/${q.id}`, { status: 'bogus' })).status).toBe(400);
+  });
+
+  // ── Maker-checker approval gate ────────────────────────────────────────────
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const draft = async (app: App, email = 'f@x.com') => {
+    const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    return r.json();
+  };
+
+  it('ops can submit a draft for review but cannot approve or self-approve', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
+    const forbid = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+    expect(forbid.status).toBe(403);
+    expect((await forbid.json()).error).toBe('approve_forbidden');
+    const id2 = (await draft(app, 'op@x.com')).id; // self-approve draft → ready also blocked
+    expect((await patchAs('op@x.com', app, `/admin/quote/${id2}`, { status: 'ready' })).status).toBe(403);
+  });
+
+  it('founder approves a pending_review quote and can self-approve a draft', async () => {
+    const app = createApp();
+    const a = (await draft(app)).id;
+    await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'pending_review' });
+    expect((await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'ready' })).status).toBe(200);
+    const b = (await draft(app)).id;
+    expect((await patchAs('f@x.com', app, `/admin/quote/${b}`, { status: 'ready' })).status).toBe(200); // self-approve
+  });
+
+  it('rejects an illegal transition (draft → sent) with 409', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    const r = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
+    expect(r.status).toBe(409);
+    expect((await r.json()).error).toBe('illegal_transition');
   });
 
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
@@ -526,9 +567,11 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
       });
       return res.json();
     };
+    // Submit-for-review is a legal move for every role (finance/ops have quote:manage) — the point
+    // of this test is that the PATCH RESPONSE strips margin for non-margin:view roles, not the status.
     const patchStatus = async (id: string, email: string) =>
       app.request(`/admin/quote/${id}`, {
-        method: 'PATCH', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify({ status: 'sent' }),
+        method: 'PATCH', headers: { 'content-type': 'application/json', cookie: await cookie(email) }, body: JSON.stringify({ status: 'pending_review' }),
       });
     for (const email of ['fin@x.com', 'op@x.com']) {
       const saved = await save(email);

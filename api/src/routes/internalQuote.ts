@@ -7,7 +7,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
-import { QUOTE_STATUSES, type QuoteStatus } from '../db/quoteRepo';
+import { QUOTE_STATUSES, canTransition, type QuoteStatus } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { can } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
@@ -416,6 +416,17 @@ export function internalQuoteRoutes(deps: {
     const body = (await c.req.json().catch(() => null)) as { status?: string; lostReason?: string | null; notes?: string | null } | null;
     if (!body) return c.json({ error: 'bad_request' }, 400);
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
+    // Maker-checker gate: only legal status moves, and only the founder (quote:approve) can
+    // mark a quote ready-to-send or send it back for changes (incl. the draft→ready self-approve).
+    if (body.status) {
+      const current = await deps.quotes.get(c.req.param('id'));
+      if (!current) return c.json({ error: 'not_found' }, 404);
+      const to = body.status as QuoteStatus;
+      if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
+      if ((to === 'ready' || to === 'changes_requested') && !can(c.get('identity').role, 'quote:approve')) {
+        return c.json({ error: 'approve_forbidden' }, 403);
+      }
+    }
     const updated = await deps.quotes.patch(c.req.param('id'), {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
