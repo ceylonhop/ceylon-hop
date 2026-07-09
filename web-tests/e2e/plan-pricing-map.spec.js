@@ -118,3 +118,46 @@ test('planner fallback map keeps repeated stops in the visible route order', asy
   await expect(map.locator('.tm-pin-num').nth(2)).toHaveText('3');
   await expect(map.locator('.tm-pin-label', { hasText: 'Kandy' })).toHaveCount(2);
 });
+
+test('discontinuous route keeps leg distances aligned per stop-pair in the booking handoff', async ({ page }) => {
+  // Regression: goToBooking used to emit one km per raw transfer leg while stops/dates come
+  // from the merged per-wire sequence. Editing leg 2's pick-up to a different place inserts a
+  // "phantom" wire (Ella→Galle) that no leg covers, which shifted every later km onto the wrong
+  // stop-pair. kms must now be index-aligned with stops: one entry per wire, phantom wire empty.
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla%7CMirissa&pax=2&vehicle=car');
+
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  // Break continuity: leg 2 becomes Galle→Mirissa (was Ella→Mirissa).
+  const leg2From = page.locator('#rail .leg-card').nth(1).locator('.leg-from');
+  await leg2From.click();
+  await leg2From.fill('Galle');
+  await expect(page.locator('.place-menu')).toBeVisible();
+  await page.locator('.place-option', { hasText: 'Galle' }).first().click();
+
+  await page.locator('#request-btn').click();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+
+  const q = new URL(page.url()).searchParams;
+  const stops = q.get('stops').split('|');
+  const kms = q.get('kms').split(',');
+  expect(stops).toEqual(['Kandy', 'Ella', 'Galle', 'Mirissa']);
+  // one km per wire (stops-1); the real legs keep their own distances, the phantom wire is blank
+  expect(kms).toHaveLength(stops.length - 1);
+  expect(kms[0]).toBe('136');   // Kandy→Ella
+  expect(kms[1]).toBe('');      // Ella→Galle phantom wire (no leg) — NOT another leg's km
+  expect(kms[2]).toBe('41');    // Galle→Mirissa
+});
+
+test('a trip leg with no resolvable distance is charged the estimate, not $0', async ({ page }) => {
+  // Regression: tripQuoteWithKms priced an unresolvable leg at $0 (baked tripQuote charges a
+  // $55 estimate), silently dropping a whole leg from the quoted+charged total. Leg 1 Kandy→Ella
+  // prices from km 136 ($69); leg 2 Ella→Zzznowhere resolves no distance and must add $55 → $124.
+  await gotoBooking(page, {
+    query: 'mode=trip&stops=Kandy%7CElla%7CZzznowhere&nights=0,0,0&dates=,&kms=136,&pax=2&vehicle=car',
+  });
+
+  await expect(page.locator('#sum-total')).toContainText('124');
+  await expect(page.locator('#sum-total')).not.toHaveText(/\$69\b/);
+});

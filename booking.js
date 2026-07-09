@@ -54,16 +54,22 @@ function tripQuoteWithKms(veh){
   const legs=[];
   let total=0, totalKm=0, hasEst=false;
   for(let i=0;i<Math.max(0,tripStops.length-1);i++){
-    const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:''};
+    const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:'',price:55,est:true};
     const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
-    const price=km!=null ? T.legPrice(km, veh) : 0;
-    if(km!=null){ totalKm+=km; total+=price; hasEst=true; }
+    // A leg with no resolvable distance must still charge the baked estimate (never $0),
+    // exactly as T.tripQuote does — otherwise a single unpriceable leg silently drops out
+    // of the total and the customer is quoted (and charged) for one fewer leg than they take.
+    let price, est=false;
+    if(km!=null){ price=T.legPrice(km, veh); totalKm+=km; }
+    else { price=(bakedLeg.price!=null ? bakedLeg.price : 55); est=true; hasEst=true; }
+    total+=price;
     legs.push({
       from:bakedLeg.from || tripStops[i],
       to:bakedLeg.to || tripStops[i+1],
       km,
       duration:km!=null ? T.durationText(km) : bakedLeg.duration,
       price,
+      est,
     });
   }
   return { legs, total, totalKm, hasEst, vehicle:veh };
@@ -585,10 +591,16 @@ if(!isTrip && r.type==='shared'){
 document.title='Book '+r.name+' — Ceylon Hop';
 
 // ---- Calendar ----
-let viewMonth = state.date ? new Date(state.date.getFullYear(),state.date.getMonth(),1) : (()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);})();
 const today=new Date();today.setHours(0,0,0,0);
 const minBookDate=new Date(today);minBookDate.setDate(minBookDate.getDate()+1);
 const maxBookDate=new Date(today.getFullYear(),today.getMonth()+12,today.getDate());
+// A date arriving via the URL (?date= / ?start=, e.g. a stale search result or a shared/
+// hand-edited link) must still satisfy the booking window. An unparseable, past, same-day,
+// or too-far date is dropped here so the calendar step is SHOWN (not skipped, see the
+// goStep(2) gate below) and the traveller must pick a valid one — the next-day rule can't
+// be bypassed by pre-seeding state.date.
+if(state.date && (isNaN(state.date.getTime()) || state.date<minBookDate || state.date>maxBookDate)) state.date=null;
+let viewMonth = state.date ? new Date(state.date.getFullYear(),state.date.getMonth(),1) : (()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1);})();
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 function fmtISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
@@ -1449,5 +1461,7 @@ if (typeof window.chTrack === 'function') {
 // multi-stop trips begin at the Service step (Route & Dates were completed on the planner)
 // drop the paint-suppression class first so goStep can make panels visible
 if(isTrip && window.goStep){ document.documentElement.classList.remove('mode-trip'); window.goStep(3); }
-// single transfer: if date was already chosen on the search page, skip the date picker
-else if(!isTrip && startParam && window.goStep) window.goStep(2);
+// single transfer: if a VALID date was already chosen on the search page, skip the date
+// picker. state.date is null here when the URL date failed the booking-window check above,
+// so an out-of-window/stale link falls through to the calendar instead of skipping it.
+else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);

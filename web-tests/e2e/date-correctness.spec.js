@@ -127,3 +127,27 @@ test('planner date handoff keeps the selected local date in the booking URL', as
   expect(new URL(page.url()).searchParams.get('dates')).toBe('2026-08-08');
   expect(new URL(page.url()).searchParams.get('start')).toBe('2026-08-08');
 });
+
+test('a stale/past URL date does not skip the calendar and cannot be pre-selected', async ({ page }) => {
+  // A shared/stale/hand-edited link can carry ?date= a past or same-day value. The booking
+  // page must NOT trust it: the date step (panel 1) stays active and no date is pre-filled,
+  // so the next-day rule cannot be bypassed by pre-seeding state.date. (booking.js window guard)
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car&date=2020-01-01');
+
+  await expect(page.locator('.panel[data-panel="1"]')).toHaveClass(/active/);
+  await expect(page.locator('.panel[data-panel="2"]')).not.toHaveClass(/active/);
+  await expect(page.locator('#sum-date')).not.toContainText('2020');
+});
+
+test('a valid in-window URL date still skips the calendar', async ({ page }) => {
+  // The guard only drops out-of-window dates; a legitimately pre-chosen date (search page)
+  // must keep skipping the date step straight to Pick-up & drop-off (panel 2).
+  const d = new Date(); d.setDate(d.getDate() + 30);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto(`/booking.html?mode=private&from=cmb-airport&to=hikkaduwa&price=121&vehicle=car&date=${iso}`);
+
+  await expect(page.locator('.panel[data-panel="2"]')).toHaveClass(/active/);
+  await expect(page.locator('.panel[data-panel="1"]')).not.toHaveClass(/active/);
+});

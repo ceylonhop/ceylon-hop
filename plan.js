@@ -361,7 +361,7 @@ function routeSeq(){
 // Each transfer leg's date lands on the wire it creates, so dates set in the
 // “When” step flow through to the booking itinerary in the right place.
 function routeSeqDetailed(){
-  const seq=[]; const wires=[];
+  const seq=[]; const wires=[]; const wireKm=[];
   const addPlace=(place,nights)=>{
     if(!place) return false;
     if(seq.length && norm(seq[seq.length-1].place)===norm(place)){ seq[seq.length-1].nights+=nights; return false; }
@@ -372,11 +372,21 @@ function routeSeqDetailed(){
     else {
       addPlace(l.from||'',0);
       addPlace(l.to||'',0);
-      if(seq.length>=2) wires[seq.length-2] = l.date ? fmtISO(l.date) : '';
+      // Date AND measured distance both land on the wire this transfer creates, keyed by the
+      // same seq position, so the two arrays stay index-aligned with `seq` even when the route
+      // is discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous
+      // drop-off inserts an extra "phantom" wire that correctly gets no date and no km).
+      if(seq.length>=2){
+        const w=seq.length-2;
+        wires[w] = l.date ? fmtISO(l.date) : '';
+        const km=legKm(l.from,l.to);
+        wireKm[w] = km!=null ? String(km) : '';
+      }
     }
   });
-  const dates=[]; for(let i=0;i<Math.max(0,seq.length-1);i++) dates.push(wires[i]||'');
-  return { seq, dates };
+  const dates=[]; const kms=[];
+  for(let i=0;i<Math.max(0,seq.length-1);i++){ dates.push(wires[i]||''); kms.push(wireKm[i]||''); }
+  return { seq, dates, kms };
 }
 function syncPlanUrl(){
   const { seq, dates } = routeSeqDetailed();
@@ -845,16 +855,12 @@ function goToBooking(){
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
-  const { seq, dates } = routeSeqDetailed();
+  const { seq, dates, kms } = routeSeqDetailed();
   if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
-  const kms=[];
-  state.legs.forEach(l=>{
-    if(l.type==='stay') return;
-    const km=legKm(l.from,l.to);
-    kms.push(km!=null ? String(km) : '');
-  });
+  // kms comes from routeSeqDetailed so it is index-aligned per wire with stops/dates —
+  // do NOT rebuild it per raw leg here (that desyncs the indexes on discontinuous routes).
   const firstDated=dates.find(Boolean) || (state.legs.find(l=>l.date)?fmtISO(state.legs.find(l=>l.date).date):'');
   const p=new URLSearchParams({
     mode:'trip',
