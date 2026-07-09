@@ -6,7 +6,8 @@ import {
 
 describe('can() capability matrix', () => {
   const rows: [OpsRole, OpsAction, boolean][] = [
-    ['founder', 'quote:manage', true], ['founder', 'margin:view', true],
+    ['founder', 'quote:manage', true], ['founder', 'quote:approve', true], ['founder', 'margin:view', true],
+    ['finance', 'quote:approve', false], ['ops', 'quote:approve', false],
     ['founder', 'bookings:operate', true], ['founder', 'bookings:read', true],
     ['founder', 'payments:act', true], ['founder', 'admin:jobs', true],
     ['finance', 'quote:manage', true], ['finance', 'margin:view', false],
