@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import vm from 'node:vm';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -54,3 +55,58 @@ export function readPayload() {
   });
   return JSON.parse(out);
 }
+
+// Evaluate a browser IIFE (transfers-data.js / routes-data.js) in a window shim and read
+// back the global it assigns — same trick as tools/load-transfers.mjs.
+function evalWindow(src, prop, filename) {
+  const sandbox = { window: {} };
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox, { filename });
+  const val = sandbox.window[prop];
+  if (!val) throw new Error(`${filename} did not define window.${prop}`);
+  return val;
+}
+
+// Replace only the FIRST `price:<n>` that appears after the route's `id:'<id>'` — i.e. that
+// route object's own price — leaving every other route (including packages) untouched.
+function replaceRoutePrice(src, id, seat) {
+  const idRe = new RegExp(`id:\\s*'${id.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}'`);
+  const m = idRe.exec(src);
+  if (!m) throw new Error(`route id '${id}' not found in routes-data.js`);
+  const priceRe = /price:\s*\d+/;
+  const after = src.slice(m.index);
+  const pm = priceRe.exec(after);
+  if (!pm) throw new Error(`no price field after shared route '${id}'`);
+  const start = m.index + pm.index;
+  return src.slice(0, start) + `price:${seat}` + src.slice(start + pm[0].length);
+}
+
+// Rewrite the `price` of every `type:'shared'` route to its corridor's flat seat price,
+// resolved through the engine's own sharedOption (the authoritative stop->corridor mapping).
+export function applySharedPrices(routesSrc, transfers) {
+  const ROUTES = evalWindow(routesSrc, 'ROUTES', 'routes-data.js');
+  let out = routesSrc;
+  for (const r of ROUTES) {
+    if (r.type !== 'shared') continue;
+    const fromId = transfers.resolvePlace(r.stops[0])?.id;
+    const toId = transfers.resolvePlace(r.stops[1])?.id;
+    const opt = fromId && toId ? transfers.sharedOption(fromId, toId) : null;
+    if (!opt) throw new Error(`no corridor carries shared route ${r.id} (${r.stops[0]} -> ${r.stops[1]})`);
+    out = replaceRoutePrice(out, r.id, opt.seat);
+  }
+  return out;
+}
+
+// Full generation: inject the pricing block into transfers-data.js, then rewrite the shared
+// prices in routes-data.js off the freshly-generated corridor seats.
+export function main() {
+  const payload = readPayload();
+  const tPath = join(ROOT, 'transfers-data.js');
+  const tSrc = injectPricingBlock(readFileSync(tPath, 'utf8'), payload);
+  writeFileSync(tPath, tSrc);
+  const transfers = evalWindow(tSrc, 'TRANSFERS', 'transfers-data.js');
+  const rPath = join(ROOT, 'routes-data.js');
+  writeFileSync(rPath, applySharedPrices(readFileSync(rPath, 'utf8'), transfers));
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();

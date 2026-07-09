@@ -1,10 +1,18 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   renderPricingBlock,
   injectPricingBlock,
+  applySharedPrices,
   PRICING_BEGIN,
   PRICING_END,
 } from '../../tools/generate-pricing.mjs';
+import { loadTransfers } from './_load.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const routesPath = path.resolve(__dirname, '../../routes-data.js');
 
 const payload = {
   perKm: { car: 0.35, van: 0.47 },
@@ -39,5 +47,24 @@ describe('renderPricingBlock', () => {
     expect(block).toContain('"safari-wait":19');
     expect(block).toContain('"ella-east":23');
     expect(block).toContain('const BUFFER_PCT = 10;');
+  });
+});
+
+describe('applySharedPrices', () => {
+  it('rewrites a tampered shared-route price back to its corridor seat', () => {
+    const T = loadTransfers();
+    const src = readFileSync(routesPath, 'utf8');
+    // Tamper ella-yala's price; ella-yala is on the ella-east corridor (seat 23).
+    const tampered = src.replace(/(id:'ella-yala',[\s\S]*?price:\s*)\d+/, '$1999');
+    expect(tampered).toContain('price:999');
+    const out = applySharedPrices(tampered, T);
+    expect(out).not.toContain('price:999');
+    expect(out).toMatch(/id:'ella-yala',[\s\S]*?price:23/);
+  });
+
+  it('leaves an already-correct catalogue untouched (idempotent)', () => {
+    const T = loadTransfers();
+    const src = readFileSync(routesPath, 'utf8');
+    expect(applySharedPrices(src, T)).toBe(applySharedPrices(applySharedPrices(src, T), T));
   });
 });
