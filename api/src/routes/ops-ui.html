@@ -2103,10 +2103,11 @@ function renderLegCard(leg, idx, total) {
     ].join('');
   }
 
-  // Date pill (KEEP input[type=date][data-field=date])
+  // Date pill (KEEP input[type=date][data-field=date]). min = today so a past date can't be
+  // picked from the native calendar (the change handler also rejects a typed past value).
   var dateHtml = [
     '<div class="ch-leg-date">',
-    '  <input type="date" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    '  <input type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
     '</div>',
   ].join('');
 
@@ -3490,6 +3491,14 @@ function attachEventListeners() {
       val = parseFloat(el.value) || 0;
     } else {
       val = el.value;
+    }
+    // No past dates: reject a typed/pasted leg date before today (native min guards the
+    // calendar; this guards direct entry). Clear the field and tell the operator why.
+    if (field === 'date' && val && val < fmtISODateLocal(new Date())) {
+      el.value = '';
+      showToast("Trip dates can't be in the past.");
+      updateLeg(legId, { date: '' });
+      return;
     }
     var patch = {};
     patch[field] = val;
