@@ -7,11 +7,18 @@ import { gotoBooking } from './_stubs.js';
 
 const MOBILE = { width: 390, height: 844 };
 
+// The cookie banner is bottom-fixed above the bar (z 9999) and intercepts taps in fresh
+// sessions; seed a prior "denied" choice so these tests behave like a returning visitor.
+async function gotoMobile(page, opts) {
+  await page.addInitScript(() => { try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) {} });
+  await gotoBooking(page, opts);
+}
+
 test.describe('mobile sticky bar', () => {
   test.use({ viewport: MOBILE });
 
   test('strip + bar visible, panel starts high, total mirrors summary', async ({ page }) => {
-    await gotoBooking(page); // private CMB->Hikkaduwa, no date => When step active
+    await gotoMobile(page); // private CMB->Hikkaduwa, no date => When step active
     await expect(page.locator('#mstrip')).toBeVisible();
     await expect(page.locator('#mbar')).toBeVisible();
     const panel = await page.locator('.stepcard.panel.active').boundingBox();
@@ -25,7 +32,7 @@ test.describe('mobile sticky bar', () => {
   });
 
   test('bar CTA proxies the active panel button and advances the step', async ({ page }) => {
-    await gotoBooking(page); // When step: #n2 "Continue" is enabled for private
+    await gotoMobile(page); // When step: #n2 "Continue" is enabled for private
     await expect(page.locator('.panel.active[data-panel="1"]')).toBeVisible();
     await page.locator('#mbar-cta').click();
     await expect(page.locator('.panel.active[data-panel="2"]')).toBeVisible();
@@ -40,18 +47,20 @@ test.describe('mobile sticky bar', () => {
     expect(await page.locator('#mbar-cta').isDisabled()).toBe(realDisabled);
   });
 
-  test('changing travelers updates the bar total live', async ({ page }) => {
-    await gotoBooking(page);
+  test('changing the price (extras toggle) updates the bar total live', async ({ page }) => {
+    // Private prices are per vehicle, so pax steppers don't move the total — the
+    // sightseeing extra (+$10) is the deterministic price-changing interaction.
+    await gotoMobile(page);
     await page.evaluate(() => window.goStep(3));
     const before = (await page.locator('#mbar-amt').textContent()).trim();
-    await page.evaluate(() => window.step('ad', 1)); // +1 adult via existing stepper API
+    await page.locator('[data-addon="sightseeing"]').click();
     await expect(page.locator('#mbar-amt')).not.toHaveText(before);
     const sumTotal = (await page.locator('#sum-total').textContent()).trim();
     await expect(page.locator('#mbar-amt')).toHaveText(sumTotal);
   });
 
   test('sheet opens from total button and strip, shows perks + WhatsApp, closes via scrim and Escape', async ({ page }) => {
-    await gotoBooking(page);
+    await gotoMobile(page);
     await page.locator('#mbar-total').click();
     const aside = page.locator('.layout > aside');
     await expect(aside).toHaveClass(/open/);

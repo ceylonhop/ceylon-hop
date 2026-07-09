@@ -1473,3 +1473,76 @@ if(isTrip && window.goStep){ document.documentElement.classList.remove('mode-tri
 // picker. state.date is null here when the URL date failed the booking-window check above,
 // so an out-of-window/stale link falls through to the calendar instead of skipping it.
 else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
+
+/* ── mobile sticky bar + summary sheet ─────────────────────────────────────────
+   Observation-only UI shell (spec 2026-07-09-mobile-booking-sticky-bar-design.md):
+   the bar's CTA proxies the ACTIVE panel's real primary button and MutationObservers
+   mirror #summary text, so pricing/validation/step logic and analytics stay untouched.
+   No JS (or missing markup) ⇒ body.js-mbar never applies ⇒ the legacy mobile layout. */
+(function(){
+  const bar=document.getElementById('mbar'), scrim=document.getElementById('mbar-scrim'),
+        strip=document.getElementById('mstrip'), cta=document.getElementById('mbar-cta'),
+        totBtn=document.getElementById('mbar-total'), amt=document.getElementById('mbar-amt'),
+        msRoute=document.getElementById('ms-route'), msDate=document.getElementById('ms-date'),
+        aside=document.querySelector('.layout > aside'), summary=document.getElementById('summary');
+  if(!bar||!scrim||!strip||!cta||!totBtn||!amt||!aside||!summary) return;
+  document.body.classList.add('js-mbar');
+
+  // sheet close button (only styled/visible in sheet mode via CSS scoping)
+  const closeBtn=document.createElement('button');
+  closeBtn.type='button'; closeBtn.className='s-close'; closeBtn.setAttribute('aria-label','Close summary');
+  closeBtn.innerHTML='&times;';
+  summary.prepend(closeBtn);
+
+  const primaryBtn=()=>document.querySelector('.panel.active .nav-btns .btn');
+
+  // ── CTA proxy: mirror label/accent/disabled of the real button; click forwards to it
+  let btnObs=null;
+  function syncCta(){
+    const b=primaryBtn();
+    if(!b){ bar.hidden=true; strip.hidden=true; if(btnObs)btnObs.disconnect(); return; }
+    bar.hidden=false; strip.hidden=false;
+    cta.textContent=b.textContent;
+    cta.disabled=b.disabled;
+    const isCta=b.classList.contains('btn-cta');
+    cta.classList.toggle('btn-cta',isCta);
+    cta.classList.toggle('btn-primary',!isCta);
+    if(btnObs) btnObs.disconnect();
+    btnObs=new MutationObserver(()=>{ cta.disabled=b.disabled; cta.textContent=b.textContent; });
+    btnObs.observe(b,{attributes:true,attributeFilter:['disabled'],childList:true,characterData:true,subtree:true});
+  }
+  cta.addEventListener('click',()=>{ const b=primaryBtn(); if(b&&!b.disabled) b.click(); });
+
+  // ── info mirror: total into the bar; route + date into the strip
+  const txt=id=>{ const el=document.getElementById(id); return el?el.textContent.trim():''; };
+  function syncInfo(){
+    amt.textContent=txt('sum-total')||'—';
+    const from=txt('sum-from'), to=txt('sum-to');
+    msRoute.textContent=(from&&to&&from!=='—')?from+' → '+to:(txt('sum-name')||'Your trip');
+    const d=txt('sum-date');
+    msDate.textContent=(d&&d!=='—')?d:'';
+  }
+  new MutationObserver(syncInfo).observe(summary,{subtree:true,childList:true,characterData:true});
+  // panels toggle .active via goStep — watch class flips to rebind the proxy
+  new MutationObserver(syncCta).observe(document.getElementById('main-layout'),
+    {subtree:true,attributes:true,attributeFilter:['class']});
+
+  // ── bottom sheet open/close
+  function openSheet(){ aside.classList.add('open'); scrim.hidden=false; bar.classList.add('sheet-open');
+    totBtn.setAttribute('aria-expanded','true'); document.body.classList.add('mbar-lock'); }
+  function closeSheet(){ aside.classList.remove('open'); scrim.hidden=true; bar.classList.remove('sheet-open');
+    totBtn.setAttribute('aria-expanded','false'); document.body.classList.remove('mbar-lock'); }
+  totBtn.addEventListener('click',()=>{ aside.classList.contains('open')?closeSheet():openSheet(); });
+  strip.addEventListener('click',openSheet);
+  scrim.addEventListener('click',closeSheet);
+  closeBtn.addEventListener('click',closeSheet);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&aside.classList.contains('open')) closeSheet(); });
+
+  // ── keyboard: never cover a focused field with the bar
+  document.addEventListener('focusin',e=>{
+    if(e.target.matches && e.target.matches('.panel input, .panel textarea, .panel select')) bar.classList.add('kb');
+  });
+  document.addEventListener('focusout',()=>bar.classList.remove('kb'));
+
+  syncCta(); syncInfo();
+})();
