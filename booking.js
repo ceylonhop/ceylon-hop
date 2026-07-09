@@ -809,7 +809,10 @@ window.toggleAddon=function(el){
   else{state.addons.add(a);el.classList.add('on');}
   render();
 };
-const addonPrices={sightseeing:10,luggage:5,front:8,flex:12};
+// Add-on prices come from the generated EXTRAS table (transfers-data.js, sourced from
+// api/src/quote/rateCard.ts) so they can never drift from the backend. The flow only offers
+// the keys in addonNames; EXTRAS carrying additional codes (safari-wait, waiting) is harmless.
+const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
 
 window.payMethod=function(el){document.querySelectorAll('.pm').forEach(x=>x.classList.remove('on'));el.classList.add('on');};
@@ -881,10 +884,10 @@ function chauffeurDistanceCharge(){
   const idleKm = idleDays * (vehicleKey==='van' ? 150 : 100);
   const tripKm = tripQuoteWithKms(vehicleKey).totalKm || 0;
   if(tripKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
-  const bulkKm = Math.round(tripKm * 1.10) + idleKm;
-  // Read the per-km rate from the single front-end source of truth (transfers-data.js
-  // PER_KM, itself mirrored from api/src/quote/rateCard.ts) so this line can't silently
-  // drift from the backend rate card the way it once did.
+  // Buffer and per-km rate both come from the single front-end source of truth
+  // (transfers-data.js BUFFER_PCT / PER_KM, mirrored from api/src/quote/rateCard.ts) so this
+  // line can't silently drift from the backend rate card the way it once did.
+  const bulkKm = Math.round(tripKm * (1 + window.TRANSFERS.BUFFER_PCT/100)) + idleKm;
   const charge = Math.round(bulkKm * window.TRANSFERS.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
   return Math.max(charge, tripBase || unit || 0);
 }
