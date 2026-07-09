@@ -103,3 +103,27 @@ test('mobile home hero and footer keep a visible edge gutter', async ({ page }) 
   expect(footerExplore.x).toBeGreaterThanOrEqual(18);
   expect(footerCopy.x).toBeGreaterThanOrEqual(18);
 });
+
+test('mobile exact location map stays compact and readable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoBooking(page, {
+    query: 'mode=private&from=cmb-airport&to=sigiriya&price=77&vehicle=car',
+    routeKm: 145,
+  });
+  await page.evaluate(() => window.goStep && window.goStep(2));
+  await expect(page.locator('#route-map')).toBeVisible();
+
+  const mapBox = await page.locator('#route-map .ch-map-wrap, #route-map .rm-canvas svg').first().boundingBox();
+  const barBox = await page.locator('#rm-bar').boundingBox();
+  const noteBox = await page.locator('#pvt-note').boundingBox();
+  const navBox = await page.locator('#nav1').boundingBox();
+  expect(mapBox).toBeTruthy();
+  expect(barBox).toBeTruthy();
+  expect(noteBox).toBeTruthy();
+  expect(navBox).toBeTruthy();
+  expect(mapBox.height).toBeLessThanOrEqual(190);
+  expect(barBox.height).toBeGreaterThanOrEqual(48);
+  expect(noteBox.y).toBeGreaterThan(barBox.y);
+  expect(navBox.y).toBeGreaterThan(noteBox.y);
+  await expect(page.locator('#rm-bar')).toContainText('145 km');
+});
