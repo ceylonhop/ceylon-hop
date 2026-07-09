@@ -712,6 +712,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 @container legs (max-width: 620px) {
   .qv .ch-leg-main { flex-wrap: wrap; }
   .qv .ch-leg-route { flex: 1 1 100%; order: 5; }}
+/* Chauffeur legs carry an extra Travel|Stay segment (~90px), so the row overflows and the
+   date input gets clipped in a width band ABOVE the 620px point-to-point threshold (the
+   "date shows only /09/" bug). Drop the route to its own line ~100px earlier for them. */
+@container legs (max-width: 720px) {
+  .qv .ch-leg.is-chauffeur .ch-leg-main { flex-wrap: wrap; }
+  .qv .ch-leg.is-chauffeur .ch-leg-route { flex: 1 1 100%; order: 5; }}
 /* Fallback for browsers without container queries: key off the viewport. */
 @supports not (container-type: inline-size) {
   @media (max-width: 1180px) {
@@ -2175,7 +2181,7 @@ function renderLegCard(leg, idx, total) {
   ].join('') : '';
 
   return [
-    '<div class="ch-leg ch-tl-item ' + legToneClass + '" data-leg-id="' + esc(leg.id) + '">',
+    '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '"></span>',
