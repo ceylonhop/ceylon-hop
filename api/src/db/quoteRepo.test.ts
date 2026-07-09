@@ -1,5 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
-import { InMemoryQuoteRepo, genReference, parseDateFilter, type NewQuote } from './quoteRepo';
+import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
+
+describe('canTransition (quote review lifecycle)', () => {
+  it('allows the maker-checker path and founder self-approve', () => {
+    expect(canTransition('draft', 'pending_review')).toBe(true);
+    expect(canTransition('draft', 'ready')).toBe(true); // self-approve (capability-gated at the route)
+    expect(canTransition('pending_review', 'ready')).toBe(true);
+    expect(canTransition('pending_review', 'changes_requested')).toBe(true);
+    expect(canTransition('changes_requested', 'pending_review')).toBe(true);
+    expect(canTransition('ready', 'sent')).toBe(true);
+    expect(canTransition('ready', 'draft')).toBe(true); // reopen to edit
+  });
+  it('rejects skipping the review gate', () => {
+    expect(canTransition('draft', 'sent')).toBe(false);
+    expect(canTransition('pending_review', 'sent')).toBe(false);
+    expect(canTransition('sent', 'ready')).toBe(false);
+  });
+  it('allows an outcome flip from any live state, not from draft', () => {
+    for (const s of ['pending_review', 'ready', 'sent'] as const) expect(canTransition(s, 'lost')).toBe(true);
+    expect(canTransition('draft', 'won')).toBe(false);
+  });
+});
 
 const sample = (over: Partial<NewQuote> = {}): NewQuote => ({
   product: 'private',

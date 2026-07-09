@@ -1,8 +1,28 @@
 import { randomUUID } from 'node:crypto';
 
-export type QuoteStatus = 'draft' | 'sent' | 'won' | 'lost' | 'expired';
-export const QUOTE_STATUSES: readonly QuoteStatus[] = ['draft', 'sent', 'won', 'lost', 'expired'];
+export type QuoteStatus =
+  | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
+export const QUOTE_STATUSES: readonly QuoteStatus[] =
+  ['draft', 'pending_review', 'changes_requested', 'ready', 'sent', 'won', 'lost', 'expired'];
 const DECIDED: readonly QuoteStatus[] = ['won', 'lost', 'expired'];
+
+// Legal status moves in the maker-checker review lifecycle (structural legality only — the
+// route separately requires quote:approve for → ready / → changes_requested, so draft → ready
+// is a legal SELF-APPROVE that a non-approver still can't perform).
+const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
+  draft:             ['pending_review', 'ready'],
+  changes_requested: ['pending_review', 'ready', 'draft'],
+  pending_review:    ['ready', 'changes_requested', 'draft'],
+  ready:             ['sent', 'draft'],
+  sent:              [],
+  won:               [],
+  lost:              [],
+  expired:           [],
+};
+export function canTransition(from: QuoteStatus, to: QuoteStatus): boolean {
+  if (DECIDED.includes(to) && from !== 'draft') return true; // outcome flip from any live state
+  return ALLOWED_TRANSITIONS[from].includes(to);
+}
 
 export interface NewQuote {
   channel?: 'ops';
