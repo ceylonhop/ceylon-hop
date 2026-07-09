@@ -922,8 +922,10 @@ function calcTotal(){
   state.addons.forEach(a=>t+=addonPrices[a]);
   return t;
 }
-const DEPOSIT_PCT = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_PCT) || 0.10;
-const DEPOSIT_CAP = (window.TRANSFERS && window.TRANSFERS.DEPOSIT_CAP) || 50; // USD
+// Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
+// api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
+const DEPOSIT_PCT = window.TRANSFERS.DEPOSIT_PCT;
+const DEPOSIT_CAP = window.TRANSFERS.DEPOSIT_CAP; // USD
 function depositDue(){ return Math.min(Math.round(calcTotal()*DEPOSIT_PCT), DEPOSIT_CAP); }
 function amountDueNow(){ if(serverQuote) return serverQuote.dueNow; return calcTotal(); }
 function money(n){return '$'+ (Math.round(n*100)/100).toFixed(2).replace(/\.00$/,'');}

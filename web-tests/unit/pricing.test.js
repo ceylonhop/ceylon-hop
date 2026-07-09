@@ -163,12 +163,14 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
     expect(src).not.toMatch(/\b0\.83\b/);
   });
 
-  it('sources add-on prices and the routing buffer from window.TRANSFERS (no literals)', () => {
-    // add-on prices come from the generated EXTRAS table, the buffer from BUFFER_PCT —
-    // no hand-typed copies that could drift from api/src/quote/rateCard.ts.
+  it('sources add-on prices, buffer and deposit from window.TRANSFERS (no literals)', () => {
+    // add-on prices come from the generated EXTRAS table, the buffer from BUFFER_PCT, deposit
+    // from DEPOSIT_PCT/CAP — no hand-typed copies that could drift from api/src/quote/rateCard.ts.
     expect(src).toMatch(/window\.TRANSFERS\.EXTRAS/);
     expect(src).toMatch(/window\.TRANSFERS\.BUFFER_PCT/);
+    expect(src).toMatch(/window\.TRANSFERS\.DEPOSIT_PCT/);
     expect(src).not.toMatch(/addonPrices\s*=\s*\{/); // no hand-authored extras table
+    expect(src).not.toMatch(/\|\|\s*0\.10\b/); // no hardcoded deposit-pct fallback copy
   });
 });
 
