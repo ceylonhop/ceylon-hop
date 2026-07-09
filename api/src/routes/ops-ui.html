@@ -742,6 +742,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-money-micro { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
 
 /* --- 1. Service chooser = the card head (two price boxes that ARE the chooser) --- */
+/* vehicle chips — pricing decision #1, top of the money card */
+.qv .ch-veh-chips { padding: 13px 16px 12px; }
+.qv .ch-veh-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.qv .ch-veh-lbl { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.qv .ch-veh-hint { font-size: 12px; font-weight: 600; color: #b06a00; }
+.qv .ch-veh-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.qv .ch-veh-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 11px;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: border-color .15s, background .15s, box-shadow .15s; }
+.qv .ch-veh-chip:hover { border-color: var(--blue); }
+.qv .ch-veh-chip.active { border-color: var(--blue); background: rgba(10,185,182,.10); box-shadow: 0 0 0 1px var(--blue) inset; }
+.qv .ch-veh-chip .ch-veh-cap { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--muted-2); }
+.qv .ch-veh-chip.over { border-color: #e6b35c; background: #fff8ec; }
+.qv .ch-veh-chip.over .ch-veh-cap { color: #b06a00; }
+.qv .ch-veh-chips.unset .ch-veh-chip { border-color: #e6b35c; background: #fffdf7; }
+.qv .ch-veh-rate { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.qv .ch-veh-rate label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.qv .ch-veh-rate .ch-input-wrap { width: 130px; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
 .qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
@@ -1501,7 +1519,7 @@ async function _runEstimate() {
   // Fix 1: no vehicle chosen yet — don't price, prompt the operator to pick one.
   if (!st.vehicleType) {
     lastEstimate = null;
-    lastEstimateError = 'Choose a vehicle type to price this trip.';
+    lastEstimateError = 'Pick a vehicle above to price this trip.';
     render();
     return;
   }
@@ -2297,6 +2315,45 @@ function renderRateCardBody() {
 // total from est.services (USD primary + LKR sub). Chauffeur is disabled with a
 // small reason hint beneath its '—' when that side returns { error } or the trip
 // has ≤1 distinct leg date. Keeps [data-action=setService][data-service=…].
+// ── Vehicle chips (pricing decision #1) ───────────────────────────────────────
+// Vehicle lives in the money pane with its sibling pricing decisions (service, price):
+// chips above the service chooser, seat caps from the live rate card. A chip too small
+// for the current pax count shows a warn tint but stays clickable — the capacity flag
+// covers a deliberate override. Clicking a chip runs the same mutate() the old header
+// select did (GL-1d: switching tier clears the custom $/km).
+function renderVehicleChips() {
+  var st = state;
+  var ids = ['car', 'van_6', 'van_9', 'van_14', 'custom'];
+  var parts = [];
+  parts.push('<div id="veh-chips" class="ch-veh-chips' + (st.vehicleType ? '' : ' unset') + '">');
+  parts.push('  <div class="ch-veh-head"><span class="ch-veh-lbl">Vehicle</span>'
+    + (st.vehicleType ? '' : '<span class="ch-veh-hint">Pick a vehicle to price this trip</span>')
+    + '</div>');
+  parts.push('  <div class="ch-veh-row">');
+  ids.forEach(function(id) {
+    var caps = vehicleCaps(id);
+    var over = !!(caps && st.passengerCount > caps.pax);
+    var seats = caps ? String(caps.pax) : '';
+    parts.push('    <button type="button" class="ch-veh-chip'
+      + (st.vehicleType === id ? ' active' : '') + (over ? ' over' : '')
+      + '" data-action="setVehicle" data-veh="' + id + '">'
+      + esc(VEHICLE_LABELS[id])
+      + (over ? '<i class="ch-veh-cap">seats ' + esc(seats) + '</i>'
+               : (seats && id !== 'custom' ? '<i class="ch-veh-cap ok">' + esc(seats) + '</i>' : ''))
+      + '</button>');
+  });
+  parts.push('  </div>');
+  // GL-1d: the Van 14/Custom per-quote rate input travels with the decision that reveals it.
+  if (st.vehicleType === 'van_14' || st.vehicleType === 'custom') {
+    parts.push('  <div class="ch-veh-rate"><label>Rate $/km <em class="req">*</em></label>'
+      + '<div class="ch-input-wrap"><input class="ch-input" id="f-customRate" type="number" min="0.01" step="0.01"'
+      + ' value="' + (st.customRatePerKm != null ? esc(st.customRatePerKm) : '') + '"'
+      + ' placeholder="' + esc(defaultCustomRateDollars(st.vehicleType)) + '" /></div></div>');
+  }
+  parts.push('</div>');
+  return parts.join('\n');
+}
+
 function renderServiceChooser() {
   var svc = (lastEstimate && lastEstimate.services) ? lastEstimate.services : null;
   var p2p = svc ? svc.pointToPoint : null;
@@ -2417,6 +2474,16 @@ function renderSummaryCardBody() {
 function computeFlags() {
   var st = state;
   var flags = [];
+
+  // orange: no vehicle chosen — the quote can't price at all, so the flags pane must never
+  // show the "looks clean to send" all-clear in this state.
+  if (!st.vehicleType) {
+    flags.push({
+      level: 'orange',
+      title: 'Vehicle not set',
+      detail: 'Pick a vehicle at the top of the price panel to price this trip.',
+    });
+  }
 
   // red: car luggage limit
   if (st.vehicleType === 'car' && st.luggageCount > 3) {
@@ -2991,19 +3058,6 @@ function render() {
     return '<option value="' + o.value + '"' + (st.status === o.value ? ' selected' : '') + '>' + o.label + '</option>';
   }).join('');
 
-  // Vehicles list
-  var vehicles = [
-    { id: 'car',    label: 'Car' },
-    { id: 'van_6',  label: 'Van 6 Seat' },
-    { id: 'van_9',  label: 'Van 9 Seat' },
-    { id: 'van_14', label: 'Van 14 Seat' },
-    { id: 'custom', label: 'Custom' },
-  ];
-  var vehicleOptions = ['<option value="" disabled' + (st.vehicleType ? '' : ' selected') + '>Select vehicle…</option>']
-    .concat(vehicles.map(function(v) {
-      return '<option value="' + v.id + '"' + (st.vehicleType === v.id ? ' selected' : '') + '>' + esc(v.label) + '</option>';
-    })).join('');
-
   // Build legs HTML (dense rows; no connectors in the compact list)
   var legsHtml = '';
   if (st.legs.length === 0) {
@@ -3093,22 +3147,8 @@ function render() {
     '            <label class="ch-field-label">Bags <em class="req">*</em></label>',
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-luggageCount" type="number" min="0" value="' + esc(st.luggageCount) + '" /></div>',
     '          </div>',
-    '          <div class="ch-field">',
-    '            <label class="ch-field-label">Vehicle <em class="req">*</em></label>',
-    '            <div class="ch-input-wrap ch-select-wrap"><select class="ch-input ch-select" id="f-vehicleType">',
-    vehicleOptions,
-    '            </select><span class="ch-select-chev">&#x25BE;</span></div>',
-    '          </div>',
-    // GL-1d: Van 14/Custom have no fixed rate — the operator sets $/km per quote.
-    // Placeholder shows the rate-card prefill default; an empty input prices at that default.
-    (st.vehicleType === 'van_14' || st.vehicleType === 'custom' ? [
-      '          <div class="ch-field">',
-      '            <label class="ch-field-label">Rate $/km <em class="req">*</em></label>',
-      '            <div class="ch-input-wrap"><input class="ch-input" id="f-customRate" type="number" min="0.01" step="0.01"',
-      '              value="' + (st.customRatePerKm != null ? esc(st.customRatePerKm) : '') + '"',
-      '              placeholder="' + esc(defaultCustomRateDollars(st.vehicleType)) + '" /></div>',
-      '          </div>',
-    ].join('') : ''),
+    // Vehicle moved into the money pane (pricing decision stack — see renderVehicleChips):
+    // the header card carries customer facts only.
     '        </div>',
     '      </div>',
 
@@ -3135,6 +3175,10 @@ function render() {
     '    <div class="ch-money">',
 
     '      <div class="ch-money-card">',
+
+    // Pricing decision #1: the vehicle (chips + the GL-1d rate input when custom-priced)
+    renderVehicleChips(),
+    '        <div class="ch-money-rule"></div>',
 
     // Head: the service chooser (two price boxes that ARE the chooser)
     renderServiceChooser(),
@@ -3357,14 +3401,8 @@ function attachEventListeners() {
     }
   });
 
-  // Vehicle type select. Changing tier clears the custom $/km — a rate set for one
-  // vehicle must never silently price another (GL-1d).
-  var vehicleSel = document.getElementById('f-vehicleType');
-  if (vehicleSel) {
-    vehicleSel.addEventListener('change', function() {
-      mutate({ vehicleType: vehicleSel.value, customRatePerKm: null });
-    });
-  }
+  // (Vehicle selection is now the chip row in the money pane — see renderVehicleChips and
+  // the delegated 'setVehicle' action; the old header select is gone.)
 
   // GL-1d: operator's custom $/km for Van 14/Custom (empty → price at the prefill default).
   var customRateIn = document.getElementById('f-customRate');
@@ -3404,6 +3442,10 @@ function attachEventListeners() {
     } else if (action === 'setService') {
       if (el.disabled) return;
       setService(el.getAttribute('data-service'));
+    } else if (action === 'setVehicle') {
+      // Same mutation the old header select performed — switching tier clears the
+      // custom $/km so a rate set for one vehicle never silently prices another (GL-1d).
+      mutate({ vehicleType: el.getAttribute('data-veh'), customRatePerKm: null });
     } else if (action === 'setLegKind') {
       // Travel | Stay switch (chauffeur only). Stay days keep no route/distance.
       var kind = el.getAttribute('data-kind') === 'stay_day' ? 'stay_day' : 'transfer';

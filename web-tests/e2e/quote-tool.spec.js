@@ -63,7 +63,9 @@ async function fillFirstLegDate(page, iso) {
 // estimate is priced. Every spec that expects a priced summary must call this
 // right after opening the quote view.
 async function chooseVehicle(page, value) {
-  await page.locator('#f-vehicleType').selectOption(value);
+  // Vehicle is now a chip row at the top of the money pane (decision-stack redesign,
+  // spec 2026-07-09-ops-vehicle-decision-stack-design.md), not a header select.
+  await page.locator('[data-action="setVehicle"][data-veh="' + value + '"]').click();
   // Choosing a vehicle kicks off a debounced estimate that render()s ~350ms later,
   // replacing #app wholesale. Let that settle before the spec starts typing into
   // leg inputs, or the re-render wipes the input node mid-keystroke.
@@ -162,9 +164,8 @@ test('autocomplete stays closed after picking a place (does not reopen on re-ren
 
 // Spec 2: Car + 4 bags triggers the luggage flag
 test('car + 4 bags raises the luggage flag', async ({ page }) => {
-  // Select Car in the vehicle dropdown
-  const vehicleSel = page.locator('#f-vehicleType');
-  await vehicleSel.selectOption('car');
+  // Select Car via the money-pane vehicle chips
+  await chooseVehicle(page, 'car');
 
   // Set bags to 4
   const bagsInput = page.locator('#f-luggageCount');
