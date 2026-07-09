@@ -4,6 +4,17 @@
    offered on popular corridors where seats run daily.
    ============================================================ */
 (function () {
+  /* @generated:pricing — from api/src/quote/rateCard.ts · DO NOT EDIT BY HAND · run `npm run generate` */
+  const PER_KM = {"car":0.35,"van":0.47};
+  const FLOORS = {"car":29,"van":50};
+  const BUFFER_PCT = 10;
+  const CHAUFFEUR_DAY_FEE = 35;
+  const DEPOSIT_PCT = 0.1;
+  const DEPOSIT_CAP = 50;
+  const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
+  const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24};
+  /* @end:pricing */
+
   // ---- Places (approx lat/lng for distance) ----
   // region groups help the picker read nicely
   const PLACES = [
@@ -34,37 +45,37 @@
       id: 'airport-cultural',
       label: 'Airport → Cultural Triangle',
       stops: ['cmb-airport', 'colombo', 'negombo', 'sigiriya', 'kandy'],
-      seat: 19, times: ['07:30'], freqText: 'Daily'
+      seat: CORRIDOR_SEAT['airport-cultural'], times: ['07:30'], freqText: 'Daily'
     },
     {
       id: 'hill-line',
       label: 'Kandy → Hill Country',
       stops: ['kandy', 'nuwara-eliya', 'ella'],
-      seat: 21, times: ['08:00'], freqText: 'Daily'
+      seat: CORRIDOR_SEAT['hill-line'], times: ['08:00'], freqText: 'Daily'
     },
     {
       id: 'ella-east',
       label: 'Ella → Yala → East',
       stops: ['ella', 'yala', 'arugam-bay'],
-      seat: 23, times: ['08:00'], freqText: 'Daily 8:00am'
+      seat: CORRIDOR_SEAT['ella-east'], times: ['08:00'], freqText: 'Daily 8:00am'
     },
     {
       id: 'south-coast',
       label: 'Galle → Mirissa coast',
       stops: ['galle', 'hikkaduwa', 'bentota', 'weligama', 'mirissa'],
-      seat: 14, times: ['09:00', '14:00'], freqText: 'Twice daily'
+      seat: CORRIDOR_SEAT['south-coast'], times: ['09:00', '14:00'], freqText: 'Twice daily'
     },
     {
       id: 'yala-south',
       label: 'Yala → South coast',
       stops: ['yala', 'mirissa', 'weligama', 'galle'],
-      seat: 16, times: ['08:00'], freqText: 'Daily 8:00am'
+      seat: CORRIDOR_SEAT['yala-south'], times: ['08:00'], freqText: 'Daily 8:00am'
     },
     {
       id: 'ella-south',
       label: 'Ella → South coast',
       stops: ['ella', 'mirissa', 'weligama'],
-      seat: 24, times: ['08:30'], freqText: 'Daily 8:30am'
+      seat: CORRIDOR_SEAT['ella-south'], times: ['08:30'], freqText: 'Daily 8:30am'
     }
   ];
 
@@ -194,19 +205,14 @@
     if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
-  // Per-km owner rates (USD/km) — the SINGLE front-end source of truth for the distance
-  // rate. Mirrors the backend rate card (api/src/quote/rateCard.ts perKmCents, owner-provided
-  // 2026-07-09 at 1 USD = 330 LKR: car 115 LKR → 35¢ · van 155 LKR → 47¢). Both legPrice
-  // (transfers) and booking.js's chauffeur distance charge read this constant, so neither can
-  // silently drift from the backend rate card; the web-tests parity guard checks the values.
-  const PER_KM = { car: 0.35, van: 0.47 };
-  // per-leg private price by vehicle — the engine formula: +10% km buffer, then a
-  // per-km rate with a minimum fare (car $29 · van $50).
+  // per-leg private price by vehicle — the engine formula: +BUFFER_PCT% km buffer, then the
+  // per-km rate with a minimum fare. Every number comes from the generated pricing block at the
+  // top of this IIFE (sourced from api/src/quote/rateCard.ts), so nothing here can drift.
   function legPrice(km, veh){
     if(km==null) return null;
-    const bkm = Math.round(km * 1.10);       // billable km: +10% routing buffer
-    const car = Math.max(29, Math.round(bkm * PER_KM.car));
-    const van = Math.max(50, Math.round(bkm * PER_KM.van));
+    const bkm = Math.round(km * (1 + BUFFER_PCT/100));   // billable km: + routing buffer
+    const car = Math.max(FLOORS.car, Math.round(bkm * PER_KM.car));
+    const van = Math.max(FLOORS.van, Math.round(bkm * PER_KM.van));
     return veh==='van' ? van : car;
   }
   // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
@@ -261,13 +267,11 @@
     const newPrice = legPrice(routedKm, veh);
     if(newPrice == null || !anchorKm) return { action:'hold', price: currentUnit };
     if(newPrice <= currentUnit) return { action:'hold', price: currentUnit };
-    if(routedKm <= Math.round(anchorKm * 1.10)) return { action:'hold', price: currentUnit };
+    if(routedKm <= Math.round(anchorKm * (1 + BUFFER_PCT/100))) return { action:'hold', price: currentUnit };
     return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
   }
-  // chauffeur-guide: a driver-guide + car stays with the trip. Flat add-on per day.
-  const CHAUFFEUR_DAY_FEE = 35;
-  const DEPOSIT_PCT = 0.10;
-  const DEPOSIT_CAP = 50; // USD — deposits are 10% of the total, capped at $50
+  // chauffeur-guide day fee (a driver-guide + car per day) plus deposit %/cap live in the
+  // generated pricing block at the top of this IIFE (sourced from api/src/quote/rateCard.ts).
 
   // full multi-stop quote: an array of typed stop names + vehicle
   function tripQuote(stops, veh){
@@ -290,7 +294,7 @@
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
     resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
-    PER_KM, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
+    PER_KM, FLOORS, BUFFER_PCT, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
 })();
