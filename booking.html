@@ -489,7 +489,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     /* ── sticky-bar mode (body.js-mbar added by booking.js; without JS none of this applies) ── */
     body.js-mbar{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))} /* room for the bar */
     /* the summary aside becomes a bottom sheet */
-    body.js-mbar .layout > aside{order:0;position:fixed;left:0;right:0;bottom:0;z-index:120;margin:0;
+    body.js-mbar .layout > aside{order:0;position:fixed;left:0;right:0;bottom:0;top:auto;z-index:120;margin:0;
       transform:translateY(102%);visibility:hidden;transition:transform .28s ease,visibility 0s .28s}
     body.js-mbar .layout > aside.open{transform:translateY(0);visibility:visible;transition:transform .28s ease}
     body.js-mbar .summary{max-height:78dvh;overflow:auto;border-radius:18px 18px 0 0;

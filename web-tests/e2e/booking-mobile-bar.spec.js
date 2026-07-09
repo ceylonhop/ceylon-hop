@@ -68,7 +68,9 @@ test.describe('mobile sticky bar', () => {
     await expect(page.locator('#s-wa')).toBeVisible();
     const sum = await page.locator('#summary').boundingBox();
     expect(sum.x).toBeGreaterThanOrEqual(0);
-    await page.locator('#mbar-scrim').click();
+    // click the scrim ABOVE the sheet (the sheet caps at 78dvh, so the top band is
+    // always exposed scrim; Playwright's default center-click can land on the sheet)
+    await page.locator('#mbar-scrim').click({ position: { x: 195, y: 60 } });
     await expect(aside).not.toHaveClass(/open/);
     await page.locator('#mstrip').click();
     await expect(aside).toHaveClass(/open/);

@@ -1,17 +1,22 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking, fillContact } from './_stubs.js';
 
-test('mobile booking shows the price summary before the active payment panel', async ({ page }) => {
+test('mobile booking shows a compact context strip, not the full summary wall', async ({ page }) => {
+  // Sticky-bar layout (spec 2026-07-09-mobile-booking-sticky-bar-design.md): the old
+  // full summary card above every step is replaced by a slim strip + sticky total bar,
+  // so the step content starts on the first screen.
   await page.setViewportSize({ width: 390, height: 844 });
   await gotoBooking(page);
   await fillContact(page);
 
-  const summary = await page.locator('#summary').boundingBox();
+  const strip = await page.locator('#mstrip').boundingBox();
   const panel = await page.locator('.panel[data-panel="4"]').boundingBox();
-  expect(summary).toBeTruthy();
+  expect(strip).toBeTruthy();
   expect(panel).toBeTruthy();
-  expect(summary.y).toBeLessThan(panel.y);
-  await expect(page.locator('#sum-total')).toBeVisible();
+  expect(strip.y).toBeLessThan(panel.y);
+  expect(strip.height).toBeLessThanOrEqual(90);
+  expect(panel.y).toBeLessThan(480); // step content reachable on the first screen
+  await expect(page.locator('#mbar-amt')).not.toHaveText('—'); // sticky bar carries the total
   await expect(page.locator('#pay-due')).toBeVisible();
 });
 
@@ -59,13 +64,17 @@ test('mobile primary cards keep a visible edge gutter', async ({ page }) => {
   await gotoBooking(page);
 
   const bookingCard = await page.locator('.stepcard.panel.active').boundingBox();
-  const bookingSummary = await page.locator('#summary').boundingBox();
+  const bookingStrip = await page.locator('#mstrip').boundingBox();
   expect(bookingCard).toBeTruthy();
-  expect(bookingSummary).toBeTruthy();
+  expect(bookingStrip).toBeTruthy();
   expect(bookingCard.x).toBeGreaterThanOrEqual(18);
   expect(390 - (bookingCard.x + bookingCard.width)).toBeGreaterThanOrEqual(18);
-  expect(bookingSummary.x).toBeGreaterThanOrEqual(18);
-  expect(390 - (bookingSummary.x + bookingSummary.width)).toBeGreaterThanOrEqual(18);
+  expect(bookingStrip.x).toBeGreaterThanOrEqual(18);
+  expect(390 - (bookingStrip.x + bookingStrip.width)).toBeGreaterThanOrEqual(18);
+  // the sticky bar is intentionally full-bleed
+  const bar = await page.locator('#mbar').boundingBox();
+  expect(bar).toBeTruthy();
+  expect(bar.width).toBeGreaterThanOrEqual(388);
 
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
