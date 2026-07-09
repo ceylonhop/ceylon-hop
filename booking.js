@@ -910,8 +910,10 @@ function chauffeurDistanceCharge(){
   // (transfers-data.js BUFFER_PCT / PER_KM, mirrored from api/src/quote/rateCard.ts) so this
   // line can't silently drift from the backend rate card the way it once did.
   const bulkKm = Math.round(tripKm * (1 + window.TRANSFERS.BUFFER_PCT/100)) + idleKm;
-  const charge = Math.round(bulkKm * window.TRANSFERS.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
-  return Math.max(charge, tripBase || unit || 0);
+  // Bulk km × per-km rate, with NO per-leg minimum-fare floor — the backend engine
+  // (api/src/quote/chauffeur.ts) has no such floor, so flooring at the private per-leg total
+  // (tripBase) over-quoted short-leg chauffeur trips and made the price drop at the pay step.
+  return Math.round(bulkKm * window.TRANSFERS.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // Server-authoritative price. Until the booking is created the wizard shows a best-effort
