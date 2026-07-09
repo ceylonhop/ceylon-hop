@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import {
   renderPricingBlock,
   injectPricingBlock,
   applySharedPrices,
+  readPayload,
   PRICING_BEGIN,
   PRICING_END,
 } from '../../tools/generate-pricing.mjs';
@@ -66,5 +67,40 @@ describe('applySharedPrices', () => {
     const T = loadTransfers();
     const src = readFileSync(routesPath, 'utf8');
     expect(applySharedPrices(src, T)).toBe(applySharedPrices(applySharedPrices(src, T), T));
+  });
+});
+
+// The real enforcement: if someone edits the backend rate card and forgets `npm run generate`,
+// or hand-edits a generated value, these fail in CI. `readPayload()` runs the actual api dump.
+describe('codegen freshness + parity (enforcement)', () => {
+  const transfersPath = path.resolve(__dirname, '../../transfers-data.js');
+  let backendPayload;
+  // Runs the api dump in the test context (NOT at collection — execFileSync during vitest
+  // collection corrupts the jsdom env). Generous timeout: a cold tsx compile can be slow in CI.
+  beforeAll(() => {
+    backendPayload = readPayload();
+  }, 30000);
+
+  it('FRESHNESS: committed transfers-data.js pricing block matches the backend', () => {
+    const src = readFileSync(transfersPath, 'utf8');
+    expect(injectPricingBlock(src, backendPayload)).toBe(src);
+  });
+
+  it('FRESHNESS: committed routes-data.js shared prices match the corridors', () => {
+    const src = readFileSync(routesPath, 'utf8');
+    expect(applySharedPrices(src, loadTransfers())).toBe(src);
+  });
+
+  it('PARITY: window.TRANSFERS constants equal the backend payload', () => {
+    const T = loadTransfers();
+    expect(T.PER_KM).toEqual(backendPayload.perKm);
+    expect(T.FLOORS).toEqual(backendPayload.floors);
+    expect(T.BUFFER_PCT).toBe(backendPayload.bufferPct);
+    expect(T.CHAUFFEUR_DAY_FEE).toBe(backendPayload.chauffeurDayFee);
+    expect(T.DEPOSIT_PCT).toBe(backendPayload.depositPct);
+    expect(T.DEPOSIT_CAP).toBe(backendPayload.depositCap);
+    // completeness: every backend extra is present with the right price (the booking.js
+    // copy that once omitted safari-wait/waiting can never recur).
+    expect(T.EXTRAS).toEqual(backendPayload.extras);
   });
 });
