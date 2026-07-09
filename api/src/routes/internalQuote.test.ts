@@ -66,20 +66,20 @@ describe('internal quoting tool route', () => {
     expect(res.status).toBe(404);
   });
 
-  it('estimate prices a private leg from a manual km (80km car = 4048¢); no drafts; lineItems carry cents', async () => {
+  it('estimate prices a private leg from a manual km (80km car = 3080¢); no drafts; lineItems carry cents', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       name: 'Test', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
     });
     expect(res.status).toBe(200);
     const d = await res.json();
-    expect(d.total.cents).toBe(4048);
-    expect(d.amountDueNow.cents).toBe(4048); // private → full
+    expect(d.total.cents).toBe(3080);
+    expect(d.amountDueNow.cents).toBe(3080); // private → full
     expect(d.drafts).toBeUndefined(); // V15: dead drafts removed
     expect(Number.isInteger(d.lineItems[0].amountCents)).toBe(true); // Fix 7: cents on line items
     expect(d.lineItems[0].meta.billableKm).toBe(88); // meta passthrough — client zips travel items with legs
     expect(d.comparison).toBeUndefined(); // reflow: car/van comparison removed
     // reflow: services chooser replaces comparison. Single undated leg → chauffeur infeasible.
-    expect(d.services.pointToPoint.total.cents).toBe(4048);
+    expect(d.services.pointToPoint.total.cents).toBe(3080);
     expect(d.services.chauffeur.error).toBeTruthy();
   });
 
@@ -135,7 +135,7 @@ describe('internal quoting tool route', () => {
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
     expect(got.customerName).toBe('Maya');
-    expect(got.rateCardVersion).toBe('2026-07-02');
+    expect(got.rateCardVersion).toBe('2026-07-09');
   });
 
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
@@ -145,7 +145,7 @@ describe('internal quoting tool route', () => {
     });
     const saved = await res.json();
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
-    expect(got.totalCents).toBe(4048); // engine price, not the bogus client total
+    expect(got.totalCents).toBe(3080); // engine price, not the bogus client total
   });
 
   it('POST /save is 400 for an unpriceable trip (no travel leg)', async () => {
@@ -222,7 +222,7 @@ describe('internal quoting tool route', () => {
     });
     const d = await res.json();
     expect(d.product).toBe('private');
-    expect(d.total.cents).toBe(12782); // van 140km
+    expect(d.total.cents).toBe(7238); // van 140km
   });
 
   it('sightseeing/waiting/safari-wait toggles add engine extras on a private trip', async () => {
@@ -232,19 +232,19 @@ describe('internal quoting tool route', () => {
   });
 
   it('van_9/van_14/custom are no longer gated — they price correctly (200, total > 0)', async () => {
-    const cases: Array<{ vehicle: string; pax: number; expectedPerKmCents: number }> = [
-      { vehicle: 'van_9',  pax: 8,  expectedPerKmCents: 55 }, // 154 billableKm × 55¢ = 8470
-      { vehicle: 'van_14', pax: 12, expectedPerKmCents: 130 }, // 154 × 130¢ = 20020
-      { vehicle: 'custom', pax: 20, expectedPerKmCents: 175 }, // 154 × 175¢ = 26950
+    const cases: Array<{ vehicle: string; pax: number; expectedCents: number }> = [
+      { vehicle: 'van_9',  pax: 8,  expectedCents: 7238 }, // 154 billableKm × 47¢ = 7238 (> floor 5000)
+      { vehicle: 'van_14', pax: 12, expectedCents: 8500 }, // 154 × 48¢ = 7392 < floor 8500 → floor wins
+      { vehicle: 'custom', pax: 20, expectedCents: 26950 }, // 154 × 175¢ = 26950
     ];
-    for (const { vehicle, pax, expectedPerKmCents } of cases) {
+    for (const { vehicle, pax, expectedCents } of cases) {
       const res = await post(createApp(), '/admin/quote/estimate', {
         vehicle, passengerCount: pax, luggageCount: 2,
         legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 140 }],
       });
       expect(res.status).toBe(200);
       const d = await res.json();
-      expect(d.total.cents).toBe(154 * expectedPerKmCents); // 140km → 154 billableKm
+      expect(d.total.cents).toBe(expectedCents); // 140km → 154 billableKm
       expect(d.total.cents).toBeGreaterThan(0);
     }
   });
@@ -252,16 +252,16 @@ describe('internal quoting tool route', () => {
   it('estimate includes a breakdown (km strip + per-leg prices)', async () => {
     const d = await (await post(createApp(), '/admin/quote/estimate', { vehicle: 'van_6', passengerCount: 4, luggageCount: 4, legs: [{ category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 }] })).json();
     expect(d.breakdown.km).toEqual({ distanceKm: 140, bufferKm: 14, billableKm: 154 });
-    expect(d.breakdown.legs[0].priceCents).toBe(12782);
+    expect(d.breakdown.legs[0].priceCents).toBe(7238);
   });
 
   it('GET /rate-card returns the locked rate card for the read-only Settings (all 5 tiers) + vehicle caps', async () => {
     const d = await (await authedGet(createApp(), '/admin/quote/rate-card')).json();
-    expect(d.version).toBe('2026-07-02');
-    expect(d.perKmCents).toMatchObject({ car: 46, van: 83, van9: 55, van14: 130, custom: 175 });
+    expect(d.version).toBe('2026-07-09');
+    expect(d.perKmCents).toMatchObject({ car: 35, van: 47, van9: 47, van14: 48, custom: 175 });
     expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
     expect(d.chauffeurDayRateCents).toBe(3500);
-    expect(d.fxUsdToLkr).toBe(320);
+    expect(d.fxUsdToLkr).toBe(330);
     // V12 server half: expose vehicle capacity caps for client-side vehicle labelling
     expect(d.vehicle).toMatchObject({
       car: { maxPax: 3, maxBags: 3 },
@@ -421,7 +421,7 @@ describe('internal quoting tool route', () => {
       legs: [{ category: 'transfer', from: 'A', to: 'B', distanceKm: 80, stopovers: ['Old Data'] }],
     });
     expect(res.status).toBe(200);
-    expect((await res.json()).total.cents).toBe(4048);
+    expect((await res.json()).total.cents).toBe(3080);
   });
 });
 
@@ -586,7 +586,7 @@ describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
     });
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j.total.cents).toBe(154 * 90); // billable 154km × 90¢, not the 130¢ placeholder
+    expect(j.total.cents).toBe(154 * 90); // billable 154km × 90¢, not the 48¢ placeholder
   });
 
   it('400s a custom rate on a non-custom tier (car)', async () => {

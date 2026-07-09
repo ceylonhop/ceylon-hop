@@ -11,7 +11,7 @@ test('price holds at the quoted amount on load (no re-price from the pre-filled 
 });
 
 test('firm floor: a cheaper new drop-off never drops the quoted price', async ({ page }) => {
-  // legPrice(200,'car') = round(220 × 0.46) = $101, which is LESS than the quoted $121.
+  // legPrice(200,'car') = round(220 × 0.35) = $77, which is LESS than the quoted $121.
   // The quote is a firm floor, so it must HOLD at $121 (no drop, no heads-up needed).
   await gotoBooking(page, { routeKm: 200 });
   await expect(page.locator('#sum-total')).toHaveText('$121');
@@ -38,9 +38,9 @@ test('warns before a material price increase and holds the total until accepted'
   await expect(page.locator('#sum-total')).toHaveText('$121');
   await expect(page.locator('#n1')).toBeDisabled();
 
-  // Accept the higher fixed price. legPrice(400,'car') = round(440×0.46) = $202.
+  // Accept the higher fixed price. legPrice(400,'car') = round(440×0.35) = $154.
   await page.locator('#reprice-note button.btn-primary').click();
-  await expect(page.locator('#sum-total')).toHaveText('$202');
+  await expect(page.locator('#sum-total')).toHaveText('$154');
   await expect(page.locator('#reprice-note')).toHaveCount(0);
   await expect(page.locator('#n1')).toBeEnabled();
 });
@@ -49,32 +49,32 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
   // Regression guard for the reprice acknowledgement (PR #21). While a notice is pending
   // the total must HOLD at the selected vehicle's un-drifted price and only move to the
   // drifted price on accept. Switching car→van mid-notice must preserve that invariant:
-  // total shows the van's standard $131 (privateQuote), NOT the drifted legPrice(400,'van')=$365,
-  // and the notice reads "from $131 to $365". (A naive "unit = pendingReprice.prices[key]"
-  // would show $365 before acknowledgement and render a broken "from $365 to $365" line.)
+  // total shows the van's standard $74 (privateQuote), NOT the drifted legPrice(400,'van')=$207,
+  // and the notice reads "from $74 to $207". (A naive "unit = pendingReprice.prices[key]"
+  // would show $207 before acknowledgement and render a broken "from $207 to $207" line.)
   await gotoBooking(page, { routeKm: 400 });
 
-  // Car drift notice appears: from the quoted $121 to legPrice(400,'car')=$202. Total held, gated.
+  // Car drift notice appears: from the quoted $121 to legPrice(400,'car')=$154. Total held, gated.
   await pickPlace(page, '#loc-to', 'ac-to', 'Jaffna hotel', 1);
   await expect(page.locator('#reprice-note')).toBeVisible();
   await expect(page.locator('#reprice-note')).toContainText('$121');
-  await expect(page.locator('#reprice-note')).toContainText('$202');
+  await expect(page.locator('#reprice-note')).toContainText('$154');
   await expect(page.locator('#sum-total')).toHaveText('$121');
   await expect(page.locator('#n1')).toBeDisabled();
 
   // Switch to the van WHILE the notice is still pending.
   await page.evaluate(() => window.switchToVan());
 
-  // The total holds at the van's un-drifted standard price ($131) — it must NOT jump to $365 yet.
-  await expect(page.locator('#sum-total')).toHaveText('$131');
-  // Notice now offers the van's own drift: from $131 (standard) to $365 (legPrice(400,'van')).
-  await expect(page.locator('#reprice-note')).toContainText('$131');
-  await expect(page.locator('#reprice-note')).toContainText('$365');
+  // The total holds at the van's un-drifted standard price ($74) — it must NOT jump to $207 yet.
+  await expect(page.locator('#sum-total')).toHaveText('$74');
+  // Notice now offers the van's own drift: from $74 (standard) to $207 (legPrice(400,'van')).
+  await expect(page.locator('#reprice-note')).toContainText('$74');
+  await expect(page.locator('#reprice-note')).toContainText('$207');
   await expect(page.locator('#n1')).toBeDisabled();
 
   // Accepting commits the drifted van price and clears the gate.
   await page.locator('#reprice-note button.btn-primary').click();
-  await expect(page.locator('#sum-total')).toHaveText('$365');
+  await expect(page.locator('#sum-total')).toHaveText('$207');
   await expect(page.locator('#reprice-note')).toHaveCount(0);
   await expect(page.locator('#n1')).toBeEnabled();
 });

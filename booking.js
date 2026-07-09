@@ -882,7 +882,10 @@ function chauffeurDistanceCharge(){
   const tripKm = tripQuoteWithKms(vehicleKey).totalKm || 0;
   if(tripKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
   const bulkKm = Math.round(tripKm * 1.10) + idleKm;
-  const charge = Math.round(bulkKm * (vehicleKey==='van' ? 0.83 : 0.46));
+  // Read the per-km rate from the single front-end source of truth (transfers-data.js
+  // PER_KM, itself mirrored from api/src/quote/rateCard.ts) so this line can't silently
+  // drift from the backend rate card the way it once did.
+  const charge = Math.round(bulkKm * window.TRANSFERS.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
   return Math.max(charge, tripBase || unit || 0);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }

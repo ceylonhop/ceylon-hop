@@ -194,13 +194,19 @@
     if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
+  // Per-km owner rates (USD/km) — the SINGLE front-end source of truth for the distance
+  // rate. Mirrors the backend rate card (api/src/quote/rateCard.ts perKmCents, owner-provided
+  // 2026-07-09 at 1 USD = 330 LKR: car 115 LKR → 35¢ · van 155 LKR → 47¢). Both legPrice
+  // (transfers) and booking.js's chauffeur distance charge read this constant, so neither can
+  // silently drift from the backend rate card; the web-tests parity guard checks the values.
+  const PER_KM = { car: 0.35, van: 0.47 };
   // per-leg private price by vehicle — the engine formula: +10% km buffer, then a
-  // per-km rate (car $0.46 · van $0.83) with a minimum fare (car $29 · van $50)
+  // per-km rate with a minimum fare (car $29 · van $50).
   function legPrice(km, veh){
     if(km==null) return null;
     const bkm = Math.round(km * 1.10);       // billable km: +10% routing buffer
-    const car = Math.max(29, Math.round(bkm * 0.46));
-    const van = Math.max(50, Math.round(bkm * 0.83));
+    const car = Math.max(29, Math.round(bkm * PER_KM.car));
+    const van = Math.max(50, Math.round(bkm * PER_KM.van));
     return veh==='van' ? van : car;
   }
   // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
@@ -284,7 +290,7 @@
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
     resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
-    CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
+    PER_KM, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
 })();

@@ -7,13 +7,15 @@ export type ExtraCode = typeof EXTRA_CODES[number];
 export const CHAUFFEUR_INCLUDED_EXTRAS = ['sightseeing', 'waiting', 'safari-wait'] as const;
 
 export const RATE_CARD = {
-  version: '2026-07-02',
+  version: '2026-07-09',
   currency: 'USD',
   markupPct: 25,
-  // van9 = $0.55/km (owner-provided 2026-07-02). van14/custom still placeholders pending real
-  // numbers. cost = round(perKm / 1.25) to keep the 25% markup/margin model consistent.
-  perKmCents: { car: 46, van: 83, van9: 55, van14: 130, custom: 175 },
-  costPerKmCents: { car: 37, van: 66, van9: 44, van14: 104, custom: 140 }, // for margin reporting only
+  // Owner-provided 2026-07-09 as LKR/km, converted at 1 USD = 330 LKR (see fxUsdToLkr):
+  //   car 115 → 35¢ · van 155 → 47¢ · van9 155 (= van6) → 47¢ · van14 160 → 48¢.
+  // custom still a placeholder pending a real number. cost = round(perKm / 1.25) to keep the
+  // 25% markup/margin model consistent.
+  perKmCents: { car: 35, van: 47, van9: 47, van14: 48, custom: 175 },
+  costPerKmCents: { car: 28, van: 38, van9: 38, van14: 38, custom: 140 }, // for margin reporting only
   floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50 (confirm)
   chauffeur: { dayRateCents: 3500, idleMinKm: { car: 100, van: 150, van9: 150, van14: 200, custom: 200 } },
   deposit: { pct: 10, capCents: 5000 },
@@ -25,7 +27,7 @@ export const RATE_CARD = {
     custom: { maxPax: 99, maxBags: 99 },
   },
   bufferPct: 10,
-  fxUsdToLkr: 320, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
+  fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
   shared: { colomboPickupCents: 300 },
 } as const;

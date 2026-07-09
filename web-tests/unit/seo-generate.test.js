@@ -12,7 +12,7 @@ describe('generateAll', () => {
   it('kandy-to-ella page carries engine prices, canonical, JSON-LD, no aggregateRating', () => {
     const html = out.get('trip/kandy-to-ella/index.html');
     expect(html).toContain('<link rel="canonical" href="https://ceylonhop.com/trip/kandy-to-ella/">');
-    expect(html).toContain('$69');            // car price from the rate card
+    expect(html).toContain('$53');            // car price from the rate card
     expect(html).toMatch(/"@type":\s*"FAQPage"/);
     expect(html).not.toContain('aggregateRating');
     expect(html).toContain('../../site.css'); // relative asset ref
@@ -25,7 +25,7 @@ describe('generateAll', () => {
     const fwd = out.get('trip/kandy-to-ella/index.html');
     const rev = out.get('trip/ella-to-kandy/index.html');
     expect(rev).toContain('<h1>Ella to Kandy</h1>');
-    expect(rev).toContain('$69'); // symmetric pricing
+    expect(rev).toContain('$53'); // symmetric pricing
     expect(fwd).not.toBe(rev);
   });
   it('sitemap lists every route page with absolute apex URLs', () => {

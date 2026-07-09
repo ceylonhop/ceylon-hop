@@ -5,20 +5,20 @@ import { RATE_CARD } from './rateCard';
 import type { QuoteRequest } from './types';
 
 describe('quote()', () => {
-  it('private single leg with deposit = full total (Tatia Kandy→Nanu Oya 80km→bill 88km = $40.48)', () => {
+  it('private single leg with deposit = full total (Tatia Kandy→Nanu Oya 80km→bill 88km = $30.80)', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] });
-    expect(r.totalCents).toBe(4048); // 88km × 46¢ = 4048
-    expect(r.amountDueNowCents).toBe(4048);
+    expect(r.totalCents).toBe(3080); // 88km × 35¢ = 3080
+    expect(r.amountDueNowCents).toBe(3080);
     expect(r.rateCardVersion).toBe(RATE_CARD.version);
-    expect(r.marginEstimateCents).toBe(792); // 4048 - (88km × 37¢ cost = 3256)
+    expect(r.marginEstimateCents).toBe(616); // 3080 - (88km × 28¢ cost = 2464)
   });
 
   it('private with extras adds them to the total', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
-    expect(r.totalCents).toBe(4048 + 1000);
+    expect(r.totalCents).toBe(3080 + 1000);
   });
 
-  it('chauffeur → amountDueNow is the full total for now (Emma $903.80)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $763.00)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -29,11 +29,11 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.totalCents).toBe(90380);
-    expect(r.amountDueNowCents).toBe(90380);
+    expect(r.totalCents).toBe(76300);
+    expect(r.amountDueNowCents).toBe(76300);
     // billableKm: Math.round(800 * 1.1) = 880 travel + (4 idle days × 100 idle min km) = 1280
-    // costCents: Math.round(1280 × 37¢/km) = 47360 → margin = 90380 − 47360 = 43020
-    expect(r.marginEstimateCents).toBe(43020);
+    // costCents: Math.round(1280 × 28¢/km) = 35840 → margin = 76300 − 35840 = 40460
+    expect(r.marginEstimateCents).toBe(40460);
   });
 
   it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
@@ -90,7 +90,7 @@ describe('quote()', () => {
 
   it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
-    expect(r.totalCents).toBe(4048 + 1000);
+    expect(r.totalCents).toBe(3080 + 1000);
     expect(r.warnings.some((w) => w.includes('included in chauffeur day rate'))).toBe(false);
   });
 
@@ -105,20 +105,20 @@ describe('quote()', () => {
 
   it('never undercharges: car requested for 6 pax is priced as the required van', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 6, bags: 1, legs: [{ from: 'A', to: 'B', distanceKm: 100 }] });
-    expect(r.totalCents).toBe(9130); // 100km → bill 110km × van 83¢ = 9130, NOT car 46¢
+    expect(r.totalCents).toBe(5170); // 100km → bill 110km × van 47¢ = 5170, NOT car 35¢
     expect(r.warnings.some((w) => w.includes('vehicle set to van'))).toBe(true);
   });
 
   // New van9 / van14 / custom tier tests
-  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 55¢ = 8470¢', () => {
+  it('van9: 140km private (1 leg, pax under cap) → 154 billableKm × 47¢ = 7238¢', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
-    expect(r.totalCents).toBe(8470); // 154km × 55¢ (owner-provided rate)
-    expect(r.marginEstimateCents).toBe(8470 - Math.round(154 * 44)); // 154 × 44¢ cost
+    expect(r.totalCents).toBe(7238); // 154km × 47¢ (owner-provided rate)
+    expect(r.marginEstimateCents).toBe(7238 - Math.round(154 * 38)); // 154 × 38¢ cost
   });
 
-  it('van14: 140km private → 154 billableKm × 130¢ = 20020¢', () => {
+  it('van14: 140km private → 154 billableKm × 48¢ = 7392¢ < $85 floor → 8500¢', () => {
     const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
-    expect(r.totalCents).toBe(20020); // 154km × 130¢
+    expect(r.totalCents).toBe(8500); // 154km × 48¢ = 7392 < van14 floor 8500
   });
 
   it('custom: 140km private → 154 billableKm × 175¢ = 26950¢', () => {
@@ -129,12 +129,12 @@ describe('quote()', () => {
   it('van9: 20km private → floor 5000¢ applies (raw 22km × 55¢ = 1210 < 5000)', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
     expect(r.totalCents).toBe(5000); // floor
-    expect(r.marginEstimateCents).toBe(5000 - Math.round(22 * 44));
+    expect(r.marginEstimateCents).toBe(5000 - Math.round(22 * 38));
   });
 
   it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 8, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 140 }] });
-    expect(r.totalCents).toBe(8470); // van9 price ($0.55/km)
+    expect(r.totalCents).toBe(7238); // van9 price ($0.47/km)
     expect(r.warnings.some((w) => w.includes('vehicle set to van9'))).toBe(true);
   });
 

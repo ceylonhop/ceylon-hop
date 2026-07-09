@@ -34,7 +34,7 @@ describe('route-page SEO invariants', () => {
   });
   it('prices in each page match the engine rate card (no stray hardcoded prices)', () => {
     // every "$NN" that appears must be a real generated price; spot-check a known one
-    expect(out.get('trip/kandy-to-ella/index.html')).toContain('$69');
+    expect(out.get('trip/kandy-to-ella/index.html')).toContain('$53');
     expect(out.get('trip/nuwara-eliya-to-ella/index.html')).toContain('$29'); // min fare, 54km
   });
 });

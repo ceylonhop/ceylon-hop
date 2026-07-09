@@ -11,7 +11,7 @@ const customer = {
 };
 const single = { from: 'A', to: 'B', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer };
 // Resolvable by the fake maps adapter → the engine prices it: CMB→Galle km 180 →
-// billable 198 → car round(198×46) = 9108.
+// billable 198 → car round(198×35) = 6930.
 const knownSingle = { ...single, from: 'Colombo Airport (CMB)', to: 'Galle' };
 
 function post(app: ReturnType<typeof createApp>, path: string, body: unknown) {
@@ -32,21 +32,21 @@ function appWithTasks() {
 describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
   it('stores the engine price, ignoring a divergent quotedTotal, and files a mismatch task', async () => {
     const { app, conciergeTasks } = appWithTasks();
-    const r = await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 7000 });
+    const r = await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 9000 });
     expect(r.status).toBe(201);
     const b = await r.json();
-    expect(b.total).toBe(9108); // engine wins
-    expect(b.amountDueNow).toBe(9108);
+    expect(b.total).toBe(6930); // engine wins
+    expect(b.amountDueNow).toBe(6930);
     const tasks = await conciergeTasks.listByBooking(b.id);
     expect(tasks).toHaveLength(1);
     expect(tasks[0].type).toBe('follow_up');
-    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 7000¢, engine priced 9108¢`);
+    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 9000¢, engine priced 6930¢`);
   });
 
   it('does not flag a quotedTotal within $1 of the engine price', async () => {
     const { app, conciergeTasks } = appWithTasks();
-    const b = await (await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 9100 })).json();
-    expect(b.total).toBe(9108);
+    const b = await (await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 6925 })).json();
+    expect(b.total).toBe(6930);
     expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(0);
   });
 

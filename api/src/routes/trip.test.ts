@@ -40,8 +40,8 @@ describe('POST /bookings/trip', () => {
     const res = await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [1, 2, 0] });
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.total).toBe(18426); // van legs: CMB→Kandy 10292 + Kandy→Ella 8134
-    expect(b.amountDueNow).toBe(18426);
+    expect(b.total).toBe(10828); // van legs: CMB→Kandy 5828 + Kandy→Ella 5000
+    expect(b.amountDueNow).toBe(10828);
   });
 
   it('prices a resolvable chauffeur trip with the engine and collects the full amount now', async () => {
@@ -56,9 +56,9 @@ describe('POST /bookings/trip', () => {
     });
     expect(res.status).toBe(201);
     const b = await res.json();
-    // 3 days × 3500 + round((222 buffered + 100 idle-min) × 46) = 10500 + 14812
-    expect(b.total).toBe(25312);
-    expect(b.amountDueNow).toBe(25312);
+    // 3 days × 3500 + round((222 buffered + 100 idle-min) × 35) = 10500 + 11270
+    expect(b.total).toBe(21770);
+    expect(b.amountDueNow).toBe(21770);
   });
 
   it('rejects an invalid trip (400)', async () => {

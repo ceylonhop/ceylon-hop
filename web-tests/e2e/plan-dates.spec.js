@@ -238,7 +238,7 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
 
   await expect(from).toHaveValue('Colombo Airport (CMB)');
   await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $77');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $58');
 
   await page.reload();
 
@@ -265,9 +265,9 @@ test('planner place search layers popular route then Google results for hotel te
   await options.nth(1).click();
   await expect(to).toHaveValue('hilton colombo Hotel');
   await expect(page.locator('#rail [data-dist]')).toContainText('100 km');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $51');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $39');
   await expect(page.locator('#st-drive')).toContainText('100 km');
-  await expect(page.locator('#sum-amt')).toContainText('$50–$100');
+  await expect(page.locator('#sum-amt')).toContainText('$29–$50');
 });
 
 test('planner place search ignores delayed Google results after a popular place is selected', async ({ page }) => {

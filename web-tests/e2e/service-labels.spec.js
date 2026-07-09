@@ -76,12 +76,12 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('52 km');
   await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('236 km');
   await expect(page.locator('#trip-route')).not.toContainText('Distance on request');
-  await expect(page.locator('#sum-total')).toHaveText('$149');
+  await expect(page.locator('#sum-total')).toHaveText('$120');
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  await expect(page.locator('#sum-adamt')).toHaveText('$149');
-  await expect(page.locator('#sum-total')).toHaveText('$219');
+  await expect(page.locator('#sum-adamt')).toHaveText('$120');
+  await expect(page.locator('#sum-total')).toHaveText('$190');
 });
 
 test('fallback-priced trip does not show zero chauffeur distance', async ({ page }) => {

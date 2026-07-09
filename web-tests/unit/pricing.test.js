@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTransfers, carFare, vanFare } from './_load.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let T;
 beforeAll(() => { T = loadTransfers(); });
@@ -27,12 +32,12 @@ describe('privateQuote (the fare customers see)', () => {
     const q = T.privateQuote('cmb-airport', 'ella');
     expect(q.km).toBe(335);
     // billableKm = round(335 × 1.10) = round(368.5) = 369
-    // car = max(29, round(369 × 0.46)) = round(169.74) = 170
-    // van = max(50, round(369 × 0.83)) = round(306.27) = 306
-    expect(q.car).toBe(carFare(335)); // 170
-    expect(q.van).toBe(vanFare(335)); // 306
-    expect(q.car).toBe(170);
-    expect(q.van).toBe(306);
+    // car = max(29, round(369 × 0.35)) = round(129.15) = 129
+    // van = max(50, round(369 × 0.47)) = round(173.43) = 173
+    expect(q.car).toBe(carFare(335)); // 129
+    expect(q.van).toBe(vanFare(335)); // 173
+    expect(q.car).toBe(129);
+    expect(q.van).toBe(173);
   });
 
   it('van is always pricier than car', () => {
@@ -50,16 +55,16 @@ describe('privateQuote (the fare customers see)', () => {
   it('honours the minimum fare floors on ultra-short hops', () => {
     const q = T.privateQuote('weligama', 'mirissa'); // 7km
     // billableKm = round(7 × 1.10) = 8
-    // car raw = round(8 × 0.46) = round(3.68) = 4  → $29 floor
-    // van raw = round(8 × 0.83) = round(6.64) = 7  → $50 floor
+    // car raw = round(8 × 0.35) = round(2.8) = 3  → $29 floor
+    // van raw = round(8 × 0.47) = round(3.76) = 4  → $50 floor
     expect(q.car).toBe(29); // floor
     expect(q.van).toBe(50); // floor
   });
 
   // Regression guard: hill-country must not collapse back to the haversine estimate
-  // (~181km), which would under-price it to ~$92; the real 335km drive prices at $170.
+  // (~181km), which would under-price it to ~$70; the real 335km drive prices at $129.
   it('REGRESSION: CMB->Ella is priced for the real 335km mountain drive', () => {
-    expect(T.privateQuote('cmb-airport', 'ella').car).toBeGreaterThanOrEqual(150);
+    expect(T.privateQuote('cmb-airport', 'ella').car).toBeGreaterThanOrEqual(120);
   });
 });
 
@@ -131,6 +136,31 @@ describe('chauffeur + deposit constants (engine parity)', () => {
     expect(T.DEPOSIT_PCT).toBe(0.10);
     expect(T.DEPOSIT_CAP).toBe(50);
     expect(T.CHAUFFEUR_DAY_FEE).toBe(35);
+  });
+
+  it('per-km owner rates match the backend rate card (car $0.35 · van $0.47)', () => {
+    // engine: RATE_CARD.perKmCents = { car: 35, van: 47 } (api/src/quote/rateCard.ts).
+    // This is the single front-end per-km source: legPrice AND booking.js's chauffeur
+    // distance charge both read T.PER_KM, so guarding it here guards both.
+    expect(T.PER_KM.car).toBe(0.35);
+    expect(T.PER_KM.van).toBe(0.47);
+  });
+});
+
+// Regression guard for the 2026-07-09 chauffeur-distance drift: booking.js:885 once held its
+// own hardcoded per-km rate (0.46/0.83) that fell out of sync with the backend and overcharged
+// chauffeur-guide trips. It must now derive the rate from the shared TRANSFERS.PER_KM constant,
+// never a re-hardcoded number, and the superseded rates must never reappear.
+describe('booking.js chauffeur distance rate (no silent drift)', () => {
+  const src = readFileSync(path.resolve(__dirname, '../../booking.js'), 'utf8');
+
+  it('reads the per-km rate from the shared TRANSFERS.PER_KM source of truth', () => {
+    expect(src).toMatch(/TRANSFERS\.PER_KM/);
+  });
+
+  it('does not contain the superseded pre-2026-07-09 per-km rates', () => {
+    expect(src).not.toMatch(/\b0\.46\b/);
+    expect(src).not.toMatch(/\b0\.83\b/);
   });
 });
 

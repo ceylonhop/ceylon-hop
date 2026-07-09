@@ -68,8 +68,8 @@ describe('quoteShared (stub)', () => {
 // ── GL-3: engine-backed pricing (the M11 engine is the pricing truth) ────────
 // Expected values follow the engine math exactly: km from the fake maps adapter
 // (round(haversine × 1.35)), billableKm = round(km × 1.1), leg = max(floor, round(billableKm × rate)).
-// Kandy→Ella: km 89 → billable 98 → car round(98×46) = 4508, van round(98×83) = 8134.
-// CMB→Kandy: km 113 → billable 124 → car round(124×46) = 5704.
+// Kandy→Ella: km 89 → billable 98 → car round(98×35) = 3430, van max(5000, round(98×47)=4606) = 5000.
+// CMB→Kandy: km 113 → billable 124 → car round(124×35) = 4340.
 
 const maps = new FakeMapsAdapter();
 const single: SingleTransferInput = { ...base, from: 'Kandy', to: 'Ella', adults: 2, bags: 2 };
@@ -77,23 +77,23 @@ const single: SingleTransferInput = { ...base, from: 'Kandy', to: 'Ella', adults
 describe('priceSingle (engine-backed)', () => {
   it('prices a resolvable route with the engine (car per-km × billable km)', async () => {
     const p = await priceSingle(single, maps);
-    expect(p).toEqual({ currency: 'USD', totalCents: 4508, amountDueNowCents: 4508, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 3430, amountDueNowCents: 3430, priced: true });
   });
 
   it('prices a van at the van rate', async () => {
     const p = await priceSingle({ ...single, vehicleType: 'van' }, maps);
-    expect(p).toEqual({ currency: 'USD', totalCents: 8134, amountDueNowCents: 8134, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 5000, amountDueNowCents: 5000, priced: true });
   });
 
   it('adds priced extras from the payload', async () => {
     const p = await priceSingle({ ...single, extras: ['luggage', 'front'] }, maps);
-    // 4508 + luggage 500 + child seat 800
-    expect(p).toEqual({ currency: 'USD', totalCents: 5808, amountDueNowCents: 5808, priced: true });
+    // 3430 + luggage 500 + child seat 800
+    expect(p).toEqual({ currency: 'USD', totalCents: 4730, amountDueNowCents: 4730, priced: true });
   });
 
   it('upgrades the vehicle when the party does not fit (engine authority, never underprice)', async () => {
     const p = await priceSingle({ ...single, adults: 5 }, maps); // 5 pax can't ride a car
-    expect(p).toEqual({ currency: 'USD', totalCents: 8134, amountDueNowCents: 8134, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 5000, amountDueNowCents: 5000, priced: true });
   });
 
   it('returns priced:false when the route cannot be resolved', async () => {
@@ -123,8 +123,8 @@ const knownTrip: TripInput = { ...trip, stops: ['Colombo Airport (CMB)', 'Kandy'
 describe('priceTrip (engine-backed) — private', () => {
   it('prices each consecutive stop pair as an engine leg', async () => {
     const p = await priceTrip(knownTrip, maps);
-    // CMB→Kandy 5704 + Kandy→Ella 4508
-    expect(p).toEqual({ currency: 'USD', totalCents: 10212, amountDueNowCents: 10212, priced: true });
+    // CMB→Kandy 4340 + Kandy→Ella 3430
+    expect(p).toEqual({ currency: 'USD', totalCents: 7770, amountDueNowCents: 7770, priced: true });
   });
 
   it('returns priced:false when any leg cannot be resolved', async () => {
@@ -141,27 +141,27 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
       maps,
     );
     // days 3 (20th→22nd), idle 1 → billable 222 + 100 = 322 km
-    // 3×3500 + round(322×46) = 10500 + 14812 = 25312
-    expect(p).toEqual({ currency: 'USD', totalCents: 25312, amountDueNowCents: 25312, priced: true });
+    // 3×3500 + round(322×35) = 10500 + 11270 = 21770
+    expect(p).toEqual({ currency: 'USD', totalCents: 21770, amountDueNowCents: 21770, priced: true });
   });
 
   it('synthesizes dates from `days` when the trip is flexible (engine only counts the span)', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 4 }, maps);
     // days 4, 2 travel legs → idle 2 → billable 222 + 200 = 422 km
-    // 4×3500 + round(422×46) = 14000 + 19412 = 33412
-    expect(p).toEqual({ currency: 'USD', totalCents: 33412, amountDueNowCents: 33412, priced: true });
+    // 4×3500 + round(422×35) = 14000 + 14770 = 28770
+    expect(p).toEqual({ currency: 'USD', totalCents: 28770, amountDueNowCents: 28770, priced: true });
   });
 
   it('defaults the span to one day per leg when `days` is absent', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur' }, maps);
-    // days 2, idle 0 → 2×3500 + round(222×46) = 7000 + 10212 = 17212
-    expect(p).toEqual({ currency: 'USD', totalCents: 17212, amountDueNowCents: 17212, priced: true });
+    // days 2, idle 0 → 2×3500 + round(222×35) = 7000 + 7770 = 14770
+    expect(p).toEqual({ currency: 'USD', totalCents: 14770, amountDueNowCents: 14770, priced: true });
   });
 
   it('clamps extra legs onto the last day when there are more legs than days', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 1 }, maps);
-    // both legs share the single day → days 1, idle 0 → 3500 + round(222×46) = 13712
-    expect(p).toEqual({ currency: 'USD', totalCents: 13712, amountDueNowCents: 13712, priced: true });
+    // both legs share the single day → days 1, idle 0 → 3500 + round(222×35) = 11270
+    expect(p).toEqual({ currency: 'USD', totalCents: 11270, amountDueNowCents: 11270, priced: true });
   });
 
   it('synthesizes when the payload dates are unusable (blank/partial)', async () => {
@@ -169,7 +169,7 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
       { ...knownTrip, serviceType: 'chauffeur', dates: ['2026-07-20', ''], days: 4 },
       maps,
     );
-    expect(p).toEqual({ currency: 'USD', totalCents: 33412, amountDueNowCents: 33412, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 28770, amountDueNowCents: 28770, priced: true });
   });
 });
 
