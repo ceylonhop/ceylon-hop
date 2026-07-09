@@ -82,6 +82,27 @@ test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quot
   expect(text).toContain('Travelers: 6+');
 });
 
+test('mobile search result avoids repeating the route hero above prices', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya&pax=1' });
+
+  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-route')).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#sl-route')).toContainText('Sigiriya / Dambulla');
+  await expect(page.locator('#sl-meta')).toContainText('~152 km');
+  await expect(page.locator('#sl-meta')).toContainText('approx');
+  await expect(page.locator('#route-title')).toBeHidden();
+  await expect(page.locator('#route-meta')).toBeHidden();
+  await expect(page.locator('#add-stops')).toBeVisible();
+  await expect(page.locator('.opt-private')).toBeVisible();
+
+  const summaryBox = await page.locator('#srch-locked').boundingBox();
+  const privateBox = await page.locator('.opt-private').boundingBox();
+  expect(summaryBox).not.toBeNull();
+  expect(privateBox).not.toBeNull();
+  expect(privateBox.y).toBeLessThan(620);
+});
+
 test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 

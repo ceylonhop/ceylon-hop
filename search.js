@@ -102,7 +102,7 @@ document.getElementById('route-meta').innerHTML =
 document.getElementById('sl-route').innerHTML =
   `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
 document.getElementById('sl-meta').textContent =
-  `${dateText} · ${pax} traveler${pax > 1 ? 's' : ''}`;
+  `~${quote.km} km · approx ${quote.duration} drive · ${dateText} · ${pax} traveler${pax > 1 ? 's' : ''}`;
 window.editSearch = function () {
   document.getElementById('srch-locked').hidden = true;
   document.getElementById('srch-bar').hidden = false;
