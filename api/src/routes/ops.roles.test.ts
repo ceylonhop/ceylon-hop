@@ -37,5 +37,15 @@ describe('ops capability gates', () => {
     expect(body.caps).toEqual(expect.arrayContaining(['quote:manage', 'bookings:operate', 'bookings:read']));
     expect(body.caps).not.toContain('margin:view');
     expect(body.caps).not.toContain('payments:act');
+    expect(body.caps).not.toContain('quote:approve'); // support cannot approve — the client must not show approve UI
+  });
+
+  it('whoami exposes quote:approve (the maker-checker gate) to the founder only', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    const res = await app.request('/admin/ops/whoami', { headers: { cookie: await cookie('f@x.com') } });
+    const body = await res.json();
+    expect(body.role).toBe('founder');
+    expect(body.caps).toContain('quote:approve'); // client uses this to render the Approve action
+    expect(body.caps).toContain('margin:view');
   });
 });
