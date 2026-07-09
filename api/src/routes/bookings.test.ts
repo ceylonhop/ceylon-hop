@@ -121,6 +121,20 @@ describe('POST /bookings/single', () => {
     expect(ok.status).toBe(201);
   });
 
+  it('floors an unpriceable route at the server placeholder — a tampered low quotedTotal is ignored', async () => {
+    const app = createApp();
+    // `valid` is an unresolvable route, so the engine can't price it → placeholder path.
+    const baseline = await (await post(app, valid)).json();
+    expect(baseline.total).toBe(5000); // server placeholder (4000 + 1×1000)
+    // a tampered tiny quotedTotal must NOT be charged verbatim — floor at the placeholder
+    const tampered = await (await post(app, { ...valid, quotedTotal: 200 })).json();
+    expect(tampered.total).toBe(5000);
+    expect(tampered.amountDueNow).toBe(5000);
+    // a legitimately higher quotedTotal is still honored on the unpriced path
+    const higher = await (await post(app, { ...valid, quotedTotal: 9000 })).json();
+    expect(higher.total).toBe(9000);
+  });
+
   it('is idempotent on Idempotency-Key — one booking, second call returns it', async () => {
     const app = createApp();
     const r1 = await post(app, valid, { 'Idempotency-Key': 'abc' });

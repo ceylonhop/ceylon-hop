@@ -56,7 +56,10 @@ function resolveTotals(
       quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
     return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
   }
-  const total = quotedTotal ?? placeholderTotal;
+  // Engine couldn't price (e.g. custom places the maps adapter can't resolve). Fall back to the
+  // customer's quotedTotal, but FLOOR it at the server's placeholder quote so a tampered/undercut
+  // quotedTotal can never be charged below what the server itself would estimate.
+  const total = Math.max(quotedTotal ?? 0, placeholderTotal);
   return { total, amountDueNow: total, mismatch: false, unpriced: true };
 }
 
