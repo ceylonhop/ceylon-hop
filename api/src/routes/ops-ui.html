@@ -551,9 +551,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* .ch-km base kept — the money-pane km line reuses .ch-km.hero (overridden there). */
 .qv .ch-km b { font-family: var(--serif); font-weight: 700; line-height: 1; }
 .qv .ch-line { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 0; font-size: 13px; }
-.qv .ch-line-label { color: var(--muted); white-space: nowrap; }
+/* Label may wrap (e.g. the long chauffeur "Distance — … (buffered + idle)" line, or a
+   long place-pair leg label) instead of overrunning the row and clipping the amount.
+   min-width:0 lets it shrink in the flex row; the amount stays fixed-width and never wraps,
+   and align-items:baseline pins it to the label's FIRST line (top-right). */
+.qv .ch-line-label { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .qv .ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
-.qv .ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qv .ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .qv .ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
 .qv .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
 .qv .ch-line.strong .ch-line-val { font-family: var(--serif); font-size: 21px; font-weight: 700; }
