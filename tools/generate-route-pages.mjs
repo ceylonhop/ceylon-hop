@@ -50,7 +50,7 @@ function faqItems(from, to, q, shared) {
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
     [`How do I book the ${from} to ${to} transfer?`,
-      `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay a small deposit to confirm and the balance to your driver.`],
+      `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking — the price you see is the price you pay.`],
   ];
   return items;
 }

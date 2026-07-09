@@ -23,3 +23,21 @@ describe('generated files match the generators (no drift)', () => {
     });
   }
 });
+
+// Bookings now charge the full amount online (deposits were removed). No generated
+// customer-facing page (visible FAQ or FAQPage JSON-LD) may still promise a deposit.
+describe('generated pages match the pay-in-full policy (no deposit promises)', () => {
+  const tripPages = [...everything].filter(([rel]) => /^trip\/.+\/index\.html$/.test(rel));
+  it('covers the trip pages', () => { expect(tripPages.length).toBeGreaterThanOrEqual(44); });
+  for (const [rel, content] of tripPages) {
+    it(`${rel} makes no deposit promise`, () => {
+      expect(content).not.toContain('small deposit');
+      expect(content).not.toContain('deposit to confirm');
+      expect(content).not.toContain('balance to your driver');
+    });
+  }
+  it('the route-page booking FAQ tells customers they pay online', () => {
+    const kandy = everything.get('trip/cmb-airport-to-kandy/index.html');
+    expect(kandy).toContain('pay securely online to confirm');
+  });
+});
