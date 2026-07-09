@@ -3282,7 +3282,10 @@ function restoreEditorFocus(snap) {
   if (snap.start != null) {
     try { el.setSelectionRange(snap.start, snap.end); } catch (e) {}
   }
-  if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title')) {
+  // Reopen the live autocomplete after a background re-render ONLY while the operator is
+  // still actively searching. After a commit (acPick) `_ac.committed` stays true, so a
+  // just-picked place does not spuriously reopen the dropdown on every follow-up render.
+  if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title') && !_ac.committed) {
     requestAutocomplete(el, snap.leg, snap.field, (el.value || '').trim());
   }
 }
@@ -3572,6 +3575,11 @@ function acPick(item) {
   // Update the input value without a full re-render so cursor stays correct
   if (_ac.inputEl) _ac.inputEl.value = name;
   acClose(false);
+  // acClose() clears `committed`; re-assert it so the render() below — and any
+  // follow-up auto-distance/estimate re-render — does NOT reopen the dropdown for
+  // the place we just picked (restoreEditorFocus refocuses this field on every
+  // render). Cleared again on the next keystroke (requestAutocomplete) or blur.
+  _ac.committed = true;
 
   // Patch leg state (this calls render(), wiping the menu — already gone)
   var patch = {};

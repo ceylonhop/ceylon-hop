@@ -141,6 +141,25 @@ test('ops autocomplete shows pending search and stays closed after scroll', asyn
   await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
 });
 
+test('autocomplete stays closed after picking a place (does not reopen on re-render)', async ({ page }) => {
+  // Regression: after acPick, acClose cleared _ac.committed, so restoreEditorFocus (which runs
+  // on every render and refocuses the picked field) re-fired requestAutocomplete for the
+  // committed value — reopening the dropdown once per follow-up auto-distance/estimate render
+  // ("autocomplete pops out multiple times even after choosing an item").
+  await chooseVehicle(page, 'van_6');
+
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+
+  // The menu closes on pick…
+  await expect(fromInput).toHaveValue('Kandy');
+  await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
+
+  // …and STAYS closed while the follow-up re-renders land (each refocuses this field).
+  await page.waitForTimeout(800);
+  await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
+});
+
 // Spec 2: Car + 4 bags triggers the luggage flag
 test('car + 4 bags raises the luggage flag', async ({ page }) => {
   // Select Car in the vehicle dropdown
