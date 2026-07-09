@@ -819,18 +819,40 @@ window.payMethod=function(el){document.querySelectorAll('.pm').forEach(x=>x.clas
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
   if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
 
+// Longest known dial code (digits only) that prefixes `digits`, or '' if none.
+function matchDialCode(digits){
+  let best='';
+  for(const c of PHONE_COUNTRIES){
+    const d=(c[2]||'').replace(/[^\d]/g,'');
+    if(d && digits.indexOf(d)===0 && d.length>best.length) best=d;
+  }
+  return best;
+}
+// Split the phone field into { code, number, whatsapp } so the three always agree
+// (code + number === whatsapp). Two inputs used to corrupt it:
+//   (a) a "+"-prefixed international number kept the SELECTOR's dial code — now the split is
+//       derived from the typed number itself, so the columns never disagree with whatsapp.
+//   (b) a number typed WITH the country code but no "+" doubled it — now the leading dial code
+//       is stripped before re-prefixing.
 function phoneParts(){
   const countryEl=document.getElementById('f-country');
   const phoneEl=document.getElementById('f-phone');
   const country=(countryEl&&countryEl.value?countryEl.value:'Sri Lanka').trim();
   const match=PHONE_COUNTRIES.find(([,name])=>name===country);
-  const code=match ? match[2] : '+94';
+  const selCode=match ? match[2] : '+94';
+  const selDigits=selCode.replace(/[^\d]/g,'');
   const raw=(phoneEl&&phoneEl.value?phoneEl.value:'').trim();
   const hasIntl=/^\s*\+/.test(raw);
   const digits=raw.replace(/[^\d]/g,'');
-  const number=hasIntl ? digits : digits.replace(/^0+/,'');
-  const whatsapp=hasIntl ? ('+'+digits) : (code + number);
-  return { code, number, whatsapp };
+  if(hasIntl){
+    const dc=matchDialCode(digits);
+    return { code: dc ? '+'+dc : '', number: dc ? digits.slice(dc.length) : digits, whatsapp: '+'+digits };
+  }
+  let number=digits.replace(/^0+/,'');
+  if(selDigits && number.indexOf(selDigits)===0 && number.length>selDigits.length){
+    number=number.slice(selDigits.length); // operator typed the code too — don't double it
+  }
+  return { code: selCode, number, whatsapp: selCode + number };
 }
 
 // chauffeur-guide fee helpers
