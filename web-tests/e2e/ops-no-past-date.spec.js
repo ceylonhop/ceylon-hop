@@ -13,8 +13,11 @@ async function openQuote(page) {
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  // The itinerary is gated until a vehicle is picked — choose Car so the leg rows render.
+  // The itinerary is gated until the trip basics are filled — set vehicle + name + contact.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-customerName', 'Test');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
   await page.waitForSelector('.ch-leg-date input[type="date"]', { timeout: 10000 });
 }
 

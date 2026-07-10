@@ -45,14 +45,35 @@ test('vehicle chips live in Trip basics (above the itinerary), not the money pan
   expect(chipBox.y).toBeLessThan(itinBox.y);
 });
 
-test('the itinerary is locked until a vehicle is chosen', async ({ page }) => {
+test('the itinerary is locked until every trip basic is filled', async ({ page }) => {
   await openQuote(page);
   await expect(page.locator('.ch-itin-locked')).toBeVisible();
-  await expect(page.locator('.ch-itin-locked')).toContainText(/pick a vehicle/i);
   await expect(page.locator('[data-action="addLeg"]')).toHaveCount(0); // can't add legs yet
+  // A vehicle alone is not enough — customer name + a valid contact are still missing.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await expect(page.locator('.ch-itin-locked')).toHaveCount(0); // unlocked
+  await expect(page.locator('.ch-itin-locked')).toBeVisible();
+  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-contact', '+94 77 123 4567');
+  await page.dispatchEvent('#f-contact', 'change');
+  await expect(page.locator('.ch-itin-locked')).toHaveCount(0); // now unlocked
   await expect(page.locator('[data-action="addLeg"]')).toBeVisible();
+});
+
+test('contact must be an email or a phone number with a country code', async ({ page }) => {
+  await openQuote(page);
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-customerName', 'Karen');
+  // A bare local number (no country code) is rejected — flagged invalid, itinerary stays locked.
+  await page.fill('#f-contact', '0771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+  await expect(page.locator('#f-contact')).toHaveClass(/invalid/);
+  await expect(page.locator('.ch-field-err')).toBeVisible();
+  await expect(page.locator('.ch-itin-locked')).toBeVisible();
+  // A valid email clears it and unlocks.
+  await page.fill('#f-contact', 'karen@example.com');
+  await page.dispatchEvent('#f-contact', 'change');
+  await expect(page.locator('#f-contact')).not.toHaveClass(/invalid/);
+  await expect(page.locator('.ch-itin-locked')).toHaveCount(0);
 });
 
 test('no vehicle → real warning card, amber chips, no false all-clear', async ({ page }) => {

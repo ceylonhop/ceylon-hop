@@ -76,9 +76,13 @@ async function chooseVehicle(page, value) {
 
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
-  // The itinerary is gated until a vehicle is picked — default to Car so every spec's leg
-  // interactions have rows to work with. Specs that need another tier call chooseVehicle again.
+  // The itinerary is gated until the trip basics are filled — vehicle + name + a valid contact —
+  // so every spec's leg interactions have rows to work with. Specs that need another tier call
+  // chooseVehicle again.
   await chooseVehicle(page, 'car');
+  await page.fill('#f-customerName', 'Test Customer');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
 });
 
 // Spec 1: Timeline autocomplete → auto-distance → priced summary → save

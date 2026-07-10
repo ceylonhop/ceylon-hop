@@ -686,6 +686,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
 .qv .ch-cust-grid .ch-input { padding: 7px 0; }
+.qv .ch-input-wrap:has(.ch-input.invalid) { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,58,36,.12); }
+.qv .ch-field-err { font-size: 10.5px; color: var(--red); margin-top: 4px; line-height: 1.35; display: none; }
+.qv .ch-field:has(.ch-input.invalid) .ch-field-err { display: block; }
 @media (max-width: 720px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
 /* Trip basics: vehicle chips sit under the customer grid (no double padding), divider between */
 .qv .ch-basics-rule { height: 1px; background: var(--line-soft); margin: 13px 0 3px; }
@@ -1558,6 +1561,41 @@ function isApprover() { return viewerCan('quote:approve'); } // founder-only —
 // approved it — i.e. status is ready (about to send) or sent. Everything before that is
 // still under review, so support cannot lift the message out and send it early.
 function copyUnlocked() { return state.status === 'ready' || state.status === 'sent'; }
+
+// ── Trip-basics validation ────────────────────────────────────────────────────
+// The contact must be a real email OR a phone number WITH a country code (leading +).
+function isValidEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
+function isValidPhone(s) {
+  // Leading + then 8–15 digits total (spaces / dashes / parens allowed as separators).
+  if (!/^\+[\d\s().-]+$/.test(s)) return false;
+  var digits = s.replace(/\D/g, '');
+  return digits.length >= 8 && digits.length <= 15;
+}
+function contactValid(s) { s = (s || '').trim(); return s !== '' && (isValidEmail(s) || isValidPhone(s)); }
+// The itinerary unlocks only once every required Trip basic is filled AND valid.
+function basicsComplete() {
+  return !!state.vehicleType
+    && (state.customerName || '').trim() !== ''
+    && contactValid(state.contact)
+    && state.passengerCount >= 1
+    && state.luggageCount >= 0;
+}
+function basicsMissingText() {
+  var m = [];
+  if ((state.customerName || '').trim() === '') m.push('customer name');
+  if (!contactValid(state.contact)) m.push('a valid WhatsApp number (with country code) or email');
+  if (!state.vehicleType) m.push('a vehicle');
+  return m.length ? 'Still needed: ' + m.join(', ') + '.' : 'Fill in the trip basics above to start.';
+}
+// Tracks whether the itinerary is currently shown unlocked (set in render). Lets the live
+// name/contact input handler re-render ONLY when the gate flips, avoiding a per-keystroke
+// rebuild (which would fight the operator's focus).
+var _basicsUnlocked = false;
+function syncBasics() {
+  var contactEl = document.getElementById('f-contact');
+  if (contactEl) contactEl.classList.toggle('invalid', (state.contact || '').trim() !== '' && !contactValid(state.contact));
+  if (basicsComplete() !== _basicsUnlocked) render(); // gate flipped → rebuild the itinerary
+}
 
 // ── Rate card (fetched once on load) ─────────────────────────────────────────
 var rateCard = null;
@@ -3216,7 +3254,10 @@ function render() {
   }
 
   var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '');
-  var vehicleSet = !!st.vehicleType; // itinerary is gated until a vehicle is chosen
+  // The itinerary is gated until every Trip basic is filled AND the contact is valid.
+  var basicsDone = basicsComplete();
+  _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
+  var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 
   var flags = computeFlags();
 
@@ -3268,12 +3309,13 @@ function render() {
     '      <div class="ch-cust-strip">',
     '        <div class="ch-cust-grid">',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">Customer name</label>',
+    '            <label class="ch-field-label">Customer name <em class="req">*</em></label>',
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-customerName" type="text" placeholder="e.g. Karen" value="' + esc(st.customerName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">WhatsApp / email</label>',
-    '            <div class="ch-input-wrap"><input class="ch-input" id="f-contact" type="text" placeholder="contact" value="' + esc(st.contact) + '" /></div>',
+    '            <label class="ch-field-label">WhatsApp / email <em class="req">*</em></label>',
+    '            <div class="ch-input-wrap"><input class="ch-input' + (contactBad ? ' invalid' : '') + '" id="f-contact" type="text" placeholder="+94 77 123 4567 or name@email.com" value="' + esc(st.contact) + '" /></div>',
+    '            <span class="ch-field-err">Enter an email or a phone number with country code (e.g. +94…)</span>',
     '          </div>',
     '          <div class="ch-field">',
     '            <label class="ch-field-label">Pax <em class="req">*</em></label>',
@@ -3284,19 +3326,19 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-luggageCount" type="number" min="0" value="' + esc(st.luggageCount) + '" /></div>',
     '          </div>',
     '        </div>',
-    // Trip basics also carries the vehicle — it's the required first choice, and gates the
-    // itinerary below (you can't build the trip until the vehicle is picked).
+    // Trip basics also carries the vehicle. The whole section gates the itinerary below —
+    // you can't build the trip until customer name, a valid contact, and a vehicle are set.
     '        <div class="ch-basics-rule"></div>',
     renderVehicleChips(),
     '      </div>',
 
-    // Itinerary (dense rows) — locked until a vehicle is chosen.
+    // Itinerary (dense rows) — locked until every trip basic is filled in.
     '      <div class="ch-sec">',
     '        <div class="ch-sec-head">',
     '          <h2>Itinerary</h2>',
-    '          <div class="ch-sec-head-r">' + (vehicleSet ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
+    '          <div class="ch-sec-head-r">' + (basicsDone ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
     '        </div>',
-    (vehicleSet ? [
+    (basicsDone ? [
       legsHtml,
       (st.legs.length > 0 ? [
         '        <div class="ch-legs-add">',
@@ -3305,9 +3347,9 @@ function render() {
       ].join('') : ''),
     ].join('') : [
       '        <div class="ch-itin-locked">',
-      '          <div class="ch-itin-locked-icon">&#x1F697;</div>',
-      '          <div class="ch-itin-locked-title">Pick a vehicle to start</div>',
-      '          <div class="ch-itin-locked-sub">Choose the vehicle above, then build the itinerary leg by leg.</div>',
+      '          <div class="ch-itin-locked-icon">&#x1F4CB;</div>',
+      '          <div class="ch-itin-locked-title">Complete the trip basics to start</div>',
+      '          <div class="ch-itin-locked-sub">' + esc(basicsMissingText()) + '</div>',
       '        </div>',
     ].join('')),
     '      </div>',
@@ -3490,20 +3532,20 @@ function attachEventListeners() {
     'f-passengerCount':  function(v) { state.passengerCount = Math.max(1, parseInt(v, 10) || 1); },
     'f-luggageCount':    function(v) { state.luggageCount = Math.max(0, parseInt(v, 10) || 0); },
   };
-  // I2: only price-affecting fields trigger refreshEstimate+render on change.
-  // Text-only fields (customerName, contact) update state on input only —
-  // no change→render, which would destroy #btnSave between mousedown and click.
   var priceFields = { 'f-passengerCount': true, 'f-luggageCount': true };
   Object.keys(fieldMap).forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', function() { fieldMap[id](el.value); });
+    var isText = (id === 'f-customerName' || id === 'f-contact');
+    el.addEventListener('input', function() {
+      fieldMap[id](el.value);
+      // Text basics: live-update the contact validity + itinerary gate (renders only on a
+      // flip, so the operator's typing/focus is never disrupted mid-keystroke).
+      if (isText) syncBasics();
+    });
+    // Price fields (pax/bags) re-estimate + re-render on change; they also affect the gate.
     if (priceFields[id]) {
-      el.addEventListener('change', function() {
-        fieldMap[id](el.value);
-        refreshEstimate();
-        render();
-      });
+      el.addEventListener('change', function() { fieldMap[id](el.value); refreshEstimate(); render(); });
     }
   });
 

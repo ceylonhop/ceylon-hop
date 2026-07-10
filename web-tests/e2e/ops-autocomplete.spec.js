@@ -53,8 +53,11 @@ test('ops quote autocomplete stays closed after picking a place', async ({ page 
   await stubOps(page);
   await page.goto(OPS_FILE + '#quote'); // #quote → bootApp mounts the quote view immediately
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  // The itinerary is gated until a vehicle is picked — choose Car so the leg rows render.
+  // The itinerary is gated until the trip basics are filled — set vehicle + name + contact.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-customerName', 'Test');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await expect(fromInput).toBeVisible({ timeout: 10000 });

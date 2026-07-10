@@ -42,8 +42,11 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await stubOps(page);
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  // The itinerary is gated until a vehicle is picked — choose Car so the leg rows render.
+  // The itinerary is gated until the trip basics are filled — set vehicle + name + contact.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-customerName', 'Test');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
   await expect(page.locator('.ch-leg-date input[type="date"]').first()).toBeVisible({ timeout: 10000 });
 
   // Faithful repro of the reported screenshot: long place names + set dates + 2 legs.
