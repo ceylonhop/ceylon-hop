@@ -65,6 +65,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   .layout{display:grid;grid-template-columns:1fr 360px;gap:36px;align-items:start;max-width:980px;margin:36px auto 80px;padding:0 24px}
   .layout > aside{position:sticky;top:90px;align-self:start}
+  /* the summary close button belongs only to the mobile bottom-sheet — hide it everywhere
+     else so it doesn't leak as a stray default button at the top-left of the desktop card */
+  .s-close{display:none}
   @media(max-width:880px){.layout{grid-template-columns:1fr}.layout > aside{position:static}}
 
   .stepcard{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:30px}
@@ -504,7 +507,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     body.js-mbar .layout > aside.open{transform:translateY(0);visibility:visible;transition:transform .28s ease}
     body.js-mbar .summary{max-height:78dvh;overflow:auto;border-radius:18px 18px 0 0;
       box-shadow:0 -18px 44px -12px rgba(20,40,38,.35)}
-    body.js-mbar .summary .s-close{position:absolute;top:10px;right:12px;width:34px;height:34px;border:none;
+    body.js-mbar .summary .s-close{display:grid;place-items:center;position:absolute;top:10px;right:12px;width:34px;height:34px;border:none;
       border-radius:50%;background:rgba(20,40,38,.08);color:var(--ink);font-size:1.25rem;line-height:1;cursor:pointer;z-index:2}
     /* in-page primary buttons are proxied by the bar (back links stay in the card) */
     body.js-mbar .panel .nav-btns .btn{display:none}
