@@ -55,11 +55,20 @@ export function quote(req: QuoteRequest): QuoteResult {
     }
   } else {
     if (req.travelDays.length === 0) throw new Error('NO_LEGS');
-    const perKmOverride = validateCustomRate(req.customPerKmCents, req.vehicle); // GL-1d
-    const c = quoteChauffeur(req);
+    // Upgrade an undersized vehicle to one that fits the group (mirrors private) — only when the
+    // caller supplied pax/bags. A chauffeur car quoted for 6 pax must not price as a car.
+    let vehicle = req.vehicle;
+    if (req.pax != null && req.bags != null) {
+      const minVehicle = selectVehicle(req.pax, req.bags);
+      if (minVehicle === 'too_big') throw new Error('TOO_BIG');
+      vehicle = vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
+      if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
+    }
+    const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle); // GL-1d (validate against the priced tier)
+    const c = quoteChauffeur({ ...req, vehicle });
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
-    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[req.vehicle];
+    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[vehicle];
     costCents += Math.round(c.meta.billableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are

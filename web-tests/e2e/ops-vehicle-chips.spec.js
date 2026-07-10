@@ -121,6 +121,24 @@ test('a chip too small for the pax count shows a seats warning but stays clickab
   await expect(car).toHaveClass(/active/);
 });
 
+test('a chip too small for the bag count shows a bags warning but stays clickable', async ({ page }) => {
+  await openQuote(page);
+  await page.fill('#f-luggageCount', '5'); // a car holds 3 bags
+  await page.dispatchEvent('#f-luggageCount', 'change');
+  const car = page.locator('[data-action="setVehicle"][data-veh="car"]');
+  await expect(car).toHaveClass(/over/);
+  await expect(car).toContainText('bags 3'); // names the exceeded limit (bags, not seats)
+  await car.click();
+  await expect(car).toHaveClass(/active/); // staff can still override
+});
+
+test('the bags input is capped at the biggest vehicle (sanity guard)', async ({ page }) => {
+  await openQuote(page);
+  await page.fill('#f-luggageCount', '999');
+  await page.locator('#f-luggageCount').blur(); // commit on blur, like a real operator
+  await expect(page.locator('#f-luggageCount')).toHaveValue('99'); // custom's 99 is the fleet max
+});
+
 test('Van 14 and Custom price from the rate card — no per-quote $/km input', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="van_14"]').click();

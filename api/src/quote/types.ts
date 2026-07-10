@@ -10,7 +10,9 @@ export interface ChauffeurTravelDay { date: string; from: string; to: string; di
 export type QuoteRequest =
   | { product: 'shared'; legs: SharedLeg[] }
   | { product: 'private'; vehicle: Vehicle; pax: number; bags: number; legs: PrivateLeg[]; extras?: ExtraCode[]; customPerKmCents?: number }
-  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: ChauffeurTravelDay[]; extras?: ExtraCode[]; customPerKmCents?: number };
+  // pax/bags optional: when present, the engine upgrades an undersized vehicle to fit (like
+  // private); when absent, no capacity upgrade (back-compat for callers that don't pass them).
+  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: ChauffeurTravelDay[]; pax?: number; bags?: number; extras?: ExtraCode[]; customPerKmCents?: number };
 
 export interface LineItem { label: string; amountCents: number; meta?: Record<string, unknown> }
 

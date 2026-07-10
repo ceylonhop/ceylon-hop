@@ -1691,6 +1691,14 @@ function vehicleCaps(toolId) {
   if (!v) return null;
   return { pax: v.maxPax, bags: v.maxBags };
 }
+// The biggest bag capacity across the whole fleet — caps the bags input (sanity guard). Falls
+// back to a sensible ceiling until the rate card loads.
+function absMaxBags() {
+  if (!rateCard || !rateCard.vehicle) return 99;
+  var m = 0;
+  Object.keys(rateCard.vehicle).forEach(function(k) { m = Math.max(m, rateCard.vehicle[k].maxBags || 0); });
+  return m || 99;
+}
 
 // Driving categories (for flag computation) — slim set (R4). Anything not a
 // stay day drives; stay_day is the only non-driving category.
@@ -2544,14 +2552,20 @@ function renderVehicleChips() {
   parts.push('  <div class="ch-veh-row">');
   ids.forEach(function(id) {
     var caps = vehicleCaps(id);
-    var over = !!(caps && st.passengerCount > caps.pax);
-    var seats = caps ? String(caps.pax) : '';
+    // Over-capacity if it can't hold the pax OR the bags. Chip stays selectable (staff can
+    // override — the capacity flag + backend upgrade still apply); the tag shows the limit hit.
+    var paxOver = !!(caps && st.passengerCount > caps.pax);
+    var bagsOver = !!(caps && st.luggageCount > caps.bags);
+    var over = paxOver || bagsOver;
+    // Tag: when over, name the exceeded limit; otherwise show the seat count (except Custom).
+    var tag = over ? (paxOver ? 'seats ' + caps.pax : 'bags ' + caps.bags)
+                   : (caps && id !== 'custom' ? String(caps.pax) : '');
     parts.push('    <button type="button" class="ch-veh-chip'
       + (st.vehicleType === id ? ' active' : '') + (over ? ' over' : '')
       + '" data-action="setVehicle" data-veh="' + id + '">'
       + esc(VEHICLE_LABELS[id])
-      + (over ? '<i class="ch-veh-cap">seats ' + esc(seats) + '</i>'
-               : (seats && id !== 'custom' ? '<i class="ch-veh-cap ok">' + esc(seats) + '</i>' : ''))
+      + (over ? '<i class="ch-veh-cap">' + esc(tag) + '</i>'
+               : (tag ? '<i class="ch-veh-cap ok">' + esc(tag) + '</i>' : ''))
       + '</button>');
   });
   parts.push('  </div>');
@@ -3369,7 +3383,7 @@ function render() {
     '          </div>',
     '          <div class="ch-field">',
     '            <label class="ch-field-label">Bags <em class="req">*</em></label>',
-    '            <div class="ch-input-wrap"><input class="ch-input" id="f-luggageCount" type="number" min="0" value="' + esc(st.luggageCount) + '" /></div>',
+    '            <div class="ch-input-wrap"><input class="ch-input" id="f-luggageCount" type="number" min="0" max="' + absMaxBags() + '" value="' + esc(st.luggageCount) + '" /></div>',
     '          </div>',
     '        </div>',
     // Trip basics also carries the vehicle. The whole section gates the itinerary below —
@@ -3588,7 +3602,7 @@ function attachEventListeners() {
     'f-contact':         function(v) { state.contact = v; },
     // V18: server 400s on pax<1 — clamp client-side so we never send it.
     'f-passengerCount':  function(v) { state.passengerCount = Math.max(1, parseInt(v, 10) || 1); },
-    'f-luggageCount':    function(v) { state.luggageCount = Math.max(0, parseInt(v, 10) || 0); },
+    'f-luggageCount':    function(v) { state.luggageCount = Math.max(0, Math.min(absMaxBags(), parseInt(v, 10) || 0)); },
   };
   var priceFields = { 'f-passengerCount': true, 'f-luggageCount': true };
   Object.keys(fieldMap).forEach(function(id) {

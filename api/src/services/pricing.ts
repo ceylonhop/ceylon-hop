@@ -104,7 +104,8 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<Pr
 
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
   if (input.serviceType === 'chauffeur') {
-    return runEngine({ product: 'chauffeur', vehicle, ...chauffeurDates(input, legs) });
+    // Public trips don't collect a bag count — pax alone drives the capacity upgrade.
+    return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) });
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
   return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs });

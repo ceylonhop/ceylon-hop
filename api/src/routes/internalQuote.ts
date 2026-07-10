@@ -157,6 +157,7 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
     const sorted = [...dated].sort();
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
+      pax: req.passengerCount, bags: req.luggageCount, // let the engine upgrade an undersized vehicle
       travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
       extras, customPerKmCents,
     };

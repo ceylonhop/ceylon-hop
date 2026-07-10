@@ -168,6 +168,28 @@ describe('quote()', () => {
       expect(r.totalCents).toBe(5400 + 33000);
     });
 
+    it('chauffeur upgrades an undersized vehicle to fit pax/bags (like private)', () => {
+      const r = quote({
+        product: 'chauffeur', vehicle: 'car', pax: 6, bags: 6, firstDate: '2026-08-01', lastDate: '2026-08-02',
+        travelDays: [
+          { date: '2026-08-01', from: 'A', to: 'B', distanceKm: 100 },
+          { date: '2026-08-02', from: 'B', to: 'C', distanceKm: 50 },
+        ],
+      });
+      // car (3 pax/bags) can't hold 6 → priced as van. distance uses van 47¢, not car 35¢.
+      expect(r.warnings.some((w) => /vehicle set to van/.test(w))).toBe(true);
+      // 2 days × $27 + billable 165km (150×1.1, 0 idle) × van 47¢ = 5400 + round(165×47)=7755
+      expect(r.totalCents).toBe(5400 + 7755);
+    });
+
+    it('does not upgrade a chauffeur vehicle that already fits', () => {
+      const r = quote({
+        product: 'chauffeur', vehicle: 'van', pax: 4, bags: 4, firstDate: '2026-08-01', lastDate: '2026-08-02',
+        travelDays: [{ date: '2026-08-01', from: 'A', to: 'B', distanceKm: 100 }, { date: '2026-08-02', from: 'B', to: 'C', distanceKm: 50 }],
+      });
+      expect(r.warnings.some((w) => /vehicle set to/.test(w))).toBe(false);
+    });
+
     it('floor still applies under an overridden rate', () => {
       const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 10 }], customPerKmCents: 90 });
       expect(r.totalCents).toBe(8500); // 11km × 90¢ = 990 < van14 floor $85

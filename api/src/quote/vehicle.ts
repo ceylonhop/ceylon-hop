@@ -23,6 +23,11 @@ export function pricedVehicle(req: QuoteRequest): Vehicle {
     if (minVehicle === 'too_big') return req.vehicle; // engine will throw before breakdown matters
     return vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
   }
-  if (req.product === 'chauffeur') return req.vehicle;
+  if (req.product === 'chauffeur') {
+    if (req.pax == null || req.bags == null) return req.vehicle; // no capacity info → no upgrade
+    const minVehicle = selectVehicle(req.pax, req.bags);
+    if (minVehicle === 'too_big') return req.vehicle; // engine throws before breakdown matters
+    return vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
+  }
   return 'car'; // shared: placeholder, breakdown legs are [] anyway
 }
