@@ -138,6 +138,33 @@ describe('internal quoting tool route', () => {
     expect(got.rateCardVersion).toBe('2026-07-09');
   });
 
+  it('POST /save with an existing id updates that quote in place, keeping its id/reference/status', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    // Move it into review, then re-save with edited content carrying the same id.
+    await patch(app, `/admin/quote/${saved.id}`, { status: 'pending_review' });
+    const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
+    expect(res.status).toBe(200); // updated, not created
+    const back = await res.json();
+    expect(back.id).toBe(saved.id);              // same row
+    expect(back.reference).toBe(saved.reference); // stable reference
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.status).toBe('pending_review');   // a content edit doesn't reset the lifecycle
+    expect(got.customerName).toBe('Maya R.');
+    expect(got.vehicle).toBe('van'); // engine stores the tier as 'van' (van_6 → van)
+    // Exactly one quote exists — the edit did not orphan a duplicate.
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    expect(list.quotes.length).toBe(1);
+  });
+
+  it('POST /save with an unknown id falls back to creating a new quote (201)', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', { id: 'no-such-id', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.id).not.toBe('no-such-id');
+  });
+
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
     const app = createApp();
     const res = await post(app, '/admin/quote/save', {

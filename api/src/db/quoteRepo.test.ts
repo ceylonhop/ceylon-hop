@@ -146,4 +146,23 @@ describe('InMemoryQuoteRepo', () => {
   it('patch returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().patch('nope', { status: 'won' })).toBeNull();
   });
+
+  it('update rewrites the priced content in place, preserving id/reference/status/createdAt', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 4048, customerName: 'Maya' }));
+    await repo.patch(q.id, { status: 'pending_review' }); // now mid-review
+    const updated = await repo.update(q.id, sample({ totalCents: 5200, customerName: 'Maya R.', marginCents: 1300 }));
+    expect(updated?.id).toBe(q.id);              // same row — no orphaned duplicate
+    expect(updated?.reference).toBe(q.reference); // reference is stable
+    expect(updated?.status).toBe('pending_review'); // status untouched by a content edit
+    expect(updated?.totalCents).toBe(5200);
+    expect(updated?.customerName).toBe('Maya R.');
+    expect(updated?.marginCents).toBe(1300);
+    expect(updated?.createdAt.getTime()).toBe(q.createdAt.getTime());
+    expect((await repo.list()).length).toBe(1); // still exactly one quote
+  });
+
+  it('update returns null for an unknown id', async () => {
+    expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
+  });
 });

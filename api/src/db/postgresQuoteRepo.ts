@@ -153,4 +153,27 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .returning();
     return row ? toSaved(row) : null;
   }
+
+  async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
+    // Content only — status/reference/createdAt and the sent/decided stamps are left as-is.
+    const [row] = await this.db
+      .update(quotes)
+      .set({
+        product: q.product,
+        vehicle: q.vehicle ?? null,
+        customerName: q.customerName ?? null,
+        customerContact: q.customerContact ?? null,
+        totalCents: q.totalCents,
+        currency: q.currency,
+        rateCardVersion: q.rateCardVersion,
+        marginCents: q.marginCents ?? null,
+        requestJson: q.request,
+        resultJson: q.result,
+        notes: q.notes ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(quotes.id, id))
+      .returning();
+    return row ? toSaved(row) : null;
+  }
 }

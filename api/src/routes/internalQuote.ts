@@ -338,12 +338,16 @@ export function internalQuoteRoutes(deps: {
   });
 
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
+  // An optional `id` on the body means "update this existing quote in place" (the founder
+  // editing a quote mid-review, or an operator re-saving a reopened one) — same row, no
+  // orphaned duplicate, lifecycle untouched. An unknown id falls back to an insert.
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
+    const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
     try {
       const body = parseToolRequest(raw);
       const { req, result } = await resolveAndPrice(body, deps.maps);
-      const saved = await deps.quotes.save({
+      const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
         customerName: body.name ?? null,
@@ -357,7 +361,10 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
-      });
+      };
+      const updated = existingId ? await deps.quotes.update(existingId, content) : null;
+      if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+      const saved = await deps.quotes.save(content);
       return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);

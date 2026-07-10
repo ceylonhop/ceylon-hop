@@ -94,6 +94,11 @@ export interface QuoteRepo {
   get(id: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
+  // Rewrite an existing quote's priced CONTENT in place (re-priced server-side on save).
+  // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
+  // untouched — so a founder editing a quote mid-review corrects the same row, never a
+  // duplicate. Returns null for an unknown id.
+  update(id: string, q: NewQuote): Promise<SavedQuote | null>;
 }
 
 // Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
@@ -209,6 +214,25 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
     row.updatedAt = now;
+    return { ...row };
+  }
+
+  async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
+    const row = this.rows.get(id);
+    if (!row) return null;
+    // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
+    row.product = q.product;
+    row.vehicle = q.vehicle ?? null;
+    row.customerName = q.customerName ?? null;
+    row.customerContact = q.customerContact ?? null;
+    row.totalCents = q.totalCents;
+    row.currency = q.currency;
+    row.rateCardVersion = q.rateCardVersion;
+    row.marginCents = q.marginCents ?? null;
+    row.request = q.request;
+    row.result = q.result;
+    row.notes = q.notes ?? null;
+    row.updatedAt = new Date();
     return { ...row };
   }
 }
