@@ -20,18 +20,19 @@ function rawHtml(): string | null {
   }
 }
 
-function uiHtml(googleClientId: string, devLoginEnabled: boolean): string | null {
+function uiHtml(googleClientId: string, devLoginEnabled: boolean, mapsBrowserKey: string): string | null {
   const raw = rawHtml();
   if (raw == null) return null;
   return raw
     .replaceAll('{{GOOGLE_CLIENT_ID}}', googleClientId)
-    .replaceAll('{{DEV_LOGIN_ENABLED}}', String(devLoginEnabled));
+    .replaceAll('{{DEV_LOGIN_ENABLED}}', String(devLoginEnabled))
+    .replaceAll('{{MAPS_KEY}}', mapsBrowserKey);
 }
 
-export function opsUiRoutes(googleClientId = '', devLoginEnabled = false): Hono {
+export function opsUiRoutes(googleClientId = '', devLoginEnabled = false, mapsBrowserKey = ''): Hono {
   const app = new Hono();
   app.get('/', (c) => {
-    const html = uiHtml(googleClientId, devLoginEnabled);
+    const html = uiHtml(googleClientId, devLoginEnabled, mapsBrowserKey);
     if (html == null) return c.html('<h1>ops dashboard unavailable</h1>', 500);
     return c.html(html);
   });

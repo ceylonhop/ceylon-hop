@@ -43,6 +43,7 @@ export interface AppDeps {
   // Front-end origin used to build those links in emails (defaults to config.APP_BASE_URL).
   bookingBaseUrl?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
+  mapsBrowserKey?: string; // browser Maps JS key templated into the /ops itinerary map
   googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
@@ -180,7 +181,7 @@ export function createApp(deps: AppDeps = {}) {
   // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
   app.use('/ops', compress());
-  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production'));
+  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? ''));
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.

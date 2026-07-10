@@ -705,6 +705,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-itin-locked-icon { font-size: 24px; }
 .qv .ch-itin-locked-title { font-weight: 700; font-size: 14px; color: var(--ink); margin-top: 6px; }
 .qv .ch-itin-locked-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+/* Interactive route map at the foot of the itinerary */
+.qv .ch-itin-map-slot { margin-top: 14px; }
+.qv .ch-itin-map { width: 100%; height: 260px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); background: #eef1ee; }
+.qv .ch-itin-map-note { padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px; }
 
 /* ---------- Dense itinerary rows ---------- */
 .qv .ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
@@ -3373,6 +3377,9 @@ function render() {
         '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
         '        </div>',
       ].join('') : ''),
+      // Route map of the itinerary on the SL map (interactive — populated after render by
+      // syncItinMap()). Only when a maps key is configured and there are ≥2 named stops.
+      (itinMapAvailable() ? '        <div class="ch-itin-map-slot" id="itin-map-slot"></div>' : ''),
     ].join('') : [
       '        <div class="ch-itin-locked">',
       '          <div class="ch-itin-locked-icon">&#x1F4CB;</div>',
@@ -3485,6 +3492,7 @@ function render() {
   attachEventListeners();
   restoreEditorFocus(_focusSnap);
   if (_menuWasOpen) reopenAutoCompleteMenu();
+  syncItinMap(); // move/refresh the persistent route map into this render's slot
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -3746,6 +3754,96 @@ async function runAutoDistance(legId) {
     // No distance found → "No distance" warn state
     updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
   }
+}
+
+// ── Itinerary route map (interactive Google map, like the website) ────────────
+// The browser Maps JS key is templated into the served HTML; a window.OPS_MAPS_KEY
+// override exists for tests. An untemplated placeholder (offline/raw file) or empty
+// value means "no key" → the map section is hidden entirely.
+var OPS_MAPS_KEY = '{{MAPS_KEY}}';
+try { if (window.OPS_MAPS_KEY != null) OPS_MAPS_KEY = window.OPS_MAPS_KEY; } catch (e) {}
+if (typeof OPS_MAPS_KEY !== 'string' || OPS_MAPS_KEY.indexOf('{{') === 0) OPS_MAPS_KEY = '';
+
+var _mapsJsPromise = null;
+function loadMapsJs() {
+  if (_mapsJsPromise) return _mapsJsPromise;
+  if (window.google && window.google.maps && window.google.maps.Map) { _mapsJsPromise = Promise.resolve(true); return _mapsJsPromise; }
+  if (!OPS_MAPS_KEY) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
+  _mapsJsPromise = new Promise(function (resolve) {
+    var s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(OPS_MAPS_KEY);
+    s.async = true; s.defer = true;
+    s.onload = function () { resolve(!!(window.google && window.google.maps && window.google.maps.Map)); };
+    s.onerror = function () { resolve(false); };
+    document.head.appendChild(s);
+  });
+  return _mapsJsPromise;
+}
+
+// Ordered, consecutive-deduplicated stop names across the travel legs.
+function itinStops() {
+  var out = [];
+  state.legs.forEach(function (l) {
+    if ((l.category || 'transfer') === 'stay_day') return;
+    var from = (l.pickupLocation || '').trim();
+    var to = (l.dropoffLocation || '').trim();
+    if (from && out[out.length - 1] !== from) out.push(from);
+    if (to && out[out.length - 1] !== to) out.push(to);
+  });
+  return out;
+}
+// Show the map once there's a routable itinerary and a key is configured.
+function itinMapAvailable() { return !!OPS_MAPS_KEY && basicsComplete() && itinStops().length >= 2; }
+
+var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null;
+function syncItinMap() {
+  var slot = document.getElementById('itin-map-slot');
+  if (!slot) return; // no map this render
+  if (!_mapEl) { _mapEl = document.createElement('div'); _mapEl.className = 'ch-itin-map'; }
+  if (_mapEl.parentNode !== slot) {
+    slot.innerHTML = '';
+    slot.appendChild(_mapEl); // move the persistent map host into the freshly-rendered slot
+    if (_mapMap && window.google && google.maps && google.maps.event) {
+      google.maps.event.trigger(_mapMap, 'resize');
+      if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
+    }
+  }
+  var stops = itinStops();
+  var sig = stops.join(' | ');
+  if (sig === _mapSig && _mapMap) return; // route unchanged — keep the live map
+  _mapSig = sig;
+  drawItinRoute(_mapEl, stops);
+}
+
+async function drawItinRoute(hostEl, stops) {
+  var ok = await loadMapsJs();
+  if (!ok) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
+  if (!_mapMap || _mapMap.__host !== hostEl) {
+    hostEl.innerHTML = '';
+    _mapMap = new google.maps.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
+    _mapMap.__host = hostEl;
+    _mapRenderer = new google.maps.DirectionsRenderer({ map: _mapMap, suppressMarkers: true, polylineOptions: { strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 } });
+  }
+  new google.maps.DirectionsService().route({
+    origin: stops[0], destination: stops[stops.length - 1],
+    waypoints: stops.slice(1, -1).map(function (n) { return { location: n, stopover: true }; }),
+    travelMode: google.maps.TravelMode.DRIVING,
+  }, function (res, status) {
+    if (status !== 'OK' || !res || !res.routes || !res.routes[0]) {
+      hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
+      _mapMap = null; return;
+    }
+    _mapRenderer.setDirections(res);
+    // Brand pins at the true routed endpoints (the renderer's A/B pins are suppressed).
+    try {
+      var rlegs = res.routes[0].legs;
+      var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new google.maps.Point(12, 22) }; };
+      new google.maps.Marker({ map: _mapMap, position: rlegs[0].start_location, icon: pin('#0a7d6f'), zIndex: 5 });
+      new google.maps.Marker({ map: _mapMap, position: rlegs[rlegs.length - 1].end_location, icon: pin('#e8623a'), zIndex: 5 });
+    } catch (e) { /* markers are non-essential */ }
+    _mapBounds = res.routes[0].bounds || null;
+    if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
+  });
 }
 
 // ── Place autocomplete ────────────────────────────────────────────────────────

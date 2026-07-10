@@ -24,6 +24,10 @@ const Env = z.object({
   // Google Maps (M8). When set, the server uses the real Distance Matrix adapter; otherwise
   // the fake (haversine) adapter. Restrict the key to the Distance Matrix API.
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // Browser (referrer-restricted) Maps JS key for the ops itinerary map — templated into
+  // the /ops HTML client-side. Separate from GOOGLE_MAPS_API_KEY (a server key). Restrict it
+  // to the Maps JavaScript API + the ops domain's HTTP referrer. When unset, the map is hidden.
+  MAPS_BROWSER_KEY: z.string().optional(),
   // Email (M4). When RESEND_API_KEY is set, the server sends real mail via Resend;
   // otherwise the fake adapter (records only). EMAIL_FROM must be a Resend-verified
   // sender (use onboarding@resend.dev for testing before the domain is verified).
