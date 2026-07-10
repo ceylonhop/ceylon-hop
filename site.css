@@ -187,17 +187,19 @@ p{margin:0 0 1rem}
   background:linear-gradient(180deg, rgba(9,38,36,.46), rgba(9,38,36,.26));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 1px 0 rgba(255,255,255,.10);
 }
-/* Home hero only: the nav sits over the immersive photo, so fade its warm wash all the
-   way to transparent — it melts into the image instead of ending as a banded edge. Dark
-   text stays legible against the stronger scrim up top; the frost + bottom hairline are
-   dropped here (they'd re-introduce a hard edge) and return on scroll via .nav.scrolled.
-   Scoped to data-page="home" so every other page keeps its solid frosted nav. */
+/* Home hero only: the nav sits over the immersive photo. White text on a soft dark scrim
+   that fades to transparent — the text stays crisp over the busy photo (a light wash lost
+   contrast) while the scrim still melts into the image with no banded edge. Frost + bottom
+   hairline dropped here (they'd re-add a hard edge); all of this reverts to the solid
+   frosted light nav on scroll via .nav.scrolled. Scoped to data-page="home". */
 body[data-page="home"] .nav:not(.scrolled){
-  background:linear-gradient(180deg, rgba(255,253,248,.82) 0%, rgba(255,253,248,.42) 46%, rgba(255,253,248,0) 100%);
+  color:#fff;
+  background:linear-gradient(180deg, rgba(6,26,24,.64) 0%, rgba(6,26,24,.36) 52%, rgba(6,26,24,0) 100%);
   -webkit-backdrop-filter:none;
   backdrop-filter:none;
   box-shadow:none;
 }
+body[data-page="home"] .nav:not(.scrolled) .brand{color:#fff}
 .nav.on-dark.scrolled{color:var(--ink)}
 .nav.on-dark.scrolled .brand{color:var(--ink)}
 
