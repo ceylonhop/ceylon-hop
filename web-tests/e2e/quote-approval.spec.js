@@ -312,12 +312,15 @@ test('once approved (ready), support can copy the customer message', async ({ pa
   await expect(page.locator('.ch-pre')).toBeVisible(); // the message is shown
 });
 
-test('the founder can preview the message under review but Copy is still locked', async ({ page }) => {
+test('the customer message stays hidden until approved — even for the founder', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
   await page.locator('.ch-tab[data-tab="whatsapp"]').click();
-  await expect(page.locator('.ch-pre')).toBeVisible();            // sees it to review
-  await expect(page.locator('.ch-copy-review-note')).toBeVisible();
-  await expect(page.locator('.ch-copy-btn')).toBeDisabled();      // but can't send yet
+  await expect(page.locator('.ch-copy-lock')).toBeVisible();      // hidden behind the lock…
+  await expect(page.locator('.ch-pre')).toHaveCount(0);           // …the wording is not rendered
+  await expect(page.locator('.ch-copy-btn')).toBeDisabled();      // and can't send yet
+  // Internal is never gated — the founder reviews pricing there before approving.
+  await page.locator('.ch-tab[data-tab="internal"]').click();
+  await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
 });
 
 // ── Side-nav collapse toggle ─────────────────────────────────────────────────────

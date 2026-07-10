@@ -3231,31 +3231,31 @@ function renderOutputBody() {
     return renderInternalView(); // never gated — internal-only ops summary
   }
 
-  // Copy gate: before approval, a support agent can't lift the customer message out at
-  // all (lock card). The founder still sees it — they need to review the exact wording —
-  // but with a "not yet sendable" note, and Copy stays disabled for everyone until ready.
-  if (!copyUnlocked() && !isApprover()) {
+  // Copy gate: the customer message stays hidden until the quote is approved (Ready to
+  // send) — for EVERYONE, founder included (owner decision 2026-07-10). Nobody sees the
+  // sendable wording before approval; the founder reviews pricing/vehicle on the Internal
+  // tab (never gated) + the itinerary, approves, and the message then appears to copy.
+  if (!copyUnlocked()) {
+    var lockSub = isApprover()
+      ? 'Click <b>Approve &mdash; ready to send</b> to reveal and copy the customer message.'
+      : 'The customer message unlocks once the founder marks this quote <b>Ready to send</b>.';
     return [
       '<div class="ch-copy-lock">',
       '  <div class="ch-copy-lock-icon">&#x1F512;</div>',
-      '  <div class="ch-copy-lock-title">Waiting on approval</div>',
-      '  <div class="ch-copy-lock-sub">The customer message unlocks once the founder marks this quote <b>Ready to send</b>.</div>',
+      '  <div class="ch-copy-lock-title">Not ready to send yet</div>',
+      '  <div class="ch-copy-lock-sub">' + lockSub + '</div>',
       '</div>',
     ].join('');
   }
-  var reviewNote = (!copyUnlocked() && isApprover())
-    ? '<div class="ch-copy-review-note">Preview for review — approve the quote to make it sendable.</div>'
-    : '';
 
   if (tab === 'whatsapp') {
     var msg = whatsappMessage();
     if (!msg) return guard;
-    return reviewNote + '<pre class="ch-pre">' + esc(msg) + '</pre>';
+    return '<pre class="ch-pre">' + esc(msg) + '</pre>';
   } else if (tab === 'email') {
     var msg2 = emailMessage();
     if (!msg2) return guard;
     return [
-      reviewNote,
       '<div class="ch-email-subject"><span>Subject</span> Ceylon Hop Transport Quote for Your Sri Lanka Trip</div>',
       '<pre class="ch-pre">' + esc(msg2) + '</pre>',
     ].join('');
