@@ -110,15 +110,15 @@ test('clicking a chip selects, prices, and clears the vehicle warning', async ({
   await expect(page.locator('#quoteRoot .ch-app')).not.toContainText('Vehicle not set');
 });
 
-test('a chip too small for the pax count shows a seats warning but stays clickable', async ({ page }) => {
+test('a vehicle too small for the pax count is disabled — seats are a hard limit', async ({ page }) => {
   await openQuote(page);
   await page.fill('#f-passengerCount', '5');
   await page.dispatchEvent('#f-passengerCount', 'change');
   const car = page.locator('[data-action="setVehicle"][data-veh="car"]');
-  await expect(car).toHaveClass(/over/);
-  await expect(car).toContainText('seats 3');
-  await car.click(); // still selectable — capacity warning framework handles the flag
-  await expect(car).toHaveClass(/active/);
+  await expect(car).toHaveClass(/unfit/);        // greyed, not the amber soft-warn
+  await expect(car).toContainText('seats 3');    // names the seat limit
+  await expect(car).toBeDisabled();              // can't put 5 pax in a 3-seat car
+  await expect(car).not.toHaveClass(/active/);   // and it was never selected
 });
 
 test('a chip too small for the bag count shows a bags warning but stays clickable', async ({ page }) => {

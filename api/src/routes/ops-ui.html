@@ -827,6 +827,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-veh-chip.over { border-color: #e6b35c; background: #fff8ec; }
 .qv .ch-veh-chip.over .ch-veh-cap { color: #b06a00; }
 .qv .ch-veh-chips.unset .ch-veh-chip { border-color: #e6b35c; background: #fffdf7; }
+/* Seats are a hard limit — a vehicle that can't seat the party is greyed out + disabled.
+   (Wins the specificity tie with the .unset rule above via source order.) */
+.qv .ch-veh-chips .ch-veh-chip.unfit,
+.qv .ch-veh-chips .ch-veh-chip.unfit:hover { border-color: var(--line); background: #f4f2ec; color: var(--muted-2); cursor: not-allowed; box-shadow: none; }
+.qv .ch-veh-chip.unfit .ch-veh-cap { color: #b06a00; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
 .qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
@@ -2588,20 +2593,26 @@ function renderVehicleChips() {
   parts.push('  <div class="ch-veh-row">');
   ids.forEach(function(id) {
     var caps = vehicleCaps(id);
-    // Over-capacity if it can't hold the pax OR the bags. Chip stays selectable (staff can
-    // override — the capacity flag + backend upgrade still apply); the tag shows the limit hit.
+    // Seats are a HARD limit — a vehicle that can't seat the party is disabled (you can't put
+    // 6 people in a 3-seat car). Bags are SOFT — over the bag count we only warn and keep the
+    // chip clickable (staff can override; the capacity flag + backend upgrade still apply).
     var paxOver = !!(caps && st.passengerCount > caps.pax);
     var bagsOver = !!(caps && st.luggageCount > caps.bags);
-    var over = paxOver || bagsOver;
-    // Tag: when over, name the exceeded limit; otherwise show the seat count (except Custom).
-    var tag = over ? (paxOver ? 'seats ' + caps.pax : 'bags ' + caps.bags)
-                   : (caps && id !== 'custom' ? String(caps.pax) : '');
+    var seatsBlock = paxOver && st.vehicleType !== id; // never disable the chip already selected
+    var bagsWarn = bagsOver && !paxOver;
+    // Tag: when it doesn't fit, name the exceeded limit; otherwise show the seat count (except Custom).
+    var tag = paxOver ? 'seats ' + caps.pax
+            : bagsOver ? 'bags ' + caps.bags
+            : (caps && id !== 'custom' ? String(caps.pax) : '');
+    var capCls = (paxOver || bagsOver) ? 'ch-veh-cap' : (tag ? 'ch-veh-cap ok' : '');
     parts.push('    <button type="button" class="ch-veh-chip'
-      + (st.vehicleType === id ? ' active' : '') + (over ? ' over' : '')
-      + '" data-action="setVehicle" data-veh="' + id + '">'
+      + (st.vehicleType === id ? ' active' : '')
+      + (paxOver ? ' unfit' : (bagsWarn ? ' over' : ''))
+      + '" data-action="setVehicle" data-veh="' + id + '"'
+      + (seatsBlock ? ' disabled title="Too many passengers for a ' + esc(VEHICLE_LABELS[id]) + ' (seats ' + caps.pax + ')"' : '')
+      + '>'
       + esc(VEHICLE_LABELS[id])
-      + (over ? '<i class="ch-veh-cap">' + esc(tag) + '</i>'
-               : (tag ? '<i class="ch-veh-cap ok">' + esc(tag) + '</i>' : ''))
+      + (tag ? '<i class="' + capCls + '">' + esc(tag) + '</i>' : '')
       + '</button>');
   });
   parts.push('  </div>');
