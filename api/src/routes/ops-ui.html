@@ -3297,9 +3297,12 @@ function render() {
   }
 
   var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '');
-  // The itinerary is gated until every Trip basic is filled AND the contact is valid.
+  // The gate only stops STARTING a new quote before the basics are in — it must never hide an
+  // itinerary that already exists (a saved/reopened quote, or one whose legs are already filled).
   var basicsDone = basicsComplete();
   _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
+  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return (l.pickupLocation || '').trim() !== '' || (l.dropoffLocation || '').trim() !== ''; });
+  var showItinerary = basicsDone || hasBuiltItinerary;
   var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 
   var flags = computeFlags();
@@ -3379,9 +3382,9 @@ function render() {
     '      <div class="ch-sec">',
     '        <div class="ch-sec-head">',
     '          <h2>Itinerary</h2>',
-    '          <div class="ch-sec-head-r">' + (basicsDone ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
+    '          <div class="ch-sec-head-r">' + (showItinerary ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
     '        </div>',
-    (basicsDone ? [
+    (showItinerary ? [
       legsHtml,
       (st.legs.length > 0 ? [
         '        <div class="ch-legs-add">',
@@ -3816,7 +3819,7 @@ function itinStops() {
   return out;
 }
 // Show the map once there's a routable itinerary and a key is configured.
-function itinMapAvailable() { return !!OPS_MAPS_KEY && basicsComplete() && itinStops().length >= 2; }
+function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
 
 var _mapOpen = false; // route map is collapsed by default — the operator opens it deliberately
 var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null;

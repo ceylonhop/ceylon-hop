@@ -59,6 +59,23 @@ test('the itinerary is locked until every trip basic is filled', async ({ page }
   await expect(page.locator('[data-action="addLeg"]')).toBeVisible();
 });
 
+test('a built itinerary is never hidden when the contact is later made invalid', async ({ page }) => {
+  await openQuote(page);
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-contact', 'karen@example.com');
+  await page.dispatchEvent('#f-contact', 'change');
+  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await from.fill('Colombo'); await from.dispatchEvent('change'); // real leg content
+  await expect(page.locator('.ch-leg').first()).toBeVisible();
+  // Break the contact — the already-built itinerary must stay visible (only NEW quotes gate).
+  await page.fill('#f-contact', 'garbage');
+  await page.dispatchEvent('#f-contact', 'change');
+  await expect(page.locator('#f-contact')).toHaveClass(/invalid/); // still flagged
+  await expect(page.locator('.ch-itin-locked')).toHaveCount(0);     // but NOT reverted to the lock
+  await expect(page.locator('.ch-leg').first()).toBeVisible();
+});
+
 test('contact must be an email or a phone number with a country code', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
