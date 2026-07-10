@@ -103,8 +103,10 @@
             done = true;
             wrap.classList.add('ready');
 
-            // Brand pins at the true routed endpoints (the renderer's default A/B pins are
-            // suppressed). Teal = pick-up, orange = drop-off — matches the summary markers.
+            // Brand pin at EVERY stop, not just the endpoints (the renderer's default A/B
+            // pins are suppressed). One pin per stop = the start of the first leg, then the
+            // end of each leg. Green = pick-up, orange = final drop-off, teal for every stop
+            // in between — matches the summary's numbered route.
             try {
               const rlegs = res.routes[0].legs;
               const pin = (fill) => ({
@@ -112,8 +114,15 @@
                 fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
                 scale: 1.5, anchor: new google.maps.Point(12, 22),
               });
-              new google.maps.Marker({ map, position: rlegs[0].start_location, icon: pin('#0a7d6f'), title: 'Pick-up', zIndex: 5 });
-              new google.maps.Marker({ map, position: rlegs[rlegs.length - 1].end_location, icon: pin('#e8623a'), title: 'Drop-off', zIndex: 5 });
+              const stopLocs = [rlegs[0].start_location].concat(rlegs.map((l) => l.end_location));
+              stopLocs.forEach((pos, i) => {
+                const first = i === 0, last = i === stopLocs.length - 1;
+                new google.maps.Marker({
+                  map, position: pos, zIndex: 5,
+                  icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
+                  title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
+                });
+              });
             } catch (e) { /* markers are non-essential */ }
 
             // Fit the whole route in view, and re-fit if the container gains its size later:
