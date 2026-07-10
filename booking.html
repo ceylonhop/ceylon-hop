@@ -358,8 +358,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-choice .pc-opt b{font-size:.92rem}
   .pay-choice .pc-opt small{display:block;color:var(--ink-soft);font-size:.8rem;margin-top:1px}
   .terms-consent{cursor:pointer}
-  .terms-consent input{width:22px;height:22px;flex:none;accent-color:var(--accent)}
-  .terms-consent span{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
+  /* Match the .addon pattern (teal box + white check) instead of the native accent-color box,
+     which renders a dark auto-checkmark that's off-brand. The input stays the real 22px control
+     (appearance:none) so keyboard + tap target are unchanged; the check is a white SVG. */
+  .terms-consent input{appearance:none;-webkit-appearance:none;width:22px;height:22px;flex:none;margin:0;
+    border:2px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;transition:.15s;
+    background-repeat:no-repeat;background-position:center;background-size:14px}
+  .terms-consent input:checked{border-color:var(--accent);background-color:var(--accent);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E")}
+  .terms-consent:has(input:checked){border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .terms-consent input:focus-visible{box-shadow:0 0 0 3px rgba(10,185,182,.35);outline:none}
+  .terms-consent > span:last-child{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
 
   /* steppers / addons */
   .stepper{display:flex;align-items:center;justify-content:space-between;border:1.5px solid var(--line);border-radius:12px;padding:.7rem 1rem;margin-bottom:12px}
