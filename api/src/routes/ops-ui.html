@@ -800,9 +800,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-veh-chip.over { border-color: #e6b35c; background: #fff8ec; }
 .qv .ch-veh-chip.over .ch-veh-cap { color: #b06a00; }
 .qv .ch-veh-chips.unset .ch-veh-chip { border-color: #e6b35c; background: #fffdf7; }
-.qv .ch-veh-rate { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-.qv .ch-veh-rate label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-.qv .ch-veh-rate .ch-input-wrap { width: 130px; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
 .qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
@@ -1616,14 +1613,6 @@ function vehicleCaps(toolId) {
   return { pax: v.maxPax, bags: v.maxBags };
 }
 
-// GL-1d: the rate-card prefill default for the custom-priced tiers, as dollars for the
-// $/km input placeholder. Falls back to the shipped placeholders until /rate-card loads.
-function defaultCustomRateDollars(toolId) {
-  var tier = VEHICLE_ENGINE_TIER[toolId];
-  var cents = (rateCard && rateCard.perKmCents && rateCard.perKmCents[tier]) || (toolId === 'van_14' ? 130 : 175);
-  return (cents / 100).toFixed(2);
-}
-
 // Driving categories (for flag computation) — slim set (R4). Anything not a
 // stay day drives; stay_day is the only non-driving category.
 var DRIVING_CATS = {
@@ -1665,7 +1654,6 @@ async function _runEstimate() {
     vehicle: st.vehicleType,
     passengerCount: st.passengerCount,
     luggageCount: st.luggageCount,
-    customRatePerKmCents: customRateCents(), // GL-1d: undefined unless van_14/custom + set
     legs: st.legs.map(function(leg) {
       return {
         category:         leg.category,
@@ -1730,9 +1718,6 @@ let state = {
   passengerCount: 2,
   luggageCount: 2,
   vehicleType: null,
-  // GL-1d: Van 14/Custom are custom-priced per quote — operator's $/km (dollars, UI-side).
-  // null = use the rate-card prefill default; only sent to the API when explicitly set.
-  customRatePerKm: null,
   service: 'private',
   outputCurrency: 'USD',
   status: 'draft',
@@ -1756,7 +1741,7 @@ function mutate(patch) {
   Object.assign(state, patch);
   markDirty();
   // Re-estimate if any pricing-affecting field changed
-  if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch || 'customRatePerKm' in patch) {
+  if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch) {
     refreshEstimate();
   }
   render();
@@ -1992,7 +1977,6 @@ function resetToNew() {
     passengerCount: 2,
     luggageCount: 2,
     vehicleType: null,
-    customRatePerKm: null,
     service: 'private',
     outputCurrency: 'USD',
     status: 'draft',
@@ -2018,15 +2002,6 @@ function startNew() {
   resetToNew();
 }
 
-// GL-1d: the operator's custom $/km (dollars) → integer cents for the API. Only meaningful
-// for Van 14/Custom; undefined otherwise (or when unset → server prices at the prefill default).
-function customRateCents() {
-  if (state.vehicleType !== 'van_14' && state.vehicleType !== 'custom') return undefined;
-  var v = state.customRatePerKm;
-  if (v == null || v === '' || isNaN(v) || Number(v) <= 0) return undefined;
-  return Math.round(Number(v) * 100);
-}
-
 function savePayload() {
   return {
     // When the quote is already saved, send its id so the server updates it in place
@@ -2039,7 +2014,6 @@ function savePayload() {
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
     luggageCount: state.luggageCount,
-    customRatePerKmCents: customRateCents(), // GL-1d
     legs: state.legs.map(function(leg) {
       return {
         category:         leg.category,
@@ -2152,8 +2126,6 @@ async function reopenQuote(id) {
   state.customerName = q.customerName || tool.name || '';
   state.contact = q.customerContact || tool.contact || '';
   state.vehicleType = tool.vehicle || state.vehicleType;
-  // GL-1d: restore the operator's custom $/km (persisted in cents on the request snapshot).
-  state.customRatePerKm = tool.customRatePerKmCents ? tool.customRatePerKmCents / 100 : null;
   state.service = (tool.service === 'chauffeur') ? 'chauffeur' : 'private';
   state.passengerCount = Math.max(1, parseInt(tool.passengerCount, 10) || 1);
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
@@ -2408,6 +2380,8 @@ function renderRateCardBody() {
 
   var carKmCents = rateCard.perKmCents.car;
   var vanKmCents = rateCard.perKmCents.van;
+  var van14KmCents = rateCard.perKmCents.van14;
+  var customKmCents = rateCard.perKmCents.custom;
   var carFloorCents = rateCard.floorCents.car;
   var vanFloorCents = rateCard.floorCents.van;
   var driverCents = rateCard.chauffeurDayRateCents;
@@ -2424,6 +2398,12 @@ function renderRateCardBody() {
     rateRow('Van', null,
       esc(usd(vanKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
       + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(vanKmCents)) + ' /km</span>'),
+    rateRow('Van 14', null,
+      esc(usd(van14KmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(van14KmCents)) + ' /km</span>'),
+    rateRow('Custom', null,
+      esc(usd(customKmCents)) + '<span style="font-weight:400;color:var(--muted);font-size:11.5px"> /km</span>'
+      + '<br><span style="font-size:11px;color:var(--muted-2)">' + esc(lkr(customKmCents)) + ' /km</span>'),
     '  <div class="ch-rate-group-title">Minimum per leg</div>',
     rateRow('Car floor', null,
       esc(usd(carFloorCents))
@@ -2494,13 +2474,8 @@ function renderVehicleChips() {
       + '</button>');
   });
   parts.push('  </div>');
-  // GL-1d: the Van 14/Custom per-quote rate input travels with the decision that reveals it.
-  if (st.vehicleType === 'van_14' || st.vehicleType === 'custom') {
-    parts.push('  <div class="ch-veh-rate"><label>Rate $/km <em class="req">*</em></label>'
-      + '<div class="ch-input-wrap"><input class="ch-input" id="f-customRate" type="number" min="0.01" step="0.01"'
-      + ' value="' + (st.customRatePerKm != null ? esc(st.customRatePerKm) : '') + '"'
-      + ' placeholder="' + esc(defaultCustomRateDollars(st.vehicleType)) + '" /></div></div>');
-  }
+  // Van 14/Custom price from the founder-managed rate card (RATE_CARD.perKmCents) — there is
+  // no per-quote $/km override in the tool anymore.
   parts.push('</div>');
   return parts.join('\n');
 }
@@ -3532,17 +3507,8 @@ function attachEventListeners() {
     }
   });
 
-  // (Vehicle selection is now the chip row in the money pane — see renderVehicleChips and
-  // the delegated 'setVehicle' action; the old header select is gone.)
-
-  // GL-1d: operator's custom $/km for Van 14/Custom (empty → price at the prefill default).
-  var customRateIn = document.getElementById('f-customRate');
-  if (customRateIn) {
-    customRateIn.addEventListener('change', function() {
-      var v = parseFloat(customRateIn.value);
-      mutate({ customRatePerKm: (isNaN(v) || v <= 0) ? null : v });
-    });
-  }
+  // (Vehicle selection is the chip row in Trip basics — see renderVehicleChips and the
+  // delegated 'setVehicle' action. Van 14/Custom price from the rate card, no per-quote input.)
 
   // Event delegation for data-action on the whole app
   // I1: attach these ONCE — the render target persists across renders, so adding on every
@@ -3574,9 +3540,7 @@ function attachEventListeners() {
       if (el.disabled) return;
       setService(el.getAttribute('data-service'));
     } else if (action === 'setVehicle') {
-      // Same mutation the old header select performed — switching tier clears the
-      // custom $/km so a rate set for one vehicle never silently prices another (GL-1d).
-      mutate({ vehicleType: el.getAttribute('data-veh'), customRatePerKm: null });
+      mutate({ vehicleType: el.getAttribute('data-veh') });
     } else if (action === 'toggleAddons') {
       legAddonsOpen[legId] = !legAddonsOpen[legId];
       render();

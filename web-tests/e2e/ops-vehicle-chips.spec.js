@@ -83,9 +83,13 @@ test('a chip too small for the pax count shows a seats warning but stays clickab
   await expect(car).toHaveClass(/active/);
 });
 
-test('Van 14 reveals the Rate $/km input with the chips in Trip basics', async ({ page }) => {
+test('Van 14 and Custom price from the rate card — no per-quote $/km input', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="van_14"]').click();
-  const rate = page.locator('.ch-cust-strip #f-customRate');
-  await expect(rate).toBeVisible();
+  await expect(page.locator('#f-customRate')).toHaveCount(0); // input removed — rate lives in the rate card
+  await expect(page.locator('[data-action="setVehicle"][data-veh="van_14"]')).toHaveClass(/active/);
+  await page.locator('[data-action="setVehicle"][data-veh="custom"]').click();
+  await expect(page.locator('#f-customRate')).toHaveCount(0);
+  // Still prices (from the rate card) — the money pane shows a total, no rate entry needed.
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('$', { timeout: 8000 });
 });
