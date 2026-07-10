@@ -55,19 +55,28 @@ async function buildRoute(page) {
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }
 
-test('a configured key renders the route map once the itinerary has two stops', async ({ page }) => {
+test('the route map is collapsed behind a toggle and opens on click', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await stub(page, { key: 'test-browser-key' });
   await buildRoute(page);
-  await expect(page.locator('#itin-map-slot')).toBeVisible({ timeout: 10000 });
+  // Two stops → the toggle appears, but the map does NOT auto-open (no jarring pop-in).
+  await expect(page.locator('.ch-map-toggle')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#itin-map-slot')).toHaveCount(0);
+  // Clicking the toggle reveals the map.
+  await page.locator('.ch-map-toggle').click();
+  await expect(page.locator('#itin-map-slot')).toBeVisible();
   await expect(page.locator('.ch-itin-map[data-map="ready"]')).toBeVisible({ timeout: 10000 });
+  // And it collapses again.
+  await page.locator('.ch-map-toggle').click();
+  await expect(page.locator('#itin-map-slot')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
-test('without a maps key the itinerary shows no route map', async ({ page }) => {
+test('without a maps key the itinerary shows no route map toggle', async ({ page }) => {
   await stub(page); // no key → OPS_MAPS_KEY stays the untemplated placeholder → treated as none
   await buildRoute(page);
   await expect(page.locator('.ch-leg').first()).toBeVisible();
+  await expect(page.locator('.ch-map-toggle')).toHaveCount(0);
   await expect(page.locator('#itin-map-slot')).toHaveCount(0);
 });

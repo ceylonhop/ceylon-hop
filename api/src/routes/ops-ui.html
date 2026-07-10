@@ -705,10 +705,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-itin-locked-icon { font-size: 24px; }
 .qv .ch-itin-locked-title { font-weight: 700; font-size: 14px; color: var(--ink); margin-top: 6px; }
 .qv .ch-itin-locked-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
-/* Interactive route map at the foot of the itinerary */
-.qv .ch-itin-map-slot { margin-top: 14px; }
-.qv .ch-itin-map { width: 100%; height: 260px; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--line); background: #eef1ee; }
+/* Collapsible route map at the foot of the itinerary */
+.qv .ch-map-block { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
+.qv .ch-map-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-soft); transition: background .15s, color .15s; }
+.qv .ch-map-toggle:hover { background: var(--cream); color: var(--ink); }
+.qv .ch-map-toggle-lbl { display: inline-flex; align-items: center; gap: 8px; }
+.qv .ch-map-pin { width: 15px; height: 15px; color: var(--teal-d); flex: none; }
+.qv .ch-map-chev { display: inline-block; font-size: 15px; color: var(--muted); transition: transform .22s; transform: rotate(180deg); }
+.qv .ch-map-block.open .ch-map-toggle { border-bottom: 1px solid var(--line); }
+.qv .ch-map-block.open .ch-map-chev { transform: rotate(0deg); color: var(--teal-d); }
+.qv .ch-itin-map-slot { animation: chMapIn .26s cubic-bezier(.2,.7,.3,1); }
+.qv .ch-itin-map { width: 100%; height: 240px; background: #eef1ee; display: block; }
 .qv .ch-itin-map-note { padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px; }
+@keyframes chMapIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Dense itinerary rows ---------- */
 .qv .ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
@@ -2060,6 +2069,7 @@ function resetToNew() {
   outputTab = 'whatsapp';
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
+  _mapOpen = false;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
   render();
@@ -2208,6 +2218,7 @@ async function reopenQuote(id) {
   lastEstimate = null;
   lastEstimateError = null;
   sendBackOpen = false;
+  _mapOpen = false;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   render();
   refreshEstimate();
@@ -3377,9 +3388,17 @@ function render() {
         '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
         '        </div>',
       ].join('') : ''),
-      // Route map of the itinerary on the SL map (interactive — populated after render by
-      // syncItinMap()). Only when a maps key is configured and there are ≥2 named stops.
-      (itinMapAvailable() ? '        <div class="ch-itin-map-slot" id="itin-map-slot"></div>' : ''),
+      // Route map of the itinerary on the SL map — collapsed by default behind a toggle so it
+      // never pops in unbidden. The map itself (populated by syncItinMap) mounts only when open.
+      (itinMapAvailable() ? [
+        '        <div class="ch-map-block' + (_mapOpen ? ' open' : '') + '">',
+        '          <button type="button" class="ch-map-toggle" data-action="toggleMap" aria-expanded="' + (_mapOpen ? 'true' : 'false') + '">',
+        '            <span class="ch-map-toggle-lbl">' + MAP_PIN_SVG + 'Route on map</span>',
+        '            <span class="ch-map-chev">&#x2303;</span>',
+        '          </button>',
+        (_mapOpen ? '          <div class="ch-itin-map-slot" id="itin-map-slot"></div>' : ''),
+        '        </div>',
+      ].join('') : ''),
     ].join('') : [
       '        <div class="ch-itin-locked">',
       '          <div class="ch-itin-locked-icon">&#x1F4CB;</div>',
@@ -3622,6 +3641,9 @@ function attachEventListeners() {
     } else if (action === 'toggleAddons') {
       legAddonsOpen[legId] = !legAddonsOpen[legId];
       render();
+    } else if (action === 'toggleMap') {
+      _mapOpen = !_mapOpen;
+      render();
     } else if (action === 'backToQueue') {
       if (window.opsGoQuotes) window.opsGoQuotes();
     } else if (action === 'saveDraft') {
@@ -3764,6 +3786,7 @@ var OPS_MAPS_KEY = '{{MAPS_KEY}}';
 try { if (window.OPS_MAPS_KEY != null) OPS_MAPS_KEY = window.OPS_MAPS_KEY; } catch (e) {}
 if (typeof OPS_MAPS_KEY !== 'string' || OPS_MAPS_KEY.indexOf('{{') === 0) OPS_MAPS_KEY = '';
 
+var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
 var _mapsJsPromise = null;
 function loadMapsJs() {
   if (_mapsJsPromise) return _mapsJsPromise;
@@ -3795,6 +3818,7 @@ function itinStops() {
 // Show the map once there's a routable itinerary and a key is configured.
 function itinMapAvailable() { return !!OPS_MAPS_KEY && basicsComplete() && itinStops().length >= 2; }
 
+var _mapOpen = false; // route map is collapsed by default — the operator opens it deliberately
 var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null;
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
