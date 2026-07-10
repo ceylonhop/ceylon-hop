@@ -301,6 +301,21 @@ test('the founder can preview the message under review but Copy is still locked'
   await expect(page.locator('.ch-copy-btn')).toBeDisabled();      // but can't send yet
 });
 
+// ── Side-nav collapse toggle ─────────────────────────────────────────────────────
+test('the rail collapses to an icon strip and the choice persists', async ({ page }) => {
+  await openQueue(page, 'founder', []);
+  await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
+  await page.locator('#railToggle').click();
+  await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
+  // Persisted, so a fresh load of the same surface stays collapsed.
+  await page.goto(OPS_FILE + '#quotes');
+  await page.waitForSelector('#view .qhead');
+  await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
+  // Toggling back expands it.
+  await page.locator('#railToggle').click();
+  await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
+});
+
 // ── Margin + Rates are founder-only across the detail view ───────────────────────
 test('founder sees the estimated margin and the Rates button', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
