@@ -60,14 +60,15 @@ describe('ops UI shell', () => {
     expect(body).not.toContain('{{GOOGLE_CLIENT_ID}}'); // placeholder always replaced, even if empty
   });
 
-  it('templates the browser maps key into the itinerary map (and always replaces the placeholder)', async () => {
+  it('templates the browser maps key into the itinerary map (defaults to the website key)', async () => {
     const app = createApp({ mapsBrowserKey: 'AIzaTESTBROWSERKEY123' });
     const body = await (await app.request('/ops')).text();
-    expect(body).toContain('AIzaTESTBROWSERKEY123'); // key reaches the client for the route map
+    expect(body).toContain('AIzaTESTBROWSERKEY123'); // explicit override reaches the client
     expect(body).not.toContain('{{MAPS_KEY}}');       // placeholder always replaced
-    // When no key is configured, the placeholder is still replaced (with empty) — the map hides.
-    const noKey = await (await createApp().request('/ops')).text();
-    expect(noKey).not.toContain('{{MAPS_KEY}}');
+    // With no override it falls back to the shared website browser key — no separate config.
+    const dflt = await (await createApp().request('/ops')).text();
+    expect(dflt).toContain('AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI');
+    expect(dflt).not.toContain('{{MAPS_KEY}}');
   });
 
   it('shows the dev-login affordance only when dev bypass is enabled (non-production)', async () => {

@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// The public, referrer-restricted browser Maps JS key the website already uses. The ops
+// itinerary map defaults to it (no separate config needed) — just add the ops/API domain to
+// this key's HTTP-referrer allowlist in the Google console. Override with MAPS_BROWSER_KEY.
+const DEFAULT_MAPS_BROWSER_KEY = 'AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';
+
 const Env = z.object({
   PORT: z.coerce.number().default(8787),
   // Render sets NODE_ENV=production. Gates fail-open conveniences (e.g. the quoting tool
@@ -25,9 +30,10 @@ const Env = z.object({
   // the fake (haversine) adapter. Restrict the key to the Distance Matrix API.
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   // Browser (referrer-restricted) Maps JS key for the ops itinerary map — templated into
-  // the /ops HTML client-side. Separate from GOOGLE_MAPS_API_KEY (a server key). Restrict it
-  // to the Maps JavaScript API + the ops domain's HTTP referrer. When unset, the map is hidden.
-  MAPS_BROWSER_KEY: z.string().optional(),
+  // the /ops HTML client-side. Separate from GOOGLE_MAPS_API_KEY (a server key restricted to
+  // Distance Matrix). Defaults to the website's public browser key; set MAPS_BROWSER_KEY only
+  // to use a different one. Either way, the ops domain must be in the key's referrer allowlist.
+  MAPS_BROWSER_KEY: z.string().default(DEFAULT_MAPS_BROWSER_KEY),
   // Email (M4). When RESEND_API_KEY is set, the server sends real mail via Resend;
   // otherwise the fake adapter (records only). EMAIL_FROM must be a Resend-verified
   // sender (use onboarding@resend.dev for testing before the domain is verified).
