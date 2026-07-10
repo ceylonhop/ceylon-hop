@@ -217,6 +217,25 @@ test('support never sees a margin figure in the queue', async ({ page }) => {
   await expect(page.locator('#view')).not.toContainText(/margin/i);
 });
 
+test('queue filter toggles narrow the list by status group', async ({ page }) => {
+  await openQueue(page, 'founder', [
+    summary({ id: 'a', status: 'ready' }),
+    summary({ id: 'b', status: 'draft' }),
+    summary({ id: 'c', status: 'sent' }),
+    summary({ id: 'd', status: 'pending_review' }),
+  ]);
+  await expect(page.locator('#view .qrow')).toHaveCount(4); // All (default)
+  await page.locator('[data-qfilter="ready"]').click();
+  await expect(page.locator('[data-qfilter="ready"]')).toHaveClass(/on/);
+  await expect(page.locator('#view .qrow')).toHaveCount(1); // only ready
+  await page.locator('[data-qfilter="progress"]').click();
+  await expect(page.locator('#view .qrow')).toHaveCount(2); // draft + pending_review
+  await page.locator('[data-qfilter="sent"]').click();
+  await expect(page.locator('#view .qrow')).toHaveCount(1); // sent
+  await page.locator('[data-qfilter="all"]').click();
+  await expect(page.locator('#view .qrow')).toHaveCount(4);
+});
+
 // ── Task 7: detail-view action bar (role + status) ───────────────────────────────
 test('support on a draft can Submit for review but has no Approve action', async ({ page }) => {
   await openDetail(page, 'ops', { id: 'q1', status: 'draft' });

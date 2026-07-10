@@ -157,6 +157,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .qnew{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border:0;border-radius:11px;padding:10px 16px;font-weight:700;font-size:.9rem;cursor:pointer;box-shadow:0 12px 26px -14px rgba(10,185,182,.8);transition:transform .15s,filter .15s}
   .qnew:hover{transform:translateY(-1px);filter:brightness(1.05)}
   .qnew .qnew-plus{font-size:1.05rem;line-height:1;font-weight:600}
+  /* Queue status-group filter toggles */
+  .qfilters{display:flex;flex-wrap:wrap;gap:9px;margin:2px 0 4px}
+  .qfilter{border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font:inherit;font-weight:700;font-size:.82rem;padding:8px 14px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-s);transition:transform .16s,border-color .16s,background .16s,color .16s}
+  .qfilter:hover{border-color:var(--cream-deep);color:var(--ink);transform:translateY(-1px)}
+  .qfilter .qfilter-n{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+  .qfilter.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-color:transparent;box-shadow:0 10px 22px -14px rgba(10,185,182,.8)}
+  .qfilter.on .qfilter-n{color:rgba(255,255,255,.85)}
   /* Role-aware queue sections */
   .qsection{margin-top:26px}
   .qsection-head{display:flex;align-items:baseline;gap:12px;margin:0 2px 11px;flex-wrap:wrap}
@@ -1153,6 +1160,14 @@ const QUEUE_SECTIONS_SUPPORT=[
   {id:'drafts',label:'Drafts',statuses:['draft']},
   {id:'closed',label:'Sent &amp; closed',statuses:['sent','won','lost','expired']},
 ];
+// Coarse status-group filters for the queue (independent of the role-aware sections).
+const QUEUE_FILTERS=[
+  {id:'all',label:'All',statuses:null},
+  {id:'progress',label:'In progress',statuses:['draft','pending_review','changes_requested']},
+  {id:'ready',label:'Ready to send',statuses:['ready']},
+  {id:'sent',label:'Sent to customer',statuses:['sent','won','lost','expired']},
+];
+let queueFilter='all';
 function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve'));}
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 async function loadOpsQuotes(){
@@ -1192,9 +1207,19 @@ function viewQuotes(){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
     $('#view').innerHTML=html;return;
   }
+  // Filter toggles (coarse status groups). Counts reflect the whole queue, not the section.
+  html+='<div class="qfilters">'+QUEUE_FILTERS.map(f=>{
+    const n=f.statuses?opsQuotes.filter(q=>f.statuses.includes(q.status)).length:opsQuotes.length;
+    return `<button class="qfilter ${queueFilter===f.id?'on':''}" data-qfilter="${f.id}">${f.label}<span class="qfilter-n">${n}</span></button>`;
+  }).join('')+'</div>';
+  const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
+  const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
+  let rendered=0;
   sections.forEach(sec=>{
-    const rows=sec.statuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
+    const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
+    const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
     if(!rows.length)return;
+    rendered++;
     html+=`<div class="qsection qsec-${sec.id}">
       <div class="qsection-head">
         <h2 class="qsection-title">${sec.label}<span class="qsection-count">${rows.length}</span></h2>
@@ -1203,6 +1228,7 @@ function viewQuotes(){
       <div class="qlist">${rows.map(quoteRowHtml).join('')}</div>
     </div>`;
   });
+  if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
   $('#view').innerHTML=html;
 }
 function openOpsQuote(id){
@@ -1389,6 +1415,8 @@ document.addEventListener('click',e=>{
    Status is changed deliberately in the detail view (maker-checker), not from the queue. */
 document.addEventListener('click',e=>{
   if(e.target.closest('#view [data-qnew]')){openNewQuote();return;}
+  const fchip=e.target.closest('#view [data-qfilter]');
+  if(fchip){queueFilter=fchip.dataset.qfilter;viewQuotes();return;}
   const row=e.target.closest('#view [data-qopen]');
   if(row){openOpsQuote(row.dataset.qopen);}
 });
