@@ -173,6 +173,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sum-estimate .se-sub{display:block;font-weight:400;font-size:.72rem;color:var(--ink-soft)}
   .sum-estimate .se-amt{font-family:var(--display);font-weight:700;font-size:1.25rem;color:var(--ink);white-space:nowrap;flex:none}
 
+  /* shown in place of the transfers until the traveller count is picked */
+  .itin-gate{display:flex;align-items:center;gap:12px;margin:8px 0 4px;padding:16px 18px;border:1.5px dashed var(--line);border-radius:var(--r);background:var(--white);color:var(--ink-soft);font-weight:600;font-size:.95rem;line-height:1.4}
+  .itin-gate svg{width:22px;height:22px;color:var(--accent);flex:none}
   .add-stop-btn{display:inline-flex;align-items:center;gap:.5rem;margin:14px 0 0 36px;background:var(--white);border:1.5px dashed var(--accent);color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border-radius:999px;cursor:pointer;transition:.15s}
   .add-stop-btn:hover{background:var(--pc-teal)}
   .add-stop-btn svg{width:16px;height:16px}
@@ -456,6 +459,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="controls">
           <div class="field" style="grid-column:1/-1"><label for="pax">Travelers</label>
             <select id="pax">
+              <option value="" disabled selected hidden>How many travelers?</option>
               <option value="1">1 traveler</option><option value="2">2 travelers</option>
               <option value="3">3 travelers</option><option value="4">4 travelers</option>
               <option value="5">5 travelers</option><option value="6">6 travelers</option>
@@ -469,6 +473,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           </div>
         </div>
       </div>
+
+      <p class="itin-gate" id="itin-gate" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Tell us how many are travelling — pick your travellers above and we&rsquo;ll open up your itinerary.</span>
+      </p>
 
       <div class="board-h">
         <h2>Your transfers</h2>

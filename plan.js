@@ -146,7 +146,9 @@ function buildLegs(stops, nights){
 // per-day rate when a chauffeur-guide stays with the guest (no intercity travel)
 const DAY_FEE = (window.TRANSFERS && window.TRANSFERS.CHAUFFEUR_DAY_FEE) || 55;
 const state = {
-  pax: Math.min(6, Math.max(1, parseInt(params.get('pax'))||2)),
+  // Traveller count starts UNPICKED unless the URL already carries a valid one — the
+  // customer must choose it before the itinerary unlocks (mirrors the ops tool).
+  pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
   legs: buildLegs(startStops, nightsParam),
   hideTemplates: params.has('stops') || params.has('nights') || params.has('dates')
@@ -277,7 +279,7 @@ window.addEventListener('touchmove',()=>closePlaceMenus(),{passive:true});
 
 // ---- top controls ---- (dates are collected in the separate “When” step)
 const paxSel=document.getElementById('pax');
-paxSel.value=String(state.pax);
+paxSel.value = state.pax==null ? '' : String(state.pax);
 paxSel.addEventListener('change',()=>{
   state.pax=+paxSel.value;
   if(state.pax>3) state.vehicle='van';
@@ -440,8 +442,18 @@ function enhanceLegDate(input){
 let dragEl=null;
 function render(){
   const rail=document.getElementById('rail');
+  // Gate the itinerary on the traveller count — no building transfers until the customer
+  // has actively picked how many are travelling (mirrors the ops dashboard trip-basics gate).
+  // Only a FRESH planner is gated: a route handed in from a ready-made template, the homepage,
+  // or a booking hand-off (hideTemplates) has already started, so it's never blocked on pax.
+  const gated = state.pax == null && !state.hideTemplates;
+  const gateEl=document.getElementById('itin-gate'); if(gateEl) gateEl.hidden=!gated;
+  const boardH=document.querySelector('.board-h'); if(boardH) boardH.hidden=gated;
+  const addRow=document.querySelector('.add-row'); if(addRow) addRow.hidden=gated;
+  rail.hidden=gated;
   clearLegDatePops();
   rail.innerHTML='';
+  if(gated){ const rhh=document.getElementById('reorder-hint'); if(rhh) rhh.hidden=true; return; }
   const n=state.legs.length;
 
   state.legs.forEach((leg,i)=>{
