@@ -35,7 +35,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   body{font-family:var(--body);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
   ::selection{background:var(--saffron);color:var(--ink)}
   button{font-family:inherit;cursor:pointer;color:inherit}
-  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden}
+  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden;transition:grid-template-columns .22s ease}
   .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2}
   .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
   .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative}
@@ -1078,6 +1078,25 @@ function toggleRail(){
   const collapsed=!$('#approot').classList.contains('rail-collapsed');
   try{localStorage.setItem('ch_ops_rail',collapsed?'1':'0');}catch(e){}
   applyRailState();
+  if(collapsed){clearRailTimer();}else{armRailAutoCollapse();}
+}
+/* Auto-hiding sidebar (common dashboard pattern): once expanded, the rail tucks itself
+   away after a short idle OR as soon as you start working in the main area — but the idle
+   timer pauses while the pointer is over the rail, so it never collapses mid-interaction. */
+let railTimer=null;
+function clearRailTimer(){if(railTimer){clearTimeout(railTimer);railTimer=null;}}
+function armRailAutoCollapse(){
+  clearRailTimer();
+  const root=$('#approot');
+  if(!root||root.hidden||root.classList.contains('rail-collapsed'))return;
+  railTimer=setTimeout(collapseRail,4000);
+}
+function collapseRail(){
+  clearRailTimer();
+  const root=$('#approot');
+  if(!root||root.classList.contains('rail-collapsed'))return;
+  try{localStorage.setItem('ch_ops_rail','1');}catch(e){}
+  applyRailState();
 }
 
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
@@ -1418,6 +1437,19 @@ function render(){
 
 /* ── events ── */
 document.addEventListener('click',e=>{if(e.target.closest('#railToggle')){toggleRail();}});
+/* Collapse an expanded rail when work moves into the main content — but only AFTER the
+   click's own handler has run. We record the press, then act on the click, so the control
+   the user clicked isn't yanked out from under the pointer as the layout reflows. */
+let railPressInMain=false;
+document.addEventListener('pointerdown',e=>{
+  const root=$('#approot');
+  railPressInMain=!!(root&&!root.hidden&&!root.classList.contains('rail-collapsed')
+    &&!e.target.closest('.rail')&&!e.target.closest('#railToggle')&&e.target.closest('.main'));
+},true);
+document.addEventListener('click',()=>{if(railPressInMain){railPressInMain=false;collapseRail();}});
+/* Any activity over the rail (hover, click, keyboard focus) restarts the idle countdown,
+   so the rail stays open while it's actually being used. */
+(function(){const r=$('.rail');if(r){['pointermove','pointerdown','focusin'].forEach(ev=>r.addEventListener(ev,armRailAutoCollapse));}})();
 document.addEventListener('click',e=>{
   const btn=e.target.closest('#nav [data-route]');if(!btn)return;
   let route=btn.dataset.route;
@@ -1462,7 +1494,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state
 
 /* ── login / session ── */
 function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;}
-function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;}
+function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;armRailAutoCollapse();}
 function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
