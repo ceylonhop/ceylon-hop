@@ -48,24 +48,26 @@ test('founder login renders the Bookings queue', async ({ page }) => {
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 });
 
-test('Quote nav is visible to founder, finance, and ops (D-A: quote:manage is not founder-only)', async ({ page }) => {
+test('Quotes queue nav is visible to founder, finance, and ops (D-A: quote:manage is not founder-only)', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
-  await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
+  await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
+  // Merged surface: the separate "Generate Quote" (data-route="quote") nav tab is gone.
+  await expect(page.locator('#nav button[data-route="quote"]')).toHaveCount(0);
 
   await page.locator('#logoutbtn').click();
   await expect(page.locator('#login')).toHaveClass(/show/);
 
   await login(page, FINANCE_EMAIL);
-  await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
+  await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
 
   await page.locator('#logoutbtn').click();
   await expect(page.locator('#login')).toHaveClass(/show/);
 
   await login(page, OPS_EMAIL);
-  await expect(page.locator('#nav button[data-route="quote"]')).toBeVisible();
+  await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
 });
 
-test('quote module lazy-mounts: /admin/quote/rate-card is not requested until Quote is opened', async ({ page }) => {
+test('quote builder lazy-mounts: /admin/quote/rate-card is not requested until the builder opens', async ({ page }) => {
   const rateCardRequests = [];
   page.on('request', (req) => {
     if (req.url().includes('/admin/quote/rate-card')) rateCardRequests.push(req.url());
@@ -77,7 +79,14 @@ test('quote module lazy-mounts: /admin/quote/rate-card is not requested until Qu
   await page.waitForTimeout(500);
   expect(rateCardRequests).toHaveLength(0);
 
-  await page.locator('#nav button[data-route="quote"]').click();
+  // Opening the queue must NOT mount the builder (no rate-card fetch yet).
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
+  await page.waitForTimeout(300);
+  expect(rateCardRequests).toHaveLength(0);
+
+  // Starting a new quote mounts the builder → rate-card is fetched.
+  await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   await expect.poll(() => rateCardRequests.length, { timeout: 5000 }).toBeGreaterThan(0);
 });
@@ -134,7 +143,8 @@ test('deep-link /ops#quote lands founder and finance on Quote', async ({ page })
 
 test('logout returns the login overlay and empties/hides #quoteRoot with no beforeunload dialog', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
-  await page.locator('#nav button[data-route="quote"]').click();
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
 
   // A dialog listener that fails the test if beforeunload's confirm fires — logging out
@@ -152,38 +162,30 @@ test('logout returns the login overlay and empties/hides #quoteRoot with no befo
   expect(dialogFired).toBe(false);
 });
 
-test('Bookings → Quote → Bookings round-trip shows a single toast, no duplicates', async ({ page }) => {
+test('Bookings → Quotes → Bookings round-trip shows a single toast, no duplicates', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 
-  await page.locator('#nav button[data-route="quote"]').click();
-  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
 
   await page.locator('#nav button[data-route="tickets"]').click();
   // Nav clicks just re-render from the already-loaded `tickets` array (no re-fetch), so this
   // is normally instant — the generous timeout is just for consistency with the other assertions.
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
-  await expect(page.locator('#quoteRoot')).toHaveAttribute('hidden', '');
 
   // No stray toast left over from the round-trip (only relevant if anything shows one).
   await expect(page.locator('.toast.show')).toHaveCount(0);
 });
 
-// ── Quotes tab (quote builder split into "Generate Quote" + a "Quotes" list) ──
-// The quote-builder nav is relabelled "Generate Quote" and a sibling "Quotes" tab is
-// added — a full-page saved-quotes list (fed by GET /admin/quote/list) that lives in the
-// ops shell #view, with status filter chips and click-to-reopen into the builder. Gated on
-// quote:manage like the builder itself. These assertions read the dev DB's saved quotes
-// (at least one exists) and never write, so they don't mutate booking/quote state.
-test('quote-builder tab is relabelled "Generate Quote" and a Quotes tab is added', async ({ page }) => {
-  await login(page, FOUNDER_EMAIL);
-  // Same data-route="quote" button, new label.
-  await expect(page.locator('#nav button[data-route="quote"]')).toContainText('Generate Quote');
-  // New sibling tab.
-  await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
-});
-
-test('Quotes tab is gated on quote:manage — visible to founder, finance, and ops', async ({ page }) => {
+// ── Merged Quotes queue (maker-checker workflow) ──────────────────────────────
+// The two quoting tabs were merged into one queue-first surface (spec: the quote-approval
+// workflow): nav is Bookings · Quotes, the Quotes queue (fed by GET /admin/quote/list)
+// lives in the ops shell #view with role-aware sections + read-only status pills, and the
+// builder is a detail view reached from a row or "+ New quote". Gated on quote:manage.
+// These assertions read the dev DB's saved quotes (at least one exists) and never write.
+// (Detailed role/status behaviour is covered offline in quote-approval.spec.js.)
+test('the Quotes queue is gated on quote:manage — visible to founder, finance, and ops', async ({ page }) => {
   for (const email of [FOUNDER_EMAIL, FINANCE_EMAIL, OPS_EMAIL]) {
     await login(page, email);
     await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
@@ -192,39 +194,36 @@ test('Quotes tab is gated on quote:manage — visible to founder, finance, and o
   }
 });
 
-test('Quotes tab renders the saved-quotes list with status filter chips', async ({ page }) => {
+test('the Quotes queue renders role-aware sections with read-only status pills, not the builder', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await page.locator('#nav button[data-route="quotes"]').click();
   await expect(page.locator('#view h1')).toHaveText('Quotes');
-  await expect(page.locator('#view .filterbar button[data-qstatus="all"]')).toBeVisible();
-  // The dev DB carries at least one saved quote, so the list paints rows once loaded.
+  await expect(page.locator('#view [data-qnew]')).toBeVisible(); // "+ New quote"
+  // The dev DB carries at least one saved quote, so the list paints rows in sections.
   await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
-  // The quote view must NOT mount the builder cockpit — it's an ops-shell list.
+  await expect(page.locator('#view .qsection-title').first()).toBeVisible();
+  await expect(page.locator('#view .qrow .qpill').first()).toBeVisible(); // read-only pill, no <select>
+  await expect(page.locator('#view .qstatsel')).toHaveCount(0); // the old inline status <select> is gone
+  // The queue must NOT mount the builder cockpit — it's an ops-shell list.
   await expect(page.locator('#quoteRoot')).toHaveAttribute('hidden', '');
 });
 
-test('a status filter chip narrows the Quotes list', async ({ page }) => {
+test('"+ New quote" opens the builder detail view (Quotes stays the active nav)', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await page.locator('#nav button[data-route="quotes"]').click();
-  await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
-  const allCount = await page.locator('#view .qrow').count();
-  // Selecting a status chip marks it active and filters to rows of that status only —
-  // every visible row's status <select> should read the selected status.
-  await page.locator('#view .filterbar button[data-qstatus="draft"]').click();
-  await expect(page.locator('#view .filterbar button[data-qstatus="draft"]')).toHaveClass(/on/);
-  const draftCount = await page.locator('#view .qrow').count();
-  expect(draftCount).toBeLessThanOrEqual(allCount);
-  for (let i = 0; i < draftCount; i++) {
-    await expect(page.locator('#view .qrow .qstatsel').nth(i)).toHaveValue('draft');
-  }
+  await expect(page.locator('#view [data-qnew]')).toBeVisible();
+  await page.locator('#view [data-qnew]').click();
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#nav button[data-route="quotes"]')).toHaveClass(/active/);
 });
 
-test('clicking a quote row reopens it in the Generate Quote builder', async ({ page }) => {
+test('clicking a quote row reopens it in the builder detail view', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await page.locator('#nav button[data-route="quotes"]').click();
   await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
   await page.locator('#view .qrow').first().click();
-  // Reopen switches to the builder route and mounts the cockpit.
+  // Reopen switches to the builder route and mounts the cockpit; Quotes stays highlighted.
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
-  await expect(page.locator('#nav button[data-route="quote"]')).toHaveClass(/active/);
+  await expect(page.locator('.ch-status-pill')).toBeVisible(); // detail header shows the status pill
+  await expect(page.locator('#nav button[data-route="quotes"]')).toHaveClass(/active/);
 });

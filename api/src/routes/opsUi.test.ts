@@ -14,15 +14,20 @@ describe('ops UI shell', () => {
     expect(body).not.toContain('CH-TMRJR'); // no mock bookings shipped
   });
 
-  it('ships the Quote nav scaffold gated on the quote:manage capability (D-A: all 3 roles)', async () => {
+  it('ships the merged Quotes queue nav gated on the quote:manage capability (D-A: all 3 roles)', async () => {
     const app = createApp();
     const res = await app.request('/ops');
     const body = await res.text();
-    expect(body).toContain('data-route="quote"'); // Quote nav button rendered by script
+    // Merged surface: one Quotes queue nav item (the builder is a detail view reached from it),
+    // so the old separate "Generate Quote" (data-route="quote") nav button is gone.
+    expect(body).toContain('data-route="quotes"'); // Quotes queue nav button rendered by script
+    expect(body).not.toContain('data-route="quote"'); // no separate builder nav tab anymore
     expect(body).toContain("state.caps.includes('quote:manage')"); // capability gate, not a hardcoded role
     expect(body).not.toContain("state.role==='founder'"); // no leftover hardcoded founder gate
     expect(body).not.toContain("role!=='founder'");
     expect(body).toContain('id="quoteRoot"'); // scoped quote container in .main
+    // The maker-checker gate reaches the client: the approve capability is exposed and used.
+    expect(body).toContain("viewerCan('quote:approve')");
   });
 
   it('serves a Google Identity Services login (no password key field)', async () => {

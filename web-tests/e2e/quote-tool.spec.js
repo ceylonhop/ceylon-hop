@@ -31,7 +31,9 @@ async function loginFounderAndOpenQuote(page) {
   await expect(page.locator('#login')).not.toHaveClass(/show/);
   // App shell becomes visible post-login (Bookings renders first).
   await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
-  await page.locator('#nav button[data-route="quote"]').click();
+  // Merged surface: open the Quotes queue, then start a fresh quote to mount the builder.
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
 }
 

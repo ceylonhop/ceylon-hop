@@ -106,8 +106,17 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (url.endsWith('/save') && method === 'POST') {
       const body = JSON.parse(req.postData() || '{}');
       store.saves.push(body);
-      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: body.customerName });
-      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: body.customerName }));
+      // Mirror the real API's upsert: a body carrying an existing id updates in place
+      // (same id/reference/status); otherwise insert a fresh draft.
+      if (body.id) {
+        const existing = store.list.find((q) => q.id === body.id);
+        if (existing) {
+          if (body.name) existing.customerName = body.name;
+          return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
+        }
+      }
+      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: body.name });
+      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: body.name }));
       return r.fulfill(json(saved));
     }
     const m = url.match(/\/admin\/quote\/([^/?]+)$/);
@@ -143,6 +152,22 @@ async function openQueue(page, role, quotes) {
   await page.waitForSelector('#view .qhead', { timeout: 10000 });
   return store;
 }
+
+// Open a single quote of a known status in the builder (detail view) by clicking its
+// queue row — the real path a user takes. Returns the harness store for PATCH assertions.
+async function openDetail(page, role, over) {
+  const q = summary(over);
+  const store = await harness(page, { role, quotes: [q] });
+  await page.goto(OPS_FILE + '#quotes');
+  await page.locator('#view .qrow').first().click();
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await page.waitForSelector('.ch-status-pill', { timeout: 10000 });
+  // Let the async /estimate resolve so its re-render is done before the test interacts —
+  // otherwise a late re-render can detach an element mid-click under parallel load.
+  await page.waitForLoadState('networkidle');
+  return store;
+}
+const actions = (page) => page.locator('.ch-actionbar');
 
 // ── Task 5: merged nav — Bookings · Quotes, no "Generate Quote" ──────────────────
 test('nav is Bookings · Quotes only — the separate "Generate Quote" tab is gone', async ({ page }) => {
@@ -186,4 +211,99 @@ test('support queue leads with "Ready to send" and surfaces "Sent back to you"',
 test('support never sees a margin figure in the queue', async ({ page }) => {
   await openQueue(page, 'ops', [summary({ id: 'a', status: 'ready' })]);
   await expect(page.locator('#view')).not.toContainText(/margin/i);
+});
+
+// ── Task 7: detail-view action bar (role + status) ───────────────────────────────
+test('support on a draft can Submit for review but has no Approve action', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'draft' });
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft');
+  await expect(actions(page).locator('[data-action="submitForReview"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
+  await expect(actions(page).locator('[data-action="sendBack"]')).toHaveCount(0);
+});
+
+test('founder on a pending_review quote gets Approve + Send back', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
+  await expect(page.locator('.ch-status-pill')).toContainText('In review');
+  await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="sendBack"]')).toBeVisible();
+  await expect(page.locator('.ch-review-banner')).toContainText(/pricing and margin/i);
+});
+
+test('founder can self-approve a draft in one hop (Approve — ready to send)', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
+  await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
+});
+
+test('clicking Approve PATCHes the quote to ready and returns to the queue', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
+  await actions(page).locator('[data-action="approveReady"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 }); // bounced back to queue
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'ready')).toBe(true);
+});
+
+test('clicking Submit for review PATCHes the quote to pending_review', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'draft' });
+  await actions(page).locator('[data-action="submitForReview"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'pending_review')).toBe(true);
+});
+
+test('Send back opens an inline note composer and captures the note on the PATCH', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
+  await actions(page).locator('[data-action="sendBack"]').click();
+  await expect(page.locator('#sendBackNote')).toBeVisible(); // inline composer, not a native prompt
+  await page.fill('#sendBackNote', 'Add the airport pickup leg');
+  await page.locator('[data-action="confirmSendBack"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
+  const sb = store.patches.find((p) => p.id === 'q1' && p.status === 'changes_requested');
+  expect(sb).toBeTruthy();
+  expect(sb.notes).toBe('Add the airport pickup leg');
+});
+
+test('Send back with an empty note is blocked (no PATCH)', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
+  await actions(page).locator('[data-action="sendBack"]').click();
+  await page.locator('[data-action="confirmSendBack"]').click(); // empty note
+  await expect(page.locator('#sendBackNote')).toBeVisible(); // stays open
+  expect(store.patches.some((p) => p.status === 'changes_requested')).toBe(false);
+});
+
+// ── Task 8: copy gate ────────────────────────────────────────────────────────────
+test('support cannot copy a draft — Copy is locked and the message is hidden', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'draft' });
+  await page.locator('.ch-tab[data-tab="whatsapp"]').click();
+  await expect(page.locator('.ch-copy-btn')).toBeDisabled();
+  await expect(page.locator('.ch-copy-lock')).toBeVisible();
+  await expect(page.locator('.ch-copy-lock')).toContainText(/unlocks/i);
+  // Internal is never gated.
+  await page.locator('.ch-tab[data-tab="internal"]').click();
+  await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
+});
+
+test('once approved (ready), support can copy the customer message', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'ready' });
+  await page.locator('.ch-tab[data-tab="whatsapp"]').click();
+  await expect(page.locator('.ch-copy-btn')).toBeEnabled();
+  await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
+  await expect(page.locator('.ch-pre')).toBeVisible(); // the message is shown
+});
+
+test('the founder can preview the message under review but Copy is still locked', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
+  await page.locator('.ch-tab[data-tab="whatsapp"]').click();
+  await expect(page.locator('.ch-pre')).toBeVisible();            // sees it to review
+  await expect(page.locator('.ch-copy-review-note')).toBeVisible();
+  await expect(page.locator('.ch-copy-btn')).toBeDisabled();      // but can't send yet
+});
+
+// A JS-error tripwire: drive the main flows and fail on any uncaught page error.
+test('no console errors while opening the detail view and switching output tabs', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await openDetail(page, 'founder', { id: 'q1', status: 'ready' });
+  for (const t of ['internal', 'whatsapp', 'email']) await page.locator(`.ch-tab[data-tab="${t}"]`).click();
+  await page.locator('[data-action="backToQueue"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible();
+  expect(errors).toEqual([]);
 });
