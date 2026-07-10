@@ -395,8 +395,13 @@ function renderRouteMap(){
 if(isTrip){
   // hide single-location entry; the itinerary stops ARE the route
   document.getElementById('loc-wrap').style.display='none';
-  document.getElementById('s1-title').textContent='Your trip & how you’ll travel';
-  document.getElementById('s1-sub').textContent='Review your route and choose how you’d like to travel. Your dates carry over from the planner — we’ll fine-tune every stop and time with you after booking.';
+  // A single-day trip has only one sensible shape, so there's no "how you'll travel"
+  // choice to make — the copy drops the "choose how" framing (see the chooser below).
+  const _oneDay = isSingleDayTrip();
+  document.getElementById('s1-title').textContent = _oneDay ? 'Your trip' : 'Your trip & how you’ll travel';
+  document.getElementById('s1-sub').textContent = _oneDay
+    ? 'Review your route — your dates carry over from the planner, and we’ll fine-tune every stop and time with you after booking.'
+    : 'Review your route and choose how you’d like to travel. Your dates carry over from the planner — we’ll fine-tune every stop and time with you after booking.';
   // render the route summary with an edit link back to the planner
   const tr=document.getElementById('trip-route');
   tr.style.display='block';
@@ -431,15 +436,19 @@ if(isTrip){
     back.onclick=()=>location.href=datesUrl;
     nav1.replaceChild(back, nav1.firstElementChild);
   }
-  // show the private vs chauffeur chooser — but a single-day trip can't "keep the car for days",
-  // so the chauffeur-guide option is removed when the whole trip fits in one day
+  // Show the private vs chauffeur chooser ONLY when there's a real choice — i.e. a multi-day
+  // trip, where "keep the car with you" vs "a fresh transfer each leg" actually differ. A
+  // single-day trip has one sensible shape (a private car & driver through your stops that
+  // day), so the chooser is hidden entirely rather than shown as a one-option "choice".
   const svcCh=document.getElementById('svc-chooser');
-  svcCh.style.display='grid';
+  const chBtn=svcCh.querySelector('.svc[data-svc="chauffeur"]');
   if(isSingleDayTrip()){
     state.svc='private';
-    const chBtn=svcCh.querySelector('.svc[data-svc="chauffeur"]'); if(chBtn) chBtn.style.display='none';
-    svcCh.style.gridTemplateColumns='1fr';
-    svcCh.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='private'));
+    svcCh.style.display='none';
+  } else {
+    svcCh.style.display='grid';
+    svcCh.style.gridTemplateColumns='';
+    if(chBtn) chBtn.style.display='';   // undo any prior single-day hide
   }
   // adjust the progress label
   const lbl=document.getElementById('lbl-s1'); if(lbl) lbl.textContent='Trip & service';
