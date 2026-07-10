@@ -21,6 +21,16 @@
       "port": 4173
     },
     {
+      "name": "ceylon-hop-home",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4180"
+      ],
+      "port": 4180
+    },
+    {
       "name": "m12s2-ops-api",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
