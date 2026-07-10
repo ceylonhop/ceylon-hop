@@ -2562,8 +2562,9 @@ function renderSummaryCardBody() {
     lines.push('<div class="ch-deposit-note">' + esc(est.amountDueNow.lkr || '') + ' &middot; no balance due after checkout</div>');
   }
 
-  // Margin — the small teal line.
-  if (est.margin) {
+  // Margin — the small teal line. FOUNDER-ONLY: the server strips margin for non-margin:view
+  // roles (est.margin is absent), and we gate the render on the capability too (defence in depth).
+  if (est.margin && viewerCan('margin:view')) {
     lines.push('<div class="ch-margin">Est. margin ' + esc(fmtUsd(est.margin.cents)) + ' (' + esc(est.margin.lkr) + ')</div>');
   }
 
@@ -3017,7 +3018,8 @@ function renderInternalView() {
 
   // Quote total
   var totalRow = '<tr class="hi blue"><td>Quote total</td><td>' + esc(fmtUsd(est.total.cents)) + ' <span style="color:var(--muted-2)">(' + esc(est.total.lkr) + ')</span></td></tr>';
-  var marginRow = est.margin ? '<tr><td>Est. margin</td><td>' + esc(fmtUsd(est.margin.cents)) + ' <span style="color:var(--muted-2)">(' + esc(est.margin.lkr) + ')</span></td></tr>' : '';
+  // FOUNDER-ONLY margin row (server-stripped for non-margin:view; capability-gated here too).
+  var marginRow = (est.margin && viewerCan('margin:view')) ? '<tr><td>Est. margin</td><td>' + esc(fmtUsd(est.margin.cents)) + ' <span style="color:var(--muted-2)">(' + esc(est.margin.lkr) + ')</span></td></tr>' : '';
 
   var tableHtml = [
     '<table class="ch-itable">',
@@ -3219,7 +3221,8 @@ function render() {
     '    <div class="ch-header-spacer"></div>',
     '    <div class="ch-header-tools ch-actionbar">',
     renderActionBar(),
-    '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>',
+    // Rates (the rate-card settings modal) is a founder-only concern.
+    (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),
     '    </div>',
     '  </div>',
     '</header>',
@@ -3552,6 +3555,7 @@ function attachEventListeners() {
     } else if (action === 'reopenToDraft') {
       reopenToDraft();
     } else if (action === 'openRates') {
+      if (!viewerCan('margin:view')) return; // founder-only rate card
       ratesOpen = true;
       render();
     } else if (action === 'closeRates') {

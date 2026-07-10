@@ -137,7 +137,11 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
   });
 
   await page.route('**/admin/quote/list**', (r) => r.fulfill(json({ quotes: store.list })));
-  await page.route('**/admin/quote/estimate', (r) => r.fulfill(json(ESTIMATE)));
+  // The real server includes `margin` only for margin:view (founder) — mirror that so the
+  // client-side founder-only gating can be asserted.
+  await page.route('**/admin/quote/estimate', (r) => r.fulfill(json(
+    role === 'founder' ? { ...ESTIMATE, margin: { cents: 6200, lkr: 'LKR 20,460' } } : ESTIMATE,
+  )));
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 120, durationMin: 180 })));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json(RATE_CARD)));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
@@ -296,6 +300,33 @@ test('the founder can preview the message under review but Copy is still locked'
   await expect(page.locator('.ch-copy-review-note')).toBeVisible();
   await expect(page.locator('.ch-copy-btn')).toBeDisabled();      // but can't send yet
 });
+
+// ── Margin + Rates are founder-only across the detail view ───────────────────────
+test('founder sees the estimated margin and the Rates button', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
+  await expect(page.locator('.ch-margin')).toContainText(/Est\. margin/i);
+  await expect(page.locator('#btnRates')).toBeVisible();
+});
+
+for (const role of ['ops', 'finance']) {
+  test(`${role} never sees margin/profit or the Rates button in the builder`, async ({ page }) => {
+    await openDetail(page, role, { id: 'q1', status: 'draft' });
+    // No margin anywhere in the builder (money pane or internal tab).
+    await expect(page.locator('.ch-margin')).toHaveCount(0);
+    await page.locator('.ch-tab[data-tab="internal"]').click();
+    await expect(page.locator('#quoteRoot .ch-app')).not.toContainText(/margin/i);
+    // Rates (rate-card) button is founder-only.
+    await expect(page.locator('#btnRates')).toHaveCount(0);
+    // And even a forced openRates action can't reveal the modal.
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-action="openRates"]') || document.createElement('button');
+      el.setAttribute('data-action', 'openRates');
+      document.querySelector('#quoteRoot .ch-app').appendChild(el);
+      el.click();
+    });
+    await expect(page.locator('.ch-modal')).toHaveCount(0);
+  });
+}
 
 // A JS-error tripwire: drive the main flows and fail on any uncaught page error.
 test('no console errors while opening the detail view and switching output tabs', async ({ page }) => {
