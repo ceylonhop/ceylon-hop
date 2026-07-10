@@ -109,12 +109,15 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   // Fill customer name — text fields only update state on 'input' (no
-  // change→render race with #btnSave), so no Tab/blur workaround is needed.
+  // change→render race with the Save action), so no Tab/blur workaround is needed.
   const nameInput = page.locator('#f-customerName');
   await nameInput.fill('E2E Port');
 
-  // Click header Save button
-  await page.locator('#btnSave').click();
+  // Save via the action-bar button. The old standalone-builder #btnSave header button was
+  // retired when the builder merged into the ops shell; Save is now a `.ch-btn` in the
+  // maker-checker action bar rendered as data-action="saveDraft" (a founder draft shows
+  // [Approve — ready to send] + [Save]).
+  await page.locator('[data-action="saveDraft"]').click();
 
   // Toast should appear containing the reference (starts with Q-)
   const toastMsg = page.locator('.ch-toast-msg');
@@ -187,14 +190,17 @@ test('car + 4 bags raises the luggage flag', async ({ page }) => {
   ).toBeVisible({ timeout: 5000 });
 });
 
-// Spec 3 (V1 + reflow): a chauffeur trip (chosen via the service chooser) with a
-// mid-itinerary stay day renders the stay UNpriced in WhatsApp, keeps the full-payment
-// line, keeps the LAST transfer's row (the old alignment bug dropped it), and the
-// total matches the Summary card.
-test('stay day renders unpriced in WhatsApp output with full-payment line (V1)', async ({ page }) => {
+// Spec 3 (V1 + reflow): a chauffeur trip (chosen via the service chooser) that spans a REST
+// (idle) day. The per-leg "stay day" was retired — idle days now derive from a gap in the leg
+// dates and are folded into the chauffeur PRICING (the day rate spans the gap + idle-day km),
+// so the customer message no longer lists an unpriced "Stay in …" line. This spec asserts the
+// current shape: the rest day is charged (not dropped, not shown as a separate itinerary line),
+// the LAST transfer's row survives (the old alignment bug dropped it), the full-payment line
+// is present, and the message total matches the Summary card.
+test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-payment line (V1)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  // Leg 1 (transfer): Kandy → Ella, dated. (Settle waits: render() replaces #app
+  // Leg 1 (transfer): Kandy → Ella, Aug 1. (Settle waits: render() replaces #app
   // wholesale ~350ms after each mutation; see the app's debounce.)
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
@@ -203,19 +209,20 @@ test('stay day renders unpriced in WhatsApp output with full-payment line (V1)',
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
 
-  // Leg 2 (transfer): Ella → Galle, dated (becomes the stay day after choosing chauffeur).
+  // Leg 2 (transfer): Ella → Galle, Aug 3 — the Aug-2 gap is the idle/rest day (an idle day
+  // derived from the date span, not an explicit stay leg).
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
   await page.waitForTimeout(600);
   const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
-  // Leg 3 (transfer): Galle → Mirissa, dated.
+  // Leg 3 (transfer): Galle → Mirissa, Aug 4.
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(3);
-  await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-03');
+  await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-04');
   await page.waitForTimeout(600);
   const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]');
   await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
@@ -227,10 +234,28 @@ test('stay day renders unpriced in WhatsApp output with full-payment line (V1)',
   await chBtn.click();
   await page.waitForTimeout(600);
 
-  // (The Travel|Stay per-leg switch was retired — idle days derive from the leg dates —
-  // so this is a straight 3-leg dated chauffeur trip.)
+  // (The Travel|Stay per-leg switch was retired — the Aug-1→Aug-3→Aug-4 span carries one idle
+  // day between legs 1 and 2, which the engine prices as an extra chauffeur day + idle km.)
 
   // Priced chauffeur summary.
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
+  // The customer message is gated behind approval now (commit c268d13): while the quote is a
+  // draft the WhatsApp/Email body is replaced by a `.ch-copy-lock` card, so `.ch-pre` is
+  // hidden (copyUnlocked() → status==='ready'||'sent'). Approve it first — approveReady()
+  // saves, PATCHes status→ready, and bounces to the Quotes queue — then reopen the quote from
+  // the queue (which re-prices it) and read the now-unlocked message.
+  const custName = 'E2E Stay ' + Date.now();
+  await page.locator('#f-customerName').fill(custName);
+  await page.locator('[data-action="approveReady"]').click();
+
+  // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
+  const qrow = page.locator('#view .qrow', { hasText: custName });
+  await expect(qrow).toBeVisible({ timeout: 8000 });
+  await qrow.click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+
+  // Re-priced on reopen — read the summary total from the reopened builder so the WhatsApp
+  // total is compared against the same render.
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const summaryTotal = await totalLineText(page);
 
@@ -243,16 +268,21 @@ test('stay day renders unpriced in WhatsApp output with full-payment line (V1)',
     await page.locator('[data-action="toggleOutput"]').click();
   }
   await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
+  // Copy is unlocked now the quote is Ready, so the customer message renders as `.ch-pre`
+  // instead of the `.ch-copy-lock` card.
   const pre = page.locator('.ch-output-body .ch-pre');
   await expect(pre).toBeVisible({ timeout: 8000 });
   const waText = await pre.textContent();
 
-  const stayLine = waText.split('\n').find((l) => l.includes('Stay in'));
-  expect(stayLine, waText).toBeTruthy();
-  expect(stayLine).not.toMatch(/LKR|\$/); // stay day carries no price
-  expect(waText).toContain('Mirissa'); // the transfer AFTER the stay is not dropped (old V1 bug)
-  expect(waText).toMatch(/Pay in full to confirm/);
-  expect(waText).toContain(summaryTotal.trim());
+  // The idle/rest day is folded into the chauffeur pricing, not shown as a separate itinerary
+  // line: the day rate spans the 4-day window (Aug 1→4) and the distance line carries non-zero
+  // idle-day km. There is no unpriced "Stay in …" line anymore (the per-leg stay day is gone).
+  expect(waText, waText).not.toMatch(/Stay in/); // no explicit stay-day itinerary line anymore
+  expect(waText).toMatch(/4 day\(s\)/); // rest day IS charged — day rate spans the Aug 1→4 window
+  expect(waText).toMatch(/[1-9]\d* idle-day min/); // …and the idle day adds non-zero idle km
+  expect(waText).toContain('Mirissa'); // the transfer AFTER the gap is not dropped (old V1 bug)
+  expect(waText).toMatch(/Pay in full to confirm/); // chauffeur full-payment line
+  expect(waText).toContain(summaryTotal.trim()); // message total matches the Summary card
 });
 
 // Spec 3b (reflow): the service chooser gates chauffeur and the per-leg add-ons.
@@ -303,9 +333,13 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
 });
 
-// Spec 4 (V5): Save→status sync — setting the status before the first save must
-// be persisted (via the post-save PATCH) so the Recent list reflects it.
-test('status chosen before first save is synced on save (V5)', async ({ page }) => {
+// Spec 4 (V5): maker-checker status sync. The old per-status `#statusSelect` dropdown was
+// retired — a quote's status now moves only through the maker-checker actions (Submit for
+// review / Approve — ready to send), and transition() PATCHes the new status then bounces to
+// the queue. This is the successor of the old "status chosen on save is reflected in the
+// list": a founder approving a draft persists status=ready and the queue row shows the
+// "Ready to send" pill.
+test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -315,28 +349,24 @@ test('status chosen before first save is synced on save (V5)', async ({ page }) 
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
-  // Set status to Sent BEFORE saving
-  await page.locator('#statusSelect').selectOption('sent');
-
   // Unique customer name so we can find the row unambiguously
   const custName = 'E2E Status ' + Date.now();
   await page.locator('#f-customerName').fill(custName);
 
-  await page.locator('#btnSave').click();
-  await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
+  // Founder self-approves the draft in one hop: approveReady() saves, PATCHes status→ready,
+  // and navigates back to the queue.
+  await page.locator('[data-action="approveReady"]').click();
 
-  // Recent quotes now live in a slide-in drawer — open it via the header button.
-  await page.locator('#btnRecent').click();
-
-  // Recent row for this customer should show status 'sent'
-  const row = page.locator('.ch-recent-row', { hasText: custName });
+  // On the queue, this quote's row shows the Ready pill (QSTATUS.ready.label = 'Ready to send').
+  const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
-  await expect(row.locator('select[data-action="patchStatus"]')).toHaveValue('sent');
+  await expect(row.locator('.qpill')).toContainText(/Ready to send/i);
 });
 
-// Spec 5 (V19): Reopen — clicking a Recent row (not its status select) reopens
-// the saved quote and repopulates the customer name.
-test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => {
+// Spec 5 (V19): Reopen — the standalone-builder Recent drawer (#btnRecent/.ch-recent-row)
+// was retired when the builder merged into the ops shell; the Quotes queue IS the list now.
+// Clicking a queue row (.qrow) reopens the saved quote and repopulates the customer name.
+test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -348,21 +378,21 @@ test('clicking a Recent row reopens the saved quote (V19)', async ({ page }) => 
 
   const custName = 'E2E Reopen ' + Date.now();
   await page.locator('#f-customerName').fill(custName);
-  await page.locator('#btnSave').click();
+  await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
-  // Start a fresh quote so we can prove the reopen repopulates the name
-  page.once('dialog', (d) => d.accept());
-  await page.locator('#btnNew').click();
+  // Start a fresh quote so we can prove the reopen repopulates the name. "+ New quote" lives
+  // in the queue now (data-qnew), so go there and start a blank quote — no unsaved-changes
+  // confirm fires because the save above cleared the dirty flag.
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#f-customerName')).toHaveValue('');
 
-  // Recent quotes now live in a slide-in drawer — open it via the header button.
-  await page.locator('#btnRecent').click();
-
-  // Click the Recent row itself (not the status select) to reopen
-  const row = page.locator('.ch-recent-row', { hasText: custName });
+  // Back to the queue and click this quote's row to reopen it.
+  await page.locator('#nav button[data-route="quotes"]').click();
+  const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
-  await row.locator('.ch-recent-ref').click();
+  await row.click();
 
   await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
   await expect(page.locator('#f-customerName')).toHaveValue(custName);
