@@ -65,8 +65,8 @@ async function fillFirstLegDate(page, iso) {
 // estimate is priced. Every spec that expects a priced summary must call this
 // right after opening the quote view.
 async function chooseVehicle(page, value) {
-  // Vehicle is now a chip row at the top of the money pane (decision-stack redesign,
-  // spec 2026-07-09-ops-vehicle-decision-stack-design.md), not a header select.
+  // Vehicle is a chip row in the Trip basics section (with the customer fields) and gates the
+  // itinerary — picking it here unlocks the leg rows.
   await page.locator('[data-action="setVehicle"][data-veh="' + value + '"]').click();
   // Choosing a vehicle kicks off a debounced estimate that render()s ~350ms later,
   // replacing #app wholesale. Let that settle before the spec starts typing into
@@ -76,6 +76,9 @@ async function chooseVehicle(page, value) {
 
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
+  // The itinerary is gated until a vehicle is picked — default to Car so every spec's leg
+  // interactions have rows to work with. Specs that need another tier call chooseVehicle again.
+  await chooseVehicle(page, 'car');
 });
 
 // Spec 1: Timeline autocomplete → auto-distance → priced summary → save
@@ -220,8 +223,8 @@ test('stay day renders unpriced in WhatsApp output with full-payment line (V1)',
   await chBtn.click();
   await page.waitForTimeout(600);
 
-  // Turn leg 2 into a mid-itinerary stay day via the Travel|Stay switch (chauffeur only).
-  await page.locator('.ch-tl-item').nth(1).locator('[data-action="setLegKind"][data-kind="stay_day"]').click();
+  // (The Travel|Stay per-leg switch was retired — idle days derive from the leg dates —
+  // so this is a straight 3-leg dated chauffeur trip.)
 
   // Priced chauffeur summary.
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
@@ -281,20 +284,19 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(chBtn).toBeEnabled({ timeout: 10000 });
   await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
 
-  // Choose chauffeur → add-on control disappears entirely (no popover button either),
-  // caption shows, stay-day add appears.
+  // Choose chauffeur → add-on control disappears entirely (no popover button either), caption shows.
+  // (The "Add stay day" button was retired — chauffeur idle days derive from the leg dates.)
   await chBtn.click();
   await page.waitForTimeout(600);
   await expect(page.locator('input[data-field="addSightseeingFee"]')).toHaveCount(0);
   await expect(page.locator('[data-action="toggleAddons"]')).toHaveCount(0);
   await expect(page.locator('.ch-svc-caption')).toContainText(/included/i);
-  await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toBeAttached();
+  await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0); // no stay-day button anymore
 
-  // Back to point-to-point → per-leg add-on control returns, stay-day add gone.
+  // Back to point-to-point → per-leg add-on control returns.
   await page.locator('[data-action="setService"][data-service="private"]').click();
   await page.waitForTimeout(600);
   await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
-  await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0);
 });
 
 // Spec 4 (V5): Save→status sync — setting the status before the first save must

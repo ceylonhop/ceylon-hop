@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-// Vehicle is a PRICING decision: it lives in the money pane as a chip row above the service
-// chooser (spec: 2026-07-09-ops-vehicle-decision-stack-design.md), not in the customer header.
-// The no-vehicle state must be loud (warning card, amber chips) — never the false all-clear.
+// Vehicle is the required first choice: it lives in the Trip basics section (with the customer
+// fields), and it GATES the itinerary — you can't build the trip until a vehicle is picked.
+// The no-vehicle state must be loud (amber chips + locked itinerary) — never the false all-clear.
 
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 
@@ -32,16 +32,27 @@ async function openQuote(page) {
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
 }
 
-test('vehicle chips live in the money pane; header has no vehicle select', async ({ page }) => {
+test('vehicle chips live in Trip basics (above the itinerary), not the money pane', async ({ page }) => {
   await openQuote(page);
-  const chips = page.locator('.ch-money-card [data-action="setVehicle"]');
+  const chips = page.locator('.ch-cust-strip [data-action="setVehicle"]');
   await expect(chips).toHaveCount(5);
   await expect(chips.first()).toContainText('Car');
-  await expect(page.locator('#f-vehicleType')).toHaveCount(0); // gone from the header
-  // chips sit ABOVE the service chooser inside the same card
+  await expect(page.locator('.ch-money-card [data-action="setVehicle"]')).toHaveCount(0); // moved out of the money pane
+  await expect(page.locator('#f-vehicleType')).toHaveCount(0); // no legacy select
+  // chips sit ABOVE the itinerary section
   const chipBox = await page.locator('#veh-chips').boundingBox();
-  const svcBox = await page.locator('.ch-svc-choose').boundingBox();
-  expect(chipBox.y).toBeLessThan(svcBox.y);
+  const itinBox = await page.locator('.ch-sec').first().boundingBox();
+  expect(chipBox.y).toBeLessThan(itinBox.y);
+});
+
+test('the itinerary is locked until a vehicle is chosen', async ({ page }) => {
+  await openQuote(page);
+  await expect(page.locator('.ch-itin-locked')).toBeVisible();
+  await expect(page.locator('.ch-itin-locked')).toContainText(/pick a vehicle/i);
+  await expect(page.locator('[data-action="addLeg"]')).toHaveCount(0); // can't add legs yet
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await expect(page.locator('.ch-itin-locked')).toHaveCount(0); // unlocked
+  await expect(page.locator('[data-action="addLeg"]')).toBeVisible();
 });
 
 test('no vehicle → real warning card, amber chips, no false all-clear', async ({ page }) => {
@@ -72,12 +83,9 @@ test('a chip too small for the pax count shows a seats warning but stays clickab
   await expect(car).toHaveClass(/active/);
 });
 
-test('Van 14 reveals the Rate $/km input under the chips', async ({ page }) => {
+test('Van 14 reveals the Rate $/km input with the chips in Trip basics', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="van_14"]').click();
-  const rate = page.locator('.ch-money-card #f-customRate');
+  const rate = page.locator('.ch-cust-strip #f-customRate');
   await expect(rate).toBeVisible();
-  const rateBox = await rate.boundingBox();
-  const svcBox = await page.locator('.ch-svc-choose').boundingBox();
-  expect(rateBox.y).toBeLessThan(svcBox.y); // sits with the chips, above the service boxes
 });

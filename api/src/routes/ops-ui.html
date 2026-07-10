@@ -687,6 +687,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
 .qv .ch-cust-grid .ch-input { padding: 7px 0; }
 @media (max-width: 720px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
+/* Trip basics: vehicle chips sit under the customer grid (no double padding), divider between */
+.qv .ch-basics-rule { height: 1px; background: var(--line-soft); margin: 13px 0 3px; }
+.qv .ch-cust-strip .ch-veh-chips { padding: 0; }
+/* Itinerary locked until a vehicle is chosen */
+.qv .ch-itin-locked { text-align: center; padding: 30px 18px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: #fbfaf7; }
+.qv .ch-itin-locked-icon { font-size: 24px; }
+.qv .ch-itin-locked-title { font-weight: 700; font-size: 14px; color: var(--ink); margin-top: 6px; }
+.qv .ch-itin-locked-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
 
 /* ---------- Dense itinerary rows ---------- */
 .qv .ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
@@ -3233,6 +3241,7 @@ function render() {
   }
 
   var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '');
+  var vehicleSet = !!st.vehicleType; // itinerary is gated until a vehicle is chosen
 
   var flags = computeFlags();
 
@@ -3299,23 +3308,33 @@ function render() {
     '            <label class="ch-field-label">Bags <em class="req">*</em></label>',
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-luggageCount" type="number" min="0" value="' + esc(st.luggageCount) + '" /></div>',
     '          </div>',
-    // Vehicle moved into the money pane (pricing decision stack — see renderVehicleChips):
-    // the header card carries customer facts only.
     '        </div>',
+    // Trip basics also carries the vehicle — it's the required first choice, and gates the
+    // itinerary below (you can't build the trip until the vehicle is picked).
+    '        <div class="ch-basics-rule"></div>',
+    renderVehicleChips(),
     '      </div>',
 
-    // Itinerary (dense rows)
+    // Itinerary (dense rows) — locked until a vehicle is chosen.
     '      <div class="ch-sec">',
     '        <div class="ch-sec-head">',
     '          <h2>Itinerary</h2>',
-    '          <div class="ch-sec-head-r"><span class="ch-badge tone-slate">' + esc(itinBadge) + '</span></div>',
+    '          <div class="ch-sec-head-r">' + (vehicleSet ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
     '        </div>',
-    legsHtml,
-    (st.legs.length > 0 ? [
-      '        <div class="ch-legs-add">',
-      '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
+    (vehicleSet ? [
+      legsHtml,
+      (st.legs.length > 0 ? [
+        '        <div class="ch-legs-add">',
+        '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
+        '        </div>',
+      ].join('') : ''),
+    ].join('') : [
+      '        <div class="ch-itin-locked">',
+      '          <div class="ch-itin-locked-icon">&#x1F697;</div>',
+      '          <div class="ch-itin-locked-title">Pick a vehicle to start</div>',
+      '          <div class="ch-itin-locked-sub">Choose the vehicle above, then build the itinerary leg by leg.</div>',
       '        </div>',
-    ].join('') : ''),
+    ].join('')),
     '      </div>',
 
     '    </div>', // ch-editor
@@ -3325,11 +3344,8 @@ function render() {
 
     '      <div class="ch-money-card">',
 
-    // Pricing decision #1: the vehicle (chips + the GL-1d rate input when custom-priced)
-    renderVehicleChips(),
-    '        <div class="ch-money-rule"></div>',
-
-    // Head: the service chooser (two price boxes that ARE the chooser)
+    // The vehicle now lives up in Trip basics (it gates the itinerary), so the money card
+    // leads with the service chooser (two price boxes that ARE the chooser).
     renderServiceChooser(),
 
     '        <div class="ch-money-rule"></div>',

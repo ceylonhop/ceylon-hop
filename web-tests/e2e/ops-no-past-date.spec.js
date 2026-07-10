@@ -13,6 +13,9 @@ async function openQuote(page) {
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  // The itinerary is gated until a vehicle is picked — choose Car so the leg rows render.
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.waitForSelector('.ch-leg-date input[type="date"]', { timeout: 10000 });
 }
 
 test('ops leg date input blocks past dates', async ({ page }) => {
