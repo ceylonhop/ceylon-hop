@@ -82,7 +82,7 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   // bulk km charge (round(round(288×1.1)×0.35)=$111), NOT floored at the $120 private per-leg total
   await expect(page.locator('#sum-adamt')).toHaveText('$111');
-  await expect(page.locator('#sum-total')).toHaveText('$181');
+  await expect(page.locator('#sum-total')).toHaveText('$165'); // $111 distance + 2 days × $27
 });
 
 test('fallback-priced trip does not show zero chauffeur distance', async ({ page }) => {
@@ -103,5 +103,5 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
   await expect(page.locator('#trip-route')).toContainText('Distance on request');
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   await expect(page.locator('#sum-adamt')).toHaveText('$110');
-  await expect(page.locator('#sum-total')).toHaveText('$180');
+  await expect(page.locator('#sum-total')).toHaveText('$164'); // $110 distance + 2 days × $27
 });

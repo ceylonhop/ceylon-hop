@@ -17,7 +17,9 @@ export const RATE_CARD = {
   perKmCents: { car: 35, van: 47, van9: 47, van14: 48, custom: 175 },
   costPerKmCents: { car: 28, van: 38, van9: 38, van14: 38, custom: 140 }, // for margin reporting only
   floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50 (confirm)
-  chauffeur: { dayRateCents: 3500, idleMinKm: { car: 100, van: 150, van9: 150, van14: 200, custom: 200 } },
+  // $27/day driver charge (owner 2026-07-10). Idle days (car kept, no travel) bill a flat
+  // 100 km/day minimum for EVERY vehicle, on top of the day charge (owner 2026-07-10).
+  chauffeur: { dayRateCents: 2700, idleMinKm: { car: 100, van: 100, van9: 100, van14: 100, custom: 100 } },
   deposit: { pct: 10, capCents: 5000 },
   vehicle: {
     car:    { maxPax: 3,  maxBags: 3  },

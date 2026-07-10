@@ -18,7 +18,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(3080 + 1000);
   });
 
-  it('chauffeur → amountDueNow is the full total for now (Emma $763.00)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $691.00)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -29,11 +29,11 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.totalCents).toBe(76300);
-    expect(r.amountDueNowCents).toBe(76300);
-    // billableKm: Math.round(800 * 1.1) = 880 travel + (4 idle days × 100 idle min km) = 1280
-    // costCents: Math.round(1280 × 28¢/km) = 35840 → margin = 76300 − 35840 = 40460
-    expect(r.marginEstimateCents).toBe(40460);
+    expect(r.totalCents).toBe(69100);
+    expect(r.amountDueNowCents).toBe(69100);
+    // day 9×$27=24300 + distance: billableKm Math.round(800*1.1)=880 travel + (4 idle × 100 min)=1280 → 1280×35¢=44800
+    // costCents: Math.round(1280 × 28¢/km) = 35840 → margin = 69100 − 35840 = 33260
+    expect(r.marginEstimateCents).toBe(33260);
   });
 
   it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
@@ -164,8 +164,8 @@ describe('quote()', () => {
         ],
         customPerKmCents: 200,
       });
-      // 2 days × $35 + billable 165km (150×1.1) × $2.00 = 7000 + 33000
-      expect(r.totalCents).toBe(7000 + 33000);
+      // 2 days × $27 + billable 165km (150×1.1) × $2.00 = 5400 + 33000
+      expect(r.totalCents).toBe(5400 + 33000);
     });
 
     it('floor still applies under an overridden rate', () => {

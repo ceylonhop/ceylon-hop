@@ -903,7 +903,7 @@ function chauffeurFee(){ return (isTrip && state.svc==='chauffeur' && tripDatesC
 function chauffeurDistanceCharge(){
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
-  const idleKm = idleDays * (vehicleKey==='van' ? 150 : 100);
+  const idleKm = idleDays * 100; // flat 100 km/day idle minimum, all vehicles (mirrors rateCard.ts)
   const tripKm = tripQuoteWithKms(vehicleKey).totalKm || 0;
   if(tripKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
   // Buffer and per-km rate both come from the single front-end source of truth

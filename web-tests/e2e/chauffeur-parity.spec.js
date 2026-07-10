@@ -9,8 +9,8 @@ import { gotoBooking } from './_stubs.js';
 
 // Two 20 km legs, car, two consecutive dates (idle-days = 0):
 //   travelKm 40 → buffered round(44)=44 → distance charge round(44 × 0.35) = $15
-//   day rate  $35 × 2 days = $70  →  total $85
-// The buggy floor would instead use the private total (2 × $29 min = $58) → distance $58, total $128.
+//   day rate  $27 × 2 days = $54  →  total $69
+// The buggy floor would instead use the private total (2 × $29 min = $58) → distance $58, total $112.
 const TRIP = [
   'mode=trip',
   'stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla',
@@ -29,5 +29,5 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
   // distance charge = the bulk km charge, NOT floored at the $58 private per-leg total
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   await expect(page.locator('#sum-adamt')).toHaveText('$15');
-  await expect(page.locator('#sum-total')).toHaveText('$85');
+  await expect(page.locator('#sum-total')).toHaveText('$69');
 });

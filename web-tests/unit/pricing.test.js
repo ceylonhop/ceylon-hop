@@ -131,11 +131,11 @@ describe('tripQuote (multi-stop)', () => {
 });
 
 describe('chauffeur + deposit constants (engine parity)', () => {
-  it('deposit is 10% capped at $50, chauffeur day fee stays $35', () => {
-    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 3500
+  it('deposit is 10% capped at $50, chauffeur day fee is $27', () => {
+    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 2700
     expect(T.DEPOSIT_PCT).toBe(0.10);
     expect(T.DEPOSIT_CAP).toBe(50);
-    expect(T.CHAUFFEUR_DAY_FEE).toBe(35);
+    expect(T.CHAUFFEUR_DAY_FEE).toBe(27);
   });
 
   it('per-km owner rates match the backend rate card (car $0.35 · van $0.47)', () => {

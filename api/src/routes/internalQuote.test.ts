@@ -328,7 +328,7 @@ describe('internal quoting tool route', () => {
     expect(d.version).toBe('2026-07-09');
     expect(d.perKmCents).toMatchObject({ car: 35, van: 47, van9: 47, van14: 48, custom: 175 });
     expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
-    expect(d.chauffeurDayRateCents).toBe(3500);
+    expect(d.chauffeurDayRateCents).toBe(2700);
     expect(d.fxUsdToLkr).toBe(330);
     // V12 server half: expose vehicle capacity caps for client-side vehicle labelling
     expect(d.vehicle).toMatchObject({

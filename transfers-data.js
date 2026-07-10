@@ -8,7 +8,7 @@
   const PER_KM = {"car":0.35,"van":0.47};
   const FLOORS = {"car":29,"van":50};
   const BUFFER_PCT = 10;
-  const CHAUFFEUR_DAY_FEE = 35;
+  const CHAUFFEUR_DAY_FEE = 27;
   const DEPOSIT_PCT = 0.1;
   const DEPOSIT_CAP = 50;
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
