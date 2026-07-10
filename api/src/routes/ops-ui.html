@@ -696,10 +696,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-dot.tone-blue { background: var(--blue); }
 .qv .ch-leg-dot.tone-stay { background: #fff; border: 2px dashed var(--muted-2); }
 
-.qv .ch-leg-kind { flex: none; }
-.qv .ch-leg-kind .ch-seg { padding: 2px; }
-.qv .ch-leg-kind .ch-seg-btn { padding: 4px 8px; font-size: 11px; }
-
 /* route inputs — normal 14px, not the 21px serif */
 .qv .ch-leg-route { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; }
 .qv .ch-leg-ac { position: relative; flex: 1 1 0; min-width: 60px; }
@@ -2199,13 +2195,9 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('');
 
-  // Travel | Stay switch (chauffeur only)
-  var legKindHtml = isChauffeur ? [
-    '<div class="ch-leg-kind"><div class="ch-seg sm">',
-    '  <button class="ch-seg-btn' + (isStay ? '' : ' active') + '" data-action="setLegKind" data-kind="transfer" data-leg="' + esc(leg.id) + '">Travel</button>',
-    '  <button class="ch-seg-btn' + (isStay ? ' active' : '') + '" data-action="setLegKind" data-kind="stay_day" data-leg="' + esc(leg.id) + '">Stay</button>',
-    '</div></div>',
-  ].join('') : '';
+  // (Removed the Travel|Stay per-leg toggle: chauffeur standby/idle days are derived from
+  // the leg dates by the engine — no explicit "stay" leg is needed. Legacy stay_day legs on
+  // a reopened quote still render read-only below.)
 
   // Route: [from → to] as normal 14px inputs (KEEP .ch-tl-title + data-field hooks for e2e/autocomplete)
   var routeHtml;
@@ -2324,7 +2316,6 @@ function renderLegCard(leg, idx, total) {
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '"></span>',
-    legKindHtml,
     routeHtml,
     dateHtml,
     distHtml,
@@ -3203,8 +3194,7 @@ function render() {
     legsHtml = '<div class="ch-legs">' + parts.join('') + '</div>';
   }
 
-  var stayDays = st.legs.filter(function(l) { return l.category === 'stay_day'; }).length;
-  var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '') + ' · ' + stayDays + ' stay day' + (stayDays !== 1 ? 's' : '');
+  var itinBadge = st.legs.length + ' leg' + (st.legs.length !== 1 ? 's' : '');
 
   var flags = computeFlags();
 
@@ -3284,10 +3274,7 @@ function render() {
     legsHtml,
     (st.legs.length > 0 ? [
       '        <div class="ch-legs-add">',
-      '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add transfer</button>',
-      (st.service === 'chauffeur'
-        ? '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="stay_day"><span class="ch-btn-icon">&#x263E;</span> Add stay day</button>'
-        : ''),
+      '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
       '        </div>',
     ].join('') : ''),
     '      </div>',
@@ -3535,12 +3522,6 @@ function attachEventListeners() {
       // Same mutation the old header select performed — switching tier clears the
       // custom $/km so a rate set for one vehicle never silently prices another (GL-1d).
       mutate({ vehicleType: el.getAttribute('data-veh'), customRatePerKm: null });
-    } else if (action === 'setLegKind') {
-      // Travel | Stay switch (chauffeur only). Stay days keep no route/distance.
-      var kind = el.getAttribute('data-kind') === 'stay_day' ? 'stay_day' : 'transfer';
-      delete _distCache[legId];
-      updateLeg(legId, { category: kind });
-      if (kind === 'transfer') scheduleAutoDistance(legId);
     } else if (action === 'toggleAddons') {
       legAddonsOpen[legId] = !legAddonsOpen[legId];
       render();

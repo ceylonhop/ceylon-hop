@@ -47,7 +47,7 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await setLegField(page, 0, 'pickupLocation', 'Colombo Airport (CMB)');
   await setLegField(page, 0, 'dropoffLocation', 'Jaffna, Sri Lanka');
   await setLegField(page, 0, 'date', '2026-07-09');
-  await page.getByText('Add transfer').click();
+  await page.getByText('Add leg').click();
   await page.waitForTimeout(120);
   await setLegField(page, 1, 'pickupLocation', 'Jaffna, Sri Lanka');
   await setLegField(page, 1, 'dropoffLocation', 'Colombo Airport (CMB)');
@@ -58,19 +58,22 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
     const btn = document.querySelector('[data-action="setService"][data-service="chauffeur"]');
     if (btn) { btn.disabled = false; btn.click(); }
   });
-  await expect(page.locator('.ch-leg-kind').first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('.ch-leg.is-chauffeur').first()).toBeVisible({ timeout: 5000 });
 
-  // Trigger auto-distance so both legs get the wide "373 km · 7h16m" pill (matches the report).
+  // Fetch each leg's distance via the real distance control (set → auto) so both legs get
+  // the wide "373 km · 7h16m" pill (matches the report) — the removed Travel|Stay toggle used
+  // to be the trigger; the auto link on the distance field is the remaining UI path.
   for (let i = 0; i < 2; i++) {
-    await page.locator('.ch-leg').nth(i).locator('[data-kind="transfer"]').click();
+    const leg = page.locator('.ch-leg').nth(i);
+    await leg.locator('[data-action="manualDistance"]').click(); // reveals the "auto" link
+    await leg.locator('[data-action="autoDistance"]').click();   // fetches the distance
     await page.waitForTimeout(150);
   }
   await expect(page.locator('.ch-dist-pill.auto').first()).toBeVisible({ timeout: 5000 });
 
   const dateInput = page.locator('.ch-leg-date input[type="date"]').first();
   const toInput = page.locator('.ch-leg').first().locator('[data-field="dropoffLocation"]');
-  // Across the width band where chauffeur's extra Travel|Stay segment crowds the row, the
-  // date input must never be overlapped/clipped by the "to" field (the reported bug: the
+  // The date input must never be overlapped/clipped by the "to" field (the reported bug: the
   // date shows only "/09/"). If space is tight the route drops to its own line instead.
   for (const width of [1280, 1100, 1000, 960, 900, 820]) {
     await page.setViewportSize({ width, height: 900 });
