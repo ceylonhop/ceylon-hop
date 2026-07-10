@@ -50,11 +50,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-immersive{position:relative;color:#fff;overflow:hidden;background:#0a2826}
   .hero-immersive::before{content:none}
   .hero-immersive .hero-bg{position:absolute;inset:0;width:100%;height:100%;z-index:0;display:block;object-fit:cover}
-  /* graded scrim: bottom-left radial + faint teal wash — the photo reads graded, not dimmed */
+  /* lifted, airier scrim: just enough grade for legible copy — the scene stays bright */
   .hero-immersive .hero-scrim{position:absolute;inset:0;z-index:1;background:
-     radial-gradient(115% 95% at 10% 80%, rgba(5,42,40,.9) 0%, rgba(6,58,55,.6) 36%, rgba(8,96,92,.22) 64%, rgba(8,96,92,0) 88%),
-     linear-gradient(0deg, rgba(5,40,38,.46) 0%, rgba(5,40,38,0) 30%),
-     linear-gradient(115deg, rgba(10,90,86,.32), rgba(13,143,140,.10))}
+     radial-gradient(115% 95% at 10% 80%, rgba(5,42,40,.72) 0%, rgba(6,58,55,.4) 36%, rgba(8,96,92,.12) 64%, rgba(8,96,92,0) 88%),
+     linear-gradient(0deg, rgba(5,40,38,.3) 0%, rgba(5,40,38,0) 28%),
+     linear-gradient(115deg, rgba(10,90,86,.16), rgba(13,143,140,.05))}
   /* shared hero scaffolding — used by both the postcard and full-bleed variants */
   .hero .hero-inner{position:relative;z-index:2;display:grid;grid-template-columns:1.1fr minmax(360px,430px);gap:50px;align-items:center;
      min-height:clamp(560px,78vh,760px);padding-top:88px;padding-bottom:60px}
@@ -120,73 +120,91 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 
   /* ============================================================
-     Hero v2 — "postcard from Ceylon" composition (default)
+     Hero v3 — Direction B: bright, airy, booking-first (default)
+     centred copy → wide frosted booking bar → panoramic photo
+     the bar pops crisply off
      ============================================================ */
   .hero-postcard{display:none}
   .hero.hero-pc{
     color:var(--ink);
     background:
-      radial-gradient(110% 92% at 88% -6%, var(--pc-teal), transparent 58%),
-      radial-gradient(90% 80% at -2% 106%, var(--pc-saffron), transparent 55%),
+      radial-gradient(120% 75% at 50% -20%, var(--pc-teal), transparent 62%),
+      radial-gradient(70% 46% at 2% 108%, var(--pc-saffron), transparent 58%),
+      radial-gradient(66% 44% at 100% 104%, var(--pc-sky), transparent 55%),
       var(--cream);
   }
   .hero-pc::before{content:none}
   .hero-pc .hero-scrim{display:none}
   .hero-pc .hero-inner{
-    grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
-    grid-template-areas:"copy photo" "card photo";
-    column-gap:64px;row-gap:24px;align-items:center;
-    min-height:0;padding-top:20px;padding-bottom:52px;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"copy" "card" "photo";
+    gap:0;justify-items:center;align-items:start;
+    min-height:0;padding-top:clamp(30px,5.5vh,64px);padding-bottom:58px;
   }
-  .hero-pc .hero-copy{grid-area:copy;align-self:end;max-width:none;gap:15px}
-  .hero-pc .hero-card{grid-area:card;align-self:start;border:1px solid var(--line);box-shadow:var(--shadow-lg)}
-  .hero-pc .hero-postcard{grid-area:photo;display:block;position:relative;--pc-rot:2.2deg;transform:rotate(var(--pc-rot))}
-  .hero-pc .hero-title{color:var(--ink);text-shadow:none}
-  .hero-pc .hero-sub{color:var(--ink-soft);text-shadow:none}
-  .hero-pc .hero-note{color:var(--ink-soft);text-shadow:none}
-  .hero-pc .hero-note svg{color:var(--teal-deep)}
-  .hero-pc .hero-badge{background:var(--paper);border-color:var(--line);color:var(--ink)}
-  .hero-pc .hero-badge:hover{background:#fff}
-  .hero-pc .hero-badge .hb-count{color:var(--ink-soft)}
+  .hero-pc .hero-copy{grid-area:copy;align-self:auto;align-items:center;text-align:center;max-width:56rem;gap:18px;margin-bottom:36px}
+  .hero-pc .hero-title{color:var(--ink);text-shadow:none;font-size:clamp(2.5rem,5.2vw,4.25rem);line-height:1.02}
+  .hero-pc .hero-sub{color:var(--ink-soft);text-shadow:none;max-width:52ch;font-size:clamp(1.05rem,1.4vw,1.2rem);line-height:1.6}
+  .hero-pc .hero-sub b{color:var(--ink)}
+  .hero.hero-pc .hero-badge{background:#fff;border:1px solid var(--line);color:var(--ink);box-shadow:var(--shadow-s);text-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .hero.hero-pc .hero-badge:hover{background:#fff;border-color:var(--teal);box-shadow:0 6px 18px -6px rgba(10,185,182,.35)}
+  .hero.hero-pc .hero-badge .hb-count{color:var(--ink-soft)}
+  /* reassurance chips — the easy first step, right above the booking bar */
+  .hero-pc .hero-note{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 10px;margin:2px 0 0;color:var(--ink);text-shadow:none;white-space:normal}
+  .hero-pc .hero-note .hn-item{display:inline-flex;align-items:center;gap:.42rem;background:rgba(255,255,255,.75);border:1px solid var(--line);border-radius:999px;padding:.4rem .85rem;font-size:.83rem;font-weight:600}
+  .hero-pc .hero-note .hn-item svg{width:14px;height:14px;color:var(--teal-deep)}
+  /* the booking card — frosted, wide, the unmistakable centrepiece */
+  .hero-pc .hero-card{
+    grid-area:card;position:relative;z-index:2;align-self:auto;
+    width:min(100%,880px);max-width:none;
+    background:rgba(255,253,248,.88);
+    -webkit-backdrop-filter:blur(16px) saturate(1.1);backdrop-filter:blur(16px) saturate(1.1);
+    border:1px solid var(--line);border-radius:26px;padding:18px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.85), 0 36px 74px -32px rgba(8,110,106,.4), 0 10px 30px -18px rgba(44,42,43,.22);
+  }
+  .hero-pc .hero-postcard{grid-area:photo;display:block;position:relative;z-index:1;width:100%;--pc-rot:0deg;transform:none;margin-top:-46px}
 
   /* hand-stitched underline on the headline's key word */
   .hl-swash{position:relative}
   .hl-swash::after{content:"";position:absolute;left:.02em;right:.05em;bottom:-.05em;height:.17em;pointer-events:none;
     background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 16' preserveAspectRatio='none'%3E%3Cpath d='M4 11 C 58 4, 150 3, 216 9' fill='none' stroke='%23F9A429' stroke-width='5' stroke-linecap='round' stroke-dasharray='.5 12'/%3E%3C/svg%3E") no-repeat center/100% 100%}
 
-  /* the postcard itself */
-  .pc-frame{position:relative;background:#fff;border-radius:8px;padding:14px 14px 58px;
-    box-shadow:0 36px 80px -30px rgba(44,42,43,.42), 0 6px 18px rgba(44,42,43,.10)}
-  .pc-img{position:relative;aspect-ratio:1/1.02;border-radius:4px;overflow:hidden;background:linear-gradient(158deg,#bfe9e7,#cfe9c6)}
+  /* the panoramic photo — a bright scene on a clean white mat, no postcard chrome */
+  .pc-frame{position:relative;background:#fff;border-radius:30px;padding:10px;
+    box-shadow:0 32px 74px -34px rgba(44,42,43,.4), 0 4px 14px rgba(44,42,43,.07)}
+  .pc-img{position:relative;aspect-ratio:21/8;border-radius:21px;overflow:hidden;background:linear-gradient(158deg,#bfe9e7,#cfe9c6)}
   .pc-img image-slot{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
   .pc-img .route-doodle{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
-  .pc-img .route-doodle path{fill:none;stroke:#fff;stroke-width:1.15;stroke-linecap:round;stroke-dasharray:.2 3.2;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
+  .pc-img .route-doodle path{fill:none;stroke:#fff;stroke-width:1.3;stroke-linecap:round;stroke-dasharray:.2 3.4;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
   .pc-img .route-doodle circle{fill:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
   .pc-img .route-doodle .cb{fill:var(--saffron);stroke:#fff;stroke-width:.9}
-  .pc-cap{position:absolute;left:20px;bottom:13px;margin:0;font-family:var(--hand);font-weight:700;font-size:1.5rem;line-height:1;color:var(--ink);transform:rotate(-1.5deg)}
-  .pc-stamp{position:absolute;top:-13px;right:14px;transform:rotate(5deg)}
-  .postmark{position:absolute;top:-14px;right:78px;width:118px;height:auto;color:var(--ink);opacity:.3;pointer-events:none}
-  .pc-pin{position:absolute;z-index:4;left:-16px;bottom:78px;background:var(--paper);color:var(--ink);border-radius:12px;box-shadow:var(--shadow);
-    padding:.55rem .85rem;font-size:.82rem;font-weight:700;display:flex;align-items:center;gap:.5rem;white-space:nowrap;transform:rotate(-2deg)}
+  .pc-cap{position:absolute;left:26px;bottom:24px;margin:0;font-family:var(--hand);font-weight:700;font-size:1.35rem;line-height:1;color:var(--ink);
+    background:rgba(255,253,248,.9);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);padding:.42rem .95rem .5rem;border-radius:999px;box-shadow:var(--shadow-s);transform:rotate(-1.2deg)}
+  .pc-stamp,.postmark{display:none}
+  .pc-pin{position:absolute;z-index:4;right:26px;bottom:24px;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:999px;box-shadow:var(--shadow);
+    padding:.55rem .9rem;font-size:.82rem;font-weight:700;display:flex;align-items:center;gap:.5rem;white-space:nowrap}
   .pc-pin .dot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 0 3px rgba(249,164,41,.22)}
   .pc-pin .pp-ar{color:var(--accent-deep);font-weight:600}
   .pc-pin small{font-weight:700;color:var(--teal-deep);font-size:.8rem}
   .pc-pin[hidden]{display:none}
 
   @media(max-width:1000px){
-    .hero-pc .hero-inner{grid-template-columns:1fr;grid-template-areas:"copy" "card" "photo";row-gap:22px;padding-top:12px;padding-bottom:44px}
-    .hero-pc .hero-copy{align-self:auto}
-    .hero-pc .hero-card,.hero-pc .hero-postcard{max-width:560px}
-    .hero-pc .hero-postcard{--pc-rot:1.2deg;margin-top:6px}
-    .pc-img{aspect-ratio:16/10.5}
+    .hero-pc .hero-inner{padding-bottom:48px}
+    .hero-pc .hero-copy{margin-bottom:30px}
+    .hero-pc .hero-postcard{margin-top:-38px}
+    .pc-img{aspect-ratio:16/9}
   }
   @media(max-width:600px){
-    .hero-pc .hero-inner{padding-top:10px}
-    .pc-frame{padding:10px 10px 46px}
-    .pc-cap{font-size:1.2rem;left:14px;bottom:12px}
-    .pc-stamp{transform:rotate(5deg) scale(.85);right:8px}
-    .postmark{right:62px;width:96px;top:-10px}
-    .pc-pin{left:-8px;bottom:62px;font-size:.74rem;padding:.45rem .65rem}
+    .hero-pc .hero-inner{padding-top:20px;padding-bottom:40px}
+    .hero-pc .hero-copy{gap:12px;margin-bottom:24px}
+    .hero-pc .hero-title{font-size:clamp(2.05rem,9vw,2.6rem)}
+    .hero-pc .hero-note{gap:6px}
+    .hero-pc .hero-note .hn-item{font-size:.75rem;padding:.32rem .68rem}
+    .hero-pc .hero-card{padding:14px;border-radius:22px}
+    .hero-pc .hero-postcard{margin-top:-30px}
+    .pc-frame{padding:7px;border-radius:24px}
+    .pc-img{aspect-ratio:16/10;border-radius:19px}
+    .pc-cap{display:none}
+    .pc-pin{right:14px;bottom:14px;font-size:.74rem;padding:.45rem .7rem}
     .pc-pin small{font-size:.72rem}
   }
 
@@ -248,11 +266,50 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .bk-tab:not(.active){color:var(--ink)}
   }
 
-  /* trust strip */
-  .trust{background:var(--ink);color:#e9e6df}
-  .trust-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:18px 0;flex-wrap:wrap;font-size:.9rem;font-weight:500}
-  .trust-row .item{display:flex;align-items:center;gap:.6rem;opacity:.92}
-  .trust-row svg{width:18px;height:18px;color:var(--teal);flex:none}
+  /* ---- Direction B: the booking bar inside the hero card ---- */
+  .hero-pc .hero-card .booker{grid-template-columns:1fr;gap:12px;padding:2px;align-items:stretch}
+  .hero-pc .bk-tabs{grid-template-columns:auto auto;justify-self:center;width:auto;background:var(--cream);border:1px solid var(--line);border-radius:999px;padding:4px;margin:0}
+  .hero-pc .bk-tab{border-radius:999px;padding:.55rem 1.3rem;font-size:.88rem}
+  .hero-pc .bk-tab.active{color:var(--teal-deep)}
+  .hero-pc .hero-card .booker .place-field{background:var(--white);border:1.5px solid var(--line);border-radius:16px;padding:.62rem 1rem .72rem;display:flex;flex-direction:column;gap:1px;min-width:0;transition:border-color .15s, box-shadow .15s}
+  .hero-pc .hero-card .booker .place-field:focus-within{border-color:var(--teal);box-shadow:0 0 0 4px rgba(10,185,182,.16)}
+  .hero-pc .hero-card .booker .place-field label{font-size:.67rem;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-soft);font-weight:700;margin:0}
+  .hero-pc .hero-card .booker .place-field input{border:none;background:transparent;padding:3px 0 0;font-size:1.04rem;font-weight:600;color:var(--ink);border-radius:0;box-shadow:none;width:100%}
+  .hero-pc .hero-card .booker .place-field input:focus{outline:none;border:none;box-shadow:none}
+  .hero-pc .hero-card .booker .place-field input::placeholder{color:var(--ink-soft);opacity:.75;font-weight:500}
+  .hero-pc .hero-card .mid-stop{padding-right:3.1rem}
+  .hero-pc .hero-card .mid-stop .rm{right:12px;bottom:auto;top:50%;transform:translateY(-50%)}
+  .hero-pc .add-stop{font-size:.88rem;padding:4px 0}
+  .hero-pc .book-go{height:auto;min-height:56px;border-radius:16px;font-size:1.02rem}
+  .hero-pc .book-go[disabled]{opacity:.65}
+  .hero-pc .hero-card .field-bad.place-field{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.16)!important}
+  /* small screens: full-width fields, the swap floats on the seam between them */
+  @media(max-width:920px){
+    .hero-pc .od-group{padding-right:0}
+    .hero-pc .od-group:not(.has-stops) .swap{right:12px}
+    .hero-pc .od-group:not(.has-stops) .place-field input{padding-right:2.6rem}
+  }
+  /* desktop: one confident row — Pick-up | swap | Drop-off | CTA */
+  @media(min-width:921px){
+    .hero-pc .hero-card .booker.mode-single{grid-template-columns:minmax(0,1fr) auto}
+    .hero-pc .hero-card .booker.mode-single .od-group{grid-row:2;grid-column:1}
+    .hero-pc .hero-card .booker.mode-single .book-go{grid-row:2;grid-column:2;height:100%;min-height:66px;padding-left:2.1rem;padding-right:2.1rem}
+    .hero-pc .booker.mode-single .od-group{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;padding-right:0;align-items:center}
+    .hero-pc .booker.mode-single .od-group .swap{position:static;transform:none;width:44px;height:44px}
+    .hero-pc .booker.mode-single .od-group .swap svg{transform:rotate(90deg)}
+    .hero-pc .booker.mode-single .od-group .swap:hover{transform:scale(1.07)}
+    .hero-pc .booker.mode-single .od-group .swap:active{transform:rotate(180deg)}
+    .hero-pc .hero-card .booker.mode-multi{grid-template-columns:1fr}
+  }
+  @media(prefers-reduced-motion:reduce){
+    .od-group .swap,.bk-tab,.hero-pc .hero-card .booker .place-field{transition:none}
+  }
+
+  /* trust strip — a light, crisp band under the bright hero */
+  .trust{background:var(--paper);color:var(--ink);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .trust-row{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:16px 0;flex-wrap:wrap;font-size:.9rem;font-weight:600}
+  .trust-row .item{display:flex;align-items:center;gap:.6rem;opacity:1}
+  .trust-row svg{width:18px;height:18px;color:var(--teal-deep);flex:none}
   @media(max-width:760px){
     .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:26px;padding:14px 0 16px;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -404,9 +461,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <a class="hero-badge" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 30 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· 30 reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
-      <p class="hero-note">
-
-Fixed prices · Free cancellation · No change fees</p>
+      <p class="hero-note"><span class="hn-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 12.5 5 5L20 6.5"/></svg>Fixed prices</span><span class="hn-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 12.5 5 5L20 6.5"/></svg>Free cancellation</span><span class="hn-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4.5 12.5 5 5L20 6.5"/></svg>No change fees</span></p>
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
@@ -435,7 +490,7 @@ Fixed prices · Free cancellation · No change fees</p>
       <div class="pc-frame">
         <div class="pc-img" id="pc-img">
           <image-slot id="hero-photo" shape="rect" placeholder="Drop a hero photo — a Sri&nbsp;Lankan road, tea country, or your AC van"></image-slot>
-          <svg class="route-doodle" viewBox="0 0 100 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M16 84 C 30 64, 46 70, 54 52 S 76 34, 84 20"></path><circle class="ca" cx="16" cy="84" r="2.3"></circle><circle class="cb" cx="84" cy="20" r="2.3"></circle></g></svg>
+          <svg class="route-doodle" viewBox="0 0 210 80" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="rd"><path d="M48 58 C 76 34, 104 56, 128 40 S 158 24, 166 22"></path><circle class="ca" cx="48" cy="58" r="2.3"></circle><circle class="cb" cx="166" cy="22" r="2.3"></circle></g></svg>
         </div>
         <figcaption class="pc-cap">wish you were here? you can be&hellip;</figcaption>
         <span class="stamp pc-stamp" style="--sc:var(--teal)"><b>LK</b>Sri&nbsp;Lanka</span>
