@@ -122,9 +122,36 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
-  .qrow .qstatsel{font:inherit;font-size:.8rem;font-weight:700;color:var(--ink-soft);background:var(--cream);border:1px solid var(--line);border-radius:9px;padding:6px 10px;cursor:pointer}
-  .qrow .qstatsel:hover{border-color:var(--cream-deep)}
+  .qrow:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  /* Read-only status pill (queue rows) — status changes happen in the detail view */
+  .qpill{display:inline-flex;align-items:center;gap:6px;font-size:.73rem;font-weight:700;letter-spacing:.01em;padding:4px 10px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .qpill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.9}
+  .qpill.tone-slate{color:#5b6472;background:#eef1f5;border-color:#e2e7ee}
+  .qpill.tone-amber{color:#9a6410;background:#fdf3e0;border-color:#f6e3c0}
+  .qpill.tone-teal{color:#0a7d78;background:#dff5f3;border-color:#bfe9e5}
+  .qpill.tone-blue{color:#2660c4;background:#e7eefb;border-color:#cfddf6}
+  .qpill.tone-green{color:#1f8a4c;background:#e4f5ea;border-color:#c7ead4}
+  .qpill.tone-red{color:#c0362a;background:#fbe8e6;border-color:#f4cec9}
+  .qpill.tone-muted{color:#8a8378;background:#f1efea;border-color:#e6e2da}
   @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}}
+  /* Queue head: title + "New quote" action */
+  .qhead{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .qnew{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border:0;border-radius:11px;padding:10px 16px;font-weight:700;font-size:.9rem;cursor:pointer;box-shadow:0 12px 26px -14px rgba(10,185,182,.8);transition:transform .15s,filter .15s}
+  .qnew:hover{transform:translateY(-1px);filter:brightness(1.05)}
+  .qnew .qnew-plus{font-size:1.05rem;line-height:1;font-weight:600}
+  /* Role-aware queue sections */
+  .qsection{margin-top:26px}
+  .qsection-head{display:flex;align-items:baseline;gap:12px;margin:0 2px 11px;flex-wrap:wrap}
+  .qsection-title{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px;margin:0}
+  .qsection-count{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);background:var(--cream);border-radius:999px;padding:1px 8px;letter-spacing:0}
+  .qsection-hint{font-size:.78rem;color:var(--ink-faint);font-style:italic}
+  /* The two action-first sections lead with a coloured accent so they read as "act now" */
+  .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
+  .qsec-ready .qsection-title{color:var(--teal-deep)}
+  .qempty{text-align:center;padding:56px 20px;color:var(--ink-faint)}
+  .qempty-icon{font-size:2.2rem}
+  .qempty-title{font-family:var(--display);font-size:1.3rem;color:var(--ink-soft);margin-top:8px}
+  .qempty-sub{font-size:.9rem;margin-top:5px}
   .sec{margin:30px 0 13px;display:flex;align-items:center;gap:12px}
   .sec h2{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
   .sec.alert h2{color:var(--alert)}
@@ -1004,10 +1031,13 @@ const NAV_ICONS={
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
+  // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
+  // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
+  // route is still active — it's just no longer a top-level destination. A row being
+  // open in the builder keeps the Quotes nav highlighted so the queue reads as "home".
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}">${NAV_ICONS.tickets} Bookings <span class="count" id="nav-attn">${tickets.filter(isAttn).length}</span></button>`+
-    (canQuote?`<button data-route="quote" class="${state.route==='quote'?'active':''}">${NAV_ICONS.quote} Generate Quote</button>`:'')+
-    (canQuote?`<button data-route="quotes" class="${state.route==='quotes'?'active':''}">${NAV_ICONS.quotes} Quotes</button>`:'');
+    (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}">${NAV_ICONS.quotes} Quotes</button>`:'');
 }
 
 function ticketRow(t,i){
@@ -1054,16 +1084,42 @@ function viewTickets(){
   $('#view').innerHTML=html;
 }
 
-/* ── Quotes tab ───────────────────────────────────────────────────────────────
-   A full-page saved-quotes list in the ops shell (#view), sibling of the Generate
-   Quote builder. Fed by GET /admin/quote/list; rows reopen into the builder via the
-   exposed QuoteView.openQuote. Gated on quote:manage like the builder. */
-let opsQuotes=[],opsQuotesLoaded=false,opsQuotesStatus='all';
-const QUOTE_STATUS_META=[
-  {id:'all',label:'All'},{id:'draft',label:'Draft'},{id:'sent',label:'Sent'},
-  {id:'won',label:'Booked'},{id:'lost',label:'Lost'},{id:'expired',label:'Expired'},
+/* ── Quotes queue ─────────────────────────────────────────────────────────────
+   The merged, queue-first Quotes surface (D6). Fed by GET /admin/quote/list; rows
+   open into the builder (QuoteView) as a detail view, and "+ New quote" opens a fresh
+   one. The queue is grouped into role-aware sections so each viewer sees what's on
+   THEIR plate first: a founder (quote:approve) leads with quotes needing review; a
+   support agent leads with approved quotes ready to send + any sent back to them.
+   Status changes are deliberate actions in the detail view (maker-checker), never a
+   casual per-row dropdown — so rows show a read-only status pill. */
+let opsQuotes=[],opsQuotesLoaded=false;
+// Status → { label, tone } for the read-only pill. Tone drives the CSS colour class.
+const QSTATUS={
+  draft:{label:'Draft',tone:'slate'},
+  pending_review:{label:'In review',tone:'amber'},
+  changes_requested:{label:'Changes requested',tone:'amber'},
+  ready:{label:'Ready to send',tone:'teal'},
+  sent:{label:'Sent',tone:'blue'},
+  won:{label:'Booked',tone:'green'},
+  lost:{label:'Lost',tone:'red'},
+  expired:{label:'Expired',tone:'muted'},
+};
+// Section order encodes "what's on your plate first". Approvers (founder) triage the
+// review queue; support acts on approved + sent-back quotes. Closed always sinks last.
+const QUEUE_SECTIONS_APPROVER=[
+  {id:'review',label:'Needs your review',statuses:['pending_review'],hint:'Check pricing &amp; margin, then approve or send back'},
+  {id:'ready',label:'Ready to send',statuses:['ready'],hint:'Approved — hand back to support to send'},
+  {id:'progress',label:'In progress',statuses:['draft','changes_requested'],hint:'Drafts and quotes sent back for changes'},
+  {id:'closed',label:'Sent &amp; closed',statuses:['sent','won','lost','expired']},
 ];
-const QUOTE_STATUS_LABEL={draft:'Draft',sent:'Sent',won:'Booked',lost:'Lost',expired:'Expired'};
+const QUEUE_SECTIONS_SUPPORT=[
+  {id:'ready',label:'Ready to send',statuses:['ready'],hint:'Approved — copy the message and send to the customer'},
+  {id:'sentback',label:'Sent back to you',statuses:['changes_requested'],hint:'Update the quote and resubmit for review'},
+  {id:'review',label:'Awaiting review',statuses:['pending_review'],hint:'With the founder for approval'},
+  {id:'drafts',label:'Drafts',statuses:['draft']},
+  {id:'closed',label:'Sent &amp; closed',statuses:['sent','won','lost','expired']},
+];
+function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve'));}
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 async function loadOpsQuotes(){
   try{
@@ -1075,27 +1131,44 @@ async function loadOpsQuotes(){
     if(state.route==='quotes')viewQuotes();
   }catch(e){if(e.message!=='auth')toast('Could not load quotes');}
 }
+function statusPill(status){
+  const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
+  return `<span class="qpill tone-${m.tone}">${esc(m.label)}</span>`;
+}
+function quoteRowHtml(q){
+  return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0">
+    <span class="qref">${esc(q.reference||q.id)}</span>
+    <span class="qcust">${esc(q.customerName||'Untitled')}</span>
+    <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
+    <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
+    <span class="qstat">${statusPill(q.status)}</span>
+  </div>`;
+}
 function viewQuotes(){
   $('#topbar').innerHTML='';
-  const counts={};QUOTE_STATUS_META.forEach(s=>counts[s.id]=0);
-  opsQuotes.forEach(q=>{counts.all++;if(counts[q.status]!=null)counts[q.status]++;});
-  const chips=QUOTE_STATUS_META.map(s=>`<button class="fchip ${opsQuotesStatus===s.id?'on':''}" data-qstatus="${s.id}"><span class="dot"></span>${s.label}<span class="fc">${counts[s.id]||0}</span></button>`).join('');
-  const list=opsQuotesStatus==='all'?opsQuotes:opsQuotes.filter(q=>q.status===opsQuotesStatus);
-  let html=`<div class="pagehead"><h1>Quotes</h1></div>
-    <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · saved from the quote builder · click a row to reopen it</p>
-    <div class="filterbar">${chips}</div>`;
-  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';}
-  else if(!list.length){html+=`<p class="muted">${opsQuotes.length?'No quotes match this filter.':'No saved quotes yet.'}</p>`;}
-  else{
-    const opts=q=>['draft','sent','won','lost','expired'].map(s=>`<option value="${s}"${q.status===s?' selected':''}>${QUOTE_STATUS_LABEL[s]}</option>`).join('');
-    html+='<div class="qlist">'+list.map(q=>`<div class="qrow" data-qopen="${esc(q.id)}">
-      <span class="qref">${esc(q.reference||q.id)}</span>
-      <span class="qcust">${esc(q.customerName||'Untitled')}</span>
-      <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
-      <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
-      <span class="qstat"><select class="qstatsel" data-qpatch="${esc(q.id)}" aria-label="Quote status">${opts(q)}</select></span>
-    </div>`).join('')+'</div>';
+  const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
+  const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
+  let html=`<div class="qhead pagehead">
+      <h1>Quotes</h1>
+      <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
+    </div>
+    <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}</p>`;
+  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';$('#view').innerHTML=html;return;}
+  if(!opsQuotes.length){
+    html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
+    $('#view').innerHTML=html;return;
   }
+  sections.forEach(sec=>{
+    const rows=sec.statuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
+    if(!rows.length)return;
+    html+=`<div class="qsection qsec-${sec.id}">
+      <div class="qsection-head">
+        <h2 class="qsection-title">${sec.label}<span class="qsection-count">${rows.length}</span></h2>
+        ${sec.hint?`<span class="qsection-hint">${sec.hint}</span>`:''}
+      </div>
+      <div class="qlist">${rows.map(quoteRowHtml).join('')}</div>
+    </div>`;
+  });
   $('#view').innerHTML=html;
 }
 function openOpsQuote(id){
@@ -1103,14 +1176,12 @@ function openOpsQuote(id){
   state.route='quote';location.hash='quote';render();
   if(QuoteView.openQuote)QuoteView.openQuote(id);
 }
-async function patchOpsQuoteStatus(id,status){
-  try{
-    const r=await fetch('/admin/quote/'+encodeURIComponent(id),{method:'PATCH',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({status})});
-    if(r.status===401){showLogin();return;}
-    if(!r.ok){toast('Could not update status');return;}
-    const q=opsQuotes.find(x=>x.id===id);if(q)q.status=status;
-    toast('Quote updated');viewQuotes();
-  }catch(e){toast('Could not update status');}
+// "+ New quote": open the builder on a guaranteed-fresh quote (honours the unsaved
+// guard inside the module).
+function openNewQuote(){
+  if(!state.caps||!state.caps.includes('quote:manage'))return;
+  state.route='quote';location.hash='quote';render();
+  if(QuoteView.startNew)QuoteView.startNew();
 }
 
 /* ── build the activity timeline from the detail payload ── */
@@ -1279,17 +1350,17 @@ document.addEventListener('click',e=>{
   render();
 });
 
-/* Quotes tab: status filter chips, click-to-reopen rows, inline status changes. */
+/* Quotes queue: "+ New quote" and click/keyboard row-open into the builder detail view.
+   Status is changed deliberately in the detail view (maker-checker), not from the queue. */
 document.addEventListener('click',e=>{
-  const chip=e.target.closest('#view [data-qstatus]');
-  if(chip){opsQuotesStatus=chip.dataset.qstatus;viewQuotes();return;}
-  if(e.target.closest('#view .qstatsel'))return; /* let the status <select> operate; not a row-open */
+  if(e.target.closest('#view [data-qnew]')){openNewQuote();return;}
   const row=e.target.closest('#view [data-qopen]');
   if(row){openOpsQuote(row.dataset.qopen);}
 });
-document.addEventListener('change',e=>{
-  const sel=e.target.closest('#view [data-qpatch]');if(!sel)return;
-  patchOpsQuoteStatus(sel.dataset.qpatch,sel.value);
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const row=e.target.closest('#view .qrow[data-qopen]');
+  if(row){e.preventDefault();openOpsQuote(row.dataset.qopen);}
 });
 $('#scrim').addEventListener('click',()=>{state.detail=null;state.detailData=null;renderSheet();});
 document.addEventListener('input',e=>{if(e.target.id==='q'){state.q=e.target.value;viewTickets();}});
@@ -1317,16 +1388,19 @@ function bootApp(identity){
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
   window.opsGoBookings=()=>{state.route='tickets';render();}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
-  /* T6 deep-link (single source of truth for both the login and whoami-refresh paths):
-     anyone with quote:manage can land on #quote (D-A: all 3 roles); otherwise bounce to
-     Bookings + clear the hash. */
-  if(location.hash==='#quote'&&state.caps&&state.caps.includes('quote:manage'))state.route='quote';
+  window.opsGoQuotes=()=>{state.route='quotes';render();}; /* builder returns to the queue after a hand-off action */
+  /* Deep-link (single source of truth for both the login and whoami-refresh paths):
+     anyone with quote:manage can land on #quote (the builder) or #quotes (the queue);
+     both need quote:manage (D-A: all 3 roles). Otherwise bounce to Bookings + clear the hash. */
+  const canQuote=state.caps&&state.caps.includes('quote:manage');
+  if(location.hash==='#quote'&&canQuote)state.route='quote';
+  else if(location.hash==='#quotes'&&canQuote)state.route='quotes';
   else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
   const initials=identity.role.slice(0,2).toUpperCase();
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>${esc(identity.email)} · ${esc(roleLabel)}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
   setNav();
-  if(state.route==='quote')render(); /* mount the quote view immediately — it needs no booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes')render(); /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
@@ -1865,8 +1939,8 @@ function showToast(msg) {
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────
-function newQuote() {
-  if (!confirm('Start a new quote? Unsaved changes will be lost.')) return;
+// Reset the builder to a blank draft (no prompt — callers decide whether to guard).
+function resetToNew() {
   legSeq = 0;
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
@@ -1890,7 +1964,20 @@ function newQuote() {
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
   render();
+}
+
+// In-builder "New" button — guard only when there are unsaved edits to lose.
+function newQuote() {
+  if (_dirty && !confirm('Start a new quote? Unsaved changes will be lost.')) return;
+  resetToNew();
   showToast('New quote started');
+}
+
+// The ops shell's "+ New quote" entry: same fresh-draft reset, minus the toast (the
+// transition into the builder from the queue is feedback enough).
+function startNew() {
+  if (_dirty && !confirm('Start a new quote? Unsaved changes will be lost.')) return;
+  resetToNew();
 }
 
 // GL-1d: the operator's custom $/km (dollars) → integer cents for the API. Only meaningful
@@ -3873,7 +3960,7 @@ async function openQuote(id) {
   await reopenQuote(id);
 }
 
-return { init: init, teardown: teardown, openQuote: openQuote };
+return { init: init, teardown: teardown, openQuote: openQuote, startNew: startNew };
 })();
 </script>
 </body>
