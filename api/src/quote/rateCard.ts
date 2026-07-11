@@ -58,5 +58,5 @@ export const RATE_CARD = {
   fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   // Extras are FINAL prices with NO markup (owner 2026-07-11).
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
-  shared: { colomboPickupCents: 300 },
+  shared: { colomboPickupCents: 300, extraBagCents: 1000 },
 } as const;

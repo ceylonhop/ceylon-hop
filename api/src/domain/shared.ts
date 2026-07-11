@@ -24,6 +24,7 @@ export const SharedBookingRequest = z.object({
   date: z.string().min(1),
   time: z.string().min(1),
   seats: z.number().int().min(1),
+  bags: z.number().int().min(0).optional(),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
 });

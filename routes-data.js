@@ -16,6 +16,7 @@ window.ROUTES = [
     tag:'Daily 7:30am',
     blurb:'Skip the public-bus chaos. A comfy AC seat from Negombo straight to the Lion Rock, with a Pro Hopper guide aboard.',
     from:'Negombo (CMB pickup)', days:1, price:19, mapBg:'ph-saffron',
+    corridor:'airport-cultural', times:['07:30'],
     stops:['Negombo','Sigiriya'],
     hero:'Sigiriya rock fortress at golden hour'
   },
@@ -26,6 +27,7 @@ window.ROUTES = [
     tag:'Daily',
     blurb:'From the cool tea hills to leopard country. The easiest way to swap Ella\u2019s views for a Yala safari morning.',
     from:'Ella', days:1, price:23, mapBg:'ph-saffron',
+    corridor:'ella-east', times:['08:00'],
     stops:['Ella','Yala'],
     hero:'Yala safari — leopards and elephants'
   },
@@ -36,6 +38,7 @@ window.ROUTES = [
     tag:'Daily 8am',
     blurb:'Trade the bush for the beach. Get from Ella & Yala to the south-coast surf towns with a confirmed seat and a trusted driver.',
     from:'Yala', days:1, price:16, mapBg:'ph-saffron',
+    corridor:'yala-south', times:['08:00'],
     stops:['Yala','Mirissa','Weligama','Ahangama'],
     hero:'Mirissa beach — coconut tree hill & whales'
   },
@@ -46,6 +49,7 @@ window.ROUTES = [
     tag:'Daily 8am',
     blurb:'From the misty hills to the surf capital of South Asia. One easy hop to Sri Lanka\u2019s most famous point break.',
     from:'Ella', days:1, price:23, mapBg:'ph-saffron',
+    corridor:'ella-east', times:['08:00'],
     stops:['Ella','Arugam Bay'],
     hero:'Arugam Bay — surf point break at sunrise'
   },

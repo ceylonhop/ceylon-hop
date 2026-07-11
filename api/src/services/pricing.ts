@@ -2,6 +2,7 @@ import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, ChauffeurTravelDay } from '../quote/types';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
@@ -114,8 +115,11 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<Pr
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
 // already server-authoritative, so no engine call and no unpriced arm. (The engine's
 // Colombo-pickup surcharge is not in the public payload; don't invent it.)
-export function priceShared(seats: number, seatPriceCents: number): Extract<PriceOutcome, { priced: true }> {
-  const totalCents = seats * seatPriceCents;
+export function priceShared(seats: number, seatPriceCents: number, bags = 0): Extract<PriceOutcome, { priced: true }> {
+  // One free bag per seat; each extra bag is the rate card's shared extra-bag fee. This
+  // mirrors the front-end quote so what the customer is shown is what actually gets charged.
+  const extraBags = Math.max(0, bags - seats);
+  const totalCents = seats * seatPriceCents + extraBags * RATE_CARD.shared.extraBagCents;
   return { currency: 'USD', totalCents, amountDueNowCents: totalCents, priced: true };
 }
 

@@ -133,7 +133,7 @@ let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 // upgrade (mirrors the passenger over-capacity flow); the van is the hard ceiling
 const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
-const sharedCorridorId = params.get('corridor') || '';
+const sharedCorridorId = params.get('corridor') || (r && r.corridor) || '';
 
 // trip start date (chauffeur day count)
 const startParam = params.get('start') || params.get('date');
@@ -1390,6 +1390,7 @@ async function createApiBooking(){
       date: (state.flexDate || !state.date) ? undefined : fmtISO(state.date),
       time: state.dep || undefined,
       seats: state.ad + state.ch,
+      bags: state.bags,
       customer,
       quotedTotal
     };

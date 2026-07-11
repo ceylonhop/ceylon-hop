@@ -248,4 +248,14 @@ describe('POST /bookings/shared — seat-hold compensation', () => {
     expect(res.status).toBeGreaterThanOrEqual(500); // the create threw
     expect(released).toBe(2); // the 2 held seats were given back, not stranded on the departure
   });
+
+  it('charges the shared extra-bag fee end to end ($10/bag beyond one free per seat)', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/shared', {
+      corridorId: 'hill-line', date: futureServiceDay(), time: '08:00', seats: 2, bags: 4, customer: valid.customer,
+    });
+    expect(res.status).toBe(201);
+    // 2 seats × $21 + 2 extra bags × $10 = $62 — the fee the customer saw is actually captured
+    expect((await res.json()).total).toBe(6200);
+  });
 });

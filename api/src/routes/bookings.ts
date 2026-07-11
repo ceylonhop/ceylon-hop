@@ -337,6 +337,7 @@ export function bookingRoutes(deps: {
     const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priceShared(
       req.seats,
       corridor.seatPrice,
+      req.bags ?? 0,
     );
     const input = {
       corridorId: corridor.id,
