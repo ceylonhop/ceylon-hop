@@ -93,6 +93,12 @@ itinerary line in the customer message (deliberate — see the idle-day note in 
 chauffeur trip the vehicle is included all day, so `sightseeing`/`waiting`/`safari-wait` extras are
 free (`CHAUFFEUR_INCLUDED_EXTRAS`).
 
+**Chauffeur requires ≥2 distinct leg dates.** A single-day itinerary is **point-to-point only** — a
+chauffeur request with `< 2` distinct leg dates is priced as a normal transfer (no day rate).
+Enforced on **both** layers so a single transfer can never carry a chauffeur day rate, whoever calls
+the API: the client (`ops-ui.html` `_runEstimate` reverts `state.service` before pricing) and the
+server (`toEngineRequest` in `internalQuote.ts` — the canonical, tamper-proof price + save-recompute).
+
 **Extras** (`extrasDeposit.ts`): `Σ extras[code]`, charged at face value (no markup).
 
 **Deposit**: `min(round(total × 10%), $50)`. `amountDueNow` = full total (customers pay in full).
