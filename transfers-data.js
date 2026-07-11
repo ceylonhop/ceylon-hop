@@ -167,9 +167,7 @@
       if (i !== -1 && j !== -1) {
         return {
           corridorId: c.id, corridorLabel: c.label,
-          seat: c.seat, times: c.times, days: c.days, freqText: c.freqText,
-          // seat count varies a little by day/route for realism
-          seatsLeft: 3 + ((fromId.length + toId.length + c.seat) % 6)
+          seat: c.seat, times: c.times, days: c.days, freqText: c.freqText
         };
       }
     }
@@ -204,6 +202,18 @@
       for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
     }
     return null;
+  }
+  // Guard: the "exact spot" on the booking page is meant to REFINE the area the
+  // customer already chose (a hotel/landmark inside it), not swap in a different
+  // route. Anything past MAX_EXACT_KM straight-line from the original area point is
+  // a route change, so the caller blocks it instead of silently re-pricing.
+  const MAX_EXACT_KM = 10;
+  function exactSpotDecision(areaPoint, spotPoint, maxKm){
+    const lim = (maxKm == null) ? MAX_EXACT_KM : maxKm;
+    // Can't measure (unknown coords) → fail open: don't block what we can't verify.
+    if(!areaPoint || !spotPoint || areaPoint.lat == null || spotPoint.lat == null) return { ok:true, km:null, limit:lim };
+    const km = haversine(areaPoint, spotPoint);
+    return { ok: km <= lim, km: Math.round(km), limit: lim };
   }
   // distance between two arbitrary points (ids or typed names)
   function kmBetween(aName, bName){
@@ -303,6 +313,7 @@
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
     resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
+    exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };

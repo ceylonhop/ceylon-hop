@@ -170,6 +170,7 @@ const state={
 // how far a customer's exact pick-up/drop-off drifts before we re-price.
 state.anchorKm = (window.TRANSFERS ? window.TRANSFERS.kmBetween(r.stops[0], r.stops[r.stops.length-1]) : null);
 state.pendingReprice = null; // {km, extraKm, prices:{car,van}} while awaiting acknowledgement
+state.locTooFar = null;      // {which,name,area,km,limit} when an exact spot leaves its area
 
 // ---- summary setup ----
 const typeLabel={shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
@@ -210,8 +211,46 @@ function onLoc(){
   // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
   state.locFrom = locFrom.value.trim() || AREA_FROM;
   state.locTo   = locTo.value.trim()   || AREA_TO;
+  checkExactRadius();
   render(); checkWhere(); scheduleRouteMap();
 }
+
+// The exact spot must stay within its area — a hotel/landmark, not a new route.
+// Resolve the current spot to a point (Google geo when picked, else the known-place
+// coords for a typed name) and compare it to the area the customer already chose.
+const _nrm = s => (s||'').toLowerCase().replace(/\(.*?\)/g,'').replace(/[^a-z]/g,'').trim();
+function spotPoint(which){
+  const geo = which==='from' ? state.locFromGeo : state.locToGeo;
+  if(geo && geo.lat!=null) return { lat:geo.lat, lng:geo.lng };  // a real pick — precise
+  const typed = which==='from' ? state.locFrom : state.locTo;
+  const area  = which==='from' ? AREA_FROM : AREA_TO;
+  if(!typed || typed===area) return null;                 // unchanged / the area itself
+  const T=window.TRANSFERS, p = T && T.resolvePlace ? T.resolvePlace(typed) : null;
+  // Only a settled, whole known place name counts — never a half-typed prefix that
+  // happens to fuzzy-match (so the block doesn't flash while the customer is typing).
+  return (p && _nrm(p.name)===_nrm(typed)) ? { lat:p.lat, lng:p.lng } : null;
+}
+function checkExactRadius(){
+  state.locTooFar = null;
+  const T=window.TRANSFERS;
+  if(isTrip || !T || !T.exactSpotDecision || !T.resolvePlace) return;
+  for(const which of ['from','to']){
+    const area = which==='from' ? AREA_FROM : AREA_TO;
+    const ap = T.resolvePlace(area), sp = spotPoint(which);
+    if(!ap || !sp) continue;
+    const d = T.exactSpotDecision(ap, sp);
+    if(!d.ok){
+      state.locTooFar = { which, name:(which==='from'?state.locFrom:state.locTo), area, km:d.km, limit:d.limit };
+      state.pendingReprice = null;                         // a hard block supersedes any re-price offer
+      if(typeof window.chTrack==='function') window.chTrack('exact_location_out_of_range',{which,km:d.km});
+      break;
+    }
+  }
+}
+window.clearExactSpot=function(which){
+  const input = which==='from' ? locFrom : locTo;
+  input.value=''; setGeo(which,null); onLoc(); input.focus();
+};
 
 // "Decide later" — a legitimate answer: collapse the input into a friendly note and
 // keep the area as the location (original anchor km, so the price never moves).
@@ -250,10 +289,12 @@ function attachAC(input, menu, which){
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
-      if(geo && geo.name){ input.value=geo.name; onLoc(); }
+      if(geo && geo.name) input.value=geo.name;
+      onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
     } else {
       setGeo(which, null);
+      onLoc();
       renderRouteMap();
     }
   }
@@ -407,7 +448,7 @@ function renderRouteMap(){
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));
         // re-price single private transfers from the REAL driving distance so the
         // summary total always matches the route actually shown on the map.
-        if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice){
+        if(km!=null && userSetLocation && perVehicle && !isTrip && T && T.legPrice && !state.locTooFar){
           const dec = T.repriceDecision(state.anchorKm, km, unit, vehicleKey);
           state.routeKm = km;
           if(dec.action==='confirm'){
@@ -579,7 +620,7 @@ if(isTrip){
   })();
 }
 
-// ===== SHARED RIDE: fixed route + fixed daily schedule, sold per seat =====
+// ===== SHARED RIDE: fixed route + fixed weekly schedule, sold per seat =====
 // A shared seat is not a private/custom transfer: the corridor and the departure
 // times are set, so we don't ask for locations or an arbitrary pick-up time. We
 // confirm the ride, then collect a date + a scheduled departure + how many seats.
@@ -722,7 +763,7 @@ function renderDeps(){
     const dp=deps[0];
     sel.style.display='none';
     hint.style.display='block';
-    hint.textContent='Reserve a seat on a daily departure.';
+    hint.textContent='Reserve a seat on a scheduled departure.';
     let card=document.getElementById('single-dep-card');
     if(!card){
       card=document.createElement('div');
@@ -744,7 +785,7 @@ function renderDeps(){
   hint.style.display='block';
   hint.textContent = perVehicle
     ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.' : 'Choose any time of day — your private vehicle leaves when you do.')
-    : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a daily departure.');
+    : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a scheduled departure.');
   let opts=`<option value="" ${!state.dep?'selected':''} disabled>Choose a ${perVehicle?'pick-up time':'departure'}…</option>`;
   opts+=deps.map(dp=>`<option value="${dp.time}" ${state.dep===dp.time?'selected':''}>${fmtTime(dp.time)} · ${dp.label}</option>`).join('');
   sel.innerHTML=opts;
@@ -786,17 +827,37 @@ window.pickSvc=function(svc){
   state.payPlan = 'full';
   render();
 };
-function renderRepriceNote(){
+function ensureRepriceEl(){
   let el=document.getElementById('reprice-note');
-  const p=state.pendingReprice;
-  if(!p){ if(el) el.remove(); return; }
-  const newPrice = p.prices[vehicleKey];
   if(!el){
     el=document.createElement('div'); el.id='reprice-note'; el.className='reprice-note';
     const wrap=document.getElementById('loc-wrap');
     if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(el, wrap.nextSibling);
     else { const panel=document.querySelector('[data-panel="2"]'); if(panel) panel.appendChild(el); }
   }
+  return el;
+}
+function renderRepriceNote(){
+  const far=state.locTooFar;
+  // A spot outside its area is a hard stop — it takes over the notice and blocks Continue.
+  if(far){
+    const el=ensureRepriceEl(); el.className='reprice-note reprice-block';
+    const spot=far.which==='from'?'pick-up':'drop-off';
+    el.innerHTML =
+      '<b>That’s outside your '+spot+' area.</b> '+
+      '“'+acEsc(far.name)+'” is about '+far.km+' km from '+acEsc(far.area)+', but an exact '+spot+
+      ' needs to be within '+far.limit+' km. To travel a different route, change your search on the home page.'+
+      '<div class="rn-actions">'+
+        '<button type="button" class="btn btn-primary btn-sm" onclick="clearExactSpot(\''+far.which+'\')">Clear this spot</button>'+
+        '<a class="rn-change" href="index.html">Change your search</a>'+
+      '</div>';
+    return;
+  }
+  let el=document.getElementById('reprice-note');
+  const p=state.pendingReprice;
+  if(!p){ if(el) el.remove(); return; }
+  const newPrice = p.prices[vehicleKey];
+  el=ensureRepriceEl(); el.className='reprice-note';
   el.innerHTML =
     '<b>Heads up — this trip is longer than the standard route.</b> '+
     'Your exact stops add about '+p.extraKm+' km, so the fixed price updates from '+
@@ -825,12 +886,17 @@ window.dismissReprice=function(){
     'background:#fff7ea;border-radius:12px;font-size:.9rem;line-height:1.4;color:#5c4a2a}'+
     '.reprice-note b{color:#8a5a12}'+
     '.reprice-note .rn-actions{display:flex;gap:.75rem;align-items:center;margin-top:.6rem;flex-wrap:wrap}'+
-    '.reprice-note .rn-change{background:none;border:0;color:#8a5a12;text-decoration:underline;cursor:pointer;font:inherit;padding:0}';
+    '.reprice-note .rn-change{background:none;border:0;color:#8a5a12;text-decoration:underline;cursor:pointer;font:inherit;padding:0}'+
+    '.reprice-note.reprice-block{border-color:#e0a091;background:#fcece7;color:#7a3320}'+
+    '.reprice-note.reprice-block b{color:#b23214}'+
+    '.reprice-note.reprice-block .rn-change{color:#b23214}'+
+    // a blocked Continue must LOOK blocked, not just be inert
+    '#n1:disabled,#mbar-cta:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}';
   document.head.appendChild(s);
 })();
 function checkWhere(){
   const haveWhere = isTrip ? true : (state.locFrom && state.locTo);
-  document.getElementById('n1').disabled = !haveWhere || !!state.pendingReprice;
+  document.getElementById('n1').disabled = !haveWhere || !!state.pendingReprice || !!state.locTooFar;
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can

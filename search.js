@@ -168,22 +168,21 @@ let sharedCard = '';
 let noShare = '';
 if (shared) {
   const perPaxPrivate = quote.car / Math.min(3, Math.max(1, pax));
-  const savePct = Math.max(15, Math.round((1 - (shared.seat / perPaxPrivate)) * 100));
+  const savePct = Math.round((1 - (shared.seat / perPaxPrivate)) * 100);
   const timeStr = shared.times.map(t => { const [h, m] = t.split(':'); const H = +h; return `${((H + 11) % 12) + 1}:${m}${H < 12 ? 'am' : 'pm'}`; }).join(' & ');
-  const low = shared.seatsLeft <= 4;
   sharedCard = `
   <article class="opt opt-shared">
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">A seat on our daily service</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">A reserved seat on our scheduled service</div></div>
     </div>
     <p class="o-desc">Hop a reserved seat on our <b>${shared.corridorLabel}</b> service. Same AC comfort, a friendly Pro&nbsp;Hopper guide on board — for a fraction of the price.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    <span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>
+    ${savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       <div class="sm">${ICONS.clock} Departs ${timeStr} · ${shared.freqText}</div>
-      <div class="sm">${ICONS.seat} <span class="${low ? 'low' : ''}">${shared.seatsLeft} seat${shared.seatsLeft > 1 ? 's' : ''} left</span> for ${pax} traveler${pax > 1 ? 's' : ''}</div>
+      <div class="sm">${ICONS.seat} Seats for ${pax} traveler${pax > 1 ? 's' : ''} — we confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
       <span class="chip">${ICONS.ck} AC car or van</span>
@@ -198,7 +197,7 @@ if (shared) {
     <div class="ns-ico">${ICONS.share}</div>
     <div>
       <b>No shared seats on this route — yet</b>
-      <p>We don't run a daily shared service between ${fromP.name} and ${toP.name} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
+      <p>We don't run a scheduled shared service between ${fromP.name} and ${toP.name} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
     </div>
   </div>`;
 }

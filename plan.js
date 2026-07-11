@@ -46,7 +46,9 @@ function resolve(name){
   if(GEO[k]) return GEO[k];
   const ck = countrylessKey(name);
   if(ck && ck!==k && GEO[ck]) return GEO[ck];
-  if(k.includes('airport') || k.includes('cmb')) return GEO[norm('Colombo Airport')];
+  // "airport"/"cmb" → Colombo Airport, but never hijack a named OTHER airport (Mattala, Jaffna…),
+  // which would silently misprice legs to/from it.
+  if((k.includes('cmb') || k.includes('airport')) && !/mattala|jaffna|hri|ratmalana|batticaloa|palaly/.test(k)) return GEO[norm('Colombo Airport')];
   if(words(name).length===1){
     for(const key in GEO){ if(key.includes(k) || k.includes(key)) return GEO[key]; }
   }
