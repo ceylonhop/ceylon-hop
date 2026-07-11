@@ -84,9 +84,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
   .cal-grid .dow{font-size:.7rem;color:var(--ink-soft);font-weight:600;padding:4px 0}
   .cal-day{aspect-ratio:1;border-radius:8px;display:grid;place-items:center;font-size:.85rem;cursor:pointer;border:1.5px solid transparent}
-  .cal-day:hover:not(.off):not(.sel){background:var(--cream-deep)}
+  .cal-day:hover:not(.off):not(.no-svc):not(.sel){background:var(--cream-deep)}
   .cal-day.off{color:#c9c4b6;cursor:default}
+  .cal-day.no-svc{color:#c9c4b6;cursor:default;text-decoration:line-through;text-decoration-color:#dcd7c8}
   .cal-day.sel{background:var(--accent);color:#fff;font-weight:600}
+  .shared-cal-note{margin:.55rem 0 0;font-size:.8rem;color:#6b6456;line-height:1.45}
   .cal-day{position:relative}
 
   /* STEP 1 — date stacked above its departures, so time slots get full width */

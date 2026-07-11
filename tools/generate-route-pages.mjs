@@ -43,10 +43,10 @@ function faqItems(from, to, q, shared) {
     [`How long does the ${from} to ${to} transfer take?`,
       `The drive is about ${q.duration} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
-      `A private car is from $${q.car} and an air-conditioned van (up to 6 people) from $${q.van}, fixed and door to door — the price you see is the price you pay.${shared ? ` A daily shared seat is from $${shared.seat} per person.` : ''}`],
+      `A private car is from $${q.car} and an air-conditioned van (up to 6 people) from $${q.van}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from ${shared.seat} per person.` : ''}`],
     shared
       ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel.replace(/\s*→\s*/g, '–')} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
-      : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest daily service.`],
+      : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest shared service.`],
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
     [`How do I book the ${from} to ${to} transfer?`,
@@ -97,7 +97,7 @@ function routePage(T, content, from, to, forward) {
   // promise a shared seat in the SERP; also keeps titles shorter. The shared option
   // lives in the body/description where it can be stated accurately per route.
   const title = `${fromName} to ${toName} — private transfer | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a daily seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
+  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a seat from ${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
@@ -208,11 +208,11 @@ function tripIndex(T, content) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sri Lanka transfer routes — fixed-price private &amp; shared rides | Ceylon Hop</title>
-<meta name="description" content="Fixed-price private transfers and daily shared rides on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
+<meta name="description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes — airport to Kandy, Kandy to Ella, the south coast and more. See distances and prices.">
 <link rel="canonical" href="${url}">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Sri Lanka transfer routes — Ceylon Hop">
-<meta property="og:description" content="Fixed-price private transfers and daily shared rides on Sri Lanka's most popular routes.">
+<meta property="og:description" content="Fixed-price private transfers and scheduled shared rides on Sri Lanka's most popular routes.">
 <meta property="og:url" content="${url}">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:image" content="${OG_IMAGE}">
@@ -233,7 +233,7 @@ ${headAssets}
 <body>
 ${header}
 <main>
-  <section class="trip-hero"><div class="wrap"><h1>Sri Lanka transfer routes</h1><p>Fixed-price private transfers and daily shared rides on the island's most popular corridors. Pick a route for prices, distance and what the drive is like.</p></div></section>
+  <section class="trip-hero"><div class="wrap"><h1>Sri Lanka transfer routes</h1><p>Fixed-price private transfers and scheduled shared rides on the island's most popular corridors. Pick a route for prices, distance and what the drive is like.</p></div></section>
   ${groups}
 </main>
 ${footer}

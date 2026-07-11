@@ -41,44 +41,47 @@
   const byId = {};
   PLACES.forEach(p => (byId[p.id] = p));
 
-  // ---- Shared corridors: groups of stops that share a daily seat service.
-  // A shared option exists when BOTH endpoints sit on the same corridor.
+  // ---- Shared corridors: groups of stops that share a fixed-schedule seat service.
+  // A shared option exists when BOTH endpoints sit on the same corridor. Seats run a
+  // fixed WEEKLY schedule (not daily): `days` are the service weekdays (0=Sun … 6=Sat),
+  // mirroring the backend `serviceDays` — the API rejects off-schedule shared bookings.
+  const SHARED_DAYS = [3, 6]; // Wed & Sat
   const CORRIDORS = [
     {
       id: 'airport-cultural',
       label: 'Airport → Cultural Triangle',
       stops: ['cmb-airport', 'colombo', 'negombo', 'sigiriya', 'kandy'],
-      seat: CORRIDOR_SEAT['airport-cultural'], times: ['07:30'], freqText: 'Daily'
+      seat: CORRIDOR_SEAT['airport-cultural'], times: ['07:30'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'hill-line',
       label: 'Kandy → Hill Country',
       stops: ['kandy', 'nuwara-eliya', 'ella'],
-      seat: CORRIDOR_SEAT['hill-line'], times: ['08:00'], freqText: 'Daily'
+      seat: CORRIDOR_SEAT['hill-line'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'ella-east',
       label: 'Ella → Yala → East',
       stops: ['ella', 'yala', 'arugam-bay'],
-      seat: CORRIDOR_SEAT['ella-east'], times: ['08:00'], freqText: 'Daily 8:00am'
+      seat: CORRIDOR_SEAT['ella-east'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'south-coast',
       label: 'Galle → Mirissa coast',
       stops: ['galle', 'hikkaduwa', 'bentota', 'weligama', 'mirissa'],
-      seat: CORRIDOR_SEAT['south-coast'], times: ['09:00', '14:00'], freqText: 'Twice daily'
+      seat: CORRIDOR_SEAT['south-coast'], times: ['09:00', '14:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'yala-south',
       label: 'Yala → South coast',
       stops: ['yala', 'mirissa', 'weligama', 'galle'],
-      seat: CORRIDOR_SEAT['yala-south'], times: ['08:00'], freqText: 'Daily 8:00am'
+      seat: CORRIDOR_SEAT['yala-south'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'ella-south',
       label: 'Ella → South coast',
       stops: ['ella', 'mirissa', 'weligama'],
-      seat: CORRIDOR_SEAT['ella-south'], times: ['08:30'], freqText: 'Daily 8:30am'
+      seat: CORRIDOR_SEAT['ella-south'], times: ['08:30'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     }
   ];
 
@@ -164,7 +167,7 @@
       if (i !== -1 && j !== -1) {
         return {
           corridorId: c.id, corridorLabel: c.label,
-          seat: c.seat, times: c.times, freqText: c.freqText,
+          seat: c.seat, times: c.times, days: c.days, freqText: c.freqText,
           // seat count varies a little by day/route for realism
           seatsLeft: 3 + ((fromId.length + toId.length + c.seat) % 6)
         };
