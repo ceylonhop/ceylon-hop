@@ -171,7 +171,36 @@ idleDays   = max(0, days − travelDays.length)
 billableKm = Σ travelDays.distanceKm  +  idleDays × idleMinKm[vehicle]
 total      = days × dayRateCents  +  round(billableKm × perKmCents[vehicle])  +  extras
 ```
-Idle-day minimum **kept as-is** (your decision) — line-itemised so the customer sees it.
+Idle-day minimum **kept as-is** (owner decision) — you charge for holding the car + driver
+regardless of how the customer spends the day. The numeric values live in
+`RATE_CARD.chauffeur` (`api/src/quote/rateCard.ts`, version-stamped) — **that is canonical**;
+figures quoted in this M11-era doc (e.g. §5) may lag it.
+
+### 6a. Idle days — derivation, naming & customer presentation (annotated 2026-07-10)
+
+**Derivation (quoting tool).** `idleDays` is inferred purely from a **gap in the leg dates** —
+any day inside `firstDate..lastDate` with no transfer leg. The old per-leg **"Add stay day"
+button was retired**; ops no longer marks stay days explicitly, so idle days fall straight out
+of the itinerary dates (see `toEngineRequest` in `api/src/routes/internalQuote.ts` and
+`idleDays` in `api/src/quote/chauffeur.ts`).
+
+**Naming is deliberate — "idle day", not "rest" or "sightseeing".** Ops can't know in advance
+whether the customer will relax *or* go sightseeing that day, so the quote commits to neither.
+The `idleMinKm` charge is the **driver + vehicle availability fee** — they're reserved for the
+customer that day no matter what the customer chooses to do.
+
+**Deliberately understated in the customer message (pricing-psychology decision).** The idle
+day is folded into the priced totals only:
+- it's inside the day count on the `Chauffeur day rate — N day(s)` line, and
+- its km appears as `+ N idle-day min` inside the single `Distance — …` line item.
+
+It is **not** rendered as its own itinerary row — there is no `Stay in …` / `Sightseeing …`
+line. A day that might just be relaxing should not lead with an expensive-looking line item.
+⚠️ **Do not "fix" this by surfacing the idle day more prominently** (adding a stay/sightseeing
+itinerary line, renaming "idle-day min", etc.) **without an explicit owner decision** — the
+understatement is intentional. The reconciled e2e spec `web-tests/e2e/quote-tool.spec.js` (V1)
+asserts exactly this behaviour: no stay line; the rest day charged via day-count + non-zero
+idle-day km.
 
 **Extras** = `Σ extras[code]`. Unknown code → `UNKNOWN_EXTRA`. (No extra-bag charge in v1.)
 An empty `legs` / `travelDays` request → `NO_LEGS`.
