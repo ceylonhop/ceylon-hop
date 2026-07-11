@@ -177,11 +177,14 @@ const ACPLACES = (function(){
 })();
 
 const locFrom=document.getElementById('loc-from'), locTo=document.getElementById('loc-to');
-// pre-fill with the route's endpoints so the user can refine to an exact spot
-locFrom.value = r.stops[0];
-locTo.value   = r.stops[r.stops.length-1];
-state.locFrom = locFrom.value;
-state.locTo   = locTo.value;
+// The route's endpoints were chosen on the homepage — they're settled, shown as done
+// chips above each field. The inputs stay EMPTY and collect only the exact spot
+// (hotel/address/landmark); untouched, everything falls back to the area itself.
+const AREA_FROM = r.stops[0], AREA_TO = r.stops[r.stops.length-1];
+(function(){ const cf=document.querySelector('#loc-area-from b'), ct=document.querySelector('#loc-area-to b');
+  if(cf) cf.textContent=AREA_FROM; if(ct) ct.textContent=AREA_TO; })();
+state.locFrom = AREA_FROM;
+state.locTo   = AREA_TO;
 let _rmTimer=null;
 let userSetLocation=false; // true once the customer actively picks a pickup/drop-off
 function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
@@ -189,10 +192,31 @@ const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
 
 function onLoc(){
-  state.locFrom = locFrom.value.trim();
-  state.locTo   = locTo.value.trim();
+  // exact spot when given; otherwise the settled area (payload, summary, map and the
+  // reprice anchor all read these, so "no exact spot yet" behaves like the old prefill)
+  state.locFrom = locFrom.value.trim() || AREA_FROM;
+  state.locTo   = locTo.value.trim()   || AREA_TO;
   render(); checkWhere(); scheduleRouteMap();
 }
+
+// "Decide later" — a legitimate answer: collapse the input into a friendly note and
+// keep the area as the location (original anchor km, so the price never moves).
+function wireDecideLater(which){
+  const field=document.getElementById('loc-field-'+which), input=which==='from'?locFrom:locTo;
+  const later=document.getElementById('loc-later-'+which), note=document.getElementById('loc-note-'+which);
+  const undo=document.getElementById('loc-undo-'+which);
+  if(!field||!later||!note||!undo) return;
+  later.addEventListener('click',()=>{
+    input.value=''; setGeo(which,null); onLoc();
+    field.classList.add('decided-later'); note.hidden=false;
+    if(typeof window.chTrack==='function') window.chTrack('exact_location_deferred',{which});
+  });
+  undo.addEventListener('click',()=>{
+    field.classList.remove('decided-later'); note.hidden=true;
+    input.focus();
+  });
+}
+wireDecideLater('from'); wireDecideLater('to');
 
 // Pickup/drop-off autocomplete. With the Maps key + Places API we show live
 // Google suggestions restricted to Sri Lanka; otherwise we fall back to the

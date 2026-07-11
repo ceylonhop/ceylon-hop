@@ -97,6 +97,11 @@ export async function gotoBooking(page, opts = {}) {
   await page.addInitScript((delay) => {
     window.__E2E_GOOGLE_DELAY = delay;
   }, googleDelay);
+  // Pre-seed the cookie choice so the consent banner never overlays controls near the
+  // bottom of the viewport (it intercepts pointer events and flakes autocomplete clicks).
+  await page.addInitScript(() => {
+    try { localStorage.setItem('ceylonhop_consent', 'denied'); } catch (e) {}
+  });
 
   // never hit the network for these
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());

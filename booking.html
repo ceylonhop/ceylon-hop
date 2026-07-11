@@ -110,18 +110,47 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     background:var(--pc-saffron);border:1px solid #efe2c2;border-radius:14px;padding:15px 18px}
   .dep-empty svg{width:26px;height:26px;color:var(--saffron);flex:none}
 
-  /* STEP 1 — location-first address entry (maps-powered) */
-  .loc-block{display:grid;gap:12px;margin-bottom:6px}
-  .loc-field{display:grid;grid-template-columns:20px 1fr;gap:12px;align-items:start;
-    border:1.5px solid var(--line);border-radius:14px;padding:12px 15px;background:var(--white);transition:border .15s,box-shadow .15s}
-  .loc-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
-  .loc-field .pin{width:14px;height:14px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;margin-top:6px}
-  .loc-field.to .pin{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
-  .loc-field label{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:1px}
-  .loc-field input{width:100%;border:none;background:none;font-family:inherit;font-size:1rem;color:var(--ink);padding:2px 0}
-  .loc-field input:focus{outline:none}
-  .loc-powered{display:flex;align-items:center;gap:.4rem;font-size:.76rem;color:var(--ink-soft);margin:2px 2px 0}
-  .loc-powered svg{width:14px;height:14px;color:var(--accent-deep)}
+  /* STEP 2 — exact pick-up & drop-off, laid out as a connected route rail.
+     The homepage-chosen area rides above each field as a settled "done" line;
+     the field itself is the one obviously-typeable element. */
+  .loc-block{position:relative;display:grid;gap:14px;margin:2px 0 6px}
+  /* the rail line joining the pick-up dot to the drop-off dot */
+  .loc-block::before{content:"";position:absolute;left:9px;top:16px;bottom:22px;width:2px;
+    background:repeating-linear-gradient(var(--line) 0 5px,transparent 5px 10px)}
+  .loc-field{display:grid;grid-template-columns:20px 1fr;gap:13px;align-items:start}
+  .loc-pin{display:grid;place-items:center;height:22px;position:relative;z-index:1}
+  .loc-field .pin{width:13px;height:13px;border-radius:50%;border:4px solid var(--teal-deep);background:var(--white);box-shadow:0 0 0 4px var(--cream)}
+  .loc-field.to .pin{border:none;background:var(--tomato);width:13px;height:16px;
+    border-radius:50% 50% 50% 50%/60% 60% 40% 40%;box-shadow:0 0 0 4px var(--cream)}
+  .loc-field.to .pin::after{content:"";position:absolute;top:3px;left:50%;transform:translateX(-50%);
+    width:4px;height:4px;border-radius:50%;background:var(--white)}
+  /* settled area line — the "done and closed" answer, sits inline with the caption */
+  .loc-cap{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+  .loc-lab{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--ink-soft)}
+  .loc-area{display:inline-flex;align-items:center;gap:5px;font-size:.94rem;font-weight:700;color:var(--ink);min-width:0}
+  .loc-area svg{width:12px;height:12px;flex:none;color:var(--accent-deep)}
+  .loc-area b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* the exact-spot field — a real, clearly-typeable input, kept compact */
+  .loc-input{position:relative;display:flex;align-items:center;gap:8px;
+    border:1.5px solid var(--line);border-radius:11px;background:var(--white);padding:0 12px;
+    transition:border-color .15s,box-shadow .15s}
+  .loc-input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+  .loc-input-ic{width:16px;height:16px;flex:none;color:var(--ink-soft);transition:color .15s}
+  .loc-input:focus-within .loc-input-ic{color:var(--accent-deep)}
+  .loc-input input{flex:1;min-width:0;border:none;background:none;font-family:inherit;font-size:.95rem;
+    color:var(--ink);padding:9px 0;outline:none}
+  .loc-input input::placeholder{color:var(--ink-soft);opacity:.9}
+  .loc-later{align-self:start;background:none;border:0;margin-top:5px;padding:0;font:inherit;font-size:.78rem;
+    font-weight:600;color:var(--ink-soft);cursor:pointer;text-decoration:underline;text-underline-offset:2px;
+    text-decoration-color:var(--line)}
+  .loc-later:hover{color:var(--accent-deep);text-decoration-color:var(--accent)}
+  .loc-later-note{display:flex;gap:7px;align-items:flex-start;margin:1px 0 0;font-size:.84rem;color:var(--ink-soft);line-height:1.45}
+  .loc-later-note[hidden]{display:none}
+  .loc-later-note svg{width:14px;height:14px;flex:none;margin-top:2px;color:var(--accent-deep)}
+  .loc-later-note .loc-undo{background:none;border:0;padding:0;font:inherit;font-size:.84rem;font-weight:700;
+    color:var(--accent-deep);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+  /* decide-later state: tuck the field + link, leave the settled area + note */
+  .loc-field.decided-later .loc-input,.loc-field.decided-later .loc-later{display:none}
 
   /* pickup/drop-off autocomplete */
   .ac-wrap{position:relative}
@@ -145,8 +174,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ac-gmap b{font-weight:700;color:#4285F4}
 
   /* route map on the Where step (shows once both ends resolve) */
-  .route-map{margin-top:14px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--white);
+  .route-map{margin-top:12px;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--white);
     box-shadow:var(--shadow-s);animation:rmIn .3s ease}
+  /* keep the map a slim confirmation strip, not the hero of the step */
+  .route-map .ch-map-wrap{height:150px}
+  .rm-canvas svg{max-height:150px}
   @keyframes rmIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   .rm-canvas{position:relative;background:linear-gradient(170deg,#eaf4f1,#dfeee9)}
   .rm-canvas svg{display:block;width:100%;height:auto}
@@ -593,7 +625,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <!-- STEP 2 — WHERE -->
     <div class="stepcard panel" data-panel="2">
       <h2 id="s1-title">Add your exact pick-up &amp; drop-off</h2>
-      <p class="sub" id="s1-sub">Your hotel, an address or a landmark — the more exact, the better we find you. Your fixed price covers this exact route; we&rsquo;ll confirm the time on WhatsApp.</p>
+      <p class="sub" id="s1-sub">Your route&rsquo;s confirmed. Add the exact spot we should meet you at &mdash; or decide later.</p>
 
       <!-- service chooser (multi-day trips only) -->
       <div class="svc-chooser" id="svc-chooser" style="display:none">
@@ -617,20 +649,39 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <!-- single-transfer locations -->
       <div id="loc-wrap">
         <div class="loc-block">
-          <div class="loc-field from"><span class="pin"></span>
-            <div class="ac-wrap"><label>Pick-up — your hotel or address</label>
-              <input id="loc-from" autocomplete="off" placeholder="Add your hotel, address or landmark…">
-              <div class="ac-menu" id="ac-from"></div>
+          <div class="loc-field from" id="loc-field-from">
+            <span class="loc-pin"><span class="pin"></span></span>
+            <div class="ac-wrap">
+              <div class="loc-cap">
+                <span class="loc-lab">Pick-up</span>
+                <span class="loc-area" id="loc-area-from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
+              </div>
+              <div class="loc-input">
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <input id="loc-from" autocomplete="off" placeholder="Hotel or address (optional)">
+                <div class="ac-menu" id="ac-from"></div>
+              </div>
+              <button type="button" class="loc-later" id="loc-later-from">I&rsquo;ll decide the exact spot later</button>
+              <p class="loc-later-note" id="loc-note-from" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact pick-up on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-from">Add it now</button></span></p>
             </div>
           </div>
-          <div class="loc-field to"><span class="pin"></span>
-            <div class="ac-wrap"><label>Drop-off — your hotel or address</label>
-              <input id="loc-to" autocomplete="off" placeholder="Add your hotel, address or landmark…">
-              <div class="ac-menu" id="ac-to"></div>
+          <div class="loc-field to" id="loc-field-to">
+            <span class="loc-pin"><span class="pin"></span></span>
+            <div class="ac-wrap">
+              <div class="loc-cap">
+                <span class="loc-lab">Drop-off</span>
+                <span class="loc-area" id="loc-area-to"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
+              </div>
+              <div class="loc-input">
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <input id="loc-to" autocomplete="off" placeholder="Hotel or address (optional)">
+                <div class="ac-menu" id="ac-to"></div>
+              </div>
+              <button type="button" class="loc-later" id="loc-later-to">I&rsquo;ll decide the exact spot later</button>
+              <p class="loc-later-note" id="loc-note-to" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact drop-off on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-to">Add it now</button></span></p>
             </div>
           </div>
         </div>
-        <p class="loc-powered"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg> Powered by maps — start typing your hotel or exact spot</p>
         <div class="route-map" id="route-map" hidden>
           <div class="rm-canvas" id="rm-canvas"></div>
           <div class="rm-bar" id="rm-bar"></div>

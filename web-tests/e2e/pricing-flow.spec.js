@@ -79,9 +79,31 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
   await expect(page.locator('#n1')).toBeEnabled();
 });
 
-test('step 2 invites an exact hotel / pick-up location', async ({ page }) => {
+test('step 2 shows the settled areas as done chips and invites the exact spot', async ({ page }) => {
   await gotoBooking(page); // default private route (cmb-airport → hikkaduwa)
   await expect(page.locator('#s1-title')).toHaveText('Add your exact pick-up & drop-off');
-  await expect(page.locator('#loc-from')).toHaveAttribute('placeholder', 'Add your hotel, address or landmark…');
-  await expect(page.locator('#loc-to')).toHaveAttribute('placeholder', 'Add your hotel, address or landmark…');
+  // The homepage-chosen areas are closed/done — chips, not editable input values.
+  await expect(page.locator('#loc-area-from b')).toHaveText('Colombo Airport (CMB)');
+  await expect(page.locator('#loc-area-to b')).toHaveText('Hikkaduwa');
+  await expect(page.locator('#loc-from')).toHaveValue('');
+  await expect(page.locator('#loc-to')).toHaveValue('');
+  await expect(page.locator('#loc-from')).toHaveAttribute('placeholder', 'Hotel or address (optional)');
+  // Continue is not gated on the exact spot — the settled area is a valid answer.
+  await expect(page.locator('#n1')).toBeEnabled();
+});
+
+test('decide later collapses the exact-spot input and keeps the original price', async ({ page }) => {
+  await gotoBooking(page, { routeKm: 400 }); // even with a long stubbed route: no pick → no reprice
+  await page.evaluate(() => window.goStep && window.goStep(2)); // the WHERE panel
+  const before = await page.locator('#sum-total').textContent();
+  await page.locator('#loc-later-from').click();
+  await expect(page.locator('#loc-note-from')).toBeVisible();  // friendly note in its place
+  await expect(page.locator('#loc-from')).toBeHidden();        // input tucked away
+  await expect(page.locator('#reprice-note')).toHaveCount(0);  // no price movement
+  await expect(page.locator('#sum-total')).toHaveText(before);
+  await expect(page.locator('#n1')).toBeEnabled();
+  // Undo brings the input back, ready to type.
+  await page.locator('#loc-undo-from').click();
+  await expect(page.locator('#loc-from')).toBeVisible();
+  await expect(page.locator('#loc-from')).toBeFocused();
 });
