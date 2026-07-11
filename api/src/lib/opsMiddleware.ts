@@ -22,7 +22,9 @@ declare module 'hono' {
 }
 
 export function devBypassEnabled(cfg: OpsAuthConfig): boolean {
-  return cfg.nodeEnv !== 'production';
+  // Fail CLOSED: only an explicit dev/test env enables the dev-login bypass, so a misspelled or
+  // unexpected NODE_ENV (e.g. 'produciton', unset in an odd deploy) can never leave it open.
+  return cfg.nodeEnv === 'development' || cfg.nodeEnv === 'test';
 }
 
 export function issueSessionCookie(c: Context, email: string, sessionSecret: string, now: number): void {

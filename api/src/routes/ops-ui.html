@@ -1142,7 +1142,7 @@ function ticketRow(t,i){
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${st.label}</span>
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+t.time:''}</div></div>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
     </div>
   </div>`;
 }
@@ -1382,7 +1382,7 @@ function renderSheet(){
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+t.time:''}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
@@ -1519,7 +1519,7 @@ document.addEventListener('keydown',e=>{
   if(row){e.preventDefault();openOpsQuote(row.dataset.qopen);}
 });
 $('#scrim').addEventListener('click',()=>{state.detail=null;state.detailData=null;renderSheet();});
-document.addEventListener('input',e=>{if(e.target.id==='q'){state.q=e.target.value;viewTickets();}});
+document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
 document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}

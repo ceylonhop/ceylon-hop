@@ -351,6 +351,15 @@ export function internalQuoteRoutes(deps: {
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
+    // Maker-checker: a content re-save is only allowed while the quote is still editable. A
+    // ready/sent/decided quote must be reopened first (PATCH → draft, founder-gated) — otherwise
+    // any quote:manage role could rewrite an already-approved quote's price and send it unreviewed.
+    if (existingId) {
+      const current = await deps.quotes.get(existingId);
+      if (current && !(['draft', 'pending_review', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
+        return c.json({ error: 'not_editable', status: current.status }, 409);
+      }
+    }
     try {
       const body = parseToolRequest(raw);
       const { req, result } = await resolveAndPrice(body, deps.maps);

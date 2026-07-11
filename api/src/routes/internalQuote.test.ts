@@ -157,6 +157,17 @@ describe('internal quoting tool route', () => {
     expect(list.quotes.length).toBe(1);
   });
 
+  it('POST /save on a READY (approved) quote is rejected (409) — maker-checker lock', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' }); // founder-approved, content now locked
+    const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Cheaper', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 5 })] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_editable');
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.customerName).toBe('Maya'); // approved content untouched
+  });
+
   it('POST /save with an unknown id falls back to creating a new quote (201)', async () => {
     const app = createApp();
     const res = await post(app, '/admin/quote/save', { id: 'no-such-id', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });

@@ -56,8 +56,12 @@ export function verifySession(token: string | undefined, secret: string, now: nu
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
   const expected = mac(body, secret);
-  if (sig.length !== expected.length) return null;
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  // Compare BYTE lengths, not string lengths — a crafted multibyte signature can match the hex
+  // string length while producing a longer Buffer, which would make timingSafeEqual throw (500).
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length) return null;
+  if (!timingSafeEqual(sigBuf, expBuf)) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
