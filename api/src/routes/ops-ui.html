@@ -154,6 +154,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .qpill.tone-green{color:#1f8a4c;background:#e4f5ea;border-color:#c7ead4}
   .qpill.tone-red{color:#c0362a;background:#fbe8e6;border-color:#f4cec9}
   .qpill.tone-muted{color:#8a8378;background:#f1efea;border-color:#e6e2da}
+  /* Age-since-request chip (queue rows): time a quote has waited, coloured for urgency to
+     get it sent. Only quotes still on the team's plate escalate; sent/closed stay neutral. */
+  .qrow .qstat{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+  .qage{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:700;font-variant-numeric:tabular-nums;padding:3px 8px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .qage::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.85}
+  .qage.tone-fresh{color:#5b6472;background:#f1f3f6;border-color:#e6eaef}   /* under 1h — calm */
+  .qage.tone-warn{color:#9a6410;background:#fdf3e0;border-color:#f6e3c0}    /* 1–6h — amber */
+  .qage.tone-urgent{color:#b4231b;background:#fbe7e4;border-color:#f3ccc6}  /* 6h+ — red */
+  .qage.tone-muted{color:#9aa2ad;background:transparent;border-color:transparent} /* sent/closed — faint */
   @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}}
   /* Queue head: title + "New quote" action */
   .qhead{display:flex;align-items:center;justify-content:space-between;gap:16px}
@@ -1211,6 +1220,36 @@ const QUEUE_FILTERS=[
 let queueFilter='all';
 function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve'));}
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+// Age-since-request chip for the queue: how long a quote has waited, coloured to create urgency
+// to get it sent. Clock = the quote's created_at (from /admin/quote/list). Compact label: now/47m/3h/2d.
+function quoteAgeLabel(iso){
+  const t=iso?Date.parse(iso):NaN;
+  if(isNaN(t))return '';
+  const mins=Math.floor((Date.now()-t)/60000);
+  if(mins<1)return 'now';
+  if(mins<60)return mins+'m';
+  const hrs=Math.floor(mins/60);
+  if(hrs<24)return hrs+'h';
+  return Math.floor(hrs/24)+'d';
+}
+// Only quotes still awaiting the team escalate (fresh <1h → warn 1–6h → urgent 6h+); once a quote
+// is sent/booked/lost/expired the send-urgency is over, so the age shows but stays neutral.
+const QAGE_DONE=new Set(['sent','won','lost','expired']);
+function quoteAgeTone(iso,status){
+  if(QAGE_DONE.has(status))return 'muted';
+  const t=iso?Date.parse(iso):NaN;
+  if(isNaN(t))return 'muted';
+  const hrs=(Date.now()-t)/3600000;
+  if(hrs<1)return 'fresh';
+  if(hrs<6)return 'warn';
+  return 'urgent';
+}
+function quoteAgeChip(q){
+  const label=quoteAgeLabel(q.createdAt);
+  if(!label)return '';
+  const title=q.createdAt?' title="Requested '+esc(new Date(q.createdAt).toLocaleString())+'"':'';
+  return `<span class="qage tone-${quoteAgeTone(q.createdAt,q.status)}"${title}>${esc(label)}</span>`;
+}
 async function loadOpsQuotes(){
   try{
     const r=await fetch('/admin/quote/list',{credentials:'same-origin'});
@@ -1231,7 +1270,7 @@ function quoteRowHtml(q){
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
     <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
-    <span class="qstat">${statusPill(q.status)}</span>
+    <span class="qstat">${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
 function viewQuotes(){

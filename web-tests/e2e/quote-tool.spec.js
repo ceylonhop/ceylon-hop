@@ -425,3 +425,26 @@ test('legs can be reordered and out-of-order dates raise a flag', async ({ page 
   await page.waitForTimeout(400);
   await expect(outOfOrderFlag).toHaveCount(0);
 });
+
+// Spec 7: the queue shows an age-since-request chip on each row, coloured for urgency. A
+// freshly-saved quote is <1h old, so its chip renders with the calm "fresh" tone (not amber/red).
+test('queue row shows a fresh age chip for a just-saved quote', async ({ page }) => {
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  await fillFirstLegDate(page, '2026-08-01');
+
+  const custName = 'E2E Age ' + Date.now();
+  await page.locator('#f-customerName').fill(custName);
+  await page.locator('[data-action="saveDraft"]').click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
+
+  // Back to the queue; the row for this quote carries a `.qage` chip, calm tone (just created).
+  await page.locator('#nav button[data-route="quotes"]').click();
+  const row = page.locator('#view .qrow', { hasText: custName });
+  await expect(row).toBeVisible({ timeout: 8000 });
+  const age = row.locator('.qage');
+  await expect(age).toBeVisible();
+  await expect(age).toHaveClass(/tone-fresh/);
+});
