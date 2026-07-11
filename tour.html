@@ -172,8 +172,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <aside>
       <div class="book-box">
         <div class="top">
-          <div class="lab">From, whole trip</div>
-          <div class="price-now"><b id="bk-price"></b><span>· private vehicle &amp; driver</span></div>
+          <div class="lab">From, point-to-point</div>
+          <div class="price-now"><b id="bk-price"></b><span id="bk-veh">· private transfers</span></div>
         </div>
         <div class="pad">
           <div class="edit-note">
@@ -184,7 +184,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <div><b>Travelers</b><div class="muted" style="font-size:.75rem">Adults</div></div>
             <div class="ctrls"><button type="button" onclick="step('ad',-1)">–</button><b id="ad-n">2</b><button type="button" onclick="step('ad',1)">+</button></div>
           </div>
-          <div class="est-row"><span class="muted">Transfers from</span><b id="bk-est"></b></div>
+          <div class="est-row"><span class="muted">Or chauffeur-guide, whole trip</span><b id="bk-est"></b></div>
           <button class="btn btn-cta btn-block btn-lg" id="bk-edit">Customise this route</button>
           <a href="https://wa.me/94779669662" class="btn btn-wa btn-block" style="margin-top:10px" id="bk-wa"></a>
           <div class="est-note">Choose <b>private transfer</b> or upgrade to a <b>chauffeur-guide</b> in the next step. You book your own hotels.</div>
@@ -207,6 +207,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js"></script>
 <script src="image-slot.js"></script>
 <script src="tours-data.js"></script>
+<script src="transfers-data.js"></script>
 <script>
   initChrome({active:'tours.html'});
   const WA='https://wa.me/94779669662';
@@ -226,7 +227,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   document.getElementById('t-pace').textContent=t.pace;
   document.getElementById('t-best').textContent=t.best;
   document.getElementById('t-blurb').textContent=t.blurb;
-  document.getElementById('bk-price').textContent='$'+t.price;
+  // headline (point-to-point) + chauffeur secondary are both set by updateEst() below
   document.getElementById('bk-wa').innerHTML = ICON.wa + ' Ask a question';
 
   // gallery — lead photo from the tour, plus scene placeholders
@@ -275,7 +276,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if(!T) return t.price;
     return T.tripQuote(t.stops, vehFor(ad)).total;
   }
-  function updateEst(){ document.getElementById('bk-est').textContent='$'+transfersEst().toLocaleString()+' · car'; }
+  function updateEst(){
+    // Headline = point-to-point (private transfers, default); chauffeur-guide is the opt-in.
+    document.getElementById('bk-price').textContent='$'+transfersEst().toLocaleString();
+    const v=document.getElementById('bk-veh'); if(v) v.textContent = vehFor(ad)==='van' ? '· private transfers (van)' : '· private transfers';
+    document.getElementById('bk-est').textContent='$'+t.price.toLocaleString();
+  }
   window.step=function(which,d){ ad=Math.max(1,ad+d); document.getElementById('ad-n').textContent=ad; updateEst(); };
   updateEst();
 

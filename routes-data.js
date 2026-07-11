@@ -10,36 +10,6 @@
    ============================================================ */
 window.ROUTES = [
   {
-    id:'island-loop-9',
-    type:'loop',
-    name:'The Island Loop — 9 Stops',
-    tag:'Most popular',
-    blurb:'The full island. Beaches, hill country, ancient cities and safari — the whole tapestry of Sri Lanka in one flexible pass.',
-    from:'Airport / Colombo', days:9, price:129, mapBg:'ph-teal',
-    stops:['Airport','Negombo','Sigiriya','Kandy','Ella','Yala','Mirissa','Weligama','Galle'],
-    hero:'Sri Lanka island loop — surf, safari, tea country'
-  },
-  {
-    id:'island-loop-6',
-    type:'loop',
-    name:'The Island Loop — 6 Stops',
-    tag:'Best of, fast',
-    blurb:'Short on time? The greatest hits — culture, hills and a taste of the south coast in a tighter, breezier loop.',
-    from:'Airport / Colombo', days:6, price:95, mapBg:'ph-teal',
-    stops:['Airport','Sigiriya','Kandy','Ella','Mirissa','Galle'],
-    hero:'Highlights loop — Sigiriya, Kandy, Ella, Mirissa'
-  },
-  {
-    id:'southern-coast-8',
-    type:'loop',
-    name:'Southern Coast — 8 Stops + Arugam Bay',
-    tag:'Surf & sand',
-    blurb:'Golden beaches, surf breaks and sunsets. Hop the waves and slow down along the island\u2019s sunniest stretch.',
-    from:'Airport CMB', days:6, price:99, mapBg:'ph-saffron',
-    stops:['Airport','Galle','Thalpe','Ahangama','Weligama','Mirissa','Hiriketiya','Arugam Bay'],
-    hero:'Southern coast beaches — surf, whales, palm bays'
-  },
-  {
     id:'negombo-sigiriya',
     type:'shared',
     name:'Negombo to Sigiriya — Shared Ride',

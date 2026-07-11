@@ -1,11 +1,12 @@
 /* ============================================================
    CEYLON HOP — packaged tours data
-   Full end-to-end TRANSPORT packages. Every tour rides in a private
-   AC vehicle with a Pro Hopper chauffeur-guide who stays with you the
-   whole trip — all the driving, airport transfers, train seats and
-   door-to-door pick-up at every stop. You book your own hotels (we
-   send a hand-picked shortlist for each night). Prices are "from",
-   for the WHOLE TRIP — a private vehicle + driver, up to 4 guests.
+   Ready-made ROUTE SUGGESTIONS — a set of stops you can take as-is or
+   tweak. Priced point-to-point by default (a private AC transfer between
+   each stop); add a Pro Hopper chauffeur-guide who stays with you the
+   whole trip as an optional upgrade. Airport transfers and door-to-door
+   pick-up at every stop. You book your own hotels (we send a hand-picked
+   shortlist for each night). Prices shown are the point-to-point "from",
+   per vehicle (up to 4 guests); chauffeur-guide is priced per day.
    ============================================================ */
 (function(){
   const TOURS = [
@@ -29,10 +30,10 @@
         'Jeep safari for leopards in Yala'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 7 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 6 nights',
         'Door-to-door pick-up at every hotel along the way',
-        'Your chauffeur-guide’s own meals & rooms',
+        'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
         'Reserved seats on the Ella train',
         'All driving, fuel, tolls & parking'
@@ -68,10 +69,10 @@
         'Beach days & whale watching off Mirissa'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 10 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 9 nights',
         'Door-to-door pick-up at every hotel along the way',
-        'Your chauffeur-guide’s own meals & rooms',
+        'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
         'Reserved seats on the Ella train',
         'All driving, fuel, tolls & parking'
@@ -110,10 +111,10 @@
         'Pick & taste leaves at a working tea estate'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 5 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 4 nights',
         'Door-to-door pick-up at every hotel along the way',
-        'Your chauffeur-guide’s own meals & rooms',
+        'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
         'Reserved seats on the Ella train',
         'All driving, fuel, tolls & parking'
@@ -147,10 +148,10 @@
         'Big herds on the plains of Udawalawe'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 6 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 5 nights',
         'Door-to-door pick-up at every hotel along the way',
-        'Your chauffeur-guide’s own meals & rooms',
+        'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
         '3 shared jeep safaris arranged for you',
         'All driving, fuel, tolls & parking'
@@ -185,10 +186,10 @@
         'Temple of the Sacred Tooth, Kandy'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 4 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 3 nights',
         'Door-to-door pick-up at every hotel along the way',
-        'Your chauffeur-guide’s own meals & rooms',
+        'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
         'All driving, fuel, tolls & parking'
       ],
@@ -220,7 +221,7 @@
         'Secluded beach days at Tangalle & Mirissa'
       ],
       includes:[
-        'Private AC vehicle + Pro Hopper chauffeur-guide for all 9 days',
+        'Private AC vehicle for every transfer between your stops',
         'A hand-picked hotel shortlist for all 8 nights',
         'Door-to-door pick-up at every hotel along the way',
         'A candlelit beach dinner, on us',
@@ -239,6 +240,41 @@
         {place:'Mirissa', t:'Pure beach day', body:'A full day to do as little or as much as you like — surf lessons, a hidden cove, or a hammock and a book.'},
         {place:'Galle', t:'The romantic fort', body:'Up the coast to Galle Fort for sunset on the ramparts and a boutique stay inside the old walls.'},
         {place:'Colombo', t:'One last coastal drive', body:'A relaxed return to Colombo or the airport, ending a honeymoon you won’t stop talking about.'}
+      ]
+    },
+    {
+      id:'southern-surf',
+      name:'Southern Surf Coast',
+      theme:'coast',
+      days:7, nights:6,
+      price:430,
+      tag:'Surf & sand',
+      mapBg:'ph-saffron',
+      pace:'Relaxed',
+      best:'Nov-Apr (south) · Apr-Oct (Arugam)',
+      photo:'PHOTO — surfers at a golden point break, Arugam Bay at sunrise',
+      blurb:'Golden beaches, easy surf and slow sunsets down the south coast and round to the point breaks of Arugam Bay — the island’s sunniest, most laid-back stretch.',
+      regions:['South Coast','Surf','East Coast'],
+      stops:['Airport','Galle','Ahangama','Weligama','Mirissa','Hiriketiya','Arugam Bay'],
+      highlights:[
+        'Beginner-friendly surf at Weligama & Hiriketiya',
+        'Galle Fort at golden hour',
+        'The famous point break at Arugam Bay'
+      ],
+      includes:[
+        'Private AC vehicle for every transfer, door to door',
+        'A hand-picked hotel shortlist for all 6 nights',
+        'Airport pick-up & drop-off',
+        'All driving, fuel, tolls & parking'
+      ],
+      excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Surf lessons & board hire','Tips'],
+      itinerary:[
+        {place:'Galle', t:'Arrive & the old fort', body:'Airport welcome and a drive down to Galle. Settle in and wander the ramparts of the 17th-century Dutch fort at sunset.'},
+        {place:'Ahangama', t:'Easy south-coast surf', body:'A short hop to the mellow breaks and palm-lined bays around Ahangama and Midigama — a good place to find your feet on a board.'},
+        {place:'Weligama', t:'Learn to surf', body:'The gentle beach break at Weligama is the island’s best spot for a first lesson. An afternoon of sand, surf and coconut roti.'},
+        {place:'Mirissa', t:'Whales & golden bays', body:'Optional dawn whale-watching, then a slow day on Mirissa’s crescent beach and coconut tree hill.'},
+        {place:'Hiriketiya', t:'The horseshoe bay', body:'Drive to the tucked-away horseshoe bay of Hiriketiya — surf, swim, and a laid-back beach-cafe evening.'},
+        {place:'Arugam Bay', t:'The point break', body:'Cross to the east coast and Sri Lanka’s most famous surf town. Sunrise sessions at the point and a final few easy days by the sea.'}
       ]
     }
   ];

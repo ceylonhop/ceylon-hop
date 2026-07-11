@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Packaged tours — Ceylon Hop</title>
-<meta name="description" content="Complete Sri Lanka tours, end-to-end private transport. One AC vehicle and a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
+<meta name="description" content="Complete Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
 <link rel="canonical" href="https://ceylonhop.com/tours.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/tours.html">
 <meta property="og:title" content="Complete Sri Lanka tours — Ceylon Hop">
-<meta property="og:description" content="Complete Sri Lanka tours, end-to-end private transport. One AC vehicle and a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
+<meta property="og:description" content="Complete Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
 <link rel="stylesheet" href="site.css">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -105,11 +105,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="crumb"><a href="index.html">Home</a> · Tours</div>
     <span class="sticker" style="margin-top:14px">Full transport · you choose the hotels</span>
     <h1 class="display">Complete tours, end&#8209;to&#8209;end transport</h1>
-    <p class="lead">Pick a ready-made route and we handle <b>every kilometre</b> &mdash; one private AC vehicle and a Pro Hopper chauffeur-guide who stays with you the whole trip, plus airport transfers, train seats and door-to-door pick-up at each stop. <b>You book your own hotels</b> &mdash; we send a hand-picked shortlist for every night, so you stay where you like, at your budget.</p>
+    <p class="lead">Pick a ready-made route and we handle <b>every kilometre</b> &mdash; a private AC vehicle for every transfer between your stops, point-to-point by default &mdash; or add a Pro Hopper chauffeur-guide who stays with you the whole trip. Airport transfers, train seats and door-to-door pick-up at each stop. <b>You book your own hotels</b> &mdash; we send a hand-picked shortlist for every night, so you stay where you like, at your budget.</p>
     <div class="assure">
-      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Private driver-guide, whole trip</span>
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Private transfers between every stop</span>
       <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> You book your own hotels (we shortlist)</span>
-      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> One price for the whole vehicle</span>
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg> Or add a chauffeur-guide, whole trip</span>
     </div>
   </div>
 </section>
@@ -144,7 +144,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="hiw">
         <span class="hiw-n">3</span>
         <h3>We handle the road</h3>
-        <p>Your chauffeur-guide and AC vehicle do every transfer, door to door, the entire trip &mdash; one price for the whole vehicle, car or van.</p>
+        <p>A private AC vehicle does every transfer, door to door &mdash; point-to-point by default, or add a chauffeur-guide who stays with you the whole trip, priced per day.</p>
       </div>
     </div>
   </div>
@@ -176,6 +176,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js"></script>
 <script src="image-slot.js"></script>
 <script src="tours-data.js"></script>
+<script src="transfers-data.js"></script>
 <script>
   initChrome({active:'tours.html'});
   document.getElementById('wa-plan').innerHTML = ICON.wa + ' Plan with us';
@@ -206,7 +207,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <ul class="hl">${hl}</ul>
         <div class="route">${route(t.stops)}</div>
         <div class="foot">
-          <span class="price">from <b>$${t.price}</b><small>whole trip · private vehicle</small></span>
+          <span class="price">from <b>$${(window.TRANSFERS?window.TRANSFERS.tripQuote(t.stops,'car').total:t.price).toLocaleString()}</b><small>point-to-point · or chauffeur-guide from $${t.price}</small></span>
           <span class="btn btn-primary btn-sm">View itinerary ${ICON.arrow}</span>
         </div>
       </div>

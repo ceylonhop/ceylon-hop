@@ -33,7 +33,10 @@
     { id: 'anuradhapura', name: 'Anuradhapura', area: 'Cultural triangle', lat: 8.31, lng: 80.40 },
     { id: 'yala', name: 'Yala', area: 'East & wild', lat: 6.37, lng: 81.52 },
     { id: 'arugam-bay', name: 'Arugam Bay', area: 'East & wild', lat: 6.84, lng: 81.84 },
-    { id: 'trincomalee', name: 'Trincomalee', area: 'East & wild', lat: 8.59, lng: 81.21 }
+    { id: 'trincomalee', name: 'Trincomalee', area: 'East & wild', lat: 8.59, lng: 81.21 },
+    { id: 'ahangama', name: 'Ahangama', area: 'South coast', lat: 5.97, lng: 80.36 },
+    { id: 'hiriketiya', name: 'Hiriketiya', area: 'South coast', lat: 5.96, lng: 80.69 },
+    { id: 'horton-plains', name: 'Horton Plains', area: 'Hill country', lat: 6.80, lng: 80.80 }
   ];
   const byId = {};
   PLACES.forEach(p => (byId[p.id] = p));
@@ -105,7 +108,10 @@
     "sigiriya|anuradhapura":[74,90],"sigiriya|yala":[304,408],"sigiriya|arugam-bay":[252,312],"sigiriya|trincomalee":[98,113],
     "anuradhapura|yala":[353,462],"anuradhapura|arugam-bay":[301,367],"anuradhapura|trincomalee":[108,127],
     "yala|arugam-bay":[192,271],"yala|trincomalee":[364,466],
-    "arugam-bay|trincomalee":[248,332]
+    "arugam-bay|trincomalee":[248,332],
+    // Tour-stop legs for Horton Plains / Ahangama / Hiriketiya — road estimates (refine with Google Directions).
+    "nuwara-eliya|horton-plains":[32,78],"horton-plains|ella":[55,115],
+    "galle|ahangama":[18,30],"ahangama|weligama":[9,15],"mirissa|hiriketiya":[30,45],"hiriketiya|arugam-bay":[228,270]
   };
   // baked real [km, min] for a known id pair (either direction), else null
   function realLeg(aId, bId) {

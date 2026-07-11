@@ -119,7 +119,9 @@ if(mode==='trip' && window.TRANSFERS){
   isCustom=false; unit=price; perVehicle=(mode==='private');
   routeNamePrefix = (mode==='private'?'Private transfer':'Shared ride');
 } else {
-  r=getRoute(params.get('id')) || ROUTES[0];
+  r=getRoute(params.get('id'));
+  // No/unknown catalogue id → send them to the planner rather than defaulting to a route.
+  if(!r){ location.replace('plan.html'); throw new Error('no catalogue route — redirected to planner'); }
   isCustom = r.price==null;
   unit = isCustom ? 60 : r.price;
 }
@@ -158,7 +160,7 @@ state.anchorKm = (window.TRANSFERS ? window.TRANSFERS.kmBetween(r.stops[0], r.st
 state.pendingReprice = null; // {km, extraKm, prices:{car,van}} while awaiting acknowledgement
 
 // ---- summary setup ----
-const typeLabel={loop:'Island loop',shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
+const typeLabel={shared:'Shared ride',custom:'Private & custom',private:'Private transfer',trip:'Multi-stop trip'};
 document.getElementById('sum-type').innerHTML=typeLabel[r.type];
 document.getElementById('sum-name').textContent=r.name;
 document.getElementById('sum-from').textContent=r.stops[0];
@@ -1259,11 +1261,22 @@ async function runPayment(){
     if(res.ok) checkout = await res.json();
   }catch(e){}
 
-  if(checkout && checkout.checkoutUrl && /payhere\.lk/.test(checkout.checkoutUrl) && window.payhere){
+  // No checkout params (network error, 5xx, or the backend's amount-mismatch guard)
+  // → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
+  if(!checkout || !checkout.checkoutUrl){
+    return phShowEnd('error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.');
+  }
+  // Real PayHere gateway.
+  if(/payhere\.lk/.test(checkout.checkoutUrl)){
+    if(!window.payhere){
+      // SDK failed to load (often an ad-blocker). Don't fake success.
+      return phShowEnd('error','We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
+    }
     document.getElementById('ph-msg').textContent='Opening secure payment…';
     return startPayHere(checkout, booking);
   }
-  // Backend without a real gateway (fake adapter) → simulated interstitial, real reference.
+  // Backend returned a non-PayHere checkout URL → the fake/dev gateway is configured
+  // (no real money gateway). Simulated interstitial with the real reference.
   return simulatePayThenConfirm(booking);
 }
 
