@@ -36,7 +36,7 @@
   },
   "pairs": {
     "cmb-airport|kandy": {
-      "intro": "Just under three hours that climb from sea-level coconut groves to Kandy's lake: your driver meets you in arrivals and heads inland via Kegalle, with Pinnawala's elephants an easy stop en route. Go private for door-to-door ease, or take a cheaper seat on the daily shared shuttle into the Cultural Triangle.",
+      "intro": "Just under three hours that climb from sea-level coconut groves to Kandy's lake: your driver meets you in arrivals and heads inland via Kegalle, with Pinnawala's elephants an easy stop en route. Go private for door-to-door ease, or take a cheaper seat on the shared shuttle into the Cultural Triangle.",
       "highlights": [
         "Pinnawala's elephants, an easy detour near Kegalle",
         "Bible Rock views at the Kadugannawa pass",
@@ -46,7 +46,7 @@
       "back": "Downhill nearly all the way: leave the lake behind, drop through the Kadugannawa pass and let your driver time the run to Katunayake around the Kegalle-road traffic. Works well for evening departures."
     },
     "cmb-airport|sigiriya": {
-      "intro": "Straight from the arrivals hall into the Cultural Triangle: the road runs through Kurunegala's coconut country before opening onto dry-zone plains, with Dambulla's cave temples a natural first stop before Sigiriya rock rises ahead. Book private for stops on demand, or split the cost on the daily shared run into the Cultural Triangle.",
+      "intro": "Straight from the arrivals hall into the Cultural Triangle: the road runs through Kurunegala's coconut country before opening onto dry-zone plains, with Dambulla's cave temples a natural first stop before Sigiriya rock rises ahead. Book private for stops on demand, or split the cost on the shared run into the Cultural Triangle.",
       "highlights": [
         "Dambulla's painted cave temples, right on the route",
         "Sigiriya rock rising from the dry-zone plains",
@@ -87,7 +87,7 @@
       "back": "Downhill through the Ella Gap, then expressway the rest of the way to Katunayake — about five hours door to door. Leave after breakfast for an evening flight and keep a small buffer for hill-road traffic."
     },
     "cmb-airport|negombo": {
-      "intro": "Seven kilometres is all that separates the baggage carousel from Negombo's beach hotels — about twenty minutes door to door — which is why the town makes an ideal first or last night in Sri Lanka. Go private for a driver waiting at arrivals, or hop on the daily shared service that covers this short leg too.",
+      "intro": "Seven kilometres is all that separates the baggage carousel from Negombo's beach hotels — about twenty minutes door to door — which is why the town makes an ideal first or last night in Sri Lanka. Go private for a driver waiting at arrivals, or hop on the shared service that covers this short leg too.",
       "highlights": [
         "Negombo's long beach strip and lagoon-crab dinners",
         "Lellama fish market and its outrigger fleet",
@@ -97,7 +97,7 @@
       "back": "The classic last-night move: sleep beside the beach, eat lagoon crab, and be at check-in twenty minutes after hotel pickup. Drivers run this hop at all hours for red-eye departures."
     },
     "cmb-airport|colombo": {
-      "intro": "Colombo traffic has a fearsome reputation, but the airport expressway sidesteps the worst of it: 35 kilometres, across the Kelani River and into the city, usually inside the hour. Your driver waits at arrivals and drops you at the hotel door; a cheaper daily shared seat also departs the airport.",
+      "intro": "Colombo traffic has a fearsome reputation, but the airport expressway sidesteps the worst of it: 35 kilometres, across the Kelani River and into the city, usually inside the hour. Your driver waits at arrivals and drops you at the hotel door; a cheaper shared seat also departs the airport.",
       "highlights": [
         "Galle Face Green for a sunset stroll",
         "Gangaramaya Temple beside Beira Lake",
@@ -107,7 +107,7 @@
       "back": "From Fort or Kollupitiya to Katunayake in under an hour once you're on the expressway. Your driver pads the pickup time around Colombo's rush hour, so early flights are never a squeeze."
     },
     "negombo|sigiriya": {
-      "intro": "Skip Colombo entirely: from Negombo the road runs inland through coconut country and Kurunegala, putting you under Sigiriya's rock in a little over three hours. Go private for door-to-door comfort and a stop at Dambulla's cave temples, or take a seat on the daily shared ride from the airport into the Cultural Triangle.",
+      "intro": "Skip Colombo entirely: from Negombo the road runs inland through coconut country and Kurunegala, putting you under Sigiriya's rock in a little over three hours. Go private for door-to-door comfort and a stop at Dambulla's cave temples, or take a seat on the shared ride from the airport into the Cultural Triangle.",
       "highlights": [
         "Coconut Triangle plantations around Giriulla and Kurunegala",
         "Athugala, the elephant-shaped rock above Kurunegala",
@@ -118,7 +118,7 @@
       "back": "Sigiriya to Negombo makes a tidy last leg before a flight: 148 km, about 3 hours 15 minutes, with time for Dambulla's caves on the way out if you leave after breakfast."
     },
     "negombo|kandy": {
-      "intro": "Beach town to hill capital in under three hours: leaving Negombo, lagoon and palms give way to rubber and spice country around Kegalle before the road climbs the Kadugannawa pass into Kandy. A private car lets you detour to Pinnawala's elephants; a cheaper daily shared seat from the airport covers this run too.",
+      "intro": "Beach town to hill capital in under three hours: leaving Negombo, lagoon and palms give way to rubber and spice country around Kegalle before the road climbs the Kadugannawa pass into Kandy. A private car lets you detour to Pinnawala's elephants; a cheaper shared seat from the airport covers this run too.",
       "highlights": [
         "Pinnawala Elephant Orphanage detour near Kegalle",
         "Kadugannawa pass with views of Bible Rock",
@@ -129,7 +129,7 @@
       "back": "Kandy to Negombo is the classic pre-flight run — about 115 km and 2 hours 50 minutes down through the Kadugannawa hairpins, door to door, with room for a Pinnawala stop if you set off early."
     },
     "colombo|kandy": {
-      "intro": "Travellers have taken the Colombo–Kandy road since colonial days, past the cashew stalls of Cadjugama, the old rest house at Ambepussa and the hairpin climb at Kadugannawa. A private transfer stops wherever you fancy; a cheaper daily shared seat, departing from the airport, makes the same climb.",
+      "intro": "Travellers have taken the Colombo–Kandy road since colonial days, past the cashew stalls of Cadjugama, the old rest house at Ambepussa and the hairpin climb at Kadugannawa. A private transfer stops wherever you fancy; a cheaper shared seat, departing from the airport, makes the same climb.",
       "highlights": [
         "Cadjugama's roadside cashew stalls",
         "Utuwankanda, the rock hideout of folk outlaw Saradiel",
@@ -161,7 +161,7 @@
       "back": "Leaving the hills, Ella to Colombo takes close to five hours — the Ella Gap descent past Rawana Falls first, then quick lowland roads home. A door-to-door private transfer spares you the bus-and-train shuffle with luggage."
     },
     "sigiriya|kandy": {
-      "intro": "From Sigiriya's rock plains the A9 winds south through Matale's spice country — 89 km and about two and a half hours to Kandy. A private car gives you door-to-door comfort and stops at Dambulla's cave temples or Nalanda Gedige; a daily Airport–Cultural Triangle shared ride is the cheaper option.",
+      "intro": "From Sigiriya's rock plains the A9 winds south through Matale's spice country — 89 km and about two and a half hours to Kandy. A private car gives you door-to-door comfort and stops at Dambulla's cave temples or Nalanda Gedige; an Airport–Cultural Triangle shared ride is the cheaper option.",
       "highlights": [
         "Dambulla's painted cave temples, just off the road",
         "Nalanda Gedige, an ancient stone shrine at the island's centre",
@@ -172,7 +172,7 @@
       "back": "Northbound, you trade Kandy's hill air for dry-zone plains: down past Matale and through Dambulla's junction bustle, with Sigiriya's rock rising ahead in the final half hour."
     },
     "kandy|ella": {
-      "intro": "This is the full hill-country traverse: 136 km of tea, waterfalls and hairpins, close to four hours by road. Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg. A daily Kandy–Hill Country shared seat is the cheaper way to go.",
+      "intro": "This is the full hill-country traverse: 136 km of tea, waterfalls and hairpins, close to four hours by road. Your driver can pause at a working tea factory — or drop you at the station to ride the celebrated blue train for the final leg. A Kandy–Hill Country shared seat is the cheaper way to go.",
       "highlights": [
         "Ramboda Falls tumbling beside the A5",
         "Tea factory tours between Pussellawa and Nuwara Eliya",
@@ -183,7 +183,7 @@
       "back": "Ella to Kandy reverses the climb: out through the Gap, up past Nuwara Eliya's tea terraces, then the long green descent to the lake city. Around four hours, with waterfall stops on request."
     },
     "kandy|nuwara-eliya": {
-      "intro": "Tea country begins almost as soon as you leave Kandy: the A5 corkscrews up through Gampola and Pussellawa for 76 km, about two and a half hours of estates and cooling air. A private car can pull over at Ramboda Falls or a factory tasting; a daily shared ride to the hill country also covers this leg.",
+      "intro": "Tea country begins almost as soon as you leave Kandy: the A5 corkscrews up through Gampola and Pussellawa for 76 km, about two and a half hours of estates and cooling air. A private car can pull over at Ramboda Falls or a factory tasting; a shared ride to the hill country also covers this leg.",
       "highlights": [
         "Ramboda Falls and its roadside viewpoint",
         "Tea estates stacked above the road at Pussellawa",
@@ -194,7 +194,7 @@
       "back": "Downhill from Little England, the return to Kandy unwinds the same hairpins in around two and a half hours — mist lifting off the valleys early on, tea pluckers at work beside the road."
     },
     "nuwara-eliya|ella": {
-      "intro": "The shortest hop in the hills, and one of the prettiest: 54 km, just under two hours, dropping from Nuwara Eliya's cool plateau past Hakgala and the vegetable terraces of Welimada into Ella's warmer air. A private car stops wherever you like; a daily shared hill-country seat is the budget option.",
+      "intro": "The shortest hop in the hills, and one of the prettiest: 54 km, just under two hours, dropping from Nuwara Eliya's cool plateau past Hakgala and the vegetable terraces of Welimada into Ella's warmer air. A private car stops wherever you like; a shared hill-country seat is the budget option.",
       "highlights": [
         "Seetha Amman Temple, tied to the Ramayana legend",
         "Hakgala Botanical Garden clinging to the mountainside",
@@ -205,7 +205,7 @@
       "back": "Climbing from Ella back to Nuwara Eliya takes just under two hours: through Welimada's farmland, past Hakgala's gardens, arriving as the temperature drops and the pines take over."
     },
     "ella|yala": {
-      "intro": "Leave the tea country at the Ella Gap and watch the road spill downhill through hairpins into hot dry-zone plains — 126 km, about 3 hours 18 minutes. A private car can pause at Rawana Falls or Buduruwagala's rock Buddhas en route; a cheaper shared seat heads to Yala daily at 8:00am.",
+      "intro": "Leave the tea country at the Ella Gap and watch the road spill downhill through hairpins into hot dry-zone plains — 126 km, about 3 hours 18 minutes. A private car can pause at Rawana Falls or Buduruwagala's rock Buddhas en route; a cheaper shared seat heads to Yala on Wed & Sat at 8:00am.",
       "highlights": [
         "Rawana Falls, roadside on the descent from Ella",
         "Buduruwagala's rock-cut Buddhas near Wellawaya",
@@ -215,7 +215,7 @@
       "back": "Coming out of the park, the road climbs from Tissamaharama through Wellawaya and up the Ella Gap, trading safari dust for tea-country cool over roughly 3 hours 18 minutes."
     },
     "ella|arugam-bay": {
-      "intro": "Breakfast in the hills, surf by mid-afternoon: 134 km and about 3 hours separate Ella from Arugam Bay, dropping through Wellawaya and Monaragala to the east coast. Private cars carry boards and stop on demand; a daily 8:00am shared ride heads east via Yala.",
+      "intro": "Breakfast in the hills, surf by mid-afternoon: 134 km and about 3 hours separate Ella from Arugam Bay, dropping through Wellawaya and Monaragala to the east coast. Private cars carry boards and stop on demand; an 8:00am shared ride heads east via Yala.",
       "highlights": [
         "Wild elephants grazing near the road at Lahugala",
         "Monaragala's paddy and rubber country",
@@ -225,7 +225,7 @@
       "back": "Westbound from the point breaks, the road runs past Pottuvil's lagoon and Lahugala's elephant country before climbing through Wellawaya into Ella's cool green gap — about 3 hours."
     },
     "ella|mirissa": {
-      "intro": "Ella to Mirissa trades thousand-metre tea country for a palm-backed bay: the road drops to Wellawaya, then runs fast across the southern plains — 173 km, about 3 hours — to Mirissa's sweep of sand. Go private to break the trip where you fancy, or take the daily 8:30am shared ride to the south coast.",
+      "intro": "Ella to Mirissa trades thousand-metre tea country for a palm-backed bay: the road drops to Wellawaya, then runs fast across the southern plains — 173 km, about 3 hours — to Mirissa's sweep of sand. Go private to break the trip where you fancy, or take the 8:30am shared ride to the south coast.",
       "highlights": [
         "Rawana Falls in the Ella Gap",
         "Buffalo-curd and treacle stalls along the southern plains",
@@ -235,7 +235,7 @@
       "back": "The reverse run swaps sea level for thousand-metre air: across the plains to Wellawaya, then up the hairpins of the Ella Gap — beach towel to jumper in around 3 hours."
     },
     "yala|mirissa": {
-      "intro": "This one hugs the coast almost the whole way: 155 km and about 3 hours 17 minutes from the lodges around Tissamaharama past Hambantota's salt pans, Tangalle's coves and Dondra's lighthouse to Mirissa. A private car can detour to the Hummanaya blowhole; the shared ride south leaves daily at 8:00am.",
+      "intro": "This one hugs the coast almost the whole way: 155 km and about 3 hours 17 minutes from the lodges around Tissamaharama past Hambantota's salt pans, Tangalle's coves and Dondra's lighthouse to Mirissa. A private car can detour to the Hummanaya blowhole; the shared ride south leaves on Wed & Sat at 8:00am.",
       "highlights": [
         "Lagoons and salt pans around Bundala, busy with birdlife",
         "Tangalle's quiet crescent beaches",
@@ -246,7 +246,7 @@
       "back": "Eastbound, the shoreline unwinds in reverse — Matara, Dickwella, Tangalle — before the road turns inland at Hambantota for Tissamaharama, timed nicely for a next-morning Yala safari."
     },
     "mirissa|galle": {
-      "intro": "At 41 km and under an hour, this is less a transfer than a slow reveal of the south coast: Weligama's stilt-fishing posts, Koggala's island-dotted lake, Unawatuna's curve of sand, then Galle Fort's Dutch ramparts. Private cars run door to door with stops; a shared coastal shuttle runs twice daily.",
+      "intro": "At 41 km and under an hour, this is less a transfer than a slow reveal of the south coast: Weligama's stilt-fishing posts, Koggala's island-dotted lake, Unawatuna's curve of sand, then Galle Fort's Dutch ramparts. Private cars run door to door with stops; a shared coastal shuttle runs twice a day on Wed & Sat.",
       "highlights": [
         "Stilt-fishing posts in the shallows off Weligama and Ahangama",
         "Koggala Lake and its island temples",
