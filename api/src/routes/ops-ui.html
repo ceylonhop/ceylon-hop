@@ -1815,6 +1815,14 @@ async function _runEstimate() {
     return;
   }
 
+  // Chauffeur needs >=2 distinct leg dates. If the itinerary drops to a single day (e.g. legs
+  // deleted on a reopened chauffeur quote), auto-revert to point-to-point BEFORE pricing —
+  // otherwise the quote keeps a chauffeur day rate on what is now a single transfer. The chooser
+  // disables chauffeur but does not flip the service; this does. render() below reflects it.
+  if (st.service === 'chauffeur' && distinctLegDateCount() <= 1) {
+    st.service = 'private';
+  }
+
   // Build the payload (Task 2 mapping)
   var payload = {
     service: st.service || 'private',

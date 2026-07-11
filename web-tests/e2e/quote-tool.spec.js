@@ -486,3 +486,38 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
       { timeout: 10000, message: 'reopened quote should re-price after changing the destination' })
     .not.toBe(totalElla);
 });
+
+// Spec 9 (regression, user-reported): reducing a chauffeur trip to a single day (e.g. deleting
+// legs on a reopened chauffeur quote) must auto-revert the service to point-to-point. Chauffeur
+// is invalid single-day, so the quote must DROP the day rate instead of keeping it on a single
+// transfer.
+test('reducing a chauffeur trip to one day reverts to point-to-point (drops the day rate)', async ({ page }) => {
+  await chooseVehicle(page, 'van_6');
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.waitForTimeout(600);
+
+  // Leg 2 on a second date → two distinct dates → chauffeur becomes eligible.
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(2);
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.waitForTimeout(600);
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, secondTo, 'Galle', 'Galle');
+  await page.waitForTimeout(600);
+
+  // Choose chauffeur — the summary now carries a day rate.
+  const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
+  await expect(chBtn).toBeEnabled({ timeout: 10000 });
+  await chBtn.click();
+  await expect(page.locator('#quoteRoot')).toContainText('Chauffeur day rate', { timeout: 10000 });
+
+  // Delete leg 2 → single leg / single date → chauffeur ineligible. Service must auto-revert to
+  // point-to-point, so the chauffeur day rate disappears from the quote.
+  await page.locator('.ch-tl-item').nth(1).locator('[data-action="removeLeg"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(1);
+  await expect(page.locator('#quoteRoot')).not.toContainText('Chauffeur day rate', { timeout: 8000 });
+});
