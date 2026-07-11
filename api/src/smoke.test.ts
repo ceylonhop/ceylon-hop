@@ -120,7 +120,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
 
     const shared = {
       corridorId: 'hill-line',
-      date: '2026-07-20',
+      date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
       time: '08:00',
       seats: 2,
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },

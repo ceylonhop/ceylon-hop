@@ -106,8 +106,9 @@ export const corridors = pgTable('corridor', {
   seatCapacity: integer('seat_capacity').notNull(),
 });
 
-// Inventory for the daily shared service. The unique (corridor,date,time) lets us
-// upsert the departure, and the atomic seat-hold updates seats_booked under a row lock.
+// Inventory for the shared service (a fixed weekly schedule, not daily — corridors run
+// only on their service weekdays). The unique (corridor,date,time) lets us upsert the
+// departure, and the atomic seat-hold updates seats_booked under a row lock.
 export const sharedDepartures = pgTable(
   'shared_departure',
   {

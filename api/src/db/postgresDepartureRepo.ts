@@ -5,6 +5,7 @@ import {
   type SharedDeparture,
   DEFAULT_CORRIDORS,
   corridorIdForRoute,
+  serviceDaysForCorridor,
 } from './departureRepo';
 
 // Idempotently upsert the corridor catalogue (run at server start + in tests).
@@ -29,8 +30,17 @@ export class PostgresDepartureRepo implements DepartureRepo {
       { id: string; from_place: string; to_place: string; seat_price: number; seat_capacity: number }[]
     >`select id, from_place, to_place, seat_price, seat_capacity from corridor where id = ${id}`;
     const r = rows[0];
+    // `service_days` isn't a DB column — the schedule lives in the code catalogue, like the
+    // corridor's intermediate stops. Merge it in by id so callers get a complete Corridor.
     return r
-      ? { id: r.id, fromPlace: r.from_place, toPlace: r.to_place, seatPrice: r.seat_price, seatCapacity: r.seat_capacity }
+      ? {
+          id: r.id,
+          fromPlace: r.from_place,
+          toPlace: r.to_place,
+          seatPrice: r.seat_price,
+          seatCapacity: r.seat_capacity,
+          serviceDays: serviceDaysForCorridor(r.id),
+        }
       : null;
   }
 

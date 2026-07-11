@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
-import { isoToday } from '../domain/dateRules';
+import { isoToday, isoWeekday } from '../domain/dateRules';
 
-// A date safely in the future (past-date rejection floors bookings at today, Asia/Colombo).
-const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
+// The next shared service day (Wed/Sat) a few days out — dodges both the past-date guard and
+// the not-a-service-day guard whenever the suite runs. Computed, so it never rots.
+const SOON = (() => {
+  for (let i = 1; i <= 14; i++) {
+    const iso = isoToday('UTC', new Date(Date.now() + i * 86_400_000));
+    if ([3, 6].includes(isoWeekday(iso)!)) return iso;
+  }
+  /* istanbul ignore next */ throw new Error('no service day within two weeks');
+})();
 
 const customer = {
   firstName: 'Maya',

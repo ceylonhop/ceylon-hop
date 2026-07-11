@@ -3,10 +3,11 @@ import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryDepartureRepo } from '../db/departureRepo';
 
 const valid = {
   corridorId: 'hill-line', // Kandy → Nuwara Eliya → Ella, $21/seat
-  date: '2026-07-20',
+  date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
   time: '08:00',
   seats: 2,
   customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
@@ -68,6 +69,28 @@ describe('POST /bookings/shared', () => {
   it('409 when the departure is sold out', async () => {
     const res = await postShared(createApp(), { ...valid, seats: 13 }); // capacity is 12
     expect(res.status).toBe(409);
+  });
+
+  it('400 not_a_service_day for a date off the corridor schedule (a Monday)', async () => {
+    const res = await postShared(createApp(), { ...valid, date: '2026-07-20' }); // Monday
+    expect(res.status).toBe(400);
+    const b = await res.json();
+    expect(b.error).toBe('not_a_service_day');
+    expect(b.message).toContain('Wed & Sat');
+  });
+
+  it('accepts a Saturday departure (the corridor’s other service day)', async () => {
+    const res = await postShared(createApp(), { ...valid, date: '2026-07-25' }); // Saturday
+    expect(res.status).toBe(201);
+  });
+
+  it('rejects an off-schedule date before holding a seat (no phantom hold)', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+    await postShared(app, { ...valid, date: '2026-07-20', seats: 12 }); // Monday, rejected
+    // the Monday departure must be untouched — a full bus can still be held there directly
+    const held = await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    expect(held?.seatsBooked).toBe(12);
   });
 
   it('flows through checkout → webhook → paid', async () => {
