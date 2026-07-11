@@ -221,6 +221,37 @@ describe('payment webhook ops alerts (M17)', () => {
     await app.request('/webhooks/payments', { method: 'POST', body });
     expect(await notificationLog.wasSent(b.id, 'confirmation')).toBe(true);
   });
+
+  it('alerts (never silently swallows) a reversal/chargeback on an already-settled payment', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    // settle it
+    await app.request('/webhooks/payments', {
+      method: 'POST',
+      body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
+    });
+    // a later NON-success notify (PayHere cancel/chargeback) for the same settled order
+    const reversal = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed' });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body: reversal });
+    expect(res.status).toBe(200);
+    expect(alerts.sent.map((a) => a.kind)).toContain('payment_reversed');
+  });
+
+  it('alerts when a payment settles for a booking no longer in payment_pending (money with nowhere to go)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, alerts, bookings });
+    const b = await bookAndCheckout(app); // payment_pending
+    await bookings.setStatus(b.id, 'cancelled'); // ops cancels while the customer is on PayHere
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled'); // NOT flipped to paid
+    expect(alerts.sent.map((a) => a.kind)).toContain('paid_in_unexpected_status');
+  });
 });
 
 describe('POST /webhooks/resend (M17)', () => {

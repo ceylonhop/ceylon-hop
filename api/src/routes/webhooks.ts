@@ -58,8 +58,22 @@ export function webhookRoutes(deps: {
       return c.json({ error: 'amount_mismatch' }, 400);
     }
 
-    // Idempotent: a duplicate notify for an already-settled payment is a no-op.
-    if (payment.status === 'succeeded') return c.json({ ok: true, idempotent: true }, 200);
+    // An already-settled payment. A duplicate SUCCESS notify is a harmless no-op — but a
+    // NON-success event (PayHere status -1/-2/-3: cancel/fail/chargeback) arriving AFTER
+    // settlement is money being clawed back. Never swallow that silently.
+    if (payment.status === 'succeeded') {
+      if (event.status !== 'succeeded') {
+        void alerts.send({
+          severity: 'critical',
+          kind: 'payment_reversed',
+          title: `Payment reversed for order ${event.orderId}`,
+          body: `A non-success PayHere notification (cancel/chargeback) arrived for order ${event.orderId}, which was already settled. The booking may still read PAID — investigate and reconcile the refund/chargeback.`,
+          dedupeKey: event.orderId,
+        });
+        return c.json({ ok: true, reversed: true }, 200);
+      }
+      return c.json({ ok: true, idempotent: true }, 200);
+    }
 
     if (event.status !== 'succeeded') return c.json({ ok: true, status: 'failed' }, 200);
 
@@ -84,6 +98,17 @@ export function webhookRoutes(deps: {
           dedupeKey: paid.reference,
         });
       }
+    } else {
+      // Money captured, but the booking is NOT awaiting payment (cancelled while the customer
+      // sat on the PayHere page, already-progressed, or missing). It will never be marked paid
+      // and no confirmation goes out — surface it loudly instead of returning ok silently.
+      void alerts.send({
+        severity: 'critical',
+        kind: 'paid_in_unexpected_status',
+        title: `Payment settled for order ${event.orderId} in an unexpected state`,
+        body: `Payment for ${event.orderId} succeeded, but its booking is ${booking ? `in status '${booking.status}'` : 'missing'} (not payment_pending). Money was captured with no paid-transition and no confirmation — investigate and reconcile.`,
+        dedupeKey: event.orderId,
+      });
     }
     return c.json({ ok: true }, 200);
   });

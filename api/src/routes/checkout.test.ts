@@ -84,3 +84,25 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
     expect((await res.json()).amount).toBe(b.total);
   });
 });
+
+describe('POST /bookings/:id/checkout — status gate', () => {
+  it('409s a checkout for a cancelled booking (never hand a dead booking a live charge)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'cancelled'); // ops cancelled it before payment
+    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(res.status).toBe(409);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled'); // untouched
+  });
+
+  it('409s a second checkout once the booking is already paid', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const b = await book(app);
+    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' }); // payment_pending
+    await bookings.setStatus(b.id, 'paid'); // settled
+    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(res.status).toBe(409);
+  });
+});

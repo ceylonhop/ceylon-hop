@@ -362,10 +362,21 @@ export function bookingRoutes(deps: {
   r.post('/:id/checkout', async (c) => {
     const booking = await bookings.get(c.req.param('id'));
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
+    // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
+    // form — that is how a customer ends up paying for a trip that no longer exists.
+    if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
+      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+    }
     const dueNow = booking.amountDueNow ?? booking.total;
 
     const idempotencyKey = `checkout:${booking.id}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
+    // Defence in depth: if the payment already settled, refuse a second checkout even if the
+    // booking somehow lags in a chargeable status.
+    if (payment && payment.status === 'succeeded') {
+      return c.json({ error: 'already_paid', status: booking.status }, 409);
+    }
     if (!payment) {
       payment = await payments.create({
         bookingId: booking.id,
