@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking } from './_stubs.js';
+import { gotoBooking, fillContact } from './_stubs.js';
 
 // Mobile sticky-bar contract (spec: docs/superpowers/specs/2026-07-09-mobile-booking-sticky-bar-design.md).
 // ≤880px: slim context strip on top, sticky total+CTA bar at bottom, summary card = bottom sheet.
@@ -85,6 +85,20 @@ test.describe('mobile sticky bar', () => {
     await expect(page.locator('#mbar')).toBeHidden();
     await page.locator('#f-first').blur();
     await expect(page.locator('#mbar')).toBeVisible();
+  });
+
+  test('the sticky bar + strip are hidden on the confirmation screen (no re-trigger of payment)', async ({ page }) => {
+    await gotoMobile(page); // default fake gateway → simulate path → boarding pass
+    await fillContact(page);
+    // fillContact leaves a details field focused, which hides the bar (keyboard-avoidance);
+    // blur to restore it, then use the bar's CTA (the in-panel pay button is hidden on mobile).
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await expect(page.locator('#mbar-cta')).toBeVisible();
+    await page.locator('#mbar-cta').click();
+    await expect.poll(() => page.locator('#pass-ref').textContent(), { timeout: 8000 }).toMatch(/CH-/);
+    // the pay CTA must not float over the boarding pass where a stray tap re-books/charges
+    await expect(page.locator('#mbar')).toBeHidden();
+    await expect(page.locator('#mstrip')).toBeHidden();
   });
 });
 

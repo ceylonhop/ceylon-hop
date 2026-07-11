@@ -73,3 +73,14 @@ test('server-authoritative amount also flows through the real PayHere path', asy
   ).toMatch(/CH-/);
   await expect(page.locator('#pass-paid')).toHaveText('$115');
 });
+
+test('booking creation sends a stable Idempotency-Key so a retried POST dedupes', async ({ page }) => {
+  await gotoBooking(page);
+  await fillContact(page);
+  const reqP = page.waitForRequest('**/bookings/single');
+  await page.click('#pay-btn');
+  const req = await reqP;
+  const key = req.headers()['idempotency-key'];
+  expect(key).toBeTruthy();
+  expect(key).toMatch(/^ch-/);
+});

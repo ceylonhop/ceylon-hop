@@ -816,7 +816,9 @@ function checkWhen(){
   const n2=document.getElementById('n2');
   if(!n2) return;
   if(isShared){
-    const ok = !!(state.date && !state.flexDate);
+    // Shared seats depart at fixed times — a concrete date AND departure are both required,
+    // else the backend (which requires `time`) 400s at the moment of payment.
+    const ok = !!(state.date && !state.flexDate && state.dep);
     n2.disabled = !ok;
     n2.style.opacity = ok ? '' : '.45';
     n2.style.cursor = ok ? '' : 'not-allowed';
@@ -1408,12 +1410,18 @@ async function createApiBooking(){
   }
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
+  const body = JSON.stringify(payload);
+  // Idempotency: a stable key derived from the exact request. A retried or duplicated POST
+  // (free-tier cold-start timeout, the ph-retry button) returns the SAME booking instead of
+  // creating a second draft; any change to the request produces a new key.
+  let h = 0; for (let i = 0; i < body.length; i++) h = ((h << 5) - h + body.charCodeAt(i)) | 0;
+  const idemKey = 'ch-' + (h >>> 0).toString(36);
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), 45000); // allow for a free-tier cold start
   let res;
   try{
     res = await fetch(API.replace(/\/$/,'')+endpoint, {
-      method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(payload), signal: ctrl.signal
+      method:'POST', headers:{'content-type':'application/json','idempotency-key':idemKey}, body, signal: ctrl.signal
     });
   } finally { clearTimeout(timer); }
   if(!res.ok) throw new Error('booking_failed_'+res.status);
@@ -1449,6 +1457,12 @@ function finalizeBooking(apiBooking){
   document.getElementById('main-layout').style.display='none';
   document.getElementById('psteps').style.display='none';
   document.getElementById('confirm').style.display='block';
+  // The mobile pay-bar + context strip live OUTSIDE #main-layout and are kept visible by the
+  // body.js-mbar CSS; force-hide them so the "Continue to secure payment" CTA can't float over
+  // — and be re-tapped on — the boarding pass (which would create a duplicate booking/charge).
+  ['mbar','mstrip','mbar-scrim'].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display='none'; });
+  document.body.classList.remove('mbar-lock');
+  const _confAside=document.querySelector('.layout > aside'); if(_confAside) _confAside.classList.remove('open');
   window.scrollTo({top:0,behavior:'smooth'});
   // funnel: purchase — PROD only, and only for a real backend booking, so sandbox/demo
   // and pre-cutover Pages traffic never pollute GA4 revenue. Deduped later (Phase 1) by ref.
