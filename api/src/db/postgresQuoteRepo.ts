@@ -140,6 +140,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(patch.status ? { status: patch.status } : {}),
         ...(patch.lostReason !== undefined ? { lostReason: patch.lostReason } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        ...(patch.rateLock !== undefined
+          ? {
+              rateCardJson: (patch.rateLock?.rateCardJson ?? null) as object | null,
+              rateLockedUntil: patch.rateLock?.rateLockedUntil ?? null,
+            }
+          : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {

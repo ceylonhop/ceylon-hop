@@ -93,6 +93,10 @@ export interface QuotePatch {
   status?: QuoteStatus;
   lostReason?: string | null;
   notes?: string | null;
+  // Rate-lock (spec 2026-07-11). The snapshot + expiry always move together, so they patch as a
+  // unit: `undefined` = leave the lock untouched; an object = stamp it (ops freeze at approval);
+  // `null` = clear it (reopen-to-edit → back to the live card). See api/src/quote/rateLock.ts.
+  rateLock?: { rateCardJson: unknown; rateLockedUntil: Date | null } | null;
 }
 
 export interface QuoteRepo {
@@ -221,6 +225,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
+    if (patch.rateLock !== undefined) {
+      row.rateCardJson = patch.rateLock?.rateCardJson ?? null;
+      row.rateLockedUntil = patch.rateLock?.rateLockedUntil ?? null;
+    }
     row.updatedAt = now;
     return { ...row };
   }

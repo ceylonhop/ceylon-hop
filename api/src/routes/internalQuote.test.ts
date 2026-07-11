@@ -4,6 +4,7 @@ import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
@@ -851,5 +852,64 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     });
     expect((await postWithOrigin('https://evil.example')).status).toBe(403);
     expect((await postWithOrigin(OWN_ORIGIN)).status).toBe(200);
+  });
+
+  // ── Rate-lock: ops freeze-on-approval (spec 2026-07-11 §3) ──────────────────
+  const patchAsRL = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const getAs = (email: string, app: App, path: string) =>
+    app.request(path, { headers: { cookie: cookie(email) } });
+  const saveDraft = async (app: App) =>
+    (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('a fresh draft carries no rate lock', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(got.rateCardJson).toBeNull();
+    expect(got.rateLockedUntil).toBeNull();
+  });
+
+  it('approving a quote (→ ready) freezes the current rate card with no expiry', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(got.status).toBe('ready');
+    expect(got.rateCardJson.version).toBe(RATE_CARD.version); // the whole card is snapshotted
+    expect(got.rateCardJson.perKmCents).toEqual(RATE_CARD.perKmCents);
+    expect(got.rateLockedUntil).toBeNull(); // ops lock = held until reopened, not time-boxed
+  });
+
+  it('reopening a ready quote to edit (→ draft) clears the lock', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'draft' });
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(got.status).toBe('draft');
+    expect(got.rateCardJson).toBeNull();
+    expect(got.rateLockedUntil).toBeNull();
+  });
+
+  it('sending a ready quote (→ sent) keeps the frozen snapshot', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'sent' });
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(got.status).toBe('sent');
+    expect(got.rateCardJson.version).toBe(RATE_CARD.version); // lock survives the send
+  });
+
+  it('the locked snapshot (cost-bearing) is stripped for non-margin roles', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    const asFounder = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(asFounder.rateCardJson).not.toBeNull(); // margin:view keeps it
+    expect(asFinance.rateCardJson).toBeUndefined(); // stripped — it embeds cost/markup
+    expect(asFinance.rateLockedUntil).toBeNull(); // the (non-sensitive) expiry stays
   });
 });

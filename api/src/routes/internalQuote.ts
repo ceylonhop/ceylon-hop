@@ -7,7 +7,7 @@ import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
 import type { ExtraCode, Vehicle } from '../quote/rateCard';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
-import { QUOTE_STATUSES, canTransition, type QuoteStatus } from '../db/quoteRepo';
+import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { can } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
@@ -206,15 +206,19 @@ function shape(result: QuoteResult, canMargin: boolean) {
 // QuoteResult, and QuoteResult.marginEstimateCents is the same cost/margin figure. A shallow
 // delete of marginCents alone leaks it nested. Strip both. (breakdown/lineItems carry only
 // customer-facing prices, so no other nested field needs stripping — see quote/types.ts.)
-function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents'> {
+function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(q: T): Omit<T, 'marginCents' | 'rateCardJson'> {
   const rest: Record<string, unknown> = { ...q };
   delete rest.marginCents;
+  // The locked rate-card snapshot embeds cost/markup fields (costPerKmCents, markupPct,
+  // chauffeur.dayRateCostCents) — same margin class as marginCents, so drop it for non-margin
+  // roles. The client renders from `result` (sell prices), never from this snapshot.
+  delete rest.rateCardJson;
   if (rest.result && typeof rest.result === 'object') {
     const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
     delete safeResult.marginEstimateCents;
     rest.result = safeResult;
   }
-  return rest as Omit<T, 'marginCents'>;
+  return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
 }
 
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
@@ -441,6 +445,9 @@ export function internalQuoteRoutes(deps: {
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
     // Maker-checker gate: only legal status moves, and only the founder (quote:approve) can
     // mark a quote ready-to-send or send it back for changes (incl. the draft→ready self-approve).
+    // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
+    // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
+    let rateLock: QuotePatch['rateLock'] = undefined;
     if (body.status) {
       const current = await deps.quotes.get(c.req.param('id'));
       if (!current) return c.json({ error: 'not_found' }, 404);
@@ -449,11 +456,21 @@ export function internalQuoteRoutes(deps: {
       if ((to === 'ready' || to === 'changes_requested') && !can(c.get('identity').role, 'quote:approve')) {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
+      if (to === 'ready') {
+        // Freeze the current card (no expiry — ops locks are held until reopened, not time-boxed).
+        // The stored total was priced against RATE_CARD at /save; today RATE_CARD only changes on
+        // deploy, so the current card is the one that produced this price. When the deferred founder
+        // rate-card API lands (design doc §9), approval should re-price from this snapshot.
+        rateLock = { rateCardJson: RATE_CARD, rateLockedUntil: null };
+      } else if (current.status === 'ready' && (['draft', 'pending_review', 'changes_requested'] as QuoteStatus[]).includes(to)) {
+        rateLock = null; // reopen-to-edit unlocks; sending (ready → sent) keeps the lock
+      }
     }
     const updated = await deps.quotes.patch(c.req.param('id'), {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
       notes: body.notes,
+      rateLock,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine
