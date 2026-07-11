@@ -61,7 +61,7 @@ and "team actual" numbers that intentionally differ — **never read a price out
   comes from at integration time.
 
 **Nice-to-have, none block the first build:**
-1. **Island Loop passes** — fixed prices (6-stop $119 · 9-stop $149 · 5-stop $105 · +Arugam Bay premium) as named products.
+1. ~~**Island Loop passes** as named products~~ — **DROPPED 2026-07-11 (owner):** loops are not a product; a loop-style trip is just a multi-stop trip (point-to-point default, chauffeur opt-in), engine-priced.
 2. **Manual discount/override field** — for competitive/loyalty quotes (e.g. Pauline $40).
 3. **Surcharges/codes** — confirm Colombo city-pickup ($3/seat) + discount codes (10/20/30%).
 

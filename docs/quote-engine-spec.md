@@ -310,7 +310,7 @@ body. So reproducibility requires all three:
 ## 12. Open data dependencies (config values — do not block the engine build)
 
 - **Shared seat table** — canonical per-corridor seat prices.
-- **Loop passes** — if sold on web, prices ($119 / $149 / $105 / +AB) as named products.
+- ~~**Loop passes** as named products~~ — **DROPPED 2026-07-11:** loops are multi-stop trips, engine-priced, not a named product.
 - **Tiered vs flat shared seat** (Anna's $19.50/$17.50/$16.50).
 - **Manual discount/override** field — competitive quotes (Pauline).
 

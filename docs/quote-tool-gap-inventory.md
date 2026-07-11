@@ -9,7 +9,7 @@ MVP.**
 
 - **Customer front-end** (`booking.js`, `plan.js`, `transfers-data.js`, **`ch-map.js`**) — live Google
   Places autocomplete + real Google Directions distance, branded date pickers, vehicle/luggage logic,
-  add-ons, 5 product flows (single / shared / multi-stop trip / catalogue+Island-Loop / custom),
+  add-ons, 4 product flows (single / shared / multi-stop trip / custom),
   chauffeur day-span billing, deposit, route map.
 - **Founder's design HTML** (decompressed) — 5 vehicle types, admin-locked Rate Settings, 6 leg types,
   offline place autocomplete + haversine distance with manual override, Driver-stays/Car-stays per
@@ -37,7 +37,7 @@ checkboxes, a pricing summary (LKR+USD+margin+deposit), car-vs-van, and a WhatsA
 | 9 | **Quote Output** | **WhatsApp + Email + Notion** templates (exact copy in design) · **LKR⇄USD send toggle** · **Internal-Calc** ops-only tab | WhatsApp draft only | 🟠 |
 | 10 | **Rate Settings panel** | admin-lockable in-tool view/edit of rates, buffer, FX, floors, min-km, rounding (design) | none (rates in code) | 🟡 |
 | 11 | **Lifecycle + Save** | Draft/Ready/Sent/Booked/Lost status · New · Save · saved-quotes list · localStorage autosave (design) | none (stateless) | 🟡 |
-| 12 | **Product flows** | besides private/chauffeur: **shared corridors**, **Island Loop pass**, **catalogue/custom** (customer); shared is also a tab in the plan | private + chauffeur | 🟠 |
+| 12 | **Product flows** | besides private/chauffeur: **shared corridors**, **catalogue/custom** (customer); shared is also a tab in the plan | private + chauffeur | 🟠 |
 | 13 | **Vehicle capacity logic** | auto van-upgrade / car-downgrade prompts, hard blocks over capacity (customer) | engine upgrade only (no UI prompt) | 🟡 |
 | 14 | **Add-ons** | sightseeing / luggage rack / child seat / flexi with prices; shared extra-bag $10 (customer) | sightseeing + waiting only | 🟡 |
 | 15 | **Route map** | Google polyline map + SVG island fallback + distance/time bar (customer) | none | 🟡 |
@@ -62,8 +62,7 @@ checkboxes, a pricing summary (LKR+USD+margin+deposit), car-vs-van, and a WhatsA
    Recommend the customer-site hybrid: Google when available, baked/haversine fallback, manual override.
 4. **Rate editing.** In-tool admin panel (design) vs code-only (`rateCard.ts`).
 5. **Persistence/lifecycle.** Add Save + status + saved-quotes now, or defer (we'd scoped stateless v1).
-6. **Shared / Island-Loop.** Still blocked on the shared pricing model you owe; Loop needs the pass
-   prices.
+6. **Shared.** Still blocked on the shared pricing model you owe. (Island-Loop dropped 2026-07-11 — loops are multi-stop trips, no pass prices needed.)
 
 ## Recommended next step
 Re-spec the tool as a **true superset** (this inventory → a proper plan), settle the 6 forks above
