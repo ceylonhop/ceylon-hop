@@ -14,7 +14,7 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $53');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#st-drive')).toContainText('136 km');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
 });
 
 test('planner vehicle switch updates prices without rebuilding the route map', async ({ page }) => {
@@ -27,13 +27,13 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
 
   await expect(page.locator('#rail [data-dist]')).toContainText('from $53');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
 
   await page.locator('.veh-btn[data-veh="van"]').click();
 
   await expect(page.locator('#rail [data-dist]')).toContainText('from $71');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$70[-\u2013]\$85/); // guide range = ceil(real+10) & a $25/$15 band
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
@@ -75,7 +75,7 @@ test('planner guide range never rounds a priced car transfer down to zero', asyn
 
   await expect(page.locator('#rail [data-dist]')).toContainText('52 km');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $29');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$29[-\u2013]\$50/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$29[-\u2013]\$40/);
   await expect(page.locator('#sum-amt')).not.toContainText('$0');
 });
 
@@ -104,7 +104,7 @@ test('search add-stops handoff preserves the equivalent base route price', async
 
   await expect(page.locator('#rail [data-dist]')).toContainText('136 km');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $53');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$100/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
 });
 
 test('planner fallback map keeps repeated stops in the visible route order', async ({ page }) => {

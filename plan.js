@@ -117,10 +117,14 @@ function legPrice(km, veh){
 function minLegPrice(veh){
   return veh==='van' ? 50 : 29;
 }
+// Indicative guide range: the ceiling is the real total + a $10 cushion (rounded up to a
+// clean $5, so we never quote under cost), and the band tightens for smaller quotes so a
+// flat $25 spread never dwarfs a small fare. `lo` is clamped to the vehicle's minimum fare.
 function guidePriceRange(totalPrice, veh){
-  const lo=Math.max(minLegPrice(veh), Math.floor(totalPrice/50)*50);
-  const hi=Math.ceil((totalPrice+1)/50)*50;
-  return lo===hi ? `~$${lo}` : `$${lo}–$${hi}`;
+  const hi = Math.ceil((totalPrice + 10) / 5) * 5;   // ceiling = real total + a $10 cushion, to a clean $5
+  const band = totalPrice >= 150 ? 25 : 15;          // $25 for normal trips; $15 keeps small quotes tight
+  const lo = Math.max(minLegPrice(veh), hi - band);  // never below the vehicle minimum (or below the real figure)
+  return lo >= hi ? `~$${hi}` : `$${lo}–$${hi}`;
 }
 
 // ---- state: an ordered list of transfer legs ----

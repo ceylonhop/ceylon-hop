@@ -267,7 +267,7 @@ test('planner place search layers popular route then Google results for hotel te
   await expect(page.locator('#rail [data-dist]')).toContainText('100 km');
   await expect(page.locator('#rail [data-dist]')).toContainText('from $39');
   await expect(page.locator('#st-drive')).toContainText('100 km');
-  await expect(page.locator('#sum-amt')).toContainText('$29–$50');
+  await expect(page.locator('#sum-amt')).toContainText('$35–$50');
 });
 
 test('planner place search ignores delayed Google results after a popular place is selected', async ({ page }) => {
