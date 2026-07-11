@@ -60,3 +60,22 @@ export const RATE_CARD = {
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
   shared: { colomboPickupCents: 300, extraBagCents: 1000 },
 } as const;
+
+// Structural shape of a rate card, so the engine can price against a LOCKED snapshot (a plain
+// object read from the DB), not only the compiled `RATE_CARD` literal. `RATE_CARD` (as const) is
+// assignable to this. See docs/superpowers/specs/2026-07-11-quote-rate-lock-design.md.
+export type RateCard = {
+  version: string;
+  currency: string;
+  markupPct: number;
+  perKmCents: Record<Vehicle, number>;
+  costPerKmCents: Record<Vehicle, number>;
+  floorCents: Record<Vehicle, number>;
+  chauffeur: { dayRateCents: number; dayRateCostCents: number; idleMinKm: Record<Vehicle, number> };
+  deposit: { pct: number; capCents: number };
+  vehicle: Record<Vehicle, { maxPax: number; maxBags: number }>;
+  bufferPct: number;
+  fxUsdToLkr: number;
+  extras: Record<string, number>;
+  shared: { colomboPickupCents: number; extraBagCents: number };
+};
