@@ -67,15 +67,15 @@ describe('POST /bookings/single', () => {
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.total).toBe(6930); // km 180 → billable 198 → round(198×35)
-    expect(b.amountDueNow).toBe(6930);
+    expect(b.total).toBe(7970); // km 180 → billable 198 → round(198×40.25) = 7970
+    expect(b.amountDueNow).toBe(7970);
   });
 
   it('prices payload extras through the engine (GL-3)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['luggage', 'front'] });
     const b = await res.json();
-    expect(b.total).toBe(8230); // 6930 + luggage 500 + child seat 800
+    expect(b.total).toBe(9270); // 7970 + luggage 500 + front 800
   });
 
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {

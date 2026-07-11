@@ -10,14 +10,14 @@ beforeAll(() => { T = loadTransfers(); });
 
 describe('repriceDecision', () => {
   it('holds the quote for a cheaper routed price (firm floor — never drops)', () => {
-    // legPrice(200,'car') = round(round(200×1.10)×0.35) = round(220×0.35) = 77 < 121,
+    // legPrice(200,'car') = round(round(200×1.10)×0.4025) = round(220×0.4025) = 89 < 121,
     // but the firm floor keeps the quoted $121.
     const d = T.repriceDecision(240, 200, 121, 'car');
     expect(d).toEqual({ action: 'hold', price: 121 });
   });
 
   it('holds the anchor when dearer but inside the +10% buffer', () => {
-    // anchor 200 → billable 220. routed 210 ≤ 220 → hold, even though legPrice(210)=81 > 77.
+    // anchor 200 → billable 220. routed 210 ≤ 220 → hold, even though legPrice(210)=93 > 89.
     const d = T.repriceDecision(200, 210, 101, 'car');
     expect(d).toEqual({ action: 'hold', price: 101 });
   });
@@ -29,13 +29,13 @@ describe('repriceDecision', () => {
   });
 
   it('confirms a material increase past the buffer', () => {
-    // routed 300 > 220, legPrice(300,'car') = round(330×0.35) = 115 > 101 → confirm, extra 100 km.
+    // routed 300 > 220, legPrice(300,'car') = round(330×0.4025) = 133 > 101 → confirm, extra 100 km.
     const d = T.repriceDecision(200, 300, 101, 'car');
-    expect(d).toEqual({ action: 'confirm', price: 115, extraKm: 100 });
+    expect(d).toEqual({ action: 'confirm', price: 133, extraKm: 100 });
   });
 
   it('uses the van rate for van quotes', () => {
-    // legPrice(300,'van') = round(330×0.47) = 155 < 190 anchor → firm floor holds.
+    // legPrice(300,'van') = round(330×0.5405) = 178 < 190 anchor → firm floor holds.
     const d = T.repriceDecision(200, 300, 190, 'van');
     expect(d).toEqual({ action: 'hold', price: 190 });
   });

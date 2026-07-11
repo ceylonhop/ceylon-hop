@@ -69,7 +69,9 @@ export function quote(req: QuoteRequest): QuoteResult {
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[vehicle];
-    costCents += Math.round(c.meta.billableKm * costPerKm);
+    // Cost = day-rate cost (per day) + distance cost, so chauffeur margin reflects the real
+    // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too).
+    costCents += c.meta.days * RATE_CARD.chauffeur.dayRateCostCents + Math.round(c.meta.billableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
       // already covered by the day rate and must never be charged again.

@@ -32,12 +32,12 @@ describe('privateQuote (the fare customers see)', () => {
     const q = T.privateQuote('cmb-airport', 'ella');
     expect(q.km).toBe(335);
     // billableKm = round(335 × 1.10) = round(368.5) = 369
-    // car = max(29, round(369 × 0.35)) = round(129.15) = 129
-    // van = max(50, round(369 × 0.47)) = round(173.43) = 173
-    expect(q.car).toBe(carFare(335)); // 129
-    expect(q.van).toBe(vanFare(335)); // 173
-    expect(q.car).toBe(129);
-    expect(q.van).toBe(173);
+    // car = max(29, round(369 × 0.4025)) = round(148.52) = 149
+    // van = max(50, round(369 × 0.5405)) = round(199.44) = 199
+    expect(q.car).toBe(carFare(335)); // 149
+    expect(q.van).toBe(vanFare(335)); // 199
+    expect(q.car).toBe(149);
+    expect(q.van).toBe(199);
   });
 
   it('van is always pricier than car', () => {
@@ -62,7 +62,7 @@ describe('privateQuote (the fare customers see)', () => {
   });
 
   // Regression guard: hill-country must not collapse back to the haversine estimate
-  // (~181km), which would under-price it to ~$70; the real 335km drive prices at $129.
+  // (~181km), which would under-price it to ~$80; the real 335km drive prices at $149.
   it('REGRESSION: CMB->Ella is priced for the real 335km mountain drive', () => {
     expect(T.privateQuote('cmb-airport', 'ella').car).toBeGreaterThanOrEqual(120);
   });
@@ -131,19 +131,19 @@ describe('tripQuote (multi-stop)', () => {
 });
 
 describe('chauffeur + deposit constants (engine parity)', () => {
-  it('deposit is 10% capped at $50, chauffeur day fee is $27', () => {
-    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 2700
+  it('deposit is 10% capped at $50, chauffeur day fee is $31.05', () => {
+    // engine: RATE_CARD.deposit = { pct: 10, capCents: 5000 }, chauffeur.dayRateCents = 3105 (sell)
     expect(T.DEPOSIT_PCT).toBe(0.10);
     expect(T.DEPOSIT_CAP).toBe(50);
-    expect(T.CHAUFFEUR_DAY_FEE).toBe(27);
+    expect(T.CHAUFFEUR_DAY_FEE).toBe(31.05);
   });
 
-  it('per-km owner rates match the backend rate card (car $0.35 · van $0.47)', () => {
-    // engine: RATE_CARD.perKmCents = { car: 35, van: 47 } (api/src/quote/rateCard.ts).
+  it('per-km owner rates match the backend rate card (car $0.4025 · van $0.5405)', () => {
+    // engine: RATE_CARD.perKmCents = { car: 40.25, van: 54.05 } sell rates (api/src/quote/rateCard.ts).
     // This is the single front-end per-km source: legPrice AND booking.js's chauffeur
     // distance charge both read T.PER_KM, so guarding it here guards both.
-    expect(T.PER_KM.car).toBe(0.35);
-    expect(T.PER_KM.van).toBe(0.47);
+    expect(T.PER_KM.car).toBe(0.4025);
+    expect(T.PER_KM.van).toBe(0.5405);
   });
 });
 

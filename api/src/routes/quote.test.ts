@@ -13,7 +13,7 @@ describe('POST /quote', () => {
     const res = await post(createApp(), { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.totalCents).toBe(3080); // 80km → bill 88km × 35¢ = 3080
+    expect(body.totalCents).toBe(3542); // 80km → bill 88km × 40.25¢ = 3542
     expect(body.marginEstimateCents).toBeUndefined();
   });
 

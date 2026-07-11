@@ -39,18 +39,18 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     const r = await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 9000 });
     expect(r.status).toBe(201);
     const b = await r.json();
-    expect(b.total).toBe(6930); // engine wins
-    expect(b.amountDueNow).toBe(6930);
+    expect(b.total).toBe(7970); // engine wins
+    expect(b.amountDueNow).toBe(7970);
     const tasks = await conciergeTasks.listByBooking(b.id);
     expect(tasks).toHaveLength(1);
     expect(tasks[0].type).toBe('follow_up');
-    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 9000¢, engine priced 6930¢`);
+    expect(tasks[0].note).toBe(`price mismatch ${b.reference}: site quoted 9000¢, engine priced 7970¢`);
   });
 
   it('does not flag a quotedTotal within $1 of the engine price', async () => {
     const { app, conciergeTasks } = appWithTasks();
-    const b = await (await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 6925 })).json();
-    expect(b.total).toBe(6930);
+    const b = await (await post(app, '/bookings/single', { ...knownSingle, quotedTotal: 7965 })).json();
+    expect(b.total).toBe(7970);
     expect(await conciergeTasks.listByBooking(b.id)).toHaveLength(0);
   });
 

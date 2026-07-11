@@ -4,10 +4,10 @@ import { buildPricingPayload } from './pricingPayload';
 describe('buildPricingPayload', () => {
   it('converts the rate card to whole-USD front-end values', () => {
     const p = buildPricingPayload();
-    expect(p.perKm).toEqual({ car: 0.35, van: 0.47 });
+    expect(p.perKm).toEqual({ car: 0.4025, van: 0.5405 });
     expect(p.floors).toEqual({ car: 29, van: 50 });
     expect(p.bufferPct).toBe(10);
-    expect(p.chauffeurDayFee).toBe(27);
+    expect(p.chauffeurDayFee).toBe(31.05);
     expect(p.depositPct).toBe(0.1);
     expect(p.depositCap).toBe(50);
     expect(p.extras).toMatchObject({
