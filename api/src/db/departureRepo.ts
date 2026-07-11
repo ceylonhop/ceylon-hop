@@ -6,6 +6,7 @@ export interface Corridor {
   toPlace: string;
   seatPrice: number; // minor units, per seat
   seatCapacity: number; // default capacity per departure
+  serviceDays: number[]; // weekdays the shared service runs, 0=Sun … 6=Sat (mirrors the front-end `days`)
 }
 
 export interface SharedDeparture {
@@ -38,23 +39,27 @@ export interface DepartureRepo {
   }): Promise<void>;
 }
 
-// Shared corridors — these MIRROR the frozen front-end (transfers-data.js `CORRIDORS`).
+// Shared corridors — these MIRROR the front-end (transfers-data.js `CORRIDORS`).
 // `stops` are place NAMES exactly as the site sends them (booking.js posts the place
 // name for from/to). A shared seat exists between ANY two stops on one corridor, at the
 // corridor's flat seat price — same rule as the front-end's `sharedOption`.
+// Shared seats run a fixed WEEKLY schedule, not a daily one: `days` are the weekdays the
+// service departs (0=Sun … 6=Sat), mirroring the front-end's `SHARED_DAYS`.
 const SHARED_CAPACITY = 12;
+const SHARED_SERVICE_DAYS = [3, 6]; // Wed & Sat — mirrors transfers-data.js `SHARED_DAYS`
 interface CorridorRoute {
   id: string;
   stops: string[];
   seat: number; // whole USD per seat (front-end value)
+  days: number[]; // service weekdays, 0=Sun … 6=Sat (mirrors the front-end `days`)
 }
 const CORRIDOR_ROUTES: CorridorRoute[] = [
-  { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19 },
-  { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21 },
-  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23 },
-  { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14 },
-  { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16 },
-  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24 },
+  { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19, days: SHARED_SERVICE_DAYS },
+  { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21, days: SHARED_SERVICE_DAYS },
+  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23, days: SHARED_SERVICE_DAYS },
+  { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14, days: SHARED_SERVICE_DAYS },
+  { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16, days: SHARED_SERVICE_DAYS },
+  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24, days: SHARED_SERVICE_DAYS },
 ];
 
 export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
@@ -63,7 +68,16 @@ export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
   toPlace: c.stops[c.stops.length - 1],
   seatPrice: c.seat * 100, // minor units
   seatCapacity: SHARED_CAPACITY,
+  serviceDays: c.days,
 }));
+
+// The corridor catalogue (stops + service days) lives in code; the DB `corridor` table
+// stores only endpoints/price/capacity. Resolve a corridor's service weekdays by id, with
+// the standard Wed & Sat schedule as the fallback for any corridor not in the catalogue.
+export function serviceDaysForCorridor(id: string): number[] {
+  const route = CORRIDOR_ROUTES.find((c) => c.id === id);
+  return route ? route.days : SHARED_SERVICE_DAYS;
+}
 
 // Resolve which corridor carries both endpoints (any direction), first match wins —
 // mirrors the front-end iteration order. Used when no corridorId is supplied.

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { SingleTransferInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
-import { isoToday, isPastIsoDate, firstPastDate } from '../domain/dateRules';
+import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from '../domain/dateRules';
 import {
   priceSingle,
   priceTrip,
@@ -308,6 +308,21 @@ export function bookingRoutes(deps: {
         ? await departures.findCorridorByRoute(req.from, req.to)
         : null;
     if (!corridor) return c.json({ error: 'unknown_corridor' }, 400);
+
+    // Shared seats run a fixed weekly schedule — reject a date that isn't one of the
+    // corridor's service weekdays (the website greys these out; enforce it server-side too).
+    // Checked before holding a seat so an off-schedule request never touches inventory.
+    const dow = isoWeekday(req.date);
+    if (dow !== null && !corridor.serviceDays.includes(dow)) {
+      const label = serviceDaysLabel(corridor.serviceDays);
+      return c.json(
+        {
+          error: 'not_a_service_day',
+          message: `This shared route only departs on ${label}. Pick one of those days, or book it as a private transfer.`,
+        },
+        400,
+      );
+    }
 
     const held = await departures.holdSeats({
       corridorId: corridor.id,

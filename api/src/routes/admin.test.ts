@@ -209,7 +209,7 @@ describe('POST /admin/jobs/watchdog', () => {
 describe('shared seat release on cancel/refund', () => {
   const shared = {
     corridorId: 'hill-line', // capacity 12
-    date: '2026-07-20',
+    date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
     time: '08:00',
     seats: 12, // the whole bus, so a leaked hold is observable as a sold-out 409
     customer: valid.customer,

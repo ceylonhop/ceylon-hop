@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isoToday, isPastIsoDate, firstPastDate } from './dateRules';
+import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from './dateRules';
 
 describe('isoToday', () => {
   it('formats the given instant as YYYY-MM-DD in the target timezone', () => {
@@ -35,5 +35,41 @@ describe('firstPastDate', () => {
     expect(firstPastDate(['2026-07-10', '2026-07-08', '2020-01-01'], today)).toBe('2026-07-08');
     expect(firstPastDate(['2026-07-10', undefined, ''], today)).toBe(null);
     expect(firstPastDate([], today)).toBe(null);
+  });
+});
+
+describe('isoWeekday', () => {
+  it('returns the calendar weekday as 0=Sun … 6=Sat', () => {
+    expect(isoWeekday('2026-07-22')).toBe(3); // Wednesday
+    expect(isoWeekday('2026-07-25')).toBe(6); // Saturday
+    expect(isoWeekday('2026-07-20')).toBe(1); // Monday
+    expect(isoWeekday('2026-07-19')).toBe(0); // Sunday
+  });
+  it('is timezone-independent — a calendar date has one weekday regardless of server TZ', () => {
+    const saved = process.env.TZ;
+    try {
+      process.env.TZ = 'Pacific/Kiritimati'; // UTC+14
+      expect(isoWeekday('2026-07-22')).toBe(3);
+      process.env.TZ = 'Pacific/Pago_Pago'; // UTC-11
+      expect(isoWeekday('2026-07-22')).toBe(3);
+    } finally {
+      process.env.TZ = saved;
+    }
+  });
+  it('returns null for absent or non-ISO values', () => {
+    expect(isoWeekday(undefined)).toBe(null);
+    expect(isoWeekday(null)).toBe(null);
+    expect(isoWeekday('')).toBe(null);
+    expect(isoWeekday('to confirm')).toBe(null);
+    expect(isoWeekday('2026/07/22')).toBe(null);
+  });
+});
+
+describe('serviceDaysLabel', () => {
+  it('renders a human list of weekday names', () => {
+    expect(serviceDaysLabel([3, 6])).toBe('Wed & Sat');
+    expect(serviceDaysLabel([6, 3])).toBe('Wed & Sat'); // sorted
+    expect(serviceDaysLabel([1, 3, 5])).toBe('Mon, Wed & Fri');
+    expect(serviceDaysLabel([3])).toBe('Wed');
   });
 });

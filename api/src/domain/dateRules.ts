@@ -24,3 +24,21 @@ export function firstPastDate(values: Array<string | null | undefined>, today: s
   }
   return null;
 }
+
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Weekday of an ISO calendar date as 0=Sun … 6=Sat (JS `getDay()` convention), or null when
+ *  `value` isn't an ISO date. Computed from the calendar fields in UTC so the weekday never
+ *  drifts with the server's timezone. */
+export function isoWeekday(value: string | null | undefined): number | null {
+  if (!value || !ISO.test(value)) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** Human label for a set of service weekdays, e.g. [3, 6] → "Wed & Sat". */
+export function serviceDaysLabel(days: number[]): string {
+  const names = [...days].sort((a, b) => a - b).map((d) => WEEKDAY_SHORT[d] ?? '?');
+  if (names.length <= 1) return names.join('');
+  return names.slice(0, -1).join(', ') + ' & ' + names[names.length - 1];
+}

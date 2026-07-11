@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { CustomerInput, QuotedTotal } from './singleTransfer';
 
-// A seat on a fixed daily corridor service. Unlike a private transfer the route and
-// departure time are fixed; the customer picks a corridor + date + how many seats.
+// A seat on a fixed-schedule corridor service. Unlike a private transfer the route and
+// departure times are fixed, and the service runs only on set weekdays (the corridor's
+// service days — see departureRepo `serviceDays`); the customer picks a corridor + date +
+// how many seats.
 export const SharedInput = z.object({
   corridorId: z.string().min(1),
   date: z.string().min(1),
