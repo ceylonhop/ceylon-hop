@@ -432,6 +432,26 @@ describe('internal quoting tool route', () => {
     expect(d.services.chauffeur.error).toMatch(/single-day/i);
   });
 
+  it('a single-day itinerary asked to price as chauffeur is reverted to point-to-point (no day rate)', async () => {
+    // Two legs on the SAME date = one distinct date → chauffeur is infeasible. Even when the
+    // caller explicitly requests `service: 'chauffeur'`, the backend must price point-to-point
+    // (no day rate), mirroring the ops UI's client-side revert — the backend is the canonical,
+    // tamper-proof price + the save-time recompute.
+    const legs = [
+      { category: 'transfer', from: 'Airport', to: 'Kandy', distanceKm: 120, date: '2026-02-14' },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-14' },
+    ];
+    const chauf = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'chauffeur', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs,
+    })).json();
+    const priv = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs,
+    })).json();
+    expect(chauf.product).toBe('private'); // reverted, not chauffeur
+    expect(chauf.total.cents).toBe(priv.total.cents); // priced exactly as point-to-point — no day rate
+    expect(chauf.services.chauffeur.error).toMatch(/single-day/i); // chooser still shows chauffeur disabled
+  });
+
   it('services: an undated multi-leg itinerary returns chauffeur error "add a date"', async () => {
     const d = await (await post(createApp(), '/admin/quote/estimate', {
       service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [

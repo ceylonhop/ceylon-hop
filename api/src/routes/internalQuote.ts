@@ -146,7 +146,13 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
   const extras = collectExtras(req.legs);
   const driving = req.legs.filter(drives);
   const service = serviceOverride ?? req.service;
-  const chauffeur = service ? service === 'chauffeur' : isChauffeur(req.legs);
+  let chauffeur = service ? service === 'chauffeur' : isChauffeur(req.legs);
+  // Chauffeur needs >=2 distinct leg dates. A single-day request is priced as point-to-point,
+  // mirroring the ops UI's client-side revert — the backend (canonical price + save recompute)
+  // must never charge a chauffeur day rate on a single transfer, whoever calls it.
+  if (chauffeur && new Set(req.legs.map((l) => l.date).filter(Boolean)).size < 2) {
+    chauffeur = false;
+  }
   if (chauffeur) {
     // Every leg (driving AND stay) must carry a date, else an undated leg gets pinned to day 0 —
     // silently dropping a day rate + idle km (the confirmed underquote). No fallback.
