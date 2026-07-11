@@ -4026,6 +4026,11 @@ function acPick(item) {
   // Patch leg state (this calls render(), wiping the menu — already gone)
   var patch = {};
   patch[field] = name;
+  // The place changed → drop any manual/reopened distance so auto-distance re-resolves for the
+  // NEW route. Reopened legs are manual (to preserve their saved price); without this, picking a
+  // new place kept the stale saved distance and the quote never re-priced.
+  patch.manualDistance = false;
+  patch.autoMatched = false;
   // Clear cache so a new distance fetch runs after the leg updates
   delete _distCache[legId];
   // Use direct state mutation to avoid two renders
@@ -4108,24 +4113,12 @@ function attachAutoComplete() {
     var field = input.getAttribute('data-field');
     if (!legId || !field) return;
 
-    // Debounced input handler — fetch suggestions AND live-sync the typed place into state,
-    // like the customer name/contact fields. Previously the place synced to state ONLY on
-    // blur or an autocomplete pick, so changing a location and then reading the price (or
-    // acting) while the field still had focus left the estimate + auto-distance pricing the
-    // OLD location — "changing the location didn't update the quote". No render() here: the
-    // debounced estimate/distance re-render later and restoreEditorFocus keeps this field's
-    // text + focus. (blur still syncs too — belt and suspenders.)
+    // Debounced input handler — fetch suggestions. The typed place syncs to state (and the
+    // quote re-prices) on commit: an autocomplete pick (acPick) or blur. Re-pricing per
+    // keystroke was tried and reverted — it re-rendered mid-type and popped the suggestion
+    // menu open repeatedly.
     input.addEventListener('input', function() {
-      var val = input.value;
-      var leg = state.legs.find(function(l) { return l.id === legId; });
-      if (leg && leg[field] !== val) {
-        var p = {}; p[field] = val;
-        state.legs = state.legs.map(function(l) { return l.id === legId ? Object.assign({}, l, p) : l; });
-        markDirty();
-        if (!leg.manualDistance) { delete _distCache[legId]; scheduleAutoDistance(legId); }
-        refreshEstimate();
-      }
-      requestAutocomplete(input, legId, field, val.trim());
+      requestAutocomplete(input, legId, field, input.value.trim());
     });
 
     // Keyboard navigation
@@ -4155,7 +4148,7 @@ function attachAutoComplete() {
         if (_ac.inputEl === input) acClose();
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });
-        if (leg && !leg.manualDistance) {
+        if (leg) {
           // Only react when the operator ACTUALLY changed the place text. A background
           // estimate/distance re-render (render() swaps the render target's innerHTML, then restores
           // focus) makes this now-detached input fire a spurious async 'blur' with an
@@ -4163,9 +4156,11 @@ function attachAutoComplete() {
           // destination field flickering and "calculating distance" forever.
           var currentVal = input.value;
           if (leg[field] !== currentVal) {
+            // The place changed → drop any manual/reopened distance so auto-distance re-resolves
+            // for the new route (reopened legs are manual to preserve the saved price).
             delete _distCache[legId];
             state.legs = state.legs.map(function(l) {
-              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; return p; })()) : l;
+              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; return p; })()) : l;
             });
             markDirty();
             scheduleAutoDistance(legId);

@@ -449,26 +449,40 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
   await expect(age).toHaveClass(/tone-fresh/);
 });
 
-// Spec 8 (regression): changing a location by TYPING a new place — without picking a
-// suggestion or blurring the field — must re-price the quote. Previously the place synced to
-// state only on blur/pick, so an unblurred change left the estimate on the OLD location.
-test('typing a new destination (no pick, no blur) re-prices the quote', async ({ page }) => {
+// Spec 8 (regression, user-reported): reopening a saved quote marks its legs manual-distance
+// (to preserve the saved price). Previously that froze the price when you changed a location on
+// a reopened quote — auto-distance bailed on the manual flag. Changing the destination must now
+// drop the manual distance and re-price for the new route.
+test('changing a reopened quote destination re-prices it', async ({ page }) => {
+  // Build + save a Kandy → Ella car quote (distance auto-resolves; price is set).
   await chooseVehicle(page, 'car');
-  // Baseline: Kandy → Ella via the dropdown, dated → a priced total.
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
+  const custName = 'E2E Reprice ' + Date.now();
+  await page.locator('#f-customerName').fill(custName);
+  await page.locator('[data-action="saveDraft"]').click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
+
+  // Reopen it from the queue — reopened legs come back in manual-distance mode.
+  await page.locator('#nav button[data-route="quotes"]').click();
+  const row = page.locator('#view .qrow', { hasText: custName });
+  await expect(row).toBeVisible({ timeout: 8000 });
+  await row.click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const totalElla = await totalLineText(page);
 
-  // Change the destination to a much farther place by typing it — `fill` leaves the field
-  // focused (no acPick, no blur). The quote must re-price off what's in the field.
-  await toInput.click();
-  await toInput.fill('Mirissa');
+  // Change the destination to a much farther place (clear it, then pick Mirissa). The price
+  // MUST recompute — previously the reopened leg's frozen manual distance kept it unchanged.
+  const toReopened = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await toReopened.fill('');
+  await pickPlace(page, toReopened, 'Miri', 'Mirissa');
   await expect
     .poll(async () => { try { return await totalLineText(page); } catch (e) { return totalElla; } },
-      { timeout: 10000, message: 'quote should re-price after a typed (unpicked) destination change' })
+      { timeout: 10000, message: 'reopened quote should re-price after changing the destination' })
     .not.toBe(totalElla);
 });
