@@ -1,5 +1,5 @@
 // api/src/quote/engine.ts
-import { RATE_CARD, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
+import { RATE_CARD, type RateCard, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
 import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
@@ -17,7 +17,9 @@ function validateCustomRate(customPerKmCents: number | undefined, pricedVehicle:
   return customPerKmCents;
 }
 
-export function quote(req: QuoteRequest): QuoteResult {
+// `rateCard` defaults to the current RATE_CARD; a quote priced against its LOCKED snapshot passes
+// that card in (rate-lock spec: docs/superpowers/specs/2026-07-11-quote-rate-lock-design.md).
+export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteResult {
   const lineItems: LineItem[] = [];
   const warnings: string[] = [];
   let subtotalCents = 0;
@@ -25,14 +27,14 @@ export function quote(req: QuoteRequest): QuoteResult {
 
   if (req.product === 'shared') {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
-    const s = quoteSharedLegs(req.legs);
+    const s = quoteSharedLegs(req.legs, rateCard);
     lineItems.push(...s.lineItems);
     subtotalCents += s.subtotalCents;
     // shared cost basis not modelled → margin reported as 0 (see warning)
     warnings.push('margin not modelled for shared');
   } else if (req.product === 'private') {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
-    const minVehicle = selectVehicle(req.pax, req.bags);
+    const minVehicle = selectVehicle(req.pax, req.bags, rateCard);
     if (minVehicle === 'too_big') throw new Error('TOO_BIG');
     // Price with the LARGER of (requested, required) — never below what the party needs; an upgrade is allowed.
     // (Do NOT trust req.vehicle blindly: car requested for 6 pax must not be priced as a car.)
@@ -42,14 +44,14 @@ export function quote(req: QuoteRequest): QuoteResult {
     // against the PRICED vehicle (an upgrade INTO van14/custom keeps the operator's rate —
     // the rate is set for the trip; the tier is capacity).
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle);
-    const p = quotePrivateLegs(req.legs, vehicle, perKmOverride);
+    const p = quotePrivateLegs(req.legs, vehicle, perKmOverride, rateCard);
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
-    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[vehicle];
-    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm) * costPerKm), 0);
+    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
+    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm, rateCard) * costPerKm), 0);
     if (req.extras?.length) {
-      const e = priceExtras(req.extras);
+      const e = priceExtras(req.extras, rateCard);
       lineItems.push(...e.lineItems);
       subtotalCents += e.subtotalCents;
     }
@@ -59,19 +61,19 @@ export function quote(req: QuoteRequest): QuoteResult {
     // caller supplied pax/bags. A chauffeur car quoted for 6 pax must not price as a car.
     let vehicle = req.vehicle;
     if (req.pax != null && req.bags != null) {
-      const minVehicle = selectVehicle(req.pax, req.bags);
+      const minVehicle = selectVehicle(req.pax, req.bags, rateCard);
       if (minVehicle === 'too_big') throw new Error('TOO_BIG');
       vehicle = vehicleRank(req.vehicle) >= vehicleRank(minVehicle) ? req.vehicle : minVehicle;
       if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
     }
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle); // GL-1d (validate against the priced tier)
-    const c = quoteChauffeur({ ...req, vehicle });
+    const c = quoteChauffeur({ ...req, vehicle }, rateCard);
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
-    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + RATE_CARD.markupPct / 100)) : RATE_CARD.costPerKmCents[vehicle];
+    const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
     // Cost = day-rate cost (per day) + distance cost, so chauffeur margin reflects the real
     // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too).
-    costCents += c.meta.days * RATE_CARD.chauffeur.dayRateCostCents + Math.round(c.meta.billableKm * costPerKm);
+    costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.billableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
       // already covered by the day rate and must never be charged again.
@@ -82,7 +84,7 @@ export function quote(req: QuoteRequest): QuoteResult {
         lineItems.push({ label: `${EXTRA_LABELS[code]} (included)`, amountCents: 0 });
       }
       if (chargeable.length) {
-        const e = priceExtras(chargeable);
+        const e = priceExtras(chargeable, rateCard);
         lineItems.push(...e.lineItems);
         subtotalCents += e.subtotalCents;
       }
@@ -90,7 +92,7 @@ export function quote(req: QuoteRequest): QuoteResult {
   }
 
   const totalCents = subtotalCents;
-  const deposit = depositCents(totalCents);
+  const deposit = depositCents(totalCents, rateCard);
   const amountDueNowCents = totalCents;
   const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
 
@@ -103,7 +105,7 @@ export function quote(req: QuoteRequest): QuoteResult {
     depositCents: deposit,
     amountDueNowCents,
     marginEstimateCents,
-    rateCardVersion: RATE_CARD.version,
+    rateCardVersion: rateCard.version,
     warnings,
   };
 }

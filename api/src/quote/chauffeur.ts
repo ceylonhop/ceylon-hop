@@ -1,5 +1,5 @@
 // api/src/quote/chauffeur.ts
-import { RATE_CARD, type Vehicle } from './rateCard';
+import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
 import { billableKm } from './private';
 import type { ChauffeurTravelDay, LineItem } from './types';
 
@@ -9,28 +9,31 @@ function dayNumber(date: string): number {
   return Math.floor(Date.parse(`${ymd}T00:00:00Z`) / 86_400_000);
 }
 
-export function quoteChauffeur(input: {
-  vehicle: Vehicle;
-  firstDate: string;
-  lastDate: string;
-  travelDays: ChauffeurTravelDay[];
-  // GL-1d: operator's custom rate for van14/custom — validated by engine.ts.
-  customPerKmCents?: number;
-}): { lineItems: LineItem[]; subtotalCents: number; meta: { days: number; idleDays: number; travelKm: number; idleKm: number; billableKm: number } } {
+export function quoteChauffeur(
+  input: {
+    vehicle: Vehicle;
+    firstDate: string;
+    lastDate: string;
+    travelDays: ChauffeurTravelDay[];
+    // GL-1d: operator's custom rate for van14/custom — validated by engine.ts.
+    customPerKmCents?: number;
+  },
+  rateCard: RateCard = RATE_CARD,
+): { lineItems: LineItem[]; subtotalCents: number; meta: { days: number; idleDays: number; travelKm: number; idleKm: number; billableKm: number } } {
   const { vehicle, firstDate, lastDate, travelDays } = input;
   const days = Math.max(1, dayNumber(lastDate) - dayNumber(firstDate) + 1);
   const idleDays = Math.max(0, days - travelDays.length);
   const travelKm = travelDays.reduce((sum, d) => sum + d.distanceKm, 0);
-  const idleKm = idleDays * RATE_CARD.chauffeur.idleMinKm[vehicle];
+  const idleKm = idleDays * rateCard.chauffeur.idleMinKm[vehicle];
   // Buffer applies to travel km only; idle-day minimum km are NOT buffered (decision I1-b)
-  const bill = billableKm(travelKm) + idleKm;
+  const bill = billableKm(travelKm, rateCard) + idleKm;
 
-  const dayCharge = days * RATE_CARD.chauffeur.dayRateCents;
-  const distanceCharge = Math.round(bill * (input.customPerKmCents ?? RATE_CARD.perKmCents[vehicle]));
+  const dayCharge = days * rateCard.chauffeur.dayRateCents;
+  const distanceCharge = Math.round(bill * (input.customPerKmCents ?? rateCard.perKmCents[vehicle]));
 
   const lineItems: LineItem[] = [
     { label: `Chauffeur day rate — ${days} day(s)`, amountCents: dayCharge },
-    { label: `Distance — ${bill} km (${billableKm(travelKm)} buffered travel + ${idleKm} idle-day min)`, amountCents: distanceCharge, meta: { vehicle } },
+    { label: `Distance — ${bill} km (${billableKm(travelKm, rateCard)} buffered travel + ${idleKm} idle-day min)`, amountCents: distanceCharge, meta: { vehicle } },
   ];
   return { lineItems, subtotalCents: dayCharge + distanceCharge, meta: { days, idleDays, travelKm, idleKm, billableKm: bill } };
 }

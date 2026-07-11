@@ -13,6 +13,19 @@ describe('quote()', () => {
     expect(r.marginEstimateCents).toBe(462); // 3542 - (88km × 35¢ cost = 3080)
   });
 
+  it('prices the SAME request against a GIVEN (locked-snapshot) rate card, not just the global one', () => {
+    const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 200 }] };
+    const current = quote(req);
+    expect(current.rateCardVersion).toBe(RATE_CARD.version);
+    // A locked snapshot with a cheaper car per-km + its own version → a different total for the SAME
+    // request. This is the rate-lock path: a quote prices against the card frozen at its generation.
+    const locked = { ...RATE_CARD, version: 'locked-test', perKmCents: { ...RATE_CARD.perKmCents, car: 20 } };
+    const r = quote(req, locked);
+    expect(r.rateCardVersion).toBe('locked-test');
+    expect(r.totalCents).toBe(220 * 20); // 200km → bill 220km × 20¢ = 4400 (above the $29 car floor)
+    expect(r.totalCents).not.toBe(current.totalCents);
+  });
+
   it('private with extras adds them to the total', () => {
     const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }], extras: ['sightseeing'] });
     expect(r.totalCents).toBe(3542 + 1000);
