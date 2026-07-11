@@ -36,6 +36,10 @@ export interface NewQuote {
   marginCents?: number | null;
   request: unknown;
   result: unknown;
+  // Rate-lock (spec 2026-07-11): the RATE_CARD snapshot this quote is priced against, and when
+  // that lock expires (null = no expiry / not yet locked). See api/src/quote/rateLock.ts.
+  rateCardJson?: unknown;
+  rateLockedUntil?: Date | null;
   notes?: string | null;
 }
 
@@ -55,6 +59,8 @@ export interface SavedQuote {
   marginCents: number | null;
   request: unknown;
   result: unknown;
+  rateCardJson: unknown;
+  rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
   createdAt: Date;
@@ -172,6 +178,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       marginCents: q.marginCents ?? null,
       request: q.request,
       result: q.result,
+      rateCardJson: q.rateCardJson ?? null,
+      rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
       createdAt: now,
@@ -231,6 +239,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.marginCents = q.marginCents ?? null;
     row.request = q.request;
     row.result = q.result;
+    row.rateCardJson = q.rateCardJson ?? null;
+    row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
     row.updatedAt = new Date();
     return { ...row };

@@ -45,6 +45,8 @@ function toSaved(r: Row): SavedQuote {
     marginCents: r.marginCents,
     request: r.requestJson,
     result: r.resultJson,
+    rateCardJson: r.rateCardJson,
+    rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
     createdAt: r.createdAt,
@@ -76,6 +78,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
             marginCents: q.marginCents ?? null,
             requestJson: q.request,
             resultJson: q.result,
+            rateCardJson: (q.rateCardJson ?? null) as object | null,
+            rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
           })
           .returning();
@@ -169,6 +173,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
         marginCents: q.marginCents ?? null,
         requestJson: q.request,
         resultJson: q.result,
+        rateCardJson: (q.rateCardJson ?? null) as object | null,
+        rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
         updatedAt: new Date(),
       })

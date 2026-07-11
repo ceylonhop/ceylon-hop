@@ -203,6 +203,10 @@ export const quotes = pgTable('quotes', {
   marginCents: integer('margin_cents'),
   requestJson: jsonb('request_json').notNull(),
   resultJson: jsonb('result_json').notNull(),
+  // Rate-lock (spec 2026-07-11): the RATE_CARD snapshot this quote is priced against + when that
+  // lock expires. Nullable — existing/legacy rows have no lock and re-price on the current card.
+  rateCardJson: jsonb('rate_card_json'),
+  rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
