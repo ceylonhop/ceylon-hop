@@ -3612,7 +3612,7 @@ function render() {
   var _menuWasOpen = !!_ac.menuEl;
   document.querySelector('#quoteRoot .ch-app').innerHTML = html;
   attachEventListeners();
-  restoreEditorFocus(_focusSnap);
+  restoreEditorFocus(_focusSnap, _menuWasOpen);
   if (_menuWasOpen) reopenAutoCompleteMenu();
   syncItinMap(); // move/refresh the persistent route map into this render's slot
 }
@@ -3650,7 +3650,7 @@ function captureEditorFocus() {
   return snap;
 }
 
-function restoreEditorFocus(snap) {
+function restoreEditorFocus(snap, menuWasOpen) {
   if (!snap) return;
   var sel;
   if (snap.leg && snap.field) {
@@ -3671,7 +3671,11 @@ function restoreEditorFocus(snap) {
   // Reopen the live autocomplete after a background re-render ONLY while the operator is
   // still actively searching. After a commit (acPick) `_ac.committed` stays true, so a
   // just-picked place does not spuriously reopen the dropdown on every follow-up render.
-  if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title') && !_ac.committed) {
+  // Reopen only if the menu was actually open before this render (matching reopenAutoCompleteMenu
+  // below). Without the menuWasOpen gate, a background estimate/distance render would re-open a
+  // menu the operator had dismissed (e.g. scrolled/wheeled away) — the "menu pops back after I
+  // scroll it closed" regression.
+  if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title') && !_ac.committed && menuWasOpen) {
     requestAutocomplete(el, snap.leg, snap.field, (el.value || '').trim());
   }
 }
@@ -4104,9 +4108,24 @@ function attachAutoComplete() {
     var field = input.getAttribute('data-field');
     if (!legId || !field) return;
 
-    // Debounced input handler — fetch suggestions
+    // Debounced input handler — fetch suggestions AND live-sync the typed place into state,
+    // like the customer name/contact fields. Previously the place synced to state ONLY on
+    // blur or an autocomplete pick, so changing a location and then reading the price (or
+    // acting) while the field still had focus left the estimate + auto-distance pricing the
+    // OLD location — "changing the location didn't update the quote". No render() here: the
+    // debounced estimate/distance re-render later and restoreEditorFocus keeps this field's
+    // text + focus. (blur still syncs too — belt and suspenders.)
     input.addEventListener('input', function() {
-      requestAutocomplete(input, legId, field, input.value.trim());
+      var val = input.value;
+      var leg = state.legs.find(function(l) { return l.id === legId; });
+      if (leg && leg[field] !== val) {
+        var p = {}; p[field] = val;
+        state.legs = state.legs.map(function(l) { return l.id === legId ? Object.assign({}, l, p) : l; });
+        markDirty();
+        if (!leg.manualDistance) { delete _distCache[legId]; scheduleAutoDistance(legId); }
+        refreshEstimate();
+      }
+      requestAutocomplete(input, legId, field, val.trim());
     });
 
     // Keyboard navigation

@@ -448,3 +448,27 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
   await expect(age).toBeVisible();
   await expect(age).toHaveClass(/tone-fresh/);
 });
+
+// Spec 8 (regression): changing a location by TYPING a new place — without picking a
+// suggestion or blurring the field — must re-price the quote. Previously the place synced to
+// state only on blur/pick, so an unblurred change left the estimate on the OLD location.
+test('typing a new destination (no pick, no blur) re-prices the quote', async ({ page }) => {
+  await chooseVehicle(page, 'car');
+  // Baseline: Kandy → Ella via the dropdown, dated → a priced total.
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  await fillFirstLegDate(page, '2026-08-01');
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
+  const totalElla = await totalLineText(page);
+
+  // Change the destination to a much farther place by typing it — `fill` leaves the field
+  // focused (no acPick, no blur). The quote must re-price off what's in the field.
+  await toInput.click();
+  await toInput.fill('Mirissa');
+  await expect
+    .poll(async () => { try { return await totalLineText(page); } catch (e) { return totalElla; } },
+      { timeout: 10000, message: 'quote should re-price after a typed (unpicked) destination change' })
+    .not.toBe(totalElla);
+});
