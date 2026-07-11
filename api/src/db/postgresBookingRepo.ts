@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
@@ -9,9 +9,20 @@ import {
   BookingNotFoundError,
   generateReference,
 } from './bookingRepo';
-import { assertTransition, type BookingStatus } from '../domain/status';
+import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
 
 type BookingRow = typeof bookings.$inferSelect;
+
+// A CH-XXXXX reference collision is a Postgres unique-violation (23505) on a *reference*
+// constraint — retry the insert with a fresh reference rather than 500-ing the booking.
+const UNIQUE_VIOLATION = '23505';
+const MAX_REFERENCE_ATTEMPTS = 5;
+function isReferenceCollision(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; constraint_name?: unknown; constraint?: unknown };
+  const constraint = String(e.constraint_name ?? e.constraint ?? '');
+  return e.code === UNIQUE_VIOLATION && constraint.includes('reference');
+}
 
 export class PostgresBookingRepo implements BookingRepo {
   constructor(private readonly db: Db) {}
@@ -104,8 +115,24 @@ export class PostgresBookingRepo implements BookingRepo {
       const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
       if (existing) return existing;
     }
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < MAX_REFERENCE_ATTEMPTS; attempt++) {
+      try {
+        // assemble after commit so the joined rows are visible
+        return await this.assemble(await this.insertBooking(b, opts));
+      } catch (err) {
+        // A reference collision rolls back the whole tx (customer insert included), so
+        // retrying with a fresh generateReference() is clean — no orphaned customer row.
+        if (!isReferenceCollision(err)) throw err;
+        lastErr = err;
+      }
+    }
+    throw lastErr;
+  }
+
+  private async insertBooking(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<BookingRow> {
     const c = b.input.customer;
-    const row = await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [cust] = await tx
         .insert(customers)
         .values({
@@ -173,8 +200,6 @@ export class PostgresBookingRepo implements BookingRepo {
       }
       return bk;
     });
-    // assemble after commit so the joined rows are visible
-    return this.assemble(row);
   }
 
   async get(id: string): Promise<Booking | null> {
@@ -190,12 +215,19 @@ export class PostgresBookingRepo implements BookingRepo {
   async setStatus(id: string, to: BookingStatus): Promise<Booking> {
     const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
     if (!row) throw new BookingNotFoundError(id);
-    assertTransition(row.status as BookingStatus, to);
+    const from = row.status as BookingStatus;
+    assertTransition(from, to);
+    // Compare-and-set: only move the row if it is STILL in `from`, so two concurrent
+    // transitions (e.g. a double-cancel) can't both win and double-release seats.
     const [updated] = await this.db
       .update(bookings)
       .set({ status: to })
-      .where(eq(bookings.id, id))
+      .where(and(eq(bookings.id, id), eq(bookings.status, from)))
       .returning();
+    if (!updated) {
+      const [current] = await this.db.select().from(bookings).where(eq(bookings.id, id));
+      throw new IllegalTransitionError((current?.status as BookingStatus) ?? from, to);
+    }
     return this.assemble(updated);
   }
 

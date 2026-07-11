@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryDepartureRepo } from '../db/departureRepo';
+import { isoToday } from '../domain/dateRules';
 import { signBookingToken } from '../lib/bookingToken';
 
 const valid = {
@@ -213,5 +215,37 @@ describe('POST /bookings — no past dates (trip + shared)', () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('date_in_past');
+  });
+});
+
+describe('POST /bookings/shared — seat-hold compensation', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  // A future shared service day (Wed=3 / Sat=6) so the request clears the date + service-day
+  // guards and actually reaches bookings.create.
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  it('releases the held seats when booking creation fails (no leaked inventory)', async () => {
+    const departures = new InMemoryDepartureRepo();
+    let released = 0;
+    const orig = departures.releaseSeats.bind(departures);
+    departures.releaseSeats = async (args) => { released += args.seats; return orig(args); };
+    class FailingBookings extends InMemoryBookingRepo {
+      async create(): Promise<never> { throw new Error('db down after hold'); }
+    }
+    const app = createApp({ departures, bookings: new FailingBookings() });
+    const res = await jpost(app, '/bookings/shared', {
+      corridorId: 'hill-line', date: futureServiceDay(), time: '08:00', seats: 2, customer: valid.customer,
+    });
+    expect(res.status).toBeGreaterThanOrEqual(500); // the create threw
+    expect(released).toBe(2); // the 2 held seats were given back, not stranded on the departure
   });
 });

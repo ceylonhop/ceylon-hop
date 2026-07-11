@@ -252,6 +252,22 @@ describe('payment webhook ops alerts (M17)', () => {
     expect((await bookings.get(b.id))!.status).toBe('cancelled'); // NOT flipped to paid
     expect(alerts.sent.map((a) => a.kind)).toContain('paid_in_unexpected_status');
   });
+
+  it('does not 500 the webhook when concierge-task creation fails (booking stays paid, alert raised)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    class FailingTasks extends InMemoryConciergeTaskRepo {
+      async create(): Promise<never> { throw new Error('tasks down'); }
+    }
+    const app = createApp({ adapter, alerts, bookings, conciergeTasks: new FailingTasks() });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200); // booking is already paid; a task hiccup must not make PayHere retry
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    expect(alerts.sent.map((a) => a.kind)).toContain('concierge_task_failed');
+  });
 });
 
 describe('POST /webhooks/resend (M17)', () => {

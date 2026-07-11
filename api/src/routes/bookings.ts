@@ -345,10 +345,18 @@ export function bookingRoutes(deps: {
       seats: req.seats,
       customer: req.customer,
     };
-    const booking = await bookings.create(
-      { mode: 'shared', input, total, amountDueNow, currency },
-      { idempotencyKey: key },
-    );
+    let booking;
+    try {
+      booking = await bookings.create(
+        { mode: 'shared', input, total, amountDueNow, currency },
+        { idempotencyKey: key },
+      );
+    } catch (err) {
+      // Compensate the hold so a failed create doesn't strand seats on the departure
+      // (sweepStaleSharedHolds only reclaims holds that have a booking row).
+      await departures.releaseSeats({ corridorId: corridor.id, date: req.date, time: req.time, seats: req.seats });
+      throw err;
+    }
     if (req.quotedTotal !== undefined && Math.abs(req.quotedTotal - total) > MISMATCH_TOLERANCE_CENTS) {
       await flagForOps(
         booking,

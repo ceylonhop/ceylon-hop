@@ -81,7 +81,20 @@ export function webhookRoutes(deps: {
     const booking = await bookings.get(payment.bookingId);
     if (booking && booking.status === 'payment_pending') {
       const paid = await bookings.setStatus(booking.id, 'paid');
-      await conciergeTasks.create({ bookingId: paid.id, type: 'confirm_pickup' });
+      // Best-effort: the booking is already paid, so a concierge-task hiccup must NOT 500 the
+      // webhook (PayHere would retry, hit the idempotent return, and skip the task forever).
+      try {
+        await conciergeTasks.create({ bookingId: paid.id, type: 'confirm_pickup' });
+      } catch (err) {
+        console.error(`concierge task failed for ${paid.reference}:`, err);
+        void alerts.send({
+          severity: 'critical',
+          kind: 'concierge_task_failed',
+          title: `Confirm-pickup task failed for ${paid.reference}`,
+          body: `Booking ${paid.reference} is PAID but the confirm_pickup ops task wasn't created. Error: ${err instanceof Error ? err.message : String(err)}`,
+          dedupeKey: paid.reference,
+        });
+      }
       // Confirmation email is best-effort: the booking is already paid, so a mail
       // provider hiccup must NOT fail the webhook (which would make PayHere retry).
       try {
