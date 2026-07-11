@@ -1,7 +1,7 @@
 /* ============================================================
    CEYLON HOP — transfers + corridors data & quote helpers
    Private transfer is the primary product; shared rides are
-   offered on popular corridors where seats run daily.
+   offered on popular corridors where seats run on set weekdays (Wed & Sat).
    ============================================================ */
 (function () {
   /* @generated:pricing — from api/src/quote/rateCard.ts · DO NOT EDIT BY HAND · run `npm run generate` */
