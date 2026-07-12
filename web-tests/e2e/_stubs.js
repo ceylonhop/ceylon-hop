@@ -28,7 +28,12 @@ function installStubs() {
             secondaryText: { text: 'Sri Lanka' },
             toPlace: () => ({
               fetchFields: async () => {},
-              location: latlng(6.9 + n * 0.01, 79.9 + n * 0.01),
+              // Default picks sit near Colombo. A test can pin picks inside a specific
+              // drop-off area via window.__E2E_PICK_GEO so the booking page's
+              // "exact spot within 10 km of its area" guard is satisfied.
+              location: (window.__E2E_PICK_GEO
+                ? latlng(window.__E2E_PICK_GEO.lat + n * 0.002, window.__E2E_PICK_GEO.lng + n * 0.002)
+                : latlng(6.9 + n * 0.01, 79.9 + n * 0.01)),
               displayName: `${input} Result ${n}`,
               formattedAddress: `${input} Result ${n}, Sri Lanka`,
             }),
@@ -87,6 +92,7 @@ export async function gotoBooking(page, opts = {}) {
     bookingTotal = 12100,            // server-authoritative total (minor units) from /bookings/single
     bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
     googleDelay = 0,
+    pickGeo = null,                  // {lat,lng}: pin Google picks inside a drop-off area
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -97,6 +103,9 @@ export async function gotoBooking(page, opts = {}) {
   await page.addInitScript((delay) => {
     window.__E2E_GOOGLE_DELAY = delay;
   }, googleDelay);
+  if (pickGeo) {
+    await page.addInitScript((g) => { window.__E2E_PICK_GEO = g; }, pickGeo);
+  }
   // Pre-seed the cookie choice so the consent banner never overlays controls near the
   // bottom of the viewport (it intercepts pointer events and flakes autocomplete clicks).
   await page.addInitScript(() => {

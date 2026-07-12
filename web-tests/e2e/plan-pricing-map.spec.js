@@ -9,12 +9,12 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   const legMeta = page.locator('#rail [data-dist]');
   await expect(legMeta).toContainText('136 km');
   await expect(legMeta).toContainText('Google distance');
-  await expect(legMeta).toContainText('from $53');
+  await expect(legMeta).toContainText('from $60');
   await expect(legMeta.locator('.lm-src')).toHaveText('Google distance');
-  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $53');
+  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $60');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#st-drive')).toContainText('136 km');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 
 test('planner vehicle switch updates prices without rebuilding the route map', async ({ page }) => {
@@ -25,15 +25,15 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await expect(mapSvg).toBeVisible();
   await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $53');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $60');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
+  await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 
   await page.locator('.veh-btn[data-veh="van"]').click();
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $71');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $81');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$70[-\u2013]\$85/); // guide range = ceil(real+10) & a $25/$15 band
+  await expect(page.locator('#sum-amt')).toHaveText(/\$80[-\u2013]\$95/); // guide range = ceil(real+10) & a $25/$15 band
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
@@ -98,13 +98,13 @@ test('planner passes Google-measured leg distance into booking handoff', async (
 test('search add-stops handoff preserves the equivalent base route price', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
 
-  await expect(page.locator('a[href*="price=53"][href*="vehicle=car"]').first()).toBeVisible();
+  await expect(page.locator('a[href*="price=60"][href*="vehicle=car"]').first()).toBeVisible();
   await page.locator('#add-stops').click();
   await page.waitForURL('**/plan.html?**');
 
   await expect(page.locator('#rail [data-dist]')).toContainText('136 km');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $53');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$50[-\u2013]\$65/);
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $60');
+  await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 
 test('planner fallback map keeps repeated stops in the visible route order', async ({ page }) => {
@@ -153,11 +153,11 @@ test('discontinuous route keeps leg distances aligned per stop-pair in the booki
 test('a trip leg with no resolvable distance is charged the estimate, not $0', async ({ page }) => {
   // Regression: tripQuoteWithKms priced an unresolvable leg at $0 (baked tripQuote charges a
   // $55 estimate), silently dropping a whole leg from the quoted+charged total. Leg 1 Kandy→Ella
-  // prices from km 136 ($53); leg 2 Ella→Zzznowhere resolves no distance and must add $55 → $108.
+  // prices from km 136 ($60); leg 2 Ella→Zzznowhere resolves no distance and must add $55 → $115.
   await gotoBooking(page, {
     query: 'mode=trip&stops=Kandy%7CElla%7CZzznowhere&nights=0,0,0&dates=,&kms=136,&pax=2&vehicle=car',
   });
 
-  await expect(page.locator('#sum-total')).toContainText('108');
-  await expect(page.locator('#sum-total')).not.toHaveText(/\$53\b/);
+  await expect(page.locator('#sum-total')).toContainText('115');
+  await expect(page.locator('#sum-total')).not.toHaveText(/\$60\b/);
 });

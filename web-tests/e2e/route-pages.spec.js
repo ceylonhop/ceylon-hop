@@ -4,7 +4,7 @@ test('route page renders with nav, prices, and a working search CTA', async ({ p
   await page.goto('/trip/kandy-to-ella/');
   await expect(page.locator('h1')).toContainText('Kandy to Ella');
   await expect(page.locator('.nav-links')).toBeVisible();
-  await expect(page.getByText('from $53').first()).toBeVisible();
+  await expect(page.getByText('from $60').first()).toBeVisible();
   await page.getByRole('link', { name: /see prices|book/i }).first().click();
   await expect(page).toHaveURL(/search\.html\?from=kandy&to=ella/);
 });
