@@ -20,3 +20,4 @@ playwright-report/
 .claude.backup/
 *.backup
 
+.claude/worktrees/
