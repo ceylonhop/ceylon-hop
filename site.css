@@ -391,13 +391,11 @@ img,svg,video,iframe{max-width:100%}
 
   /* ---- consistent nav offset for EVERY page head (beats inline .hero etc.) ---- */
   body .hero,
-  body .page-head,
   body .tours-head,
   body .hero-banner{margin-top:-62px}
   body .hero{padding-top:62px}
 
   /* ---- tame oversized teal/banner page heads on phones ---- */
-  body .page-head{padding:88px 0 40px}
   body .tours-head{padding:96px 0 38px}
   body .hero-banner{height:auto;min-height:248px;padding:92px 20px 40px}
   body .hero-banner h1{font-size:clamp(1.9rem,8.5vw,2.6rem)}

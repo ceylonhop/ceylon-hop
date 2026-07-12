@@ -681,8 +681,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     from.addEventListener('change',update);
     to.addEventListener('change',update);
 
-    function band(total){ const lo=Math.floor(total/50)*50, hi=Math.ceil((total+1)/50)*50; return lo===hi?('~$'+lo):('$'+lo+'–'+hi); }
-
     // a small route pin on the postcard (no price) reinforces the door-to-door promise
     const pcPin=document.getElementById('pc-pin');
     function update(){

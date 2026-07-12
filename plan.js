@@ -117,7 +117,9 @@ function legPrice(km, veh){
   return T.legPrice(km, veh);
 }
 function minLegPrice(veh){
-  return veh==='van' ? 50 : 29;
+  // Source the floors from the generated FLOORS mirror (window.TRANSFERS), not hardcoded
+  // copies — otherwise a rate-card regen updates FLOORS everywhere except here.
+  return veh==='van' ? T.FLOORS.van : T.FLOORS.car;
 }
 // Indicative guide range: the ceiling is the real total + a $10 cushion (rounded up to a
 // clean $5, so we never quote under cost), and the band tightens for smaller quotes so a
