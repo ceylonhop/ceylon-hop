@@ -25,9 +25,15 @@ const params = new URLSearchParams(location.search);
 let fromId = params.get('from'), toId = params.get('to');
 let date = params.get('date') || '';
 let pax = Math.max(1, parseInt(params.get('pax')) || 1);
-// fall back to a sensible demo route if params are missing
+// fall back to a sensible demo route when NO destination was given (a bare landing on the
+// page). But if a `to` WAS provided and we can't honour it (unknown place, or same as the
+// pick-up), that's a stale/broken route link — send them to the 404 rather than silently
+// swapping in a different destination and quoting a trip they never asked for.
 if (!T.place(fromId)) fromId = 'cmb-airport';
-if (!T.place(toId) || toId === fromId) toId = 'ella';
+if (!T.place(toId) || toId === fromId) {
+  if (params.get('to')) location.replace('404.html');
+  toId = 'ella'; // demo route when `to` is absent (and a safe value for the instant before any redirect)
+}
 
 // ---- populate the edit bar ----
 (function () {
