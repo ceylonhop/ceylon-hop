@@ -22,7 +22,7 @@
   function render() {
     document.body.insertAdjacentHTML('beforeend',
       '<div id="ch-consent" class="ch-consent" role="dialog" aria-label="Cookie consent">' +
-        '<p>We use cookies for analytics to improve your trip planning. ' +
+        '<p>We use cookies for analytics and advertising to improve your trip planning. ' +
         '<a href="/privacy.html">Learn more</a>.</p>' +
         '<div class="ch-consent-btns">' +
           '<button type="button" class="btn btn-sm" onclick="chConsent(\'denied\')">Reject</button>' +
