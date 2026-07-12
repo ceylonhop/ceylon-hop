@@ -85,11 +85,25 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] WhatsApp CTA opens the correct number (`+94779669662`).
 - [ ] `web-tests` (`npm run test:all`) and `api` (`npm run check`) both green.
 
+### 4a. Customer-email campaign (send one of each to a real, non-owner inbox)
+
+Trigger each once against prod and confirm the branded email lands + reads correctly (subject, reference, route, correct copy, links resolve). All are best-effort, so also confirm the underlying action still succeeds if the mail provider is down.
+
+- [ ] **Confirmation** — pay a live booking → `paid`. (Covered above.)
+- [ ] **Awaiting details** — pay a booking left with a **flexible/"to confirm" date** → a *second* "we need your details" email arrives alongside the confirmation; copy points to WhatsApp.
+- [ ] **Booking confirmed** — `POST /admin/bookings/:id/confirm` (founder/finance) on a paid booking → status `confirmed` + "you're all set" email.
+- [ ] **No-show** — `POST /admin/bookings/:id/no-show` on a confirmed booking → status `no_show` + notice stating the fare is non-refundable.
+- [ ] **Cancellation** — `POST /admin/bookings/:id/cancel` → `cancelled` + email.
+- [ ] **Refund** — `POST /admin/bookings/:id/refund` → `refunded` + email.
+- [ ] **Payment didn't complete (recovery)** — start a checkout, abandon it, wait >30 min, then run `POST /admin/jobs/watchdog` → one recovery email with a resume link; run the sweep again → **no second email** (idempotent).
+- [ ] **Pre-trip reminder + review request** — driven by `POST /admin/jobs/notifications` (needs a booking within the 48h reminder window / a completed trip); confirm each fires once.
+- [ ] Confirm none of the above emails fire **twice** on a repeated webhook/sweep/cron (idempotency).
+
 ---
 
 ## Still-to-build (not launch-blocking — but finish or consciously defer)
 
-- **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`), ✅ **refund** (`/refund`), and ✅ **pre-trip reminder + thank-you/review request** (M14 scheduler — `POST /admin/jobs/notifications`, driven daily by the `scheduled-notifications` workflow) now built + branded. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), driver-assigned, "we need your details", payment-didn't-complete. (Tracked in the agent's email roadmap notes.)
+- **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`), ✅ **refund** (`/refund`), ✅ **pre-trip reminder + thank-you/review request** (M14 scheduler — `POST /admin/jobs/notifications`), and (PR #35) ✅ **booking confirmed** (`/confirm`), ✅ **no-show** (`/no-show`), ✅ **awaiting details** (auto on paid+flexible), ✅ **payment-didn't-complete recovery** (watchdog sweep) now built + branded. Test them via §4a before deploy. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), booking-modified, no-availability. (Tracked in the agent's email roadmap notes.)
 - **M11** pricing engine + quoting tool + quote lifecycle ✅ **MERGED to main 2026-07-02** (PRs #1–#4: engine, tool, Postgres quotes, Ops Quote Generator). Remaining M11 scope: wire the engine into the PUBLIC booking flow (GL-3 above) and web-channel quote capture (deferred). · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers (pre-trip reminder + review request ✅ shipped via the scheduler; remaining: balance-due reminders, "confirm your details" nudges, SLA timers) · **M15** reporting/CSV export.
 
 ### Owner pricing decisions (2026-07-02) — recorded so launch work doesn't re-ask
