@@ -37,7 +37,21 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
       const e = result.data;
 
       track(new Error(e.message), { tag: 'frontend', extra: { stack: e.stack, url: e.url, ua: e.ua } });
-      const digest = createHash('sha1').update(e.message).digest('hex').slice(0, 12);
+      // Coarsen the dedupe key so a beacon can't defeat the alert throttle by varying the
+      // message — an attacker appending a random token, or a real error carrying an embedded
+      // id/url, would otherwise mint a fresh key every time. Strip urls, hex/uuid runs and
+      // digits, collapse whitespace, cap length, then hash; distinct real errors still bucket
+      // apart. The size cap + per-IP rate limit at the mount bound whatever slips through.
+      const basis = e.message
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, '#url')
+        .replace(/0x[0-9a-f]+/g, '#')
+        .replace(/[0-9a-f-]{8,}/g, '#')
+        .replace(/\d+/g, '#')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 80);
+      const digest = createHash('sha1').update(basis).digest('hex').slice(0, 12);
       await deps.alerts.send({
         severity: 'warning',
         kind: 'client_error',

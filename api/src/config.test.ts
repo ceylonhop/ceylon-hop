@@ -22,9 +22,19 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     );
   });
 
-  it('boots in production with a real secret', () => {
+  it('throws in production when BOOKING_LINK_SECRET is the dev default (or unset)', () => {
+    expect(() =>
+      buildConfig({ NODE_ENV: 'production', OPS_SESSION_SECRET: 'a-real-32char-random-secret', BOOKING_LINK_SECRET: 'dev-booking-link-secret-change-me' }),
+    ).toThrow(/BOOKING_LINK_SECRET/);
+    // unset → falls back to the dev default → also throws
     expect(() =>
       buildConfig({ NODE_ENV: 'production', OPS_SESSION_SECRET: 'a-real-32char-random-secret' }),
+    ).toThrow(/BOOKING_LINK_SECRET/);
+  });
+
+  it('boots in production with real secrets', () => {
+    expect(() =>
+      buildConfig({ NODE_ENV: 'production', OPS_SESSION_SECRET: 'a-real-32char-random-secret', BOOKING_LINK_SECRET: 'another-real-32char-secret' }),
     ).not.toThrow();
   });
 

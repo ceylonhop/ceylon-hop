@@ -16,6 +16,8 @@ export async function buildDigest(
 
   const alertCounts = deps.alertLog ? await deps.alertLog.countsSince(since) : {};
   const alertLines = Object.entries(alertCounts)
+    // 'ops_digest' is the digest's own once-per-day guard row (BI4), not a real alert — hide it.
+    .filter(([kind]) => kind !== 'ops_digest')
     .sort(([, a], [, b]) => b - a)
     .map(([kind, n]) => `  ${kind}: ${n}`);
 

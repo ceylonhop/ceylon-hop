@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { compress } from 'hono/compress';
+import { secureHeaders } from 'hono/secure-headers';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
@@ -86,6 +87,11 @@ export function createApp(deps: AppDeps = {}) {
   const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
 
   const app = new Hono();
+
+  // Security headers on every response — most importantly X-Frame-Options + nosniff, so the
+  // cookie-authenticated /ops app can't be framed (clickjacking) or MIME-sniffed. No CSP here:
+  // the ops HTML relies on inline scripts/styles and a data: logo.
+  app.use('*', secureHeaders());
 
   // Restrict cross-origin browser calls to the live site + local dev. Server-to-server
   // callers (e.g. the PayHere webhook) send no Origin and are unaffected by CORS.

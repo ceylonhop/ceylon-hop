@@ -106,12 +106,20 @@ export function adminRoutes(deps: {
     // failure must never block the customer notifications the caller asked for.
     let digest = false;
     if (deps.digestTo) {
-      try {
-        const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog });
-        await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text });
-        digest = true;
-      } catch (err) {
-        console.error('ops digest failed:', err);
+      // Once-per-day guard (BI4): an external cron may POST this tick several times a day,
+      // but the founder should get ONE digest. Gate on the alert-dedupe ledger — a 20h
+      // cooldown ≈ daily. Without a ledger (some tests) keep the prior always-send behaviour.
+      const DIGEST_COOLDOWN_MS = 20 * 3600_000;
+      const doDigest =
+        !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
+      if (doDigest) {
+        try {
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog });
+          await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text });
+          digest = true;
+        } catch (err) {
+          console.error('ops digest failed:', err);
+        }
       }
     }
     return c.json({ ...result, staleSharedHolds, digest }, 200);

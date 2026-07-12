@@ -21,6 +21,27 @@ async function paidSingle(bookings: InMemoryBookingRepo, date: string, time = '0
   return b;
 }
 
+async function paidTrip(bookings: InMemoryBookingRepo, dates: string[]) {
+  const b = await bookings.create({
+    mode: 'trip',
+    input: {
+      stops: ['Colombo Airport', 'Kandy', 'Ella'],
+      nights: [1, 2, 0],
+      dates,
+      pax: 2,
+      vehicleType: 'van',
+      serviceType: 'private',
+      customer,
+    },
+    total: 20000,
+    amountDueNow: 20000,
+    currency: 'USD',
+  });
+  await bookings.setStatus(b.id, 'payment_pending');
+  await bookings.setStatus(b.id, 'paid');
+  return b;
+}
+
 function deps() {
   return {
     bookings: new InMemoryBookingRepo(),
@@ -109,6 +130,20 @@ describe('runScheduledNotifications — review request', () => {
     const d = deps();
     await paidSingle(d.bookings, '2026-07-02'); // future
     expect((await runScheduledNotifications(NOW, d)).reviews).toBe(0);
+  });
+
+  // BI6 — a multi-day trip anchors its review to the LAST leg, not the first, so the
+  // customer isn't asked "how was your trip?" while still on day one.
+  it('does NOT ask for a review while a multi-day trip is still ongoing', async () => {
+    const d = deps();
+    await paidTrip(d.bookings, ['2026-06-29', '2026-07-05']); // started 2 days ago, ends in the future
+    expect((await runScheduledNotifications(NOW, d)).reviews).toBe(0);
+  });
+
+  it('asks once the whole multi-day trip is over', async () => {
+    const d = deps();
+    await paidTrip(d.bookings, ['2026-06-25', '2026-06-29']); // last leg 2 days ago
+    expect((await runScheduledNotifications(NOW, d)).reviews).toBe(1);
   });
 });
 

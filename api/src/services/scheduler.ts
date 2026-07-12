@@ -10,19 +10,23 @@ import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications'
 const REMINDER_LEAD_MS = 48 * 3600 * 1000;
 const REVIEW_DELAY_MS = 3 * 3600 * 1000;
 
-// When the booking travels, as a Date. Trips use the first dated leg (time unknown → noon).
-function travelAt(b: Booking): Date | null {
-  let date: string | undefined;
-  let time: string | undefined;
+// When the booking's trip STARTS and ENDS, as Dates. A single/shared booking is one leg
+// (start === end). A multi-stop trip starts at its first dated leg and ends at its last —
+// so the pre-trip reminder anchors to the start, but the review request waits until the
+// WHOLE trip is over, not day one (BI6). Time is only known for single transfers (noon else).
+function tripWindow(b: Booking): { start: Date | null; end: Date | null } {
+  const toDate = (date: string, time?: string): Date | null => {
+    const d = new Date(`${date}T${time ?? '12:00'}:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
   if (b.mode === 'trip') {
-    date = b.input.dates?.find(Boolean);
-  } else {
-    date = b.input.date;
-    time = b.input.time;
+    const dates = (b.input.dates ?? []).filter(Boolean).slice().sort();
+    if (!dates.length) return { start: null, end: null };
+    return { start: toDate(dates[0]), end: toDate(dates[dates.length - 1]) };
   }
-  if (!date) return null;
-  const d = new Date(`${date}T${time ?? '12:00'}:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (!b.input.date) return { start: null, end: null };
+  const at = toDate(b.input.date, b.input.time);
+  return { start: at, end: at };
 }
 
 const TRAVELLED_STATUSES = ['paid', 'confirmed', 'in_progress', 'completed'];
@@ -46,12 +50,12 @@ export async function runScheduledNotifications(
   let reviews = 0;
 
   for (const b of all) {
-    const at = travelAt(b);
-    if (!at) continue;
-    const ms = at.getTime() - now.getTime();
+    const { start, end } = tripWindow(b);
+    if (!start || !end) continue;
+    const untilStart = start.getTime() - now.getTime();
 
-    // Pre-trip reminder: upcoming within the lead window, and still active.
-    if ((b.status === 'paid' || b.status === 'confirmed') && ms > 0 && ms <= REMINDER_LEAD_MS) {
+    // Pre-trip reminder: trip STARTS within the lead window, and still active.
+    if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
       if (!(await log.wasSent(b.id, 'trip_reminder'))) {
         try {
           await sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) });
@@ -63,9 +67,11 @@ export async function runScheduledNotifications(
       }
     }
 
-    // Review request: travel is done (completed, or comfortably in the past), never cancelled.
+    // Review request: the WHOLE trip is done (last leg completed, or comfortably in the
+    // past), never cancelled — so a multi-day trip isn't asked for a review on day one.
+    const sinceEnd = now.getTime() - end.getTime();
     const travelled = TRAVELLED_STATUSES.includes(b.status);
-    if (travelled && (b.status === 'completed' || ms < -REVIEW_DELAY_MS)) {
+    if (travelled && (b.status === 'completed' || sinceEnd > REVIEW_DELAY_MS)) {
       if (!(await log.wasSent(b.id, 'review_request'))) {
         try {
           await sendReviewRequest(b, email);

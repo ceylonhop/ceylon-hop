@@ -54,6 +54,15 @@ describe('POST /errors/client', () => {
     expect(res.status).toBe(204);
   });
 
+  it('buckets messages varying only by ids/hex/digits onto one dedupe key (BI8)', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({ message: 'TypeError: cannot read x at 0xdeadbeef id 12345' }));
+    await post(app, JSON.stringify({ message: 'TypeError: cannot read x at 0xfeedface id 99999' }));
+    // Same normalized signature → the throttle collapses them to a single delivered alert,
+    // so a beacon can't flood the founder by appending a random token each time.
+    expect(inner.sent).toHaveLength(1);
+  });
+
   it('is rate limited per IP like other public write endpoints', async () => {
     const { app } = mk();
     let limited = false;

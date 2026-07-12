@@ -136,3 +136,14 @@ describe('CORS allow-list', () => {
     expect(r.headers.get('access-control-allow-origin')).toBeNull();
   });
 });
+
+// The cookie-authenticated /ops app must not be frameable (clickjacking) or MIME-sniffed.
+// secureHeaders() runs on '*', so every response — even /health — carries the headers.
+describe('security headers', () => {
+  it('sets X-Frame-Options and nosniff on every response', async () => {
+    const app = createApp();
+    const r = await app.request('/health');
+    expect(r.headers.get('x-frame-options')).toBeTruthy();
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+});

@@ -10,6 +10,11 @@ import type { AlertAdapter } from '../adapters/alerts';
 // problem at most once per alert cooldown.
 
 const STUCK_PENDING_MS = 30 * 60_000;
+// Past this, a payment_pending booking is almost certainly an abandoned checkout, not a
+// PayHere notify failure (PayHere retries notifications for minutes, not many hours). Only
+// page inside the window — otherwise abandoned private/trip carts, which never leave
+// payment_pending (only shared holds are swept), would re-alert on every ~15-min sweep forever.
+const STUCK_PENDING_MAX_MS = 6 * 3600_000;
 const UNCONFIRMED_PAID_MS = 15 * 60_000;
 
 export async function runWatchdog(
@@ -19,7 +24,10 @@ export async function runWatchdog(
   const { bookings, log, alerts } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
-  const stuck = pending.filter((b) => now.getTime() - Date.parse(b.createdAt) >= STUCK_PENDING_MS);
+  const stuck = pending.filter((b) => {
+    const age = now.getTime() - Date.parse(b.createdAt);
+    return age >= STUCK_PENDING_MS && age < STUCK_PENDING_MAX_MS;
+  });
   for (const b of stuck) {
     await alerts.send({
       severity: 'critical',

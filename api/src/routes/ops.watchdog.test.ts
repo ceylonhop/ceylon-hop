@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
+import { runWatchdog } from '../services/watchdog';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
@@ -22,6 +23,33 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0 });
+  });
+
+  // BI1 — a fresh stuck-pending booking pages the founder, but a long-abandoned cart (which
+  // never leaves payment_pending) must stop paging on every sweep.
+  it('alerts a recently-stuck pending booking but not a long-abandoned one', async () => {
+    const alerts = new FakeAlertAdapter();
+    const now = new Date('2026-07-01T12:00:00Z');
+    const mk = (reference: string, minsAgo: number) =>
+      ({
+        id: reference,
+        reference,
+        status: 'payment_pending',
+        createdAt: new Date(now.getTime() - minsAgo * 60_000).toISOString(),
+        currency: 'USD',
+        total: 5000,
+        amountDueNow: 5000,
+      }) as never;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const bookings: any = { list: async ({ status }: { status: string }) => (status === 'payment_pending' ? [mk('R-FRESH', 45), mk('R-OLD', 8 * 60)] : []) };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const log: any = { wasSent: async () => false };
+
+    const r = await runWatchdog(now, { bookings, log, alerts });
+    expect(r.stuckPending).toBe(1);
+    const titles = alerts.sent.map((a) => a.title).join(' | ');
+    expect(titles).toContain('R-FRESH');
+    expect(titles).not.toContain('R-OLD');
   });
 });
 
@@ -74,6 +102,16 @@ describe('daily ops digest rides /admin/jobs/notifications (M17)', () => {
     expect(digest!.to).toBe('ops@ceylonhop.com');
     expect(digest!.text).toContain('payhere_amount: 1');
     expect(digest!.text).toContain('Bookings created (24h): 0');
+  });
+
+  it('sends the digest at most once per day across repeated ticks (BI4)', async () => {
+    const email = new FakeEmailAdapter();
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, email, alertLog, digestTo: 'ops@ceylonhop.com' });
+    const tick = () => app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await (await tick()).json()).digest).toBe(true);
+    expect((await (await tick()).json()).digest).toBe(false);
+    expect(email.sent.filter((m) => m.subject.includes('ops digest'))).toHaveLength(1);
   });
 
   it('skips the digest silently when digestTo is unset', async () => {

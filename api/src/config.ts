@@ -64,6 +64,7 @@ const Env = z.object({
 // customer PII), so a defaulted OPS_SESSION_SECRET in production would let anyone who reads
 // the repo mint a valid founder cookie. Fail CLOSED at boot; dev/test keep the default.
 const DEV_OPS_SECRET = 'dev-ops-secret-change-me';
+const DEV_BOOKING_SECRET = 'dev-booking-link-secret-change-me';
 
 // Exported for tests: build (and validate) a config from an arbitrary env.
 export function buildConfig(env: Record<string, string | undefined>) {
@@ -72,6 +73,14 @@ export function buildConfig(env: Record<string, string | undefined>) {
     throw new Error(
       'OPS_SESSION_SECRET must be set to a strong unique value in production ' +
         '(the default would let anyone forge a founder session cookie) — refusing to boot',
+    );
+  }
+  // Same fail-closed guard for the booking-link secret: the default would let anyone who reads
+  // the repo mint a valid view-only "manage my booking" token and read a customer's PII.
+  if (cfg.NODE_ENV === 'production' && (!cfg.BOOKING_LINK_SECRET || cfg.BOOKING_LINK_SECRET === DEV_BOOKING_SECRET)) {
+    throw new Error(
+      'BOOKING_LINK_SECRET must be set to a strong unique value in production ' +
+        '(the default would let anyone forge a booking-view token and read customer PII) — refusing to boot',
     );
   }
   return cfg;

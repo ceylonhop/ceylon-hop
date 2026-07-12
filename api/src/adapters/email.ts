@@ -35,21 +35,31 @@ export class ResendEmailAdapter implements EmailAdapter {
   ) {}
 
   async send(msg: EmailMessage): Promise<void> {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: this.opts.from,
-        to: [msg.to],
-        subject: msg.subject,
-        html: msg.html,
-        ...(msg.text ? { text: msg.text } : {}),
-        ...(this.opts.replyTo ? { reply_to: this.opts.replyTo } : {}),
-      }),
-    });
+    // Bound the outbound call so a hung Resend endpoint can't stall the awaited webhook path
+    // (the confirmation email is sent inline in the PayHere webhook) or the notifications cron.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    let res: Response;
+    try {
+      res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: this.opts.from,
+          to: [msg.to],
+          subject: msg.subject,
+          html: msg.html,
+          ...(msg.text ? { text: msg.text } : {}),
+          ...(this.opts.replyTo ? { reply_to: this.opts.replyTo } : {}),
+        }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       throw new Error(`resend_send_failed_${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`);
