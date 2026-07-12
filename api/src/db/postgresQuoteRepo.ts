@@ -99,6 +99,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
     const conds = [];
+    if (filter.channel) conds.push(eq(quotes.channel, filter.channel));
     if (filter.status) conds.push(eq(quotes.status, filter.status));
     if (filter.product) conds.push(eq(quotes.product, filter.product));
     if (filter.from) conds.push(gte(quotes.createdAt, parseDateFilter(filter.from, 'from')));

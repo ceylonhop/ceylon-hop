@@ -2,7 +2,7 @@ import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
-import { RATE_CARD } from '../quote/rateCard';
+import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import type { QuoteRequest, ChauffeurTravelDay } from '../quote/types';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
@@ -18,9 +18,9 @@ function unpriced(reason: string): PriceOutcome {
 
 // Run the engine, translating any engine rejection (TOO_BIG, NO_LEGS, …) into an
 // unpriced outcome — a pricing hiccup must never take the booking flow down.
-function runEngine(req: QuoteRequest): PriceOutcome {
+function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PriceOutcome {
   try {
-    const result = quote(req);
+    const result = quote(req, rateCard);
     return {
       currency: 'USD',
       totalCents: result.totalCents,
@@ -32,7 +32,7 @@ function runEngine(req: QuoteRequest): PriceOutcome {
   }
 }
 
-export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter): Promise<PriceOutcome> {
+export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
   let distance = null;
   try {
     distance = await maps.distance(input.from, input.to);
@@ -49,6 +49,7 @@ export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter)
       legs: [{ from: input.from, to: input.to, distanceKm: distance.km }],
       extras: input.extras,
     },
+    rateCard,
   );
 }
 
@@ -88,7 +89,7 @@ function chauffeurDates(input: TripInput, legs: { from: string; to: string; dist
   };
 }
 
-export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<PriceOutcome> {
+export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
   const legs: { from: string; to: string; distanceKm: number }[] = [];
   for (let i = 0; i < input.stops.length - 1; i++) {
     const from = input.stops[i];
@@ -106,20 +107,20 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter): Promise<Pr
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
   if (input.serviceType === 'chauffeur') {
     // Public trips don't collect a bag count — pax alone drives the capacity upgrade.
-    return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) });
+    return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) }, rateCard);
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
-  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs });
+  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, rateCard);
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
 // already server-authoritative, so no engine call and no unpriced arm. (The engine's
 // Colombo-pickup surcharge is not in the public payload; don't invent it.)
-export function priceShared(seats: number, seatPriceCents: number, bags = 0): Extract<PriceOutcome, { priced: true }> {
+export function priceShared(seats: number, seatPriceCents: number, bags = 0, rateCard: RateCard = RATE_CARD): Extract<PriceOutcome, { priced: true }> {
   // One free bag per seat; each extra bag is the rate card's shared extra-bag fee. This
   // mirrors the front-end quote so what the customer is shown is what actually gets charged.
   const extraBags = Math.max(0, bags - seats);
-  const totalCents = seats * seatPriceCents + extraBags * RATE_CARD.shared.extraBagCents;
+  const totalCents = seats * seatPriceCents + extraBags * rateCard.shared.extraBagCents;
   return { currency: 'USD', totalCents, amountDueNowCents: totalCents, priced: true };
 }
 

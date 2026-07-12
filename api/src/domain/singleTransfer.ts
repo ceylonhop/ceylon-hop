@@ -35,6 +35,9 @@ export const SingleTransferInput = z.object({
   bags: z.number().int().min(0),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
+  // Rate-lock (spec 2026-07-11): a customer web quote id (POST /quote/lock). When present and
+  // still within its 7-day window, the booking is priced against that quote's locked card.
+  quoteId: z.string().optional(),
   extras: z.array(z.enum(['sightseeing', 'luggage', 'front', 'flex', 'waiting', 'safari-wait'])).optional(),
 });
 

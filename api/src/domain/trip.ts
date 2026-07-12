@@ -13,6 +13,9 @@ export const TripInput = z.object({
   serviceType: z.enum(['private', 'chauffeur']),
   customer: CustomerInput,
   quotedTotal: QuotedTotal,
+  // Rate-lock (spec 2026-07-11): a customer web quote id (POST /quote/lock). When present and
+  // still within its 7-day window, the trip is priced against that quote's locked card.
+  quoteId: z.string().optional(),
   // Chauffeur-guide: days the car is kept + driver accommodation nights (days − 1).
   days: z.number().int().positive().optional(),
   driverNights: z.number().int().min(0).optional(),

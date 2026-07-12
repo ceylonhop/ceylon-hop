@@ -17,6 +17,9 @@ import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { QuoteRepo } from '../db/quoteRepo';
+import { rateCardFor } from '../quote/rateLock';
+import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import { verifyBookingToken } from '../lib/bookingToken';
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
@@ -144,10 +147,29 @@ export function bookingRoutes(deps: {
   departures: DepartureRepo;
   maps: MapsAdapter;
   conciergeTasks: ConciergeTaskRepo;
+  quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
   linkSecret: string;
 }) {
-  const { bookings, payments, adapter, departures, maps, conciergeTasks } = deps;
+  const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const r = new Hono();
+
+  // Rate-lock (spec 2026-07-11 §4): the card a booking should be priced against. A quoteId from a
+  // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
+  // an unknown/expired id, or no quotes repo wired → the live RATE_CARD. Never throws (a bad id
+  // must not fail the booking — it just falls back to the current card).
+  async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
+    if (!quoteId || !quotes) return RATE_CARD;
+    try {
+      const q = await quotes.get(quoteId);
+      if (!q || q.channel !== 'web') return RATE_CARD;
+      return rateCardFor(
+        { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
+        new Date(),
+      ).rateCard;
+    } catch {
+      return RATE_CARD;
+    }
+  }
 
   // Flag a booking for ops as a follow_up task. Best-effort: the booking is already
   // created, so a task hiccup must never fail the request.
@@ -194,7 +216,8 @@ export function bookingRoutes(deps: {
 
     // The engine is the pricing truth; the client's quotedTotal is only a fallback.
     const legMaps = memoizeDistance(maps);
-    const outcome = await priceSingle(parsed.data, legMaps);
+    const rateCard = await bookingRateCard(parsed.data.quoteId);
+    const outcome = await priceSingle(parsed.data, legMaps, rateCard);
     const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
@@ -240,7 +263,8 @@ export function bookingRoutes(deps: {
 
     // Engine-first; customer bookings currently collect the full amount now.
     const legMaps = memoizeDistance(maps);
-    const outcome = await priceTrip(parsed.data, legMaps);
+    const rateCard = await bookingRateCard(parsed.data.quoteId);
+    const outcome = await priceTrip(parsed.data, legMaps, rateCard);
     const resolved = resolveTotals(
       outcome,
       parsed.data.quotedTotal,

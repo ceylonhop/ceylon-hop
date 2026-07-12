@@ -25,7 +25,7 @@ export function canTransition(from: QuoteStatus, to: QuoteStatus): boolean {
 }
 
 export interface NewQuote {
-  channel?: 'ops';
+  channel?: 'ops' | 'web';
   product: string;
   vehicle?: string | null;
   customerName?: string | null;
@@ -87,6 +87,7 @@ export interface QuoteListFilter {
   product?: string;
   from?: string;
   to?: string;
+  channel?: 'ops' | 'web'; // the ops review queue passes 'ops' so customer web quotes never show
 }
 
 export interface QuotePatch {
@@ -202,6 +203,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
     let rows = [...this.rows.values()];
+    if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
     if (filter.status) rows = rows.filter((r) => r.status === filter.status);
     if (filter.product) rows = rows.filter((r) => r.product === filter.product);
     if (filter.from) rows = rows.filter((r) => r.createdAt >= parseDateFilter(filter.from as string, 'from'));

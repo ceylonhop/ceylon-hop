@@ -441,6 +441,7 @@ export function internalQuoteRoutes(deps: {
     const status = c.req.query('status') as QuoteStatus | undefined;
     if (status && !QUOTE_STATUSES.includes(status)) return c.json({ error: 'bad_status' }, 400);
     const quotesList = await deps.quotes.list({
+      channel: 'ops', // the review queue is ops-authored quotes only — never customer web quotes
       status,
       product: c.req.query('product') || undefined,
       from: c.req.query('from') || undefined,

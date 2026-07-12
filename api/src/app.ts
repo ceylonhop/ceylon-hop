@@ -162,10 +162,11 @@ export function createApp(deps: AppDeps = {}) {
       departures,
       maps,
       conciergeTasks,
+      quotes,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
-  app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY }));
+  app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
   app.route(
     '/webhooks',
     webhookRoutes({

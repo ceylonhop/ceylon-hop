@@ -3,6 +3,8 @@ import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { RATE_CARD } from '../quote/rateCard';
 import { isoToday } from '../domain/dateRules';
 import { signBookingToken } from '../lib/bookingToken';
 
@@ -71,6 +73,37 @@ describe('POST /bookings/single', () => {
     const b = await res.json();
     expect(b.total).toBe(7970); // km 180 → billable 198 → round(198×40.25) = 7970
     expect(b.amountDueNow).toBe(7970);
+  });
+
+  // ── Rate-lock (spec 2026-07-11 §4): a booking carrying a live web quote id is priced against
+  // that quote's frozen card, so a rate-card change under the hood can't move the customer's price.
+  async function withLockedQuote(rateLockedUntil: Date | null, perKmCar: number) {
+    const quotes = new InMemoryQuoteRepo();
+    const saved = await quotes.save({
+      channel: 'web', product: 'private', totalCents: 0, currency: 'USD', rateCardVersion: 'frozen',
+      request: {}, result: {},
+      rateCardJson: { ...RATE_CARD, version: 'frozen', perKmCents: { ...RATE_CARD.perKmCents, car: perKmCar } },
+      rateLockedUntil,
+    });
+    return { app: createApp({ quotes }), quoteId: saved.id };
+  }
+
+  it('a live locked quote id prices the booking against its FROZEN card, not the live one', async () => {
+    const { app, quoteId } = await withLockedQuote(new Date(Date.now() + 3 * 86_400_000), 20); // 20¢/km, held
+    const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
+    expect(b.total).toBe(3960); // billable 198 × 20¢ (frozen) — NOT 7970 on the live 40.25¢ card
+  });
+
+  it('an EXPIRED locked quote id falls back to the live card (the 7-day hold has lapsed)', async () => {
+    const { app, quoteId } = await withLockedQuote(new Date(Date.now() - 86_400_000), 20); // expired yesterday
+    const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
+    expect(b.total).toBe(7970); // live 40.25¢ card
+  });
+
+  it('an unknown quote id is ignored — prices on the live card, never crashes', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId: 'no-such-quote' })).json();
+    expect(b.total).toBe(7970);
   });
 
   it('prices payload extras through the engine (GL-3)', async () => {
