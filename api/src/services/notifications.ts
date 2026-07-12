@@ -102,6 +102,19 @@ interface Badge { label: string; bg: string; color: string }
 const BADGE_PAID: Badge = { label: 'Paid', bg: '#e7f6ec', color: '#0c6b39' };
 const BADGE_CANCELLED: Badge = { label: 'Cancelled', bg: '#f1efe9', color: '#6b645f' };
 const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e6f0fc', color: '#1f5fb0' };
+const BADGE_CONFIRMED: Badge = { label: 'Confirmed', bg: '#e0f3f0', color: TEAL_DEEP };
+const BADGE_ACTION: Badge = { label: 'Action needed', bg: '#fdf1dc', color: '#8a5a12' };
+const BADGE_NO_SHOW: Badge = { label: 'No-show', bg: '#f1efe9', color: '#6b645f' };
+const AMBER = '#8a5a12';
+
+// True when a paid booking still has an open detail we must confirm (a flexible/"to
+// confirm" date). Drives the "we still need your details" follow-up. The exact pickup
+// is always captured as an area (input.from is required), so date is the open field.
+export function needsDetails(booking: Booking): boolean {
+  if (booking.mode === 'shared') return false; // shared always books a fixed departure
+  if (booking.mode === 'trip') return !booking.input.dates?.some(Boolean);
+  return !booking.input.date;
+}
 
 function brandHeader(): string {
   return `<tr><td style="background:${TEAL_DEEP};padding:24px 32px">
@@ -441,6 +454,167 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
   await email.send({
     to: booking.input.customer.email,
     subject: `How was your trip? — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// A pill CTA row consistent with manageButton, but with a custom label.
+function ctaRow(url: string, label: string): string {
+  return `<tr><td style="padding:4px 32px 26px">`
+    + `<a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;`
+    + `padding:12px 24px;border-radius:999px;font-weight:700;font-size:.95rem">${esc(label)}</a></td></tr>`;
+}
+
+// ── Payment didn't complete (abandoned checkout recovery) ──────────────────
+// Swept from payment_pending by the watchdog; one-shot, with a link to finish.
+export async function sendPaymentIncomplete(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { resume?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const due = money(booking.amountDueNow ?? booking.total, booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Payment didn’t go through',
+        AMBER,
+        `You’re almost there, ${first}`,
+        'We saved your booking, but the payment didn’t complete — so your spot isn’t held yet.',
+      ) +
+      refCard(booking, BADGE_ACTION) +
+      (links.resume ? ctaRow(links.resume, 'Finish your booking') : '') +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      totalBlock('Amount due', due) +
+      infoBox(
+        'Finish in a minute',
+        'Pick up where you left off — your details are saved. Once payment clears we’ll confirm everything by email. Trouble paying? Just reply or message us on WhatsApp.',
+      ) +
+      footer(),
+  );
+  const text = textShell('finish your booking', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `Amount due: ${due}`,
+    ...(links.resume ? ['', `Finish your booking: ${links.resume}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Booking confirmed (paid → confirmed; ops arranged the driver) ──────────
+export async function sendBookingConfirmed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        '✓ Confirmed',
+        TEAL_DEEP,
+        `You’re confirmed, ${first}!`,
+        'Good news — your driver is arranged and your trip is locked in.',
+      ) +
+      refCard(booking, BADGE_CONFIRMED) +
+      (links.manage ? manageButton(links.manage) : '') +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      infoBox(
+        'Your driver details',
+        'We’ll send your driver’s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us there.',
+        cancellationPolicy(booking),
+      ) +
+      footer(),
+  );
+  const text = textShell('your booking is confirmed', 'Your driver is arranged — you’re all set.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'We’ll share your driver’s name and vehicle on WhatsApp shortly before pickup.',
+    cancellationPolicy(booking),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `You’re confirmed — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── No-show (confirmed/in_progress → no_show; fare forfeited) ──────────────
+export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Missed pickup',
+        TOMATO,
+        `We missed you, ${first}`,
+        'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
+      ) +
+      refCard(booking, BADGE_NO_SHOW) +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      infoBox(
+        'About your fare',
+        'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
+      ) +
+      footer(),
+  );
+  const text = textShell('missed pickup', 'Your driver was at the pickup, but we couldn’t reach you.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your Ceylon Hop pickup — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── We still need your details (paid but date/time flexible) ───────────────
+export async function sendDetailsNeeded(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'One more thing',
+        AMBER,
+        `We just need a detail or two, ${first}`,
+        'Your booking is paid and safe — we only need to lock in your exact pickup time and spot.',
+      ) +
+      refCard(booking, BADGE_ACTION) +
+      (links.manage ? manageButton(links.manage) : '') +
+      routeBlock(booking) +
+      factsBlock(booking) +
+      infoBox(
+        'What happens now',
+        'Your date/time is still flexible. Our team will reach out on WhatsApp to confirm your exact pickup spot and time — or reply to this email any time with the details.',
+      ) +
+      footer(),
+  );
+  const text = textShell('we still need your details', 'Your booking is paid — we just need your exact pickup time and spot.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Our team will reach out on WhatsApp to confirm — or reply any time with your exact pickup and time.',
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `We need a couple of details — ${booking.reference}`,
     html,
     text,
   });

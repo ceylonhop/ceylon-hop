@@ -7,7 +7,7 @@ import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { AlertAdapter } from '../adapters/alerts';
-import { sendBookingConfirmation, manageUrl } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, needsDetails, manageUrl } from '../services/notifications';
 
 export function webhookRoutes(deps: {
   bookings: BookingRepo;
@@ -107,6 +107,15 @@ export function webhookRoutes(deps: {
         await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
         // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
         await notificationLog?.markSent(paid.id, 'confirmation');
+        // Paid but the date/time is still flexible → a follow-up nudge that we'll
+        // confirm the exact pickup on WhatsApp. Best-effort; never fails the webhook.
+        if (needsDetails(paid)) {
+          try {
+            await sendDetailsNeeded(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          } catch (err) {
+            console.error(`details-needed email failed for ${paid.reference}:`, err);
+          }
+        }
       } catch (err) {
         console.error(`confirmation email failed for ${paid.reference}:`, err);
         void alerts.send({

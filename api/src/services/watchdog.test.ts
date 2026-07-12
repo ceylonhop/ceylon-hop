@@ -4,6 +4,7 @@ import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
+import { FakeEmailAdapter } from '../adapters/email';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -82,3 +83,31 @@ describe('runWatchdog', () => {
     expect(inner.sent).toHaveLength(1); // …but the founder got exactly one email
   });
 });
+
+  it('emails the customer a one-shot recovery when email deps are provided', async () => {
+    const { bookings, booking } = await seed('payment_pending');
+    const alerts = new FakeAlertAdapter();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const deps = { bookings, log, alerts, email, baseUrl: 'https://ceylonhop.com', linkSecret: 'sek' };
+
+    const res = await runWatchdog(later(31), deps);
+    expect(res.recoveryEmails).toBe(1);
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('maya@example.com');
+    expect(email.sent[0].subject).toContain(booking.reference);
+    expect(email.sent[0].html).toContain('manage.html');
+    expect(await log.wasSent(booking.id, 'payment_recovery')).toBe(true);
+
+    // A later sweep must NOT email again (idempotent).
+    const res2 = await runWatchdog(later(45), deps);
+    expect(res2.recoveryEmails).toBe(0);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it('does not email when email deps are absent (alerts only)', async () => {
+    const { bookings } = await seed('payment_pending');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
+    expect(res.recoveryEmails).toBe(0);
+  });

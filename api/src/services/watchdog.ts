@@ -1,6 +1,8 @@
 import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { AlertAdapter } from '../adapters/alerts';
+import type { EmailAdapter } from '../adapters/email';
+import { sendPaymentIncomplete, manageUrl } from './notifications';
 
 // M17 payments watchdog — the periodic sweep behind POST /admin/jobs/watchdog. Catches
 // the two silent money-path failures the inline webhook alerts can't see:
@@ -19,15 +21,25 @@ const UNCONFIRMED_PAID_MS = 15 * 60_000;
 
 export async function runWatchdog(
   now: Date,
-  deps: { bookings: BookingRepo; log: NotificationLogRepo; alerts: AlertAdapter },
-): Promise<{ stuckPending: number; paidUnconfirmed: number }> {
-  const { bookings, log, alerts } = deps;
+  deps: {
+    bookings: BookingRepo;
+    log: NotificationLogRepo;
+    alerts: AlertAdapter;
+    // When provided, an abandoned checkout also gets ONE customer recovery email
+    // (idempotent via the notification log) with a link to finish paying.
+    email?: EmailAdapter;
+    baseUrl?: string;
+    linkSecret?: string;
+  },
+): Promise<{ stuckPending: number; paidUnconfirmed: number; recoveryEmails: number }> {
+  const { bookings, log, alerts, email, baseUrl, linkSecret } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck = pending.filter((b) => {
     const age = now.getTime() - Date.parse(b.createdAt);
     return age >= STUCK_PENDING_MS && age < STUCK_PENDING_MAX_MS;
   });
+  let recoveryEmails = 0;
   for (const b of stuck) {
     await alerts.send({
       severity: 'critical',
@@ -36,6 +48,17 @@ export async function runWatchdog(
       body: `Booking ${b.reference} (${b.currency} ${(b.amountDueNow ?? b.total) / 100}) has been payment_pending since ${b.createdAt}. PayHere may have failed to notify, or the customer abandoned at the gateway.`,
       dedupeKey: b.id,
     });
+    // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
+    // sweep (the ops alert above already fired). Idempotent via notification_log.
+    if (email && baseUrl && linkSecret && !(await log.wasSent(b.id, 'payment_recovery'))) {
+      try {
+        await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
+        await log.markSent(b.id, 'payment_recovery');
+        recoveryEmails += 1;
+      } catch (err) {
+        console.error(`payment-recovery email failed for ${b.reference}:`, err);
+      }
+    }
   }
 
   const paid = await bookings.list({ status: 'paid' });
@@ -53,5 +76,5 @@ export async function runWatchdog(
     });
   }
 
-  return { stuckPending: stuck.length, paidUnconfirmed };
+  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails };
 }
