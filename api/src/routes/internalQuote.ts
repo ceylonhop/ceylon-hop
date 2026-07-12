@@ -231,11 +231,14 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
 function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnType<typeof shape> | null {
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
-  const { rateCard } = rateCardFor(
-    { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
-    now,
-  );
+  // The whole locked-estimate computation is best-effort: a corrupt/legacy lock snapshot
+  // (or an un-priceable stored request) must degrade to null, never 500 the quote-open path.
+  // rateCardFor() is inside the guard too — a malformed rateLockedUntil would otherwise throw.
   try {
+    const { rateCard } = rateCardFor(
+      { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
+      now,
+    );
     return shape(quote(engineReq, rateCard), canMargin);
   } catch {
     return null;

@@ -953,4 +953,20 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     const got = await (await getAs('f@x.com', app, `/admin/quote/${saved.id}`)).json();
     expect(got.estimate.total.cents).toBe(4400); // 200km ×1.10 buffer ×20¢ — the frozen car rate
   });
+
+  it('degrades to estimate:null instead of 500 when a persisted lock field is malformed', async () => {
+    // Defense-in-depth: pricing the LOCKED estimate must never 500 the quote-open path. A
+    // corrupt/legacy lock value (here a non-Date rateLockedUntil) should yield estimate:null,
+    // not a thrown 500 — the quote itself must still open.
+    const repo = new InMemoryQuoteRepo();
+    const engine = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 200 }] };
+    const saved = await repo.save({
+      product: 'private', vehicle: 'car', totalCents: 5000, currency: RATE_CARD.currency,
+      rateCardVersion: 'v', request: { tool: {}, engine }, result: {},
+      rateCardJson: RATE_CARD, rateLockedUntil: '2026-07-20T00:00:00Z' as unknown as Date,
+    });
+    const res = await getAs('f@x.com', createApp({ quotes: repo }), `/admin/quote/${saved.id}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).estimate).toBeNull();
+  });
 });
