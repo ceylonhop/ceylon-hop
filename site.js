@@ -85,8 +85,7 @@
           <a href="index.html" class="brand" style="color:#fff">${cmark(34,'#fff')}<span>Ceylon Hop</span></a>
           <p style="margin-top:14px;color:#9a968d;max-width:30ch">Private transfers &amp; shared rides that make exploring Sri Lanka easy, social and stress-free.</p>
           <div class="soc" style="margin-top:18px">
-            <a href="#" aria-label="Instagram">${ICON.ig}</a><a href="#" aria-label="TikTok">${ICON.tiktok}</a>
-            <a href="#" aria-label="X">${ICON.x}</a><a href="#" aria-label="Facebook">${ICON.fb}</a>
+            <a href="https://www.instagram.com/ceylonhop" aria-label="Instagram" target="_blank" rel="noopener noreferrer">${ICON.ig}</a><a href="https://www.facebook.com/p/Ceylon-Hop-61561725411635/" aria-label="Facebook" target="_blank" rel="noopener noreferrer">${ICON.fb}</a>
           </div>
         </div>
         <div><h4>Explore</h4><ul>
