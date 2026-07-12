@@ -75,17 +75,28 @@ export class ThrottledAlerts implements AlertAdapter {
   }
 
   async send(alert: Alert): Promise<void> {
+    const dedupeKey = alert.dedupeKey ?? alert.kind;
+    const reservedAt = this.now();
+    let reserved = false;
     try {
-      const deliver = await this.log.shouldSend(
-        alert.kind,
-        alert.dedupeKey ?? alert.kind,
-        this.cooldownMs,
-        this.now(),
-      );
-      if (deliver) await this.inner.send(alert);
+      // Reserve atomically first (so concurrent ticks can't both deliver), then send.
+      reserved = await this.log.shouldSend(alert.kind, dedupeKey, this.cooldownMs, reservedAt);
+      if (reserved) {
+        await this.inner.send(alert);
+        reserved = false; // delivered — keep the reservation recorded
+      }
     } catch (err) {
-      // Alerting must never take down the path that raised the alert.
+      // Alerting must never take down the path that raised the alert. But a delivery failure
+      // must not silently suppress the alert for a whole cooldown (BI3): roll the reservation
+      // back so the next occurrence retries. The rollback is itself best-effort.
       console.error(`alert delivery failed (${alert.kind}):`, err);
+      if (reserved) {
+        try {
+          await this.log.rollback(alert.kind, dedupeKey, reservedAt);
+        } catch (rollbackErr) {
+          console.error(`alert rollback failed (${alert.kind}):`, rollbackErr);
+        }
+      }
     }
   }
 }

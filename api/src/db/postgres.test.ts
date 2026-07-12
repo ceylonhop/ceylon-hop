@@ -79,6 +79,20 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(counts['pg_kind']).toBeGreaterThanOrEqual(2);
   });
 
+  it('alert log: rollback frees a failed reservation so the next send retries (BI3)', async () => {
+    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const key = 'pgroll-' + Date.now();
+    const t0 = new Date();
+    const COOLDOWN = 30 * 60_000;
+    expect(await alerts.shouldSend('pg_roll', key, COOLDOWN, t0)).toBe(true);
+    // wrong reserved-at → no-op, reservation stays (a repeat inside the cooldown is suppressed)
+    await alerts.rollback('pg_roll', key, new Date(t0.getTime() - 5));
+    expect(await alerts.shouldSend('pg_roll', key, COOLDOWN, new Date(t0.getTime() + 10_000))).toBe(false);
+    // correct reserved-at → frees it; a send inside the original cooldown now delivers again
+    await alerts.rollback('pg_roll', key, t0);
+    expect(await alerts.shouldSend('pg_roll', key, COOLDOWN, new Date(t0.getTime() + 20_000))).toBe(true);
+  });
+
   it('persists and reads back a booking with customer + transfer', async () => {
     const created = await bookings.create(sample);
     const got = await bookings.get(created.id);

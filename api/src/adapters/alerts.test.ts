@@ -77,6 +77,26 @@ describe('ThrottledAlerts', () => {
     expect(inner.sent).toHaveLength(1);
   });
 
+  it('a failed delivery is not swallowed-and-suppressed — the next occurrence retries (BI3)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let calls = 0;
+    const flaky = { send: async () => { calls++; if (calls === 1) throw new Error('smtp down'); } };
+    const now = { t: 0 };
+    const alerts = new ThrottledAlerts(flaky, new InMemoryAlertLogRepo(), {
+      cooldownMs: 30 * 60_000,
+      now: () => new Date(now.t),
+    });
+    await alerts.send(alert); // reserved → delivery throws → reservation rolled back
+    now.t = 10_000; // still well inside the cooldown
+    await alerts.send(alert); // must actually retry, not be suppressed
+    expect(calls).toBe(2);
+    // and once a delivery succeeds, repeats inside the cooldown ARE suppressed again
+    now.t = 20_000;
+    await alerts.send(alert);
+    expect(calls).toBe(2);
+    errSpy.mockRestore();
+  });
+
   it('never throws even when the inner adapter does (alerting must not break requests)', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const boom = { send: async () => { throw new Error('smtp down'); } };

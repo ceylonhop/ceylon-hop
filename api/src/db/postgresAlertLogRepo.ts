@@ -1,4 +1,4 @@
-import { gte, sql as dsql } from 'drizzle-orm';
+import { and, eq, gte, sql as dsql } from 'drizzle-orm';
 import type { Db } from './client';
 import { alertLog } from './schema';
 import type { AlertLogRepo } from './alertLogRepo';
@@ -28,6 +28,22 @@ export class PostgresAlertLogRepo implements AlertLogRepo {
       .returning({ lastSentAt: alertLog.lastSentAt });
     // Delivered iff the row's last_sent_at is the timestamp we just tried to write.
     return rows[0]?.lastSentAt?.getTime() === now.getTime();
+  }
+
+  // BI3 — undo an optimistic reservation when the delivery failed, so the alert isn't
+  // suppressed for a cooldown. Guarded on last_sent_at = reservedAt so a concurrent
+  // successful send that overwrote the row is never clobbered. Deleting the row (rather than
+  // resetting the timestamp) also keeps the failed send out of the digest's countsSince.
+  async rollback(kind: string, dedupeKey: string, reservedAt: Date): Promise<void> {
+    await this.db
+      .delete(alertLog)
+      .where(
+        and(
+          eq(alertLog.kind, kind),
+          eq(alertLog.dedupeKey, dedupeKey),
+          eq(alertLog.lastSentAt, reservedAt),
+        ),
+      );
   }
 
   // Digest approximation: kinds whose most recent delivery falls in the window. (The
