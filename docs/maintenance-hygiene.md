@@ -2,7 +2,8 @@
 
 **Purpose:** what to remember when changing this codebase so quality doesn't rot. Read this
 before adding a page, a funnel step, a route, or a price. It complements — does not
-replace — `CLAUDE.md` (the agent operating contract) and `api/CLAUDE.md` (backend rules).
+replace — `CLAUDE.md` (the agent operating contract, which carries the backend rules) and
+the `docs/` specs (`backend-spec.md`, `build-plan.md`).
 
 Last reviewed: 2026-07-05.
 
@@ -88,11 +89,14 @@ Then: add the page to the relevant guard tests
 
 ### Changing a **price / rate / corridor**
 - The backend is canonical: `api/src/quote/rateCard.ts` + the corridor seat prices in
-  `api/src/db/departureRepo.ts`. The front-end `routes-data.js` / `transfers-data.js`
-  **mirror** these values.
-- Change one → change the mirror → run the parity guard
-  (`web-tests/unit/shared-price-parity.test.js` and `pricing.test.js`). Money is integer
-  minor units + USD on the backend; the front-end formats for display only.
+  `api/src/db/departureRepo.ts`. Since the 2026-07-09 codegen change, the front-end
+  `routes-data.js` / `transfers-data.js` price blocks are **generated** from the rate card
+  (the `@generated:pricing` regions) — do **not** hand-edit them.
+- Edit `rateCard.ts` (and/or `departureRepo.ts`), then run `npm run generate` (repo root; or
+  `npm run generate:pricing`) and commit the regenerated blocks in the same PR. The parity
+  guards (`web-tests/unit/shared-price-parity.test.js`, `web-tests/unit/backend-price-parity.test.js`,
+  and the backend `pricing.test.js`) verify the mirror. Money is integer minor units + USD on
+  the backend; the front-end formats for display only.
 
 ### Adding a **new tracking vendor or cookie**
 - Update the consent grants in `consent.js` and the disclosure in

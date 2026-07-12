@@ -12,8 +12,8 @@ dashboard (M12)**. Read this top-to-bottom before resuming.
 > "Control Tower" UI is served at **`GET /ops`**, wired to `/admin/ops` with a session-cookie
 > **login screen** — no more static mock. Verified end-to-end against dev Supabase (login,
 > live queue, stage advance, flag/note persistence). Plan: `docs/superpowers/plans/2026-07-03-m12-ops-dashboard-slice-2.md`.
-> **Still TODO before real traffic:** deploy runbook below + the WhatsApp quote→PayHere-link
-> tool (§4, still does not exist).
+> **Still TODO before real traffic:** the deploy runbook below + the WhatsApp
+> PayHere-payment-link generator (§4). The quote generator itself now ships inside `/ops`.
 
 ---
 
@@ -57,7 +57,8 @@ awaiting_payment → paid → vehicle_confirmed → pickup_confirmed → on_trip
 ## 2. The PROTOTYPE (front-end mockup) — DONE & in a good state
 
 **File:** `_ops-preview.html` at the **ceylon-hop repo root** (single-file HTML/CSS/JS, mock
-in-memory data). **NOT committed to git** (temp design artifact). Served via the preview server
+in-memory data). **Still tracked in git at the repo root** — the retire step (resume checklist #5)
+never happened; it should be `git rm`'d now that the live `/ops` UI supersedes it. Served via the preview server
 at `http://localhost:4173/_ops-preview.html` (server root = the `ceylon-hop` folder).
 
 ### What it does
@@ -134,12 +135,14 @@ What's there:
 ---
 
 ## 4. Deferred / open items (not blocking the main-site work)
-- **The WhatsApp quoting + PayHere-link-generation tool** (custom price → payment link) lives
-  *outside* ops and **does not exist yet** — needs building somewhere before manual bookings can
-  actually flow into the DB.
+- **The WhatsApp PayHere-payment-link generator** (custom price → payment link) is the only
+  remaining unbuilt piece. The quote generator itself now **ships inside `/ops`** (the Ops Quote
+  Generator, `/admin/quote`, founder/`quote:manage`-gated, PR #14, deployed 2026-07-04). Manual
+  bookings still need the payment-link step before they can flow into the DB.
 - **Render env vars for ops auth** (also in `docs/go-live-checklist.md`):
-  `OPS_SESSION_SECRET` (strong), `OPS_FOUNDER_KEY`, `OPS_SUPPORT_KEY`, plus `ADMIN_API_KEY`
-  (ops endpoints are locked until set).
+  `OPS_SESSION_SECRET` (strong), `OPS_USERS` (email:role list) and `GOOGLE_OAUTH_CLIENT_ID`
+  (auth is Google sign-in + roles since the 2026-07-04 RBAC change — `OPS_FOUNDER_KEY` /
+  `OPS_SUPPORT_KEY` are no longer read by the API), plus `ADMIN_API_KEY` (machine/cron identity).
 - Login screen for `/ops`; trim the prototype's dead code (§2).
 - Customer-email roadmap (cancellation/refund/deposit/reminders) — separate track, see the
   email roadmap notes + `docs/go-live-checklist.md`.
@@ -156,13 +159,12 @@ What's there:
 1. ~~Reshape the backend~~ ✅ DONE (Slice 2, 2026-07-03).
 2. ~~Wire UI → `/admin/ops`, login screen, serve at `/ops`~~ ✅ DONE (Slice 2).
 3. **Deploy** — apply migrations 0011→0012→0013 to live Supabase *before* the new image serves
-   traffic; set Render env vars (`OPS_SESSION_SECRET`, `OPS_FOUNDER_KEY`, `OPS_SUPPORT_KEY`,
+   traffic; set Render env vars (`OPS_SESSION_SECRET`, `OPS_USERS`, `GOOGLE_OAUTH_CLIENT_ID`,
    `ADMIN_API_KEY`). See the deploy runbook in the Slice 2 plan / PR.
    ⚠️ 0013 drops the `coordinators` table irreversibly — snapshot the prod DB first.
 4. Build/locate the external WhatsApp quote→PayHere-link tool (§4) — still the only path for
    manual bookings to enter the DB; ops has no create-booking form by design.
 5. Retire the root `_ops-preview.html` mock (superseded by the live `/ops` UI).
 
-**Prod hardening carried forward** (out of Slice 2 scope): add `Secure` to the ops session
-cookie (currently httpOnly + SameSite=Lax + path=/ but not Secure) — fold into the queued
-permissions/roles slice.
+**Prod hardening — DONE:** the ops session cookie now sets `Secure` (httpOnly + SameSite=Lax +
+path=/ + Secure, `api/src/lib/opsMiddleware.ts`), shipped with the permissions/roles slice.

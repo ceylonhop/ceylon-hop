@@ -67,9 +67,9 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Confirm the front-end API URL:** `window.CEYLON_HOP_API` in `booking.html` defaults to the Render URL — update if the API moves to a custom domain.
 - [ ] **Check public URLs use the apex:** canonical / Open-Graph / `schema.org` `url` / any sitemap should point to `https://ceylonhop.com` (not github.io/localhost).
 
-- [ ] **Observability & alerting (M17) — BUILT (env-gated, dormant until keys set); activate at launch.** Code shipped 2026-07-03: throttled email alerts (30-min dedupe via `alert_log`), env-gated Sentry on the API, front-end error beacon → `/errors/client`, payment-webhook failure alerts, watchdog sweep, `/health/deep`, Resend bounce webhook, daily ops digest. Spec: [`superpowers/specs/2026-07-03-m17-observability-design.md`](./superpowers/specs/2026-07-03-m17-observability-design.md). **Launch activation steps:**
-  - [ ] set `ALERT_EMAIL` on Render (alerts + daily digest start flowing)
-  - [ ] create the free **Sentry** project → set `SENTRY_DSN` on Render
+- [ ] **Observability & alerting (M17) — BUILT + PARTLY ACTIVATED in prod 2026-07-05.** Code shipped 2026-07-03: throttled email alerts (30-min dedupe via `alert_log`), env-gated Sentry on the API, front-end error beacon → `/errors/client`, payment-webhook failure alerts, watchdog sweep, `/health/deep`, Resend bounce webhook, daily ops digest. Spec: [`superpowers/specs/2026-07-03-m17-observability-design.md`](./superpowers/specs/2026-07-03-m17-observability-design.md). **Launch activation steps:**
+  - [x] set `ALERT_EMAIL` on Render — **DONE 2026-07-05** (alert emails currently send from a test sender until the `ceylonhop.com` domain is verified in Resend)
+  - [x] create the free **Sentry** project → set `SENTRY_DSN` on Render — **DONE 2026-07-05** (verified via a real event; project `ceylonhop/env production`)
   - [ ] **apply migration 0011** (`alert_log`) at deploy — alongside 0010
   - [ ] **UptimeRobot** (free): monitor `https://ceylon-hop-api.onrender.com/health/deep` every 5 min → email alert (independent of the email stack — this is the channel that catches an email outage)
   - [ ] **cron-job.org**: `POST /admin/jobs/watchdog` every 15 min with header `x-admin-key: <ADMIN_API_KEY>` (same service as the keep-warm pinger)
@@ -92,7 +92,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - **M11** pricing engine + quoting tool + quote lifecycle ✅ **MERGED to main 2026-07-02** (PRs #1–#4: engine, tool, Postgres quotes, Ops Quote Generator). Remaining M11 scope: wire the engine into the PUBLIC booking flow (GL-3 above) and web-channel quote capture (deferred). · **M12** ops dashboard (Slice-1 backend shipped; UI prototype parked — see `ops-dashboard-status.md`) · **M13** WhatsApp Business API · **M14** reminders/SLA timers (pre-trip reminder + review request ✅ shipped via the scheduler; remaining: balance-due reminders, "confirm your details" nudges, SLA timers) · **M15** reporting/CSV export.
 
 ### Owner pricing decisions (2026-07-02) — recorded so launch work doesn't re-ask
-- **The engine rate card is the pricing truth** (`api/src/quote/rateCard.ts`): car 46¢/km, van6 83¢, van9 55¢ on billable km (×1.10), deposit 10% capped $50. The front-end's old table is superseded (see GL-4 item above).
+- **The engine rate card is the pricing truth** (`api/src/quote/rateCard.ts`) — treat that file as authoritative, not any numbers restated here. Prices are now computed **cost-plus-margin** (cost/km + 15% margin, 2026-07-11) and the front-end price tables are **code-generated** from the rate card (`npm run generate`, 2026-07-09); the previously-recorded 46¢/83¢/55¢ figures are superseded. Deposit 10% capped $50.
 - **Van 14 / Custom are custom-priced per quote** — the operator sets $/km in the quote tool (rate-card 130¢/175¢ are prefill defaults only).
 - **Quote delivery = manual copy → WhatsApp** (Copy button in the tool; deliberately no wa.me deep link).
 

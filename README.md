@@ -50,11 +50,17 @@ Then open http://localhost:4173/.
 - `site.css` / `site.js` — shared chrome (header, footer, scroll reveal) used by every page.
 - `routes-data.js` / `transfers-data.js` / `tours-data.js` — pricing, places and tour data.
 - `booking.js` / `plan.js` / `search.js` / `datepicker.js` — per-flow logic.
-- `image-slot.js` + `.image-slots.state.json` — fillable image placeholders; images
+- `image-slot.js` + `image-slots.state.json` — fillable image placeholders; images
   are embedded as base64 data URIs in the sidecar (fetched at runtime).
 - `tweaks.js` — applies persisted theme variables (accent, font, corners) site-wide.
+- `api/` — the live backend (Hono + Drizzle/Postgres, PayHere adapter) the booking flow
+  calls via `window.CEYLON_HOP_API`; see [`api/README.md`](api/README.md).
+- `tools/` — codegen (pricing, route pages, terms/privacy, redirects); `web-tests/` —
+  Vitest unit + Playwright e2e; generated `trip/` route pages, `terms.html`/`privacy.html`,
+  `404.html`, `manage.html` (emailed booking view), `/ops` (founder dashboard, served by the API).
 
 ## Notes
 
-- No backend: the PayHere checkout is a simulated interstitial; no real payment is taken.
+- Backend is **live**: the booking flow calls the API in `api/` and drives a real PayHere
+  checkout. PayHere runs in **sandbox** mode today (real sandbox charges, not live money).
 - Empty "Drop a photo" boxes are unfilled image slots from the design, not errors.

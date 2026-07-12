@@ -3,10 +3,10 @@
 _Last reconciled: 2026-06-28. This is the index for the Quote Engine documents. Start here._
 
 The Quote Engine is the **one place pricing lives** — a server-authoritative calculator that turns a
-trip into a priced quote. It is *designed* to serve the website, an internal WhatsApp quoting tool,
-the ops dashboard, and booking-time anti-tamper validation. **The first increment ships only the
-engine + `POST /quote`** — none of those surfaces are wired yet (the website still prices with its
-frozen formula).
+trip into a priced quote. It is now **live and the pricing truth for public bookings** (owner decision
+2026-07-02): it is mounted at `POST /quote`, prices bookings server-side (`api/src/services/pricing.ts`),
+backs the internal quoting tool that ships inside `/ops` (`/admin/quote`), and its rate card is the
+source the website's displayed prices are **code-generated** from (`tools/generate-pricing.mjs`).
 
 ## The documents (this README is the index)
 
@@ -73,9 +73,13 @@ auto-charge on the web (needs a per-day itinerary structure + the override field
 
 ## Build status
 
-**Nothing is built yet.** The engine plan (9 tasks) is ready to execute on your go; it ships the
-pure engine + `POST /quote` and changes **no** charge behaviour. The booking anti-tamper / charge
-authority is a **separate follow-up plan**, gated on the website-display step.
+**Shipped and live.** The engine + `POST /quote` are built and deployed; the engine is the pricing
+truth for public bookings (server-side pricing in `api/src/services/pricing.ts`), the internal quoting
+tool ships inside `/ops` (`/admin/quote`), and the website's displayed prices are code-generated from
+the engine's rate card via `tools/generate-pricing.mjs`. The rate card itself lives in
+`api/src/quote/rateCard.ts` — treat that file (not the tables in these docs) as the source of truth,
+as it is revised over time (e.g. the 2026-07-09 codegen source-of-truth change and the cost-plus-margin
+update).
 
 ## Next step
 

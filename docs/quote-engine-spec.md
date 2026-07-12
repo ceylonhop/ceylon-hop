@@ -20,10 +20,12 @@ It is the one place pricing lives, and it serves four surfaces:
 It is **pure pricing**: given a trip + distances, it returns money. It does **not** fetch distances,
 send messages, or take payment.
 
-> **Shipped state of *this* increment:** only the engine + `POST /quote` are built. None of the four
-> surfaces above are wired yet — the website still prices with its frozen formula, bookings still use
-> the legacy passthrough, and the internal tool / ops dashboard are separate future work. The list
-> above is what the engine is *designed* to serve, not what ships first.
+> **Status (updated 2026-07-11):** the engine + `POST /quote` shipped and are now live. The engine is
+> the pricing truth for public bookings (server-side pricing; bookings adopt the engine total — GL-4),
+> the website's displayed prices are code-generated from the rate card (`tools/generate-pricing.mjs`),
+> and the internal quoting tool ships inside `/ops` (`/admin/quote`). The §8 anti-tamper design below
+> was NOT implemented as a reject-on-mismatch step — instead bookings are engine-authoritative: the
+> server-recomputed total simply wins over any client-submitted total. Treat §8 as design rationale.
 
 ---
 
@@ -236,6 +238,11 @@ and the website shows a "contact us" prompt. Bigger vehicles (van 9/14, bus, mul
 ---
 
 ## 8. Server-authoritative validation (anti-tamper) — **deterministic, post-display**
+
+> **Not implemented as designed (2026-07-11).** Bookings are engine-authoritative: the server
+> recomputes and the engine total wins over any client total (GL-4, `api/src/routes/bookings.ts`),
+> rather than rejecting a mismatch with `QUOTE_TAMPERED`. The recompute-and-reject flow below is
+> design rationale, not shipped behaviour.
 
 Activates **only after** the website-display step (§2). The engine prices on the **inputs the
 customer was shown**, never a server re-fetch — because re-deriving distance is non-deterministic

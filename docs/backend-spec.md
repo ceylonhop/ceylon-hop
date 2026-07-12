@@ -14,6 +14,12 @@ services over bespoke infrastructure.
 Clarifications from the founder that **override** the relevant sections below. We are
 already an operating business; this backend formalises what is partly manual today.
 
+> **⚠️ SUPERSEDED where noted (updated 2026-07-11).** These were Phase-1 assumptions and several no
+> longer hold: pricing is **no longer stubbed or client-trusted** — the M11 quote engine is the
+> server-authoritative pricing truth and bookings adopt the engine's recomputed total (GL-4), not the
+> client's; PayHere is **wired and live in sandbox** (real sandbox charges), not a fake adapter. Email
+> automation and the manual-concierge model still hold. Read the items below as historical rationale.
+
 1. **PayHere keys exist, but Phase 1 stubs it.** We already hold live PayHere
    **hosted-checkout** API keys, so there's no gateway onboarding. But **Phase 1 builds
    the whole flow against a fake/stub PayHere adapter** (fake checkout + simulated

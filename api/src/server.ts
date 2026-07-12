@@ -23,7 +23,7 @@ if (!config.DATABASE_URL) {
 
 if (!config.ADMIN_API_KEY) {
   console.warn(
-    'WARNING: ADMIN_API_KEY is not set — the internal quoting tool (/admin/quote/*) is UNAUTHENTICATED and exposes customer PII + cost/margin. Set ADMIN_API_KEY before serving real traffic.',
+    'WARNING: ADMIN_API_KEY is not set — the machine/cron identity (x-admin-key → `system`, used by the notifications + watchdog jobs) cannot authenticate. Set ADMIN_API_KEY before serving real traffic. Human /ops and /admin/quote access is separately gated by Google sign-in + roles (RBAC), so this does NOT leave the quoting tool open.',
   );
 }
 

@@ -1,6 +1,10 @@
 # Ceylon Hop — M16: SEO-Safe Site Migration
 
-**Status: NOT STARTED — recorded 2026-06-25, to implement before/at go-live.**
+**Status: LARGELY SHIPPED — M16 merged to main (PR #7, 2026-07-03).** The in-repo
+deliverables exist (`trip/` route pages, `sitemap.xml`, `robots.txt`, `404.html`, generated
+`terms.html`/`privacy.html`, `docs/cloudflare-redirects.csv`, the M16 design spec). Only the
+apex-cutover tail remains: point the CNAME at the new host, load the Cloudflare bulk redirects,
+and re-submit in Search Console. Do that tail before/at go-live. _(Original plan recorded 2026-06-25.)_
 Owner record for the SEO impact of replacing the current `ceylonhop.com` site with the
 new booking-enabled site. Read this before the apex cutover (it interacts with the
 [go-live checklist](./go-live-checklist.md): "serve the new site on the apex").
