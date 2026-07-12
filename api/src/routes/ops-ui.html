@@ -2235,7 +2235,12 @@ async function saveQuote(opts) {
 // to the queue so the hand-off is visible ("it went into the queue").
 async function transition(toStatus, opts) {
   opts = opts || {};
-  if (!(await saveQuote({ silent: true }))) return; // saveQuote already surfaced the reason
+  // Flush pending edits first — but ONLY while the quote is still editable. A ready/sent quote is
+  // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
+  // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
+  // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
+  var editable = state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested';
+  if (editable && !(await saveQuote({ silent: true }))) return; // saveQuote already surfaced the reason
   var patchBody = { status: toStatus };
   if (opts.note != null) patchBody.notes = opts.note;
   var res = await apiPatch(state.savedId, patchBody);

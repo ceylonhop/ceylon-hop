@@ -111,6 +111,11 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
       if (body.id) {
         const existing = store.list.find((q) => q.id === body.id);
         if (existing) {
+          // Mirror the real API's maker-checker lock: a content re-save is only allowed while the
+          // quote is still editable; a ready/sent/decided quote 409s (internalQuote /save guard).
+          if (!['draft', 'pending_review', 'changes_requested'].includes(existing.status)) {
+            return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_editable', status: existing.status }) });
+          }
           if (body.name) existing.customerName = body.name;
           return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
         }
@@ -270,6 +275,24 @@ test('clicking Submit for review PATCHes the quote to pending_review', async ({ 
   await actions(page).locator('[data-action="submitForReview"]').click();
   await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'pending_review')).toBe(true);
+});
+
+// Regression: transition() used to save-first unconditionally, but the /save maker-checker lock
+// (commit 3d93b56) 409s a content re-save on a ready/sent quote — which silently aborted the
+// transition. Mark-as-sent and Reopen-to-edit start FROM ready, so both broke. The fix skips the
+// save-first when the quote is already content-locked (nothing editable to flush).
+test('Mark as sent on a ready quote PATCHes to sent (no spurious /save 409 abort)', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' });
+  await actions(page).locator('[data-action="markSent"]').click();
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 }); // bounced back to queue
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'sent')).toBe(true);
+});
+
+test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 abort)', async ({ page }) => {
+  const store = await openDetail(page, 'founder', { id: 'q1', status: 'ready' });
+  await actions(page).locator('[data-action="reopenToDraft"]').click();
+  await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
+  expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
 });
 
 test('Send back opens an inline note composer and captures the note on the PATCH', async ({ page }) => {
