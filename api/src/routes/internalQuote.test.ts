@@ -225,6 +225,13 @@ describe('internal quoting tool route', () => {
     expect((await patch(app, `/admin/quote/${q.id}`, { status: 'bogus' })).status).toBe(400);
   });
 
+  it('PATCH /:id rejects a non-string lostReason/notes with 400 (validated, not cast to the DB)', async () => {
+    const app = createApp();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    expect((await patch(app, `/admin/quote/${q.id}`, { lostReason: { evil: true } })).status).toBe(400);
+    expect((await patch(app, `/admin/quote/${q.id}`, { notes: 123 })).status).toBe(400);
+  });
+
   // ── Maker-checker approval gate ────────────────────────────────────────────
   const patchAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });

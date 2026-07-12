@@ -116,9 +116,11 @@ export function opsRoutes(deps: OpsDeps) {
   });
 
   r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {
-    const body = z.object({ to: z.string() }).parse(await c.req.json());
+    // Bad body → 400, not a thrown 500 that also pages the founder via onError's alert.
+    const body = z.object({ to: z.string() }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
     try {
-      return c.json(await deps.rideOps.setStatus(c.req.param('id'), body.to as never));
+      return c.json(await deps.rideOps.setStatus(c.req.param('id'), body.data.to as never));
     } catch {
       return c.json({ error: 'illegal_transition' }, 400);
     }
@@ -129,8 +131,9 @@ export function opsRoutes(deps: OpsDeps) {
       vehiclePhotoReceived: z.boolean().optional(),
       customerUpdated: z.boolean().optional(),
       opsNotes: z.string().nullable().optional(),
-    }).parse(await c.req.json());
-    return c.json(await deps.rideOps.setFlags(c.req.param('id'), body));
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    return c.json(await deps.rideOps.setFlags(c.req.param('id'), body.data));
   });
 
   return r;

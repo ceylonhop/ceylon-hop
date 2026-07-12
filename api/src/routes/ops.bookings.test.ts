@@ -72,6 +72,17 @@ describe('ops bookings endpoints', () => {
     expect((await res.json()).vehiclePhotoReceived).toBe(true);
   });
 
+  it('returns 400 (not a 500 that pages the founder) on a malformed status/flags body', async () => {
+    const status = await app.request(`/admin/ops/bookings/${bid}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ wrong: 'field' }),
+    });
+    expect(status.status).toBe(400);
+    const flags = await app.request(`/admin/ops/bookings/${bid}/flags`, {
+      method: 'POST', headers: await hdr(), body: 'not json',
+    });
+    expect(flags.status).toBe(400);
+  });
+
   it('lists payment_pending and paid bookings as the ops queue, ordered by travel date', async () => {
     const paid = await seed(bookings, { travelDate: '2026-07-10' });
     await bookings.setStatus(paid.id, 'payment_pending');

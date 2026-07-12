@@ -1,4 +1,11 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// Constant-time string compare (length-guarded — timingSafeEqual throws on unequal lengths).
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
 
 export interface CheckoutParams {
   provider: string;
@@ -110,6 +117,6 @@ export class FakePaymentAdapter implements PaymentAdapter {
     }
     if (!isWebhookBody(parsed)) return null;
     const { signature, ...event } = parsed;
-    return signature === this.sign(event) ? event : null;
+    return safeEqual(signature, this.sign(event)) ? event : null;
   }
 }

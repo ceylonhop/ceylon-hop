@@ -1,9 +1,18 @@
 import type { Context, MiddlewareHandler } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
+import { timingSafeEqual } from 'node:crypto';
 import {
   verifySession, signSession, parseOpsUsers, roleForEmail, can,
   type OpsRole, type OpsAction,
 } from './opsAuth';
+
+// Constant-time compare for the admin key (length-guarded — timingSafeEqual throws on
+// unequal lengths). Avoids leaking key material through `===` short-circuit timing.
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
 
 export const OPS_COOKIE = 'ch_ops';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -40,7 +49,7 @@ export function opsIdentity(cfg: OpsAuthConfig): MiddlewareHandler {
   const users = parseOpsUsers(cfg.opsUsers);
   return async (c, next) => {
     const key = c.req.header('x-admin-key');
-    if (key && cfg.adminApiKey && key === cfg.adminApiKey) {
+    if (key && cfg.adminApiKey && safeEqual(key, cfg.adminApiKey)) {
       c.set('identity', { email: 'cron', role: 'system' });
       return next();
     }

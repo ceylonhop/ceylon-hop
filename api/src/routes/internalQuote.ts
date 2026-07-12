@@ -469,8 +469,16 @@ export function internalQuoteRoutes(deps: {
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
   r.patch('/:id', csrf, async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { status?: string; lostReason?: string | null; notes?: string | null } | null;
-    if (!body) return c.json({ error: 'bad_request' }, 400);
+    // Validate, don't cast: non-string lostReason/notes (e.g. an object) must not reach the DB.
+    const parsed = z
+      .object({
+        status: z.string().optional(),
+        lostReason: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request' }, 400);
+    const body = parsed.data;
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
     // Maker-checker gate: only legal status moves, and only the founder (quote:approve) can
     // mark a quote ready-to-send or send it back for changes (incl. the draft→ready self-approve).
