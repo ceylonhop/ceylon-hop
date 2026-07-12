@@ -241,6 +241,22 @@ describe('POST /bookings — no past dates (trip + shared)', () => {
     expect((await res.json()).error).toBe('date_in_past');
   });
 
+  it('a live locked quote id prices a TRIP against its frozen card (rate-lock §4)', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const saved = await quotes.save({
+      channel: 'web', product: 'private', totalCents: 0, currency: 'USD', rateCardVersion: 'frozen',
+      request: {}, result: {},
+      rateCardJson: { ...RATE_CARD, version: 'frozen', perKmCents: { ...RATE_CARD.perKmCents, car: 20 } },
+      rateLockedUntil: new Date(Date.now() + 3 * 86_400_000),
+    });
+    const app = createApp({ quotes });
+    const b = await (await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, quoteId: saved.id,
+    })).json();
+    expect(b.total).toBe(3960); // billable 198 × 20¢ (frozen) — NOT 7970 on the live card
+  });
+
   it('shared rejects a past date (400 date_in_past)', async () => {
     const app = createApp();
     const res = await jpost(app, '/bookings/shared', {

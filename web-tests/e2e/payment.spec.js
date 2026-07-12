@@ -99,3 +99,14 @@ test('a single transfer mints a 7-day locked quote and books against it (rate-lo
   expect(cached.quoteId).toBe('ql-e2e-1');
   expect(cached.exp).toBeGreaterThan(Date.now());
 });
+
+test('a multi-stop tour also mints a locked quote and books against it (rate-lock §5)', async ({ page }) => {
+  await gotoBooking(page, { query: 'mode=trip&stops=Colombo%20Airport%20(CMB)%7CKandy%7CElla&nights=0,1,0&dates=2026-08-08,2026-08-10&pax=2&vehicle=car' });
+  await fillContact(page);
+  const lockP = page.waitForRequest('**/quote/lock');
+  const bookP = page.waitForRequest('**/bookings/trip');
+  await page.click('#pay-btn');
+  await lockP;
+  const body = JSON.parse((await bookP).postData() || '{}');
+  expect(body.quoteId).toBe('ql-e2e-1'); // the tour booking carries the locked quote id
+});

@@ -1488,15 +1488,30 @@ async function createApiBooking(){
   let endpoint, payload;
   if(isTrip){
     endpoint = '/bookings/trip';
+    const tVeh = (vehicleKey==='van') ? 'van' : 'car';
+    // Lock the rate card for this tour (best-effort; undefined → prices live). We lock as a plain
+    // 'private' itinerary of the trip's legs — the lock captures the whole CARD regardless of
+    // product, and the booking re-prices the real trip (private OR chauffeur) against it, so we
+    // don't need to reconstruct the chauffeur day-model here just to freeze the rates.
+    const tripLegs = [];
+    for(let i=0; i<tripStops.length-1; i++){
+      const tf = tripStops[i], tt = tripStops[i+1];
+      const tkm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(tf, tt) || 0) : 0;
+      tripLegs.push({ from: tf, to: tt, distanceKm: tkm });
+    }
+    const tQuoteId = tripLegs.length
+      ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
+      : undefined;
     payload = {
       stops: tripStops,
       nights: tripNights,
       dates: tripDates.some(Boolean) ? tripDates : undefined,
       pax: state.ad + state.ch,
-      vehicleType: (vehicleKey==='van') ? 'van' : 'car',
+      vehicleType: tVeh,
       serviceType: state.svc,
       customer,
       quotedTotal,
+      quoteId: tQuoteId,
       days: (state.svc==='chauffeur') ? tripDays : undefined,
       driverNights: (state.svc==='chauffeur') ? Math.max(0, tripDays-1) : undefined
     };
