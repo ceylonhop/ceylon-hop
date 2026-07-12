@@ -135,7 +135,13 @@
               const ro = new ResizeObserver(() => {
                 if (mapDiv.offsetWidth && mapDiv.offsetWidth !== lastW) {
                   lastW = mapDiv.offsetWidth;
-                  google.maps.event.trigger(map, 'resize');
+                  // Legacy "resize" nudge — a no-op on the modern async-loaded API (maps
+                  // auto-handle container resize), and google.maps.event isn't always present
+                  // (partial API load, ad-blockers, headless/test stubs). Guard it so the
+                  // ResizeObserver never throws; fit() below does the actual re-fit regardless.
+                  if (google.maps.event && typeof google.maps.event.trigger === 'function') {
+                    google.maps.event.trigger(map, 'resize');
+                  }
                   fit();
                 }
               });
