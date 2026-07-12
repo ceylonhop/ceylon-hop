@@ -84,3 +84,18 @@ test('booking creation sends a stable Idempotency-Key so a retried POST dedupes'
   expect(key).toBeTruthy();
   expect(key).toMatch(/^ch-/);
 });
+
+test('a single transfer mints a 7-day locked quote and books against it (rate-lock §5)', async ({ page }) => {
+  await gotoBooking(page);
+  await fillContact(page);
+  const lockP = page.waitForRequest('**/quote/lock');
+  const bookP = page.waitForRequest('**/bookings/single');
+  await page.click('#pay-btn');
+  await lockP; // the client minted a lock BEFORE booking
+  const body = JSON.parse((await bookP).postData() || '{}');
+  expect(body.quoteId).toBe('ql-e2e-1'); // the booking carries the locked quote id
+  // …and it's cached (with its expiry) so a return visit within the window reuses the same lock.
+  const cached = await page.evaluate(() => JSON.parse(localStorage.getItem('chQuoteLock') || 'null'));
+  expect(cached.quoteId).toBe('ql-e2e-1');
+  expect(cached.exp).toBeGreaterThan(Date.now());
+});

@@ -119,6 +119,13 @@ export async function gotoBooking(page, opts = {}) {
   await page.route('**/bookings/trip', (r) => r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip' })));
   await page.route('**/bookings/shared', (r) => r.fulfill(json({ id: 'e2e-shared-1', reference: 'CH-E2ES1', status: 'draft', mode: 'shared' })));
 
+  // Rate-lock: the client mints a 7-day locked quote before a single-transfer booking (§5).
+  await page.route('**/quote/lock', (r) => r.fulfill(json({
+    quoteId: 'ql-e2e-1', reference: 'Q-E2ELK',
+    rateLockedUntil: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+    totalCents: 12100,
+  })));
+
   // checkout params
   await page.route('**/bookings/*/checkout', (r) => {
     if (checkout === 'payhere') {

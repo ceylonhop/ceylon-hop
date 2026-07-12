@@ -1434,6 +1434,36 @@ function showPayDismissed(){
   phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
 }
 
+// Rate-lock (spec 2026-07-11 §5): mint — or reuse — a 7-day locked quote for the current
+// itinerary, so a customer who returns within the window books the price they were quoted even if
+// the rate card moved (fuel-driven changes). Best-effort and NON-BLOCKING: any failure returns
+// undefined and the booking prices on the live card, exactly as before. The quote id is cached in
+// localStorage keyed by the itinerary, so a same-device return within 7 days reuses the lock and a
+// changed trip re-locks. `lockReq` is a POST /quote/lock (QuoteSchema) body.
+async function ensureLockedQuoteId(apiBase, lockReq){
+  if(!apiBase) return undefined;
+  let sig;
+  try { sig = JSON.stringify(lockReq); } catch(e){ return undefined; }
+  try {
+    const cached = JSON.parse(localStorage.getItem('chQuoteLock') || 'null');
+    if (cached && cached.sig === sig && cached.quoteId && cached.exp > Date.now()) return cached.quoteId;
+  } catch(e){ /* storage blocked or bad JSON — fall through and mint a fresh one */ }
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 8000); // never let the lock step hold up checkout
+  try {
+    const res = await fetch(apiBase.replace(/\/$/,'')+'/quote/lock', {
+      method:'POST', headers:{'content-type':'application/json'}, body: sig, signal: ctrl.signal
+    });
+    if(!res.ok) return undefined;
+    const q = await res.json();
+    if(!q || !q.quoteId) return undefined;
+    const exp = q.rateLockedUntil ? Date.parse(q.rateLockedUntil) : (Date.now() + 7*24*3600*1000);
+    try { localStorage.setItem('chQuoteLock', JSON.stringify({ sig: sig, quoteId: q.quoteId, exp: exp })); } catch(e){}
+    return q.quoteId;
+  } catch(e){ return undefined; }
+  finally { clearTimeout(timer); }
+}
+
 // M7 — when a backend is configured, create a real booking and use its reference.
 // Handles all three flows: single transfer, multi-stop trip, and shared seat.
 // Returns null only when no backend is configured (demo mode, default site behaviour);
@@ -1485,15 +1515,27 @@ async function createApiBooking(){
     };
   } else {
     endpoint = '/bookings/single';
+    const sFrom = state.locFrom || r.stops[0];
+    const sTo = state.locTo || r.stops[r.stops.length-1];
+    const sVeh = (vehicleKey==='van') ? 'van' : 'car';
+    // Lock the rate card for this transfer (best-effort; undefined → prices live). distanceKm is
+    // only the client's estimate — the booking re-resolves it server-side, and the lock captures
+    // the CARD regardless, so a rough/zero km here never affects what the customer is charged.
+    const sKm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(sFrom, sTo) || 0) : 0;
+    const sQuoteId = await ensureLockedQuoteId(API, {
+      product:'private', vehicle:sVeh, pax: state.ad + state.ch, bags: state.bags,
+      legs: [{ from: sFrom, to: sTo, distanceKm: sKm }]
+    });
     payload = {
-      from: state.locFrom || r.stops[0],
-      to: state.locTo || r.stops[r.stops.length-1],
+      from: sFrom,
+      to: sTo,
       date: (state.flexDate || !state.date) ? undefined : fmtISO(state.date),
       time: (state.flexTime || !state.dep) ? undefined : state.dep,
-      vehicleType: (vehicleKey==='van') ? 'van' : 'car',
+      vehicleType: sVeh,
       adults: state.ad, children: state.ch, bags: state.bags,
       customer,
       quotedTotal,
+      quoteId: sQuoteId,
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
       extras: state.addons.size ? Array.from(state.addons) : undefined
     };
