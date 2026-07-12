@@ -1328,7 +1328,7 @@ function openNewQuote(){
 function buildActivity(t,d){
   const acts=[];
   if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
-  (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push([`Payment · ${money({amount:p.amount,currency:p.currency})}`,'Payment received']);});
+  (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push(['Payment',`Received · ${money({amount:p.amount,currency:p.currency})}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
   t.notes.forEach(n=>acts.push(['Note',n]));
