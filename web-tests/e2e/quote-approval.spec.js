@@ -60,6 +60,14 @@ function fullQuote(over) {
       },
     },
     result: { totalCents: over.totalCents || 12100 },
+    // Phase 3b: the real GET /:id ships the quote priced against its locked card. Mirror that so
+    // reopening a ready/sent quote renders this frozen estimate instead of the live /estimate.
+    estimate: over.estimate || {
+      product: over.product || 'private',
+      total: { cents: over.totalCents || 12100, lkr: 'LKR ' + Math.round(((over.totalCents || 12100) / 100) * 330).toLocaleString() },
+      lineItems: [{ label: 'Colombo → Kandy (car)', amountCents: over.totalCents || 12100 }],
+      warnings: [],
+    },
   };
 }
 
@@ -136,7 +144,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents })));
     }
     return r.fulfill(json({}));
   });
@@ -293,6 +301,15 @@ test('Reopen to edit on a ready quote PATCHes to draft (no spurious /save 409 ab
   await actions(page).locator('[data-action="reopenToDraft"]').click();
   await expect(page.locator('.ch-status-pill')).toContainText('Draft', { timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'draft')).toBe(true);
+});
+
+// Phase 3b: opening a ready/sent quote must show the FROZEN price the server priced against the
+// locked card — not a live /estimate that may have drifted. Here GET /:id carries a locked $155
+// while the live /estimate stub returns $121; the builder must show $155.
+test('reopening a ready quote renders the frozen (locked) price, not a live /estimate', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'ready', totalCents: 15500 });
+  await expect(page.locator('.ch-total-usd')).toContainText('155');
+  await expect(page.locator('.ch-total-usd')).not.toContainText('121');
 });
 
 test('Send back opens an inline note composer and captures the note on the PATCH', async ({ page }) => {

@@ -912,4 +912,45 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     expect(asFinance.rateCardJson).toBeUndefined(); // stripped — it embeds cost/markup
     expect(asFinance.rateLockedUntil).toBeNull(); // the (non-sensitive) expiry stays
   });
+
+  // ── Rate-lock: GET /:id renders from the LOCKED card (Phase 3b) ─────────────
+  it('GET /:id ships a locked estimate consistent with the approved total', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    const beforeApproval = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(got.estimate).toBeTruthy();
+    // The shipped estimate matches the quote's own stored total — no live drift.
+    expect(got.estimate.total.cents).toBe(got.totalCents);
+    // Founder sees margin on the estimate; a draft is priced too (live card).
+    expect(got.estimate.margin).toBeTruthy();
+    expect(beforeApproval.estimate.total.cents).toBe(beforeApproval.totalCents);
+  });
+
+  it('the locked estimate omits margin for non-margin roles', async () => {
+    const app = createApp();
+    const q = await saveDraft(app);
+    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
+    expect(asFinance.estimate).toBeTruthy();
+    expect(asFinance.estimate.margin).toBeUndefined(); // shape() drops margin for non-margin:view
+  });
+
+  it('GET /:id prices a locked quote against its FROZEN snapshot, not the live card', async () => {
+    // Seed a quote whose snapshot is a cheaper car rate (20¢/km) than the live card, locked with
+    // no expiry (ops freeze). The estimate must re-price the stored engine request against THAT
+    // snapshot — proving a rate-card change under the hood can't move an approved quote's price.
+    const repo = new InMemoryQuoteRepo();
+    const engine = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'A', to: 'B', distanceKm: 200 }] };
+    const frozen = { ...RATE_CARD, version: 'frozen-cheap', perKmCents: { ...RATE_CARD.perKmCents, car: 20 } };
+    const saved = await repo.save({
+      product: 'private', vehicle: 'car', totalCents: 999999, currency: RATE_CARD.currency,
+      rateCardVersion: 'frozen-cheap', request: { tool: {}, engine }, result: {},
+      rateCardJson: frozen, rateLockedUntil: null,
+    });
+    const app = createApp({ quotes: repo });
+    const got = await (await getAs('f@x.com', app, `/admin/quote/${saved.id}`)).json();
+    expect(got.estimate.total.cents).toBe(4400); // 200km ×1.10 buffer ×20¢ — the frozen car rate
+  });
 });

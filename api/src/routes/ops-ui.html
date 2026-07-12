@@ -2253,7 +2253,12 @@ async function transition(toStatus, opts) {
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   if (opts.toast) showToast(opts.toast);
   if (opts.goQueue && window.opsGoQuotes) window.opsGoQuotes();
-  else render();
+  else {
+    render();
+    // Reopen-to-edit drops the rate lock server-side (spec 2026-07-11 §3); re-price live so the
+    // operator builds on the current card again instead of the just-shown frozen price.
+    if (toStatus === 'draft' || toStatus === 'pending_review' || toStatus === 'changes_requested') refreshEstimate();
+  }
 }
 
 function submitForReview() { transition('pending_review', { toast: 'Submitted for review', goQueue: true }); }
@@ -2321,8 +2326,16 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   _mapOpen = false;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
-  render();
-  refreshEstimate();
+  // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
+  // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
+  // since approval. Editable states still price live as the operator builds.
+  if ((q.status === 'ready' || q.status === 'sent') && q.estimate) {
+    lastEstimate = q.estimate;
+    render();
+  } else {
+    render();
+    refreshEstimate();
+  }
   showToast('Reopened ' + (q.reference || q.id));
 }
 

@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
+import { rateCardFor } from '../quote/rateLock';
 import type { QuoteRequest, QuoteResult } from '../quote/types';
-import type { ExtraCode, Vehicle } from '../quote/rateCard';
+import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
+import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -219,6 +221,25 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
     rest.result = safeResult;
   }
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
+}
+
+// Price a saved quote against the rate card it is LOCKED to (spec 2026-07-11 §3): the frozen
+// snapshot for a ready/sent quote, the live card otherwise. Reuses the stored engine request
+// (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
+// price, never a live recompute on a card that may have moved since. null for a legacy row that
+// predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnType<typeof shape> | null {
+  const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
+  if (!engineReq) return null;
+  const { rateCard } = rateCardFor(
+    { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
+    now,
+  );
+  try {
+    return shape(quote(engineReq, rateCard), canMargin);
+  } catch {
+    return null;
+  }
 }
 
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
@@ -435,7 +456,11 @@ export function internalQuoteRoutes(deps: {
     const q = await deps.quotes.get(c.req.param('id'));
     if (!q) return c.json({ error: 'not_found' }, 404);
     const canMargin = can(c.get('identity').role, 'margin:view');
-    return c.json(canMargin ? q : stripQuoteMargin(q));
+    // Ship the quote priced against its locked card so the tool renders the frozen (approved)
+    // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
+    const estimate = lockedEstimate(q, canMargin, new Date());
+    const view = canMargin ? q : stripQuoteMargin(q);
+    return c.json({ ...view, estimate });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
