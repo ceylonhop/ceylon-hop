@@ -384,7 +384,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <p class="bk-error full" id="bk-error" role="alert" hidden></p>
         <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
       </form>
-      <datalist id="lk-places"></datalist>
     </div>
     <figure class="hero-postcard" id="hero-postcard">
       <div class="pc-frame">
@@ -617,9 +616,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     attachLocalPlaceAutocomplete(from,{onInput:update});
     attachLocalPlaceAutocomplete(to,{onInput:update});
     // leave pick-up and drop-off empty on first paint — the traveler chooses both
-
-    // typeahead destinations for in-between stops
-    mountPlacesDatalist('lk-places', false);
 
     const odGroup=document.getElementById('od-group');
     const mids=document.getElementById('mid-stops');

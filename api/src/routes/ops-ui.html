@@ -1598,7 +1598,6 @@ if(devLoginForm)devLoginForm.addEventListener('submit',async e=>{
   }catch(_){errEl.textContent='Network error — try again';}
 });
 
-$('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
 document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);showLogin();}});
 
 /* Render the Google Sign-In button. The GIS script is `async defer`, so it may load

@@ -549,42 +549,12 @@ if(isTrip){
     // adds nothing here — slim this step to luggage + the capacity/van check.
     const adStep=document.getElementById('ad-step'); if(adStep) adStep.style.display='none';
     const chStep=document.getElementById('ch-step'); if(chStep) chStep.style.display='none';
+    // Vehicle & headcount are fixed in the planner for trips (car by default, auto-upgraded to a
+    // van when over capacity), so the standalone Travelers/vehicle panel is dropped below. The one
+    // live effect here is hiding the separate bag count on the summary — the chosen vehicle already
+    // implies its bag capacity.
     if(tvPanel){
-      const pax=state.ad+state.ch;
-      const h=tvPanel.querySelector('h2'); if(h) h.textContent='Your vehicle';
-      const bagCap=document.getElementById('bag-cap'); const bagStepper=bagCap?bagCap.closest('.stepper'):null; if(bagStepper) bagStepper.style.display='none';
-      // Offer BOTH vehicles here so travellers can switch car ⇄ van. A car seats 3, so it's
-      // only selectable when the group fits (4+ travellers ⇒ van only). Switching re-prices the trip.
-      const carSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m0 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m10 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m0 0v-4M7 17h.01M17 17h.01"/></svg>';
-      const vanSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14V7a2 2 0 0 1 2-2h9v9M14 9h3l3 3.5V14M3 14h17"/><circle cx="7" cy="17" r="1.6"/><circle cx="17" cy="17" r="1.6"/></svg>';
-      const tickSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>';
-      const vehChoose=document.createElement('div'); vehChoose.className='trip-veh-choose';
-      function vehOptHtml(key,label,cap,ico){
-        const disabled = key==='car' && pax>3;
-        return '<button type="button" class="tvc-opt'+(key===vehicleKey?' on':'')+'" data-veh="'+key+'"'+(disabled?' disabled':'')+'>'+
-          '<span class="tvc-ico">'+ico+'</span>'+
-          '<span class="tvc-tx"><b>'+label+'</b><small>'+(disabled?('Too small for '+pax+' travellers'):('Room for up to '+cap+' large bags'))+'</small></span>'+
-          '<span class="tvc-check">'+tickSvg+'</span></button>';
-      }
-      function paintVeh(){
-        vehChoose.innerHTML=vehOptHtml('car','AC car (up to 3)',3,carSvg)+vehOptHtml('van','AC van (up to 6)',6,vanSvg);
-        vehChoose.querySelectorAll('.tvc-opt').forEach(btn=>{
-          if(btn.disabled) return;
-          btn.addEventListener('click',()=>{
-            const key=btn.dataset.veh; if(key===vehicleKey) return;
-            vehicleKey=key;
-            vehicleLabel = key==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
-            maxBags=(VEH_CAP[key]||VEH_CAP.car).bags; vehPax=(VEH_CAP[key]||VEH_CAP.car).pax;
-            if(state.bags>maxBags) state.bags=maxBags;
-            const q=tripQuoteWithKms(key); tripLegs=q.legs; tripBase=q.total; unit=tripBase; r.price=tripBase;
-            paintVeh(); render();
-          });
-        });
-      }
-      paintVeh();
-      const subEl=tvPanel.querySelector('.sub'); if(subEl) subEl.after(vehChoose);
       const sb=document.getElementById('sum-bags'); if(sb && sb.closest('.s-row')) sb.closest('.s-row').style.display='none';
-      const sub=tvPanel.querySelector('.sub'); if(sub) sub.textContent=`You\u2019re all set for ${pax} traveller${pax>1?'s':''} \u2014 we send the vehicle you picked, with room for your bags.`;
     }
     // renumber panels into the journey: Service=3, Payment=4; park the dropped When + vehicle steps
     if(whenPanel){ whenPanel.dataset.panel='99'; whenPanel.classList.remove('active'); }
