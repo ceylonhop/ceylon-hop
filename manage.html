@@ -24,16 +24,25 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <style>
-  body{max-width:640px;margin:0 auto;padding:32px 18px;font-family:system-ui,sans-serif}
-  .card{border:1px solid #e8e3d4;border-radius:16px;padding:22px;margin-top:16px}
-  .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0ece1}
-  .ref{font-weight:700;font-size:1.3rem}
-  .muted{color:#6b645f}
+  /* On the brand design system — site.css supplies the body font (--body) + tokens. */
+  .mg-top{border-bottom:1px solid var(--line);background:var(--paper)}
+  .mg-brand{display:block;max-width:640px;margin:0 auto;padding:16px 18px;font-family:var(--display);font-weight:800;font-size:1.3rem;color:var(--accent-deep);text-decoration:none;letter-spacing:-.01em}
+  .mg-wrap{max-width:640px;margin:0 auto;padding:28px 18px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-top:16px;box-shadow:var(--shadow-s)}
+  .row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--cream-deep)}
+  .row:last-child{border-bottom:0}
+  .ref{font-family:var(--display);font-weight:800;font-size:1.4rem;color:var(--ink);line-height:1.1}
+  .muted{color:var(--ink-soft)}
   .err{text-align:center;padding:40px 16px}
+  .mg-wrap a,.err a{color:var(--accent-deep)}
+  .mg-foot{max-width:640px;margin:20px auto 44px;padding:0 18px;text-align:center;font-size:.85rem;color:var(--ink-soft)}
+  .mg-foot a{color:var(--accent-deep);text-decoration:none}
 </style>
 </head>
 <body>
-<div id="app"><p class="muted">Loading your booking…</p></div>
+<header class="mg-top"><a href="index.html" class="mg-brand">Ceylon Hop</a></header>
+<div class="mg-wrap"><div id="app"><p class="muted">Loading your booking…</p></div></div>
+<footer class="mg-foot"><a href="https://wa.me/94779669662">WhatsApp us</a> &middot; <a href="index.html">ceylonhop.com</a></footer>
 <script>
 (function(){
   var app = document.getElementById('app');
