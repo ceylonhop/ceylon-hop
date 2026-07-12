@@ -36,6 +36,13 @@ describe('POST /bookings/shared', () => {
     expect(res.status).toBe(400);
   });
 
+  it('400 for a malformed / non-calendar date (would otherwise bypass the past-date rule)', async () => {
+    // A non-ISO or impossible date is treated as "not past" by isPastIsoDate, so without
+    // schema-level ISO validation it slips through with a garbage departure date.
+    expect((await postShared(createApp(), { ...valid, date: '2026-13-45' })).status).toBe(400);
+    expect((await postShared(createApp(), { ...valid, date: 'tomorrow' })).status).toBe(400);
+  });
+
   it('resolves the corridor from from/to (what the website sends)', async () => {
     const app = createApp();
     const { corridorId: _omit, ...byRoute } = valid;

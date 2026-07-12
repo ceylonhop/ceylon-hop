@@ -52,4 +52,14 @@ export class PostgresPaymentRepo implements PaymentRepo {
     if (!row) throw new Error(`payment_not_found: ${id}`);
     return toPayment(row);
   }
+
+  async markFailed(id: string): Promise<Payment> {
+    const [row] = await this.db
+      .update(payments)
+      .set({ status: 'failed' })
+      .where(eq(payments.id, id))
+      .returning();
+    if (!row) throw new Error(`payment_not_found: ${id}`);
+    return toPayment(row);
+  }
 }

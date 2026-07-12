@@ -7,6 +7,7 @@ import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 
 const valid = {
   from: 'Colombo Airport',
@@ -64,6 +65,21 @@ describe('POST /webhooks/payments', () => {
     expect(res.status).toBe(200);
     const after = await bookings.get(b.id);
     expect(after!.status).toBe('paid');
+  });
+
+  it('marks the payment row failed on a non-success webhook (was left pending forever)', async () => {
+    const adapter = new FakePaymentAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, bookings, payments });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed' });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    const pay = await payments.findByOrderId(b.reference);
+    expect(pay!.status).toBe('failed'); // was 'pending' before the fix
+    // the booking itself is untouched — still awaiting a (re)payment
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
   });
 
   it('is idempotent — a duplicate webhook does not re-pay or re-email', async () => {

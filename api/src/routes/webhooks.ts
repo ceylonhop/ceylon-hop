@@ -75,7 +75,13 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, idempotent: true }, 200);
     }
 
-    if (event.status !== 'succeeded') return c.json({ ok: true, status: 'failed' }, 200);
+    // Non-success (PayHere cancel/fail) on a not-yet-settled payment: record the failure so
+    // the payment row doesn't sit at 'pending' forever. The booking stays payment_pending —
+    // the customer can retry — and the stale-hold sweep / watchdog handle abandonment.
+    if (event.status !== 'succeeded') {
+      await payments.markFailed(payment.id);
+      return c.json({ ok: true, status: 'failed' }, 200);
+    }
 
     await payments.markSucceeded(payment.id);
     const booking = await bookings.get(payment.bookingId);

@@ -22,6 +22,7 @@ export interface PaymentRepo {
   findByOrderId(orderId: string): Promise<Payment | null>;
   findByBookingId(bookingId: string): Promise<Payment[]>;
   markSucceeded(id: string): Promise<Payment>;
+  markFailed(id: string): Promise<Payment>;
 }
 
 export class InMemoryPaymentRepo implements PaymentRepo {
@@ -57,6 +58,14 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
     const updated: Payment = { ...p, status: 'succeeded' };
+    this.byId.set(id, updated);
+    return updated;
+  }
+
+  async markFailed(id: string): Promise<Payment> {
+    const p = this.byId.get(id);
+    if (!p) throw new Error(`payment_not_found: ${id}`);
+    const updated: Payment = { ...p, status: 'failed' };
     this.byId.set(id, updated);
     return updated;
   }
