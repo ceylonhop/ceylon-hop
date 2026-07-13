@@ -10,6 +10,7 @@ describe('canTransition (quote review lifecycle)', () => {
     expect(canTransition('changes_requested', 'pending_review')).toBe(true);
     expect(canTransition('ready', 'sent')).toBe(true);
     expect(canTransition('ready', 'draft')).toBe(true); // reopen to edit
+    expect(canTransition('sent', 'draft')).toBe(true);  // reopen a sent quote to edit (founder-gated at the route)
   });
   it('rejects skipping the review gate', () => {
     expect(canTransition('draft', 'sent')).toBe(false);

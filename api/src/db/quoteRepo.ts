@@ -14,7 +14,7 @@ const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
   changes_requested: ['pending_review', 'ready', 'draft'],
   pending_review:    ['ready', 'changes_requested', 'draft'],
   ready:             ['sent', 'draft'],
-  sent:              [],
+  sent:              ['draft'], // reopen-to-edit a sent quote (founder-gated in the route)
   won:               [],
   lost:              [],
   expired:           [],

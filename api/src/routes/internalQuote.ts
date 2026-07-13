@@ -490,7 +490,11 @@ export function internalQuoteRoutes(deps: {
       if (!current) return c.json({ error: 'not_found' }, 404);
       const to = body.status as QuoteStatus;
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
-      if ((to === 'ready' || to === 'changes_requested') && !can(c.get('identity').role, 'quote:approve')) {
+      const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
+      // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
+      // customer for changes, so it needs the same approval authority as sending it did.
+      const reopeningSent = current.status === 'sent' && EDITABLE.includes(to);
+      if ((to === 'ready' || to === 'changes_requested' || reopeningSent) && !can(c.get('identity').role, 'quote:approve')) {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
       if (to === 'ready') {
@@ -499,8 +503,8 @@ export function internalQuoteRoutes(deps: {
         // deploy, so the current card is the one that produced this price. When the deferred founder
         // rate-card API lands (design doc §9), approval should re-price from this snapshot.
         rateLock = { rateCardJson: RATE_CARD, rateLockedUntil: null };
-      } else if (current.status === 'ready' && (['draft', 'pending_review', 'changes_requested'] as QuoteStatus[]).includes(to)) {
-        rateLock = null; // reopen-to-edit unlocks; sending (ready → sent) keeps the lock
+      } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
+        rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
       }
     }
     const updated = await deps.quotes.patch(c.req.param('id'), {
