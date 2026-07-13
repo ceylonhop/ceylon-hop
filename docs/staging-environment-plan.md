@@ -87,19 +87,38 @@ real secret values.
 - Any hard-coded prod URLs (canonical/OG) are irrelevant on staging but must not be indexed →
   `noindex` the staged site.
 
-## 6. Migration discipline (the hard operational cost)
+## 6. Drift & correctness guards (automated — required, not aspirational)
 
-A second database **doubles** the manual-migration surface, and migrations are **not** applied
-automatically (this is what caused the 0013/0014 prod incident — see the go-live checklist).
-Owning this is the price of a second environment, and done right it turns staging into the
-thing that *catches* migration problems:
+A second environment must *reduce* risk, not add a manual chore that becomes a new source of
+drift. So these guards are **required and automated** — each replaces a "remember to do X" with
+a check that fails loudly. (The 0013/0014 prod incident was a *manual* migration miss; a second
+DB doubles that surface, so manual discipline is explicitly **not** an acceptable control here.)
 
-- **Rule: every migration runs on staging first**, is verified, then runs on prod. Staging is
-  the migration dry-run.
-- **During a promotion (Flavor B): migrations run BEFORE the code that needs them.** Order:
-  `migrate prod DB → deploy prod code`. Never ship code that reads a column the DB lacks.
-- **Track which migration each environment is at** (a short log in this doc or the runbook), so
-  staging and prod never silently diverge.
+- **G1 — Schema can't drift (automated).** Either run `drizzle-kit migrate` automatically on
+  every deploy (staging + prod, via a Render pre-deploy hook), **or** add a CI check that
+  asserts the target DB's applied-migration set equals the repo's migration files and **blocks
+  the deploy** if not. Staging migrates first, prod follows. This *deletes* the manual "run it
+  on both" step rather than documenting it.
+- **G2 — Migrations run before the code that needs them.** Bake the order into the deploy
+  itself (`migrate → then deploy code`) so it can't happen out of order — the exact fault behind
+  the 0013/0014 500s. Never ship code that reads a column the DB lacks.
+- **G3 — Config can't silently diverge.** `render.yaml` is the reviewed source of truth for
+  every **non-secret** env var (config-as-code). Secrets live only in the dashboard, but
+  `config.ts` already **fails closed** at boot on missing/default secrets — keep that as the
+  presence check. A short "env parity" list in the runbook covers the dashboard-only values.
+- **G4 — "It works" is proven by tests, not eyeballs.** CI runs the full suite — `api npm run
+  check` + `web-tests` (Vitest) + a Playwright e2e against the staged stack — and a **green run
+  is the promotion gate**: nothing reaches prod unless it passed on staging. No manual
+  click-through substitutes for this.
+- **G5 — Every deploy self-verifies (smoke).** A tiny post-deploy smoke script hits
+  `/health/deep` (DB connectivity) then creates + reads back a quote (write path), and **fails
+  the deploy** if either breaks — so a broken deploy is caught in seconds, automatically, on
+  both environments.
+
+**Keep the machinery small.** Fewer moving parts = fewer bugs. Prefer Render's built-in
+pre-deploy/migrate hooks and (if it fits) preview environments or promote-a-known-commit over a
+hand-rolled `production` branch — evaluate at M4. The guards above matter more than the branch
+mechanics, and they are what actually make this plan *reduce* risk rather than add it.
 
 ## 7. Two flavors — sandbox vs gate (be honest about which)
 
@@ -130,20 +149,25 @@ built before staging delivers real value? This gates how useful M1–M2 actually
 Each has an owner split (repo = can be prepped ahead; dashboard = your accounts) and an exit
 criterion.
 
-### M0 — Repo prep (no live infra)
+### M0 — Repo prep + the guards (no live infra)
 - `npm run seed` (`api/`) → runs `seedCorridors()` for a fresh staging DB.
-- `render.yaml` blueprint (config-as-code; **no secrets in the file** — those go in Render).
-- Front-end **env switch** for `CEYLON_HOP_API` + analytics-off + beacon target (so a staged
-  build points at staging cleanly).
-- Runbook + a migration-state log.
-- **Exit:** everything to stand up staging exists in the repo; nothing live touched.
+- `render.yaml` blueprint (config-as-code; **no secrets in the file** — those go in Render) — **G3**.
+- **Pre-deploy migrate hook** so every deploy migrates before it serves — **G1 + G2**.
+- **CI wiring:** `api` check + `web-tests` + a Playwright e2e against staging, gating promotion — **G4**.
+- **Smoke script** (`/health/deep` → create+read a quote) run post-deploy — **G5**.
+- Front-end **env switch** for `CEYLON_HOP_API` + analytics-off + beacon target (staged build
+  points at staging cleanly).
+- Runbook + migration-state note.
+- **Exit:** all of the above exist in the repo and pass in CI; nothing live touched. The guards
+  are in place *before* any environment is stood up.
 
 ### M1 — Staging DB + API/`ops` (Goal A / Flavor A)
-- Create staging Supabase; `DATABASE_URL=<staging> npm run migrate` then `npm run seed`.
+- Create staging Supabase; the migrate hook (G1/G2) applies schema on first deploy; `npm run seed`.
 - 2nd Render service, staging env (§5) incl. **its own Sentry + beacon isolation**.
 - Team uses the raw `.onrender.com/ops` at first; deploys from `main`.
-- **Exit:** staff quote on staging; a spot-check confirms **nothing** reached the prod DB, prod
-  Sentry, or prod analytics.
+- **Exit:** the **smoke (G5) is green** and migrations were applied by the hook (not by hand);
+  staff quote on staging; a spot-check confirms **nothing** reached the prod DB, prod Sentry, or
+  prod analytics.
 
 ### M2 — Staged customer site (full-stack)
 - Deploy the front-end to a staging URL, `CEYLON_HOP_API` → staging API, analytics off, beacon
@@ -158,10 +182,11 @@ criterion.
 
 ### M4 — Code gate (Flavor B / Goal B)
 - Introduce a `production` branch or release tags: `main` → staging (auto), promote → prod.
-- Document the **promotion runbook**: migrate prod → deploy prod → verify; and a **rollback**
-  path (revert the prod branch / redeploy the prior release).
-- **Exit:** a change demonstrably flows `main` → staging → (verify) → production, migrations
-  first.
+- **The gate is automated:** promotion is allowed only when **G4 is green on staging** and runs
+  **G2** ordering (migrate → deploy). Add a **rollback** path (revert the prod branch / redeploy
+  the prior release).
+- **Exit:** a change demonstrably flows `main` → staging → (CI green) → production, migrations
+  first, with a tested rollback.
 
 ### M5 — Fold into go-live
 - Keep staging as the standing pre-prod gate; it validates the same env/config switches the
@@ -174,7 +199,9 @@ criterion.
   **pauses**. For an environment the team uses *daily*, budget for a paid tier or accept the
   cold starts — "free is fine" was optimistic.
 - **Payment-collection blocker** (§8) — resolve before assuming staging is "end to end."
-- **Migration sync is a standing manual cost** (§6).
+- **Migration sync is automated** by G1/G2 (§6); the residual cost is reviewing migrations in
+  PRs, not running them by hand. If you *don't* build G1/G2, do not build staging — the manual
+  version reintroduces the 0013/0014 failure at double the surface.
 - **Verify the actual Render auto-deploy branch** before Flavor B — don't assume `main` is wired
   the way you think.
 - **Subdomain names** — `ops-staging` / `staging` vs alternatives.
