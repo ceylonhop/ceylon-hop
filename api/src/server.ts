@@ -1,4 +1,6 @@
 import { serve } from '@hono/node-server';
+import { fileURLToPath } from 'node:url';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { config } from './config';
 import { createApp } from './app';
 import { createDb } from './db/client';
@@ -49,6 +51,19 @@ const email = config.RESEND_API_KEY
   : new FakeEmailAdapter();
 
 const { db, sql } = createDb(config.DATABASE_URL);
+
+// Apply pending DB migrations before serving, so deployed code never ships ahead of the
+// schema (the quote 500s of 2026-07-12, when 0014's columns were missing). Runs
+// automatically on Render (which sets RENDER=true) and any env with RUN_MIGRATIONS=1;
+// fail-closed — a migration error aborts boot rather than serving a half-migrated DB, so
+// Render keeps the previous version live. Local dev keeps manual control (`npm run migrate`).
+if (process.env.RENDER || process.env.RUN_MIGRATIONS === '1') {
+  const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
+  console.log(`Applying database migrations from ${migrationsFolder} …`);
+  await migrate(db, { migrationsFolder });
+  console.log('Database migrations up to date.');
+}
+
 await seedCorridors(sql);
 
 // M17 — error tracking (dormant without SENTRY_DSN) + throttled ops alerts. Email-only
