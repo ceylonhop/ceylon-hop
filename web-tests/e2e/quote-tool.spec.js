@@ -61,6 +61,12 @@ async function fillFirstLegDate(page, iso) {
   await page.locator('input[type="date"][data-field="date"]').first().fill(iso);
 }
 
+async function fillCustomerName(page, fullName) {
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  await page.fill('#f-firstName', parts.shift() || 'Test');
+  await page.fill('#f-lastName', parts.join(' ') || 'Customer');
+}
+
 // Fix 1: there is no default vehicle anymore — ops must choose one before any
 // estimate is priced. Every spec that expects a priced summary must call this
 // right after opening the quote view.
@@ -80,7 +86,7 @@ test.beforeEach(async ({ page }) => {
   // so every spec's leg interactions have rows to work with. Specs that need another tier call
   // chooseVehicle again.
   await chooseVehicle(page, 'car');
-  await page.fill('#f-customerName', 'Test Customer');
+  await fillCustomerName(page, 'Test Customer');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 });
@@ -110,8 +116,7 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
 
   // Fill customer name — text fields only update state on 'input' (no
   // change→render race with the Save action), so no Tab/blur workaround is needed.
-  const nameInput = page.locator('#f-customerName');
-  await nameInput.fill('E2E Port');
+  await fillCustomerName(page, 'E2E Port');
 
   // Save via the action-bar button. The old standalone-builder #btnSave header button was
   // retired when the builder merged into the ops shell; Save is now a `.ch-btn` in the
@@ -245,7 +250,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   // saves, PATCHes status→ready, and bounces to the Quotes queue — then reopen the quote from
   // the queue (which re-prices it) and read the now-unlocked message.
   const custName = 'E2E Stay ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="approveReady"]').click();
 
   // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
@@ -351,7 +356,7 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
 
   // Unique customer name so we can find the row unambiguously
   const custName = 'E2E Status ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
 
   // Founder self-approves the draft in one hop: approveReady() saves, PATCHes status→ready,
   // and navigates back to the queue.
@@ -377,7 +382,7 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   const custName = 'E2E Reopen ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
@@ -386,7 +391,8 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   // confirm fires because the save above cleared the dirty flag.
   await page.locator('#nav button[data-route="quotes"]').click();
   await page.locator('#view [data-qnew]').click();
-  await expect(page.locator('#f-customerName')).toHaveValue('');
+  await expect(page.locator('#f-firstName')).toHaveValue('');
+  await expect(page.locator('#f-lastName')).toHaveValue('');
 
   // Back to the queue and click this quote's row to reopen it.
   await page.locator('#nav button[data-route="quotes"]').click();
@@ -395,7 +401,8 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await row.click();
 
   await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
-  await expect(page.locator('#f-customerName')).toHaveValue(custName);
+  await expect(page.locator('#f-firstName')).toHaveValue('E2E');
+  await expect(page.locator('#f-lastName')).toHaveValue(custName.replace(/^E2E\s+/, ''));
 });
 
 // Spec 6 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
@@ -436,7 +443,7 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
   await fillFirstLegDate(page, '2026-08-01');
 
   const custName = 'E2E Age ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
@@ -463,7 +470,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
   const custName = 'E2E Reprice ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 

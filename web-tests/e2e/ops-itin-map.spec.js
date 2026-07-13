@@ -45,7 +45,8 @@ async function buildRoute(page) {
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
   await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });

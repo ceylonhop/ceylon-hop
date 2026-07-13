@@ -42,6 +42,10 @@ const ToolLegSchema = z.object({
   addSafariWait: z.boolean().optional(),
 });
 const ToolRequestSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  // Legacy ops-tool payloads used a single name. Keep accepting it so old clients/tests
+  // and saved request.tool snapshots remain reopenable.
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
@@ -58,6 +62,14 @@ const ToolRequestSchema = z.object({
 });
 type ToolLeg = z.infer<typeof ToolLegSchema>;
 type ToolRequest = z.infer<typeof ToolRequestSchema>;
+
+function customerNameFor(body: ToolRequest): string | null {
+  const splitName = [body.firstName, body.lastName]
+    .map((s) => (s || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  return splitName || (body.name || '').trim() || null;
+}
 
 // Thrown by resolveAndPrice so the route can map it to the right HTTP status.
 class PriceError extends Error {
@@ -394,7 +406,7 @@ export function internalQuoteRoutes(deps: {
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
-        customerName: body.name ?? null,
+        customerName: customerNameFor(body),
         customerContact: body.contact ?? null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,

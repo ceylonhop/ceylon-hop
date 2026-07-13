@@ -126,7 +126,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save persists a priced quote and returns a Q- reference; total matches /estimate', async () => {
     const app = createApp();
-    const bodyReq = { name: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
+    const bodyReq = { firstName: 'Maya', lastName: 'Silva', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
     const est = await (await post(app, '/admin/quote/estimate', bodyReq)).json();
     const res = await post(app, '/admin/quote/save', bodyReq);
     expect(res.status).toBe(201);
@@ -135,7 +135,9 @@ describe('internal quoting tool route', () => {
     expect(saved.status).toBe('draft');
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
-    expect(got.customerName).toBe('Maya');
+    expect(got.customerName).toBe('Maya Silva');
+    expect(got.request.tool.firstName).toBe('Maya');
+    expect(got.request.tool.lastName).toBe('Silva');
     expect(got.rateCardVersion).toBe('2026-07-11');
   });
 

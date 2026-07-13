@@ -15,7 +15,8 @@ async function openQuote(page) {
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   // The itinerary is gated until the trip basics are filled — set vehicle + name + contact.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Test');
+  await page.fill('#f-firstName', 'Test');
+  await page.fill('#f-lastName', 'Customer');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
   await page.waitForSelector('.ch-leg-date input[type="date"]', { timeout: 10000 });
