@@ -1,146 +1,194 @@
 # Ceylon Hop — Staging Environment: Spec & Phased Rollout
 
-**Status: PLANNED — recorded 2026-07-13. Not started.** Owner reference for standing up a
-truly isolated staging environment so the team can start using the ops/quoting tool ahead of
-the customer-site launch, with a path toward using it as a pre-production gate. Read alongside
-the [go-live checklist](./go-live-checklist.md) — staging is essentially a dry run of the
+**Status: PLANNED — recorded 2026-07-13 (rewritten to be full-stack + honest about the
+sandbox-vs-gate distinction). Not started.** Owner reference for standing up an isolated
+staging environment covering **both** the customer site and the ops/quoting tool. Read
+alongside the [go-live checklist](./go-live-checklist.md) — staging is the dry run of the
 go-live config.
 
 ---
 
-## 1. Why
+## 1. Name the two goals — they need different solutions
 
-`ceylonhop.com` is today a **live WordPress site** taking real bookings and payments. We are
-rebuilding both the customer site and the ops/quoting tool (the new stack lives in this repo:
-Hono API + `/ops` dashboard on Render, static site on GitHub Pages).
+"Staging" is doing double duty here, and the two jobs are not the same:
 
-The immediate need: **let the team start generating quotes in the new quoting tool now**,
-before the customer site cuts over to the apex — with **zero risk** to the live WordPress site
-and **zero risk** to real production data. The team needs somewhere they can work (and break
-things) freely.
+- **Goal A — early team access (a sandbox).** Let the team start quoting *now*, before the
+  customer site launches, with zero risk to real data. Needs only **data isolation**.
+- **Goal B — a pre-production gate.** Validate new code, config, and DB migrations on a
+  staging copy *before* real customers hit them. Needs a **code gate** where changes land on
+  staging first and are promoted to prod deliberately.
 
-The answer is a **truly separate staging environment**: its own database, its own API/ops
-service, its own URL. Same code, isolated everything else.
+**"Staging before production deploy" = Goal B.** The team-quoting need = Goal A. They are
+different problems: Goal A is solved by a second isolated deployment; Goal B additionally
+requires a promotion flow. This plan delivers **A first** (fast, unblocks the team) and **B
+later** (the real gate), and is explicit that **A alone is a sandbox, not a gate.**
 
-## 2. Isolation guarantees (non-negotiable)
+## 2. Scope — both apps, one staging DB
 
-Staging must be incapable of touching production or real customers:
+This is a **full-stack** staging environment. Three tiers, isolated as a set:
 
-1. **Separate database** — its own Supabase project. Staging can never read or write prod data.
-2. **Sandbox PayHere** — `PAYHERE_MODE=sandbox`; no real card is ever charged.
-3. **No real email** — no `RESEND_API_KEY` (uses the fake email adapter), or a test sender; a
-   staging run never emails a real customer.
-4. **Own secrets** — its own `OPS_SESSION_SECRET` / `BOOKING_LINK_SECRET` / `ADMIN_API_KEY`, so
-   a staging session/link can't be replayed against production and vice versa.
-5. **No apex impact** — staging is a subdomain (or a raw `.onrender.com` URL). Subdomain DNS is
-   independent of the apex, so the live WordPress site is never touched.
+1. **Customer website** (static front-end) — staged front-end pointing at the staging API.
+2. **API + `/ops` dashboard** (Hono on Render) — staging service pointing at the staging DB.
+3. **Database** (Supabase) — one staging project shared by both.
 
-## 3. Architecture
+A test booking must flow **staging-site → staging-API → staging-DB → staging `/ops`**, entirely
+on throwaway data.
 
-| Component | Production | Staging (new) |
-|-----------|-----------|---------------|
-| Database | Supabase prod project | **New Supabase project** (own connection string + backups) |
-| API + `/ops` service | `ceylon-hop-api` on Render | **2nd Render web service**, same repo, pointed at the staging DB |
-| Ops URL | `ceylon-hop-api.onrender.com/ops` (→ apex later) | `ops-staging.ceylonhop.com/ops` (or the raw `.onrender.com/ops`) |
-| Customer site | GitHub Pages (apex at cutover) | Optional/later — a preview deploy or a second Pages branch (not needed for quoting) |
-| What differs | — | **Only the env vars.** Same code. |
+## 3. Isolation guarantees — the complete list (including third parties)
 
-The whole separation is in the environment variables — the code is identical.
+Data isolation alone is not enough; the shared third-party sinks leak if unmanaged.
 
-## 4. Environment-variable matrix
+| Concern | Guarantee |
+|---------|-----------|
+| **Database** | Own Supabase project — staging can't read/write prod data. |
+| **Payments** | `PAYHERE_MODE=sandbox` — no real card ever charged. |
+| **Email** | No `RESEND_API_KEY` (fake adapter) or a test sender — never emails a real customer. |
+| **Sessions/links** | Own `OPS_SESSION_SECRET` / `BOOKING_LINK_SECRET` / `ADMIN_API_KEY` — can't cross to prod. |
+| **Apex** | Subdomain-only DNS — the live WordPress apex is never touched. |
+| **Error beacon** | The front-end + ops error beacons must point at the **staging API** (`window.CEYLON_HOP_API` = staging), NOT prod — otherwise staging errors flood **prod Sentry** (exactly the bug the e2e tests caused). |
+| **Analytics** | GTM/GA4/Clarity **off** on the staged site (or a separate GA property) — staging traffic must not pollute prod analytics. |
+| **Maps key** | Prefer a **separate** browser Maps key restricted to the staging origins; at minimum know that a shared key bills the same Google account and burns the same quota. |
+| **Observability** | Staging gets its **own** Sentry env + alert inbox, **on** (not off) — the point of a gate is that staging failures are *visible*. |
 
-| Variable | Production (at launch) | Staging |
-|----------|------------------------|---------|
-| `DATABASE_URL` | prod Supabase (rotated) | **staging Supabase** ← the isolation |
-| `PAYHERE_MODE` + creds | `live` + live merchant | `sandbox` + sandbox creds |
-| `RESEND_API_KEY` | set (real sender) | **unset** (fake adapter) or test sender |
-| `EMAIL_FROM` | verified domain sender | `onboarding@resend.dev` (test) |
-| `OPS_SESSION_SECRET` | strong, unique | **strong, unique, different** |
-| `BOOKING_LINK_SECRET` | strong, unique | **strong, unique, different** |
-| `ADMIN_API_KEY` | strong (cron/jobs) | strong, different |
-| `OPS_USERS` | the 3 staff | same staff (they sign in on both) |
-| `GOOGLE_OAUTH_CLIENT_ID` | prod OAuth client | same client — **add the staging origin** to its authorized JS origins |
-| `ALLOWED_ORIGINS` | apex | staging origin(s) |
-| `APP_BASE_URL` | `https://ceylonhop.com` | the staging ops URL |
-| `ALERT_EMAIL` / `SENTRY_DSN` | prod values | optional (a test inbox / separate Sentry env, or leave off) |
+## 4. Architecture
 
-Note the code **fails closed** in production on defaulted `OPS_SESSION_SECRET` /
-`BOOKING_LINK_SECRET` (`config.ts`), so staging must still set real secret values.
+| Tier | Production | Staging |
+|------|-----------|---------|
+| Database | prod Supabase | **staging Supabase project** |
+| API + `/ops` | `ceylon-hop-api` on Render → prod DB | **2nd Render service** → staging DB |
+| Customer site | GitHub Pages (apex at cutover) | **staged front-end** (`staging` branch on Pages, or Cloudflare/Render static) → staging API |
+| Ops URL | onrender.com/ops (→ apex) | `ops-staging.ceylonhop.com/ops` |
+| Site URL | apex | `staging.ceylonhop.com` |
+| Maps key / analytics / beacon / Sentry | prod-scoped | **staging-scoped** (see §3) |
 
-## 5. Two flavors of staging — pick per phase
+The code is identical across environments — the whole separation lives in env/config.
 
-- **Flavor A — data isolation only (simplest):** the staging service deploys from **`main`**,
-  same code as production, just a different DB. Unblocks the team immediately. It is *not* a
-  "test new code before customers" gate — staging always has the same code as prod.
-- **Flavor B — data isolation + code gate:** `main` → **staging** auto-deploys; production
-  deploys only from a **`production` branch** (or a release tag) you promote to once staging
-  looks good. This is the real "staging before prod" flow, but it changes how prod deploys
-  (today `main` is prod for both the API and Pages).
+## 5. Env / config matrix
 
-**Recommendation:** start with **A** now (immediate, minimal change), move to **B** as the
-customer-site apex cutover approaches and a code gate actually earns its keep.
+**API + `/ops` service (Render):**
 
-## 6. Phased milestones
+| Variable | Production | Staging |
+|----------|-----------|---------|
+| `DATABASE_URL` | prod Supabase (rotated) | **staging Supabase** ← the core isolation |
+| `PAYHERE_MODE` + creds | `live` + live | `sandbox` + sandbox |
+| `RESEND_API_KEY` / `EMAIL_FROM` | real | unset (fake) / test sender |
+| `OPS_SESSION_SECRET` / `BOOKING_LINK_SECRET` / `ADMIN_API_KEY` | strong, unique | strong, unique, **different** |
+| `OPS_USERS` / `GOOGLE_OAUTH_CLIENT_ID` | 3 staff / prod client | same staff / same client + **staging origin added** |
+| `ALLOWED_ORIGINS` / `APP_BASE_URL` | apex | staging origins / staging URL |
+| `SENTRY_DSN` / `ALERT_EMAIL` | prod | **staging env DSN / test inbox (on)** |
 
-### M0 — Prep (repo work only; no live infra)
-- Add an `npm run seed` script (`api/`) that runs the existing `seedCorridors()` so a fresh
-  staging DB gets the 6 shared corridors. (No seed CLI exists today.)
-- Optional: a `render.yaml` blueprint so the staging service is reproducible config-as-code.
-- Write the exact env-var checklist + step-by-step runbook (Supabase → migrate/seed → Render →
-  DNS → OAuth).
-- **Exit:** everything needed to stand up staging exists in the repo; nothing touched live.
+Note: `config.ts` **fails closed** in production on defaulted secrets, so staging must still set
+real secret values.
 
-### M1 — Stand up staging (data-isolated; Flavor A)
-- Create the staging Supabase project; capture its `DATABASE_URL`.
-- `cd api && DATABASE_URL=<staging> npm run migrate` then `npm run seed` (corridors).
-- Create the 2nd Render web service from the repo, root `api`, staging env vars (§4).
-- Team uses the raw `.onrender.com/ops` URL for now; deploys from `main`.
-- **Exit:** staff can sign in, generate + send a quote on staging, and a spot-check confirms
-  **nothing** landed in the prod DB. Break-freely environment is live.
+**Customer site (front-end config, at build/deploy):**
 
-### M2 — Branded subdomain + polish
-- Add `ops-staging.ceylonhop.com` as a custom domain on the staging Render service (auto-TLS).
-- Cloudflare: add the `ops-staging` CNAME → Render's target.
-- Google Cloud: add `https://ops-staging.ceylonhop.com` to the OAuth client's authorized JS
-  origins.
-- Optional: redirect the subdomain root (`/`) → `/ops` for a clean URL.
-- **Exit:** team uses `ops-staging.ceylonhop.com/ops`; the live WordPress apex is untouched.
+- `window.CEYLON_HOP_API` → **staging API** (so bookings + error beacons hit staging).
+- Analytics (GTM) → disabled or a staging GA property.
+- Any hard-coded prod URLs (canonical/OG) are irrelevant on staging but must not be indexed →
+  `noindex` the staged site.
 
-### M3 — Code gate / promotion flow (Flavor B) — when a gate is worth it
-- Introduce a `production` branch (or release tags): `main` → staging (auto), promote →
-  production (manual/merge).
-- Document the promotion runbook (verify on staging → promote → verify on prod).
-- **Exit:** a change demonstrably flows `main` → staging → (verify) → production.
+## 6. Migration discipline (the hard operational cost)
 
-### M4 — Fold into go-live
-- At the customer-site apex cutover, keep staging as the standing pre-prod gate.
-- Cross-reference the [go-live checklist](./go-live-checklist.md): staging validates the same
-  env/config switches before they hit real customers.
-- **Exit:** go-live uses staging as the dry run.
+A second database **doubles** the manual-migration surface, and migrations are **not** applied
+automatically (this is what caused the 0013/0014 prod incident — see the go-live checklist).
+Owning this is the price of a second environment, and done right it turns staging into the
+thing that *catches* migration problems:
 
-## 7. Repo work vs. dashboard work
+- **Rule: every migration runs on staging first**, is verified, then runs on prod. Staging is
+  the migration dry-run.
+- **During a promotion (Flavor B): migrations run BEFORE the code that needs them.** Order:
+  `migrate prod DB → deploy prod code`. Never ship code that reads a column the DB lacks.
+- **Track which migration each environment is at** (a short log in this doc or the runbook), so
+  staging and prod never silently diverge.
 
-- **Repo (can be prepared ahead — my side):** the `seed` script, `render.yaml`, the runbook,
-  the env-var checklist, and (for Flavor B) the branch/promote wiring docs.
-- **Dashboards (owner action, needs your accounts):** create the Supabase project, create the
-  Render service, add the DNS record, add the OAuth origin. Cloud accounts/services can't be
-  created from the repo.
+## 7. Two flavors — sandbox vs gate (be honest about which)
 
-## 8. Open decisions (resolve when picking this up)
+- **Flavor A — data-isolated sandbox (Goal A).** Staging deploys from `main`, **same code as
+  prod**, different DB + isolated third parties. Unblocks the team immediately. It does **not**
+  gate code — staging always mirrors prod.
+- **Flavor B — pre-prod code gate (Goal B).** `main` → **staging** auto-deploys; **production
+  deploys only from a `production` branch (or release tag)** you promote to once staging looks
+  good, following the migration-ordering + rollback discipline. *This* is "staging before
+  production deploy."
 
-- **Flavor A vs B, and when** to move A → B (recommendation: A now, B near apex cutover).
-- **Subdomain name:** `ops-staging.ceylonhop.com` vs `staging-ops…` vs `ops.staging…`.
-- **Customer-site staging:** do we also want a staged front-end (preview deploy / second Pages
-  branch), or is ops-only staging enough for now? (Quoting needs only the API + `/ops`.)
-- **Seed data:** corridors are required; do we also want a few demo bookings/quotes for staff
-  training on staging?
-- **Tier/cost:** free Supabase + Render tiers (they sleep / have limits) vs paid for a snappier
-  staging. Free is fine to start.
-- **Payment-collection dependency (important):** quoting works fully on staging today, but
-  turning a quote into a *paid* booking still needs the payment path — the customer site on the
-  apex (PayHere) or the WhatsApp payment-link tool (unbuilt). Staging quoting is live before
-  payment *collection* is.
+**Recommendation:** **A now** (fast, unblocks quoting), **B before the customer-site apex
+cutover** (when a gate earns its keep). Do not mistake A for a gate.
+
+## 8. Blocking dependency: payment collection (not a footnote)
+
+Quoting works fully on staging. **Turning a quote into a *paid* booking does not** — it needs
+the payment path, which is either the customer site on the apex (PayHere is **apex-only**) or
+the **WhatsApp payment-link tool that isn't built yet**. So on staging the team can do the whole
+quote lifecycle **except collect payment**.
+
+**Decision to make up front:** is quote-only enough for the team's early use (they quote + send;
+payment handled however it is today on WordPress), or does the payment-link tool need to be
+built before staging delivers real value? This gates how useful M1–M2 actually are.
+
+## 9. Milestones
+
+Each has an owner split (repo = can be prepped ahead; dashboard = your accounts) and an exit
+criterion.
+
+### M0 — Repo prep (no live infra)
+- `npm run seed` (`api/`) → runs `seedCorridors()` for a fresh staging DB.
+- `render.yaml` blueprint (config-as-code; **no secrets in the file** — those go in Render).
+- Front-end **env switch** for `CEYLON_HOP_API` + analytics-off + beacon target (so a staged
+  build points at staging cleanly).
+- Runbook + a migration-state log.
+- **Exit:** everything to stand up staging exists in the repo; nothing live touched.
+
+### M1 — Staging DB + API/`ops` (Goal A / Flavor A)
+- Create staging Supabase; `DATABASE_URL=<staging> npm run migrate` then `npm run seed`.
+- 2nd Render service, staging env (§5) incl. **its own Sentry + beacon isolation**.
+- Team uses the raw `.onrender.com/ops` at first; deploys from `main`.
+- **Exit:** staff quote on staging; a spot-check confirms **nothing** reached the prod DB, prod
+  Sentry, or prod analytics.
+
+### M2 — Staged customer site (full-stack)
+- Deploy the front-end to a staging URL, `CEYLON_HOP_API` → staging API, analytics off, beacon
+  → staging, `noindex`.
+- **Exit:** a test booking flows staged-site → staging-API → staging-DB → appears in staging
+  `/ops`. (Payment step blocked per §8 — that's expected.)
+
+### M3 — Branded subdomains + OAuth
+- `ops-staging.ceylonhop.com` + `staging.ceylonhop.com` custom domains (auto-TLS), Cloudflare
+  CNAMEs, and the staging origins added to the Google OAuth client.
+- **Exit:** team uses branded URLs; apex untouched.
+
+### M4 — Code gate (Flavor B / Goal B)
+- Introduce a `production` branch or release tags: `main` → staging (auto), promote → prod.
+- Document the **promotion runbook**: migrate prod → deploy prod → verify; and a **rollback**
+  path (revert the prod branch / redeploy the prior release).
+- **Exit:** a change demonstrably flows `main` → staging → (verify) → production, migrations
+  first.
+
+### M5 — Fold into go-live
+- Keep staging as the standing pre-prod gate; it validates the same env/config switches the
+  go-live checklist flips before real customers see them.
+- **Exit:** go-live uses staging as its dry run.
+
+## 10. Realities & open decisions (own these when picking it up)
+
+- **Free-tier reality:** free Render **sleeps** (15-min cold starts) and free Supabase
+  **pauses**. For an environment the team uses *daily*, budget for a paid tier or accept the
+  cold starts — "free is fine" was optimistic.
+- **Payment-collection blocker** (§8) — resolve before assuming staging is "end to end."
+- **Migration sync is a standing manual cost** (§6).
+- **Verify the actual Render auto-deploy branch** before Flavor B — don't assume `main` is wired
+  the way you think.
+- **Subdomain names** — `ops-staging` / `staging` vs alternatives.
+- **Demo data** — seed a few sample bookings/quotes for staff training, or start empty?
+- **Staging data hygiene** — periodic reset (reuse the pre-launch purge SQL) so staging junk
+  doesn't accumulate.
+
+## 11. Repo work vs. dashboard work
+
+- **Repo (prep ahead):** `seed` script, `render.yaml`, front-end env switch, runbook, migration
+  log, Flavor-B branch/promote docs.
+- **Dashboards (owner):** create the Supabase project, Render service, staged front-end host,
+  DNS records, OAuth origins, secrets, and a staging Maps key.
 
 ---
 
-_Recorded 2026-07-13. Add updates here as this is picked up._
+_Recorded 2026-07-13 (v2). Add updates here as this is picked up._
