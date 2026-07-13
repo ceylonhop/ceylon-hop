@@ -302,6 +302,25 @@ describe('internal quoting tool route', () => {
     expect((await res.json()).places).toEqual(['Kandy']);
   });
 
+  it('a ready quote ships a locked estimate with per-leg breakdown AND both service rates', async () => {
+    const app = createApp();
+    // multi-leg on two distinct dates → chauffeur is offered alongside point-to-point
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Brett', vehicle: 'van_9', passengerCount: 4, luggageCount: 4,
+      legs: [leg({ distanceKm: 130, date: '2026-08-27' }), leg({ distanceKm: 290, date: '2026-08-31' })],
+    })).json();
+    await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' });
+
+    const q = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(q.status).toBe('ready');
+    // per-leg breakdown → the itinerary rows can show each leg's price (were "—")
+    expect(q.estimate.breakdown.legs).toHaveLength(2);
+    expect(q.estimate.breakdown.legs[0].priceCents).toBeGreaterThan(0);
+    // both service rates → the Point-to-point / Chauffeur-guide comparison boxes (were "—")
+    expect(q.estimate.services.pointToPoint.total).toBeTruthy();
+    expect(q.estimate.services.chauffeur.total).toBeTruthy();
+  });
+
   it('chauffeur: stay days become idle days; amountDueNow is the full total', async () => {
     const res = await post(createApp(), '/admin/quote/estimate', {
       vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [

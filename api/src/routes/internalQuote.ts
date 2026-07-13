@@ -228,8 +228,9 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnType<typeof shape> | null {
-  const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date) {
+  const stored = q.request as { tool?: ToolRequest; engine?: QuoteRequest } | null;
+  const engineReq = stored?.engine;
   if (!engineReq) return null;
   // The whole locked-estimate computation is best-effort: a corrupt/legacy lock snapshot
   // (or an un-priceable stored request) must degrade to null, never 500 the quote-open path.
@@ -239,7 +240,45 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnTyp
       { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
       now,
     );
-    return shape(quote(engineReq, rateCard), canMargin);
+    const result = quote(engineReq, rateCard);
+    const base = shape(result, canMargin);
+    // Legacy/minimal row without a usable tool payload → base only (no per-leg / services).
+    const toolReq = stored?.tool;
+    if (!toolReq || !Array.isArray(toolReq.legs)) return base;
+
+    // Match the live /estimate shape so a ready/sent quote renders its per-leg prices and the
+    // point-to-point vs chauffeur comparison (were blank "—"), all priced against the LOCKED
+    // card — frozen numbers, never a live recompute.
+    const breakdown = quoteBreakdown(engineReq, rateCard);
+    const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
+    const priceService = (svc: 'private' | 'chauffeur'): QuoteResult =>
+      svc === selected ? result : quote(toEngineRequest(toolReq, svc), rateCard);
+
+    const services: {
+      pointToPoint: ServiceSummary | { error: string };
+      chauffeur: ServiceSummary | { error: string };
+    } = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
+    try {
+      services.pointToPoint = summary(priceService('private'));
+    } catch {
+      services.pointToPoint = { error: 'could not price' };
+    }
+    // Chauffeur is only offered when every driving/stay leg has a date AND the trip spans >1 date.
+    const chauffeurLegs = toolReq.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
+    const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
+    if (chauffeurLegs.some((l) => !l.date)) {
+      services.chauffeur = { error: 'add a date to every leg' };
+    } else if (distinctDates.size <= 1) {
+      services.chauffeur = { error: 'single-day — point-to-point only' };
+    } else {
+      try {
+        services.chauffeur = summary(priceService('chauffeur'));
+      } catch {
+        services.chauffeur = { error: 'could not price' };
+      }
+    }
+
+    return { ...base, fxUsdToLkr: fxRate, breakdown, services };
   } catch {
     return null;
   }
