@@ -270,6 +270,32 @@ describe('internal quoting tool route', () => {
     expect((await r.json()).error).toBe('illegal_transition');
   });
 
+  it('reopens a SENT quote to draft (founder-only), unlocking it for edits + re-save', async () => {
+    const app = createApp();
+    const id = (await draft(app)).id;
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
+
+    // while sent, a content re-save is refused (the bug the operator hit)
+    const locked = await postAs('f@x.com', app, '/admin/quote/save', { id, vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 90 })] });
+    expect(locked.status).toBe(409);
+    expect((await locked.json()).error).toBe('not_editable');
+
+    // a support role cannot pull a sent quote back
+    const forbid = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'draft' });
+    expect(forbid.status).toBe(403);
+    expect((await forbid.json()).error).toBe('approve_forbidden');
+
+    // the founder can — sent → draft, dropping the rate lock
+    const reopened = await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'draft' });
+    expect(reopened.status).toBe(200);
+    expect((await reopened.json()).status).toBe('draft');
+
+    // now editable again — the re-save that 409'd above succeeds
+    const resave = await postAs('f@x.com', app, '/admin/quote/save', { id, vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 90 })] });
+    expect(resave.ok).toBe(true);
+  });
+
   it('accepts an injected QuoteRepo without breaking existing routes', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const res = await authedGet(app, '/admin/quote/places?q=kand');

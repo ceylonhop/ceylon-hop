@@ -3370,7 +3370,7 @@ function renderActionBar() {
     if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
   } else {
     if (s === 'draft') { out.push(B('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(B('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
