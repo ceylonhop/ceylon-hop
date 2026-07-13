@@ -23,6 +23,8 @@ async function founderCookie() {
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
+  date: '2026-08-01',
+  time: '09:00',
   vehicleType: 'van',
   adults: 3,
   children: 1,

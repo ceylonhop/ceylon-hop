@@ -2,7 +2,13 @@
 // idempotent — a booking is never reminded or asked for a review twice. 'confirmation'
 // (M17) records the post-payment confirmation email so the watchdog can spot paid
 // bookings whose customer never got one.
-export type NotificationKind = 'trip_reminder' | 'review_request' | 'confirmation';
+export type NotificationKind =
+  | 'trip_reminder'
+  | 'review_request'
+  | 'confirmation'
+  | 'payment_recovery'
+  | 'booking_confirmed'
+  | 'no_show_notice';
 
 export interface NotificationLogRepo {
   wasSent(bookingId: string, kind: NotificationKind): Promise<boolean>;

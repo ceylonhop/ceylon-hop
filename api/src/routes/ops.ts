@@ -11,6 +11,9 @@ import {
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
+import type { EmailAdapter } from '../adapters/email';
+import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import { sendBookingConfirmed, sendNoShowNotice, manageUrl } from '../services/notifications';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -18,6 +21,12 @@ export interface OpsDeps {
   rideOps: RideOpsRepo;
   auth: OpsAuthConfig;
   googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
+  // Optional so tests that only exercise fulfilment can omit them; when present, the
+  // fulfilment milestones fire the matching customer email (once, via notificationLog).
+  email?: EmailAdapter;
+  notificationLog?: NotificationLogRepo;
+  baseUrl?: string;
+  linkSecret?: string;
 }
 
 // Every action the capability matrix knows about — used only to compute whoami's `caps`
@@ -27,6 +36,28 @@ const ALL_ACTIONS: OpsAction[] = [
 ];
 
 const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
+
+// A fulfilment milestone that has a customer email attached. 'vehicle_confirmed' means
+// the driver's arranged → "you're confirmed"; 'no_show' → the forfeited-fare notice.
+async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string): Promise<void> {
+  const kind = to === 'vehicle_confirmed' ? 'booking_confirmed' : to === 'no_show' ? 'no_show_notice' : null;
+  if (!kind || !deps.email) return;
+  const log = deps.notificationLog;
+  try {
+    if (log && (await log.wasSent(bookingId, kind))) return; // already emailed for this milestone
+    const booking = await deps.bookings.get(bookingId);
+    if (!booking) return;
+    if (kind === 'booking_confirmed') {
+      const manage = deps.baseUrl && deps.linkSecret ? manageUrl(booking, deps.baseUrl, deps.linkSecret) : undefined;
+      await sendBookingConfirmed(booking, deps.email, { manage });
+    } else {
+      await sendNoShowNotice(booking, deps.email);
+    }
+    await log?.markSent(bookingId, kind);
+  } catch (err) {
+    console.error(`ops ${kind} email failed for ${bookingId}:`, err);
+  }
+}
 
 export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
@@ -119,11 +150,17 @@ export function opsRoutes(deps: OpsDeps) {
     // Bad body → 400, not a thrown 500 that also pages the founder via onError's alert.
     const body = z.object({ to: z.string() }).safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const id = c.req.param('id');
+    let updated;
     try {
-      return c.json(await deps.rideOps.setStatus(c.req.param('id'), body.data.to as never));
+      updated = await deps.rideOps.setStatus(id, body.data.to as never);
     } catch {
       return c.json({ error: 'illegal_transition' }, 400);
     }
+    // Fire the matching customer email on the milestone, once (idempotent via the log).
+    // Best-effort: a mail hiccup must never fail the ops action the operator just took.
+    await maybeEmailForStage(deps, id, body.data.to);
+    return c.json(updated);
   });
 
   r.post('/bookings/:id/flags', requireCap('bookings:operate'), async (c) => {

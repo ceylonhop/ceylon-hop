@@ -183,7 +183,12 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
-  app.route('/admin/ops', opsRoutes({ bookings, payments, rideOps, auth: opsAuthCfg, googleVerifier: deps.googleVerifier }));
+  app.route('/admin/ops', opsRoutes({
+    bookings, payments, rideOps, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
+    email, notificationLog,
+    baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+  }));
   // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
   // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
   // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).

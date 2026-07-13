@@ -150,3 +150,63 @@ describe('ops bookings endpoints', () => {
     }
   });
 });
+
+import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
+
+describe('ops fulfilment milestones email the customer', () => {
+  function appWith(email: FakeEmailAdapter) {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({
+      bookings, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey',
+      email, notificationLog: new InMemoryNotificationLogRepo(),
+    });
+    return { app, bookings };
+  }
+  async function paidBooking(bookings: InMemoryBookingRepo) {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    return b;
+  }
+  const post = (app: ReturnType<typeof createApp>, id: string, to: string) =>
+    hdr().then((h) => app.request(`/admin/ops/bookings/${id}/status`, { method: 'POST', headers: h, body: JSON.stringify({ to }) }));
+
+  it('sends the confirmed email once when ops confirms the vehicle (idempotent across a backtrack)', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, bookings } = appWith(email);
+    const b = await paidBooking(bookings);
+
+    await post(app, b.id, 'vehicle_confirmed');
+    const conf = email.sent.filter((m) => /confirmed/i.test(m.subject));
+    expect(conf).toHaveLength(1);
+    expect(conf[0].to).toBe('m@x.com');
+
+    // backtrack to paid then re-confirm — must NOT email a second time
+    await post(app, b.id, 'paid');
+    await post(app, b.id, 'vehicle_confirmed');
+    expect(email.sent.filter((m) => /confirmed/i.test(m.subject))).toHaveLength(1);
+  });
+
+  it('sends the no-show notice on → no_show', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, bookings } = appWith(email);
+    const b = await paidBooking(bookings);
+    await post(app, b.id, 'vehicle_confirmed');
+
+    const res = await post(app, b.id, 'no_show');
+    expect((await res.json()).fulfilmentStatus).toBe('no_show');
+    const notice = email.sent.filter((m) => m.to === 'm@x.com' && /refundable/i.test(m.text ?? ''));
+    expect(notice).toHaveLength(1);
+  });
+
+  it('a non-milestone advance (pickup_confirmed) sends no email', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, bookings } = appWith(email);
+    const b = await paidBooking(bookings);
+    await post(app, b.id, 'vehicle_confirmed');
+    const before = email.sent.length;
+    await post(app, b.id, 'pickup_confirmed');
+    expect(email.sent.length).toBe(before);
+  });
+});

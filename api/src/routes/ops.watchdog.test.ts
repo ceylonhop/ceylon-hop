@@ -22,7 +22,7 @@ describe('POST /admin/jobs/watchdog (M17)', () => {
       headers: { 'x-admin-key': KEY },
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0 });
+    expect(await res.json()).toEqual({ stuckPending: 0, paidUnconfirmed: 0, recoveryEmails: 0 });
   });
 
   // BI1 — a fresh stuck-pending booking pages the founder, but a long-abandoned cart (which

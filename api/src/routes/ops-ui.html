@@ -97,6 +97,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .btn-go{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:var(--teal-deep);color:#fff;box-shadow:0 12px 26px -13px rgba(8,147,143,.85)}
   .btn-go::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .65s ease}
   .btn-go:hover{filter:brightness(1.05);transform:translateY(-1px)}.btn-go:hover::after{transform:translateX(130%)}
+  /* secondary, low-emphasis danger action (no-show) — never competes with the primary CTA */
+  .btn-noshow{background:none;border-color:transparent;color:#b23214;box-shadow:none;font-size:.78rem;padding:6px 10px;align-self:center}
+  .btn-noshow:hover{background:#fbe7e2;border-color:#e6bcb0}
   .btn-wa{background:var(--wa);border-color:var(--wa);color:#fff}.btn-wa:hover{background:#178f44}
   .btn-icon{padding:8px}.btn-lg{padding:12px 18px;font-size:.9rem;border-radius:12px}
 
@@ -1001,6 +1004,7 @@ const STAGE={
   pickup_confirmed:{label:'Pickup confirmed',short:'Pickup',c:'#0a8f86',cbg:'#dff3ef'},
   on_trip:{label:'On trip',short:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
   completed:{label:'Completed',short:'Done',c:'#7c7a73',cbg:'#eeece4'},
+  no_show:{label:'No-show',short:'No-show',c:'#b23214',cbg:'#fbe7e2'},
 };
 const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
 /* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
@@ -1035,13 +1039,14 @@ const GROUPS=[
   {id:'trip',label:'On trip',c:'#1f6fd0'},
   {id:'done',label:'Completed',c:'#7c7a73'},
 ];
+const CLOSED=['completed','no_show'];
 const inGroup=(t,g)=>{
-  if(g==='all')return t.stage!=='completed';
+  if(g==='all')return !CLOSED.includes(t.stage);
   if(g==='pay')return t.stage==='awaiting_payment';
   if(g==='paid')return t.stage==='paid';
   if(g==='ready')return ['vehicle_confirmed','pickup_confirmed'].includes(t.stage);
   if(g==='trip')return t.stage==='on_trip';
-  if(g==='done')return t.stage==='completed';
+  if(g==='done')return CLOSED.includes(t.stage);
   return true;
 };
 const ICON={
@@ -1366,7 +1371,10 @@ function renderSheet(){
     pipeAction=`<div class="followup"><div><b>Payment link sent — follow up.</b> Payment lands automatically via the webhook. Nudge the customer if it's overdue.</div></div>
       <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
   }else if(nx){
-    pipeAction=`<div class="sheet-actions" style="margin-top:12px"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button></div>`;
+    pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
+      +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
+      +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button>`
+      +`</div>`;
   }else{pipeAction='';}
   sh.innerHTML=`
     <div class="sheet-h"><button class="x" data-act="close">✕</button>
@@ -1529,6 +1537,7 @@ document.addEventListener('click',async e=>{
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not advance');}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not mark no-show');}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Update failed');}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not add note');}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}

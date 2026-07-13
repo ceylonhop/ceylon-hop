@@ -4,7 +4,13 @@ import type { DepartureRepo } from '../db/departureRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '../domain/status';
-import { sendCancellationConfirmation, sendRefundConfirmation } from '../services/notifications';
+import {
+  sendCancellationConfirmation,
+  sendRefundConfirmation,
+  sendBookingConfirmed,
+  sendNoShowNotice,
+  manageUrl,
+} from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { runWatchdog } from '../services/watchdog';
 import { buildDigest } from '../services/digest';
@@ -89,6 +95,12 @@ export function adminRoutes(deps: {
 
   r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
   r.post('/bookings/:id/refund', requireCap('payments:act'), (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
+  // Ops marks the booking confirmed once the driver's arranged (paid → confirmed).
+  r.post('/bookings/:id/confirm', requireCap('payments:act'), (c) =>
+    transitionAndNotify(c, 'confirmed', (b, e) => sendBookingConfirmed(b, e, { manage: manageUrl(b, baseUrl, linkSecret) })),
+  );
+  // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
+  r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
 
   // Cron tick — an external scheduler (cron-job.org / GitHub Actions) POSTs here on a
   // cadence; the work is idempotent via the notification log, so over-calling is harmless.
@@ -128,7 +140,7 @@ export function adminRoutes(deps: {
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
-    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts });
+    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret });
     return c.json(result, 200);
   });
 

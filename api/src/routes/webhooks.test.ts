@@ -12,6 +12,8 @@ import { InMemoryPaymentRepo } from '../db/paymentRepo';
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
+  date: '2026-08-01',
+  time: '09:00',
   vehicleType: 'car',
   adults: 2,
   children: 0,
@@ -19,12 +21,12 @@ const valid = {
   customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
 };
 
-async function bookAndCheckout(app: ReturnType<typeof createApp>) {
+async function bookAndCheckout(app: ReturnType<typeof createApp>, overrides: Record<string, unknown> = {}) {
   const b = await (
     await app.request('/bookings/single', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(valid),
+      body: JSON.stringify({ ...valid, ...overrides }),
     })
   ).json();
   await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
@@ -344,5 +346,40 @@ describe('POST /webhooks/resend (M17)', () => {
     const res = await app.request('/webhooks/resend', { method: 'POST', body: ok.body, headers: ok.headers });
     expect(res.status).toBe(204);
     expect(alerts.sent).toHaveLength(0);
+  });
+});
+
+describe('POST /webhooks/payments — awaiting-details follow-up', () => {
+  it('sends a "we need your details" email in addition to the confirmation when the date is flexible', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
+    // flexible booking: no date/time
+    const b = await bookAndCheckout(app, { date: undefined, time: undefined });
+
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    expect((await app.request('/webhooks/payments', { method: 'POST', body })).status).toBe(200);
+
+    expect(email.sent).toHaveLength(2);
+    expect(email.sent.some((m) => /confirmed/i.test(m.subject))).toBe(true);
+    const details = email.sent.find((m) => /detail/i.test(m.subject));
+    expect(details).toBeTruthy();
+    expect(details!.to).toBe('maya@example.com');
+    expect(details!.html.toLowerCase()).toContain('whatsapp');
+  });
+
+  it('sends only the confirmation when the booking already has a date', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
+    const b = await bookAndCheckout(app); // dated fixture
+
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent.some((m) => /detail/i.test(m.subject))).toBe(false);
   });
 });

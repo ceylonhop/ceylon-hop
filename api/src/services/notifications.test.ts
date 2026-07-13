@@ -251,3 +251,97 @@ describe('sendRefundConfirmation', () => {
     expect(m.text).not.toContain('<');
   });
 });
+
+// ── New lifecycle emails ────────────────────────────────────────────────────
+import {
+  sendPaymentIncomplete,
+  sendBookingConfirmed,
+  sendNoShowNotice,
+  sendDetailsNeeded,
+  needsDetails,
+} from './notifications';
+
+const pending: Booking = { ...single, id: 'idp', reference: 'CH-PEND1', status: 'payment_pending' };
+
+describe('sendPaymentIncomplete — abandoned checkout recovery', () => {
+  it('emails a finish-your-booking with the amount due and a resume link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentIncomplete(pending, email, { resume: 'https://ceylonhop.com/manage.html?t=tok' });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-PEND1');
+    expect(m.subject.toLowerCase()).toContain('finish');
+    expect(m.html).toContain('$50.00');            // amount due
+    expect(m.html).toContain('manage.html?t=tok'); // resume link
+    expect(m.text).toContain('manage.html?t=tok');
+    expect(m.text).not.toContain('<');
+  });
+
+  it('still renders without a resume link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentIncomplete(pending, email);
+    expect(email.sent[0].html).not.toContain('href="undefined"');
+  });
+});
+
+describe('sendBookingConfirmed — driver arranged', () => {
+  it('emails a confirmed message with route and a manage link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmed({ ...single, status: 'confirmed' }, email, { manage: 'https://ceylonhop.com/manage.html?t=xyz' });
+    const m = email.sent[0];
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('confirmed');
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('Confirmed');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html).toContain('manage.html?t=xyz');
+  });
+});
+
+describe('sendNoShowNotice — fare forfeited', () => {
+  it('states the fare is not refundable and offers rebooking', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice({ ...single, status: 'no_show' }, email);
+    const m = email.sent[0];
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.html.toLowerCase()).toContain("isn’t refundable");
+    expect((m.text ?? "").toLowerCase()).toContain("isn’t refundable");
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendDetailsNeeded — flexible booking follow-up', () => {
+  it('says we still need the exact pickup/time and will reach out on WhatsApp', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsNeeded(single, email, { manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('detail');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html.toLowerCase()).toContain('pickup');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('needsDetails', () => {
+  it('true for a single transfer with no date, false once a date is set', () => {
+    expect(needsDetails(single)).toBe(true); // fixture has no date
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(false);
+  });
+  it('true for a trip with no dates, false when a date exists', () => {
+    const noDates: Booking = {
+      ...single, mode: 'trip', reference: 'CH-T', id: 'idt',
+      input: { stops: ['A', 'B'], nights: [0, 0], dates: [], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+    } as Booking;
+    expect(needsDetails(noDates)).toBe(true);
+    expect(needsDetails({ ...noDates, input: { ...(noDates.input as object), dates: ['2026-08-01'] } } as Booking)).toBe(false);
+  });
+  it('false for shared (always a fixed departure)', () => {
+    const shared: Booking = {
+      ...single, mode: 'shared', reference: 'CH-S', id: 'ids',
+      input: { corridorId: 'cmb-galle', date: '2026-07-10', time: '08:00', seats: 2, customer: single.input.customer },
+    } as Booking;
+    expect(needsDetails(shared)).toBe(false);
+  });
+});

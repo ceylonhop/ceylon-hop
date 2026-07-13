@@ -304,3 +304,70 @@ describe('POST /admin/bookings/:id/refund', () => {
     expect(res.status).toBe(403);
   });
 });
+
+// Drive a freshly-booked (draft) booking through legal transitions to a target state.
+async function drive(bookings: InMemoryBookingRepo, id: string, ...chain: string[]) {
+  for (const s of chain) await bookings.setStatus(id, s as never);
+}
+
+describe('POST /admin/bookings/:id/confirm', () => {
+  it('confirms a paid booking (paid → confirmed) and emails the customer', async () => {
+    const { app, bookings, email } = makeApp();
+    const b = await book(app);
+    await drive(bookings, b.id, 'payment_pending', 'paid');
+    const res = await app.request(`/admin/bookings/${b.id}/confirm`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('confirmed');
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+    const sent = email.sent.filter((m) => /confirmed/i.test(m.subject));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe('maya@example.com');
+  });
+
+  it('403 for an ops session (no payments:act)', async () => {
+    const { app, bookings } = makeApp();
+    const b = await book(app);
+    await drive(bookings, b.id, 'payment_pending', 'paid');
+    const res = await app.request(`/admin/bookings/${b.id}/confirm`, {
+      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('409 when the booking is not paid yet (illegal transition)', async () => {
+    const { app } = makeApp();
+    const b = await book(app); // still draft
+    const res = await app.request(`/admin/bookings/${b.id}/confirm`, {
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+    });
+    expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /admin/bookings/:id/no-show', () => {
+  it('marks a confirmed booking no_show and emails the forfeited-fare notice', async () => {
+    const { app, bookings, email } = makeApp();
+    const b = await book(app);
+    await drive(bookings, b.id, 'payment_pending', 'paid', 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/no-show`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('no_show');
+    expect((await bookings.get(b.id))!.status).toBe('no_show');
+    const sent = email.sent.filter((m) => m.to === 'maya@example.com' && /refundable/i.test(m.text ?? ''));
+    expect(sent).toHaveLength(1);
+  });
+
+  it('403 for an ops session (no payments:act)', async () => {
+    const { app, bookings } = makeApp();
+    const b = await book(app);
+    await drive(bookings, b.id, 'payment_pending', 'paid', 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/no-show`, {
+      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+    });
+    expect(res.status).toBe(403);
+  });
+});
