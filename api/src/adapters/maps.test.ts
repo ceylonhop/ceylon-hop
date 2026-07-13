@@ -188,3 +188,45 @@ describe('GoogleMapsAdapter', () => {
     });
   });
 });
+
+describe('known-place distance resolution (Popular-route picks)', () => {
+  const origFetch = global.fetch;
+  afterEach(() => { global.fetch = origFetch; vi.restoreAllMocks(); });
+
+  it('FakeMapsAdapter resolves a known pair that has no baked corridor (Trincomalee → Ella)', async () => {
+    const r = await new FakeMapsAdapter().distance('Trincomalee', 'Ella');
+    expect(r).not.toBeNull();
+    expect(r!.km).toBeGreaterThan(0);
+  });
+
+  it('GoogleMapsAdapter sends known places as exact coords, not the ambiguous bare name', async () => {
+    let capturedUrl = '';
+    global.fetch = (async (url: string) => {
+      capturedUrl = String(url);
+      return new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 290000 }, duration: { value: 20000 } }] }] }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const r = await new GoogleMapsAdapter('k').distance('Trincomalee', 'Ella');
+    expect(r).toEqual({ km: 290, durationMin: 333 });
+    // coords, not "Ella"/"Trincomalee" (bare "Ella" geocodes outside Sri Lanka)
+    expect(capturedUrl).toContain(encodeURIComponent('8.59,81.21')); // Trincomalee
+    expect(capturedUrl).toContain(encodeURIComponent('6.87,81.05')); // Ella
+    expect(capturedUrl).not.toMatch(/origins=Trincomalee/i);
+  });
+
+  it('falls back to the offline estimate for a known pair when Google fails', async () => {
+    global.fetch = (async () => { throw new Error('network down'); }) as typeof fetch;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const r = await new GoogleMapsAdapter('k').distance('Trincomalee', 'Ella');
+    expect(r).not.toBeNull();      // was null before → "No distance" in the tool
+    expect(r!.km).toBeGreaterThan(0);
+  });
+
+  it('still returns null when Google fails and the places are unknown', async () => {
+    global.fetch = (async () => { throw new Error('down'); }) as typeof fetch;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await new GoogleMapsAdapter('k').distance('Nowhereville', 'Elsewhereton')).toBeNull();
+  });
+});

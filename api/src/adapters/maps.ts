@@ -69,14 +69,25 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+// A place name → its exact SL coordinates, when it's one of our known places.
+function knownCoords(name: string): [number, number] | null {
+  return COORDS[norm(name)] ?? null;
+}
+// Offline road-distance estimate (crow-flies × 1.35, ~42 km/h) — only when BOTH endpoints
+// are known places. Used by the fake adapter, and as the real adapter's fallback so a known
+// pair never fails to price just because Google is down/ambiguous.
+function offlineEstimate(from: string, to: string): DistanceResult | null {
+  const a = knownCoords(from);
+  const b = knownCoords(to);
+  if (!a || !b) return null;
+  const km = Math.round(haversineKm(a, b) * 1.35);
+  return { km, durationMin: Math.round((km / 42) * 60) };
+}
+
 export class FakeMapsAdapter implements MapsAdapter {
   readonly provider = 'fake';
   async distance(from: string, to: string): Promise<DistanceResult | null> {
-    const a = COORDS[norm(from)];
-    const b = COORDS[norm(to)];
-    if (!a || !b) return null;
-    const km = Math.round(haversineKm(a, b) * 1.35);
-    return { km, durationMin: Math.round((km / 42) * 60) };
+    return offlineEstimate(from, to);
   }
 
   // Mirrors the offline fallback the route used to do itself: case-insensitive substring
@@ -93,9 +104,20 @@ export class GoogleMapsAdapter implements MapsAdapter {
   constructor(private readonly apiKey: string) {}
 
   async distance(from: string, to: string): Promise<DistanceResult | null> {
+    return (await this.googleDistance(from, to)) ?? offlineEstimate(from, to);
+  }
+
+  private async googleDistance(from: string, to: string): Promise<DistanceResult | null> {
+    // A known place goes to Google as its exact "lat,lng", never the bare name: a name like
+    // "Ella" (which exists in many countries) otherwise geocodes outside Sri Lanka and gets
+    // rejected as implausible, so picking a "Popular route" suggestion resolved no distance.
+    const o = knownCoords(from);
+    const d = knownCoords(to);
+    const origin = o ? `${o[0]},${o[1]}` : from;
+    const dest = d ? `${d[0]},${d[1]}` : to;
     const url =
       'https://maps.googleapis.com/maps/api/distancematrix/json' +
-      `?origins=${encodeURIComponent(from)}&destinations=${encodeURIComponent(to)}` +
+      `?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(dest)}` +
       `&mode=driving&region=lk&key=${this.apiKey}`;
     let res: Response;
     const controller = new AbortController();
