@@ -3961,7 +3961,7 @@ function itinStops() {
 function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
 
 var _mapOpen = false; // route map is collapsed by default — the operator opens it deliberately
-var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null;
+var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null, _mapMarkers = [];
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
   if (!slot) return; // no map this render
@@ -4000,12 +4000,20 @@ async function drawItinRoute(hostEl, stops) {
       _mapMap = null; return;
     }
     _mapRenderer.setDirections(res);
-    // Brand pins at the true routed endpoints (the renderer's A/B pins are suppressed).
+    // A brand pin at EVERY stop (the renderer's default A/B/C pins are suppressed): green
+    // start, teal for the stops in between, orange final drop-off — so the ops map shows the
+    // whole itinerary, not just the two endpoints (matches the customer site's map). Clear the
+    // previous render's pins first so they don't pile up when the route changes.
     try {
+      _mapMarkers.forEach(function (m) { m.setMap(null); });
+      _mapMarkers = [];
       var rlegs = res.routes[0].legs;
       var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new google.maps.Point(12, 22) }; };
-      new google.maps.Marker({ map: _mapMap, position: rlegs[0].start_location, icon: pin('#0a7d6f'), zIndex: 5 });
-      new google.maps.Marker({ map: _mapMap, position: rlegs[rlegs.length - 1].end_location, icon: pin('#e8623a'), zIndex: 5 });
+      _mapMarkers.push(new google.maps.Marker({ map: _mapMap, position: rlegs[0].start_location, icon: pin('#0a7d6f'), zIndex: 6 }));
+      for (var li = 0; li < rlegs.length; li++) {
+        var isLast = li === rlegs.length - 1;
+        _mapMarkers.push(new google.maps.Marker({ map: _mapMap, position: rlegs[li].end_location, icon: pin(isLast ? '#e8623a' : '#0AB9B6'), zIndex: isLast ? 6 : 5 }));
+      }
     } catch (e) { /* markers are non-essential */ }
     _mapBounds = res.routes[0].bounds || null;
     if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
