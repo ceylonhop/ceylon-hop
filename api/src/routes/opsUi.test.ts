@@ -8,6 +8,7 @@ describe('ops UI shell', () => {
     const res = await app.request('/ops');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
     const body = await res.text();
     expect(body).toContain('Ceylon Hop');
     expect(body).toContain('/admin/ops'); // wired to the real API, not mock data

@@ -91,7 +91,12 @@ export function createApp(deps: AppDeps = {}) {
   // Security headers on every response — most importantly X-Frame-Options + nosniff, so the
   // cookie-authenticated /ops app can't be framed (clickjacking) or MIME-sniffed. No CSP here:
   // the ops HTML relies on inline scripts/styles and a data: logo.
-  app.use('*', secureHeaders());
+  app.use('*', secureHeaders({
+    // Google Identity Services popup mode needs the opener to allow cross-origin popups.
+    // With the stricter default COOP (`same-origin`), Chrome can strand the GIS popup on
+    // a blank /gsi/transform page after account selection.
+    crossOriginOpenerPolicy: 'same-origin-allow-popups',
+  }));
 
   // Restrict cross-origin browser calls to the live site + local dev. Server-to-server
   // callers (e.g. the PayHere webhook) send no Origin and are unaffected by CORS.
