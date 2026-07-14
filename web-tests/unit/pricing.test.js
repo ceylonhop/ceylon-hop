@@ -31,13 +31,13 @@ describe('privateQuote (the fare customers see)', () => {
   it('prices car/van from real distance with the engine rate-card formula', () => {
     const q = T.privateQuote('cmb-airport', 'ella');
     expect(q.km).toBe(335);
-    // billableKm = round(335 × 1.10) = round(368.5) = 369
-    // car = max(29, round(369 × 0.4025)) = round(148.52) = 149
-    // van = max(50, round(369 × 0.5405)) = round(199.44) = 199
-    expect(q.car).toBe(carFare(335)); // 149
-    expect(q.van).toBe(vanFare(335)); // 199
-    expect(q.car).toBe(149);
-    expect(q.van).toBe(199);
+    // billableKm = 335 + min(15, round(33.5)) = 350
+    // car = max(29, round(350 × 0.4025)) = 141
+    // van = max(50, round(350 × 0.5405)) = 189
+    expect(q.car).toBe(carFare(335)); // 141
+    expect(q.van).toBe(vanFare(335)); // 189
+    expect(q.car).toBe(141);
+    expect(q.van).toBe(189);
   });
 
   it('van is always pricier than car', () => {
@@ -54,9 +54,9 @@ describe('privateQuote (the fare customers see)', () => {
 
   it('honours the minimum fare floors on ultra-short hops', () => {
     const q = T.privateQuote('weligama', 'mirissa'); // 7km
-    // billableKm = round(7 × 1.10) = 8
-    // car raw = round(8 × 0.35) = round(2.8) = 3  → $29 floor
-    // van raw = round(8 × 0.47) = round(3.76) = 4  → $50 floor
+    // billableKm = 7 + min 5km buffer = 12
+    // car raw = round(12 × 0.4025) = 5  → $29 floor
+    // van raw = round(12 × 0.5405) = 6  → $50 floor
     expect(q.car).toBe(29); // floor
     expect(q.van).toBe(50); // floor
   });
@@ -155,7 +155,7 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
   const src = readFileSync(path.resolve(__dirname, '../../booking.js'), 'utf8');
 
   it('reads the per-km rate from the shared TRANSFERS.PER_KM source of truth', () => {
-    expect(src).toMatch(/TRANSFERS\.PER_KM/);
+    expect(src).toMatch(/T\.PER_KM/);
   });
 
   it('does not contain the superseded pre-2026-07-09 per-km rates', () => {
@@ -163,11 +163,11 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
     expect(src).not.toMatch(/\b0\.83\b/);
   });
 
-  it('sources add-on prices, buffer and deposit from window.TRANSFERS (no literals)', () => {
-    // add-on prices come from the generated EXTRAS table, the buffer from BUFFER_PCT, deposit
+  it('sources add-on prices, billable-km logic and deposit from shared helpers/constants (no literals)', () => {
+    // add-on prices come from the generated EXTRAS table, billable km from T.billableKm, deposit
     // from DEPOSIT_PCT/CAP — no hand-typed copies that could drift from api/src/quote/rateCard.ts.
     expect(src).toMatch(/window\.TRANSFERS\.EXTRAS/);
-    expect(src).toMatch(/window\.TRANSFERS\.BUFFER_PCT/);
+    expect(src).toMatch(/T\.billableKm/);
     expect(src).toMatch(/window\.TRANSFERS\.DEPOSIT_PCT/);
     expect(src).not.toMatch(/addonPrices\s*=\s*\{/); // no hand-authored extras table
     expect(src).not.toMatch(/\|\|\s*0\.10\b/); // no hardcoded deposit-pct fallback copy

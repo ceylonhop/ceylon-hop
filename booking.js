@@ -1023,23 +1023,22 @@ function chauffeurDayList(){
 }
 // chauffeur is only priced once the trip is fully dated (we charge per day)
 function chauffeurFee(){ return (isTrip && state.svc==='chauffeur' && tripDatesComplete()) ? (window.TRANSFERS.CHAUFFEUR_DAY_FEE * Math.max(1,tripDays)) : 0; }
-// GL-4 (owner decision 2026-07-02): chauffeur distance is billed in bulk across the
-// whole trip — buffered travel km plus a minimum km for every idle (no-travel) day —
-// at the per-km rate, with NO per-leg minimum fares. Mirrors api/src/quote/chauffeur.ts.
+// GL-4 (owner decision 2026-07-02): chauffeur distance is billed from the sum of buffered
+// travel legs plus a minimum km for every idle (no-travel) day — at the per-km rate, with
+// NO per-leg minimum fares. Mirrors api/src/quote/chauffeur.ts.
 function chauffeurDistanceCharge(){
+  const T = window.TRANSFERS;
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
   const idleKm = idleDays * 100; // flat 100 km/day idle minimum, all vehicles (mirrors rateCard.ts)
-  const tripKm = tripQuoteWithKms(vehicleKey).totalKm || 0;
-  if(tripKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
-  // Buffer and per-km rate both come from the single front-end source of truth
-  // (transfers-data.js BUFFER_PCT / PER_KM, mirrored from api/src/quote/rateCard.ts) so this
-  // line can't silently drift from the backend rate card the way it once did.
-  const bulkKm = Math.round(tripKm * (1 + window.TRANSFERS.BUFFER_PCT/100)) + idleKm;
+  const q = tripQuoteWithKms(vehicleKey);
+  const bufferedTravelKm = (q.legs || []).reduce((sum, leg) => sum + (leg.km!=null ? T.billableKm(leg.km) : 0), 0);
+  if(bufferedTravelKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
+  const bulkKm = bufferedTravelKm + idleKm;
   // Bulk km × per-km rate, with NO per-leg minimum-fare floor — the backend engine
   // (api/src/quote/chauffeur.ts) has no such floor, so flooring at the private per-leg total
   // (tripBase) over-quoted short-leg chauffeur trips and made the price drop at the pay step.
-  return Math.round(bulkKm * window.TRANSFERS.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
+  return Math.round(bulkKm * T.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // Server-authoritative price. Until the booking is created the wizard shows a best-effort

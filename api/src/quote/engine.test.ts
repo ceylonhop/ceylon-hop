@@ -22,7 +22,7 @@ describe('quote()', () => {
     const locked = { ...RATE_CARD, version: 'locked-test', perKmCents: { ...RATE_CARD.perKmCents, car: 20 } };
     const r = quote(req, locked);
     expect(r.rateCardVersion).toBe('locked-test');
-    expect(r.totalCents).toBe(220 * 20); // 200km → bill 220km × 20¢ = 4400 (above the $29 car floor)
+    expect(r.totalCents).toBe(215 * 20); // 200km → bill 215km after the 15km max buffer × 20¢ = 4300
     expect(r.totalCents).not.toBe(current.totalCents);
   });
 
@@ -31,7 +31,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(3542 + 1000);
   });
 
-  it('chauffeur → amountDueNow is the full total for now (Emma $794.65)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $789.42)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -42,11 +42,11 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.totalCents).toBe(79465);
-    expect(r.amountDueNowCents).toBe(79465);
-    // day 9×$31.05=27945 + distance: billableKm Math.round(800*1.1)=880 travel + (4 idle × 100 min)=1280 → 1280×40.25¢=51520
-    // costCents: 9×2700 day-cost + Math.round(1280 × 35¢/km) = 24300 + 44800 = 69100 → margin = 79465 − 69100 = 10365
-    expect(r.marginEstimateCents).toBe(10365);
+    expect(r.totalCents).toBe(78942);
+    expect(r.amountDueNowCents).toBe(78942);
+    // day 9×$31.05=27945 + distance: per-leg buffered travel is 132+215+154+245+121=867, plus 4 idle × 100 min = 1267 → 1267×40.25¢=50997
+    // costCents: 9×2700 day-cost + Math.round(1267 × 35¢/km) = 24300 + 44345 = 68645 → margin = 78942 − 68645 = 10297
+    expect(r.marginEstimateCents).toBe(10297);
   });
 
   it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
@@ -139,10 +139,10 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(30993); // 154km × 201.25¢
   });
 
-  it('van9: 20km private → floor 5000¢ applies (raw 22km × 54.05¢ = 1189 < 5000)', () => {
+  it('van9: 20km private → floor 5000¢ applies (raw 25km × 54.05¢ = 1351 < 5000)', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
     expect(r.totalCents).toBe(5000); // floor
-    expect(r.marginEstimateCents).toBe(5000 - Math.round(22 * 47));
+    expect(r.marginEstimateCents).toBe(5000 - Math.round(25 * 47));
   });
 
   it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
@@ -177,7 +177,7 @@ describe('quote()', () => {
         ],
         customPerKmCents: 200,
       });
-      // 2 days × $31.05 + billable 165km (150×1.1) × $2.00 = 6210 + 33000
+      // 2 days × $31.05 + billable 165km (100→110 and 50→55) × $2.00 = 6210 + 33000
       expect(r.totalCents).toBe(6210 + 33000);
     });
 
@@ -191,7 +191,7 @@ describe('quote()', () => {
       });
       // car (3 pax/bags) can't hold 6 → priced as van. distance uses van 54.05¢, not car 40.25¢.
       expect(r.warnings.some((w) => /vehicle set to van/.test(w))).toBe(true);
-      // 2 days × $31.05 + billable 165km (150×1.1, 0 idle) × van 54.05¢ = 6210 + round(165×54.05)=8918
+      // 2 days × $31.05 + billable 165km (100→110 and 50→55, 0 idle) × van 54.05¢ = 6210 + round(165×54.05)=8918
       expect(r.totalCents).toBe(6210 + 8918);
     });
 
@@ -205,7 +205,7 @@ describe('quote()', () => {
 
     it('floor still applies under an overridden rate', () => {
       const r = quote({ product: 'private', vehicle: 'van14', pax: 12, bags: 8, legs: [{ from: 'A', to: 'B', distanceKm: 10 }], customPerKmCents: 90 });
-      expect(r.totalCents).toBe(8500); // 11km × 90¢ = 990 < van14 floor $85
+      expect(r.totalCents).toBe(8500); // 15km × 90¢ = 1350 < van14 floor $85
     });
 
     it('throws when the priced vehicle is not van14/custom', () => {

@@ -16,9 +16,9 @@ describe('quoteBreakdown', () => {
   it('private: floor applies on a short leg (car, 20km → floor 2900¢) — pax:1 so no vehicle upgrade', () => {
     const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] };
     const b = quoteBreakdown(req);
-    expect(b.legs[0].priceCents).toBe(2900); // max(floor, round(22*40.25))
-    expect(b.km.billableKm).toBe(22);
-    // raw = round(22 * 40.25) = 886 < floor 2900 → minApplied true
+    expect(b.legs[0].priceCents).toBe(2900); // max(floor, round(25*40.25))
+    expect(b.km.billableKm).toBe(25);
+    // raw = round(25 * 40.25) = 1006 < floor 2900 → minApplied true
     expect(b.legs[0].minApplied).toBe(true);
     expect(b.legs[0].cls).toBe('car');
   });
@@ -51,9 +51,9 @@ describe('quoteBreakdown', () => {
       travelDays: [{ date: '2026-02-14', from: 'Airport', to: 'Kandy', distanceKm: 20 }],
     };
     const b = quoteBreakdown(req);
-    // billableKm(20) = round(20*1.1) = 22; km-charge = round(22*40.25) = 886 (NOT floor 2900)
-    expect(b.legs[0].billableKm).toBe(22);
-    expect(b.legs[0].priceCents).toBe(886);
+    // billableKm(20) = 20 + 5km min buffer = 25; km-charge = round(25*40.25) = 1006 (NOT floor 2900)
+    expect(b.legs[0].billableKm).toBe(25);
+    expect(b.legs[0].priceCents).toBe(1006);
     expect(b.legs[0].minApplied).toBe(false);
     expect(b.legs[0].cls).toBe('car');
   });
@@ -68,4 +68,7 @@ describe('quoteBreakdown', () => {
   });
 });
 
-function billableSum(km: number): number { return Math.round(km * 1.1); }
+function billableSum(km: number): number {
+  const buffer = Math.min(15, Math.max(5, Math.round(km * 0.1)));
+  return km + buffer;
+}

@@ -984,7 +984,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     });
     const app = createApp({ quotes: repo });
     const got = await (await getAs('f@x.com', app, `/admin/quote/${saved.id}`)).json();
-    expect(got.estimate.total.cents).toBe(4400); // 200km ×1.10 buffer ×20¢ — the frozen car rate
+    expect(got.estimate.total.cents).toBe(4300); // 200km + 15km max buffer ×20¢ — the frozen car rate
   });
 
   it('degrades to estimate:null instead of 500 when a persisted lock field is malformed', async () => {
