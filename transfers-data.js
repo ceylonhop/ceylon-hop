@@ -143,8 +143,9 @@
   }
 
   // ---- Private quote: door-to-door, your own vehicle ----
-  // Engine rate-card parity (owner decision 2026-07-02): billable km = road km + 10%
-  // routing buffer, then a per-km rate with a minimum fare — mirrors api/src/quote/.
+  // Engine rate-card parity (owner decision 2026-07-13): billable km = road km plus a
+  // per-leg routing buffer clamped to 5..15 km, then a per-km rate with a minimum fare
+  // — mirrors api/src/quote/.
   function privateQuote(fromId, toId) {
     const km = roadKm(fromId, toId);
     const real = realLeg(fromId, toId);
@@ -224,12 +225,17 @@
     if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
-  // per-leg private price by vehicle — the engine formula: +BUFFER_PCT% km buffer, then the
+  function billableKm(km){
+    if(km==null) return null;
+    const buffer = Math.min(15, Math.max(5, Math.round(km * (BUFFER_PCT/100))));
+    return km + buffer;
+  }
+  // per-leg private price by vehicle — the engine formula: buffer each leg, then the
   // per-km rate with a minimum fare. Every number comes from the generated pricing block at the
   // top of this IIFE (sourced from api/src/quote/rateCard.ts), so nothing here can drift.
   function legPrice(km, veh){
     if(km==null) return null;
-    const bkm = Math.round(km * (1 + BUFFER_PCT/100));   // billable km: + routing buffer
+    const bkm = billableKm(km);
     const car = Math.max(FLOORS.car, Math.round(bkm * PER_KM.car));
     const van = Math.max(FLOORS.van, Math.round(bkm * PER_KM.van));
     return veh==='van' ? van : car;
@@ -278,15 +284,15 @@
   // Decide what to do when a live routed distance comes back for a customer-set
   // route, given the price currently shown. The quoted price is a FIRM FLOOR — it
   // never drops:
-  //  - cheaper/equal, within the +10% buffer already charged, or no baseline
+  //  - cheaper/equal, within the per-leg buffer already charged, or no baseline
   //    → 'hold' (keep the quoted price)
   //  - MATERIALLY dearer (past the buffer) → 'confirm' (needs a heads-up before it changes)
-  // Buffer mirrors legPrice's round(km × 1.10). No new rates — reuse legPrice.
+  // Buffer mirrors legPrice's billableKm clamp. No new rates — reuse legPrice.
   function repriceDecision(anchorKm, routedKm, currentUnit, veh){
     const newPrice = legPrice(routedKm, veh);
     if(newPrice == null || !anchorKm) return { action:'hold', price: currentUnit };
     if(newPrice <= currentUnit) return { action:'hold', price: currentUnit };
-    if(routedKm <= Math.round(anchorKm * (1 + BUFFER_PCT/100))) return { action:'hold', price: currentUnit };
+    if(routedKm <= billableKm(anchorKm)) return { action:'hold', price: currentUnit };
     return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
   }
   // chauffeur-guide day fee (a driver-guide + car per day) plus deposit %/cap live in the
@@ -312,7 +318,7 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
-    resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
+    resolvePlace, kmBetween, billableKm, legPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
