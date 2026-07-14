@@ -182,6 +182,8 @@ function money(cents: number) {
 
 // Compact per-service summary for the chooser (NOT the full breakdown).
 type ServiceSummary = { total: ReturnType<typeof money>; deposit: ReturnType<typeof money>; amountDueNow: ReturnType<typeof money> };
+type ServiceChoice = ServiceSummary | { error: string };
+type ServiceChooserData = { pointToPoint: ServiceChoice; chauffeur: ServiceChoice };
 function summary(result: QuoteResult): ServiceSummary {
   return { total: money(result.totalCents), deposit: money(result.depositCents), amountDueNow: money(result.amountDueNowCents) };
 }
@@ -223,12 +225,35 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
 }
 
+function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'private' | 'chauffeur', selectedResult: QuoteResult): ServiceChooserData {
+  const services: ServiceChooserData = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
+
+  services.pointToPoint = selected === 'private'
+    ? summary(selectedResult)
+    : summary(quote(toEngineRequest(body, 'private'), rateCard));
+
+  const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
+  const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
+  if (chauffeurLegs.some((l) => !l.date)) {
+    services.chauffeur = { error: 'add a date to every leg' };
+  } else if (distinctDates.size <= 1) {
+    services.chauffeur = { error: 'single-day — point-to-point only' };
+  } else {
+    services.chauffeur = selected === 'chauffeur'
+      ? summary(selectedResult)
+      : summary(quote(toEngineRequest(body, 'chauffeur'), rateCard));
+  }
+
+  return services;
+}
+
 // Price a saved quote against the rate card it is LOCKED to (spec 2026-07-11 §3): the frozen
 // snapshot for a ready/sent quote, the live card otherwise. Reuses the stored engine request
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnType<typeof shape> | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { services?: ServiceChooserData }) | null {
+  const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
   // The whole locked-estimate computation is best-effort: a corrupt/legacy lock snapshot
@@ -239,7 +264,13 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): ReturnTyp
       { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
       now,
     );
-    return shape(quote(engineReq, rateCard), canMargin);
+    const result = quote(engineReq, rateCard);
+    const base = shape(result, canMargin);
+    if (!toolReq || !toolReq.vehicle || !Array.isArray(toolReq.legs) || typeof toolReq.passengerCount !== 'number' || typeof toolReq.luggageCount !== 'number') {
+      return base;
+    }
+    const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
+    return { ...base, services: serviceChooserData(toolReq, rateCard, selected, result) };
   } catch {
     return null;
   }
@@ -337,28 +368,7 @@ export function internalQuoteRoutes(deps: {
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
       // reuse the selected result for its side; price only the OTHER service additionally.
-      const services: {
-        pointToPoint: ServiceSummary | { error: string };
-        chauffeur: ServiceSummary | { error: string };
-      } = { pointToPoint: { error: 'n/a' }, chauffeur: { error: 'n/a' } };
-
-      // Point-to-point is always priceable (extras included, dates ignored).
-      services.pointToPoint = selected === 'private'
-        ? summary(result)
-        : summary((await resolveAndPrice(body, deps.maps, 'private')).result);
-
-      // Chauffeur is only offered when every driving+stay leg has a date AND the trip spans >1 date.
-      const chauffeurLegs = body.legs.filter((l) => drives(l) || (l.category || 'transfer') === 'stay_day');
-      const distinctDates = new Set(chauffeurLegs.map((l) => l.date).filter(Boolean));
-      if (chauffeurLegs.some((l) => !l.date)) {
-        services.chauffeur = { error: 'add a date to every leg' };
-      } else if (distinctDates.size <= 1) {
-        services.chauffeur = { error: 'single-day — point-to-point only' };
-      } else {
-        services.chauffeur = selected === 'chauffeur'
-          ? summary(result)
-          : summary((await resolveAndPrice(body, deps.maps, 'chauffeur')).result);
-      }
+      const services = serviceChooserData(body, RATE_CARD, selected, result);
 
       return c.json({
         ...shape(result, canMargin),

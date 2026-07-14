@@ -1974,6 +1974,7 @@ function setService(service) {
   if (service !== 'private' && service !== 'chauffeur') service = 'private';
   if (service === state.service) return;
   state.service = service;
+  if (service !== 'private') outputIncludeChauffeurUpsell = false;
   if (service === 'private') {
     state.legs = state.legs.map(function(leg) {
       return leg.category === 'stay_day'
@@ -2210,6 +2211,7 @@ function resetToNew() {
   lastEstimateError = null;
   outputTab = 'whatsapp';
   outputDrafts = { whatsapp: null, email: null };
+  outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
   _mapOpen = false;
@@ -2371,6 +2373,7 @@ async function reopenQuote(id) {
   lastEstimate = null;
   lastEstimateError = null;
   outputDrafts = { whatsapp: null, email: null };
+  outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
   _mapOpen = false;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
@@ -3057,6 +3060,7 @@ function renderFlagsBadge(flagCount) {
 // ── Output tab state ──────────────────────────────────────────────────────────
 var outputTab = 'whatsapp'; // 'internal' | 'whatsapp' | 'email'
 var outputDrafts = { whatsapp: null, email: null };
+var outputIncludeChauffeurUpsell = false;
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 // V6: parse a date-only 'YYYY-MM-DD' as LOCAL midnight (not UTC midnight) so an
@@ -3212,6 +3216,7 @@ function generatedWhatsappMessage() {
     lines.push('', productBlurb(veh));
   }
 
+  appendChauffeurUpsell(lines, false);
   lines.push('', 'Please let me know if you have any questions or if you would like to proceed.');
   return lines.join('\n');
 }
@@ -3248,6 +3253,7 @@ function generatedEmailMessage() {
     lines.push('', 'Total: ' + M(totalCents));
   }
 
+  appendChauffeurUpsell(lines, true);
   lines.push('', productBlurb(veh), '', 'Please let us know if you would like to proceed and we can send over the booking/payment details.', '', 'Best,', 'Roshen', 'Ceylon Hop');
   return lines.join('\n');
 }
@@ -3267,6 +3273,31 @@ function currentOutputMessage(tab) {
 
 function hasCustomOutputDraft(tab) {
   return (tab === 'whatsapp' || tab === 'email') && typeof outputDrafts[tab] === 'string';
+}
+
+function chauffeurUpsellSummary() {
+  if (state.service === 'chauffeur' || !lastEstimate || !lastEstimate.services) return null;
+  var chauf = lastEstimate.services.chauffeur;
+  return (chauf && chauf.total) ? chauf : null;
+}
+
+function appendChauffeurUpsell(lines, emailStyle) {
+  var chauf = chauffeurUpsellSummary();
+  if (!outputIncludeChauffeurUpsell || !chauf) return;
+  var amount = M(chauf.total.cents);
+  if (emailStyle) {
+    lines.push(
+      '',
+      'If you would also like the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+      'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
+    );
+    return;
+  }
+  lines.push(
+    '',
+    'If you\'d prefer the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+    'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
+  );
 }
 
 // ── Internal view renderer ────────────────────────────────────────────────────
@@ -3667,6 +3698,12 @@ function render() {
           ? '              <button class="ch-btn ch-btn-sm ch-copy-btn" data-action="copyOutput" style="margin-left:auto" title="Copy the message to paste into ' + (outputTab === 'email' ? 'an email' : 'WhatsApp') + '">&#x2398; Copy</button>'
           : '              <button class="ch-btn ch-btn-sm ch-copy-btn" data-action="copyOutput" disabled style="margin-left:auto" title="Locked until the quote is approved (Ready to send)">&#x1F512; Copy locked</button>'),
         '            </div>',
+        (chauffeurUpsellSummary()
+          ? '            <button class="ch-toggle-row" type="button" data-action="toggleChauffeurUpsell" style="margin:0 0 12px 0">'
+            + '              <span class="ch-toggle' + (outputIncludeChauffeurUpsell ? ' on' : '') + '" data-tone="teal"><span class="ch-toggle-knob"></span></span>'
+            + '              <span class="ch-toggle-label">Add chauffeur-guide option</span>'
+            + '            </button>'
+          : ''),
       ].join('') : ''),
       '            <div class="ch-output-body">',
       renderOutputBody(),
@@ -3908,6 +3945,10 @@ function attachEventListeners() {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'copyOutput') {
       copyOutputText(); // GL-1a: manual copy → WhatsApp/email
+    } else if (action === 'toggleChauffeurUpsell') {
+      outputIncludeChauffeurUpsell = !outputIncludeChauffeurUpsell;
+      outputDrafts = { whatsapp: null, email: null };
+      render();
     } else if (action === 'resetOutputDraft') {
       var tabKey = el.getAttribute('data-tab');
       if (tabKey === 'whatsapp' || tabKey === 'email') {

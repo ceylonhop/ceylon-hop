@@ -340,6 +340,45 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
 });
 
+test('point-to-point customer output can append the chauffeur option', async ({ page }) => {
+  await chooseVehicle(page, 'van_6');
+
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.waitForTimeout(600);
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
+  await page.waitForTimeout(600);
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, secondTo, 'Galle', 'Galle');
+  await page.waitForTimeout(600);
+
+  const custName = 'E2E Both Modes ' + Date.now();
+  await page.locator('#f-customerName').fill(custName);
+  await page.locator('[data-action="approveReady"]').click();
+
+  const qrow = page.locator('#view .qrow', { hasText: custName });
+  await expect(qrow).toBeVisible({ timeout: 8000 });
+  await qrow.click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+
+  const outPanel = page.locator('.ch-out-panel');
+  if (!(await outPanel.isVisible().catch(() => false))) {
+    await page.locator('[data-action="toggleOutput"]').click();
+  }
+  await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
+  await expect(page.locator('[data-action="toggleChauffeurUpsell"]')).toBeVisible();
+  await page.locator('[data-action="toggleChauffeurUpsell"]').click();
+
+  const editor = page.locator('.ch-output-body .ch-output-editor');
+  await expect(editor).toHaveValue(/If you'd prefer the chauffeur-guide option/i);
+  await expect(editor).toHaveValue(/\$[0-9,]+\.[0-9]{2}/);
+});
+
 // Spec 4 (V5): maker-checker status sync. The old per-status `#statusSelect` dropdown was
 // retired — a quote's status now moves only through the maker-checker actions (Submit for
 // review / Approve — ready to send), and transition() PATCHes the new status then bounces to
