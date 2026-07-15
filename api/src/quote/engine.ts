@@ -25,6 +25,7 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
   const warnings: string[] = [];
   let subtotalCents = 0;
   let costCents = 0;
+  let protectedMinimumCents = 0;
 
   if (req.product === 'shared') {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
@@ -49,6 +50,7 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
+    protectedMinimumCents = req.legs.length * rateCard.floorCents[vehicle];
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
     costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm, rateCard) * costPerKm), 0);
     if (req.extras?.length) {
@@ -95,7 +97,7 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
   // Final-price policy is deliberately downstream of every core calculation and runs once.
   // Shared-seat prices stay fixed. Legacy locked rate cards without the policy remain unchanged.
   const finished = req.product !== 'shared' && rateCard.priceFinishing
-    ? finishPrice(subtotalCents, costCents, rateCard.priceFinishing)
+    ? finishPrice(subtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
     : { rawCents: subtotalCents, finalCents: subtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
   if (finished.adjustmentCents !== 0) {
     lineItems.push({

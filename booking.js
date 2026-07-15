@@ -1045,7 +1045,7 @@ function chauffeurDistanceCharge(){
   // Bulk km × per-km rate, with NO per-leg minimum-fare floor — the backend engine
   // (api/src/quote/chauffeur.ts) has no such floor, so flooring at the private per-leg total
   // (tripBase) over-quoted short-leg chauffeur trips and made the price drop at the pay step.
-  return Math.round(bulkKm * T.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
+  return T.distancePrice(bulkKm, vehicleKey);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // Server-authoritative price. Until the booking is created the wizard shows a best-effort
@@ -1076,7 +1076,11 @@ function calcTotal(){
     : (perVehicle ? unit : (unit*state.ad + unit*0.6*state.ch));
   if(isShared){ const free=Math.max(1,state.ad+state.ch); t += Math.max(0,state.bags-free)*10; }
   state.addons.forEach(a=>t+=addonPrices[a]);
-  return isShared ? t : window.TRANSFERS.finishPrice(t);
+  if(isShared) return t;
+  const privateFloor = (isTrip && state.svc!=='chauffeur')
+    ? tripLegs.length * window.TRANSFERS.FLOORS[vehicleKey]
+    : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
+  return window.TRANSFERS.finishPrice(t, privateFloor);
 }
 // Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.

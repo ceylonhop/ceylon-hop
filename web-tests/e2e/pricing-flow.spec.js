@@ -67,10 +67,10 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
   // Switch to the van WHILE the notice is still pending.
   await page.evaluate(() => window.switchToVan());
 
-  // The total holds at the van's un-drifted standard price ($85) — it must NOT jump to $238 yet.
-  await expect(page.locator('#sum-total')).toHaveText('$85');
-  // Notice now offers the van's own drift: from $85 (standard) to finished $219 (raw $224).
-  await expect(page.locator('#reprice-note')).toContainText('$85');
+  // The total holds at the van's exact un-drifted price ($85.50) until acknowledgement.
+  await expect(page.locator('#sum-total')).toHaveText('$85.50');
+  // Notice now offers the van's own drift: from $85.50 (standard) to finished $219.
+  await expect(page.locator('#reprice-note')).toContainText('$85.50');
   await expect(page.locator('#reprice-note')).toContainText('$219');
   await expect(page.locator('#n1')).toBeDisabled();
 

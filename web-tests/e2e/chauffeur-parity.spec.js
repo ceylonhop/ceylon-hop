@@ -8,8 +8,8 @@ import { gotoBooking } from './_stubs.js';
 // an inflated price that dropped at the pay step and tripped the ops price-mismatch flag.
 
 // Two 20 km legs, car, two consecutive dates (idle-days = 0):
-//   buffered travel = 25 + 25 = 50 → distance charge round(50 × 0.4025) = $20
-//   day rate  $31.05 × 2 days = $62.10  →  total $82.10
+//   buffered travel = 25 + 25 = 50 → distance charge round(50 × 40.25¢) = $20.13
+//   day rate  $31.05 × 2 days = $62.10  → raw total $82.23 → finished $82
 // The buggy floor would instead use the private total (2 × $29 min = $58) → distance $58, total $120.10.
 const TRIP = [
   'mode=trip',
@@ -28,6 +28,6 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
 
   // distance charge = the bulk km charge, NOT floored at the $58 private per-leg total
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  await expect(page.locator('#sum-adamt')).toHaveText('$20');
+  await expect(page.locator('#sum-adamt')).toHaveText('$20.13');
   await expect(page.locator('#sum-total')).toHaveText('$82');
 });

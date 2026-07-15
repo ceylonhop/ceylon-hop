@@ -32,10 +32,10 @@ describe('privateQuote (the fare customers see)', () => {
     const q = T.privateQuote('cmb-airport', 'ella');
     expect(q.km).toBe(335);
     // billableKm = 335 + min(15, round(33.5)) = 350
-    // car = max(29, round(350 × 0.4025)) = 141
-    // van = max(50, round(350 × 0.5405)) = 189
-    expect(q.rawCar).toBe(carFare(335)); // core 141
-    expect(q.rawVan).toBe(vanFare(335)); // core 189
+    // car = max(29, round(350 × 40.25¢)) = 140.88
+    // van = max(50, round(350 × 54.05¢)) = 189.18
+    expect(q.rawCar).toBe(140.88);
+    expect(q.rawVan).toBe(189.18);
     expect(q.car).toBe(139);
     expect(q.van).toBe(189);
   });
@@ -59,7 +59,7 @@ describe('privateQuote (the fare customers see)', () => {
     // van raw = round(12 × 0.5405) = 6  → $50 floor
     expect(q.car).toBe(29); // floor
     expect(q.rawVan).toBe(50); // core floor
-    expect(q.van).toBe(49); // completed customer total
+    expect(q.van).toBe(50); // final-price policy preserves the configured floor
   });
 
   // Regression guard: hill-country must not collapse back to the haversine estimate
@@ -173,8 +173,8 @@ describe('chauffeur + deposit constants (engine parity)', () => {
 describe('booking.js chauffeur distance rate (no silent drift)', () => {
   const src = readFileSync(path.resolve(__dirname, '../../booking.js'), 'utf8');
 
-  it('reads the per-km rate from the shared TRANSFERS.PER_KM source of truth', () => {
-    expect(src).toMatch(/T\.PER_KM/);
+  it('reads chauffeur distance pricing from the shared TRANSFERS source of truth', () => {
+    expect(src).toMatch(/T\.distancePrice/);
   });
 
   it('does not contain the superseded pre-2026-07-09 per-km rates', () => {

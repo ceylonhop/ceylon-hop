@@ -140,6 +140,11 @@ describe('internal quoting tool route', () => {
     expect(saved.status).toBe('draft');
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(got.totalCents).toBe(est.total.cents); // saved total == previewed total
+    const adjustmentItem = got.result.lineItems.find((item: { meta?: { kind?: string } }) => item.meta?.kind === 'price_adjustment');
+    const baseItems = got.result.lineItems.filter((item: { meta?: { kind?: string } }) => item.meta?.kind !== 'price_adjustment');
+    expect(got.result.subtotalCents).toBe(baseItems.reduce((sum: number, item: { amountCents: number }) => sum + item.amountCents, 0));
+    expect(got.result.priceAdjustmentCents).toBe(adjustmentItem?.amountCents ?? 0);
+    expect(got.result.totalCents).toBe(est.total.cents);
     expect(got.customerName).toBe('Maya');
     expect(got.rateCardVersion).toBe('2026-07-14');
   });

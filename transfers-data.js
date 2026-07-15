@@ -155,8 +155,8 @@
     return {
       km,
       duration: real ? minToText(real[1]) : durationText(km),
-      car: finishPrice(rawCar),
-      van: finishPrice(rawVan),
+      car: finishPrice(rawCar, FLOORS.car),
+      van: finishPrice(rawVan, FLOORS.van),
       rawCar,
       rawVan,
     };
@@ -164,9 +164,10 @@
 
   // Mirrors api/src/quote/priceFinish.ts in integer cents. This is display parity only; the
   // backend repeats the policy authoritatively before a booking or ops quote is persisted.
-  function finishPrice(amount) {
+  function finishPrice(amount, minimumAllowed) {
     if(!Number.isFinite(amount) || amount < 0) return amount;
     const rawCents = Math.round(amount * 100);
+    const minimumAllowedCents = Math.round((minimumAllowed || 0) * 100);
     if(rawCents === 0) return 0;
     const wholeDollars = Math.floor(rawCents / 100);
     const digits = Math.max(1, String(wholeDollars).length);
@@ -176,13 +177,13 @@
     const withinLimit = candidate => candidate >= rawCents ||
       (rawCents - candidate) * 10000 <= rawCents * PRICE_FINISHING.maxReductionBps;
     if(charm === rawCents) return rawCents / 100;
-    if(charm > 0 && charm < rawCents && withinLimit(charm)) return charm / 100;
+    if(charm > 0 && charm < rawCents && charm >= minimumAllowedCents && withinLimit(charm)) return charm / 100;
 
     const increment = PRICE_FINISHING.roundToCents;
     const lower = Math.floor(rawCents / increment) * increment;
     const upper = lower + increment;
     const rounded = rawCents - lower <= upper - rawCents ? lower : upper;
-    return withinLimit(rounded) ? rounded / 100 : rawCents / 100;
+    return rounded >= minimumAllowedCents && withinLimit(rounded) ? rounded / 100 : rawCents / 100;
   }
 
   // ---- Shared lookup: do both points sit on one corridor? ----
@@ -261,9 +262,14 @@
   function legPrice(km, veh){
     if(km==null) return null;
     const bkm = billableKm(km);
-    const car = Math.max(FLOORS.car, Math.round(bkm * PER_KM.car));
-    const van = Math.max(FLOORS.van, Math.round(bkm * PER_KM.van));
+    const car = Math.max(FLOORS.car, Math.round(bkm * (PER_KM.car * 100)) / 100);
+    const van = Math.max(FLOORS.van, Math.round(bkm * (PER_KM.van * 100)) / 100);
     return veh==='van' ? van : car;
+  }
+  function distancePrice(km, veh){
+    if(km==null) return null;
+    const rate = veh==='van' ? PER_KM.van : PER_KM.car;
+    return Math.round(km * (rate * 100)) / 100;
   }
   // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
   // then popular extras. Google exact-place suggestions can be appended later by a
@@ -343,7 +349,7 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
-    resolvePlace, kmBetween, billableKm, legPrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
+    resolvePlace, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null

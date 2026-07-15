@@ -28,11 +28,12 @@ const HUBS = [
 
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const slug = (a, b) => `${a}-to-${b}`;
+const price = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
 
 function priceChips(q, shared) {
   const chips = [
-    `<div class="pc"><span class="pc-k">Private car</span><span class="pc-v">from $${q.car}</span></div>`,
-    `<div class="pc"><span class="pc-k">AC van (up to 6)</span><span class="pc-v">from $${q.van}</span></div>`,
+    `<div class="pc"><span class="pc-k">Private car</span><span class="pc-v">from $${price(q.car)}</span></div>`,
+    `<div class="pc"><span class="pc-k">AC van (up to 6)</span><span class="pc-v">from $${price(q.van)}</span></div>`,
   ];
   if (shared) chips.push(`<div class="pc pc-share"><span class="pc-k">Shared seat</span><span class="pc-v">from $${shared.seat}</span></div>`);
   return chips.join('');
@@ -43,7 +44,7 @@ function faqItems(from, to, q, shared) {
     [`How long does the ${from} to ${to} transfer take?`,
       `The drive is about ${q.duration} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
-      `A private car is from $${q.car} and an air-conditioned van (up to 6 people) from $${q.van}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from ${shared.seat} per person.` : ''}`],
+      `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from ${shared.seat} per person.` : ''}`],
     shared
       ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel.replace(/\s*→\s*/g, '–')} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
       : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest shared service.`],
@@ -74,7 +75,7 @@ function jsonLd(from, to, url, q, faq) {
     name: `${from} to ${to} private transfer`,
     areaServed: 'Sri Lanka',
     provider: { '@type': 'TravelAgency', name: 'Ceylon Hop', url: `${ORIGIN}/`, telephone: '+94779669662' },
-    offers: { '@type': 'Offer', priceCurrency: 'USD', price: String(q.car), url },
+    offers: { '@type': 'Offer', priceCurrency: 'USD', price: price(q.car), url },
   };
   return [breadcrumb, faqPage, service]
     .map(o => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n');
@@ -193,7 +194,7 @@ function tripIndex(T, content) {
   for (const [a, b] of BASE_PAIRS) { dirs.push({ from: a, to: b }); dirs.push({ from: b, to: a }); }
   const card = ({ from, to }) => {
     const q = T.privateQuote(from, to);
-    return `<a class="rt-card" href="${p}trip/${slug(from, to)}/"><span class="rt-name">${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}</span><span class="rt-meta">${q.km} km · from $${q.car}</span></a>`;
+    return `<a class="rt-card" href="${p}trip/${slug(from, to)}/"><span class="rt-name">${esc(T.byId[from].name)} → ${esc(T.byId[to].name)}</span><span class="rt-meta">${q.km} km · from $${price(q.car)}</span></a>`;
   };
   const groups = HUBS.map(h => {
     const inHub = dirs.filter(d => h.match(d)).sort((x, y) => T.byId[x.to].name.localeCompare(T.byId[y.to].name));

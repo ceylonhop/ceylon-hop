@@ -82,7 +82,7 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   // Per-leg buffers are clamped before the chauffeur distance rate is applied:
   // (57 km + 251 km) × $0.4025 = $123.97, without private-transfer minimum fares.
-  await expect(page.locator('#sum-adamt')).toHaveText('$124');
+  await expect(page.locator('#sum-adamt')).toHaveText('$123.97');
   await expect(page.locator('#sum-total')).toHaveText('$186'); // raw $186.07 → nearest $1
 });
 

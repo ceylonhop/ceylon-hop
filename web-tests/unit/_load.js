@@ -42,5 +42,5 @@ export const PLACE_IDS = [
 //   fare       = max(floor, round(billableKm × rate))   — rate is SELL = cost × 1.15
 //   car: $0.4025/km, $29 floor · van: $0.5405/km, $50 floor
 const billableKm = (km) => km + Math.min(15, Math.max(5, Math.round(km * 0.10)));
-export const carFare = (km) => Math.max(29, Math.round(billableKm(km) * 0.4025));
-export const vanFare = (km) => Math.max(50, Math.round(billableKm(km) * 0.5405));
+export const carFare = (km) => Math.max(29, Math.round(billableKm(km) * (0.4025 * 100)) / 100);
+export const vanFare = (km) => Math.max(50, Math.round(billableKm(km) * (0.5405 * 100)) / 100);

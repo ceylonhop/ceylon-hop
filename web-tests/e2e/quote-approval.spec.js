@@ -367,6 +367,7 @@ test('final-price adjustment is auditable internally but hidden from the custome
   await page.locator('.ch-tab[data-tab="internal"]').click();
   await expect(page.locator('.ch-output-body')).toContainText('Final price adjustment');
   await page.locator('.ch-tab[data-tab="whatsapp"]').click();
+  await expect(page.locator('.ch-output-editor')).toContainText('Colombo → Kandy — $119.00');
   await expect(page.locator('.ch-output-editor')).toContainText('Total: $119.00');
   await expect(page.locator('.ch-output-editor')).not.toContainText('Final price adjustment');
 });

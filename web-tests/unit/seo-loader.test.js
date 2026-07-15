@@ -11,11 +11,11 @@ describe('loadTransfers', () => {
   it('prices Kandy→Ella from the engine rate card', () => {
     const q = T.privateQuote('kandy', 'ella'); // real leg 136 km
     expect(q.km).toBe(136);
-    // Core fares are $60/$81; final-price finishing produces $59/$79.
-    expect(q.rawCar).toBe(60);
-    expect(q.rawVan).toBe(81);
+    // Exact-cent core fares finish independently under the 2.5% cap.
+    expect(q.rawCar).toBe(60.38);
+    expect(q.rawVan).toBe(81.08);
     expect(q.car).toBe(59);
-    expect(q.van).toBe(79);
+    expect(q.van).toBe(81);
   });
   it('finds a shared corridor where one exists', () => {
     expect(T.sharedOption('kandy', 'ella')).toBeTruthy();      // hill-line

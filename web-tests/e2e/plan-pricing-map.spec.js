@@ -31,9 +31,9 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
 
   await page.locator('.veh-btn[data-veh="van"]').click();
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $79');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $81');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$75[-\u2013]\$90/); // guide range = ceil(finished+10) & a $25/$15 band
+  await expect(page.locator('#sum-amt')).toHaveText(/\$80[-\u2013]\$95/); // guide range = ceil(finished+10) & a $25/$15 band
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 

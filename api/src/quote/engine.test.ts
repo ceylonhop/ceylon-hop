@@ -181,8 +181,20 @@ describe('quote()', () => {
   it('van9: 20km private → floor 5000¢ applies (raw 25km × 54.05¢ = 1351 < 5000)', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
     expect(r.subtotalCents).toBe(5000); // core minimum fare remains intact
-    expect(r.totalCents).toBe(4900);
-    expect(r.marginEstimateCents).toBe(4900 - Math.round(25 * 47));
+    expect(r.totalCents).toBe(5000); // final-price policy must not undercut the configured floor
+    expect(r.marginEstimateCents).toBe(5000 - Math.round(25 * 47));
+  });
+
+  it('preserves the sum of per-leg minimum fares when finishing a multi-leg private quote', () => {
+    const r = quote({
+      product: 'private', vehicle: 'van', pax: 4, bags: 2,
+      legs: [
+        { from: 'A', to: 'B', distanceKm: 10 },
+        { from: 'B', to: 'C', distanceKm: 10 },
+      ],
+    });
+    expect(r.subtotalCents).toBe(10000);
+    expect(r.totalCents).toBe(10000);
   });
 
   it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {

@@ -124,8 +124,8 @@ function minLegPrice(veh){
 // Indicative guide range: the ceiling is the real total + a $10 cushion (rounded up to a
 // clean $5, so we never quote under cost), and the band tightens for smaller quotes so a
 // flat $25 spread never dwarfs a small fare. `lo` is clamped to the vehicle's minimum fare.
-function guidePriceRange(totalPrice, veh){
-  const finishedPrice = T.finishPrice(totalPrice);
+function guidePriceRange(totalPrice, veh, pricedLegCount){
+  const finishedPrice = T.finishPrice(totalPrice, pricedLegCount * minLegPrice(veh));
   const hi = Math.ceil((finishedPrice + 10) / 5) * 5; // ceiling = finished total + a $10 cushion, to a clean $5
   const band = finishedPrice >= 150 ? 25 : 15;        // $25 for normal trips; $15 keeps small quotes tight
   const lo = Math.max(minLegPrice(veh), hi - band);  // never below the vehicle minimum (or below the real figure)
@@ -353,7 +353,10 @@ if(addStayBtn) addStayBtn.addEventListener('click',()=>{
 function fmtISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 function fmtDate(d){ return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); }
-function money(n){ return '$'+Math.round(n); }
+function money(n){
+  const cents=Math.round(n*100);
+  return '$'+(cents/100).toFixed(cents%100===0?0:2);
+}
 
 // route as an ordered list of {place, nights}, merging consecutive same places.
 // A stay adds nights to its place; a transfer adds its from/to as 0-night points.
@@ -434,7 +437,7 @@ function distHtml(km, price){
   return `<span class="lm-dist"><b>${km} km</b> · ~${durationText(km)}</span>`+
          `<span class="lm-src" title="Distance &amp; time estimated by Google">Google distance</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(T.finishPrice(price))}</b></span>`;
+         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`;
 }
 
 // remove any portaled date popovers left over from the previous render
@@ -675,7 +678,7 @@ function updateSummary(opts={}){
 
   const amt=document.getElementById('sum-amt');
   if(totalPrice>0 && resolvedLegs>=1){
-    amt.textContent = guidePriceRange(totalPrice, state.vehicle);
+    amt.textContent = guidePriceRange(totalPrice, state.vehicle, resolvedLegs);
   } else {
     amt.textContent='~$—';
   }
