@@ -24,7 +24,7 @@ const DAY_RATE_COST_CENTS = 2700; // $27/day driver COST (owner 2026-07-10)
 const sell = (costCents: number): number => (costCents * (100 + MARKUP_PCT)) / 100;
 
 export const RATE_CARD = {
-  version: '2026-07-11',
+  version: '2026-07-14',
   currency: 'USD',
   markupPct: MARKUP_PCT,
   // Customer SELL rate per km = cost × 1.15 (the engine + front-end price off this).
@@ -55,6 +55,9 @@ export const RATE_CARD = {
     custom: { maxPax: 99, maxBags: 99 },
   },
   bufferPct: 10,
+  // Applied once to the completed private/chauffeur subtotal. Shared seats retain their fixed
+  // per-seat arithmetic. maxReductionBps=250 means a strict 2.5% maximum downward adjustment.
+  priceFinishing: { maxReductionBps: 250, roundToCents: 50 },
   fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   // Extras are FINAL prices with NO markup (owner 2026-07-11).
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
@@ -75,6 +78,9 @@ export type RateCard = {
   deposit: { pct: number; capCents: number };
   vehicle: Record<Vehicle, { maxPax: number; maxBags: number }>;
   bufferPct: number;
+  // Optional for backwards compatibility with rate-card JSON snapshots created before this
+  // policy existed. Those locked quotes retain their original, unfinished totals.
+  priceFinishing?: { maxReductionBps: number; roundToCents: number };
   fxUsdToLkr: number;
   extras: Record<string, number>;
   shared: { colomboPickupCents: number; extraBagCents: number };

@@ -6,6 +6,7 @@ import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
 import { priceExtras, depositCents, EXTRA_LABELS } from './extrasDeposit';
+import { finishPrice } from './priceFinish';
 
 // GL-1d: van14/custom are custom-priced per quote (owner decision 2026-07-02) — the operator
 // supplies the per-km rate. Any other tier has an owner-confirmed rate that must not be
@@ -91,7 +92,19 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     }
   }
 
-  const totalCents = subtotalCents;
+  // Final-price policy is deliberately downstream of every core calculation and runs once.
+  // Shared-seat prices stay fixed. Legacy locked rate cards without the policy remain unchanged.
+  const finished = req.product !== 'shared' && rateCard.priceFinishing
+    ? finishPrice(subtotalCents, costCents, rateCard.priceFinishing)
+    : { rawCents: subtotalCents, finalCents: subtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
+  if (finished.adjustmentCents !== 0) {
+    lineItems.push({
+      label: 'Final price adjustment',
+      amountCents: finished.adjustmentCents,
+      meta: { kind: 'price_adjustment', strategy: finished.strategy },
+    });
+  }
+  const totalCents = finished.finalCents;
   const deposit = depositCents(totalCents, rateCard);
   const amountDueNowCents = totalCents;
   const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
@@ -102,6 +115,8 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     lineItems,
     subtotalCents,
     totalCents,
+    priceAdjustmentCents: finished.adjustmentCents,
+    priceStrategy: finished.strategy,
     depositCents: deposit,
     amountDueNowCents,
     marginEstimateCents,

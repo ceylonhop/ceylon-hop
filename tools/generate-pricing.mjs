@@ -25,6 +25,7 @@ export function renderPricingBlock(p) {
     `const PER_KM = ${j(p.perKm)};`,
     `const FLOORS = ${j(p.floors)};`,
     `const BUFFER_PCT = ${p.bufferPct};`,
+    `const PRICE_FINISHING = ${j(p.priceFinishing)};`,
     `const CHAUFFEUR_DAY_FEE = ${p.chauffeurDayFee};`,
     `const DEPOSIT_PCT = ${p.depositPct};`,
     `const DEPOSIT_CAP = ${p.depositCap};`,

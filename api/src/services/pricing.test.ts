@@ -77,23 +77,23 @@ const single: SingleTransferInput = { ...base, from: 'Kandy', to: 'Ella', adults
 describe('priceSingle (engine-backed)', () => {
   it('prices a resolvable route with the engine (car per-km × billable km)', async () => {
     const p = await priceSingle(single, maps);
-    expect(p).toEqual({ currency: 'USD', totalCents: 3945, amountDueNowCents: 3945, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 3900, amountDueNowCents: 3900, priced: true });
   });
 
   it('prices a van at the van rate', async () => {
     const p = await priceSingle({ ...single, vehicleType: 'van' }, maps);
-    expect(p).toEqual({ currency: 'USD', totalCents: 5297, amountDueNowCents: 5297, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 5300, amountDueNowCents: 5300, priced: true });
   });
 
   it('adds priced extras from the payload', async () => {
     const p = await priceSingle({ ...single, extras: ['luggage', 'front'] }, maps);
     // 3945 + luggage 500 + front 800
-    expect(p).toEqual({ currency: 'USD', totalCents: 5245, amountDueNowCents: 5245, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 5250, amountDueNowCents: 5250, priced: true });
   });
 
   it('upgrades the vehicle when the party does not fit (engine authority, never underprice)', async () => {
     const p = await priceSingle({ ...single, adults: 5 }, maps); // 5 pax can't ride a car
-    expect(p).toEqual({ currency: 'USD', totalCents: 5297, amountDueNowCents: 5297, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 5300, amountDueNowCents: 5300, priced: true });
   });
 
   it('returns priced:false when the route cannot be resolved', async () => {
@@ -124,7 +124,7 @@ describe('priceTrip (engine-backed) — private', () => {
   it('prices each consecutive stop pair as an engine leg', async () => {
     const p = await priceTrip(knownTrip, maps);
     // CMB→Kandy 4991 + Kandy→Ella 3945
-    expect(p).toEqual({ currency: 'USD', totalCents: 8936, amountDueNowCents: 8936, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 8900, amountDueNowCents: 8900, priced: true });
   });
 
   it('returns priced:false when any leg cannot be resolved', async () => {
@@ -142,26 +142,26 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
     );
     // days 3 (20th→22nd), idle 1 → billable 222 + 100 = 322 km
     // 3×3105 + round(322×40.25) = 9315 + 12961 = 22276
-    expect(p).toEqual({ currency: 'USD', totalCents: 22276, amountDueNowCents: 22276, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 21900, amountDueNowCents: 21900, priced: true });
   });
 
   it('synthesizes dates from `days` when the trip is flexible (engine only counts the span)', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 4 }, maps);
     // days 4, 2 travel legs → idle 2 → billable 222 + 200 = 422 km
     // 4×3105 + round(422×40.25) = 12420 + 16986 = 29406
-    expect(p).toEqual({ currency: 'USD', totalCents: 29406, amountDueNowCents: 29406, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 28900, amountDueNowCents: 28900, priced: true });
   });
 
   it('defaults the span to one day per leg when `days` is absent', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur' }, maps);
     // days 2, idle 0 → 2×3105 + round(222×40.25) = 6210 + 8936 = 15146
-    expect(p).toEqual({ currency: 'USD', totalCents: 15146, amountDueNowCents: 15146, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 14900, amountDueNowCents: 14900, priced: true });
   });
 
   it('clamps extra legs onto the last day when there are more legs than days', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 1 }, maps);
     // both legs share the single day → days 1, idle 0 → 3105 + round(222×40.25)=8936 = 12041
-    expect(p).toEqual({ currency: 'USD', totalCents: 12041, amountDueNowCents: 12041, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 11900, amountDueNowCents: 11900, priced: true });
   });
 
   it('synthesizes when the payload dates are unusable (blank/partial)', async () => {
@@ -169,7 +169,7 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
       { ...knownTrip, serviceType: 'chauffeur', dates: ['2026-07-20', ''], days: 4 },
       maps,
     );
-    expect(p).toEqual({ currency: 'USD', totalCents: 29406, amountDueNowCents: 29406, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 28900, amountDueNowCents: 28900, priced: true });
   });
 });
 

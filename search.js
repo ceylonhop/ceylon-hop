@@ -153,13 +153,13 @@ const privateCard = `
         <div class="v-ico">${ICONS.car}</div>
         <div class="v-info"><b>AC car</b><small>Up to 3 travelers + bags</small></div>
         <div class="v-price"><div class="amt">$${quote.car}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car })}">Select</a>
+        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car, rawPrice: quote.rawCar })}">Select</a>
       </div>
       <div class="veh-row">
         <div class="v-ico">${ICONS.van}</div>
         <div class="v-info"><b>AC van</b><small>Up to 6 travelers + bags</small></div>
         <div class="v-price"><div class="amt">$${quote.van}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van })}">Select</a>
+        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van, rawPrice: quote.rawVan })}">Select</a>
       </div>
     </div>
     <div class="incl">

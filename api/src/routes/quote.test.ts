@@ -23,7 +23,7 @@ describe('POST /quote/lock', () => {
     const body = await res.json();
     expect(body.quoteId).toBeTruthy();
     expect(body.reference).toMatch(/^Q-/);
-    expect(body.totalCents).toBe(3542); // identical to the display price — the lock doesn't reprice
+    expect(body.totalCents).toBe(3550); // raw 3542¢ → nearest-50¢ final price
     expect(body.marginEstimateCents).toBeUndefined(); // never leak margin to the customer
     // ~7 days out (allow a little slack for test execution time).
     expect(new Date(body.rateLockedUntil).getTime() - Date.now()).toBeGreaterThan(WEEK_MS - 60_000);
@@ -54,7 +54,7 @@ describe('POST /quote', () => {
     const res = await post(createApp(), { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 80 }] });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.totalCents).toBe(3542); // 80km → bill 88km × 40.25¢ = 3542
+    expect(body.totalCents).toBe(3550); // raw 3542¢ → nearest-50¢ final price
     expect(body.marginEstimateCents).toBeUndefined();
   });
 

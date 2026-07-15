@@ -7,6 +7,8 @@ import { loadTransfers, carFare, vanFare } from './_load.js';
 // the backend engine charges — across the floor and per-km regimes — so a formula change (not
 // just a constant) can't silently diverge the customer quote from the backend charge.
 import { legPriceCents, billableKm } from '../../api/src/quote/private.ts';
+import { finishPrice } from '../../api/src/quote/priceFinish.ts';
+import { RATE_CARD } from '../../api/src/quote/rateCard.ts';
 
 let T;
 beforeAll(() => { T = loadTransfers(); });
@@ -29,4 +31,14 @@ describe('customer transfer prices match the backend (rate + buffer + floor, end
       expect(vanFare(km), `vanFare(${km})`).toBe(backendLegUsd(km, 'van'));
     }
   });
+});
+
+describe('customer final-price finishing matches the backend', () => {
+  const rawCents = [4000, 8099, 8110, 40148, 102000, 112500, 112936, 152000, 206018];
+  for (const raw of rawCents) {
+    it(`${raw} cents`, () => {
+      const backend = finishPrice(raw, 0, RATE_CARD.priceFinishing).finalCents;
+      expect(Math.round(T.finishPrice(raw / 100) * 100)).toBe(backend);
+    });
+  }
 });

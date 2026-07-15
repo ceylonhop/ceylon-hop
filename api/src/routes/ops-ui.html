@@ -3128,13 +3128,21 @@ function legOrderItems() {
   return (lastEstimate && lastEstimate.lineItems) ? lastEstimate.lineItems : [];
 }
 
+// The adjustment is visible in the internal price build-up, but customer drafts show only the
+// polished final total rather than exposing an internal pricing-policy label.
+function customerLineItems() {
+  return legOrderItems().filter(function(it) {
+    return !(it.meta && it.meta.kind === 'price_adjustment');
+  });
+}
+
 function drivingLegList() {
   return state.legs.filter(legDrives);
 }
 
 // Split lineItems into { travel: [...perDrivingLeg], extras: [...rest] }.
 function splitLineItems() {
-  var items = legOrderItems();
+  var items = customerLineItems();
   var drivingCount = drivingLegList().length;
   // Prefer explicit meta.billableKm markers; fall back to positional (first N).
   var hasMeta = items.some(function(it) { return it.meta && it.meta.billableKm != null; });
@@ -3197,7 +3205,7 @@ function generatedWhatsappMessage() {
     });
     lines.push('');
     // Every engine lineItem as a priced row.
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push(it.label + ' — ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
@@ -3237,7 +3245,7 @@ function generatedEmailMessage() {
       }
     });
     lines.push('');
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push('  ' + it.label + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));

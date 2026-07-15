@@ -76,13 +76,14 @@ test('trip booking review shows planner-provided Google distances for exact-plac
   await expect(page.locator('#trip-route .tr-leg').first()).toContainText('52 km');
   await expect(page.locator('#trip-route .tr-leg').nth(1)).toContainText('236 km');
   await expect(page.locator('#trip-route')).not.toContainText('Distance on request');
-  await expect(page.locator('#sum-total')).toHaveText('$134');
+  await expect(page.locator('#sum-total')).toHaveText('$129');
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  // bulk km charge (round(round(288×1.1)×0.4025)=$128), NOT floored at the $120 private per-leg total
-  await expect(page.locator('#sum-adamt')).toHaveText('$128');
-  await expect(page.locator('#sum-total')).toHaveText('$190.10'); // $128 distance + 2 days × $31.05
+  // Per-leg buffers are clamped before the chauffeur distance rate is applied:
+  // (57 km + 251 km) × $0.4025 = $123.97, without private-transfer minimum fares.
+  await expect(page.locator('#sum-adamt')).toHaveText('$124');
+  await expect(page.locator('#sum-total')).toHaveText('$186'); // raw $186.07 → nearest $1
 });
 
 test('fallback-priced trip does not show zero chauffeur distance', async ({ page }) => {
@@ -97,11 +98,11 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
   ].join('&');
 
   await gotoBooking(page, { query });
-  await expect(page.locator('#sum-total')).toHaveText('$110');
+  await expect(page.locator('#sum-total')).toHaveText('$109');
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#trip-route')).toContainText('Distance on request');
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   await expect(page.locator('#sum-adamt')).toHaveText('$110');
-  await expect(page.locator('#sum-total')).toHaveText('$172.10'); // $110 distance + 2 days × $27
+  await expect(page.locator('#sum-total')).toHaveText('$169'); // raw $172.10 → eligible $169 charm price
 });

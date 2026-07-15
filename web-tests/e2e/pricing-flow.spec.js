@@ -4,19 +4,19 @@ import { gotoBooking, pickPlace } from './_stubs.js';
 test('price holds at the quoted amount on load (no re-price from the pre-filled route)', async ({ page }) => {
   // Stubbed route reports 200km, but an unchanged pre-filled route must NOT re-price.
   await gotoBooking(page, { routeKm: 200 });
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
   // give the map/onRoute a moment — price must still hold (regression: b528abc)
   await page.waitForTimeout(1200);
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
 });
 
 test('firm floor: a cheaper new drop-off never drops the quoted price', async ({ page }) => {
   // legPrice(200,'car') = round(220 × 0.35) = $77, which is LESS than the quoted $121.
-  // The quote is a firm floor, so it must HOLD at $121 (no drop, no heads-up needed).
+  // The finished quote is a firm floor, so it must HOLD at $119 (no drop, no heads-up needed).
   // Pin the pick inside the Hikkaduwa drop-off area so the 10 km guard is satisfied
   // and we exercise the re-price path (not the out-of-area block).
   await gotoBooking(page, { routeKm: 200, pickGeo: { lat: 6.15, lng: 80.11 } });
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
 
   // Known places are intentionally listed before Google. Pick the Google row
   // explicitly so this test continues to exercise live-distance repricing.
@@ -24,25 +24,25 @@ test('firm floor: a cheaper new drop-off never drops the quoted price', async ({
 
   await expect(page.locator('#sum-name')).toContainText('Hikkaduwa hotel Result 1'); // drop-off did change
   await expect(page.locator('#reprice-note')).toHaveCount(0);                // but no notice (cheaper)
-  await expect(page.locator('#sum-total')).toHaveText('$121');               // firm floor held
+  await expect(page.locator('#sum-total')).toHaveText('$119');               // finished firm floor held
 });
 
 test('warns before a material price increase and holds the total until accepted', async ({ page }) => {
-  // Stub reports a 400 km route. On load (no pick) the price must hold at the quoted $121.
+  // Stub reports a 400 km route. On load (no pick) the finished price must hold at $119.
   await gotoBooking(page, { routeKm: 400, pickGeo: { lat: 6.15, lng: 80.11 } });
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
 
   // Customer picks a drop-off inside the area whose routed distance drifts up materially.
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
 
   // Heads-up appears; total is NOT changed yet; Continue is gated.
   await expect(page.locator('#reprice-note')).toBeVisible();
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
   await expect(page.locator('#n1')).toBeDisabled();
 
-  // Accept the higher fixed price. legPrice(400,'car') = round(440×0.4025) = $177.
+  // Accept the higher fixed price. The clamped-buffer core fare and finished price are both $167.
   await page.locator('#reprice-note button.btn-primary').click();
-  await expect(page.locator('#sum-total')).toHaveText('$177');
+  await expect(page.locator('#sum-total')).toHaveText('$167');
   await expect(page.locator('#reprice-note')).toHaveCount(0);
   await expect(page.locator('#n1')).toBeEnabled();
 });
@@ -56,12 +56,12 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
   // would show $238 before acknowledgement and render a broken "from $238 to $238" line.)
   await gotoBooking(page, { routeKm: 400, pickGeo: { lat: 6.15, lng: 80.11 } });
 
-  // Car drift notice appears: from the quoted $121 to legPrice(400,'car')=$177. Total held, gated.
+  // Car drift notice appears: from finished $119 to the new finished $167. Total held, gated.
   await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
   await expect(page.locator('#reprice-note')).toBeVisible();
-  await expect(page.locator('#reprice-note')).toContainText('$121');
-  await expect(page.locator('#reprice-note')).toContainText('$177');
-  await expect(page.locator('#sum-total')).toHaveText('$121');
+  await expect(page.locator('#reprice-note')).toContainText('$119');
+  await expect(page.locator('#reprice-note')).toContainText('$167');
+  await expect(page.locator('#sum-total')).toHaveText('$119');
   await expect(page.locator('#n1')).toBeDisabled();
 
   // Switch to the van WHILE the notice is still pending.
@@ -69,14 +69,14 @@ test('switching vehicle while a drift notice is pending keeps the hold (no early
 
   // The total holds at the van's un-drifted standard price ($85) — it must NOT jump to $238 yet.
   await expect(page.locator('#sum-total')).toHaveText('$85');
-  // Notice now offers the van's own drift: from $85 (standard) to $238 (legPrice(400,'van')).
+  // Notice now offers the van's own drift: from $85 (standard) to finished $219 (raw $224).
   await expect(page.locator('#reprice-note')).toContainText('$85');
-  await expect(page.locator('#reprice-note')).toContainText('$238');
+  await expect(page.locator('#reprice-note')).toContainText('$219');
   await expect(page.locator('#n1')).toBeDisabled();
 
   // Accepting commits the drifted van price and clears the gate.
   await page.locator('#reprice-note button.btn-primary').click();
-  await expect(page.locator('#sum-total')).toHaveText('$238');
+  await expect(page.locator('#sum-total')).toHaveText('$219');
   await expect(page.locator('#reprice-note')).toHaveCount(0);
   await expect(page.locator('#n1')).toBeEnabled();
 });

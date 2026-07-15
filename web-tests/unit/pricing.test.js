@@ -34,9 +34,9 @@ describe('privateQuote (the fare customers see)', () => {
     // billableKm = 335 + min(15, round(33.5)) = 350
     // car = max(29, round(350 × 0.4025)) = 141
     // van = max(50, round(350 × 0.5405)) = 189
-    expect(q.car).toBe(carFare(335)); // 141
-    expect(q.van).toBe(vanFare(335)); // 189
-    expect(q.car).toBe(141);
+    expect(q.rawCar).toBe(carFare(335)); // core 141
+    expect(q.rawVan).toBe(vanFare(335)); // core 189
+    expect(q.car).toBe(139);
     expect(q.van).toBe(189);
   });
 
@@ -58,7 +58,8 @@ describe('privateQuote (the fare customers see)', () => {
     // car raw = round(12 × 0.4025) = 5  → $29 floor
     // van raw = round(12 × 0.5405) = 6  → $50 floor
     expect(q.car).toBe(29); // floor
-    expect(q.van).toBe(50); // floor
+    expect(q.rawVan).toBe(50); // core floor
+    expect(q.van).toBe(49); // completed customer total
   });
 
   // Regression guard: hill-country must not collapse back to the haversine estimate
@@ -75,6 +76,24 @@ describe('legPrice', () => {
   });
   it('returns null for unknown distance', () => {
     expect(T.legPrice(null, 'car')).toBeNull();
+  });
+});
+
+describe('finishPrice (psychological final-price parity)', () => {
+  it.each([
+    [80.99, 79],
+    [401.48, 399],
+    [1020, 999],
+    [1125, 1099],
+    [1129.36, 1129.5],
+    [81.1, 81],
+    [399.88, 399],
+  ])('finishes $%s as $%s', (raw, expected) => {
+    expect(T.finishPrice(raw)).toBe(expected);
+  });
+
+  it('uses generated backend configuration rather than hand-copied limits', () => {
+    expect(T.PRICE_FINISHING).toEqual({ maxReductionBps: 250, roundToCents: 50 });
   });
 });
 

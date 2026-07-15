@@ -125,8 +125,9 @@ function minLegPrice(veh){
 // clean $5, so we never quote under cost), and the band tightens for smaller quotes so a
 // flat $25 spread never dwarfs a small fare. `lo` is clamped to the vehicle's minimum fare.
 function guidePriceRange(totalPrice, veh){
-  const hi = Math.ceil((totalPrice + 10) / 5) * 5;   // ceiling = real total + a $10 cushion, to a clean $5
-  const band = totalPrice >= 150 ? 25 : 15;          // $25 for normal trips; $15 keeps small quotes tight
+  const finishedPrice = T.finishPrice(totalPrice);
+  const hi = Math.ceil((finishedPrice + 10) / 5) * 5; // ceiling = finished total + a $10 cushion, to a clean $5
+  const band = finishedPrice >= 150 ? 25 : 15;        // $25 for normal trips; $15 keeps small quotes tight
   const lo = Math.max(minLegPrice(veh), hi - band);  // never below the vehicle minimum (or below the real figure)
   return lo >= hi ? `~$${hi}` : `$${lo}–$${hi}`;
 }
@@ -433,7 +434,7 @@ function distHtml(km, price){
   return `<span class="lm-dist"><b>${km} km</b> · ~${durationText(km)}</span>`+
          `<span class="lm-src" title="Distance &amp; time estimated by Google">Google distance</span>`+
          `<span class="lm-sep">·</span>`+
-         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(price)}</b></span>`;
+         `<span class="lm-price">from ${vehiclePriceIcon()} <b>${money(T.finishPrice(price))}</b></span>`;
 }
 
 // remove any portaled date popovers left over from the previous render

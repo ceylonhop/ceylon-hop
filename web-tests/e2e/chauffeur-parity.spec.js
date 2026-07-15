@@ -29,5 +29,5 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
   // distance charge = the bulk km charge, NOT floored at the $58 private per-leg total
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
   await expect(page.locator('#sum-adamt')).toHaveText('$20');
-  await expect(page.locator('#sum-total')).toHaveText('$82.10');
+  await expect(page.locator('#sum-total')).toHaveText('$82');
 });
