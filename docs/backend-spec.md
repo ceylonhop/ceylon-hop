@@ -235,6 +235,27 @@ the booking, and the amount charged by PayHere are produced by the **same** call
 client may *display* a quote, but the server **re-computes and is authoritative** at
 checkout. Quotes are stamped with the `rate_card` version for auditability.
 
+### 6.1 Discount and promotion extension (approved 2026-07-15)
+
+M18-M22 extend the authoritative pipeline with founder-only manual discounts and
+founder-managed automatic/promo-code rules. Promotions can be sitewide, target a
+canonical one-way/both-way route, or target a stable named-tour identity. Public
+promotions apply to private/chauffeur/tour core charges, never shared seats or extras;
+a founder's manual Ops discount applies to the full supported quote. Rules never stack:
+the server chooses the one eligible candidate producing the greatest actual saving.
+
+The order is `core price -> one discount -> psychological finishing -> amount due`.
+Every discount is capped so the final total remains at or above the same engine's
+estimated cost; there is no role override and no complimentary-booking path. A locked
+promotion remains valid for the quote's fixed seven-day lock, edits do not extend that
+lock, and strict booking conversion adopts the stored server result rather than
+recalculating money. Before discount creation is enabled, the rate card must gain
+owner-confirmed cost values for chargeable extras without changing their existing sell
+prices; an unknown cost fails closed. See
+[`superpowers/specs/2026-07-15-discounts-design.md`](./superpowers/specs/2026-07-15-discounts-design.md)
+for the complete identity, lifecycle, schema, API, RBAC, UI, testing, and rollout
+contract.
+
 ---
 
 ## 7. Booking lifecycle (state machine)

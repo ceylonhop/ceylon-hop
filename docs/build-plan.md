@@ -507,59 +507,112 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   watchdog for webhook failures / stuck `payment_pending` / paid-without-confirmation, alerting to
   WhatsApp/Slack). **Strongly recommended before taking real payments. Full plan:
   [`observability-plan.md`](./observability-plan.md).**
-- **M18 — Discount foundations.** Freeze the no-discount contract, add the pure discount pricing
-  stage, and add forward-compatible persistence with no enabled UI. Full design:
+- **M18 — Discount engine contract.** Freeze current behavior, then add pure discount arithmetic and
+  deterministic promotion selection with no persistence or UI. Full design:
   [`superpowers/specs/2026-07-15-discounts-design.md`](./superpowers/specs/2026-07-15-discounts-design.md).
-  - **18.1 — Decision contract + characterization gate.** Record the approved discount policy and
-    add permanent no-discount fixtures across private, chauffeur, shared, Ops, website, booking, and
-    checkout. **Build:** tests/docs only; no production behavior. **Done when:** reverting any current
-    price-finishing/floor/parity behavior makes the new gate fail, while all existing tests remain green.
-  - **18.2 — Pure discount pricing stage.** Add optional resolved-discount types and integer-cent
-    calculation before psychological finishing. Preserve `subtotalCents`; add additive discount fields
-    and one negative line item. **Tests:** fixed/percentage rounding, caps, eligible subtotal,
-    one-discount rule, floor/cost override warnings, finishing interaction, and exact no-discount parity.
-  - **18.3 — Discount persistence.** Forward-only migration + repositories for immutable/versioned
-    `discount_rules`, append-only `quote_discounts`, `discount_redemptions`, and nullable
-    booking source/snapshot/subtotal/discount fields. **Tests:** Postgres constraints, one active
-    discount, history retention, legacy-row reads, and atomic reservation limits. No route or UI changes.
-- **M19 — Founder-controlled Ops discounts.** Ship manual and promo-rule discounts through the
-  existing quote lifecycle before exposing public promo codes.
-  - **19.1 — Founder rule API + capabilities.** Add `discount:manage_rules`,
-    `discount:apply_manual`, and `discount:override_protection`; founder-only version/deactivate APIs;
-    CSRF, validation, attributed history, and server-side stripping. **Tests:** full role/system matrix,
-    expiry, cap validation, immutable versions, and no cost/margin leak.
-  - **19.2 — Atomic Ops estimate/save.** Extend `/admin/quote/estimate` and `/save` with tri-state
-    discount requests (omit=preserve, request=founder add/replace, null=founder remove). Price and
-    persist quote + discount history atomically; preserve editable lifecycle state and require
-    founder approval before `ready`. **Tests:** edit/reprice/reopen/approve, one active discount, unauthorized writes,
-    below-floor/cost confirmation, locked quote durability, and unchanged ordinary quotes.
-  - **19.3 — Founder promo-rule UI.** Add a restrained founder-only rule list/editor for code,
-    customer label, fixed/percentage value, cap, minimum, validity, and optional redemption limit.
-    Versions/deactivation are explicit; no hard delete. **Gate:** role/browser tests prove Finance/Ops
-    cannot load rule details or mutate them, and active locked quotes survive version/deactivation.
-  - **19.4 — Ops quote UI and customer output.** Founder controls, read-only rows for other roles,
-    `Discounted` badge, override warning/reason, internal breakdown, and reconciled editable
-    WhatsApp/email output. **Gate:** `npm run test:all` plus desktop/mobile Playwright checks; no
-    unrelated Ops workflow or layout changes.
-- **M20 — Public promo codes and conversion.** Add server-authored public discount previews and
-  carry the locked result through booking and payment without changing shared bookings.
-  - **20.1 — Canonical private/chauffeur web quote intent.** Add a backward-compatible, versioned
-    customer-intent arm to `/quote/lock`; resolve Maps server-side, accept optional promo + existing
-    quote id, fingerprint the latest intent, and preserve locked rate/rule snapshots across edits.
-    **Tests:** single/private-trip/chauffeur, expiry boundaries, seven-day durability, unpriced failure,
-    and old no-promo contract compatibility. Shared remains explicitly ineligible.
-  - **20.2 — Promo reservation + strict booking conversion.** Atomically validate the latest intent,
-    adopt its stored server-authored result, freeze the booking pricing result, link quote/booking,
-    and redeem the reservation. Discounted mismatch/expiry/replay fails closed; no-discount fallback remains as-is.
-    **Tests:** concurrency, idempotency, changed itinerary, converted quote replay, full-payment
-    preservation, checkout/PayHere/webhook amount equality, and legacy bookings.
-  - **20.3 — Website and customer surfaces.** Backend-validated promo control on private/chauffeur
-    booking summaries only; structured subtotal/discount/total on confirmation and customer view;
-    extras full price; shared UI untouched. **Gate:** unit + Playwright across single/private-trip/
-    chauffeur, invalid/expired code recovery, itinerary repricing, demo-mode behavior, and mobile.
-  - **20.4 — Staged release and rollback proof.** Expand-first migration, separate Ops/public creation
-    controls, unconditional honoring of existing locks, founder test promo, staging payment smoke,
-    structured discount events, and rollback proof that creation can stop while valid locks remain payable.
+  - **18.1 — Decision contract + zero-discount characterization gate.** Commit independently reviewed
+    golden fixtures for private, chauffeur, shared, extras, psychological finishing, Ops, website,
+    booking, checkout, and confirmation. Record owner-confirmed cost cents (including explicit zero
+    incremental cost where applicable) for every discountable extra. **Build:** tests/docs only; no
+    production behavior.
+    **Tests:** each fixture is a reviewed constant and fails when its current pricing behavior is
+    mutated. **Done when:** every existing path remains cent-identical and all current tests are green.
+  - **18.2 — Pure discount arithmetic.** Add resolved-discount types and integer-cent application
+    between core pricing and finishing. Add separate locked extra-cost fields without changing existing
+    sell prices. Preserve `subtotalCents`; add optional discount fields and one negative line item.
+    Enforce public/manual eligible subtotals and the absolute estimated-cost cap; unavailable cost fails
+    closed. **Tests:** fixed/percentage half-up math, optional maximum, extras,
+    exact-at-cost, cap diagnostics, sell-floor crossing, finishing order, and exact no-discount parity.
+    No database, route, RBAC, or UI changes.
+  - **18.3 — Pure promotion matching and winner selection.** Match sitewide, one-way/both-way route,
+    and named-tour candidates; evaluate automatic rules plus an optional submitted code; select the
+    greatest actual saving with stable tie-breaks and never stack. **Tests:** identity matches and
+    non-matches, time boundaries with fake clock, invalid code behavior, overlap, ties, cost-capped
+    candidates, and zero-cent outcomes. No database or route changes.
+- **M19 — Discount persistence and transaction boundaries.** Add the storage needed to preserve and
+  audit engine decisions while all creation flags remain off.
+  - **19.1 — Promotion rule and event schema.** Forward-only migration for immutable/versioned
+    `promotion_rules` and append-only `discount_events`; add scope/activation constraints and indexes,
+    but no redemption-limit table. Add repositories only. **Tests:** migration/legacy reads,
+    activation/scope checks, active-family and active-code uniqueness, version history, validity
+    ranges, attribution, and rollback procedure. No routes or UI.
+  - **19.2 — Quote discount and booking snapshot schema.** Add `quote_discounts`, quote `revision`, a
+    unique nullable `converted_booking_id`, and nullable booking subtotal/discount/pricing snapshot.
+    Add repositories and role-neutral projections. **Tests:** one active discount, replace/remove
+    history, revision increments, unique conversion, immutable booking pricing, legacy rows, and money
+    checks. No route or UI behavior.
+  - **19.3 — Atomic pricing transaction services.** Define and implement explicit Postgres transaction
+    interfaces for quote save/discount history/event writes and for quote conversion/booking
+    snapshot/event writes. In-memory fakes implement the same contract. **Tests:** injected failures
+    roll back every write, stale revisions conflict, idempotent conversion returns the same booking,
+    and concurrent conversion creates one booking. No route or UI changes.
+- **M20 — Founder-controlled Ops discounts and promotions.** Expose founder workflows through the
+  existing authenticated Ops application before any public promotion is enabled.
+  - **20.1 — Capabilities, flags, and promotion-rule API.** Add `promotion:manage` and
+    `discount:apply_manual`, with `OPS_PROMOTIONS_ENABLED` and `OPS_MANUAL_DISCOUNTS_ENABLED` default
+    off before routes are exposed. Mount list/create/version/deactivate/preview under existing admin
+    auth + CSRF middleware. **Tests:** founder/Finance/Ops/system matrix, CSRF, validation, immutable
+    versions, deactivation, injected clock, event attribution, and cost/margin/code stripping.
+  - **20.2 — Optimistic Ops estimate/save.** Extend estimate/save/read with quote `revision` and
+    tri-state manual discount intent (omit=preserve, request=founder add/replace, null=founder remove).
+    Quotes without manual intent evaluate automatic rules through the M18 resolver that web quote v2
+    will also use; a manual request explicitly replaces that winner until removed. Estimate stays side-effect free;
+    save uses the M19 transaction service. Price edits invalidate
+    approval; ready/sent use existing reopen behavior. **Tests:** full edit/reprice/reopen/approve
+    lifecycle, approval transition + discount event atomicity, stale-edit 409, rollback on failure,
+    cost cap with no override, unauthorized writes,
+    full-payment preservation, and unchanged ordinary quotes.
+  - **20.3 — Founder promotion-management UI.** Add a founder-only Ops view for automatic/code-only
+    activation; sitewide/route/tour scope; one-way/both-way route; fixed/percentage value; optional
+    maximum/minimum; label; and required validity. Include scheduled/active/expired/deactivated list,
+    preview, version, and deactivate. **Gate:** API + Playwright prove other roles cannot load details
+    or mutate, and `npm run test:all` remains green. No quote-builder changes.
+  - **20.4 — Ops quote discount UI and editable output.** Add founder manual controls, read-only rows
+    for other roles, derived `Discounted` badge, requested/applied cost-cap warning, internal breakdown,
+    locked-FX presentation, and a generated-message basis hash for stale edited WhatsApp/email text.
+    **Gate:** desktop/mobile Playwright, copy/output reconciliation, role tests, and no unrelated Ops
+    workflow/layout changes. No public website changes.
+- **M21 — Canonical web quote and conversion.** Introduce a secure v2 quote path that can preserve
+  automatic/code promotion decisions without changing the legacy lock or shared booking path.
+  - **21.1 — Canonical route and tour identity transport.** Preserve canonical route IDs separately
+    from exact addresses and carry stable `tourId` + route fingerprint from tour page through planner,
+    booking intent, and API validation. Altering the logical route clears/replaces identity. Add a
+    site/backend catalog parity contract. **Tests:** one-way identity, exact-address preservation,
+    changed-route clearing, one/multi-leg tour identity, altered-tour clearing, URL round-trip, and
+    `npm run test:all`. No discount application yet.
+  - **21.2 — Signed, revisioned `/quote/v2` lock.** Add create/update endpoints using server Maps,
+    canonical intent fingerprints, fixed seven-day expiry, signed browser-session edit tokens, and
+    optimistic revisions. Keep legacy `/quote/lock` unchanged and extend rate limiting to `/quote/*`.
+    **Tests:** private/trip/chauffeur, token missing/forged/wrong/expired, stale update, non-sliding
+    expiry, unpriced failure, canonical serialization, and legacy contract parity. No promotion UI.
+  - **21.3 — Web promotion resolution and lock durability.** Evaluate automatic rules on every v2
+    quote and an optional code-only candidate, persist the winning immutable snapshot, and preserve it
+    through edits/version/deactivation until fixed expiry. Invalid edits leave the prior quote intact.
+    **Tests:** sitewide/route/tour/code, greatest-saving winner, no stacking, better-automatic response,
+    cost cap, expiry/deactivation, rule snapshot replay, unavailable cost, and flags default off.
+  - **21.4 — Strict atomic booking conversion.** Require v2 quote ID, access token, revision, expiry,
+    and exact intent; adopt stored server engine result without Maps/money recomputation and use M19's
+    conversion transaction. **Tests:** mismatch/stale/expired/forged/replay failure, injected rollback,
+    concurrency/idempotency, unique quote link, immutable booking snapshot, full-payment policy,
+    checkout/PayHere/webhook equality, and unchanged legacy/no-discount/shared paths.
+- **M22 — Customer surfaces and guarded release.** Render the stored promotion consistently and
+  prove the complete customer/payment lifecycle before enabling broad public creation.
+  - **22.1 — Website automatic and promo-code UI.** Use quote v2 for eligible private/chauffeur/tour
+    summaries; display automatic winner, apply/remove code, explain a better automatic offer, reprice
+    all input edits, disable checkout while pending, and retain the prior amount on failure. Store the
+    token in session storage. Shared and demo mode remain untouched. **Gate:** unit + desktop/mobile
+    Playwright for valid/invalid/expired codes, automatic matches, route/tour changes, extras, refresh,
+    lost session, and no-discount parity.
+  - **22.2 — Confirmation, customer view, email, and payment parity.** Project structured gross,
+    discount, total, and due-now fields from the frozen booking snapshot across all customer/internal
+    surfaces; never expose cost/reason/rule internals. **Tests:** independent fixtures for each surface,
+    LKR locked-FX display, checkout/payment/webhook amount equality, legacy bookings, and editable Ops
+    output. No new promotion-management behavior.
+  - **22.3 — Staged release, observation, and rollback proof.** Enable founder manual controls first,
+    then promotion management, hidden quote v2, one controlled automatic route, and one code in staging.
+    Run private/route/tour/chauffeur sandbox payment smoke; verify structured events and mismatch alerts;
+    then prove all creation flags can turn off while a valid locked quote still converts and pays.
+    Public flags are `PUBLIC_AUTOMATIC_PROMOTIONS_ENABLED` and `PUBLIC_PROMO_CODES_ENABLED`.
 
 ---
 

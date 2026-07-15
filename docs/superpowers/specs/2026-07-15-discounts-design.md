@@ -1,95 +1,160 @@
-# Discounts across quotes, bookings, and customer surfaces
+# Discounts and promotions across quotes, bookings, and customer surfaces
 
 **Date:** 2026-07-15
-**Status:** Approved for milestone planning; implementation not started
-**Milestones:** M18-M20
-**Depends on:** M11 authoritative pricing, M12 Ops/RBAC, and the psychological-pricing contract
+**Status:** Product decisions complete; one cost-data input required before M18.2
+**Milestones:** M18-M22
+**Depends on:** M11 authoritative pricing, M12 Ops/RBAC, the seven-day quote lock, and
+the psychological-pricing contract
 
 ## 1. Problem
 
-Ceylon Hop needs two discount mechanisms:
+Ceylon Hop needs two founder-controlled ways to reduce a quote:
 
-1. Founder-applied manual discounts in the Ops quoting tool.
-2. Founder-created public promo codes that customers can apply on the website.
+1. A founder manually discounts a particular Ops quote.
+2. A founder creates a promotion that applies automatically or through a promo code.
 
-Discounts affect more than the displayed quote total. The same amount must survive quote edits,
-approval, the seven-day web rate lock, booking creation, checkout, PayHere, confirmation, customer
-messages, and reporting. The existing system also has deliberate behavior that must remain intact:
+Promotions may be sitewide, target a directional route, or target one of Ceylon Hop's
+named tours. A named tour may contain one leg or many legs. Discounts affect more than a
+displayed total: the same decision and amount must survive quote edits, approval, a
+seven-day web lock, booking creation, checkout, PayHere, confirmation, customer views,
+messages, and reporting.
 
-- The backend quote engine is authoritative for money.
-- Ops quotes remain editable until approval; approval locks their rate card.
-- A customer web quote locks a rate card for seven days and may be repriced as the itinerary changes.
-- Website booking routes resolve distances server-side before persisting money.
-- Checkout charges the booking's stored `amountDueNow`.
-- Customer bookings currently pay in full. The engine's deposit figure is informational and this
-  feature must not activate deposit collection.
-- Shared seats use authoritative corridor prices and transactional inventory holds.
-- Psychological price finishing runs once after core pricing and may never undercut its protected
-  minimum automatically.
+The backend pricing domain is the only authority for discount eligibility, cost
+protection, arithmetic, promotion selection, and the final amount. The website and Ops
+tool send intent and render structured server results. They never calculate an
+authoritative discount independently.
 
-A discount implementation that exists independently in the website, Ops UI, and booking routes
-would drift. Discount decisions and arithmetic therefore live in the backend pricing domain;
-clients render the structured result.
+## 2. Goals and success criteria
 
-## 2. Owner decisions
+- A founder can create, schedule, version, and deactivate automatic or code-only
+  promotions from Ops.
+- A founder can apply, replace, or remove one manual discount on an editable Ops quote.
+- A qualifying website or Ops quote receives the same deterministic automatic
+  promotion. On the website, a valid code may compete with automatic promotions but
+  never stacks with them.
+- Every discounted final total is at or above the engine's estimated cost. No role can
+  override this rule and no complimentary booking can be created.
+- Website, Ops, booking, payment, confirmation, email, and copied customer output agree
+  to the cent from one stored server-authored snapshot.
+- An omitted discount remains cent-identical to current production behavior.
+- Existing shared-seat pricing, inventory, full-payment policy, quote statuses, and
+  editable customer-message behavior remain intact.
 
-The owner confirmed on 2026-07-15:
+Launch is successful when the staged parity suite proves all supported private,
+chauffeur, and named-tour paths through sandbox payment; no amount mismatch is observed;
+and founders can stop new promotion creation without invalidating already locked quotes.
+
+## 3. Confirmed owner decisions
 
 | Decision | Policy |
 | --- | --- |
-| Launch mechanisms | Manual Ops discounts and public promo codes |
-| Human authority | Founder only |
-| Breaching fare floor or estimated cost | Allowed, with founder-only warnings and confirmation |
-| Public promo eligibility | Private transfers, chauffeur trips, and tours; never shared seats or extras |
-| Promo expiry after lock | A promo valid when locked remains valid for that quote's full seven-day lock |
-| Stacking | One active discount per quote or tour |
+| Launch mechanisms | Manual Ops discounts, automatic promotions, and promo codes |
+| Human authority | Founder role only |
+| Promotion activation | Automatic or code-only |
+| Promotion scope | Sitewide, route, or named tour |
+| Route direction | One-way or both directions, selected when the rule is created |
+| Named tour | A stable Ceylon Hop tour offering containing one or many legs |
+| Public eligibility | Private transfers, chauffeur trips, and named tours |
+| Public exclusions | Shared seats and extras |
+| Manual eligibility | The full supported Ops quote, including extras |
+| Stacking | Never; exactly zero or one discount applies |
+| Multiple matches | Apply the eligible candidate with the greatest actual saving after caps |
+| Manual versus automatic | An explicit founder manual discount replaces the automatic winner until removed |
+| Cost protection | Cap the discount at estimated cost; never allow a below-cost final total |
+| Fare floors | A founder-created discount may cross a sell-price fare floor, but not cost |
+| Promo expiry after lock | A promotion valid when locked remains valid for that quote's full lock |
+| Public lock duration | Seven days, fixed from creation and never extended by edits |
+| Redemption limits | No total or per-customer limits at launch |
+| Quote state | Discounted is derived display state, not a lifecycle status |
+| Payment policy | Full payment remains unchanged |
 
-Only founders can create/deactivate promo rules, apply or remove a manual discount, replace an
-existing discount, or approve a discounted Ops quote. A customer may redeem a valid public code;
-that is use of a founder-approved rule, not a privileged staff action.
+Only founders can create, version, or deactivate promotion rules; apply, replace, or
+remove a manual discount; or approve a discounted Ops quote. A customer triggering a
+valid rule is using a founder-authorized rule and receives no staff capability.
 
-## 3. Scope
+## 4. Scope
 
-### 3.1 In scope
+### 4.1 In scope
 
-- Fixed-amount and percentage manual discounts in Ops.
-- Fixed-amount and percentage public promo rules.
-- One active discount per quote.
-- Founder-only controls, warnings, reasons, and approval.
-- Discount snapshots on Ops and web quotes.
-- Seven-day public promo durability when the promo was valid at lock time.
-- Structured discount display in Ops, website booking summary, confirmation, customer booking view,
-  checkout, email, and manually copied WhatsApp output.
-- Immutable booking pricing snapshots and a source-quote link.
-- Promo expiry, optional rule-level redemption limits, reservation, and redemption tracking.
-- Exact integer-cent arithmetic, parity tests, auditability, and a guarded rollout.
+- Fixed-amount and percentage manual discounts.
+- Fixed-amount and percentage promotions.
+- Automatic and code-only activation.
+- Sitewide, canonical directional-route, and named-tour targeting.
+- Required start and expiry times for every promotion.
+- One winning discount per quote, including deterministic overlap handling.
+- Cost capping, founder warnings, reasons, and attributed audit history.
+- Discount snapshots on Ops quotes, web quotes, and bookings.
+- Seven-day locked promotion durability.
+- Structured display in Ops, website booking summary, confirmation, customer booking
+  view, checkout, email, and manually copied WhatsApp/email output.
+- Exact integer-cent arithmetic, locked FX presentation, parity tests, feature flags,
+  and guarded rollout.
 
-### 3.2 Out of scope
+### 4.2 Out of scope
 
-- More than one discount on a quote.
-- Promo codes on shared-seat bookings.
-- Public promo discounts on extras.
-- Per-customer redemption limits. The public website has no customer account and identity is not
-  known at initial quote time, so a reliable per-person limit needs a separate abuse-control design.
-- Automatic campaign/surge/loyalty pricing.
-- Gift cards, account credits, referral balances, or vouchers with stored monetary value.
-- Zero-value/complimentary bookings. The existing booking and payment flow expects a positive amount;
-  a comped-booking workflow is a separate feature.
-- Partial-refund allocation and accounting integration.
-- A generic organization-wide audit framework. This feature records its own attributed history.
+- Stacking, compounding, or allocating multiple promotions.
+- Shared-seat discounts and public discounts on extras.
+- Complimentary or below-cost bookings.
+- Total, per-customer, or per-device redemption limits. Anonymous customer identity is
+  insufficient for a reliable limit and no launch requirement needs one.
+- Geofencing arbitrary typed addresses. Route promotions use preserved canonical route
+  context; exact pickup and drop-off addresses remain separate fulfillment data.
+- Cross-device web-quote editing. The edit credential is private to the browser session.
+- Gift cards, account credits, referrals, loyalty balances, and stored-value vouchers.
+- Surge pricing, partial-refund allocation, and accounting integration.
+- A generic organization-wide audit framework. This feature records its own events.
 
-## 4. Terminology and amount contract
+## 5. Product and route identity
 
-All authoritative amounts are integer USD cents. Percentage values are integer basis points.
+Promotion matching must not depend on free-text place labels.
+
+### 5.1 Route context
+
+A single private route carries canonical `fromPlaceId` and `toPlaceId` separately from
+the customer's exact pickup and drop-off addresses. A one-way rule matches only the
+ordered pair. A both-directions rule matches either ordering.
+
+The route context originates from the route/search selection and survives entry of an
+exact hotel or airport address. If the customer changes the logical origin or
+destination, the website clears or replaces that context and the server reprices.
+Arbitrary free-text trips without recognized place IDs do not qualify for an automatic
+route rule; a founder may still discount them manually.
+
+A route promotion targets a one-leg route quote. It does not become a full-tour discount
+merely because the same ordered pair appears inside a custom multi-leg itinerary.
+
+### 5.2 Named-tour context
+
+A named tour carries a stable `tourId` and canonical route fingerprint from the tour
+catalog through tour page, planner, booking page, web quote, and booking. The catalog
+uses one source contract with a parity test so website and backend IDs cannot drift.
+
+A tour may contain one leg or many. A tour promotion matches the `tourId` and its route
+fingerprint. Changing dates, stays, passengers, vehicle, or service type may preserve
+the identity; changing the canonical stop sequence clears the named-tour identity and
+forces fresh promotion matching.
+
+### 5.3 Sitewide context
+
+A sitewide promotion matches every otherwise eligible private, chauffeur, or named-tour
+quote during its validity period. It still excludes shared seats and extras.
+
+## 6. Amount contract
+
+All authoritative amounts are integer USD cents. Percentage values are integer basis
+points. Presentation in LKR uses the quote's locked FX snapshot after all USD arithmetic;
+clients do not independently derive a second monetary result.
 
 | Term | Meaning |
 | --- | --- |
-| Gross subtotal | Current engine subtotal after core fares and extras, before discount and finishing |
-| Eligible subtotal | Portion against which this discount may be calculated |
-| Discount total | Positive number of cents removed by the one active discount |
-| Discounted subtotal | Gross subtotal minus discount total |
-| Finishing adjustment | Signed psychological adjustment applied after the discount |
-| Final total | Amount presented to the customer and stored on the quote/booking |
+| Gross subtotal | Existing engine subtotal after core fares and extras, before discount and finishing |
+| Eligible subtotal | Portion against which the chosen discount may be calculated |
+| Estimated cost | Existing engine cost estimate for the complete quote, never exposed publicly |
+| Requested discount | Amount produced by the rule or manual request before caps |
+| Applied discount | Actual positive cents removed after all caps |
+| Discounted subtotal | Gross subtotal minus applied discount |
+| Finishing adjustment | Signed psychological adjustment applied after discount |
+| Final total | Customer price stored on quote and booking |
 
 The invariant is:
 
@@ -97,12 +162,12 @@ The invariant is:
 discountedSubtotalCents = subtotalCents - discountCents
 totalCents = discountedSubtotalCents + priceAdjustmentCents
 amountDueNowCents = totalCents
+totalCents >= estimatedCostCents
 ```
 
-`QuoteResult.subtotalCents` keeps its current pre-finishing meaning and becomes the gross,
-pre-discount subtotal. This avoids silently changing the meaning of a stable interface.
-
-The extended result adds:
+`QuoteResult.subtotalCents` keeps its current pre-finishing meaning and becomes the
+gross, pre-discount subtotal. Existing interfaces gain only additive optional fields
+until the migration is fully deployed:
 
 ```ts
 discountCents: number;
@@ -110,462 +175,539 @@ discountedSubtotalCents: number;
 discount: AppliedDiscountSnapshot | null;
 ```
 
-The line-item order is:
+The internal line-item order is existing core items, existing extras, one negative
+customer-facing discount item, then the existing internal finishing item. The complete
+line-item sum equals `totalCents`. Customer renderers show the friendly discount row but
+continue hiding the internal finishing-policy label.
 
-1. Existing core transport/chauffeur items.
-2. Existing extras.
-3. One negative customer-facing discount item, when applied.
-4. Existing internal final-price adjustment item, when applied.
+## 7. Eligibility, calculation, and winner selection
 
-The complete line-item sum must equal `totalCents`. Customer drafts show the friendly discount row
-but continue hiding the internal price-finishing label; the customer-row renderer must still
-reconcile exactly to the final total.
+### 7.1 Public promotion
 
-## 5. Eligibility and calculation
+- Eligible products are private transfer and chauffeur/named-tour pricing.
+- Shared is rejected before promotion resolution.
+- Eligible subtotal contains core transport/chauffeur/tour charges only.
+- Extras remain full price and are excluded from percentage calculations and the fixed
+  amount ceiling.
+- A fixed promotion cannot remove more than the eligible subtotal.
+- A percentage uses the eligible subtotal and may have an optional maximum amount.
+- A rule may require a minimum eligible subtotal.
+- The complete quote's estimated cost protects the final total, including when extras
+  are present.
 
-### 5.1 Public promo
+### 7.2 Manual Ops discount
 
-- Eligible products: private transfer and chauffeur/tour.
-- Ineligible product: shared.
-- Eligible subtotal: core private/chauffeur/tour charges only.
-- Extras remain at their full amount and are excluded from the percentage base and fixed-discount
-  ceiling.
-- A fixed promo cannot remove more than the eligible subtotal.
-- A percentage promo is calculated from the eligible subtotal, then limited by the rule's optional
-  `maxDiscountCents`.
-- A rule may define a minimum eligible subtotal.
-- A public rule can cross a fare floor or cost basis because the founder explicitly created it.
-  The founder sees that risk while configuring/testing the rule; the customer never sees cost data.
+- The eligible subtotal is the complete supported Ops quote, including extras.
+- A founder may enter fixed cents or integer basis points.
+- There is no global founder discount cap, but the cost cap is absolute.
+- A reason is mandatory.
+- An explicit manual discount suppresses automatic promotion matching for that Ops
+  quote. Removing it immediately restores normal automatic matching. The preview warns
+  when the requested manual saving is less than the current automatic offer.
+- Crossing an ordinary sell-price floor shows a founder-only warning and requires
+  confirmation. Reaching the cost cap shows a stronger warning but cannot be overridden.
+- If cost cannot be computed, the server rejects the discount with
+  `discount_cost_unavailable`; it never trusts a browser amount.
 
-### 5.2 Manual Ops discount
+### 7.3 Integer arithmetic and cost cap
 
-- Eligible products are those supported by the Ops quote builder: private and chauffeur/tour.
-- Eligible subtotal is the complete Ops quote subtotal, including extras. The public-only exclusion
-  for extras does not restrict a founder's explicit manual quote adjustment.
-- The founder may enter either fixed cents or a percentage in basis points.
-- There is no global manual-discount cap. The founder is the sole authority and may deliberately
-  cross the fare floor or cost basis.
-- Final total must remain positive and compatible with the existing minimum accepted booking amount.
-- A reason is mandatory. Crossing a floor or cost requires an additional explicit confirmation.
-
-### 5.3 Integer arithmetic
-
-Percentage discount cents use round-half-up integer arithmetic:
+Percentage cents use round-half-up integer arithmetic:
 
 ```text
 percentageDiscount = floor((eligibleSubtotalCents * basisPoints + 5,000) / 10,000)
+maximumCostSafeDiscount = max(0, subtotalCents - estimatedCostCents)
 ```
 
-The engine applies the smallest of:
+The applied amount is the smallest of:
 
-- The calculated/requested amount.
-- The rule's optional maximum amount.
-- The eligible subtotal.
-- The amount that leaves the final pre-finishing total positive.
+- Requested/calculated discount.
+- Optional rule maximum.
+- Eligible subtotal.
+- `maximumCostSafeDiscount`.
 
-No browser or Ops JavaScript independently calculates the authoritative discount.
+When the cost cap reduces the requested amount, the snapshot records
+`capReason: 'estimated_cost'`, requested cents, and applied cents. Founders can see the
+warning and margin; customers see only the actual applied discount. A zero-cent result
+does not create a discounted state.
 
-### 5.4 Psychological finishing interaction
+### 7.4 Automatic and code candidate selection
+
+For every eligible quote without an explicit founder manual discount, the server:
+
+1. Finds active automatic rules whose time, product, scope, route/tour identity, and
+   minimum-subtotal conditions match.
+2. For a website quote with a submitted code, validates that one code-only rule and adds
+   it as a candidate.
+3. Computes each candidate independently, including optional maximum and cost cap.
+4. Selects exactly one candidate with the greatest applied cents.
+5. Breaks equal-value ties deterministically: submitted code, then tour, route,
+   sitewide, then stable rule family/version order.
+6. Stores only the winner as the active discount snapshot.
+
+Rules never stack. If a submitted code is valid but an automatic promotion gives a
+larger saving, the automatic promotion remains and the response says that a better
+offer is already applied. An invalid/expired/ineligible submitted code rejects that
+edit and leaves any previously locked quote unchanged.
+
+Ops estimates use the same automatic resolver, including route/tour identity and
+greatest-saving selection. An explicit founder manual discount is a deliberate
+replacement, not another candidate; it remains the only active discount until removed.
+
+### 7.5 Psychological finishing
 
 The order is fixed:
 
 ```text
-core pricing -> discount -> psychological finishing -> amount due
+core pricing -> select/apply one discount -> psychological finishing -> amount due
 ```
 
-The finishing module's 2.5% reduction limit is calculated from the discounted subtotal. A discount
-may explicitly cross the protected fare floor or cost basis; psychological finishing may not cross
-it automatically. If the discounted subtotal is already below the finishing minimum, finishing
-returns `unchanged` rather than reducing it further.
+Finishing's 2.5% reduction limit is calculated from the discounted subtotal. For an
+explicit discount, its downward minimum is estimated cost rather than the ordinary
+sell-price fare floor, because the founder may intentionally cross the sell floor.
+Finishing may round upward. It may never reduce the final total below estimated cost;
+at cost it returns unchanged.
 
-Shared prices remain outside psychological finishing and outside public discounts.
+Shared remains outside both public promotions and psychological finishing.
 
-## 6. Discount representations
-
-### 6.1 Discount request
+## 8. Domain representations
 
 Only server routes accept unresolved requests:
 
 ```ts
 type DiscountRequest =
-  | { source: 'promo'; code: string }
+  | { source: 'promotion'; code?: string }
   | { source: 'manual'; method: 'fixed'; amountCents: number; reason: string }
   | { source: 'manual'; method: 'percentage'; basisPoints: number; reason: string };
 ```
 
-Public callers may submit only the `promo` arm. Manual arms require a founder identity. Clients never
-submit `appliedCents`, cost, margin, or an authorization override.
+The public arm expresses an optional code; the server always evaluates automatic
+candidates. Manual arms require founder authorization. Clients never submit applied
+cents, cost, margin, candidate rules, or an override flag.
 
-### 6.2 Resolved instruction
-
-A discount service validates the request against identity, rule state, time, product, and caps. It
-passes a resolved instruction into the pure pricing pipeline. The engine does not query Postgres or
-authorize users.
-
-### 6.3 Applied snapshot
-
-The result records enough information to replay and explain the decision without reading a mutable
-rule:
+The resolver validates identity, time, product, scope, and rule state, then passes a
+resolved instruction into the pure pricing pipeline. The engine does not query
+Postgres or authorize users.
 
 ```ts
 interface AppliedDiscountSnapshot {
-  source: 'promo' | 'manual';
+  source: 'promotion' | 'manual';
   ruleId: string | null;
+  ruleFamilyId: string | null;
   ruleVersion: number | null;
+  activation: 'automatic' | 'code' | null;
+  scope: 'sitewide' | 'route' | 'tour' | null;
   customerLabel: string;
   method: 'fixed' | 'percentage';
   value: number;
   eligibleSubtotalCents: number;
+  requestedCents: number;
   appliedCents: number;
+  capReason: 'rule_maximum' | 'eligible_subtotal' | 'estimated_cost' | null;
   appliedAt: string;
   appliedBy: string | null;
   reason: string | null;
 }
 ```
 
-Public responses expose only `customerLabel`, `appliedCents`, and the resulting money breakdown.
-Founder identity, reason, rule internals, cost, and margin stay server-side.
+Public responses expose only customer label, actual applied cents, cap-neutral customer
+copy, and the resulting money breakdown. Founder identity, reason, rule internals,
+cost, margin, and cap diagnostics stay server-side.
 
-## 7. Lifecycle
+## 9. Lifecycle
 
-### 7.1 Discount is not a quote status
+### 9.1 Discount is not a quote status
 
-`draft`, `pending_review`, `ready`, `sent`, `won`, `lost`, and `expired` continue describing quote
-workflow. A quote is displayed as `Discounted` when its authoritative result has
-`discountCents > 0`. No `discounted` lifecycle status is added.
+Existing quote workflow states remain unchanged. A quote displays `Discounted` when its
+authoritative result has `discountCents > 0`; no `discounted` lifecycle state is added.
 
-### 7.2 Ops quote
+### 9.2 Ops quote
 
-- A founder can preview, add, replace, or remove the one discount while the quote is editable.
-- Finance and Ops can view the customer-facing discount but cannot mutate it.
-- A non-founder editing itinerary content on an already discounted editable quote retains the
-  discount; the server reprices it, preserves the existing editable lifecycle state, and still
-  requires founder approval before `ready`.
-- Discount mutation and complete quote save happen atomically. Omitted discount means preserve;
-  explicit `null` means founder-requested removal.
-- Any discount change invalidates prior approval.
-- A `ready` or `sent` quote must follow the existing founder-gated reopen flow before editing.
-- Approval freezes the rate-card snapshot, resolved discount snapshot, calculation, and customer
-  output basis. Reopening unlocks and requires a new approval.
+- A founder can preview, add, replace, or remove one manual discount while editable.
+- Finance and Ops may see the customer-facing discount but cannot mutate it.
+- Quotes without a manual discount receive the same automatic promotion that an
+  equivalent website quote would receive.
+- Before approval, current automatic rules are reevaluated on every estimate/save. Ops
+  approval freezes the selected rule snapshot with the rest of the quote; later rule
+  expiry/version/deactivation does not change an approved quote.
+- Editing itinerary content retains the discount request and reprices server-side.
+- Quote save and discount-history mutation are one transaction.
+- Every mutation supplies the last-read quote revision. A stale save returns 409 and
+  cannot overwrite another user's work.
+- Omitted discount means preserve; explicit `null` means founder-requested removal.
+- Any discount or price-input change invalidates prior approval.
+- Ready/sent quotes use the existing reopen flow before editing.
+- Approval freezes rate card, discount snapshot, calculation, FX, and output basis.
 
-### 7.3 Web quote
+### 9.3 Web quote
 
-- A code must be valid when first applied.
-- The locked web quote stores the rate-card snapshot and immutable promo-rule snapshot for seven
-  days.
-- Editing the itinerary during that period reprices against those locked snapshots. The discount
-  amount may change because the eligible subtotal changed; rule eligibility and limits do not.
-- Website edits update/reprice the same quote id rather than minting a new rate lock.
-- The latest server-priced intent and its server-resolved engine request/result are stored together.
-  Booking creation must match that intent exactly.
-- Normal promo expiry or deactivation after locking does not invalidate the lock.
-- After the seven-day quote lock expires, the promotion must be currently valid to create a new
-  lock. Otherwise the API returns `discount_expired`; it never silently removes a displayed discount.
+- `POST /quote/v2/lock` creates a server-priced quote and returns a signed edit token.
+- The browser keeps that bearer token in session storage and supplies it for edits and
+  conversion. Quote IDs alone cannot read, mutate, or convert a web quote.
+- `PUT /quote/v2/:id` requires the token and last-read revision, then stores intent and
+  result atomically.
+- The seven-day expiry is fixed at quote creation. Edits never slide or extend it.
+- Edits use the locked rate-card and FX. A previously locked promotion remains a
+  candidate despite later expiry/version/deactivation only while the current canonical
+  intent still satisfies its product, scope, route/tour identity, and minimum-subtotal
+  terms. Its amount may change with eligible subtotal or cost.
+- Currently active automatic candidates are also evaluated on each successful edit. A
+  newly selected winner receives its own immutable snapshot without extending the
+  quote's expiry.
+- Removing a code reruns automatic matching. Entering a new code replaces the candidate
+  request; it never stacks.
+- Rule expiry or deactivation after lock does not invalidate the existing lock.
+- After lock expiry, a new quote evaluates currently active rules. An unavailable prior
+  promotion is reported rather than silently promising its old amount.
+- Losing the browser-session token means the customer creates a new quote; cross-device
+  quote editing is deferred.
 
-### 7.4 Booking and payment
+### 9.4 Booking and payment
 
-- Booking creation validates the source quote, canonical customer intent, quote lock, and discount.
-- After an exact intent match, it adopts the quote's latest server-authored engine request/result
-  rather than resolving Maps or calculating money again. This prevents a Maps response or code
-  deployment between preview and booking from changing the promised amount.
-- The quote links to the converted booking and a promo reservation becomes redeemed.
-- Booking creation, quote conversion, redemption, and booking pricing persistence are one atomic,
-  idempotent operation for the Postgres path.
-- Checkout continues charging `booking.amountDueNow`. It does not recalculate discounts.
-- The PayHere amount, persisted payment amount, confirmation, and customer view must all equal the
-  frozen booking snapshot.
-- The discount feature must not change the current full-payment policy.
+- Booking creation requires quote ID, signed access token, matching revision, canonical
+  intent fingerprint, and an unexpired lock.
+- On exact match it adopts the latest stored server-authored request/result. It does not
+  call Maps or recalculate money during conversion.
+- Booking creation, quote conversion, pricing-snapshot persistence, and audit event are
+  one idempotent Postgres transaction.
+- Existing `quotes.converted_booking_id` is made unique and remains the sole
+  quote-to-booking link; no duplicate `bookings.source_quote_id` is added.
+- Checkout charges the booking's stored `amountDueNow`; discounts are never recalculated
+  at checkout or webhook time.
+- PayHere, payment row, confirmation, email, and customer view must equal the frozen
+  booking snapshot.
+- Booking duration/enrichment that does not affect price may refresh separately and may
+  not mutate money.
 
-### 7.5 Unpriced fallback
+### 9.5 Unpriced fallback
 
-The existing booking routes can use a guarded fallback when maps cannot price a normal request. A
-discounted request may not use that fallback: there is no trustworthy eligible subtotal. It returns
-a clear `discount_requires_priced_quote` error and routes the customer to support rather than
-silently changing the amount.
+Existing no-discount booking behavior may retain its guarded fallback. A manual or
+promotion discount requires an authoritative estimated cost and eligible subtotal. An
+unpriced request fails closed with `discount_requires_priced_quote`; it never uses a
+client total.
 
-## 8. Permissions
+## 10. Permissions
 
-Add capabilities to the existing data-driven RBAC map:
+Add founder-only capabilities to the existing server-side RBAC map:
 
 | Capability | Founder | Finance | Ops | System |
 | --- | --- | --- | --- | --- |
-| `discount:manage_rules` | yes | no | no | no |
+| `promotion:manage` | yes | no | no | no |
 | `discount:apply_manual` | yes | no | no | no |
-| `discount:override_protection` | yes | no | no | no |
 
-Existing `quote:manage` still lets all three human roles build ordinary quotes. Existing
-`quote:approve` remains the ready-to-send gate. The route enforces both founder discount authority
-and quote approval; hiding controls in the browser is not authorization.
+There is no below-cost override capability. Existing `quote:manage` continues to allow
+ordinary quote work and existing `quote:approve` remains the ready-to-send gate. Routes
+enforce capabilities and CSRF centrally; hidden browser controls are not authorization.
 
-When a manual or simulated promo result is below a configured fare floor or estimated cost, only a
-founder response may include:
+Founder-only responses may contain fare-floor difference, estimated cost, resulting
+margin, and whether cost capping occurred. Finance, Ops, system, and public projections
+must strip those fields.
 
-- Difference below fare floor.
-- Difference below estimated cost.
-- Resulting estimated margin.
+## 11. Data model
 
-The UI requires a reason and explicit confirmation. Customer, Finance, and Ops responses must never
-receive cost/margin values.
+### 11.1 `promotion_rules`
 
-## 9. Data model
-
-### 9.1 `discount_rules`
-
-Founder-created promo definitions:
+Each row is an immutable rule version:
 
 | Column | Type / rule |
 | --- | --- |
 | `id` | uuid primary key |
-| `code_normalized` | text; trimmed uppercase representation |
-| `customer_label` | text shown to customer |
+| `family_id` | uuid stable across versions |
+| `version` | positive integer, unique with family |
+| `activation` | `automatic` or `code` |
+| `code_normalized` | nullable; required only for code activation |
+| `scope` | `sitewide`, `route`, or `tour` |
+| `route_from_place_id`, `route_to_place_id` | nullable canonical IDs; required for route |
+| `route_direction` | nullable `one_way` or `both_ways` |
+| `tour_id`, `tour_route_fingerprint` | nullable; required for tour |
+| `customer_label` | non-empty public label |
 | `method` | `fixed` or `percentage` |
 | `value` | integer cents for fixed; basis points for percentage |
-| `max_discount_cents` | nullable integer |
-| `minimum_eligible_cents` | nullable integer |
-| `starts_at`, `expires_at` | timestamptz |
-| `max_redemptions` | nullable positive integer |
-| `version` | positive integer |
+| `max_discount_cents` | nullable non-negative integer |
+| `minimum_eligible_cents` | nullable non-negative integer |
+| `starts_at`, `expires_at` | timestamptz, start strictly before expiry |
 | `active` | boolean |
-| `created_by` | founder email |
-| `created_at`, `deactivated_at` | timestamptz |
+| `created_by`, `created_at`, `deactivated_by`, `deactivated_at` | attribution |
 
-Rules are immutable once used. Editing creates a new version; the old row remains available for
-locked-quote replay. Use a unique `(code_normalized, version)` constraint plus a partial unique index
-allowing only one active version of a normalized code. Deactivation prevents new locks but does not
-invalidate a valid existing lock.
+Editing inserts a new family version and deactivates the prior active version in one
+transaction. Partial unique indexes permit one active version per family and one active
+code rule per normalized code. Check constraints enforce activation/scope-specific
+columns. There is no hard delete and no redemption-limit column at launch.
 
-### 9.2 `quote_discounts`
+### 11.2 `quote_discounts`
 
-Attributed application history:
+History-retaining applied snapshots:
 
 | Column | Type / rule |
 | --- | --- |
 | `id` | uuid primary key |
 | `quote_id` | foreign key to quote |
-| `source` | `promo` or `manual` |
-| `discount_rule_id` | nullable FK |
-| `rule_snapshot_json` | nullable JSONB |
-| `request_json` | founder/manual request or normalized promo reference |
-| `eligible_subtotal_cents` | integer |
-| `applied_cents` | positive integer |
-| `reason` | nullable for promo, required for manual |
-| `applied_by`, `approved_by` | nullable email fields |
-| `status` | `active` or `voided` |
-| `created_at`, `voided_at` | timestamptz |
+| `source` | `promotion` or `manual` |
+| `promotion_rule_id` | nullable FK |
+| `rule_snapshot_json` | nullable immutable rule terms |
+| `request_json` | rule/activation reference without plaintext code, or founder request |
+| `eligible_subtotal_cents`, `requested_cents`, `applied_cents` | non-negative integers |
+| `cap_reason` | nullable enum-like text |
+| `reason` | required for manual |
+| `applied_by` | nullable founder email |
+| `status` | `active`, `replaced`, or `removed` |
+| timestamps | created and superseded times |
 
-A partial unique index permits at most one `active` row per quote. Replacing/removing voids the old
-row and inserts the next history row; history is never deleted.
+A partial unique index permits one active row per quote. Replace/remove changes the old
+row's status and inserts or clears the next row in the same quote transaction. History
+is never deleted.
 
-### 9.3 `discount_redemptions`
+### 11.3 `discount_events`
 
-Reservation rows support promo rules whose optional `max_redemptions` is configured:
+An append-only attributed event stream records rule create/version/deactivate, quote
+apply/replace/remove, cost cap, approval/reopen, web lock/update, and conversion. It
+stores entity type/id, action, actor, safe metadata, and timestamp. Public code values,
+customer PII, and signed access tokens are not written to logs.
 
-| Column | Type / rule |
-| --- | --- |
-| `discount_rule_id` | FK |
-| `quote_id` | unique FK |
-| `booking_id` | nullable unique FK |
-| `status` | `reserved`, `redeemed`, `released`, or `expired` |
-| `reserved_until` | web quote lock expiry |
-| timestamps | reserved/redeemed/released times |
+### 11.4 Existing tables
 
-Locking reserves one redemption atomically. Booking conversion redeems it. An expired/released lock
-returns capacity. This is necessary because the owner promise honors a locked promo for seven days.
-There is no per-customer limit in this milestone.
+Add to `quotes`:
 
-### 9.4 Existing tables
+- `revision integer not null default 1` for optimistic concurrency.
+- A unique index on nullable `converted_booking_id`.
 
-`quotes` keeps `total_cents` and the complete `result_json`; no new financial lifecycle status is
-added. `result_json` is the authoritative calculation snapshot.
+Canonical intent/fingerprint, promotion snapshot, locked FX, and server engine I/O stay
+inside the existing request/result snapshots unless query requirements later justify a
+column. The web edit credential is signed and is never stored in plaintext.
 
-Add to `bookings`:
+Add nullable, legacy-compatible fields to `bookings`:
 
-- `source_quote_id uuid null` referencing `quotes`.
-- `subtotal integer null` for compatibility with existing rows.
-- `discount_total integer null` for compatibility with existing rows.
-- `pricing_snapshot_json jsonb null` for compatibility with existing rows.
+- `subtotal integer`.
+- `discount_total integer`.
+- `pricing_snapshot_json jsonb`.
 
-Existing `bookings.total`, `amount_due_now`, and `currency` remain the payment contract. Existing
-rows require no synthetic discount backfill: null snapshot means legacy/no discount.
+Existing `total`, `amount_due_now`, and `currency` remain the payment contract. A null
+snapshot means legacy/no-discount. Money checks are non-negative; application and
+integration tests enforce the cross-field equation. The booking pricing snapshot is
+immutable after creation.
 
-All money columns have non-negative checks where appropriate. Application code and tests enforce the
-full cross-table equation; the booking snapshot is immutable after creation.
+No `discount_redemptions` table is added at launch. Conversions and usage can be counted
+from unique converted quotes, booking snapshots, and discount events. A reservation
+ledger is introduced only with a future finite-redemption requirement.
 
-## 10. API contracts
+## 12. API contracts
 
-### 10.1 Founder promo administration
-
-```text
-GET   /admin/discount-rules
-POST  /admin/discount-rules
-POST  /admin/discount-rules/:id/deactivate
-POST  /admin/discount-rules/:id/version
-```
-
-All require `discount:manage_rules`, CSRF protection, validated integer inputs, and attributed
-responses. There is no hard delete.
-
-### 10.2 Ops quote API
-
-Extend existing endpoints rather than adding an independent money mutation:
+### 12.1 Founder promotion administration
 
 ```text
-POST /admin/quote/estimate
-POST /admin/quote/save
-GET  /admin/quote/:id
+GET   /admin/promotion-rules
+POST  /admin/promotion-rules
+POST  /admin/promotion-rules/:id/version
+POST  /admin/promotion-rules/:id/deactivate
+POST  /admin/promotion-rules/preview
 ```
 
-`estimate` and `save` accept an optional tri-state `discount` field:
+All endpoints are mounted under existing authenticated admin middleware and require
+`promotion:manage`, CSRF, validated integer inputs, and attributed events. Preview runs
+the same resolver and engine against supplied quote intent but writes nothing.
 
-- Omitted: preserve an existing discount or use none for a new quote.
-- Discount request: founder-only add/replace.
+### 12.2 Ops quote API
+
+Extend existing quote estimate/save/read contracts. Estimate/save include `revision`
+and an optional tri-state `discount`:
+
+- Omitted: preserve existing discount, or none for a new quote.
+- Manual request: founder-only add/replace.
 - `null`: founder-only removal.
 
-The save route resolves and prices the complete quote server-side, writes quote content and discount
-history atomically, and returns the complete role-filtered result. Client totals and applied discount
-amounts are never trusted.
+Estimate is side-effect free. Save resolves and prices the complete quote server-side
+and writes quote content, revision, discount history, and event in one transaction. A
+stale revision returns `409 quote_conflict` with the latest revision. Client totals and
+applied amounts are never trusted.
 
-### 10.3 Public quote lock
+### 12.3 Public quote v2
 
-The legacy no-promo `/quote/lock` contract remains compatible. Add a versioned customer-intent arm
-that accepts private/chauffeur booking intent without customer PII, plus optional promo code and
-optional existing web quote id. The route resolves distances with the Maps adapter and returns:
+```text
+POST /quote/v2/lock
+PUT  /quote/v2/:id
+```
 
-- Quote id and seven-day expiry.
-- Structured gross subtotal, discount, final total, and amount due.
-- Customer-safe line items.
-- Stable error codes such as `discount_invalid`, `discount_not_started`, `discount_expired`,
-  `discount_not_eligible`, `discount_limit_reached`, and `discount_requires_priced_quote`.
+Create accepts canonical private/chauffeur intent plus optional promo code, never
+client-authored distance, cost, or totals. Update requires signed bearer token and
+revision. Responses include quote ID, access token on creation only, revision, fixed
+expiry, structured amounts, customer-safe line items, applied promotion label, and
+stable errors.
 
-Shared requests remain on the existing authoritative corridor booking path. The website hides the
-promo control for shared and the backend rejects attempts to apply a code to shared. The public
-promo route uses the existing public rate limiter; codes are normalized server-side and never
-treated as authentication secrets.
+Stable errors include `promotion_invalid`, `promotion_not_started`,
+`promotion_expired`, `promotion_not_eligible`, `discount_cost_unavailable`,
+`discount_requires_priced_quote`, `quote_conflict`, `quote_access_denied`, and
+`quote_expired`.
 
-The canonical intent fingerprint includes every pricing input: product/service, normalized route
-places, dates, vehicle, passenger/bag counts, extras, and currency. It excludes customer PII,
-client-authored totals, and resolved distance because those are not client pricing inputs. The quote
-stores the server-resolved engine request/result beside that fingerprint.
+The existing `/quote/lock` stays unchanged for legacy no-discount flows until v2 has
+proven parity. Rate limiting covers `/quote/*`, not only the exact legacy path.
 
-### 10.4 Booking APIs
+The canonical fingerprint contains every pricing input and identity field: product,
+service, canonical route or tour context, exact locations used by Maps, dates, vehicle,
+passengers/bags, extras, and currency. It excludes PII, client totals, access token, and
+resolved distance.
 
-Existing `/bookings/single` and `/bookings/trip` continue accepting optional `quoteId`. For a
-discounted quote they require the latest intent fingerprint to match and perform strict conversion
-by adopting the stored server-authored result.
-Unknown, mismatched, expired, or already-converted discounted quotes return an explicit 409/422;
-they do not fall back to live undiscounted pricing.
+### 12.4 Booking APIs
 
-Existing no-discount behavior, including guarded fallback and mismatch alerts, remains unchanged.
-`/bookings/shared` gains no discount behavior.
+Existing private/trip booking routes accept the v2 quote ID, access token, and revision.
+For v2 they require exact intent match and adopt the stored server result. Unknown,
+mismatched, expired, stale, unauthorized, or already converted quotes fail closed; they
+do not fall back to undiscounted live pricing.
 
-## 11. UI and message behavior
+Legacy no-discount behavior remains unchanged while migration is active. Shared gains
+no discount behavior.
 
-### 11.1 Website
+## 13. UI and message behavior
 
-- Promo input appears in the private/chauffeur booking price summary, not marketing/search cards.
-- Shared bookings do not show the control.
-- Apply/remove calls the backend and renders its structured response.
-- While validation is pending, checkout is disabled without changing the displayed price.
-- Invalid/expired/ineligible errors preserve the prior valid amount and explain the next action.
-- Any itinerary, vehicle, passenger, date, service, or extras edit triggers server repricing of the
-  same locked quote before checkout.
-- Summary shows `Subtotal`, the promo's customer label as a negative row, `Total`, and `Due now`.
-- Extras remain visibly full price.
-- Offline/demo mode does not simulate discounts.
+### 13.1 Website
 
-### 11.2 Ops
+- Automatic promotions appear in eligible private/chauffeur summaries without input.
+- Promo-code input appears only in eligible booking summaries, not search cards.
+- Apply/remove calls quote v2 and renders its structured response.
+- Shared never shows a control or discount row.
+- While repricing is pending, checkout is disabled and the last confirmed amount stays
+  visible.
+- A failed edit leaves the prior valid quote and amount untouched.
+- Any pricing-input edit reprices the same quote with token and revision.
+- Summary shows subtotal, winning promotion label and negative amount, total, and due
+  now. Extras remain visibly full price.
+- When a valid code loses to a better automatic promotion, explain that the better
+  offer is already applied.
+- Demo/offline mode does not simulate promotions or discounts.
 
-- Only founders see enabled discount controls.
-- Controls support promo/manual, fixed/percentage, value, and mandatory manual reason.
-- Finance/Ops see a read-only discount row without internal reason, cost, or margin.
-- Founder sees floor/cost warnings and must confirm an override.
-- Queue/detail shows a derived `Discounted` badge.
-- Internal output shows gross, discount, finishing, final, and founder-only margin impact.
-- WhatsApp/email customer drafts show the friendly discount row but not internal finishing policy.
-- If staff edits generated customer text so monetary values no longer match the structured result,
-  the UI warns before copy/send. Prose remains editable.
+### 13.2 Ops promotion management
 
-### 11.3 Booking, payment, and confirmation
+- Only founders can load the promotion-management view or mutate a rule.
+- Controls select automatic or code-only activation; sitewide, route, or tour scope;
+  one-way or both-way route behavior; fixed/percentage value; optional maximum and
+  minimum; customer label; and required validity period.
+- Route selection uses canonical places and shows direction clearly.
+- Tour selection shows stable offered-tour identity and route summary.
+- List states are scheduled, active, expired, and deactivated. Version and deactivate
+  are explicit; no hard delete exists.
+- Preview shows actual candidate result and founder-only floor/cost/margin warnings for
+  the supplied sample quote. Rule creation alone does not claim a universal margin,
+  because cost varies by quote.
 
-- Ops booking detail, customer confirmation, customer booking view, checkout, email, and payment all
-  render from the frozen booking snapshot.
-- PayHere receives exactly `amountDueNow` from the booking.
-- No surface recomputes or accepts a client-authored discount amount.
+### 13.3 Ops quote builder and output
 
-## 12. Accuracy and anti-drift gates
+- Only founders see enabled manual controls; other roles see a read-only discount row.
+- Automatic promotions appear on equivalent eligible Ops quotes for every quote-managing
+  role; only a founder can replace one with a manual discount.
+- Founder controls support fixed/percentage value, required reason, replace, and remove.
+- Cost capping cannot be bypassed. Founder sees requested versus applied amount and
+  resulting margin.
+- Queue/detail derives a `Discounted` badge.
+- Internal output shows gross, discount, finishing, final, and founder-only margin.
+- WhatsApp/email customer drafts show the friendly discount but not internal finishing,
+  cost, or margin.
+- Editable prose remains supported. The UI stores a generated-message basis hash; if
+  structured pricing changes after manual edits, it warns that the message is stale and
+  offers regenerate or explicit confirmation. It does not parse prose to infer money.
 
-### 12.1 Permanent zero-discount compatibility
+### 13.4 Booking, payment, and confirmation
 
-Before implementation, capture representative current outputs for:
+Ops booking detail, checkout, PayHere, confirmation, customer booking view, and email
+render from the frozen booking snapshot. No surface recalculates a discount or accepts a
+client-authored amount.
 
-- Private car/van/large/custom, including floors and multiple legs.
-- Chauffeur day + distance + idle days.
+## 14. Accuracy and anti-drift gates
+
+### 14.1 Permanent zero-discount compatibility
+
+Before production behavior changes, commit independent golden fixtures for current:
+
+- Private vehicle classes, floors, route overrides, and multiple legs.
+- Chauffeur day/distance/idle-day calculations.
 - Extras and capacity upgrades.
 - Shared seats and extra bags.
 - Psychological charm, nearest-50-cent, unchanged, and protected-minimum outcomes.
-- Ops estimate/save/reopen/approval and customer outputs.
+- Ops estimate/save/reopen/approval and customer output.
 - Website quote, booking persistence, checkout, webhook, and confirmation.
 
-Every later milestone proves that omitting a discount leaves every existing money field and total
-cent-identical. Existing interfaces gain only optional/additive fields.
+Expected values are reviewed constants, not generated by the implementation under test.
+Every later step proves that omitting a discount leaves existing fields and totals
+cent-identical.
 
-### 12.2 Required discount tests
+### 14.2 Required promotion and discount tests
 
-- Fixed and percentage golden numbers using integer cents/basis points.
-- Percentage rounding boundaries and deterministic remainder behavior.
-- One-discount invariant and replace/void history.
-- Public eligibility excludes shared and extras.
-- Manual discount includes the founder-selected Ops quote subtotal.
-- Positive-total lower bound.
-- Fare-floor/cost crossing warnings are founder-only.
-- Finishing runs after discount, stays within 2.5%, and does not further reduce a below-protection
-  discounted subtotal.
-- Promo start/expiry boundaries with an injected clock.
-- A promo locked before expiry remains valid for the whole quote lock.
-- Rule deactivation does not invalidate existing locks.
-- Reservation concurrency never exceeds `max_redemptions`.
-- Ops RBAC matrix tests every role and machine identity.
-- Server strips manual reason, cost, and margin from unauthorized responses.
-- Itinerary edits reprice under the same locked rate/rule snapshots.
-- Mismatched/replayed/converted discount quote ids fail closed.
-- Discounted unpriced requests never use client/fallback totals.
-- Booking snapshot equation, quote link, conversion, and idempotency.
-- Checkout, payment, webhook, email, and customer view all equal the frozen booking amount.
-- Website and Ops browser tests across desktop/mobile and editable customer messages.
+- Fixed/percentage golden arithmetic and half-up boundaries.
+- Eligible subtotal excludes public extras but includes manual full-quote extras.
+- Absolute cost cap, exact-at-cost behavior, and unavailable-cost failure.
+- Automatic/code overlap, greatest-saving winner, stable tie-breaks, and no stacking.
+- Sitewide, one-way, both-way, and named-tour identity matching.
+- Free-text route and altered-tour non-matches.
+- Start/expiry boundaries using an injected clock.
+- Seven-day fixed expiry; edits do not slide the lock.
+- A still-eligible locked rule survives version/deactivation; new locks do not use it.
+- Finishing runs once after discount and never drops below cost.
+- One active quote discount and complete replace/remove history.
+- Optimistic quote concurrency rejects stale Ops and web edits.
+- Founder/Finance/Ops/system RBAC matrix and CSRF.
+- Role projections do not leak reason, cost, margin, codes, or tokens.
+- Signed quote token rejects missing, forged, wrong-quote, and expired access.
+- Exact intent conversion, idempotency, replay rejection, and unique conversion link.
+- Discounted unpriced requests never use fallback/client totals.
+- Booking snapshot equation and immutability.
+- Checkout, payment, webhook, email, and customer view equal frozen booking money.
+- Website/Ops browser tests on desktop and mobile, including editable stale messages.
 
-Tests use fakes for Maps, payment, email, and time. No test calls a real external service.
+Tests use fake Maps, payments, email, and clock. Cross-surface golden fixtures are shared
+as expected data, while each surface is independently asserted against them.
 
-## 13. Rollout and rollback
+## 15. Rollout, rollback, and observability
 
-Use an expand-first migration and independent creation controls:
+Use expand-first migrations and independent creation flags available before their UI or
+route behavior ships:
 
-1. `OPS_DISCOUNTS_ENABLED`: exposes founder rule/manual controls.
-2. `PUBLIC_PROMOS_ENABLED`: accepts new public promo locks and exposes the website control.
+1. `OPS_MANUAL_DISCOUNTS_ENABLED`.
+2. `OPS_PROMOTIONS_ENABLED`.
+3. `PUBLIC_AUTOMATIC_PROMOTIONS_ENABLED`.
+4. `PUBLIC_PROMO_CODES_ENABLED`.
 
-Honoring an existing valid discounted lock is unconditional, not feature-flagged. Once a discounted
-quote exists, no deploy or rollback may run code that cannot read and honor its snapshot.
+Reading and honoring an existing valid discounted snapshot is unconditional. Rollback
+turns off new application/creation, not existing promises.
 
 Sequence:
 
-1. Deploy nullable schema and read compatibility with both creation controls off.
-2. Deploy pure pricing support in shadow tests; no UI.
-3. Enable founder-only Ops discounts and monitor.
-4. Deploy public promo code support hidden.
-5. Create one tightly limited founder-owned test promo.
-6. Run staging booking/payment/confirmation for private and chauffeur.
-7. Enable public UI for the test promo, then expand deliberately.
+1. Deploy nullable schema and legacy readers with every creation flag off.
+2. Deploy pure engine support and zero-discount fixtures.
+3. Enable founder manual discounts and monitor.
+4. Enable founder promotion management and create staging-only rules.
+5. Deploy quote v2 and strict conversion hidden from the public site.
+6. Prove private, route, named-tour, chauffeur, checkout, webhook, and confirmation in
+   sandbox.
+7. Enable automatic promotions for one controlled route.
+8. Enable code UI for one controlled code, then broaden deliberately.
 
-Rollback disables creation, not honoring. Code must continue reading existing discount snapshots
-until every locked quote has expired or converted. A bad public promo is deactivated for new locks;
-valid existing locks remain honored per owner policy.
+Structured events cover rule lifecycle, candidate selection, apply/replace/remove, cost
+cap, stale conflicts, quote access rejection, lock/update, conversion, and payment
+mismatch. Alerts fire on booking/payment amount mismatch, below-cost invariant failure,
+conversion failure spikes, and unusual promotion rejection/application volume.
 
-Log structured events for rule creation/version/deactivation, discount apply/remove, protection
-override, promo rejection, reservation, redemption, conversion mismatch, and payment mismatch. Alert
-on any booking/payment amount mismatch and unusual promo rejection/redemption volume.
+Rollback proof must show that all creation flags can turn off while an already locked
+discounted quote still converts and pays at its stored amount.
 
-## 14. Milestone boundaries
+## 16. Milestone boundaries
 
-Implementation follows the detailed M18-M20 steps in `docs/build-plan.md`. Each step is one branch,
-one PR, red-to-green evidence, `cd api && npm run check`, `npm run smoke` where applicable, and
-`web-tests/npm run test:all` for website/Ops changes. No step may widen an interface, schema, or
-surface beyond its explicit build list.
+Implementation follows M18-M22 in `docs/build-plan.md`. Every numbered step is one
+branch and one PR, contains red-to-green evidence, runs `cd api && npm run check` and
+`npm run smoke` where relevant, and runs `npm run test:all` for website/Ops changes.
+No step may widen a schema, interface, or surface beyond its explicit build list.
+
+## 17. Required owner data before M18.2
+
+The current engine models transport per-kilometer cost and chauffeur day cost, but its
+extras are final sell prices without explicit cost fields. Because manual discounts may
+cover the full quote, `estimatedCostCents` cannot honestly protect total cost until the
+owner confirms a cost basis for each chargeable extra (`sightseeing`, `safari-wait`,
+`luggage`, `front`, `flex`, and `waiting`) or confirms that a particular extra has zero
+incremental cost. This is a blocking pricing-data input for M18.2, not permission to
+change existing sell prices.
+
+M18.1 records the confirmed cost fixture. M18.2 may add separate locked cost fields to
+the rate card solely for protection/margin calculation; it must not alter existing
+sell-price arithmetic. Until every discountable component has a known cost, discount
+creation flags remain off and discounted requests fail closed.
+
+Finite redemption limits, cross-device quote access, arbitrary-address geofencing, and
+discount-aware refunds remain explicit future design steps rather than launch
+improvisations.
