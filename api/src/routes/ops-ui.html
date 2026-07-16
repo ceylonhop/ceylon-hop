@@ -1739,18 +1739,22 @@ function isValidPhone(s) {
   return digits.length >= 8 && digits.length <= 15;
 }
 function contactValid(s) { s = (s || '').trim(); return s !== '' && (isValidEmail(s) || isValidPhone(s)); }
+// Contact is OPTIONAL — some quotes come in via Instagram with no email/phone. A blank
+// contact is fine; a typed one must still be a real email or +country-code phone.
+function contactOk(s) { s = (s || '').trim(); return s === '' || contactValid(s); }
 // The itinerary unlocks only once every required Trip basic is filled AND valid.
 function basicsComplete() {
   return !!state.vehicleType
     && (state.customerName || '').trim() !== ''
-    && contactValid(state.contact)
+    && contactOk(state.contact)
     && state.passengerCount >= 1
     && state.luggageCount >= 0;
 }
 function basicsMissingText() {
   var m = [];
   if ((state.customerName || '').trim() === '') m.push('customer name');
-  if (!contactValid(state.contact)) m.push('a valid WhatsApp number (with country code) or email');
+  // Only flag contact when the operator typed one that isn't valid — blank is allowed.
+  if (!contactOk(state.contact)) m.push('a valid WhatsApp number (with country code) or email, or clear the field');
   if (!state.vehicleType) m.push('a vehicle');
   return m.length ? 'Still needed: ' + m.join(', ') + '.' : 'Fill in the trip basics above to start.';
 }
@@ -3639,7 +3643,7 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-customerName" type="text" placeholder="e.g. Karen" value="' + esc(st.customerName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">WhatsApp / email <em class="req">*</em></label>',
+    '            <label class="ch-field-label">WhatsApp / email <span style="color:var(--ink-faint);font-weight:400">(optional)</span></label>',
     '            <div class="ch-input-wrap"><input class="ch-input' + (contactBad ? ' invalid' : '') + '" id="f-contact" type="text" placeholder="+94 77 123 4567 or name@email.com" value="' + esc(st.contact) + '" /></div>',
     '            <span class="ch-field-err">Enter an email or a phone number with country code (e.g. +94…)</span>',
     '          </div>',
