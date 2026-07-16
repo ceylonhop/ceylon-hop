@@ -1123,7 +1123,13 @@ function applyRouteFromUrl(mode){
   if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);
 }
 
-async function loadQueue(){const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();}
+async function loadQueue(){
+  const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);
+  // Booking data only feeds the Bookings surface + the nav attention count. Re-rendering the
+  // whole app here re-painted the quote/quotes surfaces too (which don't use it) — the visible
+  // "double render". So re-render only on Bookings; elsewhere just refresh the count.
+  if(state.route==='tickets')render();else setNav();
+}
 
 /* Rail collapse: reclaims horizontal space while working; the choice persists per browser. */
 function railCollapsed(){try{return localStorage.getItem('ch_ops_rail')==='1';}catch(e){return false;}}
