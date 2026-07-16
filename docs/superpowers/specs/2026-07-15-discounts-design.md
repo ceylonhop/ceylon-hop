@@ -1,7 +1,9 @@
 # Discounts and promotions across quotes, bookings, and customer surfaces
 
 **Date:** 2026-07-15
-**Status:** Product decisions complete; one cost-data input required before M18.2
+**Status:** Product decisions complete; one cost-data input required before M18.2.
+Amended 2026-07-16 (owner-approved, pre-implementation): quote-shape conditions
+(minimum trip km, minimum leg count) and per-family total redemption budgets.
 **Milestones:** M18-M22
 **Depends on:** M11 authoritative pricing, M12 Ops/RBAC, the seven-day quote lock, and
 the psychological-pricing contract
@@ -32,6 +34,10 @@ authoritative discount independently.
 - A qualifying website or Ops quote receives the same deterministic automatic
   promotion. On the website, a valid code may compete with automatic promotions but
   never stacks with them.
+- A promotion can target bigger itineraries: minimum spend, minimum total trip
+  distance, or minimum leg count, alone or combined.
+- A finite code stops applying once its redemption budget is spent — always before
+  payment, never by changing an amount already shown or charged.
 - Every discounted final total is at or above the engine's estimated cost. No role can
   override this rule and no complimentary booking can be created.
 - Website, Ops, booking, payment, confirmation, email, and copied customer output agree
@@ -53,6 +59,7 @@ and founders can stop new promotion creation without invalidating already locked
 | Promotion activation | Automatic or code-only |
 | Promotion scope | Sitewide, route, or named tour |
 | Route direction | One-way or both directions, selected when the rule is created |
+| Quote-shape conditions | Optional minimums for eligible subtotal, total trip km, and leg count; all configured conditions must hold together |
 | Named tour | A stable Ceylon Hop tour offering containing one or many legs |
 | Public eligibility | Private transfers, chauffeur trips, and named tours |
 | Public exclusions | Shared seats and extras |
@@ -62,9 +69,9 @@ and founders can stop new promotion creation without invalidating already locked
 | Manual versus automatic | An explicit founder manual discount replaces the automatic winner until removed |
 | Cost protection | Cap the discount at estimated cost; never allow a below-cost final total |
 | Fare floors | A founder-created discount may cross a sell-price fare floor, but not cost |
-| Promo expiry after lock | A promotion valid when locked remains valid for that quote's full lock |
+| Promo expiry after lock | A promotion valid when locked remains valid for that quote's full lock; the one exception is a finite budget exhausting before conversion (§7.6) |
 | Public lock duration | Seven days, fixed from creation and never extended by edits |
-| Redemption limits | No total or per-customer limits at launch |
+| Redemption limits | Optional total budget per rule family (revised 2026-07-16; supersedes the launch deferral); still no per-customer or per-device limits |
 | Quote state | Discounted is derived display state, not a lifecycle status |
 | Payment policy | Full payment remains unchanged |
 
@@ -82,6 +89,10 @@ valid rule is using a founder-authorized rule and receives no staff capability.
 - Sitewide, canonical directional-route, and named-tour targeting.
 - Required start and expiry times for every promotion.
 - One winning discount per quote, including deterministic overlap handling.
+- Optional rule conditions: minimum eligible subtotal, minimum total trip km, and
+  minimum leg count.
+- Optional total redemption budget per rule family, enforced at code entry and again
+  at conversion.
 - Cost capping, founder warnings, reasons, and attributed audit history.
 - Discount snapshots on Ops quotes, web quotes, and bookings.
 - Seven-day locked promotion durability.
@@ -95,8 +106,10 @@ valid rule is using a founder-authorized rule and receives no staff capability.
 - Stacking, compounding, or allocating multiple promotions.
 - Shared-seat discounts and public discounts on extras.
 - Complimentary or below-cost bookings.
-- Total, per-customer, or per-device redemption limits. Anonymous customer identity is
-  insufficient for a reliable limit and no launch requirement needs one.
+- Per-customer or per-device redemption limits. Anonymous customer identity is
+  insufficient for a reliable per-person limit. A total per-family budget is in scope
+  (§7.6); "one per person" is approximated by setting the budget to the intended
+  audience size.
 - Geofencing arbitrary typed addresses. Route promotions use preserved canonical route
   context; exact pickup and drop-off addresses remain separate fulfillment data.
 - Cross-device web-quote editing. The edit credential is private to the browser session.
@@ -192,6 +205,13 @@ continue hiding the internal finishing-policy label.
 - A fixed promotion cannot remove more than the eligible subtotal.
 - A percentage uses the eligible subtotal and may have an optional maximum amount.
 - A rule may require a minimum eligible subtotal.
+- A rule may require a minimum total trip distance in km. The comparison uses the
+  engine's summed server-resolved leg distances — never a client-supplied figure. If
+  any leg's distance is unresolved, the condition is unmet and the rule does not match:
+  fail closed, consistent with §9.5.
+- A rule may require a minimum leg count, counted from the canonical intent's priced
+  legs.
+- When a rule configures several conditions, all of them must hold together.
 - The complete quote's estimated cost protects the final total, including when extras
   are present.
 
@@ -235,9 +255,9 @@ does not create a discounted state.
 For every eligible quote without an explicit founder manual discount, the server:
 
 1. Finds active automatic rules whose time, product, scope, route/tour identity, and
-   minimum-subtotal conditions match.
-2. For a website quote with a submitted code, validates that one code-only rule and adds
-   it as a candidate.
+   quote-shape conditions (minimum subtotal, trip km, leg count) match.
+2. For a website quote with a submitted code, validates that one code-only rule —
+   including its remaining redemption budget (§7.6) — and adds it as a candidate.
 3. Computes each candidate independently, including optional maximum and cost cap.
 4. Selects exactly one candidate with the greatest applied cents.
 5. Breaks equal-value ties deterministically: submitted code, then tour, route,
@@ -246,8 +266,8 @@ For every eligible quote without an explicit founder manual discount, the server
 
 Rules never stack. If a submitted code is valid but an automatic promotion gives a
 larger saving, the automatic promotion remains and the response says that a better
-offer is already applied. An invalid/expired/ineligible submitted code rejects that
-edit and leaves any previously locked quote unchanged.
+offer is already applied. An invalid/expired/exhausted/ineligible submitted code
+rejects that edit and leaves any previously locked quote unchanged.
 
 Ops estimates use the same automatic resolver, including route/tour identity and
 greatest-saving selection. An explicit founder manual discount is a deliberate
@@ -268,6 +288,34 @@ Finishing may round upward. It may never reduce the final total below estimated 
 at cost it returns unchanged.
 
 Shared remains outside both public promotions and psychological finishing.
+
+### 7.6 Redemption budget
+
+A rule may carry `max_redemptions`, an optional positive integer. The budget belongs to
+the rule **family**, not the version: versions of one family share a single spent count,
+so editing a label or window never resets a code's budget.
+
+A redemption is a **converted booking** whose frozen snapshot applies a version of that
+family. Quote locks, previews, and estimates never consume budget — window-shoppers
+cannot exhaust a code by browsing.
+
+Enforcement happens twice:
+
+- **At matching.** A rule whose budget is spent is not a candidate. A submitted
+  exhausted code rejects with `promotion_exhausted`, wording it as fully redeemed.
+- **At conversion.** Between lock and conversion the budget may run out, so the booking
+  transaction re-verifies it: it takes a transaction-scoped Postgres advisory lock on
+  the family id, counts committed conversions, and fails closed with
+  `promotion_exhausted` when the budget is spent. The advisory lock serializes
+  concurrent conversions of the same family so the budget can never overshoot. No
+  booking is ever created at an amount other than the one shown; after a rejection the
+  quote reprices without the discount on its next edit, and the customer confirms the
+  corrected total before converting.
+
+This is the single, deliberate exception to locked-promotion durability (§3): a lock
+preserves a promotion's terms, but cannot promise a share of a finite budget. For the
+launch use case — codes handed to a known circle of friends — the budget is set to the
+audience size and the window kept short.
 
 ## 8. Domain representations
 
@@ -348,8 +396,11 @@ authoritative result has `discountCents > 0`; no `discounted` lifecycle state is
 - The seven-day expiry is fixed at quote creation. Edits never slide or extend it.
 - Edits use the locked rate-card and FX. A previously locked promotion remains a
   candidate despite later expiry/version/deactivation only while the current canonical
-  intent still satisfies its product, scope, route/tour identity, and minimum-subtotal
-  terms. Its amount may change with eligible subtotal or cost.
+  intent still satisfies its product, scope, route/tour identity, and quote-shape terms
+  (minimum subtotal, trip km, leg count). Its amount may change with eligible subtotal
+  or cost.
+- A locked finite-budget promotion is not a reservation; its remaining budget is
+  re-verified at conversion (§7.6).
 - Currently active automatic candidates are also evaluated on each successful edit. A
   newly selected winner receives its own immutable snapshot without extending the
   quote's expiry.
@@ -367,6 +418,10 @@ authoritative result has `discountCents > 0`; no `discounted` lifecycle state is
   intent fingerprint, and an unexpired lock.
 - On exact match it adopts the latest stored server-authored request/result. It does not
   call Maps or recalculate money during conversion.
+- When the adopted discount's rule family carries `max_redemptions`, the conversion
+  transaction re-verifies the remaining budget under the family advisory lock (§7.6)
+  and fails closed with `promotion_exhausted`. The booking is never created at an
+  amount other than the one the customer was shown.
 - Booking creation, quote conversion, pricing-snapshot persistence, and audit event are
   one idempotent Postgres transaction.
 - Existing `quotes.converted_booking_id` is made unique and remains the sole
@@ -424,6 +479,9 @@ Each row is an immutable rule version:
 | `value` | integer cents for fixed; basis points for percentage |
 | `max_discount_cents` | nullable non-negative integer |
 | `minimum_eligible_cents` | nullable non-negative integer |
+| `minimum_trip_km` | nullable positive integer; compared against summed server-resolved leg km |
+| `minimum_leg_count` | nullable positive integer |
+| `max_redemptions` | nullable positive integer; budget shared across a family's versions (§7.6) |
 | `starts_at`, `expires_at` | timestamptz, start strictly before expiry |
 | `active` | boolean |
 | `created_by`, `created_at`, `deactivated_by`, `deactivated_at` | attribution |
@@ -431,7 +489,10 @@ Each row is an immutable rule version:
 Editing inserts a new family version and deactivates the prior active version in one
 transaction. Partial unique indexes permit one active version per family and one active
 code rule per normalized code. Check constraints enforce activation/scope-specific
-columns. There is no hard delete and no redemption-limit column at launch.
+columns. There is no hard delete. `max_redemptions` is copied forward to each new
+version unless the founder changes it; the spent count always belongs to the family
+(§7.6), so raising or lowering the budget on a new version compares against the same
+count.
 
 ### 11.2 `quote_discounts`
 
@@ -485,9 +546,12 @@ snapshot means legacy/no-discount. Money checks are non-negative; application an
 integration tests enforce the cross-field equation. The booking pricing snapshot is
 immutable after creation.
 
-No `discount_redemptions` table is added at launch. Conversions and usage can be counted
-from unique converted quotes, booking snapshots, and discount events. A reservation
-ledger is introduced only with a future finite-redemption requirement.
+No `discount_redemptions` table is added. Budget enforcement (§7.6) counts committed
+conversions — converted quotes whose active `quote_discounts` row references a version
+of the family — inside the conversion transaction, serialized by a transaction-scoped
+advisory lock on the family id. At Ceylon Hop's booking volume the count is cheap and
+the lock uncontended; a separate reservation ledger becomes worthwhile only if that
+stops being true.
 
 ## 12. API contracts
 
@@ -533,7 +597,8 @@ expiry, structured amounts, customer-safe line items, applied promotion label, a
 stable errors.
 
 Stable errors include `promotion_invalid`, `promotion_not_started`,
-`promotion_expired`, `promotion_not_eligible`, `discount_cost_unavailable`,
+`promotion_expired`, `promotion_exhausted`, `promotion_not_eligible`,
+`discount_cost_unavailable`,
 `discount_requires_priced_quote`, `quote_conflict`, `quote_access_denied`, and
 `quote_expired`.
 
@@ -571,6 +636,8 @@ no discount behavior.
   now. Extras remain visibly full price.
 - When a valid code loses to a better automatic promotion, explain that the better
   offer is already applied.
+- A code whose budget is spent is rejected as fully redeemed, at entry and — in the
+  rare late-conversion case — before payment, never after (§7.6).
 - Demo/offline mode does not simulate promotions or discounts.
 
 ### 13.2 Ops promotion management
@@ -578,11 +645,13 @@ no discount behavior.
 - Only founders can load the promotion-management view or mutate a rule.
 - Controls select automatic or code-only activation; sitewide, route, or tour scope;
   one-way or both-way route behavior; fixed/percentage value; optional maximum and
-  minimum; customer label; and required validity period.
+  minimum; optional minimum trip km and leg count; optional total redemption budget;
+  customer label; and required validity period.
 - Route selection uses canonical places and shows direction clearly.
 - Tour selection shows stable offered-tour identity and route summary.
-- List states are scheduled, active, expired, and deactivated. Version and deactivate
-  are explicit; no hard delete exists.
+- List states are scheduled, active, expired, and deactivated; a finite rule also shows
+  redemptions spent against its budget. Version and deactivate are explicit; no hard
+  delete exists.
 - Preview shows actual candidate result and founder-only floor/cost/margin warnings for
   the supplied sample quote. Rule creation alone does not claim a universal margin,
   because cost varies by quote.
@@ -636,6 +705,11 @@ cent-identical.
 - Sitewide, one-way, both-way, and named-tour identity matching.
 - Free-text route and altered-tour non-matches.
 - Start/expiry boundaries using an injected clock.
+- Minimum trip-km and leg-count boundaries, combined-condition AND semantics, and an
+  unresolved leg distance failing the km condition closed.
+- Redemption budget: the last unit converts, the next rejects; exhausted rejection at
+  code entry and at conversion; concurrent conversions serialized by the family
+  advisory lock never overshoot; versioning a rule preserves the family's spent count.
 - Seven-day fixed expiry; edits do not slide the lock.
 - A still-eligible locked rule survives version/deactivation; new locks do not use it.
 - Finishing runs once after discount and never drops below cost.
@@ -679,8 +753,8 @@ Sequence:
 8. Enable code UI for one controlled code, then broaden deliberately.
 
 Structured events cover rule lifecycle, candidate selection, apply/replace/remove, cost
-cap, stale conflicts, quote access rejection, lock/update, conversion, and payment
-mismatch. Alerts fire on booking/payment amount mismatch, below-cost invariant failure,
+cap, budget exhaustion, stale conflicts, quote access rejection, lock/update,
+conversion, and payment mismatch. Alerts fire on booking/payment amount mismatch, below-cost invariant failure,
 conversion failure spikes, and unusual promotion rejection/application volume.
 
 Rollback proof must show that all creation flags can turn off while an already locked
