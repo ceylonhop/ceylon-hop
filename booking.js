@@ -1233,9 +1233,14 @@ function render(){
   if(perVehicle){
     document.getElementById('sum-adlabel').textContent = (isTrip && state.svc==='chauffeur')
       ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
-      : (isTrip ? (vehicleKey==='van'?'Private AC van · per leg':'Private AC car · per leg') : vehicleLabel);
-    // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
-    document.getElementById('sum-adamt').textContent=money((isTrip && state.svc==='chauffeur') ? chauffeurDistanceCharge() : unit);
+      : (isTrip ? (vehicleKey==='van'?'Private AC van · whole trip':'Private AC car · whole trip') : vehicleLabel);
+    // The base line absorbs the one finishing adjustment: it equals the finished Total minus every
+    // OTHER visible row — the extras, plus (on a chauffeur-guide trip) the day-rate row. So the rows
+    // on screen always sum exactly to Total, and no raw pre-finishing number is ever shown here.
+    let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
+    if (isTrip && state.svc==='chauffeur') otherRows += chauffeurFee();
+    const baseAmt = calcTotal() - otherRows;
+    document.getElementById('sum-adamt').textContent=money(baseAmt);
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travelers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;

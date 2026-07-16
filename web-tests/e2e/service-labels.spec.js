@@ -55,7 +55,7 @@ test('chauffeur service is unavailable until every trip leg has a date', async (
 
   await expect(chauffeur).not.toHaveClass(/on/);
   await expect(page.locator('[data-svc="private"]')).toHaveClass(/on/);
-  await expect(page.locator('#sum-adlabel')).toHaveText(/Private AC van · per leg/);
+  await expect(page.locator('#sum-adlabel')).toHaveText(/Private AC van · whole trip/);
   await expect(page.locator('#sum-adlabel')).not.toHaveText(/Chauffeur distance/);
 });
 
@@ -80,10 +80,12 @@ test('trip booking review shows planner-provided Google distances for exact-plac
 
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  // Per-leg buffers are clamped before the chauffeur distance rate is applied:
-  // (57 km + 251 km) × $0.4025 = $123.97, without private-transfer minimum fares.
-  await expect(page.locator('#sum-adamt')).toHaveText('$123.97');
-  await expect(page.locator('#sum-total')).toHaveText('$186'); // raw $186.07 → nearest $1
+  // Chauffeur = day rate + one trip-distance charge. Raw distance is (57 km + 251 km) × $0.4025 =
+  // $123.97 (buffers clamped, no private-transfer minimum fares). The distance row now shows the
+  // finished Total minus the day rate so the rows sum to Total: it absorbs the −$0.07 finishing
+  // and displays $123.90 (day-rate $62.10 + distance $123.90 = $186).
+  await expect(page.locator('#sum-adamt')).toHaveText('$123.90');
+  await expect(page.locator('#sum-total')).toHaveText('$186'); // $186.07 raw → finished $186
 });
 
 test('fallback-priced trip does not show zero chauffeur distance', async ({ page }) => {
@@ -103,6 +105,8 @@ test('fallback-priced trip does not show zero chauffeur distance', async ({ page
   await page.locator('[data-svc="chauffeur"]').click();
   await expect(page.locator('#trip-route')).toContainText('Distance on request');
   await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
-  await expect(page.locator('#sum-adamt')).toHaveText('$110');
+  // Distance row absorbs the finishing adjustment so the rows sum to Total: raw distance $110 +
+  // day-rate $62.10 = $172.10 raw, finished to $169, so distance displays $106.90 ($62.10 + $106.90 = $169).
+  await expect(page.locator('#sum-adamt')).toHaveText('$106.90');
   await expect(page.locator('#sum-total')).toHaveText('$169'); // raw $172.10 → eligible $169 charm price
 });
