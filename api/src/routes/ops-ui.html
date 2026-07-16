@@ -4162,9 +4162,13 @@ async function drawItinRoute(hostEl, stops) {
     _mapMap.__host = hostEl;
     _mapRenderer = new google.maps.DirectionsRenderer({ map: _mapMap, suppressMarkers: true, polylineOptions: { strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 } });
   }
+  // Clean names for geocoding, mirroring the customer-site map (ch-map.js): drop "(CMB)"
+  // parentheticals and slashes, and anchor to Sri Lanka so bare names don't geocode abroad —
+  // otherwise multi-stop routes with an airport/slash/bare name fail with "couldn't map".
+  var geoName = function (s) { return (s || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka'; };
   new google.maps.DirectionsService().route({
-    origin: stops[0], destination: stops[stops.length - 1],
-    waypoints: stops.slice(1, -1).map(function (n) { return { location: n, stopover: true }; }),
+    origin: geoName(stops[0]), destination: geoName(stops[stops.length - 1]),
+    waypoints: stops.slice(1, -1).map(function (n) { return { location: geoName(n), stopover: true }; }),
     travelMode: google.maps.TravelMode.DRIVING,
   }, function (res, status) {
     if (status !== 'OK' || !res || !res.routes || !res.routes[0]) {
