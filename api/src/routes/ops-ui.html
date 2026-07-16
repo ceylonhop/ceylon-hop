@@ -3512,7 +3512,7 @@ function renderActionBar() {
   var B = function(action, label, cls) { return '<button class="ch-btn ' + cls + '" data-action="' + action + '">' + label + '</button>'; };
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
-    if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), SAVE); }
+    if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
     else if (s === 'pending_review') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
