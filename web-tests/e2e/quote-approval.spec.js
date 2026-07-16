@@ -383,18 +383,18 @@ test('the customer message stays hidden until approved — even for the founder'
   await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
 });
 
-// ── Side-nav collapse toggle ─────────────────────────────────────────────────────
-test('the rail collapses to an icon strip and the choice persists', async ({ page }) => {
+// ── Side-nav collapsed rail ──────────────────────────────────────────────────────
+test('the collapsed rail opens when any part of it is clicked', async ({ page }) => {
   await openQueue(page, 'founder', []);
+  await expect(page.locator('#railToggle')).toHaveCount(0);
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
-  await page.locator('#railToggle').click();
-  await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Persisted, so a fresh load of the same surface stays collapsed.
+
+  await page.evaluate(() => localStorage.setItem('ch_ops_rail', '1'));
   await page.goto(OPS_FILE + '#quotes');
   await page.waitForSelector('#view .qhead');
   await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Toggling back expands it.
-  await page.locator('#railToggle').click();
+
+  await page.locator('.rail').click();
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
 });
 
