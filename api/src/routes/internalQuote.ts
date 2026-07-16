@@ -252,7 +252,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { services?: ServiceChooserData }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -266,16 +266,22 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
     );
     const result = quote(engineReq, rateCard);
     const base = shape(result, canMargin);
+    // Legacy/minimal row without a usable tool payload → base total only (no per-leg / services).
     if (!toolReq || !toolReq.vehicle || !Array.isArray(toolReq.legs) || typeof toolReq.passengerCount !== 'number' || typeof toolReq.luggageCount !== 'number') {
       return base;
     }
+    // Match the live /estimate shape so a ready/sent quote renders its per-leg prices AND the
+    // point-to-point vs chauffeur comparison — all priced against the LOCKED card (frozen numbers).
     const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
-    return { ...base, services: serviceChooserData(toolReq, rateCard, selected, result) };
+    return {
+      ...base,
+      breakdown: quoteBreakdown(engineReq, rateCard),
+      services: serviceChooserData(toolReq, rateCard, selected, result),
+    };
   } catch {
     return null;
   }
 }
-
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
 
 function normPlace(s: string): string {
