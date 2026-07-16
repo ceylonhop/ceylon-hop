@@ -91,6 +91,7 @@ window.updateSearch = function (e) {
 const fromP = T.place(fromId), toP = T.place(toId);
 const quote = T.privateQuote(fromId, toId);
 const shared = T.sharedOption(fromId, toId);
+const displayPrice = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
 document.title = `${fromP.name} → ${toP.name} — Ceylon Hop`;
 
 document.getElementById('route-title').innerHTML =
@@ -152,14 +153,14 @@ const privateCard = `
       <div class="veh-row">
         <div class="v-ico">${ICONS.car}</div>
         <div class="v-info"><b>AC car</b><small>Up to 3 travelers + bags</small></div>
-        <div class="v-price"><div class="amt">$${quote.car}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car })}">Select</a>
+        <div class="v-price"><div class="amt">$${displayPrice(quote.car)}</div><small>total, fixed</small></div>
+        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car, rawPrice: quote.rawCar })}">Select</a>
       </div>
       <div class="veh-row">
         <div class="v-ico">${ICONS.van}</div>
         <div class="v-info"><b>AC van</b><small>Up to 6 travelers + bags</small></div>
-        <div class="v-price"><div class="amt">$${quote.van}</div><small>total, fixed</small></div>
-        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van })}">Select</a>
+        <div class="v-price"><div class="amt">$${displayPrice(quote.van)}</div><small>total, fixed</small></div>
+        <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van, rawPrice: quote.rawVan })}">Select</a>
       </div>
     </div>
     <div class="incl">

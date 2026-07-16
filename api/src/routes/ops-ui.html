@@ -3128,13 +3128,56 @@ function legOrderItems() {
   return (lastEstimate && lastEstimate.lineItems) ? lastEstimate.lineItems : [];
 }
 
+// The adjustment is visible in the internal price build-up, but customer drafts show only the
+// polished final total rather than exposing an internal pricing-policy label.
+function customerLineItems() {
+  var adjustment = 0;
+  var items = [];
+  legOrderItems().forEach(function(it) {
+    if (it.meta && it.meta.kind === 'price_adjustment') adjustment += Number(it.amountCents) || 0;
+    else items.push(Object.assign({}, it));
+  });
+  if (!adjustment || !items.length) return items;
+
+  // Keep the policy auditable internally while making customer rows add up to Total.
+  // Prefer the main travel charges; use another visible charge only if those cannot
+  // absorb the full reduction without becoming negative.
+  var candidates = [];
+  if (isChauffeurEstimate()) {
+    items.forEach(function(it, i) {
+      if (/^(Chauffeur day rate|Distance)\s+—/.test(it.label || '')) candidates.push(i);
+    });
+  } else {
+    items.forEach(function(it, i) {
+      if (it.meta && it.meta.billableKm != null) candidates.push(i);
+    });
+  }
+  if (!candidates.length) {
+    items.forEach(function(it, i) { if (Number(it.amountCents) > 0) candidates.push(i); });
+  }
+  candidates.sort(function(a, b) { return Number(items[b].amountCents) - Number(items[a].amountCents); });
+  items.forEach(function(it, i) {
+    if (Number(it.amountCents) > 0 && candidates.indexOf(i) < 0) candidates.push(i);
+  });
+
+  var remaining = adjustment;
+  candidates.forEach(function(i) {
+    if (!remaining) return;
+    var amount = Number(items[i].amountCents) || 0;
+    var applied = remaining < 0 ? Math.max(remaining, -amount) : remaining;
+    items[i].amountCents = amount + applied;
+    remaining -= applied;
+  });
+  return items;
+}
+
 function drivingLegList() {
   return state.legs.filter(legDrives);
 }
 
 // Split lineItems into { travel: [...perDrivingLeg], extras: [...rest] }.
 function splitLineItems() {
-  var items = legOrderItems();
+  var items = customerLineItems();
   var drivingCount = drivingLegList().length;
   // Prefer explicit meta.billableKm markers; fall back to positional (first N).
   var hasMeta = items.some(function(it) { return it.meta && it.meta.billableKm != null; });
@@ -3197,7 +3240,7 @@ function generatedWhatsappMessage() {
     });
     lines.push('');
     // Every engine lineItem as a priced row.
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push(it.label + ' — ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
@@ -3237,7 +3280,7 @@ function generatedEmailMessage() {
       }
     });
     lines.push('');
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push('  ' + it.label + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));

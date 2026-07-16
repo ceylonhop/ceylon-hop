@@ -29,9 +29,9 @@ describe('repriceDecision', () => {
   });
 
   it('confirms a material increase past the buffer', () => {
-    // routed 300 > 215, legPrice(300,'car') = round(315×0.4025) = 127 > 101 → confirm, extra 100 km.
+    // routed 300 > 215, exact legPrice(300,'car') = $126.79 > $101 → confirm, extra 100 km.
     const d = T.repriceDecision(200, 300, 101, 'car');
-    expect(d).toEqual({ action: 'confirm', price: 127, extraKm: 100 });
+    expect(d).toEqual({ action: 'confirm', price: 126.79, extraKm: 100 });
   });
 
   it('uses the van rate for van quotes', () => {

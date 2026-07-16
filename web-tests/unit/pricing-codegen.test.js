@@ -23,6 +23,7 @@ const payload = {
   perKm: { car: 0.35, van: 0.47 },
   floors: { car: 29, van: 50 },
   bufferPct: 10,
+  priceFinishing: { maxReductionBps: 250, roundToCents: 50 },
   chauffeurDayFee: 35,
   depositPct: 0.1,
   depositCap: 50,
@@ -52,6 +53,7 @@ describe('renderPricingBlock', () => {
     expect(block).toContain('"safari-wait":19');
     expect(block).toContain('"ella-east":23');
     expect(block).toContain('const BUFFER_PCT = 10;');
+    expect(block).toContain('const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};');
   });
 });
 
@@ -95,6 +97,7 @@ describe('codegen freshness + parity (enforcement)', () => {
     expect(T.PER_KM).toEqual(backendPayload.perKm);
     expect(T.FLOORS).toEqual(backendPayload.floors);
     expect(T.BUFFER_PCT).toBe(backendPayload.bufferPct);
+    expect(T.PRICE_FINISHING).toEqual(backendPayload.priceFinishing);
     expect(T.CHAUFFEUR_DAY_FEE).toBe(backendPayload.chauffeurDayFee);
     expect(T.DEPOSIT_PCT).toBe(backendPayload.depositPct);
     expect(T.DEPOSIT_CAP).toBe(backendPayload.depositCap);

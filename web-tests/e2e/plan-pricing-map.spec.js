@@ -9,9 +9,9 @@ test('planner prices Kandy to Ella with the shared route table', async ({ page }
   const legMeta = page.locator('#rail [data-dist]');
   await expect(legMeta).toContainText('136 km');
   await expect(legMeta).toContainText('Google distance');
-  await expect(legMeta).toContainText('from $60');
+  await expect(legMeta).toContainText('from $59');
   await expect(legMeta.locator('.lm-src')).toHaveText('Google distance');
-  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $60');
+  await expect(legMeta.locator('.lm-src + .lm-sep + .lm-price')).toContainText('from $59');
   await expect(legMeta.locator('.lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#st-drive')).toContainText('136 km');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
@@ -25,7 +25,7 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
   await expect(mapSvg).toBeVisible();
   await mapSvg.evaluate((el) => { el.dataset.e2eMapNode = 'stable'; });
 
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $60');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC car');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 
@@ -33,7 +33,7 @@ test('planner vehicle switch updates prices without rebuilding the route map', a
 
   await expect(page.locator('#rail [data-dist]')).toContainText('from $81');
   await expect(page.locator('#rail [data-dist] .lm-price .lm-veh')).toHaveAttribute('aria-label', 'Private AC van');
-  await expect(page.locator('#sum-amt')).toHaveText(/\$80[-\u2013]\$95/); // guide range = ceil(real+10) & a $25/$15 band
+  await expect(page.locator('#sum-amt')).toHaveText(/\$80[-\u2013]\$95/); // guide range = ceil(finished+10) & a $25/$15 band
   await expect(page.locator('#trip-map svg[data-e2e-map-node="stable"]')).toHaveCount(1);
 });
 
@@ -98,12 +98,12 @@ test('planner passes Google-measured leg distance into booking handoff', async (
 test('search add-stops handoff preserves the equivalent base route price', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
 
-  await expect(page.locator('a[href*="price=60"][href*="vehicle=car"]').first()).toBeVisible();
+  await expect(page.locator('a[href*="price=59"][href*="rawPrice=60"][href*="vehicle=car"]').first()).toBeVisible();
   await page.locator('#add-stops').click();
   await page.waitForURL('**/plan.html?**');
 
   await expect(page.locator('#rail [data-dist]')).toContainText('136 km');
-  await expect(page.locator('#rail [data-dist]')).toContainText('from $60');
+  await expect(page.locator('#rail [data-dist]')).toContainText('from $59');
   await expect(page.locator('#sum-amt')).toHaveText(/\$55[-\u2013]\$70/);
 });
 

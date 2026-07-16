@@ -102,13 +102,18 @@ if(mode==='trip' && window.TRANSFERS){
   routeFromId=params.get('from'); routeToId=params.get('to');
   const fromP=T.place(routeFromId)||{name:routeFromId||'Pick-up'};
   const toP=T.place(routeToId)||{name:routeToId||'Drop-off'};
-  const price=parseFloat(params.get('price'))||0;
+  // Search passes both the polished display price and its raw fare. Keep the raw fare internally
+  // so extras are added before the one final finishing pass; older links without rawPrice retain
+  // their existing price contract and are finished once by calcTotal().
+  let price=parseFloat(params.get('rawPrice') || params.get('price'))||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
   // pre-compute both vehicle prices so we can switch car→van when over capacity
   if(T.place(routeFromId) && T.place(routeToId)){
     const q=T.privateQuote(routeFromId, routeToId);
-    vehPrices={ car:q.car, van:q.van };
+    // Keep the unfinished vehicle fares internally so extras are added before the one final
+    // price-finishing pass in calcTotal(). privateQuote's car/van fields are display totals.
+    vehPrices={ car:q.rawCar, van:q.rawVan };
   }
   r={
     id:'transfer', type:mode,
@@ -857,13 +862,15 @@ function renderRepriceNote(){
   const p=state.pendingReprice;
   if(!p){ if(el) el.remove(); return; }
   const newPrice = p.prices[vehicleKey];
+  const shownCurrentPrice = window.TRANSFERS.finishPrice(unit);
+  const shownNewPrice = window.TRANSFERS.finishPrice(newPrice);
   el=ensureRepriceEl(); el.className='reprice-note';
   el.innerHTML =
     '<b>Heads up — this trip is longer than the standard route.</b> '+
     'Your exact stops add about '+p.extraKm+' km, so the fixed price updates from '+
-    money(unit)+' to '+money(newPrice)+'.'+
+    money(shownCurrentPrice)+' to '+money(shownNewPrice)+'.'+
     '<div class="rn-actions">'+
-      '<button type="button" class="btn btn-primary btn-sm" onclick="acceptReprice()">Got it — use '+money(newPrice)+'</button>'+
+      '<button type="button" class="btn btn-primary btn-sm" onclick="acceptReprice()">Got it — use '+money(shownNewPrice)+'</button>'+
       '<button type="button" class="rn-change" onclick="dismissReprice()">Change location</button>'+
     '</div>';
 }
@@ -1038,7 +1045,7 @@ function chauffeurDistanceCharge(){
   // Bulk km × per-km rate, with NO per-leg minimum-fare floor — the backend engine
   // (api/src/quote/chauffeur.ts) has no such floor, so flooring at the private per-leg total
   // (tripBase) over-quoted short-leg chauffeur trips and made the price drop at the pay step.
-  return Math.round(bulkKm * T.PER_KM[vehicleKey==='van' ? 'van' : 'car']);
+  return T.distancePrice(bulkKm, vehicleKey);
 }
 function daysUntilStart(){ if(!state.date) return 999; return Math.round((state.date - new Date())/86400000); }
 // Server-authoritative price. Until the booking is created the wizard shows a best-effort
@@ -1069,7 +1076,11 @@ function calcTotal(){
     : (perVehicle ? unit : (unit*state.ad + unit*0.6*state.ch));
   if(isShared){ const free=Math.max(1,state.ad+state.ch); t += Math.max(0,state.bags-free)*10; }
   state.addons.forEach(a=>t+=addonPrices[a]);
-  return t;
+  if(isShared) return t;
+  const privateFloor = (isTrip && state.svc!=='chauffeur')
+    ? tripLegs.length * window.TRANSFERS.FLOORS[vehicleKey]
+    : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
+  return window.TRANSFERS.finishPrice(t, privateFloor);
 }
 // Deposit %/cap come from the generated rate-card block (transfers-data.js, sourced from
 // api/src/quote/rateCard.ts) — no hardcoded fallback copy that could drift from the backend.
@@ -1222,9 +1233,14 @@ function render(){
   if(perVehicle){
     document.getElementById('sum-adlabel').textContent = (isTrip && state.svc==='chauffeur')
       ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
-      : (isTrip ? (vehicleKey==='van'?'Private AC van · per leg':'Private AC car · per leg') : vehicleLabel);
-    // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
-    document.getElementById('sum-adamt').textContent=money((isTrip && state.svc==='chauffeur') ? chauffeurDistanceCharge() : unit);
+      : (isTrip ? (vehicleKey==='van'?'Private AC van · whole trip':'Private AC car · whole trip') : vehicleLabel);
+    // The base line absorbs the one finishing adjustment: it equals the finished Total minus every
+    // OTHER visible row — the extras, plus (on a chauffeur-guide trip) the day-rate row. So the rows
+    // on screen always sum exactly to Total, and no raw pre-finishing number is ever shown here.
+    let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
+    if (isTrip && state.svc==='chauffeur') otherRows += chauffeurFee();
+    const baseAmt = calcTotal() - otherRows;
+    document.getElementById('sum-adamt').textContent=money(baseAmt);
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travelers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
