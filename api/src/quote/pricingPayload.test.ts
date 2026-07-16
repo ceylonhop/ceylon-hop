@@ -7,6 +7,7 @@ describe('buildPricingPayload', () => {
     expect(p.perKm).toEqual({ car: 0.4025, van: 0.5405 });
     expect(p.floors).toEqual({ car: 29, van: 50 });
     expect(p.bufferPct).toBe(10);
+    expect(p.priceFinishing).toEqual({ maxReductionBps: 250, roundToCents: 50 });
     expect(p.chauffeurDayFee).toBe(31.05);
     expect(p.depositPct).toBe(0.1);
     expect(p.depositCap).toBe(50);

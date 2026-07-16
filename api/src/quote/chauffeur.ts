@@ -24,16 +24,17 @@ export function quoteChauffeur(
   const days = Math.max(1, dayNumber(lastDate) - dayNumber(firstDate) + 1);
   const idleDays = Math.max(0, days - travelDays.length);
   const travelKm = travelDays.reduce((sum, d) => sum + d.distanceKm, 0);
+  const bufferedTravelKm = travelDays.reduce((sum, d) => sum + billableKm(d.distanceKm, rateCard), 0);
   const idleKm = idleDays * rateCard.chauffeur.idleMinKm[vehicle];
-  // Buffer applies to travel km only; idle-day minimum km are NOT buffered (decision I1-b)
-  const bill = billableKm(travelKm, rateCard) + idleKm;
+  // Buffer applies to each travel leg only; idle-day minimum km are NOT buffered (decision I1-b)
+  const bill = bufferedTravelKm + idleKm;
 
   const dayCharge = days * rateCard.chauffeur.dayRateCents;
   const distanceCharge = Math.round(bill * (input.customPerKmCents ?? rateCard.perKmCents[vehicle]));
 
   const lineItems: LineItem[] = [
     { label: `Chauffeur day rate — ${days} day(s)`, amountCents: dayCharge },
-    { label: `Distance — ${bill} km (${billableKm(travelKm, rateCard)} buffered travel + ${idleKm} idle-day min)`, amountCents: distanceCharge, meta: { vehicle } },
+    { label: `Distance — ${bill} km (${bufferedTravelKm} buffered travel + ${idleKm} idle-day min)`, amountCents: distanceCharge, meta: { vehicle } },
   ];
   return { lineItems, subtotalCents: dayCharge + distanceCharge, meta: { days, idleDays, travelKm, idleKm, billableKm: bill } };
 }

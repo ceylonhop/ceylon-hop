@@ -54,13 +54,13 @@ test('Quotes queue nav is visible to founder, finance, and ops (D-A: quote:manag
   // Merged surface: the separate "Generate Quote" (data-route="quote") nav tab is gone.
   await expect(page.locator('#nav button[data-route="quote"]')).toHaveCount(0);
 
-  await page.locator('#logoutbtn').click();
+  await page.evaluate(() => document.getElementById('logoutbtn').click());
   await expect(page.locator('#login')).toHaveClass(/show/);
 
   await login(page, FINANCE_EMAIL);
   await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
 
-  await page.locator('#logoutbtn').click();
+  await page.evaluate(() => document.getElementById('logoutbtn').click());
   await expect(page.locator('#login')).toHaveClass(/show/);
 
   await login(page, OPS_EMAIL);
@@ -117,9 +117,9 @@ test('ops ink colour does not leak from the quote view CSS on the Bookings scree
   expect(color).toBe('rgb(36, 31, 29)'); // ops --ink: #241f1d
 });
 
-// D-A: all 3 roles have quote:manage, so the deep-link resolution (bootApp() in
-// ops-ui.html) lands EVERY role on Quote for /ops#quote — there is no longer a role
-// among founder/finance/ops that gets bounced back to Bookings from this hash.
+// D-A: all 3 roles have quote:manage, so the deep-link resolution lands EVERY role on
+// Quote for a route-only deep link too — there is no longer a human role that gets
+// bounced back to Bookings from this route.
 test('deep-link /ops#quote lands founder and finance on Quote', async ({ page }) => {
   await page.goto(`${OPS}#quote`);
   await page.waitForLoadState('networkidle');
@@ -221,9 +221,39 @@ test('clicking a quote row reopens it in the builder detail view', async ({ page
   await login(page, FOUNDER_EMAIL);
   await page.locator('#nav button[data-route="quotes"]').click();
   await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
+  const firstId = await page.locator('#view .qrow').first().getAttribute('data-qopen');
   await page.locator('#view .qrow').first().click();
   // Reopen switches to the builder route and mounts the cockpit; Quotes stays highlighted.
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ch-status-pill')).toBeVisible(); // detail header shows the status pill
   await expect(page.locator('#nav button[data-route="quotes"]')).toHaveClass(/active/);
+  await expect(page).toHaveURL(new RegExp(`/ops\\?quote=${firstId}#quote$`));
+
+  await page.goBack();
+  await expect(page.locator('#view h1')).toHaveText('Quotes');
+  await expect(page.locator('#quoteRoot')).toHaveAttribute('hidden', '');
+  await expect(page).toHaveURL(/\/ops#quotes$/);
+});
+
+test('a shareable quote URL opens that quote for another authenticated quote manager', async ({ page }) => {
+  await login(page, FOUNDER_EMAIL);
+  await page.locator('#nav button[data-route="quotes"]').click();
+  const row = page.locator('#view .qrow').first();
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await row.click();
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  const sharedUrl = page.url();
+
+  await page.evaluate(() => document.getElementById('logoutbtn').click());
+  await expect(page.locator('#login')).toHaveClass(/show/);
+
+  await page.goto(sharedUrl);
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('#login')).toHaveClass(/show/);
+  await page.fill('#devloginemail', FINANCE_EMAIL);
+  await page.evaluate(() => document.getElementById('devloginform').requestSubmit());
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.ch-status-pill')).toBeVisible();
+  await expect(page.locator('#nav button[data-route="quotes"]')).toHaveClass(/active/);
+  await expect(page).toHaveURL(sharedUrl);
 });

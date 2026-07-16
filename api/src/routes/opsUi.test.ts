@@ -8,6 +8,7 @@ describe('ops UI shell', () => {
     const res = await app.request('/ops');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
+    expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin-allow-popups');
     const body = await res.text();
     expect(body).toContain('Ceylon Hop');
     expect(body).toContain('/admin/ops'); // wired to the real API, not mock data
@@ -131,7 +132,10 @@ describe('ops UI shell', () => {
     const res = await app.request('/ops');
     const body = await res.text();
     expect(body).toContain('QuoteView.teardown()'); // logout tears down the quote module (no stale beforeunload)
-    expect(body).toContain("location.hash==='#quote'"); // boot sequence deep-links a founder into the quote view
+    expect(body).toContain("searchParams.get('quote')"); // shareable quote links reopen a specific quote
+    expect(body).toContain("window.addEventListener('popstate'"); // browser navigation replays the route
+    expect(body).toContain('ch-output-editor'); // ready-to-send output is editable in place before copying
+    expect(body).toContain('toggleChauffeurUpsell'); // point-to-point customer drafts can append the chauffeur option
     expect(body).toContain('_lastRenderedRoute'); // focus only moves on an actual route transition
   });
 

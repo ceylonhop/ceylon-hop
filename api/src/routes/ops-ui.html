@@ -654,6 +654,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-output-body { min-height: 120px; }
 .qv .ch-pre { font-family: var(--sans); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--cream); border-radius: var(--r-md); padding: 16px 18px; margin: 0; color: var(--ink); }
 .qv .ch-pre.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.qv .ch-output-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.qv .ch-output-hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
+.qv .ch-output-editor { width: 100%; min-height: 320px; border: 1px solid var(--line); resize: vertical; }
+.qv .ch-output-editor:focus { outline: none; border-color: rgba(10,185,182,.55); box-shadow: 0 0 0 3px rgba(10,185,182,.12); }
 .qv .ch-email-subject { font-size: 13px; margin-bottom: 10px; padding: 10px 14px; background: #fff; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .qv .ch-email-subject span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted-2); margin-right: 8px; }
 .qv .ch-internal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
@@ -1077,9 +1081,50 @@ function rowToTicket(row){
 }
 
 let tickets=[];
-let state={route:'tickets',q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
+let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 
-async function loadQueue(){const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();}
+function routeStateFromUrl(canQuote){
+  const url=new URL(window.location.href);
+  const quoteId=(url.searchParams.get('quote')||'').trim()||null;
+  if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId };
+  if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null };
+  if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null };
+  return { route:'tickets', routeQuoteId:null };
+}
+function syncUrl(route, quoteId, mode){
+  const url=new URL(window.location.href);
+  if(route==='quote')url.hash='#quote';
+  else if(route==='quotes')url.hash='#quotes';
+  else url.hash='';
+  if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
+  else url.searchParams.delete('quote');
+  const next=url.pathname+url.search+url.hash;
+  if(mode==='push')history.pushState(null,'',next);
+  else history.replaceState(null,'',next);
+}
+function setShellRoute(route, opts){
+  opts=opts||{};
+  state.route=route;
+  state.routeQuoteId=(route==='quote'&&opts.quoteId)?opts.quoteId:null;
+  syncUrl(route,state.routeQuoteId,opts.replace?'replace':'push');
+  render();
+}
+function applyRouteFromUrl(mode){
+  const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
+  state.route=next.route;
+  state.routeQuoteId=next.routeQuoteId;
+  syncUrl(state.route,state.routeQuoteId,mode==='push'?'push':'replace');
+  render();
+  if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);
+}
+
+async function loadQueue(){
+  const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);
+  // Booking data only feeds the Bookings surface + the nav attention count. Re-rendering the
+  // whole app here re-painted the quote/quotes surfaces too (which don't use it) — the visible
+  // "double render". So re-render only on Bookings; elsewhere just refresh the count.
+  if(state.route==='tickets')render();else setNav();
+}
 
 /* Rail collapse: reclaims horizontal space while working; the choice persists per browser. */
 function railCollapsed(){try{return localStorage.getItem('ch_ops_rail')==='1';}catch(e){return false;}}
@@ -1311,14 +1356,14 @@ function viewQuotes(){
 }
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
-  state.route='quote';location.hash='quote';render();
+  setShellRoute('quote',{ quoteId:id });
   if(QuoteView.openQuote)QuoteView.openQuote(id);
 }
 // "+ New quote": open the builder on a guaranteed-fresh quote (honours the unsaved
 // guard inside the module).
 function openNewQuote(){
   if(!state.caps||!state.caps.includes('quote:manage'))return;
-  state.route='quote';location.hash='quote';render();
+  setShellRoute('quote',{});
   if(QuoteView.startNew)QuoteView.startNew();
 }
 
@@ -1427,7 +1472,7 @@ async function refreshRow(id){
 
 /* ── quote view panel — mounts QuoteView into #quoteRoot: .ch-app render target + SIBLING #ch-toast (innerHTML swaps never destroy the toast) ── */
 function showQuoteView(){
-  if(!state.caps||!state.caps.includes('quote:manage')){state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);render();return;}
+  if(!state.caps||!state.caps.includes('quote:manage')){state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,'replace');render();return;}
   /* close any open Bookings detail sheet + scrim so its fixed overlay doesn't float over the cockpit */
   if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
   const qr=$('#quoteRoot');
@@ -1506,10 +1551,7 @@ document.addEventListener('click',e=>{
   const btn=e.target.closest('#nav [data-route]');if(!btn)return;
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
-  state.route=route;
-  if(route==='quote')location.hash='quote';
-  else if(location.hash)history.replaceState(null,'',location.pathname+location.search);
-  render();
+  setShellRoute(route,{});
 });
 
 /* Quotes queue: "+ New quote" and click/keyboard row-open into the builder detail view.
@@ -1552,23 +1594,22 @@ function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
-  window.opsGoBookings=()=>{state.route='tickets';render();}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
-  window.opsGoQuotes=()=>{state.route='quotes';render();}; /* builder returns to the queue after a hand-off action */
+  window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
+  window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
-  /* Deep-link (single source of truth for both the login and whoami-refresh paths):
-     anyone with quote:manage can land on #quote (the builder) or #quotes (the queue);
-     both need quote:manage (D-A: all 3 roles). Otherwise bounce to Bookings + clear the hash. */
-  const canQuote=state.caps&&state.caps.includes('quote:manage');
-  if(location.hash==='#quote'&&canQuote)state.route='quote';
-  else if(location.hash==='#quotes'&&canQuote)state.route='quotes';
-  else{state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);}
+  /* URL is the single source of truth for route/deep-link state across login refreshes,
+     shared quote links, and browser back/forward. */
+  const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
+  state.route=next.route;
+  state.routeQuoteId=next.routeQuoteId;
+  syncUrl(state.route,state.routeQuoteId,'replace');
   const initials=identity.role.slice(0,2).toUpperCase();
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>${esc(identity.email)} · ${esc(roleLabel)}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes')render(); /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
@@ -1608,7 +1649,9 @@ if(devLoginForm)devLoginForm.addEventListener('submit',async e=>{
 });
 
 $('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
-document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';if(location.hash)history.replaceState(null,'',location.pathname+location.search);showLogin();}});
+document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,'replace');showLogin();}});
+window.addEventListener('popstate',()=>{if(!$('#approot').hidden)applyRouteFromUrl('replace');});
+window.addEventListener('hashchange',()=>{if(!$('#approot').hidden)applyRouteFromUrl('replace');});
 
 /* Render the Google Sign-In button. The GIS script is `async defer`, so it may load
    BEFORE or AFTER this inline script — so this is called from BOTH the script's onload
@@ -1702,18 +1745,22 @@ function isValidPhone(s) {
   return digits.length >= 8 && digits.length <= 15;
 }
 function contactValid(s) { s = (s || '').trim(); return s !== '' && (isValidEmail(s) || isValidPhone(s)); }
+// Contact is OPTIONAL — some quotes come in via Instagram with no email/phone. A blank
+// contact is fine; a typed one must still be a real email or +country-code phone.
+function contactOk(s) { s = (s || '').trim(); return s === '' || contactValid(s); }
 // The itinerary unlocks only once every required Trip basic is filled AND valid.
 function basicsComplete() {
   return !!state.vehicleType
     && (state.customerName || '').trim() !== ''
-    && contactValid(state.contact)
+    && contactOk(state.contact)
     && state.passengerCount >= 1
     && state.luggageCount >= 0;
 }
 function basicsMissingText() {
   var m = [];
   if ((state.customerName || '').trim() === '') m.push('customer name');
-  if (!contactValid(state.contact)) m.push('a valid WhatsApp number (with country code) or email');
+  // Only flag contact when the operator typed one that isn't valid — blank is allowed.
+  if (!contactOk(state.contact)) m.push('a valid WhatsApp number (with country code) or email, or clear the field');
   if (!state.vehicleType) m.push('a vehicle');
   return m.length ? 'Still needed: ' + m.join(', ') + '.' : 'Fill in the trip basics above to start.';
 }
@@ -1937,6 +1984,7 @@ function setService(service) {
   if (service !== 'private' && service !== 'chauffeur') service = 'private';
   if (service === state.service) return;
   state.service = service;
+  if (service !== 'private') outputIncludeChauffeurUpsell = false;
   if (service === 'private') {
     state.legs = state.legs.map(function(leg) {
       return leg.category === 'stay_day'
@@ -2172,9 +2220,11 @@ function resetToNew() {
   lastEstimate = null;
   lastEstimateError = null;
   outputTab = 'whatsapp';
+  outputDrafts = { whatsapp: null, email: null };
+  outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
-  _mapOpen = false;
+  _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
   render();
@@ -2332,8 +2382,10 @@ async function reopenQuote(id) {
 
   lastEstimate = null;
   lastEstimateError = null;
+  outputDrafts = { whatsapp: null, email: null };
+  outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
-  _mapOpen = false;
+  _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
   // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
@@ -2463,9 +2515,9 @@ function renderLegCard(leg, idx, total) {
     if (leg.manualDistance) {
       distHtml = [
         '<div class="ch-leg-dist ch-dist-manual">',
-        '  <div class="ch-input-wrap" style="width:74px;padding:0 8px">',
+        '  <div class="ch-input-wrap" style="width:92px;padding:0 8px">',
         '    <input class="ch-input" type="number" min="0" value="' + esc(leg.distanceKm) + '"',
-        '      data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:44px" />',
+        '      data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:56px" />',
         '    <span class="ch-input-suffix">km</span>',
         '  </div>',
         '  <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '">auto</button>',
@@ -3017,6 +3069,8 @@ function renderFlagsBadge(flagCount) {
 
 // ── Output tab state ──────────────────────────────────────────────────────────
 var outputTab = 'whatsapp'; // 'internal' | 'whatsapp' | 'email'
+var outputDrafts = { whatsapp: null, email: null };
+var outputIncludeChauffeurUpsell = false;
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 // V6: parse a date-only 'YYYY-MM-DD' as LOCAL midnight (not UTC midnight) so an
@@ -3084,13 +3138,56 @@ function legOrderItems() {
   return (lastEstimate && lastEstimate.lineItems) ? lastEstimate.lineItems : [];
 }
 
+// The adjustment is visible in the internal price build-up, but customer drafts show only the
+// polished final total rather than exposing an internal pricing-policy label.
+function customerLineItems() {
+  var adjustment = 0;
+  var items = [];
+  legOrderItems().forEach(function(it) {
+    if (it.meta && it.meta.kind === 'price_adjustment') adjustment += Number(it.amountCents) || 0;
+    else items.push(Object.assign({}, it));
+  });
+  if (!adjustment || !items.length) return items;
+
+  // Keep the policy auditable internally while making customer rows add up to Total.
+  // Prefer the main travel charges; use another visible charge only if those cannot
+  // absorb the full reduction without becoming negative.
+  var candidates = [];
+  if (isChauffeurEstimate()) {
+    items.forEach(function(it, i) {
+      if (/^(Chauffeur day rate|Distance)\s+—/.test(it.label || '')) candidates.push(i);
+    });
+  } else {
+    items.forEach(function(it, i) {
+      if (it.meta && it.meta.billableKm != null) candidates.push(i);
+    });
+  }
+  if (!candidates.length) {
+    items.forEach(function(it, i) { if (Number(it.amountCents) > 0) candidates.push(i); });
+  }
+  candidates.sort(function(a, b) { return Number(items[b].amountCents) - Number(items[a].amountCents); });
+  items.forEach(function(it, i) {
+    if (Number(it.amountCents) > 0 && candidates.indexOf(i) < 0) candidates.push(i);
+  });
+
+  var remaining = adjustment;
+  candidates.forEach(function(i) {
+    if (!remaining) return;
+    var amount = Number(items[i].amountCents) || 0;
+    var applied = remaining < 0 ? Math.max(remaining, -amount) : remaining;
+    items[i].amountCents = amount + applied;
+    remaining -= applied;
+  });
+  return items;
+}
+
 function drivingLegList() {
   return state.legs.filter(legDrives);
 }
 
 // Split lineItems into { travel: [...perDrivingLeg], extras: [...rest] }.
 function splitLineItems() {
-  var items = legOrderItems();
+  var items = customerLineItems();
   var drivingCount = drivingLegList().length;
   // Prefer explicit meta.billableKm markers; fall back to positional (first N).
   var hasMeta = items.some(function(it) { return it.meta && it.meta.billableKm != null; });
@@ -3134,7 +3231,7 @@ function productBlurb(veh) {
   return 'This is for a private ' + veh + ' and includes fuel, driver cost, tolls, and pickup/drop-off from your locations.';
 }
 
-function whatsappMessage() {
+function generatedWhatsappMessage() {
   if (!lastEstimate) return null;
   var name = state.customerName || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType || '—';
@@ -3153,7 +3250,7 @@ function whatsappMessage() {
     });
     lines.push('');
     // Every engine lineItem as a priced row.
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push(it.label + ' — ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
@@ -3172,11 +3269,12 @@ function whatsappMessage() {
     lines.push('', productBlurb(veh));
   }
 
+  appendChauffeurUpsell(lines, false);
   lines.push('', 'Please let me know if you have any questions or if you would like to proceed.');
   return lines.join('\n');
 }
 
-function emailMessage() {
+function generatedEmailMessage() {
   if (!lastEstimate) return null;
   var name = state.customerName || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType || '—';
@@ -3192,7 +3290,7 @@ function emailMessage() {
       }
     });
     lines.push('');
-    legOrderItems().forEach(function(it) {
+    customerLineItems().forEach(function(it) {
       lines.push('  ' + it.label + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
@@ -3208,8 +3306,51 @@ function emailMessage() {
     lines.push('', 'Total: ' + M(totalCents));
   }
 
+  appendChauffeurUpsell(lines, true);
   lines.push('', productBlurb(veh), '', 'Please let us know if you would like to proceed and we can send over the booking/payment details.', '', 'Best,', 'Roshen', 'Ceylon Hop');
   return lines.join('\n');
+}
+
+function generatedOutputMessage(tab) {
+  if (tab === 'whatsapp') return generatedWhatsappMessage();
+  if (tab === 'email') return generatedEmailMessage();
+  return null;
+}
+
+function currentOutputMessage(tab) {
+  if (tab !== 'whatsapp' && tab !== 'email') return null;
+  var draft = outputDrafts[tab];
+  if (typeof draft === 'string') return draft;
+  return generatedOutputMessage(tab);
+}
+
+function hasCustomOutputDraft(tab) {
+  return (tab === 'whatsapp' || tab === 'email') && typeof outputDrafts[tab] === 'string';
+}
+
+function chauffeurUpsellSummary() {
+  if (state.service === 'chauffeur' || !lastEstimate || !lastEstimate.services) return null;
+  var chauf = lastEstimate.services.chauffeur;
+  return (chauf && chauf.total) ? chauf : null;
+}
+
+function appendChauffeurUpsell(lines, emailStyle) {
+  var chauf = chauffeurUpsellSummary();
+  if (!outputIncludeChauffeurUpsell || !chauf) return;
+  var amount = M(chauf.total.cents);
+  if (emailStyle) {
+    lines.push(
+      '',
+      'If you would also like the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+      'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
+    );
+    return;
+  }
+  lines.push(
+    '',
+    'If you\'d prefer the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+    'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
+  );
 }
 
 // ── Internal view renderer ────────────────────────────────────────────────────
@@ -3279,9 +3420,9 @@ function copyOutputText() {
   if (!copyUnlocked()) { showToast('Approve the quote first — copy unlocks at “Ready to send”'); return; }
   var text = null;
   if (outputTab === 'whatsapp') {
-    text = whatsappMessage();
+    text = currentOutputMessage('whatsapp');
   } else if (outputTab === 'email') {
-    var body = emailMessage();
+    var body = currentOutputMessage('email');
     if (body) text = 'Subject: Ceylon Hop Transport Quote for Your Sri Lanka Trip\n\n' + body;
   }
   if (!text) { showToast('Price the trip first'); return; }
@@ -3334,15 +3475,29 @@ function renderOutputBody() {
   }
 
   if (tab === 'whatsapp') {
-    var msg = whatsappMessage();
+    var msg = currentOutputMessage('whatsapp');
     if (!msg) return guard;
-    return '<pre class="ch-pre">' + esc(msg) + '</pre>';
+    return [
+      '<div class="ch-output-meta">',
+      '  <div class="ch-output-hint">Generated draft. Edit it here before copying if you want to personalize it.</div>',
+      (hasCustomOutputDraft('whatsapp')
+        ? '  <button class="ch-btn ch-btn-sm" data-action="resetOutputDraft" data-tab="whatsapp" type="button">Reset</button>'
+        : ''),
+      '</div>',
+      '<textarea class="ch-pre ch-output-editor" data-output-tab="whatsapp" spellcheck="true">' + esc(msg) + '</textarea>',
+    ].join('');
   } else if (tab === 'email') {
-    var msg2 = emailMessage();
+    var msg2 = currentOutputMessage('email');
     if (!msg2) return guard;
     return [
+      '<div class="ch-output-meta">',
+      '  <div class="ch-output-hint">Generated draft. Edit the email body here before copying if you want to personalize it.</div>',
+      (hasCustomOutputDraft('email')
+        ? '  <button class="ch-btn ch-btn-sm" data-action="resetOutputDraft" data-tab="email" type="button">Reset</button>'
+        : ''),
+      '</div>',
       '<div class="ch-email-subject"><span>Subject</span> Ceylon Hop Transport Quote for Your Sri Lanka Trip</div>',
-      '<pre class="ch-pre">' + esc(msg2) + '</pre>',
+      '<textarea class="ch-pre ch-output-editor" data-output-tab="email" spellcheck="true">' + esc(msg2) + '</textarea>',
     ].join('');
   }
   return '';
@@ -3367,7 +3522,7 @@ function renderActionBar() {
   var B = function(action, label, cls) { return '<button class="ch-btn ' + cls + '" data-action="' + action + '">' + label + '</button>'; };
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
-    if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), SAVE); }
+    if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
     else if (s === 'pending_review') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
@@ -3494,7 +3649,7 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-customerName" type="text" placeholder="e.g. Karen" value="' + esc(st.customerName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">WhatsApp / email <em class="req">*</em></label>',
+    '            <label class="ch-field-label">WhatsApp / email <span style="color:var(--ink-faint);font-weight:400">(optional)</span></label>',
     '            <div class="ch-input-wrap"><input class="ch-input' + (contactBad ? ' invalid' : '') + '" id="f-contact" type="text" placeholder="+94 77 123 4567 or name@email.com" value="' + esc(st.contact) + '" /></div>',
     '            <span class="ch-field-err">Enter an email or a phone number with country code (e.g. +94…)</span>',
     '          </div>',
@@ -3596,6 +3751,12 @@ function render() {
           ? '              <button class="ch-btn ch-btn-sm ch-copy-btn" data-action="copyOutput" style="margin-left:auto" title="Copy the message to paste into ' + (outputTab === 'email' ? 'an email' : 'WhatsApp') + '">&#x2398; Copy</button>'
           : '              <button class="ch-btn ch-btn-sm ch-copy-btn" data-action="copyOutput" disabled style="margin-left:auto" title="Locked until the quote is approved (Ready to send)">&#x1F512; Copy locked</button>'),
         '            </div>',
+        (chauffeurUpsellSummary()
+          ? '            <button class="ch-toggle-row" type="button" data-action="toggleChauffeurUpsell" style="margin:0 0 12px 0">'
+            + '              <span class="ch-toggle' + (outputIncludeChauffeurUpsell ? ' on' : '') + '" data-tone="teal"><span class="ch-toggle-knob"></span></span>'
+            + '              <span class="ch-toggle-label">Add chauffeur-guide option</span>'
+            + '            </button>'
+          : ''),
       ].join('') : ''),
       '            <div class="ch-output-body">',
       renderOutputBody(),
@@ -3837,6 +3998,16 @@ function attachEventListeners() {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'copyOutput') {
       copyOutputText(); // GL-1a: manual copy → WhatsApp/email
+    } else if (action === 'toggleChauffeurUpsell') {
+      outputIncludeChauffeurUpsell = !outputIncludeChauffeurUpsell;
+      outputDrafts = { whatsapp: null, email: null };
+      render();
+    } else if (action === 'resetOutputDraft') {
+      var tabKey = el.getAttribute('data-tab');
+      if (tabKey === 'whatsapp' || tabKey === 'email') {
+        outputDrafts[tabKey] = null;
+        render();
+      }
     } else if (action === 'setTab') {
       outputTab = el.getAttribute('data-tab') || 'whatsapp';
       render();
@@ -3869,6 +4040,13 @@ function attachEventListeners() {
     var patch = {};
     patch[field] = val;
     updateLeg(legId, patch);
+  });
+
+  app.addEventListener('input', function(e) {
+    var el = e.target;
+    if (!el || !el.matches || !el.matches('.ch-output-editor[data-output-tab]')) return;
+    var tab = el.getAttribute('data-output-tab');
+    if (tab === 'whatsapp' || tab === 'email') outputDrafts[tab] = el.value;
   });
 
   } // end if (!_delegatesWired)
@@ -3960,7 +4138,7 @@ function itinStops() {
 // Show the map once there's a routable itinerary and a key is configured.
 function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
 
-var _mapOpen = false; // route map is collapsed by default — the operator opens it deliberately
+var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null, _mapMarkers = [];
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
@@ -3990,9 +4168,13 @@ async function drawItinRoute(hostEl, stops) {
     _mapMap.__host = hostEl;
     _mapRenderer = new google.maps.DirectionsRenderer({ map: _mapMap, suppressMarkers: true, polylineOptions: { strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 } });
   }
+  // Clean names for geocoding, mirroring the customer-site map (ch-map.js): drop "(CMB)"
+  // parentheticals and slashes, and anchor to Sri Lanka so bare names don't geocode abroad —
+  // otherwise multi-stop routes with an airport/slash/bare name fail with "couldn't map".
+  var geoName = function (s) { return (s || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka'; };
   new google.maps.DirectionsService().route({
-    origin: stops[0], destination: stops[stops.length - 1],
-    waypoints: stops.slice(1, -1).map(function (n) { return { location: n, stopover: true }; }),
+    origin: geoName(stops[0]), destination: geoName(stops[stops.length - 1]),
+    waypoints: stops.slice(1, -1).map(function (n) { return { location: geoName(n), stopover: true }; }),
     travelMode: google.maps.TravelMode.DRIVING,
   }, function (res, status) {
     if (status !== 'OK' || !res || !res.routes || !res.routes[0]) {
