@@ -51,3 +51,26 @@ jobs:
           else
             echo "No web-tests/ — skipping."
           fi
+
+  codegen-fresh:
+    name: generated files in sync with the backend rate card
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # `npm run generate` reads the backend rate card via api's dump:pricing (tsx), so the
+      # generators need api deps installed. No DB is required — rateCard.ts is a static constant.
+      - name: install api deps (generators read the rate card via api)
+        run: |
+          if [ -f api/package.json ]; then cd api && npm ci; fi
+      - name: regenerate and fail if any committed generated file drifted
+        run: |
+          npm run generate
+          if ! git diff --quiet; then
+            echo "::error::Generated files are stale — run 'npm run generate' and commit the result. Prices/route pages must never ship out of sync with rateCard.ts."
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "✓ generated files (routes / pricing / static / redirects) are in sync with the backend"
