@@ -15,6 +15,7 @@ import { test, expect } from '@playwright/test';
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 
 const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
+const customerNameFromBody = (body) => [body.firstName, body.lastName].filter(Boolean).join(' ') || body.name || '';
 
 // A saved-quote summary row as GET /admin/quote/list returns them.
 function summary(over) {
@@ -125,12 +126,14 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
           if (!['draft', 'pending_review', 'changes_requested'].includes(existing.status)) {
             return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_editable', status: existing.status }) });
           }
-          if (body.name) existing.customerName = body.name;
+          const bodyName = customerNameFromBody(body);
+          if (bodyName) existing.customerName = bodyName;
           return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
         }
       }
-      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: body.name });
-      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: body.name }));
+      const bodyName = customerNameFromBody(body);
+      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: bodyName });
+      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: bodyName }));
       return r.fulfill(json(saved));
     }
     const m = url.match(/\/admin\/quote\/([^/?]+)$/);

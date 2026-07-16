@@ -52,7 +52,8 @@ test('the itinerary is locked until every trip basic is filled', async ({ page }
   // A vehicle alone is not enough — customer name + a valid contact are still missing.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
   await expect(page.locator('.ch-itin-locked')).toBeVisible();
-  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94 77 123 4567');
   await page.dispatchEvent('#f-contact', 'change');
   await expect(page.locator('.ch-itin-locked')).toHaveCount(0); // now unlocked
@@ -62,7 +63,8 @@ test('the itinerary is locked until every trip basic is filled', async ({ page }
 test('a built itinerary is never hidden when the contact is later made invalid', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', 'karen@example.com');
   await page.dispatchEvent('#f-contact', 'change');
   const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -79,7 +81,8 @@ test('a built itinerary is never hidden when the contact is later made invalid',
 test('contact must be an email or a phone number with a country code', async ({ page }) => {
   await openQuote(page);
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
   // A bare local number (no country code) is rejected — flagged invalid, itinerary stays locked.
   await page.fill('#f-contact', '0771234567');
   await page.dispatchEvent('#f-contact', 'change');

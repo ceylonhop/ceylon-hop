@@ -705,7 +705,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 /* ---------- Customer strip (one compact row) ---------- */
 .qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; }
-.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(120px, 1.4fr) 84px 84px minmax(140px, 1fr); gap: 12px; align-items: end; }
+.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: end; }
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
 .qv .ch-cust-grid .ch-input { padding: 7px 0; }
@@ -1735,6 +1735,14 @@ function isApprover() { return viewerCan('quote:approve'); } // founder-only —
 // still under review, so support cannot lift the message out and send it early.
 function copyUnlocked() { return state.status === 'ready' || state.status === 'sent'; }
 
+function customerName() {
+  return [state.firstName, state.lastName].map(function(s) { return (s || '').trim(); }).filter(Boolean).join(' ');
+}
+function splitCustomerName(name) {
+  var parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts.shift() || '', lastName: parts.join(' ') };
+}
+
 // ── Trip-basics validation ────────────────────────────────────────────────────
 // The contact must be a real email OR a phone number WITH a country code (leading +).
 function isValidEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s); }
@@ -1751,14 +1759,16 @@ function contactOk(s) { s = (s || '').trim(); return s === '' || contactValid(s)
 // The itinerary unlocks only once every required Trip basic is filled AND valid.
 function basicsComplete() {
   return !!state.vehicleType
-    && (state.customerName || '').trim() !== ''
+    && (state.firstName || '').trim() !== ''
+    && (state.lastName || '').trim() !== ''
     && contactOk(state.contact)
     && state.passengerCount >= 1
     && state.luggageCount >= 0;
 }
 function basicsMissingText() {
   var m = [];
-  if ((state.customerName || '').trim() === '') m.push('customer name');
+  if ((state.firstName || '').trim() === '') m.push('first name');
+  if ((state.lastName || '').trim() === '') m.push('last name');
   // Only flag contact when the operator typed one that isn't valid — blank is allowed.
   if (!contactOk(state.contact)) m.push('a valid WhatsApp number (with country code) or email, or clear the field');
   if (!state.vehicleType) m.push('a vehicle');
@@ -1944,7 +1954,8 @@ function newLeg() {
 
 let state = {
   id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
-  customerName: '',
+  firstName: '',
+  lastName: '',
   contact: '',
   passengerCount: 2,
   luggageCount: 2,
@@ -2204,7 +2215,8 @@ function resetToNew() {
   legSeq = 0;
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
-    customerName: '',
+    firstName: '',
+    lastName: '',
     contact: '',
     passengerCount: 2,
     luggageCount: 2,
@@ -2242,7 +2254,8 @@ function savePayload() {
     // When the quote is already saved, send its id so the server updates it in place
     // (same row, lifecycle preserved) instead of inserting a duplicate.
     id: state.savedId || undefined,
-    name: state.customerName,
+    firstName: state.firstName,
+    lastName: state.lastName,
     contact: state.contact,
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
     service: state.service || 'private',
@@ -2368,7 +2381,13 @@ async function reopenQuote(id) {
   });
   if (legs.length === 0) legs = [newLeg()];
 
-  state.customerName = q.customerName || tool.name || '';
+  var split = {
+    firstName: tool.firstName || '',
+    lastName: tool.lastName || '',
+  };
+  if (!split.firstName && !split.lastName) split = splitCustomerName(q.customerName || tool.name || '');
+  state.firstName = split.firstName;
+  state.lastName = split.lastName;
   state.contact = q.customerContact || tool.contact || '';
   state.vehicleType = tool.vehicle || state.vehicleType;
   state.service = (tool.service === 'chauffeur') ? 'chauffeur' : 'private';
@@ -3233,7 +3252,7 @@ function productBlurb(veh) {
 
 function generatedWhatsappMessage() {
   if (!lastEstimate) return null;
-  var name = state.customerName || 'there';
+  var name = customerName() || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType || '—';
   var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
   var lines = [];
@@ -3276,7 +3295,7 @@ function generatedWhatsappMessage() {
 
 function generatedEmailMessage() {
   if (!lastEstimate) return null;
-  var name = state.customerName || 'there';
+  var name = customerName() || 'there';
   var veh = VEHICLE_LABELS[state.vehicleType] || state.vehicleType || '—';
   var totalCents = lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : 0;
   var lines = ['Hi ' + name + ',', '', 'Thank you for reaching out to Ceylon Hop. Based on the itinerary you shared, please find the transport quote below.', ''];
@@ -3368,7 +3387,7 @@ function renderInternalView() {
 
   var gridHtml = [
     '<div class="ch-internal-grid">',
-    '  <div><span>Customer</span><b>' + esc(state.customerName || '—') + '</b></div>',
+    '  <div><span>Customer</span><b>' + esc(customerName() || '—') + '</b></div>',
     '  <div><span>Pax / Bags</span><b>' + esc(state.passengerCount) + ' / ' + esc(state.luggageCount) + '</b></div>',
     '  <div><span>Vehicle</span><b>' + esc(vLabel) + '</b></div>',
     '  <div><span>Service</span><b>' + esc(serviceLabel) + '</b></div>',
@@ -3612,7 +3631,7 @@ function render() {
     '    <button class="ch-back" data-action="backToQueue" title="Back to the quotes queue">&#x2190; Queue</button>',
     '    <div class="ch-quoteref">',
     '      <b>' + esc(st.reference || 'New quote') + '</b>',
-    '      <span>' + (st.customerName ? esc(st.customerName) : 'Quote builder') + '</span>',
+    '      <span>' + (customerName() ? esc(customerName()) : 'Quote builder') + '</span>',
     '    </div>',
     '    ' + renderStatusPill(),
     '    <div class="ch-header-spacer"></div>',
@@ -3645,8 +3664,12 @@ function render() {
     '      <div class="ch-cust-strip">',
     '        <div class="ch-cust-grid">',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">Customer name <em class="req">*</em></label>',
-    '            <div class="ch-input-wrap"><input class="ch-input" id="f-customerName" type="text" placeholder="e.g. Karen" value="' + esc(st.customerName) + '" /></div>',
+    '            <label class="ch-field-label">First name <em class="req">*</em></label>',
+    '            <div class="ch-input-wrap"><input class="ch-input" id="f-firstName" type="text" placeholder="e.g. Karen" value="' + esc(st.firstName) + '" /></div>',
+    '          </div>',
+    '          <div class="ch-field">',
+    '            <label class="ch-field-label">Last name <em class="req">*</em></label>',
+    '            <div class="ch-input-wrap"><input class="ch-input" id="f-lastName" type="text" placeholder="e.g. Silva" value="' + esc(st.lastName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
     '            <label class="ch-field-label">WhatsApp / email <span style="color:var(--ink-faint);font-weight:400">(optional)</span></label>',
@@ -3884,7 +3907,8 @@ function attachEventListeners() {
 
   // Customer card fields — live update state without full re-render for text inputs
   var fieldMap = {
-    'f-customerName':    function(v) { state.customerName = v; },
+    'f-firstName':       function(v) { state.firstName = v; },
+    'f-lastName':        function(v) { state.lastName = v; },
     'f-contact':         function(v) { state.contact = v; },
     // V18: server 400s on pax<1 — clamp client-side so we never send it.
     'f-passengerCount':  function(v) { state.passengerCount = Math.max(1, parseInt(v, 10) || 1); },
@@ -3894,7 +3918,7 @@ function attachEventListeners() {
   Object.keys(fieldMap).forEach(function(id) {
     var el = document.getElementById(id);
     if (!el) return;
-    var isText = (id === 'f-customerName' || id === 'f-contact');
+    var isText = (id === 'f-firstName' || id === 'f-lastName' || id === 'f-contact');
     el.addEventListener('input', function() {
       fieldMap[id](el.value);
       // Text basics: live-update the contact validity + itinerary gate (renders only on a

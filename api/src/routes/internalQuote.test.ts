@@ -131,7 +131,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save persists a priced quote and returns a Q- reference; total matches /estimate', async () => {
     const app = createApp();
-    const bodyReq = { name: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
+    const bodyReq = { firstName: 'Maya', lastName: 'Silva', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
     const est = await (await post(app, '/admin/quote/estimate', bodyReq)).json();
     const res = await post(app, '/admin/quote/save', bodyReq);
     expect(res.status).toBe(201);
@@ -145,7 +145,10 @@ describe('internal quoting tool route', () => {
     expect(got.result.subtotalCents).toBe(baseItems.reduce((sum: number, item: { amountCents: number }) => sum + item.amountCents, 0));
     expect(got.result.priceAdjustmentCents).toBe(adjustmentItem?.amountCents ?? 0);
     expect(got.result.totalCents).toBe(est.total.cents);
-    expect(got.customerName).toBe('Maya');
+    // This request posts firstName/lastName, so the stored customer_name is the joined pair.
+    expect(got.customerName).toBe('Maya Silva');
+    expect(got.request.tool.firstName).toBe('Maya');
+    expect(got.request.tool.lastName).toBe('Silva');
     expect(got.rateCardVersion).toBe('2026-07-14');
   });
 
