@@ -84,75 +84,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* itinerary rail */
   .rail{position:relative}
-  .stop{position:relative;display:grid;grid-template-columns:22px 1fr;gap:14px;align-items:start}
-  .stop-node{display:flex;flex-direction:column;align-items:center;padding-top:20px}
-  .stop-node .pin{width:18px;height:18px;border-radius:50%;border:3px solid var(--accent-deep);background:var(--white);z-index:2;flex:none}
-  .stop.start .stop-node .pin{background:var(--teal-deep);border-color:var(--teal-deep)}
-  .stop.end .stop-node .pin{background:var(--tomato);border-color:var(--tomato)}
-  .stop-node .wire{width:2px;flex:1;background:repeating-linear-gradient(var(--accent) 0 5px,transparent 5px 11px);opacity:.5;margin-top:2px;min-height:14px}
-  .stop:last-of-type .stop-node .wire{display:none}
-
-  .stop-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:13px 14px 15px;margin-bottom:0;transition:box-shadow .15s,opacity .15s}
-  .stop-card.dragging{opacity:.55;box-shadow:var(--shadow)}
-  .stop.start .stop-card{border-color:color-mix(in srgb,var(--teal-deep) 35%,var(--line))}
-  .stop.end .stop-card{border-color:color-mix(in srgb,var(--tomato) 35%,var(--line))}
-  .stop-top{display:grid;grid-template-columns:18px 1fr auto;gap:9px;align-items:center}
   .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
   .drag:active{cursor:grabbing}
   .drag svg{width:16px;height:16px}
-  .stop-badge{font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);
-    background:var(--pc-teal);border-radius:999px;padding:3px 10px;justify-self:start;white-space:nowrap}
-  .stop.start .stop-badge{color:var(--teal-deep);background:#e3f3ee}
-  .stop.end .stop-badge{color:var(--tomato);background:#fdeae4}
-  .stop-rm{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;flex:none}
-  .stop-rm:hover{border-color:var(--tomato);color:var(--tomato)}
-  .stop-rm svg{width:12px;height:12px}
-  .stop-rm.hide{visibility:hidden}
-  .stop-name{width:100%;border:none;background:none;font-family:var(--display);font-weight:700;font-size:1.32rem;color:var(--ink);padding:4px 0 2px;margin:2px 0 0}
-  .stop-name:focus{outline:none;border-bottom:2px solid var(--accent)}
-  .stop-name::placeholder{color:var(--ink-soft);opacity:.6}
-
-  /* leg-style title: "Previous → [editable destination]" */
-  .leg-title{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 7px;margin-top:2px}
-  .leg-title .stop-name{width:auto;flex:1 1 7ch;min-width:7ch;margin:0;padding:2px 0}
-  .leg-title.origin-only .stop-name{flex:1 1 100%}
-  .leg-origin{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink-soft);flex:0 0 auto;white-space:nowrap}
-  .leg-arrow{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--accent);flex:none}
-
-  /* transfer detail folded into the leg card */
-  .card-transfer{display:flex;align-items:center;gap:.5rem;margin-top:8px;font-size:.8rem;color:var(--ink-soft)}
-  .card-transfer b{color:var(--ink);font-weight:700}
-  .card-transfer .ct-ico{width:22px;height:22px;border-radius:50%;background:var(--pc-teal);color:var(--accent-deep);display:grid;place-items:center;flex:none}
-  .card-transfer .ct-ico svg{width:13px;height:13px}
-
-  .stop-body{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:9px}
-  .date-lines{display:flex;flex-direction:column;gap:4px}
-  .dl-row{display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft);white-space:nowrap}
-  .dl-row b{color:var(--ink);font-weight:700}
-  .dl-muted{color:var(--ink-soft);font-weight:400}
-  .dl-dot{width:9px;height:9px;border-radius:50%;border:2px solid var(--accent);background:var(--white);flex:none}
-  .dl-dot.in{background:var(--accent);border-color:var(--accent)}
-  .dl-dot.out{background:var(--white);border-color:var(--ink-soft)}
-  .dl-dot.end{background:var(--tomato);border-color:var(--tomato)}
-  .stay-nights{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
-  .stay-nights .lbl{font-size:.72rem;color:var(--ink-soft);font-weight:600}
-  .stay-nights .ctrls{display:flex;align-items:center;gap:6px;background:var(--cream-deep);border-radius:999px;padding:3px}
-  .stay-nights .ctrls button{width:28px;height:28px;border-radius:50%;border:none;background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep);font-size:1.1rem;font-weight:700;cursor:pointer;display:grid;place-items:center;line-height:1}
-  .stay-nights .ctrls button:disabled{opacity:.35;cursor:default}
-  .stay-nights .ctrls b{min-width:30px;text-align:center;font-size:.86rem}
-
-  /* transfer connector between stays — dotted continuity + minimal label */
-  .leg-link{display:grid;grid-template-columns:22px 1fr;gap:14px;align-items:center;padding:3px 0}
-  .ll-rail{position:relative;display:flex;justify-content:center;align-self:stretch}
-  .ll-wire{width:2px;background:repeating-linear-gradient(var(--accent) 0 5px,transparent 5px 11px);opacity:.5}
-  .ll-ico{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50%;
-    background:var(--white);border:1.5px solid var(--pc-line);display:grid;place-items:center;color:var(--accent-deep)}
-  .ll-ico svg{width:14px;height:14px}
-  .ll-tx{font-size:.82rem;color:var(--ink-soft);padding:6px 0}
-  .ll-tx b{color:var(--ink);font-weight:700}
-  .ll-lead{font-weight:700;color:var(--ink)}
-  .ll-meta{display:block;font-size:.76rem;margin-top:1px}
-  .ll-meta b{color:var(--ink-soft);font-weight:700}
 
   /* vehicle requirement note */
   .veh-note{display:flex;gap:.45rem;align-items:flex-start;margin-top:8px;font-size:.8rem;line-height:1.4;color:var(--ink-soft)}
@@ -400,9 +334,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   @media(max-width:600px){
     .controls{grid-template-columns:1fr}
-    .stop-meta{margin-left:0}
-    .nights{margin-left:0;width:100%;justify-content:space-between}
-    .stop-name{font-size:1.06rem}
     .add-stop-btn,.reorder-hint{margin-left:0}
   }
 
