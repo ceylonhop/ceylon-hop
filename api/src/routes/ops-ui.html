@@ -2214,7 +2214,7 @@ function resetToNew() {
   outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
-  _mapOpen = false;
+  _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
   render();
@@ -2375,7 +2375,7 @@ async function reopenQuote(id) {
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
-  _mapOpen = false;
+  _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
   // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
@@ -2505,9 +2505,9 @@ function renderLegCard(leg, idx, total) {
     if (leg.manualDistance) {
       distHtml = [
         '<div class="ch-leg-dist ch-dist-manual">',
-        '  <div class="ch-input-wrap" style="width:74px;padding:0 8px">',
+        '  <div class="ch-input-wrap" style="width:92px;padding:0 8px">',
         '    <input class="ch-input" type="number" min="0" value="' + esc(leg.distanceKm) + '"',
-        '      data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:44px" />',
+        '      data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:56px" />',
         '    <span class="ch-input-suffix">km</span>',
         '  </div>',
         '  <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '">auto</button>',
@@ -4128,7 +4128,7 @@ function itinStops() {
 // Show the map once there's a routable itinerary and a key is configured.
 function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
 
-var _mapOpen = false; // route map is collapsed by default — the operator opens it deliberately
+var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null, _mapMarkers = [];
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
