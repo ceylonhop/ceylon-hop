@@ -17,10 +17,11 @@ describe('legPriceCents', () => {
 });
 
 describe('billableKm', () => {
-  it('adds 10% (half-up)', () => {
+  it('adds 10% with a 5km floor and 15km cap per leg', () => {
     expect(billableKm(80)).toBe(88);
     expect(billableKm(75)).toBe(83);   // 82.5 → 83
-    expect(billableKm(35)).toBe(39);   // 38.5 → 39
+    expect(billableKm(35)).toBe(40);   // 3.5km buffer rounds to 4, then floors to 5
+    expect(billableKm(200)).toBe(215); // 20km buffer caps at 15
   });
 });
 
@@ -28,7 +29,7 @@ describe('quotePrivateLegs', () => {
   it('prices off buffered km (Julián subtotal 6241)', () => {
     const r = quotePrivateLegs(
       [
-        { from: 'Mirissa', to: 'Tangalle', distanceKm: 35 }, // bill 39 → $29 floor
+        { from: 'Mirissa', to: 'Tangalle', distanceKm: 35 }, // bill 40 → $29 floor
         { from: 'Yala', to: 'Tangalle', distanceKm: 75 },    // bill 83 → 83×40.25 = 3341
       ],
       'car',

@@ -67,10 +67,10 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
         body: JSON.stringify(chauffeur),
       })
     ).json();
-    expect(b.total).toBe(22276); // engine: 3×3105 + round(322×40.25) = 22276
+    expect(b.total).toBe(21900); // raw 22276¢ → eligible $219 charm price
     const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
     expect(res.status).toBe(200);
-    expect((await res.json()).amount).toBe(22276);
+    expect((await res.json()).amount).toBe(21900);
   });
 
   it('falls back to the full total for legacy rows without amountDueNow', async () => {

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { quoteChauffeur } from './chauffeur';
 
 describe('quoteChauffeur', () => {
-  it('Ayan: 3 days, 1 idle (car); buffer on travel only = $299.63', () => {
+  it('Ayan: 3 days, 1 idle (car); travel buffer clamps per leg before idle km = $296.41', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-11-02', lastDate: '2026-11-04',
       travelDays: [
@@ -11,11 +11,11 @@ describe('quoteChauffeur', () => {
         { date: '2026-11-04', from: 'N.Eliya', to: 'Hiriketiya', distanceKm: 210 },
       ],
     });
-    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 100, billableKm: 513 });
-    expect(r.subtotalCents).toBe(29963); // day 3×31.05=9315 + 513×40.25=20648; travel 375→413, idle 100 unbuffered
+    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 100, billableKm: 505 });
+    expect(r.subtotalCents).toBe(29641); // day 3×31.05=9315 + 505×40.25=20326; travel 165→180 and 210→225, idle 100 unbuffered
   });
 
-  it('Emma: 9 days, 4 idle (car); buffer on travel only = $794.65', () => {
+  it('Emma: 9 days, 4 idle (car); travel buffer clamps per leg before idle km = $789.42', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -26,8 +26,8 @@ describe('quoteChauffeur', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 400, billableKm: 1280 });
-    expect(r.subtotalCents).toBe(79465); // day 9×31.05=27945 + 1280×40.25=51520; travel 800→880, idle 400 unbuffered
+    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 400, billableKm: 1267 });
+    expect(r.subtotalCents).toBe(78942); // day 9×31.05=27945 + 1267×40.25=50997; travel legs buffer individually, idle 400 unbuffered
   });
 
   it('clamps idleDays to 0 when travelDays exceed the date span (bad input)', () => {

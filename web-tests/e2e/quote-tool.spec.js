@@ -14,7 +14,7 @@ import { test, expect } from '@playwright/test';
 // Sign-In needs a real OAuth client and can't be driven in e2e.
 test.skip(process.env.CH_E2E_API !== '1', 'quote-tool e2e needs the API — run with CH_E2E_API=1');
 
-const OPS = 'http://localhost:8787/ops';
+const OPS = (process.env.OPS_BASE || 'http://localhost:8787') + '/ops';
 
 // Matches playwright.config.js's OPS_USERS default for the CH_E2E_API webServer.
 const FOUNDER_EMAIL = 'founder@e2e.test';
@@ -273,21 +273,28 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
     await page.locator('[data-action="toggleOutput"]').click();
   }
   await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
-  // Copy is unlocked now the quote is Ready, so the customer message renders as `.ch-pre`
-  // instead of the `.ch-copy-lock` card.
-  const pre = page.locator('.ch-output-body .ch-pre');
-  await expect(pre).toBeVisible({ timeout: 8000 });
-  const waText = await pre.textContent();
+  // Copy is unlocked now the quote is Ready, so the customer message renders as an editable
+  // draft instead of the `.ch-copy-lock` card.
+  const editor = page.locator('.ch-output-body .ch-output-editor');
+  await expect(editor).toBeVisible({ timeout: 8000 });
+  const waText = await editor.inputValue();
+  await editor.fill(waText + '\n\nCustom closing line.');
+  await expect(editor).toHaveValue(/Custom closing line\./);
+  await page.locator('[data-action="setTab"][data-tab="email"]').click();
+  await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
+  const reopenedEditor = page.locator('.ch-output-body .ch-output-editor');
+  await expect(reopenedEditor).toHaveValue(/Custom closing line\./);
+  const waEditedText = await reopenedEditor.inputValue();
 
   // The idle/rest day is folded into the chauffeur pricing, not shown as a separate itinerary
   // line: the day rate spans the 4-day window (Aug 1→4) and the distance line carries non-zero
   // idle-day km. There is no unpriced "Stay in …" line anymore (the per-leg stay day is gone).
-  expect(waText, waText).not.toMatch(/Stay in/); // no explicit stay-day itinerary line anymore
-  expect(waText).toMatch(/4 day\(s\)/); // rest day IS charged — day rate spans the Aug 1→4 window
-  expect(waText).toMatch(/[1-9]\d* idle-day min/); // …and the idle day adds non-zero idle km
-  expect(waText).toContain('Mirissa'); // the transfer AFTER the gap is not dropped (old V1 bug)
-  expect(waText).toMatch(/Pay in full to confirm/); // chauffeur full-payment line
-  expect(waText).toContain(summaryTotal.trim()); // message total matches the Summary card
+  expect(waEditedText, waEditedText).not.toMatch(/Stay in/); // no explicit stay-day itinerary line anymore
+  expect(waEditedText).toMatch(/4 day\(s\)/); // rest day IS charged — day rate spans the Aug 1→4 window
+  expect(waEditedText).toMatch(/[1-9]\d* idle-day min/); // …and the idle day adds non-zero idle km
+  expect(waEditedText).toContain('Mirissa'); // the transfer AFTER the gap is not dropped (old V1 bug)
+  expect(waEditedText).toMatch(/Pay in full to confirm/); // chauffeur full-payment line
+  expect(waEditedText).toContain(summaryTotal.trim()); // message total matches the Summary card
 });
 
 // Spec 3b (reflow): the service chooser gates chauffeur and the per-leg add-ons.
@@ -336,6 +343,45 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await page.locator('[data-action="setService"][data-service="private"]').click();
   await page.waitForTimeout(600);
   await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
+});
+
+test('point-to-point customer output can append the chauffeur option', async ({ page }) => {
+  await chooseVehicle(page, 'van_6');
+
+  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  await pickPlace(page, fromInput, 'Kand', 'Kandy');
+  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await pickPlace(page, toInput, 'Ella', 'Ella');
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.waitForTimeout(600);
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
+  await page.waitForTimeout(600);
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  await pickPlace(page, secondTo, 'Galle', 'Galle');
+  await page.waitForTimeout(600);
+
+  const custName = 'E2E Both Modes ' + Date.now();
+  await page.locator('#f-customerName').fill(custName);
+  await page.locator('[data-action="approveReady"]').click();
+
+  const qrow = page.locator('#view .qrow', { hasText: custName });
+  await expect(qrow).toBeVisible({ timeout: 8000 });
+  await qrow.click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+
+  const outPanel = page.locator('.ch-out-panel');
+  if (!(await outPanel.isVisible().catch(() => false))) {
+    await page.locator('[data-action="toggleOutput"]').click();
+  }
+  await page.locator('[data-action="setTab"][data-tab="whatsapp"]').click();
+  await expect(page.locator('[data-action="toggleChauffeurUpsell"]')).toBeVisible();
+  await page.locator('[data-action="toggleChauffeurUpsell"]').click();
+
+  const editor = page.locator('.ch-output-body .ch-output-editor');
+  await expect(editor).toHaveValue(/If you'd prefer the chauffeur-guide option/i);
+  await expect(editor).toHaveValue(/\$[0-9,]+\.[0-9]{2}/);
 });
 
 // Spec 4 (V5): maker-checker status sync. The old per-status `#statusSelect` dropdown was

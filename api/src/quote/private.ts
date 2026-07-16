@@ -1,8 +1,13 @@
 import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
 import type { PrivateLeg, LineItem } from './types';
 
+function bufferedKm(rawKm: number, rateCard: RateCard): number {
+  const unclamped = Math.round(rawKm * (rateCard.bufferPct / 100));
+  return Math.min(15, Math.max(5, unclamped));
+}
+
 export function billableKm(rawKm: number, rateCard: RateCard = RATE_CARD): number {
-  return Math.round(rawKm * (1 + rateCard.bufferPct / 100));
+  return rawKm + bufferedKm(rawKm, rateCard);
 }
 
 // perKmCentsOverride (GL-1d): the operator's custom rate for van14/custom — validated by

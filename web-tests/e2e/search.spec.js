@@ -6,15 +6,15 @@ test('search prices on real distance and carries that price into booking', async
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
 
   // CMB -> Ella private car on real distance (335km):
-  // billableKm = round(335×1.10) = 369; max(29, round(369×0.4025)) = $149
-  const selectLink = page.locator('a[href*="price=149"][href*="vehicle=car"]').first();
+  // Exact core fare is $140.88 after the clamped per-leg buffer; finishing gives $139.
+  const selectLink = page.locator('a[href*="price=139"][href*="rawPrice=140.88"][href*="vehicle=car"]').first();
   await expect(selectLink).toBeVisible();
-  await expect(page.getByText('$149').first()).toBeVisible();
+  await expect(page.getByText('$139').first()).toBeVisible();
 
   await selectLink.click();
   await page.waitForURL('**/booking.html**');
   // booking holds the quoted price on load
-  await expect(page.locator('#sum-total')).toHaveText('$149');
+  await expect(page.locator('#sum-total')).toHaveText('$139');
 });
 
 test('search choices stay locked until Edit, then Update applies (Kayak/Expedia pattern)', async ({ page }) => {

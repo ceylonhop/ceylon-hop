@@ -1,4 +1,5 @@
 import type { Vehicle, ExtraCode } from './rateCard';
+import type { PriceFinishStrategy } from './priceFinish';
 
 export interface PrivateLeg { from: string; to: string; distanceKm: number }
 export interface SharedLeg { routeId: string; seats: number; seatPriceCents: number; colomboPickup?: boolean }
@@ -22,6 +23,8 @@ export interface QuoteResult {
   lineItems: LineItem[];
   subtotalCents: number;
   totalCents: number;
+  priceAdjustmentCents: number;
+  priceStrategy: PriceFinishStrategy;
   depositCents: number;
   amountDueNowCents: number;
   marginEstimateCents: number | null; // total − cost basis; null for shared (cost not modelled). FOUNDER-ONLY (margin:view): stripped server-side (incl. nested in a persisted quote's `result`) for finance/ops — see internalQuote.ts stripQuoteMargin()

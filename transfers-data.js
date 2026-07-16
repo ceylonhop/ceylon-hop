@@ -8,6 +8,7 @@
   const PER_KM = {"car":0.4025,"van":0.5405};
   const FLOORS = {"car":29,"van":50};
   const BUFFER_PCT = 10;
+  const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};
   const CHAUFFEUR_DAY_FEE = 31.05;
   const DEPOSIT_PCT = 0.1;
   const DEPOSIT_CAP = 50;
@@ -143,21 +144,47 @@
   }
 
   // ---- Private quote: door-to-door, your own vehicle ----
-  // Engine rate-card parity (owner decision 2026-07-02): billable km = road km + 10%
-  // routing buffer, then a per-km rate with a minimum fare — mirrors api/src/quote/.
+  // Engine rate-card parity (owner decision 2026-07-13): billable km = road km plus a
+  // per-leg routing buffer clamped to 5..15 km, then a per-km rate with a minimum fare
+  // — mirrors api/src/quote/.
   function privateQuote(fromId, toId) {
     const km = roadKm(fromId, toId);
     const real = realLeg(fromId, toId);
-    const car = legPrice(km, 'car');         // sedan, up to 3 pax
-    const van = legPrice(km, 'van');         // AC van, up to 6 pax
+    const rawCar = legPrice(km, 'car');         // sedan, up to 3 pax
+    const rawVan = legPrice(km, 'van');         // AC van, up to 6 pax
     return {
       km,
       duration: real ? minToText(real[1]) : durationText(km),
-      car: roundPretty(car),
-      van: roundPretty(van)
+      car: finishPrice(rawCar, FLOORS.car),
+      van: finishPrice(rawVan, FLOORS.van),
+      rawCar,
+      rawVan,
     };
   }
-  function roundPretty(n) { return Math.round(n); }
+
+  // Mirrors api/src/quote/priceFinish.ts in integer cents. This is display parity only; the
+  // backend repeats the policy authoritatively before a booking or ops quote is persisted.
+  function finishPrice(amount, minimumAllowed) {
+    if(!Number.isFinite(amount) || amount < 0) return amount;
+    const rawCents = Math.round(amount * 100);
+    const minimumAllowedCents = Math.round((minimumAllowed || 0) * 100);
+    if(rawCents === 0) return 0;
+    const wholeDollars = Math.floor(rawCents / 100);
+    const digits = Math.max(1, String(wholeDollars).length);
+    const intervalDollars = digits <= 3 ? 10 : Math.pow(10, digits - 2);
+    const intervalCents = intervalDollars * 100;
+    const charm = Math.floor((rawCents + 100) / intervalCents) * intervalCents - 100;
+    const withinLimit = candidate => candidate >= rawCents ||
+      (rawCents - candidate) * 10000 <= rawCents * PRICE_FINISHING.maxReductionBps;
+    if(charm === rawCents) return rawCents / 100;
+    if(charm > 0 && charm < rawCents && charm >= minimumAllowedCents && withinLimit(charm)) return charm / 100;
+
+    const increment = PRICE_FINISHING.roundToCents;
+    const lower = Math.floor(rawCents / increment) * increment;
+    const upper = lower + increment;
+    const rounded = rawCents - lower <= upper - rawCents ? lower : upper;
+    return rounded >= minimumAllowedCents && withinLimit(rounded) ? rounded / 100 : rawCents / 100;
+  }
 
   // ---- Shared lookup: do both points sit on one corridor? ----
   function sharedOption(fromId, toId) {
@@ -224,15 +251,25 @@
     if(real) return real[0];
     return Math.round(haversine(a,b) * 1.35);
   }
-  // per-leg private price by vehicle — the engine formula: +BUFFER_PCT% km buffer, then the
+  function billableKm(km){
+    if(km==null) return null;
+    const buffer = Math.min(15, Math.max(5, Math.round(km * (BUFFER_PCT/100))));
+    return km + buffer;
+  }
+  // per-leg private price by vehicle — the engine formula: buffer each leg, then the
   // per-km rate with a minimum fare. Every number comes from the generated pricing block at the
   // top of this IIFE (sourced from api/src/quote/rateCard.ts), so nothing here can drift.
   function legPrice(km, veh){
     if(km==null) return null;
-    const bkm = Math.round(km * (1 + BUFFER_PCT/100));   // billable km: + routing buffer
-    const car = Math.max(FLOORS.car, Math.round(bkm * PER_KM.car));
-    const van = Math.max(FLOORS.van, Math.round(bkm * PER_KM.van));
+    const bkm = billableKm(km);
+    const car = Math.max(FLOORS.car, Math.round(bkm * (PER_KM.car * 100)) / 100);
+    const van = Math.max(FLOORS.van, Math.round(bkm * (PER_KM.van * 100)) / 100);
     return veh==='van' ? van : car;
+  }
+  function distancePrice(km, veh){
+    if(km==null) return null;
+    const rate = veh==='van' ? PER_KM.van : PER_KM.car;
+    return Math.round(km * (rate * 100)) / 100;
   }
   // Hybrid planner autocomplete: known Ceylon Hop places first (stable baked pricing),
   // then popular extras. Google exact-place suggestions can be appended later by a
@@ -278,15 +315,15 @@
   // Decide what to do when a live routed distance comes back for a customer-set
   // route, given the price currently shown. The quoted price is a FIRM FLOOR — it
   // never drops:
-  //  - cheaper/equal, within the +10% buffer already charged, or no baseline
+  //  - cheaper/equal, within the per-leg buffer already charged, or no baseline
   //    → 'hold' (keep the quoted price)
   //  - MATERIALLY dearer (past the buffer) → 'confirm' (needs a heads-up before it changes)
-  // Buffer mirrors legPrice's round(km × 1.10). No new rates — reuse legPrice.
+  // Buffer mirrors legPrice's billableKm clamp. No new rates — reuse legPrice.
   function repriceDecision(anchorKm, routedKm, currentUnit, veh){
     const newPrice = legPrice(routedKm, veh);
     if(newPrice == null || !anchorKm) return { action:'hold', price: currentUnit };
     if(newPrice <= currentUnit) return { action:'hold', price: currentUnit };
-    if(routedKm <= Math.round(anchorKm * (1 + BUFFER_PCT/100))) return { action:'hold', price: currentUnit };
+    if(routedKm <= billableKm(anchorKm)) return { action:'hold', price: currentUnit };
     return { action:'confirm', price: newPrice, extraKm: Math.max(1, Math.round(routedKm - anchorKm)) };
   }
   // chauffeur-guide day fee (a driver-guide + car per day) plus deposit %/cap live in the
@@ -312,9 +349,9 @@
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
     roadKm, durationText, privateQuote, sharedOption,
-    resolvePlace, kmBetween, legPrice, placeSuggestions, tripQuote, repriceDecision,
+    resolvePlace, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
-    PER_KM, FLOORS, BUFFER_PCT, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
+    PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
 })();

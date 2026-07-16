@@ -28,6 +28,7 @@ function summary(over) {
     totalCents: over.totalCents || 12100,
     currency: 'USD',
     status: over.status,
+    ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
 
@@ -147,7 +148,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate })));
     }
     return r.fulfill(json({}));
   });
@@ -355,6 +356,25 @@ test('once approved (ready), support can copy the customer message', async ({ pa
   await expect(page.locator('.ch-pre')).toBeVisible(); // the message is shown
 });
 
+test('final-price adjustment is auditable internally but hidden from the customer draft', async ({ page }) => {
+  const estimate = {
+    ...ESTIMATE,
+    total: { cents: 11900, lkr: 'LKR 39,270' },
+    lineItems: [
+      { label: 'Colombo → Kandy (car)', amountCents: 12100, lkr: 'LKR 39,930' },
+      { label: 'Final price adjustment', amountCents: -200, meta: { kind: 'price_adjustment', strategy: 'charm' } },
+    ],
+  };
+  await openDetail(page, 'ops', { id: 'q1', status: 'ready', totalCents: 11900, estimate });
+
+  await page.locator('.ch-tab[data-tab="internal"]').click();
+  await expect(page.locator('.ch-output-body')).toContainText('Final price adjustment');
+  await page.locator('.ch-tab[data-tab="whatsapp"]').click();
+  await expect(page.locator('.ch-output-editor')).toContainText('Colombo → Kandy — $119.00');
+  await expect(page.locator('.ch-output-editor')).toContainText('Total: $119.00');
+  await expect(page.locator('.ch-output-editor')).not.toContainText('Final price adjustment');
+});
+
 test('the customer message stays hidden until approved — even for the founder', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
   await page.locator('.ch-tab[data-tab="whatsapp"]').click();
@@ -366,18 +386,18 @@ test('the customer message stays hidden until approved — even for the founder'
   await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
 });
 
-// ── Side-nav collapse toggle ─────────────────────────────────────────────────────
-test('the rail collapses to an icon strip and the choice persists', async ({ page }) => {
+// ── Side-nav collapsed rail ──────────────────────────────────────────────────────
+test('the collapsed rail opens when any part of it is clicked', async ({ page }) => {
   await openQueue(page, 'founder', []);
+  await expect(page.locator('#railToggle')).toHaveCount(0);
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
-  await page.locator('#railToggle').click();
-  await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Persisted, so a fresh load of the same surface stays collapsed.
+
+  await page.evaluate(() => localStorage.setItem('ch_ops_rail', '1'));
   await page.goto(OPS_FILE + '#quotes');
   await page.waitForSelector('#view .qhead');
   await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Toggling back expands it.
-  await page.locator('#railToggle').click();
+
+  await page.locator('.rail').click();
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
 });
 

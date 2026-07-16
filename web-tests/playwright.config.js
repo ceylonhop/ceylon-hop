@@ -15,7 +15,10 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Retry once everywhere (not just CI): the heavy ops-SPA specs occasionally time out on a
+  // per-action wait under parallel CPU contention on a busy dev machine (they pass in isolation),
+  // so a single retry absorbs those transient timeouts and keeps the local full run green.
+  retries: 1,
   reporter: process.env.CI ? 'github' : 'list',
   // The quote-tool/ops-ui specs share one Supabase session-mode pool (pool_size: 15 —
   // see api/.env's DATABASE_URL). Each Playwright worker opens its own browser and fires

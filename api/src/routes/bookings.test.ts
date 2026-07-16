@@ -71,8 +71,8 @@ describe('POST /bookings/single', () => {
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.total).toBe(7970); // km 180 → billable 198 → round(198×40.25) = 7970
-    expect(b.amountDueNow).toBe(7970);
+    expect(b.total).toBe(7850); // raw 7849¢ → nearest-50¢ final price
+    expect(b.amountDueNow).toBe(7850);
   });
 
   // ── Rate-lock (spec 2026-07-11 §4): a booking carrying a live web quote id is priced against
@@ -91,26 +91,26 @@ describe('POST /bookings/single', () => {
   it('a live locked quote id prices the booking against its FROZEN card, not the live one', async () => {
     const { app, quoteId } = await withLockedQuote(new Date(Date.now() + 3 * 86_400_000), 20); // 20¢/km, held
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
-    expect(b.total).toBe(3960); // billable 198 × 20¢ (frozen) — NOT 7970 on the live 40.25¢ card
+    expect(b.total).toBe(3900); // billable 195 × 20¢ (frozen) — NOT 7849 on the live 40.25¢ card
   });
 
   it('an EXPIRED locked quote id falls back to the live card (the 7-day hold has lapsed)', async () => {
     const { app, quoteId } = await withLockedQuote(new Date(Date.now() - 86_400_000), 20); // expired yesterday
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId })).json();
-    expect(b.total).toBe(7970); // live 40.25¢ card
+    expect(b.total).toBe(7850); // live card raw 7849¢ → nearest-50¢ final price
   });
 
   it('an unknown quote id is ignored — prices on the live card, never crashes', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const b = await (await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', quoteId: 'no-such-quote' })).json();
-    expect(b.total).toBe(7970);
+    expect(b.total).toBe(7850);
   });
 
   it('prices payload extras through the engine (GL-3)', async () => {
     const app = createApp();
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle', extras: ['luggage', 'front'] });
     const b = await res.json();
-    expect(b.total).toBe(9270); // 7970 + luggage 500 + front 800
+    expect(b.total).toBe(9150); // raw 9149¢ incl. extras → nearest-50¢ final price
   });
 
   it('resolves each route pair once per request — pricing + enrichment share the billed lookup', async () => {
@@ -254,7 +254,7 @@ describe('POST /bookings — no past dates (trip + shared)', () => {
       stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0],
       pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer, quoteId: saved.id,
     })).json();
-    expect(b.total).toBe(3960); // billable 198 × 20¢ (frozen) — NOT 7970 on the live card
+    expect(b.total).toBe(3900); // billable 195 × 20¢ (frozen) — NOT 7849 on the live card
   });
 
   it('shared rejects a past date (400 date_in_past)', async () => {

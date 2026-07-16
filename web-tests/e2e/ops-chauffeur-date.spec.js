@@ -39,6 +39,8 @@ async function setLegField(page, legIndex, field, value) {
 }
 
 test('chauffeur mode does not collapse the leg date input', async ({ page }) => {
+  test.slow(); // heavy: boots the ops SPA, adds a 2nd leg, fetches distances, sweeps 6 viewports —
+  //            triples the test timeout so it doesn't run out of budget under parallel CPU load.
   await stubOps(page);
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
