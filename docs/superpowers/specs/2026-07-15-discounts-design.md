@@ -205,13 +205,24 @@ continue hiding the internal finishing-policy label.
 - A fixed promotion cannot remove more than the eligible subtotal.
 - A percentage uses the eligible subtotal and may have an optional maximum amount.
 - A rule may require a minimum eligible subtotal.
-- A rule may require a minimum total trip distance in km. The comparison uses the
-  engine's summed server-resolved leg distances — never a client-supplied figure. If
-  any leg's distance is unresolved, the condition is unmet and the rule does not match:
-  fail closed, consistent with §9.5.
-- A rule may require a minimum leg count, counted from the canonical intent's priced
-  legs.
+- A rule may require a minimum total trip distance in km. The distance is the engine's
+  **real driven km** for the product, never a client-supplied figure:
+  - private and multi-leg/tour quotes: the sum of server-resolved transfer-leg
+    distances; stay legs contribute nothing;
+  - chauffeur: the engine's `travelKm` — the unbuffered sum of travel-day driving
+    distances, excluding both the km buffer and the idle-day minimum-km billing
+    padding. Idle days never earn distance toward a promotion.
+  If any contributing distance is unresolved, the condition is unmet and the rule does
+  not match: fail closed, consistent with §9.5.
+- A rule may require a minimum leg count, counted as **transfer legs** — movements
+  between places. Stay legs are excluded. For chauffeur, the count is the number of
+  travel days (days with driving); idle days do not count.
 - When a rule configures several conditions, all of them must hold together.
+- Resolved distance is deliberately outside the canonical fingerprint (§12.3), so the
+  same itinerary may resolve slightly different km on different days as Maps re-routes.
+  A km threshold set at a popular route's exact total will apply intermittently across
+  quotes; founders should set km thresholds with headroom below the trips they mean to
+  reward.
 - The complete quote's estimated cost protects the final total, including when extras
   are present.
 
@@ -305,12 +316,18 @@ Enforcement happens twice:
   exhausted code rejects with `promotion_exhausted`, wording it as fully redeemed.
 - **At conversion.** Between lock and conversion the budget may run out, so the booking
   transaction re-verifies it: it takes a transaction-scoped Postgres advisory lock on
-  the family id, counts committed conversions, and fails closed with
-  `promotion_exhausted` when the budget is spent. The advisory lock serializes
-  concurrent conversions of the same family so the budget can never overshoot. No
-  booking is ever created at an amount other than the one shown; after a rejection the
-  quote reprices without the discount on its next edit, and the customer confirms the
-  corrected total before converting.
+  the family id (the uuid is hashed into the bigint advisory-lock keyspace; a hash
+  collision merely serializes an unrelated conversion, which is harmless), counts
+  committed conversions, and fails closed with `promotion_exhausted` when the budget is
+  spent. The advisory lock serializes concurrent conversions of the same family so the
+  budget can never overshoot. No booking is ever created at an amount other than the
+  one shown; after a rejection the quote reprices without the discount on its next
+  edit, and the customer confirms the corrected total before converting.
+
+A spent unit stays spent: cancelling or refunding a booking never returns budget, so
+the count stays monotonic and the history append-only. The founder remedy is versioning
+the rule with a higher budget — the family's spent count is unchanged, so raising
+`max_redemptions` by one restores exactly one unit.
 
 This is the single, deliberate exception to locked-promotion durability (§3): a lock
 preserves a promotion's terms, but cannot promise a share of a finite budget. For the
@@ -479,7 +496,7 @@ Each row is an immutable rule version:
 | `value` | integer cents for fixed; basis points for percentage |
 | `max_discount_cents` | nullable non-negative integer |
 | `minimum_eligible_cents` | nullable non-negative integer |
-| `minimum_trip_km` | nullable positive integer; compared against summed server-resolved leg km |
+| `minimum_trip_km` | nullable positive integer; compared against the product's real driven km (§7.1) |
 | `minimum_leg_count` | nullable positive integer |
 | `max_redemptions` | nullable positive integer; budget shared across a family's versions (§7.6) |
 | `starts_at`, `expires_at` | timestamptz, start strictly before expiry |
@@ -614,8 +631,9 @@ resolved distance.
 
 Existing private/trip booking routes accept the v2 quote ID, access token, and revision.
 For v2 they require exact intent match and adopt the stored server result. Unknown,
-mismatched, expired, stale, unauthorized, or already converted quotes fail closed; they
-do not fall back to undiscounted live pricing.
+mismatched, expired, stale, unauthorized, already converted, or budget-exhausted
+(`promotion_exhausted`, §7.6) quotes fail closed; they do not fall back to undiscounted
+live pricing.
 
 Legacy no-discount behavior remains unchanged while migration is active. Shared gains
 no discount behavior.
@@ -664,6 +682,10 @@ no discount behavior.
 - Founder controls support fixed/percentage value, required reason, replace, and remove.
 - Cost capping cannot be bypassed. Founder sees requested versus applied amount and
   resulting margin.
+- When an applied automatic promotion's family budget is nearly or fully spent, the
+  founder-facing preview warns before approval: an approved, already-sent price that
+  later bounces at conversion with `promotion_exhausted` is a human workflow cost, not
+  just an error code.
 - Queue/detail derives a `Discounted` badge.
 - Internal output shows gross, discount, finishing, final, and founder-only margin.
 - WhatsApp/email customer drafts show the friendly discount but not internal finishing,
@@ -707,6 +729,9 @@ cent-identical.
 - Start/expiry boundaries using an injected clock.
 - Minimum trip-km and leg-count boundaries, combined-condition AND semantics, and an
   unresolved leg distance failing the km condition closed.
+- Per-product condition semantics: stay legs excluded from both km and leg count;
+  chauffeur km equals `travelKm` (a quote with idle days earns no idle or buffer km
+  toward a threshold); chauffeur leg count equals travel days.
 - Redemption budget: the last unit converts, the next rejects; exhausted rejection at
   code entry and at conversion; concurrent conversions serialized by the family
   advisory lock never overshoot; versioning a rule preserves the family's spent count.
@@ -752,9 +777,11 @@ Sequence:
 7. Enable automatic promotions for one controlled route.
 8. Enable code UI for one controlled code, then broaden deliberately.
 
-Structured events cover rule lifecycle, candidate selection, apply/replace/remove, cost
-cap, budget exhaustion, stale conflicts, quote access rejection, lock/update,
-conversion, and payment mismatch. Alerts fire on booking/payment amount mismatch, below-cost invariant failure,
+Structured events cover rule lifecycle, candidate selection — including a rule skipped
+solely because a leg distance was unresolved, so a Maps hiccup suppressing an
+advertised promotion is visible rather than silent — apply/replace/remove, cost cap,
+budget exhaustion, stale conflicts, quote access rejection, lock/update, conversion,
+and payment mismatch. Alerts fire on booking/payment amount mismatch, below-cost invariant failure,
 conversion failure spikes, and unusual promotion rejection/application volume.
 
 Rollback proof must show that all creation flags can turn off while an already locked

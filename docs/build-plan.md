@@ -525,8 +525,10 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     exact-at-cost, cap diagnostics, sell-floor crossing, finishing order, and exact no-discount parity.
     No database, route, RBAC, or UI changes.
   - **18.3 — Pure promotion matching and winner selection.** Match sitewide, one-way/both-way route,
-    and named-tour candidates; evaluate quote-shape conditions (minimum subtotal, minimum trip km with
-    unresolved-distance fail-closed, minimum leg count, AND semantics); evaluate automatic rules plus
+    and named-tour candidates; evaluate quote-shape conditions per spec §7.1 (minimum subtotal;
+    minimum trip km as real driven km — transfer legs only, chauffeur `travelKm` excludes buffer and
+    idle-day padding — with unresolved-distance fail-closed; minimum transfer-leg count with stays
+    excluded and chauffeur counting travel days; AND semantics); evaluate automatic rules plus
     an optional submitted code; select the greatest actual saving with stable tie-breaks and never
     stack. **Tests:** identity matches and non-matches, condition boundaries and fail-closed km, time
     boundaries with fake clock, invalid code behavior, overlap, ties, cost-capped candidates, and
