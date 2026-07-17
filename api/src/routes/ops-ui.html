@@ -1588,6 +1588,14 @@ document.addEventListener('click',async e=>{
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state.detail=null;state.detailData=null;renderSheet();}});
 
 /* ── login / session ── */
+/* Avatar initials: first+last from the Google profile name ("Sandra Wolker"→"SW");
+   no name (dev-login, legacy cookies) → first two letters of the email local part. */
+function avatarInitials(name,email){
+  const parts=(name||'').trim().split(/\s+/).filter(Boolean);
+  if(parts.length>1)return (parts[0][0]+parts[parts.length-1][0]).toUpperCase();
+  if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
+  return ((email||'').split('@')[0].slice(0,2)||'??').toUpperCase();
+}
 function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;}
 function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;armRailAutoCollapse();}
 function bootApp(identity){
@@ -1604,7 +1612,7 @@ function bootApp(identity){
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
   syncUrl(state.route,state.routeQuoteId,'replace');
-  const initials=identity.role.slice(0,2).toUpperCase();
+  const initials=avatarInitials(identity.name,identity.email);
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>${esc(identity.email)} · ${esc(roleLabel)}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
   applyRailState();

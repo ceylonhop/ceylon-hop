@@ -39,6 +39,7 @@ export function roleForEmail(email: string, users: Map<string, OpsRole>): OpsRol
 export interface SessionPayload {
   email: string;
   exp: number; // epoch ms
+  name?: string; // display name from Google at login; absent on legacy cookies + dev-login
 }
 
 function mac(body: string, secret: string): string {
@@ -69,5 +70,5 @@ export function verifySession(token: string | undefined, secret: string, now: nu
   const p = parsed as Partial<SessionPayload>;
   if (typeof p?.email !== 'string' || typeof p?.exp !== 'number') return null;
   if (p.exp <= now) return null;
-  return { email: p.email, exp: p.exp };
+  return { email: p.email, exp: p.exp, ...(typeof p.name === 'string' && p.name ? { name: p.name } : {}) };
 }

@@ -89,6 +89,14 @@ describe('ops UI shell', () => {
     expect(body).not.toContain('function bootApp(role)');
   });
 
+  it("derives the rail avatar from the person's name/email, never the role", async () => {
+    const app = createApp();
+    const body = await (await app.request('/ops')).text();
+    expect(body).toContain('function avatarInitials(');
+    expect(body).toContain('avatarInitials(identity.name,identity.email)');
+    expect(body).not.toContain('identity.role.slice(0,2)'); // the old role-initials avatar ("FO")
+  });
+
   it('mounts the quote tool as an encapsulated module on the ops session (T5)', async () => {
     const app = createApp();
     const res = await app.request('/ops');

@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 export interface GoogleIdentity {
   email: string;
   emailVerified: boolean;
+  name?: string; // Google profile display name — the UI derives avatar initials from it
 }
 
 export type JwtVerifier = (
@@ -34,5 +35,6 @@ export async function verifyGoogleIdToken(
   if (!GOOGLE_ISSUERS.has(iss)) throw new Error(`bad issuer: ${iss}`);
   const email = payload.email;
   if (typeof email !== 'string' || !email) throw new Error('token has no email');
-  return { email, emailVerified: payload.email_verified === true };
+  const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name.trim() : undefined;
+  return { email, emailVerified: payload.email_verified === true, ...(name ? { name } : {}) };
 }

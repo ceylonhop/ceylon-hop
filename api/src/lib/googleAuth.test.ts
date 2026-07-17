@@ -27,6 +27,22 @@ describe('verifyGoogleIdToken', () => {
     await expect(verifyGoogleIdToken('tok', { clientId: CLIENT_ID, verifier: v })).rejects.toThrow();
   });
 
+  it('surfaces the Google profile name so the UI can show the user\'s initials', async () => {
+    const v = verifierReturning({
+      iss: 'https://accounts.google.com', aud: CLIENT_ID,
+      email: 'sandra@x.com', email_verified: true, name: 'Sandra Wolker',
+    });
+    const id = await verifyGoogleIdToken('tok', { clientId: CLIENT_ID, verifier: v });
+    expect(id.name).toBe('Sandra Wolker');
+  });
+
+  it('leaves name undefined when the token has no usable name claim', async () => {
+    const noName = verifierReturning({ iss: 'accounts.google.com', aud: CLIENT_ID, email: 'a@x.com', email_verified: true });
+    expect((await verifyGoogleIdToken('tok', { clientId: CLIENT_ID, verifier: noName })).name).toBeUndefined();
+    const blank = verifierReturning({ iss: 'accounts.google.com', aud: CLIENT_ID, email: 'a@x.com', email_verified: true, name: '   ' });
+    expect((await verifyGoogleIdToken('tok', { clientId: CLIENT_ID, verifier: blank })).name).toBeUndefined();
+  });
+
   it('surfaces email_verified === false as emailVerified:false (caller decides)', async () => {
     const v = verifierReturning({ iss: 'accounts.google.com', aud: CLIENT_ID, email: 'a@x.com', email_verified: false });
     const id = await verifyGoogleIdToken('tok', { clientId: CLIENT_ID, verifier: v });

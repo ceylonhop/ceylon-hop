@@ -78,7 +78,7 @@ export function opsRoutes(deps: OpsDeps) {
     if (!id.emailVerified) return c.json({ error: 'email_unverified' }, 403);
     const role = roleForEmail(id.email, users);
     if (!role) return c.json({ error: 'not_authorised', email: id.email }, 403);
-    issueSessionCookie(c, id.email, auth.sessionSecret, Date.now());
+    issueSessionCookie(c, id.email, auth.sessionSecret, Date.now(), id.name);
     return c.json({ email: id.email, role }, 200);
   });
 
@@ -104,7 +104,7 @@ export function opsRoutes(deps: OpsDeps) {
   r.get('/whoami', requireCap('bookings:read'), (c) => {
     const identity = c.get('identity');
     const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
-    return c.json({ email: identity.email, role: identity.role, caps });
+    return c.json({ email: identity.email, role: identity.role, caps, ...(identity.name ? { name: identity.name } : {}) });
   });
 
   r.get('/finance/summary', requireCap('margin:view'), (c) => c.json({ ok: true }));

@@ -45,6 +45,14 @@ describe('parseOpsUsers / roleForEmail', () => {
 
 describe('identity session cookie', () => {
   const secret = 'sek';
+  it('round-trips the optional display name (Google profile → avatar initials)', () => {
+    const tok = signSession({ email: 'a@x.com', exp: 2000, name: 'Sandra Wolker' }, secret);
+    expect(verifySession(tok, secret, 1000)).toEqual({ email: 'a@x.com', exp: 2000, name: 'Sandra Wolker' });
+    // Legacy cookies minted before `name` existed must stay valid (no forced logout).
+    const legacy = signSession({ email: 'a@x.com', exp: 2000 }, secret);
+    expect(verifySession(legacy, secret, 1000)).toEqual({ email: 'a@x.com', exp: 2000 });
+  });
+
   it('round-trips {email, exp}', () => {
     const tok = signSession({ email: 'a@x.com', exp: 2000 }, secret);
     expect(verifySession(tok, secret, 1000)).toEqual({ email: 'a@x.com', exp: 2000 });

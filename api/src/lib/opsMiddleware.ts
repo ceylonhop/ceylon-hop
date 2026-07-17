@@ -17,7 +17,7 @@ function safeEqual(a: string, b: string): boolean {
 export const OPS_COOKIE = 'ch_ops';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface OpsIdentity { email: string; role: OpsRole }
+export interface OpsIdentity { email: string; role: OpsRole; name?: string }
 export interface OpsAuthConfig {
   opsUsers: string;
   googleClientId: string;
@@ -36,8 +36,8 @@ export function devBypassEnabled(cfg: OpsAuthConfig): boolean {
   return cfg.nodeEnv === 'development' || cfg.nodeEnv === 'test';
 }
 
-export function issueSessionCookie(c: Context, email: string, sessionSecret: string, now: number): void {
-  const token = signSession({ email, exp: now + SESSION_TTL_MS }, sessionSecret);
+export function issueSessionCookie(c: Context, email: string, sessionSecret: string, now: number, name?: string): void {
+  const token = signSession({ email, exp: now + SESSION_TTL_MS, ...(name ? { name } : {}) }, sessionSecret);
   setCookie(c, OPS_COOKIE, token, {
     httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: SESSION_TTL_MS / 1000,
   });
@@ -57,7 +57,7 @@ export function opsIdentity(cfg: OpsAuthConfig): MiddlewareHandler {
     if (payload) {
       const role = roleForEmail(payload.email, users);
       if (role) {
-        c.set('identity', { email: payload.email, role });
+        c.set('identity', { email: payload.email, role, ...(payload.name ? { name: payload.name } : {}) });
       } else {
         c.set('revoked', true); // valid cookie, email no longer allowlisted → 403 at the guard
       }
