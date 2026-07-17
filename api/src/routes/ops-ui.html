@@ -875,6 +875,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-req-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-family: var(--sans); color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
 .qv .ch-req-chip:hover:not(.active) { border-color: var(--muted-2); }
 .qv .ch-req-chip.active { border-color: var(--teal); background: rgba(10,185,182,.06); color: var(--teal-d); font-weight: 600; }
+.qv .ch-req-mismatch { margin: -4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -2074,6 +2075,23 @@ function mutate(patch) {
   render();
 }
 
+/* Quote intent (spec 2026-07-17, I8). Returns a message when the quote does NOT express what the
+   customer asked for, else null. Signal only — never blocks (the reviewer decides). The
+   'both'+chauffeur row exists because the upsell is ONE-DIRECTIONAL (I10): appendChauffeurUpsell()
+   adds a chauffeur total to a point-to-point message, and there is no "add point-to-point option"
+   counterpart — so a chauffeur-priced quote structurally cannot show both prices. */
+function requestMismatch(requested, priced) {
+  if (!requested) return null;
+  if (requested === 'both') {
+    return priced === 'private' ? null
+      : "Customer asked for both — a chauffeur-priced quote can't carry the point-to-point price. Price it point-to-point and add the chauffeur option.";
+  }
+  if (requested === priced) return null;
+  return requested === 'private'
+    ? 'Customer asked for Point-to-point — this quote is priced Chauffeur-guide.'
+    : 'Customer asked for Chauffeur-guide — this quote is priced Point-to-point.';
+}
+
 /* Quote intent (spec 2026-07-17): record what the CUSTOMER asked for. Deliberately independent
    of setService() below — that picks what we PRICE, this records what was REQUESTED, and the
    whole point is that the two can disagree (see requestMismatch). Never derived from
@@ -2934,6 +2952,10 @@ function renderServiceChooser() {
       + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(reqOpts[ri][1]) + '</button>');
   }
   parts.push('</div>');
+
+  // I8: flag when the quote doesn't express what the customer asked for. Signal, not a gate.
+  var _mm = requestMismatch(state.requestedService, state.service);
+  if (_mm) parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
 
   if (chaufActive && !chaufDisabled) {
     parts.push('<div class="ch-svc-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
