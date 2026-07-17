@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  can, parseOpsUsers, roleForEmail, signSession, verifySession,
+  can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor,
   type OpsRole, type OpsAction,
 } from './opsAuth';
 
@@ -21,6 +21,42 @@ describe('can() capability matrix', () => {
   ];
   it.each(rows)('%s can %s === %s', (role, action, expected) => {
     expect(can(role, action)).toBe(expected);
+  });
+});
+
+// The assign picker and the queue's assignee chip both label staff by person, not by inbox.
+// Format is "first name + last initial" — short enough for a queue row, and unambiguous
+// across a 3-person team in a way a bare first name would stop being if we ever hire a
+// second Roshen. No stored name (nobody has signed in since profiles shipped, or a
+// dev-login session) → the email local part, which is what the UI showed before.
+describe('displayNameFor', () => {
+  it('renders a full name as first name + last initial', () => {
+    expect(displayNameFor('Roshen Wijesinghe', 'roshen@ceylonhop.com')).toBe('Roshen W.');
+  });
+
+  it('uses the LAST name part for the initial, not the middle one', () => {
+    expect(displayNameFor('Geethma Devan Perera', 'geethmadevan@gmail.com')).toBe('Geethma P.');
+  });
+
+  it('leaves a single-word name alone — there is no last initial to add', () => {
+    expect(displayNameFor('Dasis', 'dasis@ceylonhop.com')).toBe('Dasis');
+  });
+
+  it('falls back to the email local part when no name is stored', () => {
+    expect(displayNameFor(null, 'dasis@ceylonhop.com')).toBe('dasis');
+    expect(displayNameFor(undefined, 'dasis@ceylonhop.com')).toBe('dasis');
+  });
+
+  it('treats a blank or whitespace-only name as no name', () => {
+    expect(displayNameFor('   ', 'dasis@ceylonhop.com')).toBe('dasis');
+  });
+
+  it('tolerates untidy spacing in the stored name', () => {
+    expect(displayNameFor('  Roshen   Wijesinghe  ', 'roshen@ceylonhop.com')).toBe('Roshen W.');
+  });
+
+  it('never returns an empty label, even with nothing to work from', () => {
+    expect(displayNameFor(null, '')).toBe('unknown');
   });
 });
 

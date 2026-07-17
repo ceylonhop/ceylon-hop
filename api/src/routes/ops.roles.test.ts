@@ -53,15 +53,18 @@ describe('ops capability gates', () => {
 // The assign picker (spec 2026-07-16 §7) needs the assignable staff list. Staff emails, so it is
 // session-gated — and it must only offer people who can actually open the quote the email links to.
 describe('GET /admin/ops/users — assignable staff for the assign picker', () => {
+  // displayName is the picker's label. These users have no captured Google name (nobody has
+  // signed in), so it degrades to the email local part — see ops.profiles.test.ts for the
+  // named case.
   it('returns the OPS_USERS roster to any signed-in staff member', async () => {
     const app = createApp({ auth, adminApiKey: 'adminkey' });
     const res = await app.request('/admin/ops/users', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.users).toEqual([
-      { email: 'f@x.com', role: 'founder' },
-      { email: 'fin@x.com', role: 'finance' },
-      { email: 'op@x.com', role: 'ops' },
+      { email: 'f@x.com', role: 'founder', displayName: 'f' },
+      { email: 'fin@x.com', role: 'finance', displayName: 'fin' },
+      { email: 'op@x.com', role: 'ops', displayName: 'op' },
     ]);
   });
 

@@ -36,6 +36,21 @@ export function roleForEmail(email: string, users: Map<string, OpsRole>): OpsRol
   return users.get((email ?? '').toLowerCase()) ?? null;
 }
 
+// How staff are labelled wherever the UI names a person (the assign picker, the queue's
+// assignee chip): "Roshen Wijesinghe" → "Roshen W.". Short enough for a queue row, and it
+// survives a second Roshen joining in a way a bare first name would not.
+//
+// The name comes from the Google profile captured at sign-in, so it is absent until that
+// person signs in once (and always, for dev-login sessions). That is not an error state —
+// we fall back to the email local part, which is exactly what the UI showed before names
+// existed. Always returns something printable: a blank label reads as a broken row.
+export function displayNameFor(name: string | null | undefined, email: string): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length > 1) return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+  if (parts.length === 1) return parts[0];
+  return (email ?? '').split('@')[0] || 'unknown';
+}
+
 export interface AssignableUser { email: string; role: OpsRole }
 
 // Who a quote may be assigned to (spec 2026-07-16 §5/§7). Assignment drives an email carrying a
