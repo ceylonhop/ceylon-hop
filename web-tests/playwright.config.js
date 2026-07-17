@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // Serves the static site (same minimal server the preview uses) and runs the
 // e2e specs against it. Google Maps, PayHere and the API are stubbed per-test
@@ -7,10 +9,45 @@ import { defineConfig, devices } from '@playwright/test';
 // The quote-tool and ops-ui specs are the exception: they exercise the real
 // merged ops⇄quote dashboard served by the API at /ops (the quoting tool is a
 // view mounted inside it, open to all 3 roles per spec D-A — see
-// api/src/routes/ops-ui.html), which needs a reachable DATABASE_URL and writes
-// rows to that DB. Those specs are skipped unless you opt in with CH_E2E_API=1,
-// which also boots the API webServer below (see package.json's
+// api/src/routes/ops-ui.html), which needs a reachable database and writes real
+// rows to it. Those specs are skipped unless you opt in with CH_E2E_API=1, which
+// also boots the API webServer below (see package.json's
 // "test:e2e:tool"/"test:e2e:ops" scripts).
+//
+// Those writes go to DATABASE_URL_TEST — never the API's own DATABASE_URL. See the
+// guard below for why.
+
+const E2E_API = process.env.CH_E2E_API === '1';
+
+// Read ONLY DATABASE_URL_TEST out of api/.env. Deliberately does NOT load that file
+// into process.env: it also holds the production DATABASE_URL, and the test runner has
+// no business carrying prod credentials around.
+function testDbFromApiEnv() {
+  try {
+    const path = fileURLToPath(new URL('../api/.env', import.meta.url));
+    const m = readFileSync(path, 'utf8').match(/^DATABASE_URL_TEST=(.*)$/m);
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const TEST_DB = process.env.DATABASE_URL_TEST || testDbFromApiEnv();
+
+// Fail closed. These specs write quote rows to whatever DB the booted API resolves.
+// Until 2026-07-17 there was no test DB and no guard: the API fell back to api/.env's
+// DATABASE_URL — production — and a run of the ops-e2e suite left 45 "E2E …" quotes in
+// the live quoting tool alongside real customers. Refuse to run rather than guess.
+if (E2E_API && !TEST_DB) {
+  throw new Error(
+    'CH_E2E_API=1 requires DATABASE_URL_TEST — these specs write quote rows to a real DB.\n' +
+      "Without it the booted API falls back to api/.env's DATABASE_URL, which is PRODUCTION.\n" +
+      'Set it in api/.env or the environment, e.g.\n' +
+      '  DATABASE_URL_TEST=postgresql://postgres:postgres@localhost:5432/ceylonhop_test\n' +
+      '(same value .github/workflows/ci.yml provisions for CI).',
+  );
+}
+
 export default defineConfig({
   testDir: './e2e',
   // Fails the CH_E2E_API run fast if the API port is owned by something that isn't the
@@ -26,12 +63,11 @@ export default defineConfig({
   // so a single retry absorbs those transient timeouts and keeps the local full run green.
   retries: 1,
   reporter: process.env.CI ? 'github' : 'list',
-  // The quote-tool/ops-ui specs share one Supabase session-mode pool (pool_size: 15 —
-  // see api/.env's DATABASE_URL). Each Playwright worker opens its own browser and fires
-  // concurrent DB-backed requests (loadQueue, /admin/quote/*), so a full 8-worker fan-out
-  // can exhaust the pool and 500 on /admin/ops/bookings. Cap workers only for the
-  // CH_E2E_API run; the offline default suite is unaffected.
-  workers: process.env.CH_E2E_API === '1' ? 4 : undefined,
+  // The quote-tool/ops-ui specs share one connection pool. Each Playwright worker opens
+  // its own browser and fires concurrent DB-backed requests (loadQueue, /admin/quote/*),
+  // so a full 8-worker fan-out can exhaust the pool and 500 on /admin/ops/bookings. Cap
+  // workers only for the CH_E2E_API run; the offline default suite is unaffected.
+  workers: E2E_API ? 4 : undefined,
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
@@ -46,17 +82,26 @@ export default defineConfig({
       reuseExistingServer: true,
       timeout: 30000,
     },
-    ...(process.env.CH_E2E_API === '1' ? [
+    ...(E2E_API ? [
       {
         // The API serves the merged ops⇄quote dashboard at /ops (see quote-tool.spec.js
         // and ops-ui.spec.js) — the quoting tool is a view inside it open to all 3 roles.
-        // Needs DATABASE_URL (api/.env) — only booted when CH_E2E_API=1.
+        // Only booted when CH_E2E_API=1, and only ever against DATABASE_URL_TEST.
         command: 'npm --prefix ../api run dev',
         url: 'http://localhost:8787/health',
         reuseExistingServer: true,
         timeout: 60000,
         env: {
           ...process.env,
+          // Point the booted API at the TEST database. This MUST be set explicitly:
+          // the API's config does `import 'dotenv/config'` and would otherwise resolve
+          // api/.env's production DATABASE_URL. dotenv never overwrites a var that is
+          // already set, so this assignment wins and prod is never reachable from a test.
+          DATABASE_URL: TEST_DB,
+          // The test DB is disposable, so let the API self-apply pending migrations on
+          // boot — the same fail-closed path Render uses (api/src/server.ts). A fresh
+          // local Postgres then needs no manual `npm run migrate`.
+          RUN_MIGRATIONS: '1',
           // Parallel specs share one IP; the /admin/quote rate limiter (RATE_LIMIT_MAX*4)
           // saturates near the tail of a full run. Raise the cap for the test server only.
           RATE_LIMIT_MAX: '200',
