@@ -2443,6 +2443,9 @@ async function transition(toStatus, opts) {
   if (opts.note != null) patchBody.notes = opts.note;
   var res = await apiPatch(state.savedId, patchBody);
   if (!res || res.error) {
+    // Quote intent (spec 2026-07-17): the server gate can 400 even if a client bypassed the
+    // disabled button — give it the same friendly copy as the button hint, not the raw code.
+    if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first'); return; }
     showToast('Could not update — ' + ((res && res.error) || 'unknown error'));
     return;
   }
@@ -3685,16 +3688,24 @@ function renderStatusPill() {
 // a draft in one hop), sends back, or edits in place. Buttons are data-action delegated.
 function renderActionBar() {
   var s = state.status, approver = isApprover(), out = [];
-  var B = function(action, label, cls) { return '<button class="ch-btn ' + cls + '" data-action="' + action + '">' + label + '</button>'; };
+  // Quote intent (spec 2026-07-17): a quote can't be submitted for review — or self-approved —
+  // until the customer request is recorded. Mirror the server gate on the client so the buttons
+  // that would 400 are disabled with a reason. Save is NEVER gated (work-in-progress must save).
+  var needReq = !state.requestedService, reqHint = 'Record what the customer asked for first';
+  var B = function(action, label, cls, disabled, title) {
+    return '<button class="ch-btn ' + cls + '" data-action="' + action + '"'
+      + (disabled ? ' disabled' : '') + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
+  };
+  var GB = function(action, label, cls) { return B(action, label, cls, needReq, needReq ? reqHint : null); }; // gated button
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
-    if (s === 'draft' || s === 'changes_requested') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
-    else if (s === 'pending_review') { out.push(B('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
+    if (s === 'draft' || s === 'changes_requested') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
+    else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
   } else {
-    if (s === 'draft') { out.push(B('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'changes_requested') { out.push(B('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
+    if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
+    else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     // pending_review → awaiting the founder; no support actions (read-only)

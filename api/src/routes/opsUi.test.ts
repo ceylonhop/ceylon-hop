@@ -230,3 +230,17 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
     expect(body).toContain('ch-req-mismatch');
   });
 });
+
+// Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit/Approve are
+// disabled until the customer request is recorded, and a bypassed 400 gets friendly copy.
+describe('ops UI — submit gated on recorded request', () => {
+  it('disables submit/approve until the request is recorded, with a hint', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('!state.requestedService');
+    expect(body).toContain('Record what the customer asked for first');
+  });
+  it('maps the server 400 to the same friendly copy for a bypassed client', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('requested_service_required');
+  });
+});

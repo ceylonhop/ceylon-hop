@@ -28,6 +28,9 @@ function summary(over) {
     totalCents: over.totalCents || 12100,
     currency: 'USD',
     status: over.status,
+    // Carried so the GET /:id stub can reflect it into the reopened quote's request.tool
+    // (quote intent, spec 2026-07-17). Not part of the real summary shape — test plumbing only.
+    ...('requestedService' in over ? { requestedService: over.requestedService } : {}),
     ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
@@ -56,6 +59,10 @@ function fullQuote(over) {
         contact: over.customerContact || '+44 7700 900000',
         vehicle: over.vehicle || 'car',
         service: 'private',
+        // Quote intent (spec 2026-07-17): reopened quotes carry the recorded request. Default it
+        // so the submit/approve buttons aren't gated (the gate itself is covered by its own test);
+        // pass requestedService: null explicitly to exercise the un-recorded, disabled case.
+        requestedService: 'requestedService' in over ? over.requestedService : 'private',
         passengerCount: 2,
         luggageCount: 2,
         legs: [{ category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 }],
@@ -148,7 +155,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}) })));
     }
     return r.fulfill(json({}));
   });
@@ -287,6 +294,16 @@ test('clicking Submit for review PATCHes the quote to pending_review', async ({ 
   await actions(page).locator('[data-action="submitForReview"]').click();
   await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'pending_review')).toBe(true);
+});
+
+// Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit is unavailable
+// until the customer request is recorded, then enables once the chip is chosen.
+test('Submit for review is disabled until the customer request is recorded', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'draft', requestedService: null });
+  const submit = actions(page).locator('[data-action="submitForReview"]');
+  await expect(submit).toBeDisabled();
+  await page.locator('[data-action="setRequestedService"][data-req="private"]').click();
+  await expect(submit).toBeEnabled();
 });
 
 // Regression: transition() used to save-first unconditionally, but the /save maker-checker lock
