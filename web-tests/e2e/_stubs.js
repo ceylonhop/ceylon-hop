@@ -5,15 +5,37 @@
 function installStubs() {
   const latlng = (lat, lng) => ({ lat: () => lat, lng: () => lng });
 
-  function DirectionsService() {}
-  DirectionsService.prototype.route = function (req, cb) {
-    const km = (typeof window.__E2E_ROUTE_KM === 'number') ? window.__E2E_ROUTE_KM : 100;
-    cb({ routes: [{ legs: [{ distance: { value: km * 1000 }, duration: { value: Math.round((km / 0.7) * 60) } }] }] }, 'OK');
-  };
-  function DirectionsRenderer() {}
-  DirectionsRenderer.prototype.setMap = function () {};
-  DirectionsRenderer.prototype.setDirections = function () {};
+  // Mirrors the async-loaded Maps API (see ops-itin-map.spec.js): classes come ONLY from
+  // importLibrary, and routing is the routes library's Route.computeRoutes — the legacy
+  // DirectionsService/DirectionsRenderer are deliberately absent so any lingering use of
+  // them throws. Requests are recorded on window.__computeRoutesReqs for assertions.
   function MapCls() {}
+  MapCls.prototype.fitBounds = function () {};
+  function Marker() {}
+  Marker.prototype.setMap = function () {};
+  function Point() {}
+  function Polyline() {}
+  Polyline.prototype.setOptions = function () {};
+  Polyline.prototype.setMap = function () {};
+  const Route = {
+    computeRoutes: async (req) => {
+      (window.__computeRoutesReqs = window.__computeRoutesReqs || []).push(req);
+      const km = (typeof window.__E2E_ROUTE_KM === 'number') ? window.__E2E_ROUTE_KM : 100;
+      return {
+        routes: [{
+          path: [],
+          viewport: {},
+          legs: [{
+            distanceMeters: km * 1000,
+            durationMillis: Math.round((km / 0.7) * 60) * 1000,
+            startLocation: { lat: 6.93, lng: 79.85 },
+            endLocation: { lat: 7.29, lng: 80.63 },
+          }],
+          createPolylines: () => [new Polyline()],
+        }],
+      };
+    },
+  };
 
   const places = {
     AutocompleteSessionToken: function () {},
@@ -44,14 +66,11 @@ function installStubs() {
     },
   };
 
+  const libs = { maps: { Map: MapCls, Polyline }, routes: { Route }, marker: { Marker }, core: { Point }, places };
   window.google = {
     maps: {
-      Map: MapCls,
-      DirectionsService,
-      DirectionsRenderer,
-      TravelMode: { DRIVING: 'DRIVING' },
-      places,
-      importLibrary: async (name) => (name === 'places' ? places : {}),
+      importLibrary: async (name) => libs[name] || {},
+      event: { trigger() {} },
     },
   };
 
@@ -76,7 +95,7 @@ const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSO
  * opts:
  *   query        - querystring for booking.html (without leading ?)
  *   path         - page path (default '/booking.html')
- *   routeKm      - distance the stubbed DirectionsService reports (default 100)
+ *   routeKm      - distance the stubbed Route.computeRoutes reports (default 100)
  *   bookingStatus- HTTP status for POST /bookings/* (default 201)
  *   checkout     - 'fake' (default, simulate path) | 'payhere'
  *   payhere      - 'completed' (default) | 'dismissed' | 'error'
