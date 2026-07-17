@@ -45,6 +45,8 @@ export interface AppDeps {
   bookingBaseUrl?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
   mapsBrowserKey?: string; // browser Maps JS key templated into the /ops itinerary map
+  // Origin serving /ops, for deep links in internal emails (defaults to config.OPS_BASE_URL).
+  opsBaseUrl?: string;
   googleVerifier?: JwtVerifier; // test seam, threaded to opsRoutes only
   allowedOrigins?: string[];
   rateLimit?: { max: number; windowMs: number };
@@ -207,6 +209,8 @@ export function createApp(deps: AppDeps = {}) {
     maps, quotes,
     auth: opsAuthCfg,
     allowedOrigins,
+    email,
+    opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay

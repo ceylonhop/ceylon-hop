@@ -6,6 +6,7 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
+import { FakeEmailAdapter } from '../adapters/email';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -1112,5 +1113,88 @@ describe('quote assignment + audit trail', () => {
     const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
     expect(q.createdBy).toBe('op@x.com');
     expect(q.updatedBy).toBe('f@x.com');
+  });
+});
+
+// ── Assignment notification (spec 2026-07-16 §6) ─────────────────────────────
+// The point of the whole feature: assigning a quote is what tells someone it's theirs. Everything
+// here guards a way that can go wrong — silence, spam, or a failed send taking the assign with it.
+describe('quote assignment notification', () => {
+  const OPS_BASE = 'https://ops.example.com';
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { name: 'Ana Silva', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('emails the assignee a deep link to that quote, naming who assigned it', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id, reference } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1);
+    const msg = mail.sent[0];
+    expect(msg.to).toBe('f@x.com');
+    expect(msg.subject).toContain(reference);
+    // The deep link is the entire value of the email — it must land on THIS quote, not the queue.
+    expect(msg.html).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.text).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.html).toContain('op@x.com');
+    expect(msg.html).toContain('Ana Silva');
+  });
+
+  it('does not email when you assign a quote to yourself', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'op@x.com' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('does not email on unassign', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null });
+    expect(mail.sent).toHaveLength(1); // the assign only — nobody is told they've been un-told
+  });
+
+  it('does not re-email when re-assigning to the same person', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1); // an unchanged assignment is not news
+  });
+
+  it('does not email on a status transition — assignment is the only trigger', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('still assigns when the mail provider is down (best-effort)', async () => {
+    const app = createApp({
+      email: { send: async () => { throw new Error('resend is down'); } },
+      opsBaseUrl: OPS_BASE,
+    });
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).assignedTo).toBe('f@x.com'); // the assign is the durable bit
+  });
+
+  it('still assigns (and sends) when OPS_BASE_URL is unset — no link rather than no email', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: '' });
+    const { id } = await draftAs(app, 'op@x.com');
+    expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' })).status).toBe(200);
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0].html).not.toContain('href="/ops');
   });
 });
