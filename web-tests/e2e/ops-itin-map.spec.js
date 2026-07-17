@@ -35,6 +35,7 @@ async function stub(page, { key } = {}) {
     const Route = {
       computeRoutes: async (req) => {
         (window.__computeRoutesReqs = window.__computeRoutesReqs || []).push(req);
+        if (window.__failRoutes) return { routes: [] }; // test knob: unroutable itinerary
         return {
           routes: [{
             path: [],
@@ -102,6 +103,40 @@ test('the route map is open by default and folds behind the toggle', async ({ pa
   expect(reqs[reqs.length - 1].origin).toBe('Colombo, Sri Lanka');
   expect(reqs[reqs.length - 1].destination).toEqual({ lat: 7.29, lng: 80.63 });
   expect(errors).toEqual([]);
+});
+
+test('a failed route does not re-query on unrelated edits — only a stop change retries', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  await stub(page, { key: 'test-browser-key' });
+  // Every computeRoutes returns no routes → the map lands in its failed state
+  // ("Couldn't map this route"). In that state _mapMap stays null, and syncItinMap
+  // used to re-fire a full billable route query on EVERY render — every date change,
+  // price keystroke, or checkbox — retrying an itinerary that can't succeed until a
+  // stop actually changes.
+  await page.addInitScript(() => { window.__failRoutes = true; });
+  await buildRoute(page);
+  await expect(page.locator('.ch-itin-map-note')).toContainText(/map this route/, { timeout: 10000 });
+  await page.waitForTimeout(1000); // let boot-time renders + the estimate debounce settle
+  const before = await page.evaluate(() => (window.__computeRoutesReqs || []).length);
+
+  // A date-only change re-renders (twice: immediately + after the estimate) but must
+  // NOT re-query — the stops didn't change, so the route would just fail again.
+  await page.$eval('input[type="date"][data-field="date"]', (el) => {
+    el.value = '2026-08-10';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(1000);
+  const afterDate = await page.evaluate(() => (window.__computeRoutesReqs || []).length);
+  expect(afterDate).toBe(before);
+
+  // Changing an actual stop is the only thing that can fix a failed route → exactly
+  // that triggers a retry.
+  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await to.fill('Ella');
+  await to.dispatchEvent('change');
+  await expect
+    .poll(() => page.evaluate(() => (window.__computeRoutesReqs || []).length), { timeout: 5000 })
+    .toBeGreaterThan(afterDate);
 });
 
 test('without a maps key the itinerary shows no route map toggle', async ({ page }) => {

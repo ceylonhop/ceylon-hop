@@ -4472,7 +4472,12 @@ function syncItinMap() {
   }
   var stops = itinStops();
   var sig = stops.join(' | ');
-  if (sig === _mapSig && _mapMap) return; // route unchanged — keep the live map
+  // Route unchanged → nothing to do, whatever state the map is in: keep a live map,
+  // keep a failure note (retrying identical stops can't succeed and re-billed a route
+  // query on EVERY render — each date/price/checkbox edit), and let an in-flight draw
+  // finish (renders during the async draw used to launch duplicate queries). A failed
+  // or in-flight route re-draws only when a stop actually changes.
+  if (sig === _mapSig) return;
   _mapSig = sig;
   drawItinRoute(_mapEl, stops);
 }
