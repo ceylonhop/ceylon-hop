@@ -554,6 +554,16 @@ export function internalQuoteRoutes(deps: {
     if (body.status && current) {
       const to = body.status as QuoteStatus;
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
+      // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
+      // straight to ready — until the submitter has recorded what the customer asked for.
+      // Checked against the STORED row, never the body: only POST /save writes this field, so
+      // trusting a body value here would be a hole, not a shortcut. Deliberately NOT applied to
+      // /save (work-in-progress must stay savable) nor to any other transition. No exemption for
+      // rows predating the field (I7) — there are few in flight, and an exemption would leave a
+      // permanent hole in the rule.
+      if ((to === 'pending_review' || to === 'ready') && !current.requestedService) {
+        return c.json({ error: 'requested_service_required' }, 400);
+      }
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
       // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
       // customer for changes, so it needs the same approval authority as sending it did.

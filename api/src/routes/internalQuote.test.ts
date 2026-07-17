@@ -155,7 +155,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save with an existing id updates that quote in place, keeping its id/reference/status', async () => {
     const app = createApp();
-    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     // Move it into review, then re-save with edited content carrying the same id.
     await patch(app, `/admin/quote/${saved.id}`, { status: 'pending_review' });
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
@@ -174,7 +174,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save on a READY (approved) quote is rejected (409) — maker-checker lock', async () => {
     const app = createApp();
-    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' }); // founder-approved, content now locked
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Cheaper', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 5 })] });
     expect(res.status).toBe(409);
@@ -213,9 +213,9 @@ describe('internal quoting tool route', () => {
 
   it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
     const app = createApp();
-    const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     await new Promise((r) => setTimeout(r, 5)); // distinct createdAt — same-ms ties order by reference, not insertion
-    const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await authedGet(app, '/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
     // reach 'won' the legal way: draft → ready (founder self-approve) → won
@@ -227,7 +227,7 @@ describe('internal quoting tool route', () => {
 
   it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
     const app = createApp();
-    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     await patch(app, `/admin/quote/${q.id}`, { status: 'ready' }); // draft → ready (self-approve)
     const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
     expect(sent.status).toBe('sent');
@@ -241,7 +241,7 @@ describe('internal quoting tool route', () => {
 
   it('PATCH /:id rejects a non-string lostReason/notes with 400 (validated, not cast to the DB)', async () => {
     const app = createApp();
-    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     expect((await patch(app, `/admin/quote/${q.id}`, { lostReason: { evil: true } })).status).toBe(400);
     expect((await patch(app, `/admin/quote/${q.id}`, { notes: 123 })).status).toBe(400);
   });
@@ -252,7 +252,7 @@ describe('internal quoting tool route', () => {
   const postAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
   const draft = async (app: App, email = 'f@x.com') => {
-    const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] });
     return r.json();
   };
 
@@ -320,7 +320,7 @@ describe('internal quoting tool route', () => {
     const app = createApp();
     // multi-leg on two distinct dates → chauffeur is offered alongside point-to-point
     const saved = await (await post(app, '/admin/quote/save', {
-      name: 'Brett', vehicle: 'van_9', passengerCount: 4, luggageCount: 4,
+      name: 'Brett', vehicle: 'van_9', passengerCount: 4, luggageCount: 4, requestedService: 'private',
       legs: [leg({ distanceKm: 130, date: '2026-08-27' }), leg({ distanceKm: 290, date: '2026-08-31' })],
     })).json();
     await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' });
@@ -644,7 +644,10 @@ describe('quote tool authorization (D-A: all 3 roles get quote:manage)', () => {
 });
 
 describe('quote tool — margin stripped for non-margin:view roles (server-side, per response)', () => {
-  const estimateBody = { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [leg({ distanceKm: 100 })] };
+  // requestedService is set because quotes built from this body get submitted/approved below:
+  // since spec 2026-07-17 a quote can't reach pending_review/ready without it. Harmless to
+  // /estimate, which ignores it.
+  const estimateBody = { vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private', legs: [leg({ distanceKm: 100 })] };
 
   it('omits margin from /estimate for finance and ops sessions, includes it for founder', async () => {
     const app = createApp({ auth: AUTH, adminApiKey: 'k' });
@@ -925,8 +928,10 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
   const getAs = (email: string, app: App, path: string) =>
     app.request(path, { headers: { cookie: cookie(email) } });
+  // requestedService is set because these drafts get submitted/approved: since spec 2026-07-17
+  // a quote can't reach pending_review/ready without it recorded.
   const saveDraft = async (app: App) =>
-    (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
 
   it('a fresh draft carries no rate lock', async () => {
     const app = createApp();
@@ -1047,7 +1052,7 @@ describe('quote assignment + audit trail', () => {
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
   const getAs = (email: string, app: App, path: string) => app.request(path, { headers: { cookie: cookie(email) } });
   const draftAs = async (app: App, email: string) =>
-    (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
 
   it('stamps createdBy/updatedBy on save and leaves the quote unassigned', async () => {
     const app = createApp();
@@ -1241,5 +1246,58 @@ describe('quote intent — requestedService persistence', () => {
     await post(app, '/admin/quote/save', { ...TRIP, id: first.id, requestedService: 'chauffeur' });
     const got = await (await authedGet(app, `/admin/quote/${first.id}`)).json();
     expect(got.requestedService).toBe('chauffeur');
+  });
+});
+
+// Quote intent (spec 2026-07-17, I3/I7): a quote may not reach review until the submitter has
+// recorded what the customer asked for. No exemption for pre-existing quotes.
+describe('quote intent — submit gate', () => {
+  const TRIP = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] };
+  // The file's `patch` helper is scoped inside another describe, so it isn't visible here.
+  // FOUNDER_COOKIE and App are module-scope, so this stays self-contained.
+  const patchReq = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE }, body: JSON.stringify(body) });
+  const draft = async (app: App, extra: Record<string, unknown> = {}) =>
+    (await (await post(app, '/admin/quote/save', { ...TRIP, ...extra })).json()) as { id: string };
+
+  it('400s draft → pending_review when nothing is recorded', async () => {
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('requested_service_required');
+  });
+
+  it('allows draft → pending_review once it is recorded', async () => {
+    const app = createApp();
+    const q = await draft(app, { requestedService: 'private' });
+    expect((await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review' })).status).toBe(200);
+  });
+
+  it("gates the founder's draft → ready self-approve identically", async () => {
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'ready' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('requested_service_required');
+  });
+
+  it('gates ONLY pending_review/ready — other legal moves pass with nothing recorded', async () => {
+    // Seed the state through the repo, not the route: reaching pending_review via the route
+    // would require passing the very gate under test. (draft → lost is no use here — it's an
+    // illegal transition, so it 409s before the gate is ever consulted.)
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+    const q = await draft(app); // requestedService is null
+    await quotes.patch(q.id, { status: 'pending_review' });
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'draft' }); // reopen-to-edit
+    expect(res.status).toBe(200);
+  });
+
+  it('reads the STORED row, not the body — a client cannot smuggle the value past the gate', async () => {
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review', requestedService: 'both' });
+    expect(res.status).toBe(400);
   });
 });
