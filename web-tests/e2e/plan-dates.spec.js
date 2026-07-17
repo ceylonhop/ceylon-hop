@@ -28,14 +28,9 @@ async function pickPlannerPlace(page, field, query, label) {
 async function installGooglePlacesStub(page) {
   await page.addInitScript(() => {
     const latlng = (lat, lng) => ({ lat: () => lat, lng: () => lng });
-    function DirectionsService() {}
-    DirectionsService.prototype.route = function (req, cb) {
-      cb({ routes: [{ legs: [{ distance: { value: 100000 }, duration: { value: 7200 } }] }] }, 'OK');
+    const Route = {
+      computeRoutes: async () => ({ routes: [{ legs: [{ distanceMeters: 100000, durationMillis: 7200000 }] }] }),
     };
-    function DirectionsRenderer() {}
-    DirectionsRenderer.prototype.setMap = function () {};
-    DirectionsRenderer.prototype.setDirections = function () {};
-    function MapCls() {}
     const places = {
       AutocompleteSessionToken: function () {},
       AutocompleteSuggestion: {
@@ -59,15 +54,9 @@ async function installGooglePlacesStub(page) {
         }),
       },
     };
+    const libs = { routes: { Route }, places };
     window.google = {
-      maps: {
-        Map: MapCls,
-        DirectionsService,
-        DirectionsRenderer,
-        TravelMode: { DRIVING: 'DRIVING' },
-        places,
-        importLibrary: async (name) => (name === 'places' ? places : {}),
-      },
+      maps: { importLibrary: async (name) => libs[name] || {} },
     };
   });
 }
