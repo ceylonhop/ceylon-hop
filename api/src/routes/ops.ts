@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
-import { can, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
+import { assignableOpsUsers, can, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
@@ -106,6 +106,12 @@ export function opsRoutes(deps: OpsDeps) {
     const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
     return c.json({ email: identity.email, role: identity.role, caps });
   });
+
+  // The assign picker's roster (spec 2026-07-16 §7). Staff emails, so it needs a session — but
+  // no special capability: anyone who can work a quote can hand it to a colleague. The list is
+  // filtered to users who can actually OPEN a quote, so we never offer an assignee whose
+  // notification link would dead-end (see assignableOpsUsers).
+  r.get('/users', requireCap('bookings:read'), (c) => c.json({ users: assignableOpsUsers(auth.opsUsers) }));
 
   r.get('/finance/summary', requireCap('margin:view'), (c) => c.json({ ok: true }));
 

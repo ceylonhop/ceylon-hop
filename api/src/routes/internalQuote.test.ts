@@ -1035,3 +1035,82 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     expect((await res.json()).estimate).toBeNull();
   });
 });
+
+// ── Assignment + audit trail (spec 2026-07-16) ───────────────────────────────
+// Notifications follow an explicit assignment, not a state transition, so `assignedTo` is the
+// notification target and must never be inferable from who happened to move the quote last.
+describe('quote assignment + audit trail', () => {
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const getAs = (email: string, app: App, path: string) => app.request(path, { headers: { cookie: cookie(email) } });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('stamps createdBy/updatedBy on save and leaves the quote unassigned', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('op@x.com');
+    expect(q.assignedTo).toBeNull();
+    expect(q.assignedAt).toBeNull();
+  });
+
+  it('assigns to an OPS_USERS member, stamping assignedAt + updatedBy but never createdBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    const q = await res.json();
+    expect(q.assignedTo).toBe('f@x.com');
+    expect(q.assignedAt).not.toBeNull();
+    expect(q.updatedBy).toBe('op@x.com');
+    expect(q.createdBy).toBe('op@x.com');
+  });
+
+  // The hard requirement from the spec (§5): assignment drives an email, so an unvalidated
+  // assignee would mail a stranger a link to a customer's quote.
+  it('rejects an assignee outside OPS_USERS', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'stranger@evil.com' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('unknown_assignee');
+  });
+
+  it('accepts an assignee in any case (OPS_USERS lookup is lowercased) and stores it normalised', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'F@X.CoM' })).json();
+    expect(q.assignedTo).toBe('f@x.com');
+  });
+
+  it('unassigns with null, clearing assignedAt', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null })).json();
+    expect(q.assignedTo).toBeNull();
+    expect(q.assignedAt).toBeNull();
+  });
+
+  it('leaves assignment untouched by a status-only patch', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).json();
+    expect(q.assignedTo).toBe('f@x.com'); // manual-only: transitions never re-assign
+    expect(q.updatedBy).toBe('op@x.com');
+  });
+
+  it('keeps createdBy immutable across a content re-save by someone else, moving updatedBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await postAs('f@x.com', app, '/admin/quote/save', { id, vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 90 })] });
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('f@x.com');
+  });
+});

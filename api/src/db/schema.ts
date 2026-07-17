@@ -209,6 +209,14 @@ export const quotes = pgTable('quotes', {
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
+  // Assignment + audit (spec 2026-07-16). assignedTo is the notification target: who HOLDS the
+  // quote, set only by an explicit assign — never inferred from who last moved it. All nullable:
+  // rows predating this can't be backfilled (we don't know who made them). Emails, not FKs —
+  // staff live in OPS_USERS (env), not a table, and the route validates against it.
+  assignedTo: text('assigned_to'),
+  assignedAt: timestamp('assigned_at', { withTimezone: true }),
+  createdBy: text('created_by'),
+  updatedBy: text('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),

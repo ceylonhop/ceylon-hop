@@ -49,3 +49,34 @@ describe('ops capability gates', () => {
     expect(body.caps).toContain('margin:view');
   });
 });
+
+// The assign picker (spec 2026-07-16 §7) needs the assignable staff list. Staff emails, so it is
+// session-gated — and it must only offer people who can actually open the quote the email links to.
+describe('GET /admin/ops/users — assignable staff for the assign picker', () => {
+  it('returns the OPS_USERS roster to any signed-in staff member', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    const res = await app.request('/admin/ops/users', { headers: { cookie: await cookie('op@x.com') } });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.users).toEqual([
+      { email: 'f@x.com', role: 'founder' },
+      { email: 'fin@x.com', role: 'finance' },
+      { email: 'op@x.com', role: 'ops' },
+    ]);
+  });
+
+  it('rejects an anonymous caller', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    expect((await app.request('/admin/ops/users')).status).toBe(401);
+  });
+
+  // Every listed user must hold quote:manage, or the deep link in their assignment email
+  // (/ops?quote=<id>) silently falls back to the tickets queue — see ops-ui.html:1089.
+  it('only lists users who can open a quote', async () => {
+    const app = createApp({ auth: { ...auth, opsUsers: 'f@x.com:founder,fin@x.com:finance,op@x.com:ops' }, adminApiKey: 'adminkey' });
+    const res = await app.request('/admin/ops/users', { headers: { cookie: await cookie('f@x.com') } });
+    const body = await res.json();
+    expect(body.users.length).toBeGreaterThan(0);
+    for (const u of body.users) expect(['founder', 'finance', 'ops']).toContain(u.role);
+  });
+});
