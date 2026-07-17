@@ -418,12 +418,14 @@ export function internalQuoteRoutes(deps: {
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
-    // Maker-checker: a content re-save is only allowed while the quote is still editable. A
-    // ready/sent/decided quote must be reopened first (PATCH → draft, founder-gated) — otherwise
-    // any quote:manage role could rewrite an already-approved quote's price and send it unreviewed.
+    // Maker-checker: a content re-save is only allowed while the quote is still editable.
+    // Review lock (owner, 2026-07-17): SUBMISSION freezes content — pending_review is no longer
+    // editable, so the founder approves exactly what they reviewed; the one door back in is the
+    // explicit reopen-to-draft. ready/sent stay locked as before. changes_requested stays
+    // editable — that state exists to be edited.
     if (existingId) {
       const current = await deps.quotes.get(existingId);
-      if (current && !(['draft', 'pending_review', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
+      if (current && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
         return c.json({ error: 'not_editable', status: current.status }, 409);
       }
     }

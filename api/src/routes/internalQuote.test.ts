@@ -156,15 +156,16 @@ describe('internal quoting tool route', () => {
   it('POST /save with an existing id updates that quote in place, keeping its id/reference/status', async () => {
     const app = createApp();
     const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
-    // Move it into review, then re-save with edited content carrying the same id.
-    await patch(app, `/admin/quote/${saved.id}`, { status: 'pending_review' });
+    // Re-save with edited content carrying the same id. (Stays in draft: since the review lock
+    // — owner, 2026-07-17 — a pending_review quote refuses content saves; see the review-lock
+    // describe block for that behaviour.)
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
     expect(res.status).toBe(200); // updated, not created
     const back = await res.json();
     expect(back.id).toBe(saved.id);              // same row
     expect(back.reference).toBe(saved.reference); // stable reference
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
-    expect(got.status).toBe('pending_review');   // a content edit doesn't reset the lifecycle
+    expect(got.status).toBe('draft');            // a content edit doesn't move the lifecycle
     expect(got.customerName).toBe('Maya R.');
     expect(got.vehicle).toBe('van'); // engine stores the tier as 'van' (van_6 → van)
     // Exactly one quote exists — the edit did not orphan a duplicate.
@@ -1299,5 +1300,45 @@ describe('quote intent — submit gate', () => {
     const q = await draft(app);
     const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review', requestedService: 'both' });
     expect(res.status).toBe(400);
+  });
+});
+
+// Review lock (owner decision 2026-07-17): SUBMISSION freezes content. The founder reviews an
+// immutable quote and approves exactly what they saw; the one door back in is reopen-to-draft.
+// EDITABLE for /save therefore shrinks to draft + changes_requested — pending_review joins
+// ready/sent behind the 409.
+describe('review lock — /save refuses content edits while in review', () => {
+  const TRIP2 = { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] };
+  const patchReq2 = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE }, body: JSON.stringify(body) });
+
+  it('409s a re-save on a pending_review quote (submission is the lock)', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_editable');
+    // and the content did not move
+    const got = await (await authedGet(app, `/admin/quote/${q.id}`)).json();
+    expect(got.request.tool.legs[0].distanceKm).toBe(80);
+  });
+
+  it('still allows re-save after reopening to draft (the explicit door)', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'draft' }); // reopen
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(200);
+  });
+
+  it('changes_requested stays editable — that state exists to be edited', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'changes_requested' });
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(200);
   });
 });
