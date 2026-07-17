@@ -66,8 +66,13 @@ Fires when `assigned_to` changes to a non-null value **and** the assignee ≠ th
 
 - **To:** the assignee. **Subject:** `Quote Q-XXXX assigned to you — Ceylon Hop ops`
 - **Body:** who assigned it, customer, total, current status, and a deep link to the quote.
-- **Deep link:** `/ops?quote=<id>` — the ops router already reads the `quote` search param, so
-  this lands the person on the exact quote in one click. (Base URL — see §9.)
+- **Deep link:** `/ops?quote=<id>` — lands the recipient on the **exact quote**, not the quotes
+  list (owner decision 2026-07-16). *Verified:* `routeStateFromUrl` (`ops-ui.html:1089`) reads the
+  `quote` param **before** the hash, so no `#quote` fragment is needed. (Base URL — see §9.)
+  **Caveat:** the param only resolves for a viewer holding `quote:manage`; without it the link
+  silently falls back to the tickets queue. Safe today — founder/finance/ops **all** hold
+  `quote:manage` (`opsAuth.ts:11-13`) — but the §7 picker must list only users who do, or a future
+  role gets a link that goes nowhere useful.
 - **Best-effort:** a mail failure must never fail the assign (same discipline as the booking
   emails — log + carry on).
 - **No email** on self-assign or on unassign.
