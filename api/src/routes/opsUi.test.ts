@@ -158,3 +158,24 @@ describe('ops UI shell', () => {
     expect(body).toContain('[ops-ui]');                             // tagged distinctly from customer errors
   });
 });
+
+// Quote intent (spec 2026-07-17): the submitter records what the CUSTOMER asked for, which the
+// reviewer reads to know which options to focus on.
+describe('ops UI — quote intent', () => {
+  // These assert the SHELL SOURCE (the JS that builds the DOM), not the rendered DOM — the
+  // data-req attribute values are concatenated at runtime, so only the option list is a literal
+  // here. The rendered control is covered in the browser by web-tests/e2e.
+  it('renders the "Customer asked for" control, unselected by default', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('Customer asked for');
+    expect(body).toContain('data-action="setRequestedService"');
+    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']]");
+    expect(body).toContain('requestedService: null'); // I4: never derived from the priced service
+  });
+
+  it('sends it on save and restores it on reopen', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('requestedService: state.requestedService');
+    expect(body).toContain('tool.requestedService');
+  });
+});

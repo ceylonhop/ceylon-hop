@@ -870,6 +870,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
 .qv .ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
 .qv .ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
+.qv .ch-req-choose { display: flex; align-items: center; gap: 8px; padding: 0 16px 12px; flex-wrap: wrap; }
+.qv .ch-req-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.qv .ch-req-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-family: var(--sans); color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+.qv .ch-req-chip:hover:not(.active) { border-color: var(--muted-2); }
+.qv .ch-req-chip.active { border-color: var(--teal); background: rgba(10,185,182,.06); color: var(--teal-d); font-weight: 600; }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -2037,6 +2042,10 @@ let state = {
   luggageCount: 2,
   vehicleType: null,
   service: 'private',
+  /* Quote intent (spec 2026-07-17): what the CUSTOMER asked for. Starts unselected and is
+     NEVER derived from `service` above (I4) — a pre-filled value gets accepted unread, which
+     is the failure this field exists to prevent. */
+  requestedService: null,
   outputCurrency: 'USD',
   status: 'draft',
   notes: '',
@@ -2062,6 +2071,18 @@ function mutate(patch) {
   if ('vehicleType' in patch || 'passengerCount' in patch || 'luggageCount' in patch) {
     refreshEstimate();
   }
+  render();
+}
+
+/* Quote intent (spec 2026-07-17): record what the CUSTOMER asked for. Deliberately independent
+   of setService() below — that picks what we PRICE, this records what was REQUESTED, and the
+   whole point is that the two can disagree (see requestMismatch). Never derived from
+   state.service (I4). */
+function setRequestedService(v) {
+  if (v !== 'private' && v !== 'chauffeur' && v !== 'both') return;
+  if (state.requestedService === v) return;
+  state.requestedService = v;
+  _dirty = true;
   render();
 }
 
@@ -2298,6 +2319,7 @@ function resetToNew() {
     luggageCount: 2,
     vehicleType: null,
     service: 'private',
+    requestedService: null,
     outputCurrency: 'USD',
     status: 'draft',
     notes: '',
@@ -2338,6 +2360,7 @@ function savePayload() {
     contact: state.contact,
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
     service: state.service || 'private',
+    requestedService: state.requestedService,
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
     luggageCount: state.luggageCount,
@@ -2470,6 +2493,8 @@ async function reopenQuote(id) {
   state.contact = q.customerContact || tool.contact || '';
   state.vehicleType = tool.vehicle || state.vehicleType;
   state.service = (tool.service === 'chauffeur') ? 'chauffeur' : 'private';
+  state.requestedService = (tool.requestedService === 'private' || tool.requestedService === 'chauffeur' || tool.requestedService === 'both')
+    ? tool.requestedService : null;
   state.passengerCount = Math.max(1, parseInt(tool.passengerCount, 10) || 1);
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
   state.legs = legs;
@@ -2890,6 +2915,18 @@ function renderServiceChooser() {
     parts.push('    <span class="ch-svc-hint">' + esc(chaufErr) + '</span>');
   }
   parts.push('  </button>');
+  parts.push('</div>');
+
+  // Quote intent (spec 2026-07-17). Separate from the chooser above: that picks what we PRICE,
+  // this records what the customer ASKED FOR. Starts unselected — no pre-fill (I4).
+  var reqOpts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']];
+  parts.push('<div class="ch-req-choose">');
+  parts.push('  <span class="ch-req-lbl">Customer asked for</span>');
+  for (var ri = 0; ri < reqOpts.length; ri++) {
+    var rv = reqOpts[ri][0];
+    parts.push('  <button class="ch-req-chip' + (state.requestedService === rv ? ' active' : '') + '"'
+      + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(reqOpts[ri][1]) + '</button>');
+  }
   parts.push('</div>');
 
   if (chaufActive && !chaufDisabled) {
@@ -4103,6 +4140,8 @@ function attachEventListeners() {
     } else if (action === 'setService') {
       if (el.disabled) return;
       setService(el.getAttribute('data-service'));
+    } else if (action === 'setRequestedService') {
+      setRequestedService(el.getAttribute('data-req'));
     } else if (action === 'setVehicle') {
       mutate({ vehicleType: el.getAttribute('data-veh') });
     } else if (action === 'toggleAddons') {
