@@ -184,6 +184,21 @@ describe('ops UI — quote intent', () => {
     expect(body).toContain('requestedService: state.requestedService');
     expect(body).toContain('tool.requestedService');
   });
+
+  // The control was moved out of the right-hand price panel into the trip basics (an intake fact,
+  // beside the vehicle chips). The MISMATCH warning stays with the prices. Guard both, so the
+  // relocation can't silently regress.
+  it('places the control in the trip basics (beside the vehicle chips), not the price panel', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // Its own render fn, called right after renderVehicleChips() in the basics card.
+    expect(body).toContain('function renderRequestedService(');
+    expect(body).toMatch(/renderVehicleChips\(\),[\s\S]{0,400}renderRequestedService\(\)/);
+    // The chips no longer build inside the service chooser — only the mismatch warning does.
+    const svc = body.slice(body.indexOf('function renderServiceChooser('));
+    const svcBody = svc.slice(0, svc.indexOf('\nfunction '));
+    expect(svcBody).not.toContain('data-action="setRequestedService"');
+    expect(svcBody).toContain('requestMismatch(state.requestedService, state.service)');
+  });
 });
 
 // requestMismatch is pure and DOM-free, so we lift it out of the inlined shell script and

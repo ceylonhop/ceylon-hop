@@ -870,12 +870,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-svc-sub { display: block; margin-top: 2px; font-size: 10px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.2; }
 .qv .ch-svc-hint { font-size: 10.5px; color: var(--muted); line-height: 1.3; font-weight: 500; }
 .qv .ch-svc-box:disabled .ch-svc-hint { color: var(--muted-2); }
-.qv .ch-req-choose { display: flex; align-items: center; gap: 8px; padding: 0 16px 12px; flex-wrap: wrap; }
-.qv .ch-req-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
-.qv .ch-req-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 12px; font-size: 12px; font-family: var(--sans); color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+/* "Customer asked for" now lives in the trip basics next to the vehicle chips, so it mirrors
+   their head+row layout (ch-veh-head/ch-veh-row) — the two intake questions read as a pair. */
+.qv .ch-req-choose { padding: 0; }
+.qv .ch-req-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.qv .ch-req-lbl { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.qv .ch-req-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.qv .ch-req-chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 11px; font-size: 12px; font-family: var(--sans); color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
 .qv .ch-req-chip:hover:not(.active) { border-color: var(--muted-2); }
 .qv .ch-req-chip.active { border-color: var(--teal); background: rgba(10,185,182,.06); color: var(--teal-d); font-weight: 600; }
-.qv .ch-req-mismatch { margin: -4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
+/* Mismatch stays in the price panel under the service chooser (no longer under the chips), so a
+   small positive top margin sits it cleanly below the price boxes. */
+.qv .ch-req-mismatch { margin: 4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -2901,6 +2907,26 @@ function renderVehicleChips() {
   return parts.join('\n');
 }
 
+// Quote intent (spec 2026-07-17): what the CUSTOMER asked for. Lives in the trip basics, beside
+// the vehicle chips — it's an intake fact recorded with the enquiry, not a pricing-panel choice.
+// Distinct from state.service (what we PRICE); never derived from it (I4). Mirrors the vehicle
+// chips' head+row layout so the two intake questions read as a pair. The mismatch WARNING lives
+// separately, in renderServiceChooser next to the prices.
+function renderRequestedService() {
+  var opts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']];
+  var parts = ['<div class="ch-req-choose">'];
+  parts.push('  <div class="ch-req-head"><span class="ch-req-lbl">Customer asked for</span></div>');
+  parts.push('  <div class="ch-req-row">');
+  for (var i = 0; i < opts.length; i++) {
+    var rv = opts[i][0];
+    parts.push('    <button type="button" class="ch-req-chip' + (state.requestedService === rv ? ' active' : '') + '"'
+      + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(opts[i][1]) + '</button>');
+  }
+  parts.push('  </div>');
+  parts.push('</div>');
+  return parts.join('\n');
+}
+
 function renderServiceChooser() {
   var svc = (lastEstimate && lastEstimate.services) ? lastEstimate.services : null;
   var p2p = svc ? svc.pointToPoint : null;
@@ -2944,19 +2970,11 @@ function renderServiceChooser() {
   parts.push('  </button>');
   parts.push('</div>');
 
-  // Quote intent (spec 2026-07-17). Separate from the chooser above: that picks what we PRICE,
-  // this records what the customer ASKED FOR. Starts unselected — no pre-fill (I4).
-  var reqOpts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']];
-  parts.push('<div class="ch-req-choose">');
-  parts.push('  <span class="ch-req-lbl">Customer asked for</span>');
-  for (var ri = 0; ri < reqOpts.length; ri++) {
-    var rv = reqOpts[ri][0];
-    parts.push('  <button class="ch-req-chip' + (state.requestedService === rv ? ' active' : '') + '"'
-      + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(reqOpts[ri][1]) + '</button>');
-  }
-  parts.push('</div>');
-
-  // I8: flag when the quote doesn't express what the customer asked for. Signal, not a gate.
+  // Quote intent (spec 2026-07-17). The "Customer asked for" control itself lives up in the trip
+  // basics (renderRequestedService) — it's an intake fact, recorded with the customer's name/contact.
+  // The MISMATCH stays here, next to the prices: "recorded X but priced Y" only means something once
+  // the trip is priced, and this is where the priced service (state.service) is chosen and shown.
+  // I8: signal, not a gate.
   var _mm = requestMismatch(state.requestedService, state.service);
   if (_mm) parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
 
@@ -3905,6 +3923,11 @@ function render() {
     // you can't build the trip until customer name, a valid contact, and a vehicle are set.
     '        <div class="ch-basics-rule"></div>',
     renderVehicleChips(),
+    // Quote intent (spec 2026-07-17): "Customer asked for" sits with the trip basics — an intake
+    // fact, like the name/contact/vehicle above it. Required at submit, but (unlike name/vehicle)
+    // it does NOT gate the itinerary.
+    '        <div class="ch-basics-rule"></div>',
+    renderRequestedService(),
     '      </div>',
 
     // Itinerary (dense rows) — locked until every trip basic is filled in.
