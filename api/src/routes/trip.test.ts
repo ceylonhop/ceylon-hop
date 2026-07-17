@@ -56,9 +56,9 @@ describe('POST /bookings/trip', () => {
     });
     expect(res.status).toBe(201);
     const b = await res.json();
-    // 3 days × 3105 + round((222 buffered + 100 idle-min) × 40.25) = 9315 + 12961
-    expect(b.total).toBe(21900);
-    expect(b.amountDueNow).toBe(21900);
+    // 3 days × 3105 + round((222 buffered + 50 idle-min) × 40.25) = 9315 + 10948
+    expect(b.total).toBe(19900);
+    expect(b.amountDueNow).toBe(19900);
   });
 
   it('rejects an invalid trip (400)', async () => {

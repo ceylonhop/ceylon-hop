@@ -10,6 +10,7 @@
   const BUFFER_PCT = 10;
   const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};
   const CHAUFFEUR_DAY_FEE = 31.05;
+  const CHAUFFEUR_IDLE_MIN_KM = {"car":50,"van":100};
   const DEPOSIT_PCT = 0.1;
   const DEPOSIT_CAP = 50;
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10};
@@ -351,7 +352,7 @@
     roadKm, durationText, privateQuote, sharedOption,
     resolvePlace, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
-    PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, DEPOSIT_PCT, DEPOSIT_CAP,
+    PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_CAP,
     place: id => byId[id] || null
   };
 })();

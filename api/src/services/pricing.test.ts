@@ -134,22 +134,22 @@ describe('priceTrip (engine-backed) — private', () => {
 });
 
 describe('priceTrip (engine-backed) — chauffeur', () => {
-  // travelKm 113 + 89 = 202 → buffered 222; day rate 3105/day (sell); car idle-min 100 km/day.
+  // travelKm 113 + 89 = 202 → buffered 222; day rate 3105/day (sell); car idle-min 50 km/day.
   it('uses real leg dates for the day span (idle days between dated legs are billed)', async () => {
     const p = await priceTrip(
       { ...knownTrip, serviceType: 'chauffeur', dates: ['2026-07-20', '2026-07-22'] },
       maps,
     );
-    // days 3 (20th→22nd), idle 1 → billable 222 + 100 = 322 km
-    // 3×3105 + round(322×40.25) = 9315 + 12961 = 22276
-    expect(p).toEqual({ currency: 'USD', totalCents: 21900, amountDueNowCents: 21900, priced: true });
+    // days 3 (20th→22nd), idle 1 → billable 222 + 50 = 272 km
+    // 3×3105 + round(272×40.25) = 9315 + 10948 = 20263
+    expect(p).toEqual({ currency: 'USD', totalCents: 19900, amountDueNowCents: 19900, priced: true });
   });
 
   it('synthesizes dates from `days` when the trip is flexible (engine only counts the span)', async () => {
     const p = await priceTrip({ ...knownTrip, serviceType: 'chauffeur', days: 4 }, maps);
-    // days 4, 2 travel legs → idle 2 → billable 222 + 200 = 422 km
-    // 4×3105 + round(422×40.25) = 12420 + 16986 = 29406
-    expect(p).toEqual({ currency: 'USD', totalCents: 28900, amountDueNowCents: 28900, priced: true });
+    // days 4, 2 travel legs → idle 2 → billable 222 + 100 = 322 km
+    // 4×3105 + round(322×40.25) = 12420 + 12961 = 25381
+    expect(p).toEqual({ currency: 'USD', totalCents: 24900, amountDueNowCents: 24900, priced: true });
   });
 
   it('defaults the span to one day per leg when `days` is absent', async () => {
@@ -169,7 +169,7 @@ describe('priceTrip (engine-backed) — chauffeur', () => {
       { ...knownTrip, serviceType: 'chauffeur', dates: ['2026-07-20', ''], days: 4 },
       maps,
     );
-    expect(p).toEqual({ currency: 'USD', totalCents: 28900, amountDueNowCents: 28900, priced: true });
+    expect(p).toEqual({ currency: 'USD', totalCents: 24900, amountDueNowCents: 24900, priced: true });
   });
 });
 
