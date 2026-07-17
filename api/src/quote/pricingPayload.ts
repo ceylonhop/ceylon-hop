@@ -11,6 +11,7 @@ export type PricingPayload = {
   bufferPct: number;
   priceFinishing: { maxReductionBps: number; roundToCents: number };
   chauffeurDayFee: number;
+  chauffeurIdleMinKm: { car: number; van: number }; // idle-day min km/day (km, not USD)
   depositPct: number; // fraction, e.g. 0.10
   depositCap: number; // whole USD
   extras: Record<string, number>; // USD per extra code
@@ -32,6 +33,7 @@ export function buildPricingPayload(): PricingPayload {
     bufferPct: RATE_CARD.bufferPct,
     priceFinishing: RATE_CARD.priceFinishing,
     chauffeurDayFee: usd(RATE_CARD.chauffeur.dayRateCents),
+    chauffeurIdleMinKm: { car: RATE_CARD.chauffeur.idleMinKm.car, van: RATE_CARD.chauffeur.idleMinKm.van },
     depositPct: RATE_CARD.deposit.pct / 100,
     depositCap: usd(RATE_CARD.deposit.capCents),
     extras,

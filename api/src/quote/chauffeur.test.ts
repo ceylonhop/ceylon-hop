@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { quoteChauffeur } from './chauffeur';
 
 describe('quoteChauffeur', () => {
-  it('Ayan: 3 days, 1 idle (car); travel buffer clamps per leg before idle km = $296.41', () => {
+  it('Ayan: 3 days, 1 idle (car); travel buffer clamps per leg before idle km = $276.29', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-11-02', lastDate: '2026-11-04',
       travelDays: [
@@ -11,11 +11,11 @@ describe('quoteChauffeur', () => {
         { date: '2026-11-04', from: 'N.Eliya', to: 'Hiriketiya', distanceKm: 210 },
       ],
     });
-    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 100, billableKm: 505 });
-    expect(r.subtotalCents).toBe(29641); // day 3×31.05=9315 + 505×40.25=20326; travel 165→180 and 210→225, idle 100 unbuffered
+    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 50, billableKm: 455 });
+    expect(r.subtotalCents).toBe(27629); // day 3×31.05=9315 + 455×40.25=18314; travel 165→180 and 210→225, idle 50 (car) unbuffered
   });
 
-  it('Emma: 9 days, 4 idle (car); travel buffer clamps per leg before idle km = $789.42', () => {
+  it('Emma: 9 days, 4 idle (car); travel buffer clamps per leg before idle km = $708.92', () => {
     const r = quoteChauffeur({
       vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -26,8 +26,8 @@ describe('quoteChauffeur', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 400, billableKm: 1267 });
-    expect(r.subtotalCents).toBe(78942); // day 9×31.05=27945 + 1267×40.25=50997; travel legs buffer individually, idle 400 unbuffered
+    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 200, billableKm: 1067 });
+    expect(r.subtotalCents).toBe(70892); // day 9×31.05=27945 + 1067×40.25=42947; travel legs buffer individually, idle 200 (car) unbuffered
   });
 
   it('clamps idleDays to 0 when travelDays exceed the date span (bad input)', () => {

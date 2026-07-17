@@ -33,3 +33,19 @@ test('chauffeur distance charge has no per-leg minimum floor (backend parity)', 
   await expect(page.locator('#sum-adamt')).toHaveText('$19.90');
   await expect(page.locator('#sum-total')).toHaveText('$82');
 });
+
+// Same trip but the second leg is two days later (idle-days = 1). A car idle day bills the
+// CAR minimum of 50 km/day (vans stay at 100) — mirrors RATE_CARD.chauffeur.idleMinKm:
+//   buffered travel 25 + 25 = 50, + 1 idle × 50 = 100 km → distance round(100 × 40.25¢) = $40.25
+//   day rate $31.05 × 3 days = $93.15 → raw total $133.40 → finished $133.50 (nearest 50¢;
+//   the distance row absorbs the +$0.10 adjustment → $40.35).
+const TRIP_IDLE = TRIP.replace('dates=2026-08-10,2026-08-11', 'dates=2026-08-10,2026-08-12');
+
+test('car idle day bills the 50 km car minimum, not the 100 km van minimum', async ({ page }) => {
+  await gotoBooking(page, { query: TRIP_IDLE });
+  await page.locator('[data-svc="chauffeur"]').click();
+
+  await expect(page.locator('#sum-adlabel')).toHaveText(/Chauffeur distance/);
+  await expect(page.locator('#sum-adamt')).toHaveText('$40.35');
+  await expect(page.locator('#sum-total')).toHaveText('$133.50');
+});

@@ -64,7 +64,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(4550);
   });
 
-  it('chauffeur → amountDueNow is the full total for now (Emma $789.42)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $708.92)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -75,12 +75,12 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.subtotalCents).toBe(78942);
-    expect(r.totalCents).toBe(78900);
-    expect(r.amountDueNowCents).toBe(78900);
-    // day 9×$31.05=27945 + distance: per-leg buffered travel is 132+215+154+245+121=867, plus 4 idle × 100 min = 1267 → 1267×40.25¢=50997
-    // costCents: 9×2700 day-cost + Math.round(1267 × 35¢/km) = 24300 + 44345 = 68645 → margin = 78942 − 68645 = 10297
-    expect(r.marginEstimateCents).toBe(10255);
+    expect(r.subtotalCents).toBe(70892);
+    expect(r.totalCents).toBe(69900);
+    expect(r.amountDueNowCents).toBe(69900);
+    // day 9×$31.05=27945 + distance: per-leg buffered travel is 132+215+154+245+121=867, plus 4 idle × 50 min (car) = 1067 → 1067×40.25¢=42947
+    // costCents: 9×2700 day-cost + Math.round(1067 × 35¢/km) = 24300 + 37345 = 61645 → margin = 69900 − 61645 = 8255
+    expect(r.marginEstimateCents).toBe(8255);
   });
 
   it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {

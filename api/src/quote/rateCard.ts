@@ -40,11 +40,11 @@ export const RATE_CARD = {
   // the floor as-is (the floor already covers the fixed cost of a short trip).
   floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50
   // Chauffeur: SELL day rate = cost × 1.15 (dayRateCostCents kept for margin). Idle days bill a
-  // flat 100 km/day min at the sell per-km, on top of the day charge.
+  // per-vehicle min km/day at the sell per-km, on top of the day charge (car 50, vans 100).
   chauffeur: {
     dayRateCents: Math.round(sell(DAY_RATE_COST_CENTS)), // customer SELL day rate (whole-cent per-day charge)
     dayRateCostCents: DAY_RATE_COST_CENTS,   // real cost — margin only
-    idleMinKm: { car: 100, van: 100, van9: 100, van14: 100, custom: 100 },
+    idleMinKm: { car: 50, van: 100, van9: 100, van14: 100, custom: 100 },
   },
   deposit: { pct: 10, capCents: 5000 },
   vehicle: {

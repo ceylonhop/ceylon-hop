@@ -25,6 +25,7 @@ const payload = {
   bufferPct: 10,
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 },
   chauffeurDayFee: 35,
+  chauffeurIdleMinKm: { car: 55, van: 110 },
   depositPct: 0.1,
   depositCap: 50,
   extras: { sightseeing: 10, 'safari-wait': 19, luggage: 5, front: 8, flex: 12, waiting: 10 },
@@ -54,6 +55,7 @@ describe('renderPricingBlock', () => {
     expect(block).toContain('"ella-east":23');
     expect(block).toContain('const BUFFER_PCT = 10;');
     expect(block).toContain('const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};');
+    expect(block).toContain('const CHAUFFEUR_IDLE_MIN_KM = {"car":55,"van":110};');
   });
 });
 
@@ -99,6 +101,7 @@ describe('codegen freshness + parity (enforcement)', () => {
     expect(T.BUFFER_PCT).toBe(backendPayload.bufferPct);
     expect(T.PRICE_FINISHING).toEqual(backendPayload.priceFinishing);
     expect(T.CHAUFFEUR_DAY_FEE).toBe(backendPayload.chauffeurDayFee);
+    expect(T.CHAUFFEUR_IDLE_MIN_KM).toEqual(backendPayload.chauffeurIdleMinKm);
     expect(T.DEPOSIT_PCT).toBe(backendPayload.depositPct);
     expect(T.DEPOSIT_CAP).toBe(backendPayload.depositCap);
     // completeness: every backend extra is present with the right price (the booking.js

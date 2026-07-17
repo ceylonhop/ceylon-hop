@@ -1037,7 +1037,7 @@ function chauffeurDistanceCharge(){
   const T = window.TRANSFERS;
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
-  const idleKm = idleDays * 100; // flat 100 km/day idle minimum, all vehicles (mirrors rateCard.ts)
+  const idleKm = idleDays * (T.CHAUFFEUR_IDLE_MIN_KM[vehicleKey] ?? T.CHAUFFEUR_IDLE_MIN_KM.car); // per-vehicle idle-day min km (generated from rateCard.ts)
   const q = tripQuoteWithKms(vehicleKey);
   const bufferedTravelKm = (q.legs || []).reduce((sum, leg) => sum + (leg.km!=null ? T.billableKm(leg.km) : 0), 0);
   if(bufferedTravelKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
