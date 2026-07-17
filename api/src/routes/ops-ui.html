@@ -52,9 +52,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .nav button.active .count{background:rgba(255,255,255,.24)}
   .rail-foot{margin-top:auto;display:flex;align-items:center;gap:11px;padding:11px 8px;border-top:1px solid rgba(255,255,255,.08);position:relative}
   .avatar{width:35px;height:35px;border-radius:12px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:.74rem;flex:none;color:#fff;background:linear-gradient(140deg,var(--teal-deep),#0aa49d)}
-  .rail-foot b{font-size:.85rem;display:block;color:#f2ebdc}.rail-foot span{font-size:.69rem;color:#897f72}
-  .rail-foot .logout{margin-left:auto;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#c5bcad;border-radius:9px;padding:6px 10px;font-size:.72rem;font-weight:700;transition:.16s}
-  .rail-foot .logout:hover{background:rgba(255,255,255,.09);color:#fff;border-color:rgba(255,255,255,.22)}
+  .rail-user{min-width:0;display:flex;flex-direction:column;gap:2px}
+  .rail-user b{font-size:.76rem;color:#f2ebdc;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rail-role{font-size:.6rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#897f72}
+  .rail-foot-actions{margin-left:auto;display:flex;gap:6px;flex:none}
+  .railbtn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#c5bcad;border-radius:9px;padding:6px 9px;font-size:.72rem;font-weight:700;cursor:pointer;transition:.16s;line-height:1.2}
+  .railbtn:hover{background:rgba(255,255,255,.09);color:#fff;border-color:rgba(255,255,255,.22)}
   /* Rail icon-strip state */
   .rail-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .nav-txt{flex:1;white-space:nowrap;overflow:hidden}
@@ -68,7 +71,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rail-collapsed .nav .nav-txt{display:none}
   .rail-collapsed .nav button .count{position:absolute;top:2px;right:8px;margin:0;padding:0 5px;font-size:.58rem;line-height:1.6}
   .rail-collapsed .rail-foot{justify-content:center;padding:11px 0}
-  .rail-collapsed .rail-foot>div:not(.avatar),.rail-collapsed .rail-foot .logout{display:none}
+  .rail-collapsed .rail-foot>div:not(.avatar),.rail-collapsed .rail-foot .rail-foot-actions{display:none}
 
   .main{display:flex;flex-direction:column;overflow:hidden;position:relative;background:
     radial-gradient(110% 55% at 100% 0%,rgba(249,164,41,.07),transparent 55%),
@@ -260,7 +263,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
 
-  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:80;display:flex;align-items:center;gap:9px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
 
   /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
@@ -403,14 +406,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-status-pill.tone-red { color: #c0362a; background: #fbe8e6; border-color: #f4cec9; }
 .qv .ch-status-pill.tone-muted { color: #8a8378; background: #f1efea; border-color: #e6e2da; }
 /* ---------- Review banner ---------- */
-.qv .ch-review-banner { display: flex; flex-direction: column; gap: 2px; padding: 12px 15px; border-radius: var(--r-sm); margin-bottom: 16px; border: 1px solid transparent; }
-.qv .ch-review-banner b { font-size: 13.5px; font-weight: 700; }
+.qv .ch-review-banner { display: flex; align-items: baseline; gap: 8px; padding: 7px 12px; border-radius: 999px; margin-bottom: 10px; border: 1px solid transparent; width: fit-content; max-width: 100%; }
+.qv .ch-review-banner b { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .qv .ch-assign { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
 .qv .ch-assign-lbl { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
 .qv .ch-assign-sel { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
 .qv .ch-assign-sel:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
-.qv .ch-review-banner span { font-size: 12.5px; opacity: .85; }
+.qv .ch-review-banner span { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qv .ch-review-banner.tone-amber { background: #fdf3e0; border-color: #f6e3c0; color: #7a4f0c; }
 .qv .ch-review-banner.tone-teal { background: #dff5f3; border-color: #bfe9e5; color: #0a6f6a; }
 /* ---------- Send-back note composer (founder) ---------- */
@@ -702,7 +705,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* ---------- Toast ---------- */
 /* T5: fixed→absolute — .qv is position:relative, so the toast centers in the
    quote pane rather than the full viewport (which includes the ops rail). */
-.qv .ch-toast { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 100; display: flex; align-items: center; gap: 8px; }
+.qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
 .qv .ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .qv .ch-toast .tick { color: var(--teal); }
 
@@ -1010,8 +1013,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      serif price still the brightest thing in the room. Toggle: ⌘K or the rail button;
      persisted in localStorage(ch_ops_theme); defaults to the OS preference. ── */
   :root[data-theme="dark"]{
-    --cream:#171310;--cream-deep:#262019;--paper:#1f1a15;--line:#332b22;--line-soft:#2a231b;
-    --ink:#ede6d8;--ink-soft:#b4aa9a;--ink-faint:#7e7466;
+    --cream:#141313;--cream-deep:#232221;--paper:#1c1b1a;--line:#302e2b;--line-soft:#282624;
+    --ink:#eceae5;--ink-soft:#b3afa7;--ink-faint:#807b73;
     --shadow-s:0 1px 2px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.3);
     --shadow:0 8px 26px -12px rgba(0,0,0,.65);--shadow-lg:0 40px 90px -30px rgba(0,0,0,.85);
     --ok:#4fbf7e;--ok-bg:#132a1c;--wait:#e0a33e;--wait-bg:#2e2410;--go:#2fbfb4;--go-bg:#0e2a27;
@@ -1019,19 +1022,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     --wa:#37c96e;--wa-bg:#0f2b1a;--web:#2fbfb4;--web-bg:#0e2a27;
   }
   :root[data-theme="dark"] .qv{
-    --black:#ede6d8;--cream:#171310;--cream-d:#262019;
-    --paper:#1f1a15;--ink:#ede6d8;--muted:#b4aa9a;--muted-2:#7e7466;
-    --line:#332b22;--line-soft:#2a231b;
-    --surface:#282219;--surface-warm:#2b241b;
+    --black:#eceae5;--cream:#141313;--cream-d:#232221;
+    --paper:#1c1b1a;--ink:#eceae5;--muted:#b3afa7;--muted-2:#807b73;
+    --line:#302e2b;--line-soft:#282624;
+    --surface:#262523;--surface-warm:#292724;
     --shadow-card:0 1px 2px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.3);
     --shadow-pop:0 8px 26px -12px rgba(0,0,0,.7);
   }
   /* amber-tinted one-offs that hardcode light values */
-  :root[data-theme="dark"] .qv .ch-veh-chips.unset .ch-veh-chip{background:#2b2318;border-color:#6b5124}
-  :root[data-theme="dark"] .qv .ch-veh-chip.over{background:#33270f;border-color:#6b5124}
   :root[data-theme="dark"] .qv .ch-sendback{border-color:#5b4a22}
   :root[data-theme="dark"] .qv .ch-req-mismatch{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
   :root[data-theme="dark"] .kbar{background:rgba(0,0,0,.55)}
+  :root[data-theme="dark"] .topbar{background:rgba(20,19,19,.78)}
+  /* stage tones arrive as inline light pastels (STAGE map) — remix them against dark paper */
+  :root[data-theme="dark"] .tk.attn{background:linear-gradient(100deg,color-mix(in srgb,var(--c,var(--line)) 13%,var(--paper)),var(--paper) 36%)}
+  :root[data-theme="dark"] .pill{background:color-mix(in srgb,var(--cbg,var(--cream-deep)) 20%,var(--paper));color:color-mix(in srgb,var(--c,var(--ink-soft)) 78%,#fff)}
+  :root[data-theme="dark"] .sheet-h{background:linear-gradient(162deg,color-mix(in srgb,var(--c,var(--line)) 15%,var(--paper)),var(--paper) 78%)}
+  :root[data-theme="dark"] .qv .ch-veh-chips.unset .ch-veh-chip{background:#2a2620;border-color:#5d4c22}
+  :root[data-theme="dark"] .qv .ch-veh-chip.over{background:#2e2817;border-color:#5d4c22}
+  :root[data-theme="dark"] .qv .ch-review-banner.tone-amber{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.3);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-review-banner.tone-teal{background:rgba(47,191,180,.12);border-color:rgba(47,191,180,.3);color:#5fd6cc}
 
   /* ── D5: arrival motion — a lighting change, not a flash. The builder rises once on
      mount; the itinerary rises once when the basics unlock it. Guarded by a one-shot
@@ -1046,14 +1056,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .qv .ch-app.mount-rise > *,.qv .ch-sec.just-unlocked{animation:none}
   }
 
-  /* D6: rail theme toggle — icon-only, at home in both rail states */
-  .rail-theme{margin-top:auto;align-self:center;width:34px;height:34px;border:1px solid rgba(255,255,255,.14);
-    background:rgba(255,255,255,.05);color:#c5bcad;border-radius:10px;cursor:pointer;font-size:15px;
-    display:grid;place-items:center;transition:background .25s,color .25s}
-  .rail-theme:hover{background:rgba(255,255,255,.12);color:#fff}
 
   /* dark-theme follow-ups: the frosted header + low-contrast chips */
-  :root[data-theme="dark"] .qv .ch-header{background:rgba(23,19,16,.82)}
+  :root[data-theme="dark"] .qv .ch-header{background:rgba(20,19,19,.82)}
   :root[data-theme="dark"] .qv .ch-req-chip,
   :root[data-theme="dark"] .qv .ch-veh-chip{color:var(--ink)}
   :root[data-theme="dark"] .qv .ch-veh-chip:disabled{color:var(--muted-2)}
@@ -1072,7 +1077,6 @@ document.documentElement.dataset.theme=_t;}catch(e){}</script>
       <div class="brand"><img class="rail-logo" width="30" height="30" src="data:image/png;base64,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" alt="Ceylon Hop"><span>Ceylon Hop<small>Ops control</small></span></div>
     </div>
     <nav class="nav" id="nav"><!-- rendered by setNav(): Bookings always, Quote for founders --></nav>
-    <button class="rail-theme" id="railTheme" title="Toggle dark theme">&#9789;</button>
     <div class="rail-foot" id="railfoot"></div>
   </aside>
   <main class="main"><div class="topbar" id="topbar"></div><div class="scroll" id="view"></div><div class="qv" id="quoteRoot" hidden></div></main>
@@ -1869,7 +1873,12 @@ function bootApp(identity){
   syncUrl(state.route,state.routeQuoteId,'replace');
   const initials=avatarInitials(identity.name,identity.email);
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
-  $('#railfoot').innerHTML=`<div class="avatar">${initials}</div><div><b>Signed in</b><span>${esc(identity.email)} · ${esc(roleLabel)}</span></div><button class="logout" id="logoutbtn">Logout</button>`;
+  $('#railfoot').innerHTML=`<div class="avatar">${initials}</div>
+    <div class="rail-user"><b title="${esc(identity.email)}">${esc(identity.email)}</b><span class="rail-role">${esc(roleLabel)}</span></div>
+    <div class="rail-foot-actions">
+      <button class="railbtn" id="railTheme" title="Toggle dark theme">${document.documentElement.dataset.theme==='dark'?'&#9788;':'&#9789;'}</button>
+      <button class="railbtn logout" id="logoutbtn">Logout</button>
+    </div>`;
   applyRailState();
   setNav();
   if(state.route==='quote'||state.route==='quotes'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
