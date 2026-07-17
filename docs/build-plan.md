@@ -525,17 +525,22 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     exact-at-cost, cap diagnostics, sell-floor crossing, finishing order, and exact no-discount parity.
     No database, route, RBAC, or UI changes.
   - **18.3 — Pure promotion matching and winner selection.** Match sitewide, one-way/both-way route,
-    and named-tour candidates; evaluate automatic rules plus an optional submitted code; select the
-    greatest actual saving with stable tie-breaks and never stack. **Tests:** identity matches and
-    non-matches, time boundaries with fake clock, invalid code behavior, overlap, ties, cost-capped
-    candidates, and zero-cent outcomes. No database or route changes.
+    and named-tour candidates; evaluate quote-shape conditions per spec §7.1 (minimum subtotal;
+    minimum trip km as real driven km — transfer legs only, chauffeur `travelKm` excludes buffer and
+    idle-day padding — with unresolved-distance fail-closed; minimum transfer-leg count with stays
+    excluded and chauffeur counting travel days; AND semantics); evaluate automatic rules plus
+    an optional submitted code; select the greatest actual saving with stable tie-breaks and never
+    stack. **Tests:** identity matches and non-matches, condition boundaries and fail-closed km, time
+    boundaries with fake clock, invalid code behavior, overlap, ties, cost-capped candidates, and
+    zero-cent outcomes. No database or route changes.
 - **M19 — Discount persistence and transaction boundaries.** Add the storage needed to preserve and
   audit engine decisions while all creation flags remain off.
   - **19.1 — Promotion rule and event schema.** Forward-only migration for immutable/versioned
-    `promotion_rules` and append-only `discount_events`; add scope/activation constraints and indexes,
-    but no redemption-limit table. Add repositories only. **Tests:** migration/legacy reads,
-    activation/scope checks, active-family and active-code uniqueness, version history, validity
-    ranges, attribution, and rollback procedure. No routes or UI.
+    `promotion_rules` (including `minimum_trip_km`, `minimum_leg_count`, and `max_redemptions` —
+    budget counted per family, spec §7.6) and append-only `discount_events`; add scope/activation
+    constraints and indexes, but no redemption-ledger table. Add repositories only. **Tests:**
+    migration/legacy reads, activation/scope checks, active-family and active-code uniqueness,
+    version history, validity ranges, attribution, and rollback procedure. No routes or UI.
   - **19.2 — Quote discount and booking snapshot schema.** Add `quote_discounts`, quote `revision`, a
     unique nullable `converted_booking_id`, and nullable booking subtotal/discount/pricing snapshot.
     Add repositories and role-neutral projections. **Tests:** one active discount, replace/remove
@@ -543,9 +548,12 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     checks. No route or UI behavior.
   - **19.3 — Atomic pricing transaction services.** Define and implement explicit Postgres transaction
     interfaces for quote save/discount history/event writes and for quote conversion/booking
-    snapshot/event writes. In-memory fakes implement the same contract. **Tests:** injected failures
-    roll back every write, stale revisions conflict, idempotent conversion returns the same booking,
-    and concurrent conversion creates one booking. No route or UI changes.
+    snapshot/event writes, including the finite-budget re-check at conversion (family advisory lock +
+    committed-conversion count, `promotion_exhausted` on a spent budget — spec §7.6). In-memory fakes
+    implement the same contract. **Tests:** injected failures roll back every write, stale revisions
+    conflict, idempotent conversion returns the same booking, concurrent conversion creates one
+    booking, and concurrent finite-budget conversions never overshoot the budget. No route or UI
+    changes.
 - **M20 — Founder-controlled Ops discounts and promotions.** Expose founder workflows through the
   existing authenticated Ops application before any public promotion is enabled.
   - **20.1 — Capabilities, flags, and promotion-rule API.** Add `promotion:manage` and
@@ -564,7 +572,8 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     full-payment preservation, and unchanged ordinary quotes.
   - **20.3 — Founder promotion-management UI.** Add a founder-only Ops view for automatic/code-only
     activation; sitewide/route/tour scope; one-way/both-way route; fixed/percentage value; optional
-    maximum/minimum; label; and required validity. Include scheduled/active/expired/deactivated list,
+    maximum/minimum, minimum trip km/leg count, and total redemption budget (spent count shown in the
+    list); label; and required validity. Include scheduled/active/expired/deactivated list,
     preview, version, and deactivate. **Gate:** API + Playwright prove other roles cannot load details
     or mutate, and `npm run test:all` remains green. No quote-builder changes.
   - **20.4 — Ops quote discount UI and editable output.** Add founder manual controls, read-only rows
