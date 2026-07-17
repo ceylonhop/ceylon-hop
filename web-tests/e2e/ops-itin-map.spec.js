@@ -16,20 +16,39 @@ const RATE_CARD = {
 
 // Install a minimal google.maps stub that records that a Map + route were created, and
 // (optionally) a forced browser key so the ops map code treats the key as configured.
+// Mirrors the async-loaded API: classes come ONLY from importLibrary (no google.maps.Map
+// namespace access), and routing is the new routes library's Route.computeRoutes — the
+// legacy DirectionsService/DirectionsRenderer are deliberately absent so any lingering
+// use of them throws and fails the no-pageerror assertion. Each computeRoutes request is
+// recorded on window.__computeRoutesReqs so tests can assert the known-places-by-coords rule.
 async function stub(page, { key } = {}) {
   await page.addInitScript((k) => {
     if (k) window.OPS_MAPS_KEY = k;
     function Map(el) { this.__el = el; if (el) el.setAttribute('data-map', 'ready'); }
     Map.prototype.fitBounds = function () {};
-    function DS() {}
-    DS.prototype.route = function (req, cb) { cb({ routes: [{ legs: [{ start_location: {}, end_location: {} }], bounds: {} }] }, 'OK'); };
-    function DR() {}
-    DR.prototype.setDirections = function () {};
     function Marker() {}
+    Marker.prototype.setMap = function () {};
     function Point() {}
+    function Polyline() {}
+    Polyline.prototype.setOptions = function () {};
+    Polyline.prototype.setMap = function () {};
+    const Route = {
+      computeRoutes: async (req) => {
+        (window.__computeRoutesReqs = window.__computeRoutesReqs || []).push(req);
+        return {
+          routes: [{
+            path: [],
+            viewport: {},
+            legs: [{ startLocation: { lat: 6.93, lng: 79.85 }, endLocation: { lat: 7.29, lng: 80.63 } }],
+            createPolylines: () => [new Polyline()],
+          }],
+        };
+      },
+    };
+    const libs = { maps: { Map, Polyline }, routes: { Route }, marker: { Marker }, core: { Point } };
     window.google = {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
-      maps: { Map, DirectionsService: DS, DirectionsRenderer: DR, Marker, Point, TravelMode: { DRIVING: 'DRIVING' }, event: { trigger() {} }, importLibrary: async () => ({}) },
+      maps: { importLibrary: async (name) => libs[name] || {}, event: { trigger() {} } },
     };
   }, key || '');
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
@@ -74,6 +93,14 @@ test('the route map is open by default and folds behind the toggle', async ({ pa
   await page.locator('.ch-map-toggle').click();
   await expect(page.locator('#itin-map-slot')).toBeVisible();
   await expect(page.locator('.ch-itin-map[data-map="ready"]')).toBeVisible({ timeout: 10000 });
+  // The route was computed via the new routes library, resolving stops per the repo rule:
+  // a known place ("Kandy") goes to Google as its exact coords — bare names can geocode
+  // outside Sri Lanka — while a free-typed name ("Colombo" isn't in the known-place table)
+  // stays a string anchored to ", Sri Lanka".
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  expect(reqs.length).toBeGreaterThan(0);
+  expect(reqs[reqs.length - 1].origin).toBe('Colombo, Sri Lanka');
+  expect(reqs[reqs.length - 1].destination).toEqual({ lat: 7.29, lng: 80.63 });
   expect(errors).toEqual([]);
 });
 
