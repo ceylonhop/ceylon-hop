@@ -51,9 +51,13 @@ refine the Hard rules above for day-to-day changes:
    share one working tree on `main` — stage only your own files by path, never `git add -A`.
 7. **No surprises to production.** `main` deploys to the live services (API on Render, site on
    Pages). Don't ship anything to prod — **especially schema/migrations, pricing, or config** —
-   without the owner's explicit ok. Migrations are **NOT auto-applied** (this already caused a
-   prod incident); if a change needs one, FLAG it and treat the prod migrate as a required,
-   owner-run release step.
+   without the owner's explicit ok. **Merging IS the schema release** (PR #50, 2026-07-16):
+   pending migrations **auto-apply on Render boot**, fail-closed — a migration error aborts boot,
+   so Render keeps the previous version live. No owner-run migrate stands between a merge and
+   prod's schema, which makes the owner's ok *before* merge **more** important, not less: flag the
+   migration when you propose the change — do **not** tell the owner to run a prod migrate as a
+   release step. Local dev stays manual (`cd api && npm run migrate`); nothing migrates on
+   `npm run dev` unless `RUN_MIGRATIONS=1`.
 
 **Drift rules (always):** prices change ONLY via `rateCard.ts` (+ corridors in
 `departureRepo.ts`) then `npm run generate` — never hand-edit a `@generated:` block (the parity +
