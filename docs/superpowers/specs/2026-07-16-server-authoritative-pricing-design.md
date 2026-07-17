@@ -1,8 +1,8 @@
 # Server-authoritative pricing in the booking flow
 
 **Date:** 2026-07-16
-**Status:** Proposed — deliberate, non-urgent. The backend already supports it; the plan is
-gated on one infra (hosting) decision.
+**Status:** Approved direction, deliberate, non-urgent. The infra gate is resolved (owner
+2026-07-16: stay on the free Render tier — see §10); execution folds into M21's front-end work.
 **Depends on:** the live `POST /quote` engine endpoint; psychological price-finishing (shipped
 2026-07-16, PR #43); the rate-lock / quote-lifecycle work.
 **Related:** `docs/superpowers/specs/2026-06-30-quote-lifecycle-design.md`,
@@ -152,3 +152,22 @@ per-interaction backend pricing is a UX downgrade from today's instant client-si
 viable?** Everything else follows from that answer. If **no**, keep today's model but continue
 hardening it (single generated/shared implementation + the CI freshness gate already merged); if
 **yes**, this becomes a scoped `booking.js` front-end change with no new backend work.
+
+**Owner decision 2026-07-16: no paid tier for now — proceed on the free tier.** The owner judges
+~400–500 ms per debounced reprice acceptable for a travel site (customers edit a route a handful
+of times, not per keystroke). Notes attached to the decision:
+
+- The free instance does not cold-start in practice: `keepalive.yml` pings `/health` every 13
+  minutes, so the operative latency is the warm 250 ms–1.3 s jitter band, not a ~50 s spin-up.
+- The measurement above was taken near the US-East edge and excludes the Sri-Lanka→origin
+  distance; SL customers land toward the upper end of the band. Take one real measurement from an
+  SL connection before front-end work assumes a number.
+- Consequently the optimistic-UI behavior in §5.2 (hold last valid price, never blank, never
+  block on the in-flight call) is **mandatory**, sized to the ~1.3 s jitter tail — it is the
+  mitigation that makes free-tier latency acceptable, not polish.
+- Rollout step 1 (provision paid tier, re-measure) is replaced by: measure once from SL, then
+  proceed behind the flag. Revisit the paid tier at the go-live checkpoint alongside real payment
+  traffic, or earlier if the measured SL latency breaks the owner's threshold.
+- Sequencing: rather than a standalone `booking.js` migration, land this spec's goals inside
+  M21's front-end work (quote v2), which rewrites the same summary-rendering code — one rewrite,
+  and the discounts work requires server-priced quotes anyway.
