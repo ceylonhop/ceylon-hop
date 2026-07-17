@@ -49,6 +49,7 @@ function toSaved(r: Row): SavedQuote {
     rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
+    requestedService: r.requestedService,
     assignedTo: r.assignedTo,
     assignedAt: r.assignedAt,
     createdBy: r.createdBy,
@@ -85,6 +86,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
+            requestedService: q.requestedService ?? null,
             createdBy: q.createdBy ?? null,
             updatedBy: q.updatedBy ?? null,
           })
@@ -198,6 +200,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         rateCardJson: (q.rateCardJson ?? null) as object | null,
         rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
+        requestedService: q.requestedService ?? null,
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })

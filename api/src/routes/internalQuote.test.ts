@@ -1208,3 +1208,38 @@ describe('quote assignment notification', () => {
     expect(mail.sent[0].html).not.toContain('href="/ops');
   });
 });
+
+// Quote intent (spec 2026-07-17): what the CUSTOMER asked for, recorded by the submitter and
+// distinct from `product` (what we priced). Assertions go through GET /:id, like the other
+// /save persistence tests, rather than reaching for a repo handle.
+describe('quote intent — requestedService persistence', () => {
+  const TRIP = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] };
+
+  it('persists the recorded customer request from the tool payload', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', { ...TRIP, requestedService: 'both' });
+    expect(res.status).toBe(201);
+    const got = await (await authedGet(app, `/admin/quote/${(await res.json()).id}`)).json();
+    expect(got.requestedService).toBe('both');
+  });
+
+  it('leaves it null when the payload omits it (I7: no backfill, no sentinel)', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', TRIP);
+    const got = await (await authedGet(app, `/admin/quote/${(await res.json()).id}`)).json();
+    expect(got.requestedService).toBeNull();
+  });
+
+  it("rejects a value outside the enum — 'legacy' is not a member (I7)", async () => {
+    const res = await post(createApp(), '/admin/quote/save', { ...TRIP, requestedService: 'legacy' });
+    expect(res.status).toBe(400);
+  });
+
+  it('survives a re-save, so reopening and correcting it sticks', async () => {
+    const app = createApp();
+    const first = await (await post(app, '/admin/quote/save', { ...TRIP, requestedService: 'private' })).json();
+    await post(app, '/admin/quote/save', { ...TRIP, id: first.id, requestedService: 'chauffeur' });
+    const got = await (await authedGet(app, `/admin/quote/${first.id}`)).json();
+    expect(got.requestedService).toBe('chauffeur');
+  });
+});

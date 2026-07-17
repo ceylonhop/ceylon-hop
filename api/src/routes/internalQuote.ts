@@ -54,6 +54,11 @@ const ToolRequestSchema = z.object({
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
+  // Quote intent (spec 2026-07-17). What the customer ASKED for, vs `service` = what we price.
+  // Deliberately NOT defaulted from `service` (I4): a pre-filled value gets accepted unread,
+  // which is the exact failure this field exists to prevent. No 'legacy' member — there is no
+  // exemption (I7), so a client cannot mint one.
+  requestedService: z.enum(['private', 'chauffeur', 'both']).optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
@@ -439,6 +444,9 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
+        // check; it also rides inside request.tool above, which is what the builder reopens from.
+        requestedService: body.requestedService ?? null,
         // Audit (spec 2026-07-16). Both stamped on create; on a re-save the repo applies only
         // updatedBy, so authorship stays with whoever built the quote.
         createdBy: c.get('identity').email,
