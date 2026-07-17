@@ -43,6 +43,21 @@ async function login(page, email) {
   await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
 }
 
+// Logout helper: the rail auto-hides (34c52ea) — after ~4s idle, or immediately once you
+// click into the main content — and a collapsed rail display:none's the logout button
+// (`.rail-collapsed .rail-foot .logout`). So expand it first, exactly as a user does,
+// instead of racing the idle timer against a control that may already be hidden. Clicking
+// #railToggle is itself rail activity, which restarts the countdown and keeps it open.
+async function logout(page) {
+  const logoutBtn = page.locator('#logoutbtn');
+  if (!(await logoutBtn.isVisible())) {
+    await page.locator('#railToggle').click();
+    await expect(logoutBtn).toBeVisible();
+  }
+  await logoutBtn.click();
+  await expect(page.locator('#login')).toHaveClass(/show/);
+}
+
 test('founder login renders the Bookings queue', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
@@ -129,8 +144,7 @@ test('deep-link /ops#quote lands founder and finance on Quote', async ({ page })
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('#quoteRoot')).not.toHaveAttribute('hidden', '');
 
-  await page.locator('#logoutbtn').click();
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await page.goto(`${OPS}#quote`);
   await page.waitForLoadState('networkidle');
@@ -152,8 +166,7 @@ test('logout returns the login overlay and empties/hides #quoteRoot with no befo
   let dialogFired = false;
   page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
 
-  await page.locator('#logoutbtn').click();
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
   // QuoteView.teardown() empties .ch-app's innerHTML but leaves the wrapper div itself in
   // #quoteRoot (showQuoteView() only (re)creates it when absent) — so assert it's emptied,
   // not removed, and that #approot (which contains #quoteRoot) is hidden behind the login.
@@ -189,8 +202,7 @@ test('the Quotes queue is gated on quote:manage — visible to founder, finance,
   for (const email of [FOUNDER_EMAIL, FINANCE_EMAIL, OPS_EMAIL]) {
     await login(page, email);
     await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
-    await page.locator('#logoutbtn').click();
-    await expect(page.locator('#login')).toHaveClass(/show/);
+    await logout(page);
   }
 });
 
