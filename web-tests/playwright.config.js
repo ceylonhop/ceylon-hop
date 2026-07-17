@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { resolveStaticPort } from './static-port.js';
 
 // Serves the static site (same minimal server the preview uses) and runs the
 // e2e specs against it. Google Maps, PayHere and the API are stubbed per-test
@@ -18,6 +19,11 @@ import { fileURLToPath } from 'node:url';
 // guard below for why.
 
 const E2E_API = process.env.CH_E2E_API === '1';
+
+// Static-server port: per-worktree by default so concurrent checkouts never
+// reuse each other's server (see static-port.js for the incident that motivated
+// this); set CH_STATIC_PORT to pin it, e.g. to reuse a preview on 4173.
+const STATIC_PORT = resolveStaticPort(process.env, fileURLToPath(new URL('..', import.meta.url)));
 
 // Read ONLY DATABASE_URL_TEST out of api/.env. Deliberately does NOT load that file
 // into process.env: it also holds the production DATABASE_URL, and the test runner has
@@ -69,7 +75,7 @@ export default defineConfig({
   // workers only for the CH_E2E_API run; the offline default suite is unaffected.
   workers: E2E_API ? 4 : undefined,
   use: {
-    baseURL: 'http://localhost:4173',
+    baseURL: `http://localhost:${STATIC_PORT}`,
     trace: 'on-first-retry',
   },
   projects: [
@@ -78,9 +84,10 @@ export default defineConfig({
   webServer: [
     {
       command: 'node ../serve-booking.js',
-      url: 'http://localhost:4173/index.html',
+      url: `http://localhost:${STATIC_PORT}/index.html`,
       reuseExistingServer: true,
       timeout: 30000,
+      env: { ...process.env, CH_STATIC_PORT: String(STATIC_PORT) },
     },
     ...(E2E_API ? [
       {
