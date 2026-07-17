@@ -184,6 +184,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Assignee chip. Lives inside .qstat's flex, never as a 6th .qrow grid child. */
   .qassignee{font-size:.72rem;font-weight:700;letter-spacing:.01em;padding:3px 9px;border-radius:999px;color:var(--ink-soft);background:var(--cream);border:1px solid var(--line);white-space:nowrap;max-width:96px;overflow:hidden;text-overflow:ellipsis}
   .qassignee.mine{color:#0a7d78;background:#dff5f3;border-color:#bfe9e5}
+  /* Nobody holds this one. Reads as an empty slot rather than a person: no fill, dashed
+     edge, faint ink — present enough to scan for, quiet enough not to compete with the
+     rows that DO name someone. Wider than a name chip; "Unassigned" must not ellipsis. */
+  .qassignee.nobody{color:var(--ink-faint);background:transparent;border-style:dashed;border-color:var(--cream-deep);font-weight:600;max-width:none}
   .qsec-mine .qsection-title{color:#0a7d78}
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
@@ -1319,13 +1323,34 @@ function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
   return `<span class="qpill tone-${m.tone}">${esc(m.label)}</span>`;
 }
-// 'roshen@ceylonhop.com' → 'roshen'. The chip has to fit a queue row; the full address
-// stays in the title attribute.
+// 'roshen@ceylonhop.com' → 'roshen'. Last-resort label: used when the roster has no entry
+// for an email (someone left OPS_USERS while still holding an old quote) or hasn't loaded.
+// The full address stays in the title attribute either way.
 function shortUser(email){const s=String(email||'');const at=s.indexOf('@');return at>0?s.slice(0,at):s;}
+// email → 'Roshen W.', from /admin/ops/users. The server formats the label so this queue and
+// the builder's assign picker can't drift into naming the same person two different ways.
+let opsRoster=new Map();
+async function loadOpsRoster(){
+  try{
+    const r=await fetch('/admin/ops/users',{credentials:'same-origin'});
+    if(!r.ok)return; /* 401 is handled by the queue/booking loaders; don't double-bounce to login */
+    const body=await r.json();
+    const users=(body&&body.users)||[];
+    window.opsUsers=users; /* the builder's assign picker reads this rather than re-fetching */
+    opsRoster=new Map(users.map(u=>[String(u.email||'').toLowerCase(),u.displayName||shortUser(u.email)]));
+    if(state.route==='quotes'&&opsQuotesLoaded)viewQuotes(); /* names arrived after first paint */
+  }catch(e){/* labels fall back to the email local part — the queue still works */}
+}
+function userLabel(email){return opsRoster.get(String(email||'').toLowerCase())||shortUser(email);}
 function isMineEmail(email){const me=(state.email||'').toLowerCase();return !!me&&String(email||'').toLowerCase()===me;}
 function assigneeChip(email){
   const mine=isMineEmail(email);
-  return `<span class="qassignee${mine?' mine':''}" title="Assigned to ${esc(email)}">${esc(mine?'you':shortUser(email))}</span>`;
+  return `<span class="qassignee${mine?' mine':''}" title="Assigned to ${esc(email)}">${esc(mine?'you':userLabel(email))}</span>`;
+}
+// An unassigned quote is the one state worth stating outright: it means nobody has picked it
+// up, which is invisible if we render nothing at all.
+function unassignedChip(){
+  return '<span class="qassignee nobody" title="Nobody is assigned to this quote yet">Unassigned</span>';
 }
 // hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
 // says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
@@ -1336,7 +1361,7 @@ function quoteRowHtml(q,hideAssignee){
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
     <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
-    <span class="qstat">${(!hideAssignee&&q.assignedTo)?assigneeChip(q.assignedTo):''}${quoteAgeChip(q)}${statusPill(q.status)}</span>
+    <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
 function viewQuotes(){
@@ -1660,6 +1685,7 @@ function bootApp(identity){
   applyRailState();
   setNav();
   if(state.route==='quote'||state.route==='quotes'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
+  loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
 }
 
@@ -3618,6 +3644,7 @@ function renderActionBar() {
 // people the server would reject anyway.
 var opsUsers = [];
 async function loadOpsUsers() {
+  if (window.opsUsers) { opsUsers = window.opsUsers; return; } // the shell already fetched it for the queue chips
   try {
     var r = await api('/admin/ops/users');
     if (!r.ok) return;
@@ -3634,8 +3661,12 @@ function renderAssignStrip() {
   var me = (window.opsEmail || '').toLowerCase();
   var opts = ['<option value="">Unassigned</option>'];
   opsUsers.forEach(function(u) {
-    opts.push('<option value="' + esc(u.email) + '"' + (u.email === cur ? ' selected' : '') + '>' +
-      esc(u.email) + (u.email === me ? ' (you)' : '') + '</option>');
+    // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
+    // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
+    var label = u.displayName || String(u.email || '').split('@')[0];
+    opts.push('<option value="' + esc(u.email) + '"' + (u.email === cur ? ' selected' : '') +
+      ' title="' + esc(u.email) + '">' +
+      esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var audit = [];
   if (state.createdBy) audit.push('Created by ' + esc(state.createdBy));
@@ -3660,7 +3691,7 @@ async function assignQuote(email) {
   }
   state.assignedTo = res.assignedTo || null;
   state.updatedBy = res.updatedBy || state.updatedBy;
-  showToast(state.assignedTo ? ('Assigned to ' + state.assignedTo) : 'Unassigned');
+  showToast(state.assignedTo ? ('Assigned to ' + userLabel(state.assignedTo)) : 'Unassigned');
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   render();
 }

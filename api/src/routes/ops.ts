@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
-import { assignableOpsUsers, can, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
+import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
+import { assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
@@ -19,6 +20,7 @@ export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
+  opsUserProfiles: OpsUserProfileRepo;
   auth: OpsAuthConfig;
   googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
   // Optional so tests that only exercise fulfilment can omit them; when present, the
@@ -64,6 +66,19 @@ export function opsRoutes(deps: OpsDeps) {
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
 
+  // Remember who someone is, by the name Google already knows them by. Deliberately swallows
+  // its errors: this is a nicety on the login path, and the prod migration lands by hand AFTER
+  // the code deploys — for that window the table is missing and every write throws. Nobody
+  // should be locked out of the ops tool because we couldn't store a label.
+  async function rememberName(email: string, name: string | undefined): Promise<void> {
+    if (!name) return;
+    try {
+      await deps.opsUserProfiles.upsert(email, name);
+    } catch (err) {
+      console.error('ops profile name upsert failed for', email, err);
+    }
+  }
+
   // Google sign-in: the browser POSTs the Google ID token; we verify, allowlist-check, set cookie.
   r.post('/login', async (c) => {
     const body = z.object({ credential: z.string() }).safeParse(await c.req.json().catch(() => ({})));
@@ -79,6 +94,7 @@ export function opsRoutes(deps: OpsDeps) {
     const role = roleForEmail(id.email, users);
     if (!role) return c.json({ error: 'not_authorised', email: id.email }, 403);
     issueSessionCookie(c, id.email, auth.sessionSecret, Date.now(), id.name);
+    await rememberName(id.email, id.name);
     return c.json({ email: id.email, role }, 200);
   });
 
@@ -101,9 +117,15 @@ export function opsRoutes(deps: OpsDeps) {
   // Identity + guards for everything below.
   r.use('*', opsIdentity(auth));
 
-  r.get('/whoami', requireCap('bookings:read'), (c) => {
+  // Backfill seam: sessions live for 7 days, so login alone would leave the picker showing
+  // email local parts for up to a week after this ships — for people who are signed in and
+  // working the whole time. whoami runs once per app boot and the cookie already carries the
+  // name, so the roster heals on the next page load instead. A write on a read path, which is
+  // a smell worth the honesty of the picker naming actual humans on day one.
+  r.get('/whoami', requireCap('bookings:read'), async (c) => {
     const identity = c.get('identity');
     const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
+    await rememberName(identity.email, identity.name);
     return c.json({ email: identity.email, role: identity.role, caps, ...(identity.name ? { name: identity.name } : {}) });
   });
 
@@ -111,7 +133,21 @@ export function opsRoutes(deps: OpsDeps) {
   // no special capability: anyone who can work a quote can hand it to a colleague. The list is
   // filtered to users who can actually OPEN a quote, so we never offer an assignee whose
   // notification link would dead-end (see assignableOpsUsers).
-  r.get('/users', requireCap('bookings:read'), (c) => c.json({ users: assignableOpsUsers(auth.opsUsers) }));
+  // displayName is computed here, not in the browser, so the picker and the queue's assignee
+  // chip cannot drift apart — they consume the same label. Role stays env-owned; the name is
+  // joined on from whatever we've captured at sign-in. A failed lookup costs the names, never
+  // the roster: staff must still be able to hand a quote over.
+  r.get('/users', requireCap('bookings:read'), async (c) => {
+    let names = new Map<string, string>();
+    try {
+      names = await deps.opsUserProfiles.namesByEmail();
+    } catch (err) {
+      console.error('ops profile name lookup failed; falling back to email local parts', err);
+    }
+    const users = assignableOpsUsers(auth.opsUsers)
+      .map((u) => ({ ...u, displayName: displayNameFor(names.get(u.email), u.email) }));
+    return c.json({ users });
+  });
 
   r.get('/finance/summary', requireCap('margin:view'), (c) => c.json({ ok: true }));
 

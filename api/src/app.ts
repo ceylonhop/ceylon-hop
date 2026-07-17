@@ -18,6 +18,7 @@ import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
+import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
@@ -36,6 +37,7 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
+  opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   adminApiKey?: string;
@@ -73,6 +75,7 @@ export function createApp(deps: AppDeps = {}) {
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
+  const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
@@ -191,7 +194,7 @@ export function createApp(deps: AppDeps = {}) {
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   app.route('/admin/ops', opsRoutes({
-    bookings, payments, rideOps, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
+    bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
     email, notificationLog,
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,

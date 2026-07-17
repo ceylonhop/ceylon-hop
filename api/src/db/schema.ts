@@ -157,6 +157,16 @@ export const rideOps = pgTable('ride_ops', {
 
 // Dedup ledger for scheduled customer notifications (M14): one row per (booking, kind)
 // means the cron tick can run as often as it likes without ever double-sending.
+// Display names for ops staff, captured from the Google profile at sign-in so the assign
+// picker and queue name people rather than inboxes. Email is the key, NOT a foreign key:
+// staff identity/role lives in OPS_USERS (env), so a row here is a cache of what Google told
+// us, and dropping this table costs labels, not access. No row until that person signs in.
+export const opsUserProfiles = pgTable('ops_user_profiles', {
+  email: text('email').primaryKey(),
+  name: text('name').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // M17 — ops-alert dedupe ledger. One row per (kind, dedupe_key); ThrottledAlerts only
 // delivers when last_sent_at is older than the cooldown, so alert storms collapse and a
 // restart/redeploy can't re-spam the founder. count tracks suppressed repeats.

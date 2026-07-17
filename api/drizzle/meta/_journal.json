@@ -113,6 +113,13 @@
       "when": 1784248583673,
       "tag": "0015_quote_assignment",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784255587804,
+      "tag": "0016_ops_user_profiles",
+      "breakpoints": true
     }
   ]
 }
