@@ -259,3 +259,59 @@ describe('ops UI — submit gated on recorded request', () => {
     expect(body).toContain('requested_service_required');
   });
 });
+
+// Design elevation (2026-07-17): live price hero, keyboard-first, autosave, suggestion,
+// motion, dark mode. Source-level assertions, same style as the quote-intent block above;
+// behaviour is exercised in the browser + web-tests e2e.
+describe('ops UI — design elevation', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  it('D1: the price never disappears — em-dash hero + one quiet needs line', () => {
+    expect(body).toContain('function priceNeeds(');
+    expect(body).toContain('ch-total-usd pending');
+    expect(body).toContain("'To price: ' + needs.join(' &middot; ')");
+  });
+
+  it('D1: the price panel names its role — "Pricing as" over the service boxes', () => {
+    expect(body).toContain('Pricing as');
+  });
+
+  it('D2: command palette exists with shell actions and module-contextual merge', () => {
+    expect(body).toContain('id="kbar"');
+    expect(body).toContain('function kbarActions(');
+    expect(body).toContain('window.opsQuoteKbar');
+  });
+
+  it('D2: Enter adds a leg (guarded on the place menu) and ⌘S saves', () => {
+    expect(body).toContain("e.key === 'Enter'");
+    expect(body).toContain("addLeg('transfer');");
+    expect(body).toContain("(e.metaKey || e.ctrlKey) && (e.key === 's'");
+  });
+
+  it('D3: the smallest fitting vehicle is suggested, never auto-selected', () => {
+    expect(body).toContain("id === sug ? ' suggest'");
+    expect(body).toContain('fits this group');
+    expect(body).not.toContain('vehicleType = sug'); // suggestion must not silently pick
+  });
+
+  it('D4: autosave is debounced, gated on savedId + editable status, with a saved chip', () => {
+    expect(body).toContain('function fireAutosave(');
+    expect(body).toContain('setTimeout(fireAutosave, 2500)');
+    expect(body).toContain('if (!state.savedId || !isEditableNow() || !state.vehicleType) return;');
+    expect(body).toContain('ch-savestate');
+  });
+
+  it('D6: dark theme tokens + persisted toggle + pre-paint init', () => {
+    expect(body).toContain(':root[data-theme="dark"]');
+    expect(body).toContain("localStorage.setItem('ch_ops_theme'");
+    expect(body).toContain('prefers-color-scheme: dark');
+    expect(body).toContain('id="railTheme"');
+  });
+
+  it('D5: arrival motion is one-shot and respects reduced motion', () => {
+    expect(body).toContain('mount-rise');
+    expect(body).toContain('just-unlocked');
+    expect(body).toContain('prefers-reduced-motion');
+  });
+});
