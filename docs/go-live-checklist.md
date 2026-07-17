@@ -48,6 +48,7 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Google Cloud console:** add `ceylonhop.com` (+ `www`) to the **front-end Maps/Places key** *Website restrictions* (today: `ceylonhop.github.io` + localhost). Key powers Maps JS + Places Autocomplete + Directions on `booking.html` / `plan.html`.
 - [ ] **PayHere dashboard:** approved/live domain = the `ceylonhop.com` apex (PayHere is **apex-only** — no subdomains, no `github.io`).
 - [ ] **Keep the API warm:** `keepalive.yml` (GHA, 13-min `/health` ping) exists but GitHub Actions cron is throttled and not reliable enough alone — still set up an external pinger (e.g. cron-job.org → `https://ceylon-hop-api.onrender.com/health` every ~10 min) **or** upgrade Render off the free tier.
+- [ ] **Revisit the Render tier under real payment traffic.** Owner decision 2026-07-16: staying on the **free tier** for now — ~400–500 ms per debounced reprice judged acceptable for a travel site (see `docs/superpowers/specs/2026-07-16-server-authoritative-pricing-design.md` §10). At go-live, re-measure quote latency from a Sri Lankan connection and reconsider paid tier (+ Singapore region) if the warm jitter band (250 ms–1.3 s) hurts conversion or webhook reliability.
 
 ## 3. Hosting / code / data
 
