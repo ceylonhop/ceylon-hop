@@ -88,6 +88,9 @@ export interface QuoteSummary {
   customerContact: string | null;
   totalCents: number;
   currency: string;
+  // The queue's "Assigned to me" section filters on this, so it must survive the narrow
+  // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
+  assignedTo: string | null;
   createdAt: Date;
 }
 
@@ -165,6 +168,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     customerContact: q.customerContact,
     totalCents: q.totalCents,
     currency: q.currency,
+    assignedTo: q.assignedTo,
     createdAt: q.createdAt,
   };
 }

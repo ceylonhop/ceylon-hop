@@ -121,6 +121,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         customerContact: quotes.customerContact,
         totalCents: quotes.totalCents,
         currency: quotes.currency,
+        assignedTo: quotes.assignedTo,
         createdAt: quotes.createdAt,
       })
       .from(quotes)
@@ -136,6 +137,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       customerContact: r.customerContact,
       totalCents: r.totalCents,
       currency: r.currency,
+      assignedTo: r.assignedTo,
       createdAt: r.createdAt,
     }));
   }

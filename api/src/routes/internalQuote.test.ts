@@ -1106,6 +1106,16 @@ describe('quote assignment + audit trail', () => {
     expect(q.updatedBy).toBe('op@x.com');
   });
 
+  // The queue's "Assigned to me" section filters on this, so the list projection must carry it.
+  // (The projection is deliberately narrow — see postgresQuoteRepo.list — so it needs adding.)
+  it('exposes assignedTo on the queue list', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const list = await (await getAs('f@x.com', app, '/admin/quote/list')).json();
+    expect(list.quotes.find((q: { id: string }) => q.id === id).assignedTo).toBe('f@x.com');
+  });
+
   it('keeps createdBy immutable across a content re-save by someone else, moving updatedBy', async () => {
     const app = createApp();
     const { id } = await draftAs(app, 'op@x.com');
