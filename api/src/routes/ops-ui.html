@@ -577,7 +577,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* place autocomplete */
 .qv .ch-ac { position: relative; }
 .qv .ch-tl-title-field .ch-ac { width: 100%; }
-.qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; }
+.qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
 .qv .ch-ac-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); font-family: var(--sans); }
 .qv .ch-ac-item:hover, .qv .ch-ac-item.hi { background: var(--cream); }
 .qv .ch-ac-item.loading { cursor: default; color: var(--muted); }
@@ -4707,17 +4707,69 @@ var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" strok
 var _mapsJsPromise = null;
 function loadMapsJs() {
   if (_mapsJsPromise) return _mapsJsPromise;
-  if (window.google && window.google.maps && window.google.maps.Map) { _mapsJsPromise = Promise.resolve(true); return _mapsJsPromise; }
+  if (window.google && window.google.maps && window.google.maps.importLibrary) { _mapsJsPromise = Promise.resolve(true); return _mapsJsPromise; }
   if (!OPS_MAPS_KEY) { _mapsJsPromise = Promise.resolve(false); return _mapsJsPromise; }
   _mapsJsPromise = new Promise(function (resolve) {
+    // loading=async is Google's recommended pattern (a console warning fires without it);
+    // the API signals readiness via the callback, then classes load via importLibrary.
+    window.__opsMapsReady = function () { resolve(!!(window.google && window.google.maps && window.google.maps.importLibrary)); };
     var s = document.createElement('script');
-    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(OPS_MAPS_KEY);
-    s.async = true; s.defer = true;
-    s.onload = function () { resolve(!!(window.google && window.google.maps && window.google.maps.Map)); };
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(OPS_MAPS_KEY) + '&loading=async&callback=__opsMapsReady';
+    s.async = true;
     s.onerror = function () { resolve(false); };
     document.head.appendChild(s);
   });
   return _mapsJsPromise;
+}
+
+// The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
+// route map needs once. Resolves null when any import fails (e.g. routes library unavailable).
+var _mapsLibsPromise = null;
+function mapsLibs() {
+  if (_mapsLibsPromise) return _mapsLibsPromise;
+  _mapsLibsPromise = Promise.all([
+    google.maps.importLibrary('maps'),
+    google.maps.importLibrary('routes'),
+    google.maps.importLibrary('marker'),
+    google.maps.importLibrary('core'),
+  ]).then(function (libs) {
+    var out = { Map: libs[0].Map, Route: libs[1].Route, Marker: libs[2].Marker, Point: libs[3].Point };
+    return (out.Map && out.Route && out.Marker && out.Point) ? out : null;
+  }).catch(function () { return null; });
+  return _mapsLibsPromise;
+}
+
+// Known-place coordinates, mirroring the backend's table (api/src/adapters/maps.ts COORDS).
+// A known place goes to Google as its exact coords, never the bare name: names like "Ella"
+// exist in other countries and can geocode abroad, failing the whole route — the same
+// gotcha the backend's Distance Matrix calls guard against.
+var MAP_COORDS = {
+  'colombo airport (cmb)': { lat: 7.18, lng: 79.88 },
+  'colombo city': { lat: 6.93, lng: 79.85 },
+  'negombo': { lat: 7.21, lng: 79.84 },
+  'bentota': { lat: 6.42, lng: 79.99 },
+  'hikkaduwa': { lat: 6.14, lng: 80.1 },
+  'galle': { lat: 6.03, lng: 80.22 },
+  'weligama': { lat: 5.97, lng: 80.42 },
+  'mirissa': { lat: 5.95, lng: 80.46 },
+  'kandy': { lat: 7.29, lng: 80.63 },
+  'nuwara eliya': { lat: 6.95, lng: 80.79 },
+  'ella': { lat: 6.87, lng: 81.05 },
+  'sigiriya / dambulla': { lat: 7.95, lng: 80.76 },
+  'anuradhapura': { lat: 8.31, lng: 80.4 },
+  'yala': { lat: 6.37, lng: 81.52 },
+  'arugam bay': { lat: 6.84, lng: 81.84 },
+  'trincomalee': { lat: 8.59, lng: 81.21 },
+};
+
+// A stop → the location we send to computeRoutes: exact coords for known places (see
+// MAP_COORDS above); otherwise clean the free-typed name for geocoding, mirroring the
+// customer-site map (ch-map.js) — drop "(CMB)" parentheticals and slashes, and anchor to
+// Sri Lanka so bare names don't geocode abroad.
+function routeLoc(name) {
+  var known = MAP_COORDS[(name || '').trim().toLowerCase()];
+  if (known) return known;
+  return (name || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka';
 }
 
 // Ordered, consecutive-deduplicated stop names across the travel legs.
@@ -4736,7 +4788,7 @@ function itinStops() {
 function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
-var _mapEl = null, _mapMap = null, _mapRenderer = null, _mapSig = null, _mapBounds = null, _mapMarkers = [];
+var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
   if (!slot) return; // no map this render
@@ -4751,52 +4803,67 @@ function syncItinMap() {
   }
   var stops = itinStops();
   var sig = stops.join(' | ');
-  if (sig === _mapSig && _mapMap) return; // route unchanged — keep the live map
+  // Route unchanged → nothing to do, whatever state the map is in: keep a live map,
+  // keep a failure note (retrying identical stops can't succeed and re-billed a route
+  // query on EVERY render — each date/price/checkbox edit), and let an in-flight draw
+  // finish (renders during the async draw used to launch duplicate queries). A failed
+  // or in-flight route re-draws only when a stop actually changes.
+  if (sig === _mapSig) return;
   _mapSig = sig;
   drawItinRoute(_mapEl, stops);
 }
 
 async function drawItinRoute(hostEl, stops) {
   var ok = await loadMapsJs();
-  if (!ok) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
+  var libs = ok ? await mapsLibs() : null;
+  if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
   if (!_mapMap || _mapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
-    _mapMap = new google.maps.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
+    _mapMap = new libs.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
     _mapMap.__host = hostEl;
-    _mapRenderer = new google.maps.DirectionsRenderer({ map: _mapMap, suppressMarkers: true, polylineOptions: { strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 } });
   }
-  // Clean names for geocoding, mirroring the customer-site map (ch-map.js): drop "(CMB)"
-  // parentheticals and slashes, and anchor to Sri Lanka so bare names don't geocode abroad —
-  // otherwise multi-stop routes with an airport/slash/bare name fail with "couldn't map".
-  var geoName = function (s) { return (s || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka'; };
-  new google.maps.DirectionsService().route({
-    origin: geoName(stops[0]), destination: geoName(stops[stops.length - 1]),
-    waypoints: stops.slice(1, -1).map(function (n) { return { location: geoName(n), stopover: true }; }),
-    travelMode: google.maps.TravelMode.DRIVING,
-  }, function (res, status) {
-    if (status !== 'OK' || !res || !res.routes || !res.routes[0]) {
-      hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
-      _mapMap = null; return;
-    }
-    _mapRenderer.setDirections(res);
-    // A brand pin at EVERY stop (the renderer's default A/B/C pins are suppressed): green
-    // start, teal for the stops in between, orange final drop-off — so the ops map shows the
-    // whole itinerary, not just the two endpoints (matches the customer site's map). Clear the
-    // previous render's pins first so they don't pile up when the route changes.
-    try {
-      _mapMarkers.forEach(function (m) { m.setMap(null); });
-      _mapMarkers = [];
-      var rlegs = res.routes[0].legs;
-      var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new google.maps.Point(12, 22) }; };
-      _mapMarkers.push(new google.maps.Marker({ map: _mapMap, position: rlegs[0].start_location, icon: pin('#0a7d6f'), zIndex: 6 }));
-      for (var li = 0; li < rlegs.length; li++) {
-        var isLast = li === rlegs.length - 1;
-        _mapMarkers.push(new google.maps.Marker({ map: _mapMap, position: rlegs[li].end_location, icon: pin(isLast ? '#e8623a' : '#0AB9B6'), zIndex: isLast ? 6 : 5 }));
-      }
-    } catch (e) { /* markers are non-essential */ }
-    _mapBounds = res.routes[0].bounds || null;
-    if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
+  var route = null;
+  try {
+    var res = await libs.Route.computeRoutes({
+      origin: routeLoc(stops[0]),
+      destination: routeLoc(stops[stops.length - 1]),
+      intermediates: stops.slice(1, -1).map(function (n) { return { location: routeLoc(n) }; }),
+      travelMode: 'DRIVING',
+      region: 'lk',
+      fields: ['path', 'legs', 'viewport'],
+    });
+    route = res && res.routes && res.routes[0];
+  } catch (e) { /* unroutable → the "couldn't map" note below */ }
+  if (!route) {
+    hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
+    _mapMap = null; return;
+  }
+  // Swap in this route's polylines, styled like the old DirectionsRenderer line (the
+  // renderer used to replace the previous line for us; now we clear it ourselves).
+  _mapPolylines.forEach(function (p) { p.setMap(null); });
+  _mapPolylines = route.createPolylines();
+  _mapPolylines.forEach(function (p) {
+    p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 });
+    p.setMap(_mapMap);
   });
+  // A brand pin at EVERY stop (createWaypointAdvancedMarkers needs a map ID, so we keep our
+  // own pins): green start, teal for the stops in between, orange final drop-off — so the
+  // ops map shows the whole itinerary, not just the two endpoints (matches the customer
+  // site's map). Clear the previous render's pins first so they don't pile up.
+  try {
+    _mapMarkers.forEach(function (m) { m.setMap(null); });
+    _mapMarkers = [];
+    var rlegs = route.legs;
+    var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22) }; };
+    var at = function (loc) { return { lat: loc.lat, lng: loc.lng }; }; // DirectionalLocation → LatLngLiteral
+    _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(rlegs[0].startLocation), icon: pin('#0a7d6f'), zIndex: 6 }));
+    for (var li = 0; li < rlegs.length; li++) {
+      var isLast = li === rlegs.length - 1;
+      _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(rlegs[li].endLocation), icon: pin(isLast ? '#e8623a' : '#0AB9B6'), zIndex: isLast ? 6 : 5 }));
+    }
+  } catch (e) { /* markers are non-essential */ }
+  _mapBounds = route.viewport || null;
+  if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
 }
 
 // ── Place autocomplete ────────────────────────────────────────────────────────
@@ -5040,11 +5107,19 @@ document.addEventListener('mousedown', function(e) {
     acClose();
   }
 });
-document.addEventListener('scroll', function() {
-  if (_ac.menuEl && Date.now() - _ac.openedAt > 250) acClose();
+// Scrolling/wheeling/touch-dragging INSIDE the menu scrolls the results (the menu is its
+// own scroll box — max-height + overflow-y); only movement OUTSIDE it dismisses, mirroring
+// the click-away rule above. The scroll listener is capture-phase, so it sees the menu's own
+// scroll events too — hence the same inside-the-menu guard.
+document.addEventListener('scroll', function(e) {
+  if (_ac.menuEl && !_ac.menuEl.contains(e.target) && Date.now() - _ac.openedAt > 250) acClose();
 }, true);
-window.addEventListener('wheel', function() { if (_ac.menuEl) acClose(); }, { passive: true });
-window.addEventListener('touchmove', function() { if (_ac.menuEl) acClose(); }, { passive: true });
+window.addEventListener('wheel', function(e) {
+  if (_ac.menuEl && !_ac.menuEl.contains(e.target)) acClose();
+}, { passive: true });
+window.addEventListener('touchmove', function(e) {
+  if (_ac.menuEl && !_ac.menuEl.contains(e.target)) acClose();
+}, { passive: true });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // T5: no self-invoke — the ops shell calls QuoteView.init() when the founder

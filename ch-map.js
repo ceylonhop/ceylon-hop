@@ -25,7 +25,7 @@
   }
 
   function loadJs(key) {
-    if (window.google && window.google.maps) return Promise.resolve();
+    if (window.google && window.google.maps && window.google.maps.importLibrary) return Promise.resolve();
     if (loaderPromise) return loaderPromise;
     loaderPromise = new Promise((resolve, reject) => {
       window.__chMapsReady = () => resolve();
@@ -39,6 +39,24 @@
       document.head.appendChild(s);
     });
     return loaderPromise;
+  }
+
+  // The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
+  // route renderer needs once. A failed import stays rejected → callers fall back to SVG.
+  let libsPromise = null;
+  function loadLibs() {
+    if (libsPromise) return libsPromise;
+    libsPromise = Promise.all([
+      google.maps.importLibrary('maps'),
+      google.maps.importLibrary('routes'),
+      google.maps.importLibrary('marker'),
+      google.maps.importLibrary('core'),
+    ]).then(([m, r, mk, c]) => {
+      const libs = { Map: m.Map, Route: r.Route, Marker: mk.Marker, Point: c.Point };
+      if (!libs.Map || !libs.Route || !libs.Marker || !libs.Point) throw new Error('maps_libs_missing');
+      return libs;
+    });
+    return libsPromise;
   }
 
   // Place names → geocodable query (drop "(CMB)"/slashes, anchor to Sri Lanka).
@@ -73,7 +91,8 @@
 
     try {
       await loadJs(key);
-      const map = new google.maps.Map(mapDiv, {
+      const libs = await loadLibs();
+      const map = new libs.Map(mapDiv, {
         // explicit centre/zoom on Sri Lanka so base tiles load immediately —
         // the renderer re-fits to the route once it resolves (avoids grey tiles).
         center: { lat: 7.87, lng: 80.77 },
@@ -83,88 +102,91 @@
         clickableIcons: false,
         gestureHandling: 'cooperative',
       });
-      const renderer = new google.maps.DirectionsRenderer({
-        map,
-        suppressMarkers: true, // hide the A/B pins — the route line + the bar below convey it
-        polylineOptions: { strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 },
-      });
-      new google.maps.DirectionsService().route(
-        {
+      let route = null;
+      try {
+        const res = await libs.Route.computeRoutes({
           origin: toLoc(stops[0]),
           destination: toLoc(stops[stops.length - 1]),
-          waypoints: stops.slice(1, -1).map((n) => ({ location: toLoc(n), stopover: true })),
-          travelMode: google.maps.TravelMode.DRIVING,
-        },
-        (res, status) => {
-          if (done) return;
-          clearTimeout(timer);
-          if (status === 'OK') {
-            renderer.setDirections(res);
-            done = true;
-            wrap.classList.add('ready');
+          intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
+          travelMode: 'DRIVING',
+          region: 'lk',
+          fields: ['path', 'legs', 'viewport'],
+        });
+        route = res && res.routes && res.routes[0];
+      } catch (e) { /* unroutable → fail() below */ }
+      if (done) return;
+      clearTimeout(timer);
+      if (!route) {
+        fail();
+        return;
+      }
+      done = true;
+      wrap.classList.add('ready');
+      // Route line styled like the old DirectionsRenderer line (each render gets a fresh
+      // map, so there's no previous line to clear).
+      route.createPolylines().forEach((p) => {
+        p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 });
+        p.setMap(map);
+      });
 
-            // Brand pin at EVERY stop, not just the endpoints (the renderer's default A/B
-            // pins are suppressed). One pin per stop = the start of the first leg, then the
-            // end of each leg. Green = pick-up, orange = final drop-off, teal for every stop
-            // in between — matches the summary's numbered route.
-            try {
-              const rlegs = res.routes[0].legs;
-              const pin = (fill) => ({
-                path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
-                fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
-                scale: 1.5, anchor: new google.maps.Point(12, 22),
-              });
-              const stopLocs = [rlegs[0].start_location].concat(rlegs.map((l) => l.end_location));
-              stopLocs.forEach((pos, i) => {
-                const first = i === 0, last = i === stopLocs.length - 1;
-                new google.maps.Marker({
-                  map, position: pos, zIndex: 5,
-                  icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
-                  title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
-                });
-              });
-            } catch (e) { /* markers are non-essential */ }
+      // Brand pin at EVERY stop, not just the endpoints (createWaypointAdvancedMarkers
+      // needs a map ID, so we keep our own pins). One pin per stop = the start of the first
+      // leg, then the end of each leg. Green = pick-up, orange = final drop-off, teal for
+      // every stop in between — matches the summary's numbered route.
+      try {
+        const rlegs = route.legs;
+        const pin = (fill) => ({
+          path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
+          fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
+          scale: 1.5, anchor: new libs.Point(12, 22),
+        });
+        const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
+        const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
+        stopLocs.forEach((pos, i) => {
+          const first = i === 0, last = i === stopLocs.length - 1;
+          new libs.Marker({
+            map, position: pos, zIndex: 5,
+            icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
+            title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
+          });
+        });
+      } catch (e) { /* markers are non-essential */ }
 
-            // Fit the whole route in view, and re-fit if the container gains its size later:
-            // the map can be created while its step panel is still collapsed (0-width), which
-            // otherwise leaves grey tiles + a tiny un-fitted route.
-            const fit = () => { if (res.routes[0].bounds) map.fitBounds(res.routes[0].bounds, 36); };
+      // Fit the whole route in view, and re-fit if the container gains its size later:
+      // the map can be created while its step panel is still collapsed (0-width), which
+      // otherwise leaves grey tiles + a tiny un-fitted route.
+      const fit = () => { if (route.viewport) map.fitBounds(route.viewport, 36); };
+      fit();
+      if (window.ResizeObserver) {
+        let lastW = mapDiv.offsetWidth;
+        const ro = new ResizeObserver(() => {
+          if (mapDiv.offsetWidth && mapDiv.offsetWidth !== lastW) {
+            lastW = mapDiv.offsetWidth;
+            // Legacy "resize" nudge — a no-op on the modern async-loaded API (maps
+            // auto-handle container resize), and google.maps.event isn't always present
+            // (partial API load, ad-blockers, headless/test stubs). Guard it so the
+            // ResizeObserver never throws; fit() below does the actual re-fit regardless.
+            if (google.maps.event && typeof google.maps.event.trigger === 'function') {
+              google.maps.event.trigger(map, 'resize');
+            }
             fit();
-            if (window.ResizeObserver) {
-              let lastW = mapDiv.offsetWidth;
-              const ro = new ResizeObserver(() => {
-                if (mapDiv.offsetWidth && mapDiv.offsetWidth !== lastW) {
-                  lastW = mapDiv.offsetWidth;
-                  // Legacy "resize" nudge — a no-op on the modern async-loaded API (maps
-                  // auto-handle container resize), and google.maps.event isn't always present
-                  // (partial API load, ad-blockers, headless/test stubs). Guard it so the
-                  // ResizeObserver never throws; fit() below does the actual re-fit regardless.
-                  if (google.maps.event && typeof google.maps.event.trigger === 'function') {
-                    google.maps.event.trigger(map, 'resize');
-                  }
-                  fit();
-                }
-              });
-              ro.observe(mapDiv);
-            }
-            // report the REAL road distance + drive time so callers can show a
-            // figure that matches the route on the map (not an offline estimate).
-            if (opts.onRoute) {
-              try {
-                const legs = (res.routes[0] && res.routes[0].legs) || [];
-                let meters = 0, secs = 0;
-                legs.forEach((l) => {
-                  meters += l.distance ? l.distance.value : 0;
-                  secs += l.duration ? l.duration.value : 0;
-                });
-                opts.onRoute({ km: Math.round(meters / 1000), durationMin: Math.round(secs / 60) });
-              } catch (e) { /* leave the estimate in place */ }
-            }
-          } else {
-            fail();
           }
-        },
-      );
+        });
+        ro.observe(mapDiv);
+      }
+      // report the REAL road distance + drive time so callers can show a
+      // figure that matches the route on the map (not an offline estimate).
+      if (opts.onRoute) {
+        try {
+          const legs = route.legs || [];
+          let meters = 0, ms = 0;
+          legs.forEach((l) => {
+            meters += l.distanceMeters || 0;
+            ms += l.durationMillis || 0;
+          });
+          opts.onRoute({ km: Math.round(meters / 1000), durationMin: Math.round(ms / 60000) });
+        } catch (e) { /* leave the estimate in place */ }
+      }
     } catch (e) {
       clearTimeout(timer);
       fail();
@@ -177,33 +199,28 @@
     if (!key || stops.length < 2) return null;
     try {
       await loadJs(key);
-      return await new Promise((resolve) => {
-        const svc = new google.maps.DirectionsService();
-        svc.route(
-          {
-            origin: toLoc(stops[0]),
-            destination: toLoc(stops[stops.length - 1]),
-            waypoints: stops.slice(1, -1).map((s) => ({ location: toLoc(s), stopover: true })),
-            travelMode: google.maps.TravelMode.DRIVING,
-            region: 'LK',
-          },
-          (res, status) => {
-            if (status !== 'OK' || !res || !res.routes || !res.routes[0]) return resolve(null);
-            try {
-              const legs = res.routes[0].legs || [];
-              let meters = 0, secs = 0;
-              legs.forEach((l) => {
-                meters += l.distance ? l.distance.value : 0;
-                secs += l.duration ? l.duration.value : 0;
-              });
-              resolve({ km: Math.round(meters / 1000), durationMin: Math.round(secs / 60) });
-            } catch (e) {
-              resolve(null);
-            }
-          },
-        );
+      // Stats only — import just the routes library (no map/marker classes needed), and
+      // request only the legs field so we're not billed for path/viewport we won't use.
+      const { Route } = await google.maps.importLibrary('routes');
+      const res = await Route.computeRoutes({
+        origin: toLoc(stops[0]),
+        destination: toLoc(stops[stops.length - 1]),
+        intermediates: stops.slice(1, -1).map((s) => ({ location: toLoc(s) })),
+        travelMode: 'DRIVING',
+        region: 'lk',
+        fields: ['legs'],
       });
+      const r0 = res && res.routes && res.routes[0];
+      if (!r0) return null;
+      let meters = 0, ms = 0;
+      (r0.legs || []).forEach((l) => {
+        meters += l.distanceMeters || 0;
+        ms += l.durationMillis || 0;
+      });
+      return { km: Math.round(meters / 1000), durationMin: Math.round(ms / 60000) };
     } catch (e) {
+      // Transient failures (over-quota, network, rejected computeRoutes) collapse to null —
+      // callers treat null as "no answer yet", never as a cacheable result (plan-live-km spec).
       return null;
     }
   }
