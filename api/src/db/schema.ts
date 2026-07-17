@@ -219,6 +219,12 @@ export const quotes = pgTable('quotes', {
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
+  // Quote intent (spec 2026-07-17): which service the CUSTOMER asked for — 'private' |
+  // 'chauffeur' | 'both' — as distinct from `product`, which is what was actually priced.
+  // Nullable: rows predating this have none, and the requirement is a workflow gate at submit
+  // (internalQuote's PATCH), not a storage constraint. There is no 'legacy' sentinel — every
+  // quote is gated, old ones included (spec I7).
+  requestedService: text('requested_service'),
   // Assignment + audit (spec 2026-07-16). assignedTo is the notification target: who HOLDS the
   // quote, set only by an explicit assign — never inferred from who last moved it. All nullable:
   // rows predating this can't be backfilled (we don't know who made them). Emails, not FKs —

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { gunzipSync } from 'node:zlib';
 import { createApp } from '../app';
 
@@ -156,5 +156,91 @@ describe('ops UI shell', () => {
     expect(body).toContain("addEventListener('unhandledrejection'"); // + promise rejections
     expect(body).toContain('/errors/client');                       // same sink as the customer pages
     expect(body).toContain('[ops-ui]');                             // tagged distinctly from customer errors
+  });
+});
+
+// Quote intent (spec 2026-07-17): the submitter records what the CUSTOMER asked for, which the
+// reviewer reads to know which options to focus on.
+describe('ops UI — quote intent', () => {
+  // These assert the SHELL SOURCE (the JS that builds the DOM), not the rendered DOM — the
+  // data-req attribute values are concatenated at runtime, so only the option list is a literal
+  // here. The rendered control is covered in the browser by web-tests/e2e.
+  it('renders the "Customer asked for" control, unselected by default', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('Customer asked for');
+    expect(body).toContain('data-action="setRequestedService"');
+    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']]");
+    expect(body).toContain('requestedService: null'); // I4: never derived from the priced service
+  });
+
+  it("recording 'both' switches the chauffeur upsell on so the second price can't be forgotten (I9)", async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain("if (v === 'both') outputIncludeChauffeurUpsell = true;");
+    expect(body).toContain('data-action="toggleChauffeurUpsell"'); // still overridable
+  });
+
+  it('sends it on save and restores it on reopen', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('requestedService: state.requestedService');
+    expect(body).toContain('tool.requestedService');
+  });
+});
+
+// requestMismatch is pure and DOM-free, so we lift it out of the inlined shell script and
+// table-test all six (recorded, priced) combinations directly — an e2e per row would be absurd.
+describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
+  let f: (r: string | null, p: string) => string | null;
+  beforeAll(async () => {
+    const body = await (await createApp().request('/ops')).text();
+    const start = body.indexOf('function requestMismatch(');
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    const src = body.slice(start, i + 1);
+    // eslint-disable-next-line no-new-func
+    f = new Function(`${src}; return requestMismatch;`)() as typeof f;
+  });
+
+  it('is silent when nothing is recorded yet', () => {
+    expect(f(null, 'private')).toBeNull();
+  });
+  it('is silent when the record matches what was priced', () => {
+    expect(f('private', 'private')).toBeNull();
+    expect(f('chauffeur', 'chauffeur')).toBeNull();
+  });
+  it("is silent for 'both' on a point-to-point quote — the upsell carries the second price", () => {
+    expect(f('both', 'private')).toBeNull();
+  });
+  it('flags a recorded point-to-point priced as chauffeur', () => {
+    expect(f('private', 'chauffeur')).toMatch(/Point-to-point/);
+  });
+  it('flags a recorded chauffeur priced as point-to-point', () => {
+    expect(f('chauffeur', 'private')).toMatch(/Chauffeur-guide/);
+  });
+  it("flags 'both' on a chauffeur quote — the upsell is one-directional, so it can't show both (I10)", () => {
+    expect(f('both', 'chauffeur')).toMatch(/point-to-point/i);
+  });
+
+  it('renders the mismatch line from live state', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('requestMismatch(state.requestedService, state.service)');
+    expect(body).toContain('ch-req-mismatch');
+  });
+});
+
+// Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit/Approve are
+// disabled until the customer request is recorded, and a bypassed 400 gets friendly copy.
+describe('ops UI — submit gated on recorded request', () => {
+  it('disables submit/approve until the request is recorded, with a hint', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('!state.requestedService');
+    expect(body).toContain('Record what the customer asked for first');
+  });
+  it('maps the server 400 to the same friendly copy for a bypassed client', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('requested_service_required');
   });
 });

@@ -54,6 +54,11 @@ const ToolRequestSchema = z.object({
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
+  // Quote intent (spec 2026-07-17). What the customer ASKED for, vs `service` = what we price.
+  // Deliberately NOT defaulted from `service` (I4): a pre-filled value gets accepted unread,
+  // which is the exact failure this field exists to prevent. No 'legacy' member — there is no
+  // exemption (I7), so a client cannot mint one.
+  requestedService: z.enum(['private', 'chauffeur', 'both']).optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
@@ -439,6 +444,9 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
+        // check; it also rides inside request.tool above, which is what the builder reopens from.
+        requestedService: body.requestedService ?? null,
         // Audit (spec 2026-07-16). Both stamped on create; on a re-save the repo applies only
         // updatedBy, so authorship stays with whoever built the quote.
         createdBy: c.get('identity').email,
@@ -546,6 +554,16 @@ export function internalQuoteRoutes(deps: {
     if (body.status && current) {
       const to = body.status as QuoteStatus;
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
+      // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
+      // straight to ready — until the submitter has recorded what the customer asked for.
+      // Checked against the STORED row, never the body: only POST /save writes this field, so
+      // trusting a body value here would be a hole, not a shortcut. Deliberately NOT applied to
+      // /save (work-in-progress must stay savable) nor to any other transition. No exemption for
+      // rows predating the field (I7) — there are few in flight, and an exemption would leave a
+      // permanent hole in the rule.
+      if ((to === 'pending_review' || to === 'ready') && !current.requestedService) {
+        return c.json({ error: 'requested_service_required' }, 400);
+      }
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
       // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
       // customer for changes, so it needs the same approval authority as sending it did.

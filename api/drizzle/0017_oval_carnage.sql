@@ -1,0 +1,1 @@
+ALTER TABLE "quotes" ADD COLUMN "requested_service" text;

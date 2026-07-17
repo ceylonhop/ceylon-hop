@@ -167,3 +167,26 @@ describe('InMemoryQuoteRepo', () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
   });
 });
+
+// Quote intent (spec 2026-07-17): what the CUSTOMER asked for, as distinct from `product`
+// (what was priced). The submitter records it; the route gates submission on it.
+describe('requestedService', () => {
+  it('round-trips the recorded request', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ requestedService: 'both' }));
+    expect(saved.requestedService).toBe('both');
+    expect((await repo.get(saved.id))!.requestedService).toBe('both');
+  });
+
+  it('is null when the submitter has not recorded it (I7: no backfill, no sentinel)', async () => {
+    const saved = await new InMemoryQuoteRepo().save(sample());
+    expect(saved.requestedService).toBeNull();
+  });
+
+  it('update() rewrites it, so a correction on re-save sticks', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ requestedService: 'private' }));
+    const updated = await repo.update(saved.id, sample({ requestedService: 'chauffeur' }));
+    expect(updated!.requestedService).toBe('chauffeur');
+  });
+});

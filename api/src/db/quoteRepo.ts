@@ -41,6 +41,9 @@ export interface NewQuote {
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
   notes?: string | null;
+  // Quote intent (spec 2026-07-17). What the customer ASKED for ('private'|'chauffeur'|'both'),
+  // vs `product` = what was priced. Optional here; the submit gate lives in the route.
+  requestedService?: string | null;
   // Audit (spec 2026-07-16). The acting staff email. On save() both are stamped; on update()
   // only updatedBy moves — createdBy is write-once, so a founder editing an ops person's quote
   // never becomes its author.
@@ -68,6 +71,7 @@ export interface SavedQuote {
   rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
+  requestedService: string | null;
   assignedTo: string | null;
   assignedAt: Date | null;
   createdBy: string | null;
@@ -206,6 +210,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
+      requestedService: q.requestedService ?? null,
       assignedTo: null, // manual-only: a new quote is nobody's until someone assigns it
       assignedAt: null,
       createdBy: q.createdBy ?? null,
@@ -280,6 +285,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
+    row.requestedService = q.requestedService ?? null;
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
