@@ -1064,6 +1064,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   :root[data-theme="dark"] .qv .ch-veh-chip:disabled{color:var(--muted-2)}
   :root[data-theme="dark"] .qv .ch-btn-teal:disabled,
   :root[data-theme="dark"] .qv .ch-btn-primary:disabled{filter:brightness(.55) saturate(.6)}
+
+/* Review lock: the editor reads as inert while the quote isn't editable. */
+.qv .ch-app.ch-locked .ch-cust-strip, .qv .ch-app.ch-locked .ch-sec, .qv .ch-app.ch-locked .ch-svc-choose { opacity: .68; }
+.qv .ch-app.ch-locked .ch-cust-strip input:disabled, .qv .ch-app.ch-locked .ch-sec input:disabled { cursor: not-allowed; }
+.qv .ch-app.ch-locked .ch-req-chip:disabled, .qv .ch-app.ch-locked .ch-veh-chip:disabled { cursor: not-allowed; }
 </style>
 <script>/* D6: set the theme before first paint — no light flash for dark users */
 try{var _t=localStorage.getItem('ch_ops_theme');
@@ -2253,8 +2258,29 @@ var _dirty = false;
    queue. The Save button remains as the explicit path (and the only way to CREATE the row). */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
 function isEditableNow() {
-  return state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested';
+  // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
+  // the founder approves exactly what they reviewed; reopen-to-draft is the one door back in.
+  return state.status === 'draft' || state.status === 'changes_requested';
 }
+/* Review lock: while the quote isn't editable, the EDITOR is inert — every input/chip/button
+   in the basics, itinerary and pricing chooser is disabled and the sections dim. The action
+   bar, output tools and assign strip stay live (they're workflow, not content). The server
+   enforces the same rule (/save 409s), so this is honesty, not the security boundary. */
+function applyContentLock() {
+  var app = document.querySelector('#quoteRoot .ch-app');
+  if (!app) return;
+  var locked = !isEditableNow();
+  app.classList.toggle('ch-locked', locked);
+  if (!locked) return;
+  var regions = app.querySelectorAll('.ch-cust-strip, .ch-sec, .ch-svc-choose');
+  regions.forEach(function(region) {
+    region.querySelectorAll('input, select, textarea, button').forEach(function(el) {
+      if (el.closest('[data-action="toggleMap"]') || el.matches('[data-action="toggleMap"]')) return; // viewing the route is not editing
+      el.disabled = true;
+    });
+  });
+}
+
 function armAutosave() {
   if (_autoTimer) clearTimeout(_autoTimer);
   _autoTimer = setTimeout(fireAutosave, 2500);
@@ -2273,6 +2299,7 @@ async function fireAutosave() {
   updateSaveChip();
 }
 function renderSaveState() {
+  if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
   else if (_dirty) { cls += ' dirty'; txt = state.savedId ? 'Edits pending' : 'Unsaved'; }
@@ -2667,7 +2694,7 @@ async function transition(toStatus, opts) {
   // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
   // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
   // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
-  var editable = state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested';
+  var editable = isEditableNow(); // review lock: pending_review no longer flushes a save (it would 409)
   if (editable && !(await saveQuote({ silent: true }))) return; // saveQuote already surfaced the reason
   var patchBody = { status: toStatus };
   if (opts.note != null) patchBody.notes = opts.note;
@@ -3978,7 +4005,7 @@ function renderActionBar() {
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
-    else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
+    else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
   } else {
@@ -3986,7 +4013,7 @@ function renderActionBar() {
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
-    // pending_review → awaiting the founder; no support actions (read-only)
+    else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
   return out.join('');
 }
@@ -4058,8 +4085,8 @@ function renderReviewBanner() {
   }
   if (s === 'pending_review') {
     return isApprover()
-      ? banner('amber', 'In review', 'Check the pricing and margin, then approve or send it back for changes.')
-      : banner('amber', 'Submitted for review', 'With the founder for approval. You can send it once it’s approved.');
+      ? banner('amber', 'In review — locked', 'Approve, send back, or reopen to edit.')
+      : banner('amber', 'Submitted — locked', 'With the founder. Reopen to edit if you need to change it.');
   }
   if (s === 'changes_requested') {
     return isApprover()
@@ -4331,6 +4358,7 @@ function render() {
   // child of the render target), so capture the intent to rebuild it afterwards.
   var _menuWasOpen = !!_ac.menuEl;
   document.querySelector('#quoteRoot .ch-app').innerHTML = html;
+  applyContentLock();
   attachEventListeners();
   restoreEditorFocus(_focusSnap, _menuWasOpen);
   if (_menuWasOpen) reopenAutoCompleteMenu();

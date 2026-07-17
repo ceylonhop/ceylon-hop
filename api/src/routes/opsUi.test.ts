@@ -315,3 +315,34 @@ describe('ops UI — design elevation', () => {
     expect(body).toContain('prefers-reduced-motion');
   });
 });
+
+// Review lock (owner, 2026-07-17): submission freezes content; reopen-to-draft is the one
+// explicit door back in. Server enforces via /save 409 — these assert the UI tells the truth.
+describe('ops UI — review lock', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  it('pending_review is no longer client-editable (gates autosave, ⌘S, palette, vehicle keys)', () => {
+    expect(body).toContain("return state.status === 'draft' || state.status === 'changes_requested';");
+    expect(body).not.toContain("state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested'");
+  });
+
+  it('the editor renders inert while locked, with the map toggle exempt', () => {
+    expect(body).toContain('function applyContentLock(');
+    expect(body).toContain("classList.toggle('ch-locked', locked)");
+    expect(body).toContain('viewing the route is not editing');
+  });
+
+  it('every locked row in the action bar offers the reopen door, and review loses Save', () => {
+    const bar = body.slice(body.indexOf('function renderActionBar('), body.indexOf('function renderReviewBanner('));
+    const reviewRows = bar.split('\n').filter(l => l.includes("'pending_review'"));
+    expect(reviewRows.length).toBeGreaterThanOrEqual(2); // approver + submitter rows
+    reviewRows.forEach(row => expect(row).toContain("reopenToDraft"));
+    reviewRows.forEach(row => expect(row).not.toContain('SAVE'));
+  });
+
+  it('the banner names the lock', () => {
+    expect(body).toContain('In review — locked');
+    expect(body).toContain('Submitted — locked');
+  });
+});
