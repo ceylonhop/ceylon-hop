@@ -2082,6 +2082,12 @@ function setRequestedService(v) {
   if (v !== 'private' && v !== 'chauffeur' && v !== 'both') return;
   if (state.requestedService === v) return;
   state.requestedService = v;
+  /* I9: 'both' means the customer wants to see BOTH prices. The chauffeur option lives in a
+     separate Output-tab toggle, and leaving the two decoupled means recording 'both' and then
+     sending one price because that unrelated toggle was forgotten. Default it on; the operator
+     can still switch it back off. (It only applies to a point-to-point-priced quote — the
+     upsell is one-directional; see requestMismatch's 'both'+chauffeur case.) */
+  if (v === 'both') outputIncludeChauffeurUpsell = true;
   _dirty = true;
   render();
 }

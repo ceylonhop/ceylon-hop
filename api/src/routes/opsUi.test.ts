@@ -173,6 +173,12 @@ describe('ops UI — quote intent', () => {
     expect(body).toContain('requestedService: null'); // I4: never derived from the priced service
   });
 
+  it("recording 'both' switches the chauffeur upsell on so the second price can't be forgotten (I9)", async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain("if (v === 'both') outputIncludeChauffeurUpsell = true;");
+    expect(body).toContain('data-action="toggleChauffeurUpsell"'); // still overridable
+  });
+
   it('sends it on save and restores it on reopen', async () => {
     const body = await (await createApp().request('/ops')).text();
     expect(body).toContain('requestedService: state.requestedService');
