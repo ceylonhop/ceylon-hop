@@ -6,6 +6,7 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
+import { FakeEmailAdapter } from '../adapters/email';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -1033,5 +1034,177 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     const res = await getAs('f@x.com', createApp({ quotes: repo }), `/admin/quote/${saved.id}`);
     expect(res.status).toBe(200);
     expect((await res.json()).estimate).toBeNull();
+  });
+});
+
+// ── Assignment + audit trail (spec 2026-07-16) ───────────────────────────────
+// Notifications follow an explicit assignment, not a state transition, so `assignedTo` is the
+// notification target and must never be inferable from who happened to move the quote last.
+describe('quote assignment + audit trail', () => {
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const getAs = (email: string, app: App, path: string) => app.request(path, { headers: { cookie: cookie(email) } });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('stamps createdBy/updatedBy on save and leaves the quote unassigned', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('op@x.com');
+    expect(q.assignedTo).toBeNull();
+    expect(q.assignedAt).toBeNull();
+  });
+
+  it('assigns to an OPS_USERS member, stamping assignedAt + updatedBy but never createdBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    const q = await res.json();
+    expect(q.assignedTo).toBe('f@x.com');
+    expect(q.assignedAt).not.toBeNull();
+    expect(q.updatedBy).toBe('op@x.com');
+    expect(q.createdBy).toBe('op@x.com');
+  });
+
+  // The hard requirement from the spec (§5): assignment drives an email, so an unvalidated
+  // assignee would mail a stranger a link to a customer's quote.
+  it('rejects an assignee outside OPS_USERS', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'stranger@evil.com' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('unknown_assignee');
+  });
+
+  it('accepts an assignee in any case (OPS_USERS lookup is lowercased) and stores it normalised', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'F@X.CoM' })).json();
+    expect(q.assignedTo).toBe('f@x.com');
+  });
+
+  it('unassigns with null, clearing assignedAt', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null })).json();
+    expect(q.assignedTo).toBeNull();
+    expect(q.assignedAt).toBeNull();
+  });
+
+  it('leaves assignment untouched by a status-only patch', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).json();
+    expect(q.assignedTo).toBe('f@x.com'); // manual-only: transitions never re-assign
+    expect(q.updatedBy).toBe('op@x.com');
+  });
+
+  // The queue's "Assigned to me" section filters on this, so the list projection must carry it.
+  // (The projection is deliberately narrow — see postgresQuoteRepo.list — so it needs adding.)
+  it('exposes assignedTo on the queue list', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const list = await (await getAs('f@x.com', app, '/admin/quote/list')).json();
+    expect(list.quotes.find((q: { id: string }) => q.id === id).assignedTo).toBe('f@x.com');
+  });
+
+  it('keeps createdBy immutable across a content re-save by someone else, moving updatedBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await postAs('f@x.com', app, '/admin/quote/save', { id, vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 90 })] });
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('f@x.com');
+  });
+});
+
+// ── Assignment notification (spec 2026-07-16 §6) ─────────────────────────────
+// The point of the whole feature: assigning a quote is what tells someone it's theirs. Everything
+// here guards a way that can go wrong — silence, spam, or a failed send taking the assign with it.
+describe('quote assignment notification', () => {
+  const OPS_BASE = 'https://ops.example.com';
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { name: 'Ana Silva', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('emails the assignee a deep link to that quote, naming who assigned it', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id, reference } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1);
+    const msg = mail.sent[0];
+    expect(msg.to).toBe('f@x.com');
+    expect(msg.subject).toContain(reference);
+    // The deep link is the entire value of the email — it must land on THIS quote, not the queue.
+    expect(msg.html).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.text).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.html).toContain('op@x.com');
+    expect(msg.html).toContain('Ana Silva');
+  });
+
+  it('does not email when you assign a quote to yourself', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'op@x.com' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('does not email on unassign', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null });
+    expect(mail.sent).toHaveLength(1); // the assign only — nobody is told they've been un-told
+  });
+
+  it('does not re-email when re-assigning to the same person', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1); // an unchanged assignment is not news
+  });
+
+  it('does not email on a status transition — assignment is the only trigger', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('still assigns when the mail provider is down (best-effort)', async () => {
+    const app = createApp({
+      email: { send: async () => { throw new Error('resend is down'); } },
+      opsBaseUrl: OPS_BASE,
+    });
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).assignedTo).toBe('f@x.com'); // the assign is the durable bit
+  });
+
+  it('still assigns (and sends) when OPS_BASE_URL is unset — no link rather than no email', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: '' });
+    const { id } = await draftAs(app, 'op@x.com');
+    expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' })).status).toBe(200);
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0].html).not.toContain('href="/ops');
   });
 });

@@ -19,6 +19,9 @@ const Env = z.object({
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
   APP_BASE_URL: z.string().default('http://localhost:4173'),
+  // Origin serving /ops — used to deep-link internal emails straight to a quote. Distinct
+  // from APP_BASE_URL (the customer site): the ops tool is served by the API host.
+  OPS_BASE_URL: z.string().default(''),
   // Browser origins allowed to call the API (comma-separated). The live site + local dev.
   ALLOWED_ORIGINS: z
     .string()

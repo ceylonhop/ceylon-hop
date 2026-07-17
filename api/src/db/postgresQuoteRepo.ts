@@ -49,6 +49,10 @@ function toSaved(r: Row): SavedQuote {
     rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
+    assignedTo: r.assignedTo,
+    assignedAt: r.assignedAt,
+    createdBy: r.createdBy,
+    updatedBy: r.updatedBy,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     sentAt: r.sentAt,
@@ -81,6 +85,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
+            createdBy: q.createdBy ?? null,
+            updatedBy: q.updatedBy ?? null,
           })
           .returning();
         return toSaved(row);
@@ -115,6 +121,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         customerContact: quotes.customerContact,
         totalCents: quotes.totalCents,
         currency: quotes.currency,
+        assignedTo: quotes.assignedTo,
         createdAt: quotes.createdAt,
       })
       .from(quotes)
@@ -130,6 +137,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       customerContact: r.customerContact,
       totalCents: r.totalCents,
       currency: r.currency,
+      assignedTo: r.assignedTo,
       createdAt: r.createdAt,
     }));
   }
@@ -147,6 +155,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
               rateLockedUntil: patch.rateLock?.rateLockedUntil ?? null,
             }
           : {}),
+        // Assignment moves as a unit with its stamp, so assignedAt can never disagree with
+        // assignedTo (an assignee with no date, or a date with nobody holding it).
+        ...(patch.assignedTo !== undefined
+          ? { assignedTo: patch.assignedTo, assignedAt: patch.assignedTo ? new Date() : null }
+          : {}),
+        ...(patch.updatedBy !== undefined ? { updatedBy: patch.updatedBy } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
@@ -166,7 +180,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
   }
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
-    // Content only — status/reference/createdAt and the sent/decided stamps are left as-is.
+    // Content only — status/reference/createdAt, the sent/decided stamps, createdBy and the
+    // assignment are all left as-is. (createdBy is write-once; assignment moves only via patch.)
     const [row] = await this.db
       .update(quotes)
       .set({
@@ -183,6 +198,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         rateCardJson: (q.rateCardJson ?? null) as object | null,
         rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
+        ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(quotes.id, id))

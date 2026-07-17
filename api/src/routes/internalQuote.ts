@@ -11,8 +11,10 @@ import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { can } from '../lib/opsAuth';
+import { can, resolveAssignee } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import type { EmailAdapter } from '../adapters/email';
+import { sendQuoteAssigned } from '../services/opsNotifications';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -323,6 +325,10 @@ export function internalQuoteRoutes(deps: {
   quotes: QuoteRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
+  // Assignment notification (spec 2026-07-16 §6). Optional: with no adapter, assignment still
+  // works — it just goes unannounced, exactly as it did before this feature existed.
+  email?: EmailAdapter;
+  opsBaseUrl?: string; // origin serving /ops, for the email's deep link (config.OPS_BASE_URL)
 }) {
   const r = new Hono();
 
@@ -433,6 +439,10 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        // Audit (spec 2026-07-16). Both stamped on create; on a re-save the repo applies only
+        // updatedBy, so authorship stays with whoever built the quote.
+        createdBy: c.get('identity').email,
+        updatedBy: c.get('identity').email,
       };
       const updated = existingId ? await deps.quotes.update(existingId, content) : null;
       if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
@@ -503,19 +513,37 @@ export function internalQuoteRoutes(deps: {
         status: z.string().optional(),
         lostReason: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        assignedTo: z.string().nullable().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request' }, 400);
     const body = parsed.data;
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
+    // Assignment (spec 2026-07-16 §5). Resolve the assignee against OPS_USERS BEFORE it reaches
+    // the DB: assignment sends that person a link to the quote, so an unvalidated value would
+    // mail a customer's quote to whatever address was typed. `null` = unassign, and is exempt.
+    let assignedTo: string | null | undefined = undefined;
+    if (body.assignedTo !== undefined) {
+      if (body.assignedTo === null) assignedTo = null;
+      else {
+        assignedTo = resolveAssignee(body.assignedTo, deps.auth.opsUsers);
+        if (assignedTo === null) return c.json({ error: 'unknown_assignee' }, 400);
+      }
+    }
     // Maker-checker gate: only legal status moves, and only the founder (quote:approve) can
     // mark a quote ready-to-send or send it back for changes (incl. the draft→ready self-approve).
     // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
     // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
     let rateLock: QuotePatch['rateLock'] = undefined;
-    if (body.status) {
-      const current = await deps.quotes.get(c.req.param('id'));
+    // Read the pre-patch row once when either path needs it: the status gate below, and the
+    // notification's "did the assignee actually change?" test (re-assigning to the same person
+    // is not news, so it must not re-mail them).
+    let current: SavedQuote | null = null;
+    if (body.status || assignedTo !== undefined) {
+      current = await deps.quotes.get(c.req.param('id'));
       if (!current) return c.json({ error: 'not_found' }, 404);
+    }
+    if (body.status && current) {
       const to = body.status as QuoteStatus;
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
@@ -540,8 +568,25 @@ export function internalQuoteRoutes(deps: {
       lostReason: body.lostReason,
       notes: body.notes,
       rateLock,
+      assignedTo,
+      updatedBy: c.get('identity').email,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
+    // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not
+    // an unassign (nobody to tell), and not a no-op re-assign. Best-effort — the assignment is the
+    // durable fact, so a provider outage must not 500 the patch and lose it.
+    const actor = c.get('identity').email;
+    const handoverTo =
+      assignedTo && assignedTo !== (current?.assignedTo ?? null) && assignedTo !== actor.toLowerCase()
+        ? assignedTo
+        : null;
+    if (handoverTo && deps.email) {
+      try {
+        await sendQuoteAssigned(updated, handoverTo, actor, deps.email, deps.opsBaseUrl ?? '');
+      } catch (err) {
+        console.error('quote assignment email failed', { quote: updated.reference, err });
+      }
+    }
     // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine
     // status/notes edit by finance/ops must not echo cost/margin back to them.
     const canMargin = can(c.get('identity').role, 'margin:view');

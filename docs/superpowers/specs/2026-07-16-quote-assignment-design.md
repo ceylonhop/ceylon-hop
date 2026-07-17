@@ -1,6 +1,9 @@
 # Quote assignment + audit trail (ops workflow notifications)
 
-**Status: SPEC — recorded 2026-07-16. Not built.** Owner decisions confirmed in §2.
+**Status: BUILT 2026-07-16 on branch `ops/quote-assignment` — NOT merged.** A1–A3 all landed
+(§10). Merging deploys, and migrations now self-apply on boot, so the merge *is* the prod
+schema change — held for an explicit owner go. See §11 for what must happen at release.
+Owner decisions confirmed in §2.
 
 ---
 
@@ -95,23 +98,37 @@ Fires when `assigned_to` changes to a non-null value **and** the assignee ≠ th
   scalable version of it. Show the assignee on each row.
 - **Quote detail:** a small audit line — "Created by X · Last updated by Y".
 
-## 9. Open questions
+## 9. Resolved questions
 
-1. **Ops base URL for the deep link.** `APP_BASE_URL` points at the *customer* site, but the ops
-   tool is served from the API host. Add an `OPS_BASE_URL` config, or derive it from the request
-   origin? (Config is more predictable; derivation is one less env var.)
-2. Show the assignee on queue rows, or only in the quote detail?
-3. Later: should `assigned_at` drive an "unattended" flag (assigned > N days, untouched)? Not
-   now — but the column makes it possible without another migration.
+1. **Ops base URL** → **`OPS_BASE_URL` env var** (owner, 2026-07-16). Explicit beats deriving from
+   the request origin, and staging needs its own value regardless. Unset ⇒ the email still sends,
+   just without the button — silence would be worse than a linkless nudge.
+2. **Assignee on queue rows** → **yes**, as a chip inside `.qstat`. Suppressed inside the
+   "Assigned to me" section, where it would only ever read "you".
+3. **`assigned_at` → an "unattended" flag** (assigned > N days, untouched): still deferred. The
+   column exists, so it needs no further migration.
 
-## 10. Milestones
+## 10. Milestones — all built
 
-- **A1 — Data + API.** Migration, repo fields, `PATCH assignedTo` (validated against OPS_USERS),
-  `created_by`/`updated_by` stamping, `GET /admin/ops/users`. Tests: valid assign, reject
-  non-OPS_USERS email, unassign, created_by immutable, updated_by moves.
-- **A2 — Notification.** Assignment email template + best-effort trigger + deep link. Tests: email
-  on assign-to-other, **no** email on self-assign/unassign, assign still succeeds when mail throws.
-- **A3 — UI.** Assign picker, assignee display, "Assigned to me" queue section, audit line.
+- **A1 — Data + API** (`5782e74`). Migration 0015, repo fields, `PATCH assignedTo` validated
+  against OPS_USERS, `created_by`/`updated_by` stamping, `GET /admin/ops/users`. 10 tests.
+  *Found while building:* `PATCH` returned **200** for an unknown assignee — zod silently dropped
+  the field. Now a hard `400 unknown_assignee`, which is the §5 requirement made real.
+- **A2 — Notification** (`7892a95`). `services/opsNotifications.ts` + best-effort trigger + the
+  deep link + `OPS_BASE_URL`. 7 tests, incl. no-mail on self-assign/unassign/no-op/status-change,
+  and assign-survives-a-throwing-provider.
+- **A3 — UI** (`314da3b`). Assign picker (+"(you)"), audit line, "Assigned to me" **partition**
+  (not an overlay — see §8), assignee chips, `assignedTo` on the list projection.
+  Browser-verified against in-memory repos: assign → section appears and the status section drops
+  to 1; reassign → section empties, row returns with a chip; `/ops?quote=<id>` opens that quote.
+
+## 11. Release steps (owner)
+
+1. **Set `OPS_BASE_URL`** on Render = `https://ceylon-hop-api.onrender.com`. Without it the
+   assignment emails arrive with no button.
+2. **Merge the branch.** Migration 0015 self-applies on the next boot (additive + nullable, no
+   rewrite, existing rows get NULLs). Nothing else needs a manual migrate.
+3. Emails deliver via the already-verified `send.ceylonhop.com` sender.
 
 ---
 

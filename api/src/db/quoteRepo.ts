@@ -41,6 +41,11 @@ export interface NewQuote {
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
   notes?: string | null;
+  // Audit (spec 2026-07-16). The acting staff email. On save() both are stamped; on update()
+  // only updatedBy moves — createdBy is write-once, so a founder editing an ops person's quote
+  // never becomes its author.
+  createdBy?: string | null;
+  updatedBy?: string | null;
 }
 
 export interface SavedQuote {
@@ -63,6 +68,10 @@ export interface SavedQuote {
   rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
+  assignedTo: string | null;
+  assignedAt: Date | null;
+  createdBy: string | null;
+  updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   sentAt: Date | null;
@@ -79,6 +88,9 @@ export interface QuoteSummary {
   customerContact: string | null;
   totalCents: number;
   currency: string;
+  // The queue's "Assigned to me" section filters on this, so it must survive the narrow
+  // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
+  assignedTo: string | null;
   createdAt: Date;
 }
 
@@ -98,6 +110,12 @@ export interface QuotePatch {
   // unit: `undefined` = leave the lock untouched; an object = stamp it (ops freeze at approval);
   // `null` = clear it (reopen-to-edit → back to the live card). See api/src/quote/rateLock.ts.
   rateLock?: { rateCardJson: unknown; rateLockedUntil: Date | null } | null;
+  // Assignment (spec 2026-07-16). Tri-state, like rateLock: `undefined` = leave the assignment
+  // alone (so a status/notes patch never disturbs it — assignment is manual-only, never a
+  // side effect of a transition); a string = assign (route-validated against OPS_USERS first);
+  // `null` = unassign. assignedAt follows automatically.
+  assignedTo?: string | null;
+  updatedBy?: string | null;
 }
 
 export interface QuoteRepo {
@@ -150,6 +168,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     customerContact: q.customerContact,
     totalCents: q.totalCents,
     currency: q.currency,
+    assignedTo: q.assignedTo,
     createdAt: q.createdAt,
   };
 }
@@ -187,6 +206,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
+      assignedTo: null, // manual-only: a new quote is nobody's until someone assigns it
+      assignedAt: null,
+      createdBy: q.createdBy ?? null,
+      updatedBy: q.updatedBy ?? null,
       createdAt: now,
       updatedAt: now,
       sentAt: null,
@@ -231,6 +254,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       row.rateCardJson = patch.rateLock?.rateCardJson ?? null;
       row.rateLockedUntil = patch.rateLock?.rateLockedUntil ?? null;
     }
+    if (patch.assignedTo !== undefined) {
+      row.assignedTo = patch.assignedTo;
+      row.assignedAt = patch.assignedTo ? now : null;
+    }
+    if (patch.updatedBy !== undefined) row.updatedBy = patch.updatedBy;
     row.updatedAt = now;
     return { ...row };
   }
@@ -252,6 +280,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
+    // createdBy is deliberately NOT touched here — a re-save by another staff member must not
+    // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
+    if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
     row.updatedAt = new Date();
     return { ...row };
   }

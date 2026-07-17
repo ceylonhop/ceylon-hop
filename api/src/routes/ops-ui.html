@@ -181,6 +181,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .qsection-title{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px;margin:0}
   .qsection-count{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);background:var(--cream);border-radius:999px;padding:1px 8px;letter-spacing:0}
   .qsection-hint{font-size:.78rem;color:var(--ink-faint);font-style:italic}
+  /* Assignee chip. Lives inside .qstat's flex, never as a 6th .qrow grid child. */
+  .qassignee{font-size:.72rem;font-weight:700;letter-spacing:.01em;padding:3px 9px;border-radius:999px;color:var(--ink-soft);background:var(--cream);border:1px solid var(--line);white-space:nowrap;max-width:96px;overflow:hidden;text-overflow:ellipsis}
+  .qassignee.mine{color:#0a7d78;background:#dff5f3;border-color:#bfe9e5}
+  .qsec-mine .qsection-title{color:#0a7d78}
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
@@ -385,6 +389,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* ---------- Review banner ---------- */
 .qv .ch-review-banner { display: flex; flex-direction: column; gap: 2px; padding: 12px 15px; border-radius: var(--r-sm); margin-bottom: 16px; border: 1px solid transparent; }
 .qv .ch-review-banner b { font-size: 13.5px; font-weight: 700; }
+.qv .ch-assign { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.qv .ch-assign-lbl { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.qv .ch-assign-sel { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+.qv .ch-assign-sel:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
 .qv .ch-review-banner span { font-size: 12.5px; opacity: .85; }
 .qv .ch-review-banner.tone-amber { background: #fdf3e0; border-color: #f6e3c0; color: #7a4f0c; }
 .qv .ch-review-banner.tone-teal { background: #dff5f3; border-color: #bfe9e5; color: #0a6f6a; }
@@ -1240,6 +1249,9 @@ const QSTATUS={
 };
 // Section order encodes "what's on your plate first". Approvers (founder) triage the
 // review queue; support acts on approved + sent-back quotes. Closed always sinks last.
+// Statuses that still need work from whoever holds the quote (drives the "Assigned to me"
+// section). Excludes sent/won/lost/expired — those are closed, not someone's to-do.
+const MINE_STATUSES=['draft','pending_review','changes_requested','ready'];
 const QUEUE_SECTIONS_APPROVER=[
   {id:'review',label:'Needs your review',statuses:['pending_review'],hint:'Check pricing &amp; margin, then approve or send back'},
   {id:'ready',label:'Ready to send',statuses:['ready'],hint:'Approved — hand back to support to send'},
@@ -1307,19 +1319,37 @@ function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
   return `<span class="qpill tone-${m.tone}">${esc(m.label)}</span>`;
 }
-function quoteRowHtml(q){
+// 'roshen@ceylonhop.com' → 'roshen'. The chip has to fit a queue row; the full address
+// stays in the title attribute.
+function shortUser(email){const s=String(email||'');const at=s.indexOf('@');return at>0?s.slice(0,at):s;}
+function isMineEmail(email){const me=(state.email||'').toLowerCase();return !!me&&String(email||'').toLowerCase()===me;}
+function assigneeChip(email){
+  const mine=isMineEmail(email);
+  return `<span class="qassignee${mine?' mine':''}" title="Assigned to ${esc(email)}">${esc(mine?'you':shortUser(email))}</span>`;
+}
+// hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
+// says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
+// would pass the array index in as hideAssignee.
+function quoteRowHtml(q,hideAssignee){
   return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
     <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
-    <span class="qstat">${quoteAgeChip(q)}${statusPill(q.status)}</span>
+    <span class="qstat">${(!hideAssignee&&q.assignedTo)?assigneeChip(q.assignedTo):''}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
 function viewQuotes(){
   $('#topbar').innerHTML='';
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
-  const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
+  // "Assigned to me" is a PARTITION, not an overlay: a quote assigned to me is lifted out of
+  // its status section rather than duplicated into two. The status sections already tile the
+  // queue exactly once each (their status lists don't overlap), and a row appearing twice in
+  // one list reads as a bug. The status pill on the row still says where it is in the flow.
+  // Open states only — a sent/won/lost quote assigned to me is history, not work.
+  const mineRows=opsQuotes.filter(q=>isMineEmail(q.assignedTo)&&MINE_STATUSES.includes(q.status));
+  const mineIds=new Set(mineRows.map(q=>q.id));
+  const byStatus={};opsQuotes.forEach(q=>{if(mineIds.has(q.id))return;(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
   let html=`<div class="qhead pagehead">
       <h1>Quotes</h1>
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
@@ -1338,6 +1368,17 @@ function viewQuotes(){
   const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
   const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
   let rendered=0;
+  const mineVisible=allowed?mineRows.filter(q=>allowed.has(q.status)):mineRows;
+  if(mineVisible.length){
+    rendered++;
+    html+=`<div class="qsection qsec-mine">
+      <div class="qsection-head">
+        <h2 class="qsection-title">Assigned to me<span class="qsection-count">${mineVisible.length}</span></h2>
+        <span class="qsection-hint">Handed to you — yours to move</span>
+      </div>
+      <div class="qlist">${mineVisible.map(q=>quoteRowHtml(q,true)).join('')}</div>
+    </div>`;
+  }
   sections.forEach(sec=>{
     const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
     const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
@@ -1348,7 +1389,7 @@ function viewQuotes(){
         <h2 class="qsection-title">${sec.label}<span class="qsection-count">${rows.length}</span></h2>
         ${sec.hint?`<span class="qsection-hint">${sec.hint}</span>`:''}
       </div>
-      <div class="qlist">${rows.map(quoteRowHtml).join('')}</div>
+      <div class="qlist">${rows.map(q=>quoteRowHtml(q)).join('')}</div>
     </div>`;
   });
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
@@ -1605,6 +1646,7 @@ function bootApp(identity){
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
+  window.opsEmail=identity.email||''; /* the builder labels the assign picker's "(you)" option */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
   /* URL is the single source of truth for route/deep-link state across login refreshes,
      shared quote links, and browser back/forward. */
@@ -2236,6 +2278,9 @@ function resetToNew() {
     legs: [newLeg()],
     savedId: null,
     reference: null,
+    assignedTo: null, // who holds it; set only via the assign picker (never by a transition)
+    createdBy: null,
+    updatedBy: null,
   };
   lastEstimate = null;
   lastEstimateError = null;
@@ -2406,6 +2451,9 @@ async function reopenQuote(id) {
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
   state.savedId = q.id;
   state.reference = q.reference || q.id;
+  state.assignedTo = q.assignedTo || null;
+  state.createdBy = q.createdBy || null;
+  state.updatedBy = q.updatedBy || null;
 
   lastEstimate = null;
   lastEstimateError = null;
@@ -3565,6 +3613,58 @@ function renderActionBar() {
 
 // A contextual banner above the editor explaining the current review state (and, for a
 // sent-back quote, the founder's note — the one cross-role message in v1).
+// The assign picker's roster, fetched once per session. Empty on failure — the picker just
+// shows Unassigned, which is honest: assignment is optional, and a stale roster would offer
+// people the server would reject anyway.
+var opsUsers = [];
+async function loadOpsUsers() {
+  try {
+    var r = await api('/admin/ops/users');
+    if (!r.ok) return;
+    var b = await jsonOrNull(r);
+    opsUsers = (b && b.users) || [];
+  } catch (e) { /* leave the roster empty; assigning is not required to quote */ }
+}
+
+// Assign + audit. Assignment is what notifies someone, so it is a first-class control here
+// rather than buried in a menu. Hidden until the quote is saved: there is no id to assign.
+function renderAssignStrip() {
+  if (!state.savedId) return '';
+  var cur = state.assignedTo || '';
+  var me = (window.opsEmail || '').toLowerCase();
+  var opts = ['<option value="">Unassigned</option>'];
+  opsUsers.forEach(function(u) {
+    opts.push('<option value="' + esc(u.email) + '"' + (u.email === cur ? ' selected' : '') + '>' +
+      esc(u.email) + (u.email === me ? ' (you)' : '') + '</option>');
+  });
+  var audit = [];
+  if (state.createdBy) audit.push('Created by ' + esc(state.createdBy));
+  if (state.updatedBy) audit.push('last updated by ' + esc(state.updatedBy));
+  return '<div class="ch-assign">' +
+    '<label class="ch-assign-lbl" for="assignSel">Assigned to</label>' +
+    '<select class="ch-assign-sel" id="assignSel" data-action="assignQuote">' + opts.join('') + '</select>' +
+    (audit.length ? '<span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span>' : '') +
+    '</div>';
+}
+
+// Hand the quote to someone (or nobody). The server validates the assignee against OPS_USERS
+// and emails them; on failure we re-render so the select snaps back to the truth rather than
+// showing a handover that never happened.
+async function assignQuote(email) {
+  if (!state.savedId) return;
+  var res = await apiPatch(state.savedId, { assignedTo: email || null });
+  if (!res || res.error) {
+    showToast('Could not assign — ' + ((res && res.error) || 'unknown error'));
+    render();
+    return;
+  }
+  state.assignedTo = res.assignedTo || null;
+  state.updatedBy = res.updatedBy || state.updatedBy;
+  showToast(state.assignedTo ? ('Assigned to ' + state.assignedTo) : 'Unassigned');
+  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  render();
+}
+
 function renderReviewBanner() {
   var s = state.status, note = state.notes ? String(state.notes).trim() : '';
   function banner(tone, title, body) {
@@ -3667,6 +3767,7 @@ function render() {
       '      </div>',
     ].join('') : ''),
     renderReviewBanner(),
+    renderAssignStrip(),
 
     // Customer strip (one compact row)
     '      <div class="ch-cust-strip">',
@@ -4049,6 +4150,7 @@ function attachEventListeners() {
   // Leg field change delegation
   app.addEventListener('change', function(e) {
     var el = e.target;
+    if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
     if (!legId || !field) return;
@@ -4490,6 +4592,7 @@ async function init() {
   if (_inited) return;
   _inited = true;
   render(); // first paint with loading state
+  await loadOpsUsers(); // roster for the assign picker; failure just leaves it empty
   var rc = await apiRateCard();
   if (rc) {
     rateCard = rc;
