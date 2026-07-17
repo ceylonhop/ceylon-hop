@@ -4,7 +4,12 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = __dirname;
-const PORT = 4173;
+// Default 4173 for the preview (.claude/launch.json, bare `node serve-booking.js`).
+// The e2e suite overrides this per-worktree (see web-tests/static-port.js) so
+// concurrent checkouts never share — and silently cross-test — one server.
+const PORT = Number.parseInt(process.env.CH_STATIC_PORT ?? '', 10) > 0
+  ? Number.parseInt(process.env.CH_STATIC_PORT, 10)
+  : 4173;
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
