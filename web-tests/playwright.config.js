@@ -13,6 +13,12 @@ import { defineConfig, devices } from '@playwright/test';
 // "test:e2e:tool"/"test:e2e:ops" scripts).
 export default defineConfig({
   testDir: './e2e',
+  // Fails the CH_E2E_API run fast if the API port is owned by something that isn't the
+  // Ceylon Hop API. Playwright's own readiness probe can't catch that: it only checks the
+  // status code and accepts 401, so a squatter looks "ready" and reuseExistingServer keeps
+  // the real API from booting — surfacing as 26 baffling "#login not found" failures.
+  // See api-guard.js.
+  globalSetup: './global-setup.js',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // Retry once everywhere (not just CI): the heavy ops-SPA specs occasionally time out on a

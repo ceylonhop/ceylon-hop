@@ -45,13 +45,13 @@ async function login(page, email) {
 
 // Logout helper: the rail auto-hides (34c52ea) — after ~4s idle, or immediately once you
 // click into the main content — and a collapsed rail display:none's the logout button
-// (`.rail-collapsed .rail-foot .logout`). So expand it first, exactly as a user does,
-// instead of racing the idle timer against a control that may already be hidden. Clicking
-// #railToggle is itself rail activity, which restarts the countdown and keeps it open.
+// (`.rail-collapsed .rail-foot .logout`). Clicking anywhere on a COLLAPSED rail expands it
+// (the shell intercepts that click in the capture phase and swallows it), so do that first,
+// exactly as a user does, instead of racing the idle timer against a hidden control.
 async function logout(page) {
   const logoutBtn = page.locator('#logoutbtn');
   if (!(await logoutBtn.isVisible())) {
-    await page.locator('#railToggle').click();
+    await page.locator('.rail').click();
     await expect(logoutBtn).toBeVisible();
   }
   await logoutBtn.click();
@@ -69,14 +69,12 @@ test('Quotes queue nav is visible to founder, finance, and ops (D-A: quote:manag
   // Merged surface: the separate "Generate Quote" (data-route="quote") nav tab is gone.
   await expect(page.locator('#nav button[data-route="quote"]')).toHaveCount(0);
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await login(page, FINANCE_EMAIL);
   await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await login(page, OPS_EMAIL);
   await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
@@ -256,8 +254,7 @@ test('a shareable quote URL opens that quote for another authenticated quote man
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   const sharedUrl = page.url();
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await page.goto(sharedUrl);
   await page.waitForLoadState('networkidle');
