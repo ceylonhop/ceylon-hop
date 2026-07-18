@@ -38,9 +38,10 @@ the booking shows in the bookings tab and the quote is joinable to it.
 
 **Out (deferred / by decision):**
 - **Payment recording.** No manual-payment path exists today — the ledger is fed only by the
-  PayHere checkout → webhook loop. The booking is created `draft`; recording the out-of-band
-  payment is deferred to the future *"payment-link → webhook auto-creates the booking"* flow.
-  **Consequence accepted:** the booking reads unpaid (balance due) until that lands.
+  PayHere checkout → webhook loop. The booking lands in `payment_pending` (see D4) but **no
+  payment row is recorded**; the out-of-band payment is reconciled later via the future
+  *"payment-link → webhook"* flow. **Consequence accepted:** the booking reads unpaid (balance
+  due, "Awaiting payment") until that lands.
 - The **web self-serve** `converted_booking_id` stamp (the customer `/bookings/*` path) — a
   separate, smaller change if still wanted.
 - Any pricing change; any DB schema/migration (`converted_booking_id` already exists); any
@@ -53,7 +54,8 @@ the booking shows in the bookings tab and the quote is joinable to it.
 | D1 | **Trigger = the existing "Mark booked" button**, which now opens a confirmation modal. On confirm the booking is created; **cancel leaves the quote untouched.** | The owner's ask: mark booked *creates* a booking, gated by a confirmation modal so the agent means it. Reuses the button already there — no second "Create booking" button. |
 | D2 | **Button shows on `sent` OR `won`-without-a-`convertedBookingId`.** | `won` is terminal (`won → draft` is illegal — can't reopen), so an already-won quote like Q-RDUCM has no other route to the modal. Widening the show-condition rescues the backlog without touching the state machine. |
 | D3 | **Approach A — dedicated server endpoint `POST /admin/quote/:id/book`.** | Server owns the price (quote total verbatim), does create + stamp in one round-trip, leaves the quote `PATCH` and the public booking routes alone. *Rejected:* overloading `PATCH /:id` (mixes booking-creation into dense maker-checker logic); client-orchestrated public route (re-prices, doesn't stamp, racy across two client calls). |
-| D4 | **Booking created `draft`; payments subsystem untouched.** | No manual-payment path exists; payment is deferred (see Scope-Out). |
+| D4 | **Booking created, then moved to `payment_pending`** (a `draft` is hidden from the ops Bookings queue, which lists only `payment_pending`/`paid` — that hiding was the original Q-RDUCM symptom). **No payment row is recorded.** | The queue's status filter (`ops.ts` `QUEUE_STATUSES`) would drop a `draft`, defeating the goal. `payment_pending` is reachable via `setStatus` with no payment row. Revised 2026-07-18 after browser verification (original decision was `draft`). |
+| D11 | **The payments watchdog's stuck-pending sweep skips `channel==='whatsapp'` bookings.** | Ops-booked bookings are `channel:'whatsapp'` and settled out-of-band; without this, the abandoned-cart sweep would (30 min–6 h) page ops with a false "stuck" alert **and email the already-paid customer a "finish paying" link**. `'whatsapp'` is otherwise unused today. Money-path change — owner-approved 2026-07-18. |
 | D5 | **Price = `quote.totalCents` verbatim** (`total = amountDueNow = quote.totalCents`, `currency = quote.currency`); never recomputed. | Honor the agreed quoted price; keep the change out of the pricing engine. |
 | D6 | **Idempotency key `book:quote:<id>`.** If the quote already has a `convertedBookingId`, or a booking exists for the key, return that booking instead of creating another. | Double-click / two-agent safe (no duplicate booking). A retry after a partial failure (booking created, stamp not yet applied) heals rather than duplicates. |
 | D7 | **Modal requires the full web-booking customer set** — first name, last name, email, WhatsApp, country — plus travel date/time; pre-filled from the quote. The built input is validated against the existing `SingleTransferInput`/`TripInput` Zod schemas. | Owner call ("all standard fields required"); produces a first-class booking; reusing the existing validation makes a bad mapping fail loudly instead of persisting junk. |
@@ -90,10 +92,13 @@ the booking shows in the bookings tab and the quote is joinable to it.
    contact/date/vehicle/pax from the body. Validate `input` against the mode's Zod schema →
    `400 invalid_booking` on failure.
 5. `bookings.create({ mode, input, total: quote.totalCents, amountDueNow: quote.totalCents,
-   currency: quote.currency, distanceKm, durationMin }, { idempotencyKey: 'book:quote:' + id })`.
+   currency: quote.currency, distanceKm, durationMin, channel: 'whatsapp' }, { idempotencyKey: 'book:quote:' + id })`.
    `distanceKm`/`durationMin` = best-effort sum of the quote legs' distances, else `null`.
-6. Stamp the quote: `quotes.patch(id, { convertedBookingId: booking.id, status: 'won' })`.
-7. Return `201` with the booking.
+6. **If the created booking is `draft`, move it to `payment_pending`** (`bookings.setStatus`).
+   Guarded on `draft` so an idempotent retry (which returns the existing `payment_pending`
+   booking) doesn't attempt an illegal `payment_pending → payment_pending` self-transition.
+7. Stamp the quote: `quotes.patch(id, { convertedBookingId: booking.id, status: 'won' })`.
+8. Return `201` with the booking.
 
 Create → stamp is **not** transactional (two repos, no shared transaction); D6 idempotency
 is what makes a mid-failure retry safe. If step 6 throws after step 5, the booking persists;
@@ -146,18 +151,31 @@ already constructed for `bookingRoutes`).
 `404` unknown quote · `409 not_bookable` (wrong status / non-ops channel) · `400`
 (`invalid_booking` from Zod, or `bad_request` for a malformed body) · `403` (no
 `bookings:operate`) · `200` already booked (idempotent) · `201` created. **No customer email
-fires on create** — bookings are born `draft` and customer comms are milestone/webhook-driven,
-so modal contact data is not emailed anywhere in this flow.
+fires from this flow** — creation sends none, and the watchdog's abandoned-cart recovery email
+is suppressed for `channel:'whatsapp'` bookings (D11), so the already-paid customer is never
+told to "finish paying."
+
+## Watchdog — `api/src/services/watchdog.ts` (D11)
+
+The stuck-pending sweep (`bookings.list({ status: 'payment_pending' })` → alert + customer
+recovery email for rows 30 min–6 h old) filters out `b.channel === 'whatsapp'` first, so
+ops-booked bookings never trigger a false "stuck" ops alert or a "finish paying" customer
+email. The paid-unconfirmed sweep is untouched (these bookings are `payment_pending`, not
+`paid`).
 
 ## Testing (TDD, red → green per CLAUDE.md)
 
 - **Unit — `quoteToBooking`:** single, multi-leg private, chauffeur (asserts `days` /
   `driverNights`), each vehicle tier, non-contiguous legs, undated trip.
-- **Route — `internalQuote.test.ts`:** booking a `sent` quote creates a `draft` booking at
-  the quote's total and stamps `convertedBookingId` + `won`; booking a `won`-without-booking
-  quote creates the booking and stays `won`; a double-POST returns one booking (idempotent);
-  `bookings:operate` is enforced (finance → `403`); a non-ops channel or bad status → `409`;
-  invalid contact → `400`; an already-linked quote → `200` with the same booking.
+- **Route — `internalQuote.test.ts`:** booking a `sent` quote creates a `payment_pending`,
+  `channel:'whatsapp'` booking at the quote's total and stamps `convertedBookingId` + `won`;
+  booking a `won`-without-booking quote creates the booking and stays `won`; a double-POST
+  returns one booking (idempotent); `bookings:operate` is enforced (finance → `403`); a
+  non-ops channel or bad status → `409`; invalid contact → `400`; an already-linked quote →
+  `200` with the same booking.
+- **Watchdog — `watchdog.test.ts`:** a `channel:'whatsapp'` booking aged into the stuck window
+  (>30 min) produces **no** stuck-pending alert and **no** recovery email; the existing
+  `website` behaviour is unchanged.
 - **Repo:** `InMemoryQuoteRepo.patch` sets `convertedBookingId`; the Postgres repo round-trips
   it (existing harness).
 - **web-tests:** the button appears on `sent` and on `won`-without-booking; the modal
