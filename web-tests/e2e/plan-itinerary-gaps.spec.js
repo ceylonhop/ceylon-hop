@@ -51,3 +51,12 @@ test('editing back from booking restores the original legs, no connector', async
   await expect(page.locator('#rail .leg-card')).toHaveCount(2);
   await expect(page.locator('.leg-gap.is-gap')).toBeVisible();
 });
+
+test('the reference map breaks the route line at the gap (no line drawn across it)', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  // Load the discontinuous itinerary directly: Kandy→Ella, [gap], Galle→Mirissa.
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella|Galle|Mirissa') + '&gaps=1&pax=2&vehicle=car');
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  // Two drawn segments (Kandy→Ella and Galle→Mirissa); the Ella→Galle gap is NOT connected.
+  await expect(page.locator('#trip-map .tm-route')).toHaveCount(2);
+});

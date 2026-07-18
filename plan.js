@@ -713,17 +713,24 @@ function renderMap(){
   const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
   const proj=(lat,lng)=>({ x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX), y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY) });
   const names=points().filter(Boolean);
-  const pts=names.map(name=>{
+  const pts=names.map((name,idx)=>{
     if(!name) return null; const g=T.resolvePlace(name); if(!g) return null;
-    return {name, ...proj(g.lat,g.lng)};
+    return {name, idx, ...proj(g.lat,g.lng)};
   }).filter(Boolean);
+  // Wires the traveller arranges themselves — the route line must BREAK here, not draw across.
+  const gapSet=new Set(routeSeqDetailed().gaps);
+  const gapBetween=(a,b)=>{ for(let w=a;w<b;w++) if(gapSet.has(w)) return true; return false; };
   const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
   if(pts.length<2 && !(window.CH_MAP && names.length>=2)){
     host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map">${island}</svg>`+
       `<div class="tm-empty">Add a pick-up and drop-off to see your route mapped.</div>`;
     return;
   }
-  const line=`<path d="M${pts.map(p=>`${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L')}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 7" opacity="0.9"/>`;
+  let line='';
+  for(let k=0;k<pts.length-1;k++){
+    if(gapBetween(pts[k].idx, pts[k+1].idx)) continue; // don't connect across a self-arranged gap
+    line+=`<path class="tm-route" d="M${pts[k].x.toFixed(1)} ${pts[k].y.toFixed(1)} L${pts[k+1].x.toFixed(1)} ${pts[k+1].y.toFixed(1)}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 7" opacity="0.9"/>`;
+  }
   const pins=pts.map((p,idx)=>{
     const first=idx===0, last=idx===pts.length-1;
     const fill=first?'#0a7d6f':(last?'#e8623a':'#0AB9B6');
@@ -739,7 +746,9 @@ function renderMap(){
   }).join('');
   const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
   // Clean Google map (JS API: route line + waypoints, no panel/markers) with a loading state.
-  if(window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
+  // A gapped route can't be one continuous Google road route without implying we drive the gap,
+  // so show the schematic SVG (line already broken at the gap) instead of the Google route.
+  if(!gapSet.size && window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
   else { host.innerHTML=svg; }
 }
 
