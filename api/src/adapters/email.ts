@@ -19,6 +19,49 @@ export class FakeEmailAdapter implements EmailAdapter {
   }
 }
 
+// Parse EMAIL_ALLOWLIST ("Team@x.com, ops@x.com, @ceylonhop.com") into a normalized list of
+// lowercased entries. Each entry is either a full address (exact match) or a domain suffix
+// beginning with "@" (matches any recipient on that domain). Undefined/blank → [] (no allowlist).
+export function parseEmailAllowlist(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export interface AllowlistOptions {
+  allow: string[]; // entries from parseEmailAllowlist — full addresses and/or "@domain" suffixes
+  onBlocked?: (msg: EmailMessage) => void; // observability hook; defaults to a console.warn
+}
+
+// Staging safety decorator. Wraps a real EmailAdapter and only forwards messages whose
+// recipient matches the allowlist; anything else is DROPPED (logged, never thrown) so a
+// staging run can never email a real customer, and a blocked send can't break the inline
+// webhook/confirmation path. Production never wraps (empty EMAIL_ALLOWLIST → the real adapter
+// is used directly), so this is inert there — the whole feature lives in staging config.
+export class AllowlistEmailAdapter implements EmailAdapter {
+  constructor(
+    private readonly inner: EmailAdapter,
+    private readonly opts: AllowlistOptions,
+  ) {}
+
+  async send(msg: EmailMessage): Promise<void> {
+    const to = msg.to.trim().toLowerCase();
+    const allowed = this.opts.allow.some((entry) =>
+      entry.startsWith('@') ? to.endsWith(entry) : to === entry,
+    );
+    if (!allowed) {
+      const onBlocked =
+        this.opts.onBlocked ??
+        ((m: EmailMessage) =>
+          console.warn(`[email-allowlist] dropped message to ${m.to} — not in EMAIL_ALLOWLIST`));
+      onBlocked(msg);
+      return;
+    }
+    await this.inner.send(msg);
+  }
+}
+
 export interface ResendOptions {
   from: string; // e.g. "Ceylon Hop <hello@ceylonhop.com>" — must be a Resend-verified sender
   replyTo?: string;

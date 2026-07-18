@@ -1,0 +1,103 @@
+# Render Blueprint — Ceylon Hop STAGING (config-as-code, guard G3).
+#
+# Scope: this blueprint stands up ONLY the new staging services. The existing PRODUCTION
+# API service is intentionally NOT described here — importing a blueprint that names it could
+# duplicate or take over the live service. Production stays as its current manually-managed
+# Render service; at the M4 gate flip you change that service's deploy branch from `main` to
+# `production` in the dashboard (one setting). The full prod/staging env matrix lives in
+# docs/staging-environment-runbook.md.
+#
+# Secrets are NEVER in this file (sync:false → set them in the Render dashboard). config.ts
+# fails closed at boot on missing/default secrets, so a half-configured service refuses to
+# serve rather than run insecure. Render sets RENDER=true automatically, which triggers the
+# fail-closed migrate-on-boot in api/src/server.ts — staging applies pending migrations itself.
+#
+# NOTE: verify service-schema keys (runtime/env, staticPublishPath) against Render's current
+# Blueprint spec at import time — Render occasionally renames them. The env-var wiring below
+# is the part that matters and is stable.
+
+services:
+  # ── Staging API + /ops dashboard ─────────────────────────────────────────────
+  - type: web
+    name: ceylon-hop-api-staging
+    env: node
+    rootDir: api
+    plan: free # free sleeps after ~15 min idle (cold starts). Bump to `starter` if the team hits it daily.
+    branch: main # Flavor A/B: main auto-deploys to STAGING. Prod deploys from `production` (M4).
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production # real prod-like behavior; the isolation is in the DB + third-party keys, not the mode
+      - key: PAYHERE_MODE
+        value: sandbox # no real card is ever charged on staging
+      - key: APP_BASE_URL
+        value: https://staging.ceylonhop.com
+      - key: ALLOWED_ORIGINS
+        # staging site origins + local dev. Update if the static-site URL differs.
+        value: https://staging.ceylonhop.com,https://ceylon-hop-staging-site.onrender.com,http://localhost:4173,http://localhost:8787
+      - key: EMAIL_FROM
+        value: Ceylon Hop (staging) <onboarding@resend.dev>
+      # ── Secrets & env-specific values — set in the Render dashboard (sync:false) ──
+      - key: DATABASE_URL # staging Supabase project — the core data isolation
+        sync: false
+      - key: ADMIN_API_KEY # cron/machine identity; strong + unique, different from prod
+        sync: false
+      - key: OPS_SESSION_SECRET # strong + unique, DIFFERENT from prod (config.ts fails closed on the default)
+        sync: false
+      - key: BOOKING_LINK_SECRET # strong + unique, DIFFERENT from prod
+        sync: false
+      - key: INTERNAL_QUOTE_KEY
+        sync: false
+      - key: OPS_USERS # same 3 staff, e.g. "founder@…:founder,finance@…:finance,ops@…:ops"
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID # same client as prod, with the staging origin added in Google console
+        sync: false
+      # Email: real Resend sending, but fenced to the team by EMAIL_ALLOWLIST so a staging run
+      # can never email a real customer (see api/src/adapters/email.ts AllowlistEmailAdapter).
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_ALLOWLIST # e.g. "@ceylonhop.com" or "roshen@…,ops@…" — DROP everything else
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY # server Distance-Matrix key (ideally a staging-scoped key)
+        sync: false
+      - key: MAPS_BROWSER_KEY # browser Maps JS key for the /ops map (prefer a staging-restricted key)
+        sync: false
+      - key: PAYHERE_MERCHANT_ID # PayHere SANDBOX merchant
+        sync: false
+      - key: PAYHERE_MERCHANT_SECRET # PayHere SANDBOX secret
+        sync: false
+      - key: PAYHERE_NOTIFY_URL # https://<staging-api>/webhooks/payhere
+        sync: false
+      # ── Observability: staging gets its OWN Sentry env + alert inbox, ON (not off) ──
+      - key: SENTRY_DSN # a STAGING Sentry project DSN — never the prod DSN (that was the e2e-flood bug)
+        sync: false
+      - key: ALERT_EMAIL # a team inbox for staging alerts
+        sync: false
+      - key: EMAIL_REPLY_TO
+        sync: false
+      - key: RESEND_WEBHOOK_SECRET # optional — only if you wire the Resend bounce webhook on staging
+        sync: false
+
+  # ── Staging customer website (static) ────────────────────────────────────────
+  # Serves the marketing/booking site with the staging config injected at build time by
+  # tools/stage-config.mjs (points window.CEYLON_HOP_API at the staging API, noindex, analytics
+  # off). The committed source is untouched — only this build's copy is transformed.
+  #
+  # The production site stays on GitHub Pages (legacy Pages allows only one source branch, so
+  # it can't also serve staging). At M4, point Pages at the `production` branch — or migrate the
+  # prod site here too for a uniform gate. See the runbook.
+  - type: web
+    name: ceylon-hop-staging-site
+    runtime: static
+    branch: main
+    autoDeploy: true
+    buildCommand: node tools/stage-config.mjs .
+    staticPublishPath: .
+    envVars:
+      - key: STAGING_API_URL
+        value: https://ceylon-hop-api-staging.onrender.com # must match the API service's public URL
+      - key: STAGING_MAPS_KEY # optional — a staging-restricted browser Maps key
+        sync: false

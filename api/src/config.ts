@@ -43,6 +43,12 @@ const Env = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('Ceylon Hop <onboarding@resend.dev>'),
   EMAIL_REPLY_TO: z.string().optional(),
+  // Staging safety valve: comma-separated allowlist of recipients real mail may reach
+  // ("team@ceylonhop.com, @ceylonhop.com"). When set, outbound email is filtered to these
+  // addresses/domains and anything else is dropped (logged) — so staging can send real mail
+  // for testing without ever emailing a customer. UNSET in production (the default), where
+  // the real adapter is used unwrapped and every recipient is delivered normally.
+  EMAIL_ALLOWLIST: z.string().optional(),
   // Ops/quote auth (Google sign-in + capability roles). See docs/go-live-checklist.md.
   // OPS_USERS = "email:role,email:role" over roles founder|finance|ops (exactly the 3 staff).
   OPS_USERS: z.string().default(''),

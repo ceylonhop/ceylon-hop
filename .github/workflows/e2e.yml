@@ -1,0 +1,47 @@
+name: e2e
+
+# Runs the real ops⇄quote Playwright suite (CH_E2E_API=1) against an ephemeral Postgres — the
+# specs boot the API pointed at DATABASE_URL_TEST and write real quote rows to that throwaway DB
+# (never a real one). This is deliberately a SEPARATE workflow from `ci` so it can be stabilized
+# without destabilizing the core gate: the production promote script gates on `ci.yml` only until
+# this job has proven reliably green, at which point add 'e2e.yml' to REQUIRED_WORKFLOWS in
+# scripts/promote-to-prod.mjs. See docs/staging-environment-runbook.md.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ops-e2e:
+    name: ops⇄quote e2e (Playwright + ephemeral Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ceylonhop_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The e2e specs (and the API the Playwright webServer boots) write to this throwaway DB.
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/ceylonhop_test
+      CH_E2E_API: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # API deps: the Playwright webServer boots `npm --prefix ../api run dev`, and the booted
+      # API self-applies migrations on boot (RUN_MIGRATIONS=1, set in playwright.config.js) so
+      # the fresh CI Postgres gets its schema + seeded corridors with no manual migrate step.
+      - name: install api deps
+        run: cd api && npm ci
+      - name: install web-tests deps + chromium
+        run: cd web-tests && npm ci && npx playwright install --with-deps chromium
+      - name: run ops⇄quote e2e
+        run: cd web-tests && npm run test:e2e

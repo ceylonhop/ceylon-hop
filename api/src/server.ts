@@ -11,7 +11,7 @@ import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
-import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
+import { AllowlistEmailAdapter, FakeEmailAdapter, ResendEmailAdapter, parseEmailAllowlist } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
@@ -44,12 +44,22 @@ const maps = config.GOOGLE_MAPS_API_KEY
   ? new GoogleMapsAdapter(config.GOOGLE_MAPS_API_KEY)
   : new FakeMapsAdapter();
 
-const email = config.RESEND_API_KEY
+const baseEmail = config.RESEND_API_KEY
   ? new ResendEmailAdapter(config.RESEND_API_KEY, {
       from: config.EMAIL_FROM,
       replyTo: config.EMAIL_REPLY_TO,
     })
   : new FakeEmailAdapter();
+
+// Staging sends real mail but only to the team: EMAIL_ALLOWLIST wraps the adapter so any
+// non-team recipient is dropped. Unset in production → the real adapter is used unwrapped.
+const emailAllowlist = parseEmailAllowlist(config.EMAIL_ALLOWLIST);
+const email = emailAllowlist.length
+  ? new AllowlistEmailAdapter(baseEmail, { allow: emailAllowlist })
+  : baseEmail;
+if (emailAllowlist.length) {
+  console.log(`Email allowlist active (${emailAllowlist.length} entr${emailAllowlist.length === 1 ? 'y' : 'ies'}) — non-allowlisted recipients will be dropped.`);
+}
 
 const { db, sql } = createDb(config.DATABASE_URL);
 
