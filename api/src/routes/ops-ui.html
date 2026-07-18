@@ -732,7 +732,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-sec-head-r { display: flex; align-items: center; gap: 8px; }
 
 /* ---------- Customer strip (one compact row) ---------- */
-.qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; }
+.qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; container-type: inline-size; container-name: custstrip; }
 .qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: end; }
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
@@ -740,7 +740,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-input-wrap:has(.ch-input.invalid) { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,58,36,.12); }
 .qv .ch-field-err { font-size: 10.5px; color: var(--red); margin-top: 4px; line-height: 1.35; display: none; }
 .qv .ch-field:has(.ch-input.invalid) .ch-field-err { display: block; }
-@media (max-width: 720px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
+/* Wrap to two columns off the STRIP's own width, not the viewport: the editor column is sized by
+   the container layout (rail + 360px price pane), so a viewport media query fires at the wrong
+   width and lets the 5-col grid overflow — same reason .ch-cockpit uses @container qv (see line ~305). */
+@container custstrip (max-width: 620px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
 /* Trip basics: vehicle chips sit under the customer grid (no double padding), divider between */
 .qv .ch-basics-rule { height: 1px; background: var(--line-soft); margin: 13px 0 3px; }
 .qv .ch-cust-strip .ch-veh-chips { padding: 0; }
