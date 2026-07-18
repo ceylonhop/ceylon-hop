@@ -22,6 +22,8 @@ export async function buildDigest(
   const all = await deps.bookings.list();
   const recent = all.filter((b) => Date.parse(b.createdAt) >= since.getTime());
   const byStatus = (s: string) => all.filter((b) => b.status === s).length;
+  // USD-only assumption: bookings are USD today, so we sum minor units and label them $.
+  // Revisit if a non-USD booking currency is ever introduced (would need per-currency grouping).
   const valueBooked = recent.reduce((sum, b) => sum + b.total, 0);
 
   const rows: [string, string][] = [

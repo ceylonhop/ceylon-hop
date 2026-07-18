@@ -697,7 +697,7 @@ export function internalQuoteRoutes(deps: {
       }
     }
     // Sent-back → the maker (createdBy), except the actor, carrying the note (spec 2026-07-18).
-    if (body.status === 'changes_requested' && deps.email && updated.createdBy && updated.createdBy !== actor.toLowerCase()) {
+    if (body.status === 'changes_requested' && deps.email && updated.createdBy && updated.createdBy.toLowerCase() !== actor.toLowerCase()) {
       try {
         await sendQuoteSentBack(updated, updated.createdBy, actor, body.notes ?? null, deps.email, deps.opsBaseUrl ?? '');
       } catch (err) {
