@@ -229,6 +229,8 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+      quotes,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
