@@ -1215,6 +1215,56 @@ describe('quote assignment notification', () => {
   });
 });
 
+// ── Review notifications: awaiting-approval + sent-back (spec 2026-07-18) ───
+// Mirrors the assignment-notification describe's harness (own scoped OPS_BASE/patchAs/postAs)
+// so this block stays self-contained, same pattern as the other describes in this file.
+describe('quote review notifications (awaiting-approval + sent-back)', () => {
+  const OPS_BASE = 'https://ops.example.com';
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+
+  async function seedReviewableQuote(mail: FakeEmailAdapter) {
+    const app = createApp({ quotes: new InMemoryQuoteRepo(), email: mail, opsBaseUrl: OPS_BASE });
+    const save = await postAs('op@x.com', app, '/admin/quote/save', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
+      legs: [leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 })],
+    });
+    const id = (await save.json()).id as string;
+    return { app, id };
+  }
+
+  it('emails approvers (not the actor) when a quote enters review', async () => {
+    const mail = new FakeEmailAdapter();
+    const { app, id } = await seedReviewableQuote(mail); // draft quote w/ requestedService, created by op@x.com
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    const to = mail.sent.map((m) => m.to);
+    expect(to).toContain('f@x.com');   // founder holds quote:approve
+    expect(to).not.toContain('op@x.com'); // the actor isn't notified
+    const msg = mail.sent.find((m) => m.to === 'f@x.com')!;
+    expect(msg.subject).toContain('needs your approval');
+    expect(msg.html).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    // Strip tags (and their inline `style="margin:..."` attributes) before matching — the
+    // shared ops-email shell legitimately uses CSS `margin:` on every element, so checking the
+    // raw HTML/JSON would false-positive on layout, not a real cost/margin content leak.
+    const rendered = `${msg.subject}\n${msg.html.replace(/<[^>]+>/g, ' ')}\n${msg.text ?? ''}`;
+    expect(rendered).not.toMatch(/margin/i);
+  });
+
+  it('emails the maker with the note when a quote is sent back', async () => {
+    const mail = new FakeEmailAdapter();
+    const { app, id } = await seedReviewableQuote(mail);
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    mail.sent.length = 0;
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'changes_requested', notes: 'Fix the van rate' });
+    const msg = mail.sent.find((m) => m.to === 'op@x.com'); // op@x.com is createdBy
+    expect(msg).toBeTruthy();
+    expect(msg!.subject).toContain('Changes requested');
+    expect(msg!.html).toContain('Fix the van rate');
+  });
+});
+
 // Quote intent (spec 2026-07-17): what the CUSTOMER asked for, recorded by the submitter and
 // distinct from `product` (what we priced). Assertions go through GET /:id, like the other
 // /save persistence tests, rather than reaching for a repo handle.

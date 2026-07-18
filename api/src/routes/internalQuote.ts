@@ -11,10 +11,10 @@ import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { can, resolveAssignee } from '../lib/opsAuth';
+import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned } from '../services/opsNotifications';
+import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
@@ -683,6 +683,25 @@ export function internalQuoteRoutes(deps: {
         await sendQuoteAssigned(updated, handoverTo, actor, deps.email, deps.opsBaseUrl ?? '');
       } catch (err) {
         console.error('quote assignment email failed', { quote: updated.reference, err });
+      }
+    }
+    // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
+    if (body.status === 'pending_review' && deps.email) {
+      for (const u of approverOpsUsers(deps.auth.opsUsers)) {
+        if (u.email === actor.toLowerCase()) continue;
+        try {
+          await sendQuoteAwaitingApproval(updated, u.email, actor, deps.email, deps.opsBaseUrl ?? '');
+        } catch (err) {
+          console.error('quote awaiting-approval email failed', { quote: updated.reference, to: u.email, err });
+        }
+      }
+    }
+    // Sent-back → the maker (createdBy), except the actor, carrying the note (spec 2026-07-18).
+    if (body.status === 'changes_requested' && deps.email && updated.createdBy && updated.createdBy !== actor.toLowerCase()) {
+      try {
+        await sendQuoteSentBack(updated, updated.createdBy, actor, body.notes ?? null, deps.email, deps.opsBaseUrl ?? '');
+      } catch (err) {
+        console.error('quote sent-back email failed', { quote: updated.reference, err });
       }
     }
     // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine

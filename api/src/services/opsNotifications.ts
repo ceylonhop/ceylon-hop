@@ -70,3 +70,35 @@ export async function sendQuoteAssigned(
   });
   await email.send({ to: assignedTo, subject: `Quote ${q.reference} assigned to you — Ceylon Hop ops`, html, text });
 }
+
+export async function sendQuoteAwaitingApproval(
+  q: AssignedQuote,
+  to: string,
+  submittedBy: string,
+  email: EmailAdapter,
+  opsBaseUrl: string,
+): Promise<void> {
+  const link = quoteDeepLink(q.id, opsBaseUrl);
+  const { html, text } = assignedBody(q, `<strong>${esc(submittedBy)}</strong> submitted a quote for approval.`, {
+    label: 'Review the quote',
+    link,
+  });
+  await email.send({ to, subject: `Quote ${q.reference} needs your approval — Ceylon Hop ops`, html, text });
+}
+
+export async function sendQuoteSentBack(
+  q: AssignedQuote,
+  to: string,
+  sentBackBy: string,
+  note: string | null,
+  email: EmailAdapter,
+  opsBaseUrl: string,
+): Promise<void> {
+  const link = quoteDeepLink(q.id, opsBaseUrl);
+  const lead = `<strong>${esc(sentBackBy)}</strong> sent your quote back for changes.`;
+  const noteHtml = note ? `<p style="margin:0 0 20px;padding:12px 14px;background:#f3f4f6;border-radius:6px;font-size:14px">${esc(note)}</p>` : '';
+  const html = [`<p style="font-size:16px;margin:0 0 4px">${lead}</p>`, heroRef(q.reference), noteHtml, ctaBlock('Open the quote', link, 'Open it from the Quotes tab in the ops dashboard.')].join('');
+  const text = [lead.replace(/<[^>]+>/g, ''), '', `Reference: ${q.reference}`, note ? `\nNote: ${note}` : '', '', link ? `Open the quote: ${link}` : 'Open it from the Quotes tab.'].join('\n');
+  const wrapped = opsEmailShell(html, text);
+  await email.send({ to, subject: `Changes requested on quote ${q.reference} — Ceylon Hop ops`, html: wrapped.html, text: wrapped.text });
+}
