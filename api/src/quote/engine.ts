@@ -108,6 +108,14 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
   }
   const totalCents = finished.finalCents;
   const deposit = depositCents(totalCents, rateCard);
+  // amountDueNow is the FULL total for EVERY product, deposit-eligible ones (chauffeur) included.
+  // Deliberate owner decision "Charge full amount for all bookings" (2026-07-07, commit 4d58f5a)
+  // that replaced the earlier `req.product === 'chauffeur' ? deposit : totalCents` split — so this
+  // SUPERSEDES go-live-checklist GL-3 piece 3 (the chauffeur "deposit" charge). `deposit` above
+  // stays a separate display-only figure (shown by the ops quote tool, internalQuote.ts); the
+  // deposit/balance machinery on the booking side (notifications.ts paidRows, bookings.ts
+  // balanceDueCents) is plumbed but dormant — it only lights up if a booking ever stores
+  // amountDueNow < total, which no public flow currently does.
   const amountDueNowCents = totalCents;
   const marginEstimateCents = req.product === 'shared' ? null : totalCents - costCents;
 
