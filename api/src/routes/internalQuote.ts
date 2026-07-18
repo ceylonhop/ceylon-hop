@@ -523,7 +523,14 @@ export function internalQuoteRoutes(deps: {
         : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' };
 
-    const booking = await deps.bookings.create(newBooking, { idempotencyKey });
+    const created = await deps.bookings.create(newBooking, { idempotencyKey });
+    // Land it in payment_pending so it surfaces in the ops Bookings queue ("Awaiting
+    // payment") — a draft is hidden there. No payment row is recorded; payment is collected
+    // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
+    // returns the existing payment_pending booking) never attempts an illegal self-transition.
+    const booking = created.status === 'draft'
+      ? await deps.bookings.setStatus(created.id, 'payment_pending')
+      : created;
     await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
     return c.json(booking, 201);
   });

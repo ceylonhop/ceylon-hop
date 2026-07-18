@@ -1335,7 +1335,8 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     const res = await book(createApp({ quotes, bookings }), id, BODY);
     expect(res.status).toBe(201);
     const b = await res.json();
-    expect(b.status).toBe('draft');
+    expect(b.status).toBe('payment_pending'); // surfaces in the ops Bookings queue
+    expect(b.channel).toBe('whatsapp'); // ops-booked, not a website booking
     expect(b.mode).toBe('single');
     expect(b.total).toBe(21900);
     expect(b.amountDueNow).toBe(21900);
