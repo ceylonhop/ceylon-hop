@@ -264,7 +264,12 @@ function renderPlaceMenu(input){
 }
 function wirePlaceSearch(input){
   input.setAttribute('autocomplete','off');
-  input.addEventListener('focus',()=>renderPlaceMenu(input));
+  input.addEventListener('focus',()=>{
+    // Programmatic focus after adding a leg keeps the field ready to type but should NOT
+    // pop the suggestion menu — it opens on the first keystroke (the input handler below).
+    if(input.dataset.suppressMenu==='1'){ delete input.dataset.suppressMenu; return; }
+    renderPlaceMenu(input);
+  });
   input.addEventListener('input',()=>{
     if(input.dataset.placeCommitted==='1'){
       delete input.dataset.placeCommitted;
@@ -333,7 +338,7 @@ document.getElementById('add-stop').addEventListener('click',()=>{
   if(inputs.length){
     const last=inputs[inputs.length-1];
     const target = prevTo ? last.querySelector('.leg-to') : last.querySelector('.leg-from');
-    if(target) target.focus();
+    if(target){ target.dataset.suppressMenu='1'; target.focus(); }
   }
 });
 
@@ -346,7 +351,7 @@ if(addStayBtn) addStayBtn.addEventListener('click',()=>{
   state.legs.push({ type:'stay', from:prevTo, to:prevTo, date:null, nights:1 });
   render();
   const cards=document.querySelectorAll('#rail .leg-card');
-  if(cards.length){ const f=cards[cards.length-1].querySelector('.leg-from'); if(f && !f.value) f.focus(); }
+  if(cards.length){ const f=cards[cards.length-1].querySelector('.leg-from'); if(f && !f.value){ f.dataset.suppressMenu='1'; f.focus(); } }
 });
 
 // ---- helpers ----
