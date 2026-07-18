@@ -96,6 +96,8 @@ export class InMemoryBookingRepo implements BookingRepo {
       // calls with the same key can't both pass the guard and duplicate the booking —
       // mirrors the DB's unique idempotency_key constraint.
       const existingId = this.byKey.get(key);
+      // `byId` is append-only (no eviction anywhere in this repo), so a live byKey entry
+      // always resolves to a row — the non-null assertion holds.
       if (existingId) return this.byId.get(existingId)!;
     }
     let reference = generateReference();
