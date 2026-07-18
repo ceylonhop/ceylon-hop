@@ -539,16 +539,10 @@ function render(){
         const pr=k!=null?legPrice(k,state.vehicle):null;
         distEl.innerHTML=distHtml(k,pr);
         distEl.classList.toggle('on', k!=null);
-        if(k==null && fromI.value && toI.value){
-          requestLiveKm(fromI.value, toI.value, liveK=>{
-            if(state.legs[i] && state.legs[i].from===fromI.value && state.legs[i].to===toI.value){
-              const livePrice=legPrice(liveK,state.vehicle);
-              distEl.innerHTML=distHtml(liveK,livePrice);
-              distEl.classList.add('on');
-              updateSummary();
-            }
-          });
-        }
+        // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
+        // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
+        // never here on raw keystrokes, so a half-typed string like "ga" is never geocoded
+        // or priced. Known places still price instantly above via the local legKm().
         updateSummary();
       }
       fromI.addEventListener('input',recompute);
