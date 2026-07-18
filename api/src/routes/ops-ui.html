@@ -2353,16 +2353,24 @@ function requestMismatch(requested, priced) {
    of setService() below — that picks what we PRICE, this records what was REQUESTED, and the
    whole point is that the two can disagree (see requestMismatch). Never derived from
    state.service (I4). */
-function setRequestedService(v) {
-  if (v !== 'private' && v !== 'chauffeur' && v !== 'both') return;
-  if (state.requestedService === v) return;
-  state.requestedService = v;
-  /* I9: 'both' means the customer wants to see BOTH prices. The chauffeur option lives in a
-     separate Output-tab toggle, and leaving the two decoupled means recording 'both' and then
-     sending one price because that unrelated toggle was forgotten. Default it on; the operator
-     can still switch it back off. (It only applies to a point-to-point-priced quote — the
-     upsell is one-directional; see requestMismatch's 'both'+chauffeur case.) */
-  if (v === 'both') outputIncludeChauffeurUpsell = true;
+// Is `dim` ('private'|'chauffeur') part of what the customer asked for? 'both' includes each.
+function requestedIncludes(dim) {
+  return state.requestedService === dim || state.requestedService === 'both';
+}
+// Toggle one dimension; re-derive the stored enum from the two flags (both on → 'both',
+// one on → that one, neither → null). Storage shape is unchanged, so nothing downstream moves.
+function setRequestedService(dim) {
+  if (dim !== 'private' && dim !== 'chauffeur') return;
+  var p2p = requestedIncludes('private'), chauf = requestedIncludes('chauffeur');
+  if (dim === 'private') p2p = !p2p; else chauf = !chauf;
+  var next = (p2p && chauf) ? 'both' : p2p ? 'private' : chauf ? 'chauffeur' : null;
+  if (next === state.requestedService) return;
+  state.requestedService = next;
+  /* I9: reaching 'both' (customer wants to SEE both prices) defaults the Output-tab chauffeur
+     option on — decoupled, they'd record 'both' and then send one price because that unrelated
+     toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
+     price (see requestMismatch's 'both'+chauffeur case). */
+  if (next === 'both') outputIncludeChauffeurUpsell = true;
   markDirty();
   render();
 }
@@ -3175,13 +3183,18 @@ function renderVehicleChips() {
 // chips' head+row layout so the two intake questions read as a pair. The mismatch WARNING lives
 // separately, in renderServiceChooser next to the prices.
 function renderRequestedService() {
-  var opts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']];
+  // Two independent toggles, NOT three single-select buttons: selecting both IS "both"
+  // (owner, 2026-07-17) — a third button would just restate a state the toggles already express.
+  // The STORED value stays 'private' | 'chauffeur' | 'both' | null (see requestedFrom/derive),
+  // so the mismatch signal, the review gate and the I9 upsell default are all unchanged.
+  var opts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide']];
   var parts = ['<div class="ch-req-choose">'];
   parts.push('  <div class="ch-req-head"><span class="ch-req-lbl">Customer asked for</span></div>');
   parts.push('  <div class="ch-req-row">');
   for (var i = 0; i < opts.length; i++) {
     var rv = opts[i][0];
-    parts.push('    <button type="button" class="ch-req-chip' + (state.requestedService === rv ? ' active' : '') + '"'
+    parts.push('    <button type="button" class="ch-req-chip' + (requestedIncludes(rv) ? ' active' : '') + '"'
+      + ' aria-pressed="' + (requestedIncludes(rv) ? 'true' : 'false') + '"'
       + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(opts[i][1]) + '</button>');
   }
   parts.push('  </div>');

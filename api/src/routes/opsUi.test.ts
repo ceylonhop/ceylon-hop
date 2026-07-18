@@ -169,13 +169,17 @@ describe('ops UI — quote intent', () => {
     const body = await (await createApp().request('/ops')).text();
     expect(body).toContain('Customer asked for');
     expect(body).toContain('data-action="setRequestedService"');
-    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']]");
+    // Two toggles, not three single-select buttons — selecting both IS "both" (owner, 2026-07-17).
+    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide']]");
+    expect(body).not.toContain("['both', 'Both']"); // the third button is gone
+    expect(body).toContain('function requestedIncludes('); // stored enum still derives to 'both'
+    expect(body).toContain("(p2p && chauf) ? 'both'"); // both toggles on -> stored 'both'
     expect(body).toContain('requestedService: null'); // I4: never derived from the priced service
   });
 
   it("recording 'both' switches the chauffeur upsell on so the second price can't be forgotten (I9)", async () => {
     const body = await (await createApp().request('/ops')).text();
-    expect(body).toContain("if (v === 'both') outputIncludeChauffeurUpsell = true;");
+    expect(body).toContain("if (next === 'both') outputIncludeChauffeurUpsell = true;");
     expect(body).toContain('data-action="toggleChauffeurUpsell"'); // still overridable
   });
 
