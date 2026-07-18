@@ -138,15 +138,21 @@ const startStops = (params.get('stops')||'Colombo Airport (CMB)|Sigiriya|Ella').
 // Optional per-stop nights (e.g. from a tour hand-off). Index i = nights at stops[i];
 // the final stop is a departure point and carries no nights.
 const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)||0);
-function buildLegs(stops, nights){
+// Wire indices the traveller arranges themselves (a leg's drop-off ≠ the next leg's pick-up).
+// Restored from the URL so returning from booking doesn't re-invent a connector leg for the gap.
+const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+function buildLegs(stops, nights, gaps){
   const hasNights = nights && nights.some(n=>n>0);
   if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1 }];
+  const isGap = new Set(gaps||[]); // wire i (stops[i]→stops[i+1]) the traveller arranges themselves
   const N = i => (nights && nights[i]>0) ? nights[i] : 0;
   const legs=[];
   // a night at the origin becomes a leading stay so the reviewed day-count is preserved
   if(hasNights && N(0)>0) legs.push({ type:'stay', from:stops[0], to:stops[0], date:null, nights:N(0) });
   for(let i=0;i<stops.length-1;i++){
-    legs.push({ type:'transfer', from:stops[i], to:stops[i+1], date:null, nights:1 });
+    // a gap wire is NOT a transfer we run — the traveller connects it themselves, so we never
+    // re-invent (and never later price) a leg they didn't create.
+    if(!isGap.has(i)) legs.push({ type:'transfer', from:stops[i], to:stops[i+1], date:null, nights:1 });
     // stay at each intermediate destination (skip the final stop — you depart from there)
     if(hasNights && i+1<stops.length-1 && N(i+1)>0) legs.push({ type:'stay', from:stops[i+1], to:stops[i+1], date:null, nights:N(i+1) });
   }
@@ -159,7 +165,7 @@ const state = {
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
   pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
-  legs: buildLegs(startStops, nightsParam),
+  legs: buildLegs(startStops, nightsParam, gapsParam),
   hideTemplates: params.has('stops') || params.has('nights') || params.has('dates')
 };
 // Restore the travel dates the customer already chose: the booking step passes them back
@@ -382,7 +388,7 @@ function routeSeq(){
 // Each transfer leg's date lands on the wire it creates, so dates set in the
 // “When” step flow through to the booking itinerary in the right place.
 function routeSeqDetailed(){
-  const seq=[]; const wires=[]; const wireKm=[];
+  const seq=[]; const wires=[]; const wireKm=[]; const claimed=new Set();
   const addPlace=(place,nights)=>{
     if(!place) return false;
     if(seq.length && norm(seq[seq.length-1].place)===norm(place)){ seq[seq.length-1].nights+=nights; return false; }
@@ -399,23 +405,25 @@ function routeSeqDetailed(){
       // drop-off inserts an extra "phantom" wire that correctly gets no date and no km).
       if(seq.length>=2){
         const w=seq.length-2;
+        claimed.add(w); // this transfer's own wire; any UNclaimed wire is a "gap" the traveller arranges
         wires[w] = l.date ? fmtISO(l.date) : '';
         const km=legKm(l.from,l.to);
         wireKm[w] = km!=null ? String(km) : '';
       }
     }
   });
-  const dates=[]; const kms=[];
-  for(let i=0;i<Math.max(0,seq.length-1);i++){ dates.push(wires[i]||''); kms.push(wireKm[i]||''); }
-  return { seq, dates, kms };
+  const dates=[]; const kms=[]; const gaps=[];
+  for(let i=0;i<Math.max(0,seq.length-1);i++){ dates.push(wires[i]||''); kms.push(wireKm[i]||''); if(!claimed.has(i)) gaps.push(i); }
+  return { seq, dates, kms, gaps };
 }
 function syncPlanUrl(){
-  const { seq, dates } = routeSeqDetailed();
+  const { seq, dates, gaps } = routeSeqDetailed();
   if(seq.length){
     const p=new URLSearchParams(location.search);
     p.set('stops', seq.map(s=>s.place).join('|'));
     p.set('nights', seq.map(s=>s.nights).join(','));
     p.set('dates', dates.join(','));
+    if(gaps.length) p.set('gaps', gaps.join(',')); else p.delete('gaps');
     p.set('pax', String(state.pax));
     p.set('vehicle', state.vehicle);
     const datesWrap=document.getElementById('dates-wrap');
@@ -574,10 +582,17 @@ function render(){
 
     // connector between cards
     if(i<n-1){
-      const nextStay = state.legs[i+1] && state.legs[i+1].type==='stay';
+      const next = state.legs[i+1];
+      const nextStay = next && next.type==='stay';
+      // A gap: this transfer's drop-off isn't the next transfer's pick-up. We do NOT invent a
+      // connecting leg — the traveller arranges that stretch (a train, own transport) — but we
+      // flag it so leaving it is a conscious choice, not a silent omission.
+      const isGapHere = !isStay && !nextStay && leg.to && next && next.from && norm(leg.to)!==norm(next.from);
       const conn=document.createElement('div');
-      conn.className='leg-gap';
-      conn.innerHTML=`<span class="lg-line"></span><span class="lg-tx">${nextStay||isStay?'·':'then continue…'}</span><span class="lg-line"></span>`;
+      conn.className='leg-gap'+(isGapHere?' is-gap':'');
+      conn.innerHTML = isGapHere
+        ? `<span class="lg-line"></span><span class="lg-tx gap-tx">You’ll arrange ${escAttr(leg.to)} → ${escAttr(next.from)} yourself — we won’t add or charge for this stretch</span><span class="lg-line"></span>`
+        : `<span class="lg-line"></span><span class="lg-tx">${nextStay||isStay?'·':'then continue…'}</span><span class="lg-line"></span>`;
       rail.appendChild(conn);
     }
   });
@@ -697,17 +712,24 @@ function renderMap(){
   const LAT0=9.95, LAT1=5.80, LNG0=79.55, LNG1=82.0;
   const proj=(lat,lng)=>({ x: padX + (lng-LNG0)/(LNG1-LNG0)*(W-2*padX), y: padY + (LAT0-lat)/(LAT0-LAT1)*(H-2*padY) });
   const names=points().filter(Boolean);
-  const pts=names.map(name=>{
+  const pts=names.map((name,idx)=>{
     if(!name) return null; const g=T.resolvePlace(name); if(!g) return null;
-    return {name, ...proj(g.lat,g.lng)};
+    return {name, idx, ...proj(g.lat,g.lng)};
   }).filter(Boolean);
+  // Wires the traveller arranges themselves — the route line must BREAK here, not draw across.
+  const gapSet=new Set(routeSeqDetailed().gaps);
+  const gapBetween=(a,b)=>{ for(let w=a;w<b;w++) if(gapSet.has(w)) return true; return false; };
   const island=`<path d="M172 28 C214 32 246 64 248 112 C250 152 234 182 214 206 C199 224 184 234 172 234 C160 234 145 224 130 206 C110 182 94 152 96 112 C98 64 130 32 172 28 Z" fill="#cfe7da" stroke="#a9d2c2" stroke-width="1.5"/>`;
   if(pts.length<2 && !(window.CH_MAP && names.length>=2)){
     host.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Route map">${island}</svg>`+
       `<div class="tm-empty">Add a pick-up and drop-off to see your route mapped.</div>`;
     return;
   }
-  const line=`<path d="M${pts.map(p=>`${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L')}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 7" opacity="0.9"/>`;
+  let line='';
+  for(let k=0;k<pts.length-1;k++){
+    if(gapBetween(pts[k].idx, pts[k+1].idx)) continue; // don't connect across a self-arranged gap
+    line+=`<path class="tm-route" d="M${pts[k].x.toFixed(1)} ${pts[k].y.toFixed(1)} L${pts[k+1].x.toFixed(1)} ${pts[k+1].y.toFixed(1)}" fill="none" stroke="#0AB9B6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 7" opacity="0.9"/>`;
+  }
   const pins=pts.map((p,idx)=>{
     const first=idx===0, last=idx===pts.length-1;
     const fill=first?'#0a7d6f':(last?'#e8623a':'#0AB9B6');
@@ -723,7 +745,9 @@ function renderMap(){
   }).join('');
   const svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Your route across Sri Lanka">${island}${line}${pins}</svg>`;
   // Clean Google map (JS API: route line + waypoints, no panel/markers) with a loading state.
-  if(window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
+  // A gapped route can't be one continuous Google road route without implying we drive the gap,
+  // so show the schematic SVG (line already broken at the gap) instead of the Google route.
+  if(!gapSet.size && window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
   else { host.innerHTML=svg; }
 }
 
@@ -880,7 +904,7 @@ function goToBooking(){
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
-  const { seq, dates, kms } = routeSeqDetailed();
+  const { seq, dates, kms, gaps } = routeSeqDetailed();
   if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
@@ -893,6 +917,7 @@ function goToBooking(){
     nights:nights.join(','),
     dates:dates.join(','),     // one date per leg/wire (empty = flexible)
     kms:kms.join(','),          // planner-measured Google distances for exact-place legs
+    gaps:gaps.join(','),        // wire indices the traveller arranges themselves (not a leg, not priced)
     pax:String(state.pax),
     vehicle:state.vehicle,
     start: firstDated || ''
