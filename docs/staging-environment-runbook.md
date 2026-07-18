@@ -19,7 +19,7 @@ release on your own schedule.
 | Seed script | `api/scripts/seed.ts` → `npm run seed` | Migrates + seeds corridors into a fresh DB (the API also seeds on boot). |
 | Post-deploy smoke | `scripts/smoke-deploy.mjs` | Hits `/health` + `/health/deep` on a live URL; tolerates cold starts; non-zero exit on failure. |
 | **Promote (the gate)** | `scripts/promote-to-prod.mjs` | The only path to prod: refuses unless `ci.yml` is green for the commit, then fast-forwards `production` + tags the release. Has `--dry-run`, `--rollback`, `--force`. |
-| e2e workflow | `.github/workflows/e2e.yml` | Runs the ops⇄quote Playwright suite against an ephemeral Postgres (additive; not yet in the gate). |
+| e2e workflow | `.github/workflows/e2e.yml` | Runs the ops⇄quote Playwright suite against an ephemeral Postgres. **Manual-dispatch only** for now — see the ⚠ note below. |
 | Email allowlist | `api/src/adapters/email.ts` (`AllowlistEmailAdapter`) + `EMAIL_ALLOWLIST` env | Staging sends **real** mail but only to allowlisted team addresses; everything else is dropped. **Unset in prod → no behavior change.** |
 | Site staging transform | `tools/stage-config.mjs` | Build-time: points the staged site at the staging API, adds `noindex`, turns analytics off. Never touches committed source. |
 
@@ -104,9 +104,13 @@ confirm it appears in staging `/ops`, and that **nothing** reached the prod DB /
    the Pages source from `main` → `production` in repo Settings → Pages, **or** (b) move the prod
    site onto a Render static site from `production` for a uniform gate. Recommendation: (a) is the
    smaller change.
-4. **Fold e2e into the gate (optional).** Once `.github/workflows/e2e.yml` has been reliably green
-   for a while, add `'e2e.yml'` to `REQUIRED_WORKFLOWS` in `scripts/promote-to-prod.mjs` so the
-   ops⇄quote e2e also gates prod.
+4. **Fix + fold e2e into the gate.** ⚠ The ops⇄quote e2e is currently **manual-dispatch only**
+   because its first CI run surfaced pre-existing drift: 10 of 187 specs fail — the quote
+   save/approve paths in `web-tests/e2e/quote-tool.spec.js` and `ops-ui.spec.js` don't set the
+   `requested_service` field that became **required** in migration 0017 (PR #56). The harness
+   itself is sound (177 pass). To make it a gate: (a) update those specs to select a requested
+   service before saving, (b) switch `e2e.yml`'s trigger to `pull_request` + `push`, (c) add
+   `'e2e.yml'` to `REQUIRED_WORKFLOWS` in `scripts/promote-to-prod.mjs`.
 
 **Rollback:** `node scripts/promote-to-prod.mjs --rollback <known-good-sha>` (find one with
 `git log --first-parent origin/production`). Render redeploys prod to that commit.
