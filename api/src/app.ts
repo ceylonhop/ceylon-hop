@@ -225,6 +225,7 @@ export function createApp(deps: AppDeps = {}) {
       departures,
       email,
       notificationLog,
+      quotes,
       auth: opsAuthCfg,
       alerts,
       alertLog: deps.alertLog,

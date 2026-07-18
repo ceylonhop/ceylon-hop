@@ -12,7 +12,9 @@ import {
   manageUrl,
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { expireStaleQuotes } from '../services/quoteExpiry';
 import { runWatchdog } from '../services/watchdog';
+import type { QuoteRepo } from '../db/quoteRepo';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
@@ -28,6 +30,9 @@ export function adminRoutes(deps: {
   email: EmailAdapter;
   notificationLog: NotificationLogRepo;
   auth: OpsAuthConfig;
+  // Optional so existing callers work; when wired, the notifications tick also expires stale
+  // sent ops quotes (best-effort rider). See services/quoteExpiry.
+  quotes?: QuoteRepo;
   // M17 — watchdog alert channel + digest inputs; all optional so existing callers work.
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
@@ -114,6 +119,17 @@ export function adminRoutes(deps: {
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
     }
+    // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
+    // past the idle TTL. Idempotent (an expired quote no longer matches), and a failure here
+    // must never block the customer notifications the caller asked for.
+    let expiredQuotes = 0;
+    if (deps.quotes) {
+      try {
+        expiredQuotes = (await expireStaleQuotes(new Date(), { quotes: deps.quotes })).expired;
+      } catch (err) {
+        console.error('quote expiry sweep failed:', err);
+      }
+    }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
     // failure must never block the customer notifications the caller asked for.
     let digest = false;
@@ -134,7 +150,7 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, digest }, 200);
+    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
