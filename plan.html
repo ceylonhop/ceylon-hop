@@ -207,6 +207,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-gap{display:flex;align-items:center;gap:.6rem;padding:9px 4px;color:var(--ink-soft)}
   .leg-gap .lg-line{flex:1;height:0;border-top:2px dashed var(--pc-line)}
   .leg-gap .lg-tx{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;opacity:.8}
+  /* a "gap" — the traveller arranges this stretch themselves; flagged, never auto-connected */
+  .leg-gap.is-gap .lg-line{border-top-color:#e6b980}
+  .leg-gap.is-gap .lg-tx.gap-tx{text-transform:none;letter-spacing:0;font-weight:600;font-size:.78rem;white-space:normal;text-align:center;max-width:26rem;color:#9a5b12;opacity:1}
 
   .leg-badge.stay{color:#a96b04;background:var(--pc-saffron)}
   /* transfer / stay-put type switch */
