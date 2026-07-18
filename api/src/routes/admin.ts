@@ -7,9 +7,7 @@ import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '..
 import {
   sendCancellationConfirmation,
   sendRefundConfirmation,
-  sendBookingConfirmed,
   sendNoShowNotice,
-  manageUrl,
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -101,8 +99,10 @@ export function adminRoutes(deps: {
   r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
   r.post('/bookings/:id/refund', requireCap('payments:act'), (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
   // Ops marks the booking confirmed once the driver's arranged (paid → confirmed).
+  // No customer email on this transition (owner decision 2026-07-18): the paid
+  // confirmation already went out, so confirming the driver is an internal step.
   r.post('/bookings/:id/confirm', requireCap('payments:act'), (c) =>
-    transitionAndNotify(c, 'confirmed', (b, e) => sendBookingConfirmed(b, e, { manage: manageUrl(b, baseUrl, linkSecret) })),
+    transitionAndNotify(c, 'confirmed', async () => {}),
   );
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
   r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));

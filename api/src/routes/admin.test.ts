@@ -339,7 +339,7 @@ async function drive(bookings: InMemoryBookingRepo, id: string, ...chain: string
 }
 
 describe('POST /admin/bookings/:id/confirm', () => {
-  it('confirms a paid booking (paid → confirmed) and emails the customer', async () => {
+  it('confirms a paid booking (paid → confirmed) without emailing the customer', async () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
     await drive(bookings, b.id, 'payment_pending', 'paid');
@@ -349,9 +349,7 @@ describe('POST /admin/bookings/:id/confirm', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('confirmed');
     expect((await bookings.get(b.id))!.status).toBe('confirmed');
-    const sent = email.sent.filter((m) => /confirmed/i.test(m.subject));
-    expect(sent).toHaveLength(1);
-    expect(sent[0].to).toBe('maya@example.com');
+    expect(email.sent.filter((m) => /confirmed/i.test(m.subject))).toHaveLength(0);
   });
 
   it('403 for an ops session (no payments:act)', async () => {

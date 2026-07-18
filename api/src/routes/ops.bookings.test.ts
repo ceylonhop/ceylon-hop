@@ -172,20 +172,14 @@ describe('ops fulfilment milestones email the customer', () => {
   const post = (app: ReturnType<typeof createApp>, id: string, to: string) =>
     hdr().then((h) => app.request(`/admin/ops/bookings/${id}/status`, { method: 'POST', headers: h, body: JSON.stringify({ to }) }));
 
-  it('sends the confirmed email once when ops confirms the vehicle (idempotent across a backtrack)', async () => {
+  it('does not email the customer when ops confirms the vehicle (driver-arranged email suppressed)', async () => {
     const email = new FakeEmailAdapter();
     const { app, bookings } = appWith(email);
     const b = await paidBooking(bookings);
 
-    await post(app, b.id, 'vehicle_confirmed');
-    const conf = email.sent.filter((m) => /confirmed/i.test(m.subject));
-    expect(conf).toHaveLength(1);
-    expect(conf[0].to).toBe('m@x.com');
-
-    // backtrack to paid then re-confirm — must NOT email a second time
-    await post(app, b.id, 'paid');
-    await post(app, b.id, 'vehicle_confirmed');
-    expect(email.sent.filter((m) => /confirmed/i.test(m.subject))).toHaveLength(1);
+    const res = await post(app, b.id, 'vehicle_confirmed');
+    expect((await res.json()).fulfilmentStatus).toBe('vehicle_confirmed');
+    expect(email.sent).toHaveLength(0);
   });
 
   it('sends the no-show notice on → no_show', async () => {
