@@ -166,6 +166,18 @@ describe('InMemoryQuoteRepo', () => {
   it('update returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
   });
+
+  it('patch stamps convertedBookingId (the booking a won quote became)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      product: 'private', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    const updated = await repo.patch(q.id, { convertedBookingId: 'booking-123', status: 'won' });
+    expect(updated?.convertedBookingId).toBe('booking-123');
+    expect(updated?.status).toBe('won');
+    expect((await repo.get(q.id))?.convertedBookingId).toBe('booking-123');
+  });
 });
 
 // Quote intent (spec 2026-07-17): what the CUSTOMER asked for, as distinct from `product`
