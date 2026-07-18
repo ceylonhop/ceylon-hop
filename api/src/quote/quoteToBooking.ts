@@ -63,12 +63,13 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
         },
       };
     }
+    const stops = [legs[0].from, ...legs.map((l) => l.to)];
     return {
       mode: 'trip',
       distanceKm,
       input: {
-        stops: [legs[0].from, ...legs.map((l) => l.to)],
-        nights: [],
+        stops,
+        nights: Array(Math.max(0, stops.length - 1)).fill(0),
         dates: details.date ? [details.date] : undefined,
         pax: details.pax,
         vehicleType: details.vehicleType,
@@ -82,12 +83,13 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
   const days = [...engine.travelDays].sort((a, b) => a.date.localeCompare(b.date));
   if (!days.length) throw new QuoteNotBookableError('chauffeur quote has no travel days');
   const span = daySpan(engine.firstDate, engine.lastDate);
+  const stops = [days[0].from, ...days.map((d) => d.to)];
   return {
     mode: 'trip',
     distanceKm: sumKm(days),
     input: {
-      stops: [days[0].from, ...days.map((d) => d.to)],
-      nights: [],
+      stops,
+      nights: Array(Math.max(0, stops.length - 1)).fill(0),
       dates: days.map((d) => d.date),
       pax: details.pax,
       vehicleType: details.vehicleType,

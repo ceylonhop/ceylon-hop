@@ -36,6 +36,7 @@ describe('quoteToBooking', () => {
       expect(m.input.stops).toEqual(['CMB', 'Sigiriya', 'CMB']);
       expect(m.input.serviceType).toBe('private');
       expect(m.input.pax).toBe(2);
+      expect(m.input.nights).toEqual([0, 0]);
     }
     expect(m.distanceKm).toBe(340);
   });

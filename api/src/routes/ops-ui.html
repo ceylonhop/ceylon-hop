@@ -2067,6 +2067,7 @@ var _delegatesWired = false;
 var ratesOpen = false;    // Rate Settings modal
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
 var outputOpen = null;
@@ -2750,14 +2751,23 @@ async function bookQuote() {
     showToast('Fill in name, email, WhatsApp, country, date and time');
     return;
   }
-  var res = await apiBook(state.savedId, b);
-  if (!res || res.error) { showToast('Could not book — ' + ((res && res.error) || 'unknown error')); return; }
-  bookOpen = false;
-  state.status = 'won';
-  state.convertedBookingId = res.id;
-  showToast('Booked · ' + res.reference);
-  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
-  render();
+  // Re-entrancy guard: a double-clicked Confirm booking button fires bookQuote() twice
+  // before the first POST resolves. Without this, both reach the server and the second
+  // response is redundant at best; with it, the second call is a silent no-op.
+  if (bookSubmitting) return;
+  bookSubmitting = true;
+  try {
+    var res = await apiBook(state.savedId, b);
+    if (!res || res.error) { showToast('Could not book — ' + ((res && res.error) || 'unknown error')); return; }
+    bookOpen = false;
+    state.status = 'won';
+    state.convertedBookingId = res.id;
+    showToast('Booked · ' + res.reference);
+    if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+    render();
+  } finally {
+    bookSubmitting = false;
+  }
 }
 
 // ── Reopen a saved quote (V19) ────────────────────────────────────────────────

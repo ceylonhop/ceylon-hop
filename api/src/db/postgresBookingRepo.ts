@@ -24,6 +24,16 @@ function isReferenceCollision(err: unknown): boolean {
   return e.code === UNIQUE_VIOLATION && constraint.includes('reference');
 }
 
+// A concurrent create with the same Idempotency-Key hits the unique idempotency_key
+// constraint. Unlike a reference collision (retry with a fresh reference), the right response
+// is to return the booking the winning insert created — create is idempotent by contract.
+function isIdempotencyCollision(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; constraint_name?: unknown; constraint?: unknown };
+  const constraint = String(e.constraint_name ?? e.constraint ?? '');
+  return e.code === UNIQUE_VIOLATION && constraint.includes('idempotency');
+}
+
 export class PostgresBookingRepo implements BookingRepo {
   constructor(private readonly db: Db) {}
 
@@ -121,6 +131,12 @@ export class PostgresBookingRepo implements BookingRepo {
         // assemble after commit so the joined rows are visible
         return await this.assemble(await this.insertBooking(b, opts));
       } catch (err) {
+        // Lost the race to a concurrent create with the same Idempotency-Key — the other
+        // insert committed the booking, so return it instead of 500-ing (create is idempotent).
+        if (opts?.idempotencyKey && isIdempotencyCollision(err)) {
+          const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
+          if (existing) return existing;
+        }
         // A reference collision rolls back the whole tx (customer insert included), so
         // retrying with a fresh generateReference() is clean — no orphaned customer row.
         if (!isReferenceCollision(err)) throw err;

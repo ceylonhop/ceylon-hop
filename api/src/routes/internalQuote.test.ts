@@ -1401,4 +1401,18 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     const res = await book(createApp({ quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo() }), 'nope', BODY);
     expect(res.status).toBe(404);
   });
+
+  it('a concurrent double-submit never 500s and creates exactly one booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const [r1, r2] = await Promise.all([book(app, id, BODY), book(app, id, BODY)]);
+    expect([200, 201]).toContain(r1.status);
+    expect([200, 201]).toContain(r2.status);
+    expect((await bookings.list()).length).toBe(1);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBeTruthy();
+  });
 });

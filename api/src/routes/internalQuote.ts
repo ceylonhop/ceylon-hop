@@ -528,9 +528,16 @@ export function internalQuoteRoutes(deps: {
     // payment") — a draft is hidden there. No payment row is recorded; payment is collected
     // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
     // returns the existing payment_pending booking) never attempts an illegal self-transition.
-    const booking = created.status === 'draft'
-      ? await deps.bookings.setStatus(created.id, 'payment_pending')
-      : created;
+    let booking = created;
+    if (created.status === 'draft') {
+      try {
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+      } catch {
+        // A concurrent double-submit already moved this booking out of draft — re-read it
+        // rather than surface a 500 on a booking that was, in fact, created.
+        booking = (await deps.bookings.get(created.id)) ?? created;
+      }
+    }
     await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
     return c.json(booking, 201);
   });

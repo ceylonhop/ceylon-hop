@@ -92,8 +92,11 @@ export class InMemoryBookingRepo implements BookingRepo {
   async create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking> {
     const key = opts?.idempotencyKey;
     if (key) {
-      const existing = await this.findByIdempotencyKey(key);
-      if (existing) return existing;
+      // Synchronous check (no await before the insert below) so two concurrent create()
+      // calls with the same key can't both pass the guard and duplicate the booking —
+      // mirrors the DB's unique idempotency_key constraint.
+      const existingId = this.byKey.get(key);
+      if (existingId) return this.byId.get(existingId)!;
     }
     let reference = generateReference();
     while (this.refs.has(reference)) reference = generateReference();
