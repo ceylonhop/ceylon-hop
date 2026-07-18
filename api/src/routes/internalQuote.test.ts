@@ -4,6 +4,7 @@ import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -739,7 +740,7 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
 describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
   const openApp = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
   const estimate = async (body: unknown) =>
@@ -776,7 +777,7 @@ describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
 describe('quoting tool — fail-closed with no auth', () => {
   const locked = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
 
@@ -796,7 +797,7 @@ describe('quoting tool — fail-closed with no auth', () => {
 
   it('a valid session (any of the 3 roles) unlocks the data routes via quote:manage', async () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=kand', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
   });
@@ -806,7 +807,7 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns local known places before adapter-backed Google suggestions', async () => {
     const a = new Hono();
     const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=colombo', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -819,7 +820,7 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
     const a = new Hono();
     let called = false;
     const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=c', { headers: { cookie: await cookie('op@x.com') } });
     expect((await res.json()).places).toEqual([]);
     expect(called).toBe(false);
@@ -847,7 +848,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   const build = () => {
     const a = new Hono();
     a.route('/admin/quote', internalQuoteRoutes({
-      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(),
       auth: OPS_AUTH_CFG, allowedOrigins: [OWN_ORIGIN],
     }));
     return a;
@@ -1299,5 +1300,104 @@ describe('quote intent — submit gate', () => {
     const q = await draft(app);
     const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review', requestedService: 'both' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
+  const BODY = {
+    customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+    vehicleType: 'car', pax: 2, bags: 1, date: '2026-08-01', time: '09:00',
+  };
+
+  async function sentQuote(quotes: InMemoryQuoteRepo) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1,
+        legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+    return q.id;
+  }
+
+  function book(app: App, id: string, body: unknown, cookieStr = FOUNDER_COOKIE) {
+    return app.request(`/admin/quote/${id}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookieStr },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('books a sent quote: draft booking at the quote price, quote stamped won+linked', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const res = await book(createApp({ quotes, bookings }), id, BODY);
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.status).toBe('draft');
+    expect(b.mode).toBe('single');
+    expect(b.total).toBe(21900);
+    expect(b.amountDueNow).toBe(21900);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBe(b.id);
+    expect(await bookings.get(b.id)).not.toBeNull();
+  });
+
+  it('books an already-won quote (backfill) and leaves it won', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    await quotes.patch(id, { status: 'won' });
+    const res = await book(createApp({ quotes, bookings }), id, BODY);
+    expect(res.status).toBe(201);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBeTruthy();
+  });
+
+  it('is idempotent: a second book returns the same booking, no duplicate', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const first = await (await book(app, id, BODY)).json();
+    const res2 = await book(app, id, BODY);
+    expect(res2.status).toBe(200);
+    expect((await res2.json()).id).toBe(first.id);
+    expect((await bookings.list()).length).toBe(1);
+  });
+
+  it('requires bookings:operate — finance is 403', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), id, BODY, cookie('fin@x.com'));
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a non-sent/won quote with 409', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 1000, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 1, bags: 0,
+        legs: [{ from: 'A', to: 'B', distanceKm: 10 }] } },
+    }); // stays 'draft'
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), q.id, BODY);
+    expect(res.status).toBe(409);
+  });
+
+  it('rejects missing required contact fields with 400', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    const bad = { ...BODY, customer: { firstName: 'A', lastName: 'B' } };
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), id, bad);
+    expect(res.status).toBe(400);
+  });
+
+  it('404s an unknown quote', async () => {
+    const res = await book(createApp({ quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo() }), 'nope', BODY);
+    expect(res.status).toBe(404);
   });
 });
