@@ -2066,6 +2066,7 @@ var _delegatesWired = false;
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
 var ratesOpen = false;    // Rate Settings modal
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
+var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
 var outputOpen = null;
@@ -2583,6 +2584,7 @@ function resetToNew() {
     assignedTo: null, // who holds it; set only via the assign picker (never by a transition)
     createdBy: null,
     updatedBy: null,
+    convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
   };
   lastEstimate = null;
   lastEstimateError = null;
@@ -2591,6 +2593,7 @@ function resetToNew() {
   outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
+  bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   refreshEstimate();
@@ -2707,6 +2710,56 @@ function confirmSendBack() {
   transition('changes_requested', { note: note, toast: 'Sent back for changes', goQueue: true });
 }
 
+// ── "Mark booked" modal (spec 2026-07-18) ─────────────────────────────────────
+// Reads a modal input field by id, trimmed. Local helper — these fields (email,
+// whatsapp, country, vehicle, date, time) aren't tracked in `state`; they're
+// booking-only details the quote itself never carries.
+function val(id) {
+  var el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+async function apiBook(id, payload) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id) + '/book', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Booking failed' };
+  } catch (e) { return { error: 'Network error' }; }
+}
+// Creates the booking from the modal's fields (server re-validates via the same Zod
+// schema); on success stamps the local won+convertedBookingId so the button set updates
+// without a full reopen.
+async function bookQuote() {
+  var b = {
+    customer: {
+      firstName: val('bk-first'), lastName: val('bk-last'),
+      email: val('bk-email'), whatsapp: val('bk-whatsapp'), country: val('bk-country'),
+    },
+    vehicleType: val('bk-vehicle') || 'car',
+    pax: Number(val('bk-pax')) || 1,
+    bags: Number(val('bk-bags')) || 0,
+    date: val('bk-date') || undefined,
+    time: val('bk-time') || undefined,
+  };
+  // Client-side required-field guard (server re-validates via Zod).
+  if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
+    showToast('Fill in name, email, WhatsApp, country, date and time');
+    return;
+  }
+  var res = await apiBook(state.savedId, b);
+  if (!res || res.error) { showToast('Could not book — ' + ((res && res.error) || 'unknown error')); return; }
+  bookOpen = false;
+  state.status = 'won';
+  state.convertedBookingId = res.id;
+  showToast('Booked · ' + res.reference);
+  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  render();
+}
+
 // ── Reopen a saved quote (V19) ────────────────────────────────────────────────
 async function reopenQuote(id) {
   if (!id) return;
@@ -2762,12 +2815,14 @@ async function reopenQuote(id) {
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
+  state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
 
   lastEstimate = null;
   lastEstimateError = null;
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
+  bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
@@ -3981,11 +4036,13 @@ function renderActionBar() {
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     // pending_review → awaiting the founder; no support actions (read-only)
   }
   return out.join('');
@@ -4072,6 +4129,43 @@ function renderReviewBanner() {
       : banner('teal', 'Approved — ready to send', 'Copy the message below, send it to the customer, then mark it sent.');
   }
   return '';
+}
+
+// "Mark booked" modal body: collects the contact/date/vehicle details the quote itself
+// doesn't carry (spec 2026-07-18). Pre-fills from state where it can — name, pax, bags,
+// the first leg's date — and splits the single f-contact field back into email/whatsapp
+// where it recognizably is one or the other; email/whatsapp/country/date/time have no
+// safe default, so the operator must fill them (guarded client-side in bookQuote()).
+function renderBookModal() {
+  var st = state;
+  var contact = (st.contact || '').trim();
+  var prefEmail = isValidEmail(contact) ? contact : '';
+  var prefWhatsapp = isValidPhone(contact) ? contact : '';
+  var prefVehicle = (st.vehicleType === 'car') ? 'car' : 'van'; // booking schema only knows car/van
+  var prefDate = (st.legs[0] && st.legs[0].date) || '';
+  function field(label, req, inputHtml) {
+    return '<div class="ch-field">'
+      + '<label class="ch-field-label">' + esc(label) + (req ? ' <em class="req">*</em>' : '') + '</label>'
+      + '<div class="ch-input-wrap">' + inputHtml + '</div>'
+      + '</div>';
+  }
+  return [
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 14px">',
+    field('First name', true, '<input class="ch-input" id="bk-first" type="text" value="' + esc(st.firstName) + '" />'),
+    field('Last name', true, '<input class="ch-input" id="bk-last" type="text" value="' + esc(st.lastName) + '" />'),
+    field('Email', true, '<input class="ch-input" id="bk-email" type="email" value="' + esc(prefEmail) + '" />'),
+    field('WhatsApp', true, '<input class="ch-input" id="bk-whatsapp" type="tel" placeholder="+94 77 123 4567" value="' + esc(prefWhatsapp) + '" />'),
+    field('Country', true, '<input class="ch-input" id="bk-country" type="text" placeholder="e.g. LK" value="" />'),
+    field('Vehicle', false, '<select class="ch-input" id="bk-vehicle">'
+      + '<option value="car"' + (prefVehicle === 'car' ? ' selected' : '') + '>Car</option>'
+      + '<option value="van"' + (prefVehicle === 'van' ? ' selected' : '') + '>Van</option>'
+      + '</select>'),
+    field('Pax', false, '<input class="ch-input" id="bk-pax" type="number" min="1" value="' + esc(st.passengerCount) + '" />'),
+    field('Bags', false, '<input class="ch-input" id="bk-bags" type="number" min="0" value="' + esc(st.luggageCount) + '" />'),
+    field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(prefDate) + '" />'),
+    field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
+    '</div>',
+  ].join('');
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
@@ -4318,6 +4412,27 @@ function render() {
       '</div>',
     ].join('') : ''),
 
+    // ══ "Mark booked" modal ══
+    (bookOpen ? [
+      '<div class="ch-scrim show" data-action="cancelBook"></div>',
+      '<div class="ch-modal">',
+      '  <div class="ch-modal-card">',
+      '    <div class="ch-modal-head">',
+      '      <h2>Mark booked</h2>',
+      '      <button class="ch-x-btn" data-action="cancelBook" title="Close">&times;</button>',
+      '    </div>',
+      '    <div class="ch-modal-body">',
+      '      <div class="ch-lock-note">Fill in the details the quote doesn’t carry yet to create the booking at the quoted price.</div>',
+      renderBookModal(),
+      '      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">',
+      '        <button class="ch-btn ch-btn-outline" data-action="cancelBook">Cancel</button>',
+      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">Confirm booking</button>',
+      '      </div>',
+      '    </div>',
+      '  </div>',
+      '</div>',
+    ].join('') : ''),
+
   ].join('');
 
   // V19: render() replaces the render target's innerHTML wholesale, destroying whatever
@@ -4501,9 +4616,15 @@ function attachEventListeners() {
     } else if (action === 'markSent') {
       markSent();
     } else if (action === 'markWon') {
-      markOutcome('won');
+      bookOpen = true;
+      render();
     } else if (action === 'markLost') {
       markOutcome('lost');
+    } else if (action === 'confirmBook') {
+      bookQuote();
+    } else if (action === 'cancelBook') {
+      bookOpen = false;
+      render();
     } else if (action === 'reopenToDraft') {
       reopenToDraft();
     } else if (action === 'openRates') {
