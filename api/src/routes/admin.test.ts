@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { Hono } from 'hono';
@@ -186,6 +187,33 @@ describe('POST /admin/jobs/notifications', () => {
     expect((await res.json()).staleSharedHolds).toBe(1);
     expect((await bookings.get(b.id))!.status).toBe('cancelled');
     expect(await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 })).not.toBeNull();
+  });
+
+  it('expires stale sent ops quotes alongside the notification tick', async () => {
+    vi.useFakeTimers();
+    try {
+      const NOW = new Date('2026-07-17T12:00:00Z');
+      vi.setSystemTime(NOW);
+      const quotes = new InMemoryQuoteRepo();
+      const app = createApp({
+        adminApiKey: KEY, auth, quotes, bookings: new InMemoryBookingRepo(), email: new FakeEmailAdapter(),
+      });
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+        rateCardVersion: '2026-06-28', request: {}, result: {},
+      });
+      // stamp sentAt 31 days ago — past the 30-day idle TTL
+      vi.setSystemTime(new Date(NOW.getTime() - 31 * 24 * 3600 * 1000));
+      await quotes.patch(q.id, { status: 'sent' });
+      vi.setSystemTime(NOW);
+
+      const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+      expect(res.status).toBe(200);
+      expect((await res.json()).expiredQuotes).toBe(1);
+      expect((await quotes.get(q.id))?.status).toBe('expired');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
