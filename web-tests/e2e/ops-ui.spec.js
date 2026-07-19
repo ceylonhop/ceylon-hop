@@ -58,6 +58,48 @@ async function logout(page) {
   await expect(page.locator('#login')).toHaveClass(/show/);
 }
 
+// Helper: pick a place from the live autocomplete for a leg field (the ops⇄quote builder is the
+// same view the quote-tool specs drive). FakeMaps resolves the known corridors offline in e2e.
+async function pickPlace(page, input, query, resultText) {
+  await input.click();
+  await page.keyboard.type(query, { delay: 40 });
+  await expect(page.locator('.ch-ac-menu').first()).toBeVisible({ timeout: 5000 });
+  await page.locator('.ch-ac-menu .ch-ac-item', { hasText: resultText }).first().click();
+}
+
+// Seed one saved quote into the queue via the real builder. The three queue-reading specs below
+// need at least one quote to exist; on the fresh CI Postgres nothing is seeded, and since
+// 2026-07-17 a quote can't be saved until "Customer asked for" is recorded — POST /save's Zod
+// rejects a null requestedService ("Expected 'private' | 'chauffeur' | 'both', received null").
+// Mirrors the ops save flow: new quote → trip basics → record requested service → price a known
+// corridor → save a draft. Leaves the app on the builder; the caller navigates to the queue next.
+async function seedQuote(page, label) {
+  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('#view [data-qnew]').click();
+  await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
+  // Trip basics gate the itinerary: vehicle + name + a valid contact.
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.waitForTimeout(600); // choosing a vehicle kicks a debounced re-render
+  await page.fill('#f-firstName', 'Queue');
+  await page.fill('#f-lastName', label);
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+  // Record what the customer asked for (required before the quote can be saved).
+  await page.locator('[data-action="setRequestedService"][data-req="private"]').click();
+  // A priced leg so /save resolves a distance offline (FakeMaps): Kandy → Ella + a date.
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="pickupLocation"]').first(), 'Kand', 'Kandy');
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="dropoffLocation"]').first(), 'Ella', 'Ella');
+  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
+  await page.locator('[data-action="saveDraft"]').click();
+  await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
+  // Return to the queue list via the builder's "← Queue" button. Clicking the Quotes nav from
+  // inside the builder does NOT collapse the detail view back to the list, so land on the list
+  // here and let the calling spec drive the queue from a known state.
+  await page.locator('[data-action="backToQueue"]').click();
+  await expect(page.locator('#view [data-qnew]')).toBeVisible({ timeout: 8000 });
+}
+
 test('founder login renders the Bookings queue', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
@@ -206,6 +248,7 @@ test('the Quotes queue is gated on quote:manage — visible to founder, finance,
 
 test('the Quotes queue renders role-aware sections with read-only status pills, not the builder', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await seedQuote(page, 'Sections'); // ensure the fresh test DB has a quote to render
   await page.locator('#nav button[data-route="quotes"]').click();
   await expect(page.locator('#view h1')).toHaveText('Quotes');
   await expect(page.locator('#view [data-qnew]')).toBeVisible(); // "+ New quote"
@@ -229,6 +272,7 @@ test('"+ New quote" opens the builder detail view (Quotes stays the active nav)'
 
 test('clicking a quote row reopens it in the builder detail view', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await seedQuote(page, 'Reopen'); // ensure the fresh test DB has a row to click
   await page.locator('#nav button[data-route="quotes"]').click();
   await expect(page.locator('#view .qrow').first()).toBeVisible({ timeout: 10000 });
   const firstId = await page.locator('#view .qrow').first().getAttribute('data-qopen');
@@ -247,6 +291,7 @@ test('clicking a quote row reopens it in the builder detail view', async ({ page
 
 test('a shareable quote URL opens that quote for another authenticated quote manager', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await seedQuote(page, 'Shareable'); // ensure the fresh test DB has a row to share
   await page.locator('#nav button[data-route="quotes"]').click();
   const row = page.locator('#view .qrow').first();
   await expect(row).toBeVisible({ timeout: 10000 });

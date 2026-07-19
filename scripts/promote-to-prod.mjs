@@ -78,9 +78,11 @@ console.log(`\nCandidate: ${sha.slice(0, 12)}  "${shortMsg}"  (${ref})`);
 
 // --- CI gate: the required workflow(s) must be green for this exact commit ----
 // Gate on specific workflow files (robust) rather than "every check", so an unrelated or
-// still-stabilizing check never blocks a real release. Add 'e2e.yml' here once the e2e job
-// has proven reliably green (see docs/staging-environment-runbook.md).
-const REQUIRED_WORKFLOWS = ['ci.yml'];
+// still-stabilizing check never blocks a real release. e2e.yml (the ops⇄quote Playwright suite)
+// gates releases now that its requested_service drift is fixed and the full suite is green; if a
+// run flakes, re-run it (retries:1 already absorbs the usual contention) or drop it back to
+// ['ci.yml'] (see docs/staging-environment-runbook.md).
+const REQUIRED_WORKFLOWS = ['ci.yml', 'e2e.yml'];
 if (FORCE) {
   console.log('⚠  --force: skipping the CI-green check.');
 } else {

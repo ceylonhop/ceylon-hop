@@ -5,19 +5,19 @@ name: e2e
 # (never a real one). Deliberately SEPARATE from `ci` so it can be stabilized without touching the
 # core gate.
 #
-# TRIGGER: manual (workflow_dispatch) ONLY, on purpose. When first run in CI (PR #71) this suite
-# surfaced PRE-EXISTING drift: 10 specs (the quote save/approve paths in quote-tool.spec.js and
-# ops-ui.spec.js) fail because they don't set the `requested_service` field that became REQUIRED
-# in migration 0017 (PR #56, 2026-07-17) — the old `ci` never ran these DB-backed specs, so the
-# drift went unnoticed. 177 of 187 pass, proving the harness itself is sound.
-#
-# TO PROMOTE THIS INTO THE GATE once the specs are fixed:
-#   1. update the quote-intent specs to select a requested service before saving,
-#   2. switch this trigger to `pull_request` + `push: branches:[main]`,
-#   3. add 'e2e.yml' to REQUIRED_WORKFLOWS in scripts/promote-to-prod.mjs.
-# Until then, run it on demand from the Actions tab. See docs/staging-environment-runbook.md.
+# TRIGGER: pull_request + push to main. This suite was briefly manual (workflow_dispatch) after its
+# first CI run (PR #71) surfaced PRE-EXISTING drift: 10 DB-backed specs in quote-tool.spec.js and
+# ops-ui.spec.js failed because they didn't set the `requested_service` field that became REQUIRED
+# in migration 0017 (PR #56, 2026-07-17) — the old `ci` never ran these specs, so it went unnoticed.
+# Those specs now record what the customer asked for before saving (and the queue-readers seed a
+# quote first), so the full suite is green and this gates PRs again. It is also listed in
+# REQUIRED_WORKFLOWS in scripts/promote-to-prod.mjs, so a red ops e2e blocks a prod promotion.
+# Kept SEPARATE from `ci` so a flaky run is a quick re-run, not a change to the core gate.
+# See docs/staging-environment-runbook.md.
 on:
-  workflow_dispatch: {}
+  pull_request: {}
+  push:
+    branches: [main]
 
 jobs:
   ops-e2e:
