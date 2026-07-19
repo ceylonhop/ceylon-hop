@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { FakeEmailAdapter, ResendEmailAdapter } from './email';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { AllowlistEmailAdapter, FakeEmailAdapter, ResendEmailAdapter, parseEmailAllowlist } from './email';
 
 describe('FakeEmailAdapter', () => {
   it('records each sent message', async () => {
@@ -7,6 +7,61 @@ describe('FakeEmailAdapter', () => {
     await email.send({ to: 'a@b.com', subject: 'hi', html: '<p>hi</p>' });
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0].to).toBe('a@b.com');
+  });
+});
+
+describe('parseEmailAllowlist', () => {
+  it('splits, trims, lowercases, and drops blanks', () => {
+    expect(parseEmailAllowlist(' Team@CeylonHop.com , ops@ceylonhop.com ,, @ceylonhop.com '))
+      .toEqual(['team@ceylonhop.com', 'ops@ceylonhop.com', '@ceylonhop.com']);
+  });
+  it('treats undefined / empty as no allowlist', () => {
+    expect(parseEmailAllowlist(undefined)).toEqual([]);
+    expect(parseEmailAllowlist('')).toEqual([]);
+    expect(parseEmailAllowlist('   ')).toEqual([]);
+  });
+});
+
+describe('AllowlistEmailAdapter (staging safety)', () => {
+  it('forwards a message to an exactly-allowed recipient', async () => {
+    const inner = new FakeEmailAdapter();
+    const guard = new AllowlistEmailAdapter(inner, { allow: ['team@ceylonhop.com'] });
+    await guard.send({ to: 'Team@CeylonHop.com', subject: 's', html: '<p>h</p>' });
+    expect(inner.sent).toHaveLength(1);
+    expect(inner.sent[0].to).toBe('Team@CeylonHop.com');
+  });
+
+  it('drops (does not forward, does not throw) a message to a non-allowed recipient', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const inner = new FakeEmailAdapter();
+    const guard = new AllowlistEmailAdapter(inner, { allow: ['team@ceylonhop.com'] });
+    await expect(
+      guard.send({ to: 'real.customer@gmail.com', subject: 's', html: '<p>h</p>' }),
+    ).resolves.toBeUndefined();
+    expect(inner.sent).toHaveLength(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('real.customer@gmail.com');
+    warn.mockRestore();
+  });
+
+  it('allows a whole domain when the entry starts with "@"', async () => {
+    const inner = new FakeEmailAdapter();
+    const guard = new AllowlistEmailAdapter(inner, { allow: ['@ceylonhop.com'] });
+    await guard.send({ to: 'anyone@ceylonhop.com', subject: 's', html: '<p>h</p>' });
+    await guard.send({ to: 'nope@gmail.com', subject: 's', html: '<p>h</p>' });
+    expect(inner.sent.map((m) => m.to)).toEqual(['anyone@ceylonhop.com']);
+  });
+
+  it('calls the onBlocked hook instead of logging when provided', async () => {
+    const inner = new FakeEmailAdapter();
+    const blocked: string[] = [];
+    const guard = new AllowlistEmailAdapter(inner, {
+      allow: ['team@ceylonhop.com'],
+      onBlocked: (m) => blocked.push(m.to),
+    });
+    await guard.send({ to: 'stranger@example.com', subject: 's', html: '<p>h</p>' });
+    expect(blocked).toEqual(['stranger@example.com']);
+    expect(inner.sent).toHaveLength(0);
   });
 });
 

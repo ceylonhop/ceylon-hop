@@ -1,10 +1,36 @@
 # Ceylon Hop — Staging Environment: Spec & Phased Rollout
 
-**Status: PLANNED — recorded 2026-07-13 (rewritten to be full-stack + honest about the
-sandbox-vs-gate distinction). Not started.** Owner reference for standing up an isolated
-staging environment covering **both** the customer site and the ops/quoting tool. Read
-alongside the [go-live checklist](./go-live-checklist.md) — staging is the dry run of the
-go-live config.
+**Status: v3 — IN BUILD (M0 repo prep done 2026-07-18).** Owner reference for standing up an
+isolated staging environment covering **both** the customer site and the ops/quoting tool. Read
+alongside the [go-live checklist](./go-live-checklist.md) and the actionable
+[runbook](./staging-environment-runbook.md).
+
+## v3 decisions (owner-approved 2026-07-18) — supersede the conflicting v2 text below
+
+1. **Staging email = real sending fenced by an allowlist**, not a fake adapter. Real Resend, but
+   `EMAIL_ALLOWLIST` drops any recipient that isn't a team address — so staging tests real
+   deliverability with zero chance of emailing a customer. (Updates the §3 "Email" row.)
+2. **Go straight to the gate (Flavor B now), not sandbox-first.** The site isn't live yet, so the
+   cost of adopting the gate early is near-zero and it delivers "test on staging, release
+   deliberately" from day one. (Updates the §7 recommendation.)
+3. **Promote on the owner's word.** "This is good, push to prod" → the owner-run promote script
+   verifies staging CI is green for that commit, moves `production`, and prod redeploys. Rollback
+   is the same script pointed at a known-good commit.
+
+**Also corrected:** the "Playwright e2e against the staged stack" idea (§6 G4) is implemented as
+the ops⇄quote e2e running in **CI against an ephemeral Postgres** (the suite boots its own API
+and writes to a throwaway DB — it is not built to hit a remote URL), **plus** a read-only
+post-deploy **smoke** against the live URL. Both exist in the repo now.
+
+**M0 build status:** `render.yaml`, `api/scripts/seed.ts`, `scripts/smoke-deploy.mjs`,
+`scripts/promote-to-prod.mjs`, `.github/workflows/e2e.yml`, the `EMAIL_ALLOWLIST` adapter, and
+`tools/stage-config.mjs` are all built + tested. Remaining work is dashboard/DNS/secrets — see
+the [runbook](./staging-environment-runbook.md).
+
+---
+
+_Historical v2 text follows (recorded 2026-07-13). Where it conflicts with the v3 decisions
+above, v3 wins._
 
 ---
 
@@ -42,7 +68,7 @@ Data isolation alone is not enough; the shared third-party sinks leak if unmanag
 |---------|-----------|
 | **Database** | Own Supabase project — staging can't read/write prod data. |
 | **Payments** | `PAYHERE_MODE=sandbox` — no real card ever charged. |
-| **Email** | No `RESEND_API_KEY` (fake adapter) or a test sender — never emails a real customer. |
+| **Email** | **v3:** real `RESEND_API_KEY`, but `EMAIL_ALLOWLIST` fences delivery to team addresses (`AllowlistEmailAdapter`) — real deliverability testing, never a customer. |
 | **Sessions/links** | Own `OPS_SESSION_SECRET` / `BOOKING_LINK_SECRET` / `ADMIN_API_KEY` — can't cross to prod. |
 | **Apex** | Subdomain-only DNS — the live WordPress apex is never touched. |
 | **Error beacon** | The front-end + ops error beacons must point at the **staging API** (`window.CEYLON_HOP_API` = staging), NOT prod — otherwise staging errors flood **prod Sentry** (exactly the bug the e2e tests caused). |
@@ -130,8 +156,10 @@ mechanics, and they are what actually make this plan *reduce* risk rather than a
   good, following the migration-ordering + rollback discipline. *This* is "staging before
   production deploy."
 
-**Recommendation:** **A now** (fast, unblocks quoting), **B before the customer-site apex
-cutover** (when a gate earns its keep). Do not mistake A for a gate.
+**Recommendation (v2):** A now, B later. **Superseded by v3:** go straight to B (the gate) — the
+site isn't live yet, so adopting the gate early costs almost nothing and delivers the
+"test-on-staging, release-deliberately" workflow immediately. Staging still deploys from `main`
+(so it mirrors what you're testing); the gate is that **prod** deploys only from `production`.
 
 ## 8. Blocking dependency: payment collection (not a footnote)
 
