@@ -8,11 +8,10 @@ import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '..
 import {
   sendCancellationConfirmation,
   sendRefundConfirmation,
-  sendBookingConfirmed,
   sendNoShowNotice,
-  manageUrl,
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { expireStaleQuotes } from '../services/quoteExpiry';
 import { runWatchdog } from '../services/watchdog';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
@@ -29,13 +28,14 @@ export function adminRoutes(deps: {
   email: EmailAdapter;
   notificationLog: NotificationLogRepo;
   auth: OpsAuthConfig;
+  // Optional so existing callers work; when wired, the notifications tick also expires stale
+  // sent ops quotes (best-effort rider). See services/quoteExpiry.
+  quotes?: QuoteRepo;
   // M17 — watchdog alert channel + digest inputs; all optional so existing callers work.
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
-  // Digest inputs (Task 4) — quote snapshot + dashboard link, both optional so the digest
-  // degrades gracefully without them.
-  quotes?: QuoteRepo;
+  // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
@@ -101,8 +101,10 @@ export function adminRoutes(deps: {
   r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
   r.post('/bookings/:id/refund', requireCap('payments:act'), (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
   // Ops marks the booking confirmed once the driver's arranged (paid → confirmed).
+  // No customer email on this transition (owner decision 2026-07-18): the paid
+  // confirmation already went out, so confirming the driver is an internal step.
   r.post('/bookings/:id/confirm', requireCap('payments:act'), (c) =>
-    transitionAndNotify(c, 'confirmed', (b, e) => sendBookingConfirmed(b, e, { manage: manageUrl(b, baseUrl, linkSecret) })),
+    transitionAndNotify(c, 'confirmed', async () => {}),
   );
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
   r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
@@ -118,6 +120,17 @@ export function adminRoutes(deps: {
       staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
+    }
+    // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
+    // past the idle TTL. Idempotent (an expired quote no longer matches), and a failure here
+    // must never block the customer notifications the caller asked for.
+    let expiredQuotes = 0;
+    if (deps.quotes) {
+      try {
+        expiredQuotes = (await expireStaleQuotes(new Date(), { quotes: deps.quotes })).expired;
+      } catch (err) {
+        console.error('quote expiry sweep failed:', err);
+      }
     }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
     // failure must never block the customer notifications the caller asked for.
@@ -139,7 +152,7 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, digest }, 200);
+    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their

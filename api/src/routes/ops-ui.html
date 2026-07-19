@@ -631,7 +631,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .qv .ch-fee { display: inline-flex; align-items: center; gap: 9px; }
-.qv .ch-note-in { border: 1px solid var(--line); background: #fcfbf7; border-radius: var(--r-sm); padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; color: var(--ink); width: 100%; }
+.qv .ch-note-in { border: 1px solid var(--line); background: var(--surface-warm); border-radius: var(--r-sm); padding: 8px 11px; font-size: 12.5px; outline: none; font-family: inherit; color: var(--ink); width: 100%; }
 .qv .ch-note-in:focus { border-color: var(--blue); background: var(--surface); }
 
 .qv .ch-timeline-add { display: flex; gap: 10px; padding: 6px 0 4px 46px; flex-wrap: wrap; }
@@ -732,7 +732,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-sec-head-r { display: flex; align-items: center; gap: 8px; }
 
 /* ---------- Customer strip (one compact row) ---------- */
-.qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; }
+.qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; container-type: inline-size; container-name: custstrip; }
 .qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: end; }
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
@@ -740,12 +740,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-input-wrap:has(.ch-input.invalid) { border-color: var(--red); box-shadow: 0 0 0 3px rgba(236,58,36,.12); }
 .qv .ch-field-err { font-size: 10.5px; color: var(--red); margin-top: 4px; line-height: 1.35; display: none; }
 .qv .ch-field:has(.ch-input.invalid) .ch-field-err { display: block; }
-@media (max-width: 720px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
+/* Wrap to two columns off the STRIP's own width, not the viewport: the editor column is sized by
+   the container layout (rail + 360px price pane), so a viewport media query fires at the wrong
+   width and lets the 5-col grid overflow — same reason .ch-cockpit uses @container qv (see line ~305). */
+@container custstrip (max-width: 620px) { .qv .ch-cust-grid { grid-template-columns: 1fr 1fr; }}
 /* Trip basics: vehicle chips sit under the customer grid (no double padding), divider between */
 .qv .ch-basics-rule { height: 1px; background: var(--line-soft); margin: 13px 0 3px; }
 .qv .ch-cust-strip .ch-veh-chips { padding: 0; }
 /* Itinerary locked until a vehicle is chosen */
-.qv .ch-itin-locked { text-align: center; padding: 30px 18px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: #fbfaf7; }
+.qv .ch-itin-locked { text-align: center; padding: 30px 18px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: var(--surface-warm); }
 .qv .ch-itin-locked-icon { font-size: 24px; }
 .qv .ch-itin-locked-title { font-weight: 700; font-size: 14px; color: var(--ink); margin-top: 6px; }
 .qv .ch-itin-locked-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
@@ -759,7 +762,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-map-block.open .ch-map-toggle { border-bottom: 1px solid var(--line); }
 .qv .ch-map-block.open .ch-map-chev { transform: rotate(0deg); color: var(--teal-d); }
 .qv .ch-itin-map-slot { animation: chMapIn .26s cubic-bezier(.2,.7,.3,1); }
-.qv .ch-itin-map { width: 100%; height: 240px; background: #eef1ee; display: block; }
+.qv .ch-itin-map { width: 100%; height: 240px; background: var(--line-soft); display: block; }
 .qv .ch-itin-map-note { padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px; }
 @keyframes chMapIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
@@ -877,7 +880,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* Seats are a hard limit — a vehicle that can't seat the party is greyed out + disabled.
    (Wins the specificity tie with the .unset rule above via source order.) */
 .qv .ch-veh-chips .ch-veh-chip.unfit,
-.qv .ch-veh-chips .ch-veh-chip.unfit:hover { border-color: var(--line); background: #f4f2ec; color: var(--muted-2); cursor: not-allowed; box-shadow: none; }
+.qv .ch-veh-chips .ch-veh-chip.unfit:hover { border-color: var(--line); background: var(--line-soft); color: var(--muted-2); cursor: not-allowed; box-shadow: none; }
 .qv .ch-veh-chip.unfit .ch-veh-cap { color: #b06a00; }
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
 .qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
@@ -1042,6 +1045,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   :root[data-theme="dark"] .qv .ch-veh-chip.over{background:#2e2817;border-color:#5d4c22}
   :root[data-theme="dark"] .qv .ch-review-banner.tone-amber{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.3);color:#e8b96a}
   :root[data-theme="dark"] .qv .ch-review-banner.tone-teal{background:rgba(47,191,180,.12);border-color:rgba(47,191,180,.3);color:#5fd6cc}
+  /* status-pill tones + amber copy-note hardcode light pastels — remix each as a translucent
+     tint over dark paper (same treatment as the review banners above) */
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-slate{background:rgba(143,160,184,.14);border-color:rgba(143,160,184,.30);color:#aebbcd}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-amber{background:rgba(224,163,62,.14);border-color:rgba(224,163,62,.30);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-teal{background:rgba(47,191,180,.14);border-color:rgba(47,191,180,.30);color:#5fd6cc}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-blue{background:rgba(90,140,230,.16);border-color:rgba(90,140,230,.32);color:#8fb3f0}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-green{background:rgba(79,191,126,.14);border-color:rgba(79,191,126,.30);color:#79d69b}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-red{background:rgba(239,106,76,.14);border-color:rgba(239,106,76,.32);color:#f0937c}
+  :root[data-theme="dark"] .qv .ch-status-pill.tone-muted{background:rgba(150,144,134,.14);border-color:rgba(150,144,134,.30);color:#b3afa7}
+  :root[data-theme="dark"] .qv .ch-copy-review-note{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.30);color:#e8b96a}
 
   /* ── D5: arrival motion — a lighting change, not a flash. The builder rises once on
      mount; the itinerary rises once when the basics unlock it. Guarded by a one-shot
@@ -1064,6 +1077,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   :root[data-theme="dark"] .qv .ch-veh-chip:disabled{color:var(--muted-2)}
   :root[data-theme="dark"] .qv .ch-btn-teal:disabled,
   :root[data-theme="dark"] .qv .ch-btn-primary:disabled{filter:brightness(.55) saturate(.6)}
+
+/* Review lock: the editor reads as inert while the quote isn't editable. */
+.qv .ch-app.ch-locked .ch-cust-strip, .qv .ch-app.ch-locked .ch-sec, .qv .ch-app.ch-locked .ch-svc-choose { opacity: .68; }
+.qv .ch-app.ch-locked .ch-cust-strip input:disabled, .qv .ch-app.ch-locked .ch-sec input:disabled { cursor: not-allowed; }
+.qv .ch-app.ch-locked .ch-req-chip:disabled, .qv .ch-app.ch-locked .ch-veh-chip:disabled { cursor: not-allowed; }
 </style>
 <script>/* D6: set the theme before first paint — no light flash for dark users */
 try{var _t=localStorage.getItem('ch_ops_theme');
@@ -2255,8 +2273,29 @@ var _dirty = false;
    queue. The Save button remains as the explicit path (and the only way to CREATE the row). */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
 function isEditableNow() {
-  return state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested';
+  // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
+  // the founder approves exactly what they reviewed; reopen-to-draft is the one door back in.
+  return state.status === 'draft' || state.status === 'changes_requested';
 }
+/* Review lock: while the quote isn't editable, the EDITOR is inert — every input/chip/button
+   in the basics, itinerary and pricing chooser is disabled and the sections dim. The action
+   bar, output tools and assign strip stay live (they're workflow, not content). The server
+   enforces the same rule (/save 409s), so this is honesty, not the security boundary. */
+function applyContentLock() {
+  var app = document.querySelector('#quoteRoot .ch-app');
+  if (!app) return;
+  var locked = !isEditableNow();
+  app.classList.toggle('ch-locked', locked);
+  if (!locked) return;
+  var regions = app.querySelectorAll('.ch-cust-strip, .ch-sec, .ch-svc-choose');
+  regions.forEach(function(region) {
+    region.querySelectorAll('input, select, textarea, button').forEach(function(el) {
+      if (el.closest('[data-action="toggleMap"]') || el.matches('[data-action="toggleMap"]')) return; // viewing the route is not editing
+      el.disabled = true;
+    });
+  });
+}
+
 function armAutosave() {
   if (_autoTimer) clearTimeout(_autoTimer);
   _autoTimer = setTimeout(fireAutosave, 2500);
@@ -2275,6 +2314,7 @@ async function fireAutosave() {
   updateSaveChip();
 }
 function renderSaveState() {
+  if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
   else if (_dirty) { cls += ' dirty'; txt = state.savedId ? 'Edits pending' : 'Unsaved'; }
@@ -2328,16 +2368,24 @@ function requestMismatch(requested, priced) {
    of setService() below — that picks what we PRICE, this records what was REQUESTED, and the
    whole point is that the two can disagree (see requestMismatch). Never derived from
    state.service (I4). */
-function setRequestedService(v) {
-  if (v !== 'private' && v !== 'chauffeur' && v !== 'both') return;
-  if (state.requestedService === v) return;
-  state.requestedService = v;
-  /* I9: 'both' means the customer wants to see BOTH prices. The chauffeur option lives in a
-     separate Output-tab toggle, and leaving the two decoupled means recording 'both' and then
-     sending one price because that unrelated toggle was forgotten. Default it on; the operator
-     can still switch it back off. (It only applies to a point-to-point-priced quote — the
-     upsell is one-directional; see requestMismatch's 'both'+chauffeur case.) */
-  if (v === 'both') outputIncludeChauffeurUpsell = true;
+// Is `dim` ('private'|'chauffeur') part of what the customer asked for? 'both' includes each.
+function requestedIncludes(dim) {
+  return state.requestedService === dim || state.requestedService === 'both';
+}
+// Toggle one dimension; re-derive the stored enum from the two flags (both on → 'both',
+// one on → that one, neither → null). Storage shape is unchanged, so nothing downstream moves.
+function setRequestedService(dim) {
+  if (dim !== 'private' && dim !== 'chauffeur') return;
+  var p2p = requestedIncludes('private'), chauf = requestedIncludes('chauffeur');
+  if (dim === 'private') p2p = !p2p; else chauf = !chauf;
+  var next = (p2p && chauf) ? 'both' : p2p ? 'private' : chauf ? 'chauffeur' : null;
+  if (next === state.requestedService) return;
+  state.requestedService = next;
+  /* I9: reaching 'both' (customer wants to SEE both prices) defaults the Output-tab chauffeur
+     option on — decoupled, they'd record 'both' and then send one price because that unrelated
+     toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
+     price (see requestMismatch's 'both'+chauffeur case). */
+  if (next === 'both') outputIncludeChauffeurUpsell = true;
   markDirty();
   render();
 }
@@ -2671,7 +2719,7 @@ async function transition(toStatus, opts) {
   // content-locked server-side (/save → 409 not_editable) and has no unsaved edits to flush, so
   // saving first would spuriously abort the move. The /save maker-checker lock (commit 3d93b56)
   // made the old unconditional save-first fail here, breaking "Mark as sent" + "Reopen to edit".
-  var editable = state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested';
+  var editable = isEditableNow(); // review lock: pending_review no longer flushes a save (it would 409)
   if (editable && !(await saveQuote({ silent: true }))) return; // saveQuote already surfaced the reason
   var patchBody = { status: toStatus };
   if (opts.note != null) patchBody.notes = opts.note;
@@ -3213,13 +3261,18 @@ function renderVehicleChips() {
 // chips' head+row layout so the two intake questions read as a pair. The mismatch WARNING lives
 // separately, in renderServiceChooser next to the prices.
 function renderRequestedService() {
-  var opts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']];
+  // Two independent toggles, NOT three single-select buttons: selecting both IS "both"
+  // (owner, 2026-07-17) — a third button would just restate a state the toggles already express.
+  // The STORED value stays 'private' | 'chauffeur' | 'both' | null (see requestedFrom/derive),
+  // so the mismatch signal, the review gate and the I9 upsell default are all unchanged.
+  var opts = [['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide']];
   var parts = ['<div class="ch-req-choose">'];
   parts.push('  <div class="ch-req-head"><span class="ch-req-lbl">Customer asked for</span></div>');
   parts.push('  <div class="ch-req-row">');
   for (var i = 0; i < opts.length; i++) {
     var rv = opts[i][0];
-    parts.push('    <button type="button" class="ch-req-chip' + (state.requestedService === rv ? ' active' : '') + '"'
+    parts.push('    <button type="button" class="ch-req-chip' + (requestedIncludes(rv) ? ' active' : '') + '"'
+      + ' aria-pressed="' + (requestedIncludes(rv) ? 'true' : 'false') + '"'
       + ' data-action="setRequestedService" data-req="' + rv + '">' + esc(opts[i][1]) + '</button>');
   }
   parts.push('  </div>');
@@ -4043,7 +4096,7 @@ function renderActionBar() {
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
-    else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), SAVE); }
+    else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
@@ -4053,7 +4106,7 @@ function renderActionBar() {
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
-    // pending_review → awaiting the founder; no support actions (read-only)
+    else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
   return out.join('');
 }
@@ -4125,8 +4178,8 @@ function renderReviewBanner() {
   }
   if (s === 'pending_review') {
     return isApprover()
-      ? banner('amber', 'In review', 'Check the pricing and margin, then approve or send it back for changes.')
-      : banner('amber', 'Submitted for review', 'With the founder for approval. You can send it once it’s approved.');
+      ? banner('amber', 'In review — locked', 'Approve, send back, or reopen to edit.')
+      : banner('amber', 'Submitted — locked', 'With the founder. Reopen to edit if you need to change it.');
   }
   if (s === 'changes_requested') {
     return isApprover()
@@ -4456,6 +4509,7 @@ function render() {
   // child of the render target), so capture the intent to rebuild it afterwards.
   var _menuWasOpen = !!_ac.menuEl;
   document.querySelector('#quoteRoot .ch-app').innerHTML = html;
+  applyContentLock();
   attachEventListeners();
   restoreEditorFocus(_focusSnap, _menuWasOpen);
   if (_menuWasOpen) reopenAutoCompleteMenu();

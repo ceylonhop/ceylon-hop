@@ -14,7 +14,7 @@ import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
-import { sendBookingConfirmed, sendNoShowNotice, manageUrl } from '../services/notifications';
+import { sendNoShowNotice } from '../services/notifications';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -39,22 +39,19 @@ const ALL_ACTIONS: OpsAction[] = [
 
 const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
 
-// A fulfilment milestone that has a customer email attached. 'vehicle_confirmed' means
-// the driver's arranged → "you're confirmed"; 'no_show' → the forfeited-fare notice.
+// A fulfilment milestone that has a customer email attached. 'no_show' → the
+// forfeited-fare notice. The 'vehicle_confirmed' (driver-arranged) milestone
+// deliberately sends NO customer email (owner decision 2026-07-18): the paid
+// confirmation already went out, so confirming the driver is an internal step.
 async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string): Promise<void> {
-  const kind = to === 'vehicle_confirmed' ? 'booking_confirmed' : to === 'no_show' ? 'no_show_notice' : null;
+  const kind = to === 'no_show' ? 'no_show_notice' : null;
   if (!kind || !deps.email) return;
   const log = deps.notificationLog;
   try {
     if (log && (await log.wasSent(bookingId, kind))) return; // already emailed for this milestone
     const booking = await deps.bookings.get(bookingId);
     if (!booking) return;
-    if (kind === 'booking_confirmed') {
-      const manage = deps.baseUrl && deps.linkSecret ? manageUrl(booking, deps.baseUrl, deps.linkSecret) : undefined;
-      await sendBookingConfirmed(booking, deps.email, { manage });
-    } else {
-      await sendNoShowNotice(booking, deps.email);
-    }
+    await sendNoShowNotice(booking, deps.email);
     await log?.markSent(bookingId, kind);
   } catch (err) {
     console.error(`ops ${kind} email failed for ${bookingId}:`, err);

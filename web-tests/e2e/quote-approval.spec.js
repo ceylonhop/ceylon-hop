@@ -269,12 +269,17 @@ test('support on a draft can Submit for review but has no Approve action', async
   await expect(actions(page).locator('[data-action="sendBack"]')).toHaveCount(0);
 });
 
-test('founder on a pending_review quote gets Approve + Send back', async ({ page }) => {
+test('founder on a pending_review quote gets Approve + Send back + the reopen door', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
   await expect(page.locator('.ch-status-pill')).toContainText('In review');
   await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
   await expect(actions(page).locator('[data-action="sendBack"]')).toBeVisible();
-  await expect(page.locator('.ch-review-banner')).toContainText(/pricing and margin/i);
+  // Review lock (owner, 2026-07-17): submission freezes content — the banner names the lock,
+  // the action bar offers the one door back in, and the editor renders inert.
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
+  await expect(page.locator('.ch-review-banner')).toContainText(/locked/i);
+  await expect(page.locator('#quoteRoot .ch-app')).toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeDisabled();
 });
 
 test('founder can self-approve a draft in one hop (Approve — ready to send)', async ({ page }) => {

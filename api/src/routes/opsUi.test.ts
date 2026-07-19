@@ -169,13 +169,17 @@ describe('ops UI — quote intent', () => {
     const body = await (await createApp().request('/ops')).text();
     expect(body).toContain('Customer asked for');
     expect(body).toContain('data-action="setRequestedService"');
-    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide'], ['both', 'Both']]");
+    // Two toggles, not three single-select buttons — selecting both IS "both" (owner, 2026-07-17).
+    expect(body).toContain("[['private', 'Point-to-point'], ['chauffeur', 'Chauffeur-guide']]");
+    expect(body).not.toContain("['both', 'Both']"); // the third button is gone
+    expect(body).toContain('function requestedIncludes('); // stored enum still derives to 'both'
+    expect(body).toContain("(p2p && chauf) ? 'both'"); // both toggles on -> stored 'both'
     expect(body).toContain('requestedService: null'); // I4: never derived from the priced service
   });
 
   it("recording 'both' switches the chauffeur upsell on so the second price can't be forgotten (I9)", async () => {
     const body = await (await createApp().request('/ops')).text();
-    expect(body).toContain("if (v === 'both') outputIncludeChauffeurUpsell = true;");
+    expect(body).toContain("if (next === 'both') outputIncludeChauffeurUpsell = true;");
     expect(body).toContain('data-action="toggleChauffeurUpsell"'); // still overridable
   });
 
@@ -313,5 +317,36 @@ describe('ops UI — design elevation', () => {
     expect(body).toContain('mount-rise');
     expect(body).toContain('just-unlocked');
     expect(body).toContain('prefers-reduced-motion');
+  });
+});
+
+// Review lock (owner, 2026-07-17): submission freezes content; reopen-to-draft is the one
+// explicit door back in. Server enforces via /save 409 — these assert the UI tells the truth.
+describe('ops UI — review lock', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  it('pending_review is no longer client-editable (gates autosave, ⌘S, palette, vehicle keys)', () => {
+    expect(body).toContain("return state.status === 'draft' || state.status === 'changes_requested';");
+    expect(body).not.toContain("state.status === 'draft' || state.status === 'pending_review' || state.status === 'changes_requested'");
+  });
+
+  it('the editor renders inert while locked, with the map toggle exempt', () => {
+    expect(body).toContain('function applyContentLock(');
+    expect(body).toContain("classList.toggle('ch-locked', locked)");
+    expect(body).toContain('viewing the route is not editing');
+  });
+
+  it('every locked row in the action bar offers the reopen door, and review loses Save', () => {
+    const bar = body.slice(body.indexOf('function renderActionBar('), body.indexOf('function renderReviewBanner('));
+    const reviewRows = bar.split('\n').filter(l => l.includes("'pending_review'"));
+    expect(reviewRows.length).toBeGreaterThanOrEqual(2); // approver + submitter rows
+    reviewRows.forEach(row => expect(row).toContain("reopenToDraft"));
+    reviewRows.forEach(row => expect(row).not.toContain('SAVE'));
+  });
+
+  it('the banner names the lock', () => {
+    expect(body).toContain('In review — locked');
+    expect(body).toContain('Submitted — locked');
   });
 });
