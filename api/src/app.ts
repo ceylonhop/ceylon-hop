@@ -209,7 +209,7 @@ export function createApp(deps: AppDeps = {}) {
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes,
+    maps, quotes, bookings,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
@@ -230,6 +230,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),

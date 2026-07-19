@@ -13,15 +13,35 @@ import { assertTransition, IllegalTransitionError, type BookingStatus } from '..
 
 type BookingRow = typeof bookings.$inferSelect;
 
-// A CH-XXXXX reference collision is a Postgres unique-violation (23505) on a *reference*
-// constraint — retry the insert with a fresh reference rather than 500-ing the booking.
+// A Postgres unique-violation (23505). Drizzle wraps the driver error as `Error: Failed
+// query…` with the real PostgresError on `.cause`; the raw postgres.js error carries
+// `code`/`constraint_name` directly. Walk the cause chain so 23505 is recognised either way.
+// Exported (with the detectors) for unit tests — the DB-gated postgres.test.ts can't run
+// without a database, so this pure detector is what guards create()'s retry/idempotency paths.
 const UNIQUE_VIOLATION = '23505';
 const MAX_REFERENCE_ATTEMPTS = 5;
-function isReferenceCollision(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: unknown; constraint_name?: unknown; constraint?: unknown };
-  const constraint = String(e.constraint_name ?? e.constraint ?? '');
-  return e.code === UNIQUE_VIOLATION && constraint.includes('reference');
+export function pgUniqueViolation(err: unknown): { constraint: string } | null {
+  let e: unknown = err;
+  for (let depth = 0; depth < 6 && e && typeof e === 'object'; depth++) {
+    const o = e as { code?: unknown; constraint_name?: unknown; constraint?: unknown; cause?: unknown };
+    if (o.code === UNIQUE_VIOLATION) return { constraint: String(o.constraint_name ?? o.constraint ?? '') };
+    e = o.cause;
+  }
+  return null;
+}
+
+// A CH-XXXXX reference collision — retry the insert with a fresh reference rather than 500-ing.
+export function isReferenceCollision(err: unknown): boolean {
+  const v = pgUniqueViolation(err);
+  return v !== null && v.constraint.includes('reference');
+}
+
+// A concurrent create with the same Idempotency-Key hits the unique idempotency_key constraint.
+// Unlike a reference collision (retry with a fresh reference), the right response is to return
+// the booking the winning insert created — create is idempotent by contract.
+export function isIdempotencyCollision(err: unknown): boolean {
+  const v = pgUniqueViolation(err);
+  return v !== null && v.constraint.includes('idempotency');
 }
 
 export class PostgresBookingRepo implements BookingRepo {
@@ -121,6 +141,12 @@ export class PostgresBookingRepo implements BookingRepo {
         // assemble after commit so the joined rows are visible
         return await this.assemble(await this.insertBooking(b, opts));
       } catch (err) {
+        // Lost the race to a concurrent create with the same Idempotency-Key — the other
+        // insert committed the booking, so return it instead of 500-ing (create is idempotent).
+        if (opts?.idempotencyKey && isIdempotencyCollision(err)) {
+          const existing = await this.findByIdempotencyKey(opts.idempotencyKey);
+          if (existing) return existing;
+        }
         // A reference collision rolls back the whole tx (customer insert included), so
         // retrying with a fresh generateReference() is clean — no orphaned customer row.
         if (!isReferenceCollision(err)) throw err;

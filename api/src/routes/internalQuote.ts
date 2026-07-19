@@ -11,10 +11,14 @@ import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { can, resolveAssignee } from '../lib/opsAuth';
+import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned } from '../services/opsNotifications';
+import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
+import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
+import { TripInput } from '../domain/trip';
+import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -69,6 +73,17 @@ const ToolRequestSchema = z.object({
 });
 type ToolLeg = z.infer<typeof ToolLegSchema>;
 type ToolRequest = z.infer<typeof ToolRequestSchema>;
+
+// The fields the "Mark booked" modal supplies that the quote itself doesn't carry.
+// CustomerInput enforces the full contactable set (email/whatsapp/country required).
+const BookingDetailsSchema = z.object({
+  customer: CustomerInput,
+  vehicleType: z.enum(['car', 'van']),
+  pax: z.number().int().min(1),
+  bags: z.number().int().min(0),
+  date: z.string().optional(),
+  time: z.string().optional(),
+});
 
 function customerNameFor(body: ToolRequest): string | null {
   const splitName = [body.firstName, body.lastName]
@@ -328,6 +343,7 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
+  bookings: BookingRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
   // Assignment notification (spec 2026-07-16 §6). Optional: with no adapter, assignment still
@@ -462,6 +478,70 @@ export function internalQuoteRoutes(deps: {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
       throw e;
     }
+  });
+
+  // Create a real booking from a booked quote (spec 2026-07-18). The ops "Mark booked" modal
+  // POSTs the contact/date/vehicle the quote lacks; the booking is priced at the quote's frozen
+  // total (never re-priced) and the quote is stamped with the back-link + 'won'. Idempotent on
+  // the quote id — a double-submit or a mid-failure retry returns the same booking.
+  r.post('/:id/book', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    if (quote.channel !== 'ops' || (quote.status !== 'sent' && quote.status !== 'won')) {
+      return c.json({ error: 'not_bookable', status: quote.status }, 409);
+    }
+
+    const idempotencyKey = `book:quote:${id}`;
+    // Already booked → return the existing booking; never create a second.
+    const prior = quote.convertedBookingId
+      ? await deps.bookings.get(quote.convertedBookingId)
+      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
+    if (prior) {
+      if (!quote.convertedBookingId) await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      return c.json(prior, 200);
+    }
+
+    const parsed = BookingDetailsSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', details: parsed.error.flatten() }, 400);
+
+    let mapped;
+    try {
+      mapped = quoteToBooking(quote, parsed.data);
+    } catch (e) {
+      if (e instanceof QuoteNotBookableError) return c.json({ error: 'not_bookable' }, 409);
+      throw e;
+    }
+
+    // Validate the built input against the same schema the public booking routes use —
+    // a bad mapping fails loudly instead of persisting a malformed booking.
+    const schema = mapped.mode === 'single' ? SingleTransferInput : TripInput;
+    if (!schema.safeParse(mapped.input).success) return c.json({ error: 'invalid_booking' }, 400);
+
+    const newBooking: NewBooking =
+      mapped.mode === 'single'
+        ? { mode: 'single', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' }
+        : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' };
+
+    const created = await deps.bookings.create(newBooking, { idempotencyKey });
+    // Land it in payment_pending so it surfaces in the ops Bookings queue ("Awaiting
+    // payment") — a draft is hidden there. No payment row is recorded; payment is collected
+    // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
+    // returns the existing payment_pending booking) never attempts an illegal self-transition.
+    let booking = created;
+    if (created.status === 'draft') {
+      try {
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+      } catch {
+        // A concurrent double-submit already moved this booking out of draft — re-read it
+        // rather than surface a 500 on a booking that was, in fact, created.
+        booking = (await deps.bookings.get(created.id)) ?? created;
+      }
+    }
+    await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
+    return c.json(booking, 201);
   });
 
   // Read-only view of the locked rate card for the tool's Settings card.
@@ -605,6 +685,25 @@ export function internalQuoteRoutes(deps: {
         await sendQuoteAssigned(updated, handoverTo, actor, deps.email, deps.opsBaseUrl ?? '');
       } catch (err) {
         console.error('quote assignment email failed', { quote: updated.reference, err });
+      }
+    }
+    // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
+    if (body.status === 'pending_review' && deps.email) {
+      for (const u of approverOpsUsers(deps.auth.opsUsers)) {
+        if (u.email === actor.toLowerCase()) continue;
+        try {
+          await sendQuoteAwaitingApproval(updated, u.email, actor, deps.email, deps.opsBaseUrl ?? '');
+        } catch (err) {
+          console.error('quote awaiting-approval email failed', { quote: updated.reference, to: u.email, err });
+        }
+      }
+    }
+    // Sent-back → the maker (createdBy), except the actor, carrying the note (spec 2026-07-18).
+    if (body.status === 'changes_requested' && deps.email && updated.createdBy && updated.createdBy.toLowerCase() !== actor.toLowerCase()) {
+      try {
+        await sendQuoteSentBack(updated, updated.createdBy, actor, body.notes ?? null, deps.email, deps.opsBaseUrl ?? '');
+      } catch (err) {
+        console.error('quote sent-back email failed', { quote: updated.reference, err });
       }
     }
     // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine

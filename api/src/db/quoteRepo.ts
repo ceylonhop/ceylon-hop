@@ -120,6 +120,9 @@ export interface QuotePatch {
   // `null` = unassign. assignedAt follows automatically.
   assignedTo?: string | null;
   updatedBy?: string | null;
+  // Back-link to the booking a won quote became. System-set only — POST /admin/quote/:id/book
+  // writes it; the ops PATCH route's zod schema deliberately does not accept it.
+  convertedBookingId?: string;
 }
 
 export interface QuoteRepo {
@@ -264,6 +267,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       row.assignedAt = patch.assignedTo ? now : null;
     }
     if (patch.updatedBy !== undefined) row.updatedBy = patch.updatedBy;
+    if (patch.convertedBookingId !== undefined) row.convertedBookingId = patch.convertedBookingId;
     row.updatedAt = now;
     return { ...row };
   }

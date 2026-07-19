@@ -82,6 +82,24 @@ describe('runWatchdog', () => {
     expect(r2.stuckPending).toBe(1); // still counted as stuck…
     expect(inner.sent).toHaveLength(1); // …but the founder got exactly one email
   });
+
+  it('skips ops-booked (channel whatsapp) bookings — no stuck alert, no recovery email', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), {
+      bookings,
+      log: new InMemoryNotificationLogRepo(),
+      alerts,
+      email: new FakeEmailAdapter(),
+      baseUrl: 'https://ops.example',
+      linkSecret: 'secret',
+    });
+    expect(res.stuckPending).toBe(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
 });
 
   it('emails the customer a one-shot recovery when email deps are provided', async () => {

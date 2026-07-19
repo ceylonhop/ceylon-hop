@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor,
+  can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor, approverOpsUsers,
   type OpsRole, type OpsAction,
 } from './opsAuth';
 
@@ -58,6 +58,11 @@ describe('displayNameFor', () => {
   it('never returns an empty label, even with nothing to work from', () => {
     expect(displayNameFor(null, '')).toBe('unknown');
   });
+});
+
+it('approverOpsUsers returns only quote:approve holders (founders)', () => {
+  const raw = 'f@x.com:founder,fin@x.com:finance,op@x.com:ops';
+  expect(approverOpsUsers(raw).map((u) => u.email)).toEqual(['f@x.com']);
 });
 
 describe('parseOpsUsers / roleForEmail', () => {

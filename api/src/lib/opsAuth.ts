@@ -64,6 +64,14 @@ export function assignableOpsUsers(raw: string): AssignableUser[] {
     .map(([email, role]) => ({ email, role }));
 }
 
+// Who should be told a quote is waiting for approval (spec 2026-07-18): the quote:approve
+// holders. Mirrors assignableOpsUsers, filtered on the approval capability instead.
+export function approverOpsUsers(raw: string): AssignableUser[] {
+  return [...parseOpsUsers(raw)]
+    .filter(([, role]) => can(role, 'quote:approve'))
+    .map(([email, role]) => ({ email, role }));
+}
+
 // Normalised assignee email, or null if they aren't assignable. Callers reject on null.
 export function resolveAssignee(email: string, raw: string): string | null {
   const wanted = (email ?? '').trim().toLowerCase();

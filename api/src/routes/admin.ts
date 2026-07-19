@@ -3,6 +3,7 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import type { QuoteRepo } from '../db/quoteRepo';
 import { BOOKING_STATUSES, type BookingStatus, IllegalTransitionError } from '../domain/status';
 import {
   sendCancellationConfirmation,
@@ -12,7 +13,6 @@ import {
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { runWatchdog } from '../services/watchdog';
-import type { QuoteRepo } from '../db/quoteRepo';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
@@ -35,6 +35,8 @@ export function adminRoutes(deps: {
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
+  opsBaseUrl?: string;
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
   linkSecret: string;
@@ -142,7 +144,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text });
           digest = true;
         } catch (err) {

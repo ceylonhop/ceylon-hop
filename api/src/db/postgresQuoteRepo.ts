@@ -163,6 +163,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
           ? { assignedTo: patch.assignedTo, assignedAt: patch.assignedTo ? new Date() : null }
           : {}),
         ...(patch.updatedBy !== undefined ? { updatedBy: patch.updatedBy } : {}),
+        ...(patch.convertedBookingId !== undefined ? { convertedBookingId: patch.convertedBookingId } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
