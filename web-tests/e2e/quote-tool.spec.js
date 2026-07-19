@@ -80,6 +80,16 @@ async function chooseVehicle(page, value) {
   await page.waitForTimeout(600);
 }
 
+// Quote intent (spec 2026-07-17): a quote can't be saved or approved until "Customer asked for"
+// is recorded. POST /save's Zod rejects a null requestedService ("Expected 'private' | 'chauffeur'
+// | 'both', received null" — the toast every save/approve spec hit before this), and the approve
+// PATCH gate 400s requested_service_required. The control is a pair of toggle chips in the trip
+// basics (data-action="setRequestedService"), independent of the priced service — record the
+// dimension that matches what each spec prices, before saving/approving.
+async function recordRequestedService(page, dim) {
+  await page.locator('[data-action="setRequestedService"][data-req="' + dim + '"]').click();
+}
+
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
   // The itinerary is gated until the trip basics are filled — vehicle + name + a valid contact —
@@ -117,6 +127,8 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
   // Fill customer name — text fields only update state on 'input' (no
   // change→render race with the Save action), so no Tab/blur workaround is needed.
   await fillCustomerName(page, 'E2E Port');
+  // Record what the customer asked for — the save path rejects a null requestedService.
+  await recordRequestedService(page, 'private');
 
   // Save via the action-bar button. The old standalone-builder #btnSave header button was
   // retired when the builder merged into the ops shell; Save is now a `.ch-btn` in the
@@ -251,6 +263,8 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   // the queue (which re-prices it) and read the now-unlocked message.
   const custName = 'E2E Stay ' + Date.now();
   await fillCustomerName(page, custName);
+  // Requested service matches the chauffeur-priced trip (no mismatch, no upsell side effect).
+  await recordRequestedService(page, 'chauffeur');
   await page.locator('[data-action="approveReady"]').click();
 
   // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
@@ -363,7 +377,12 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   await page.waitForTimeout(600);
 
   const custName = 'E2E Both Modes ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  // The single #f-customerName input was split into first/last name fields — use the shared
+  // helper like every other spec (the stale id silently hung this spec for the full 30s).
+  await fillCustomerName(page, custName);
+  // Record 'private' only (NOT 'both') — 'both' would default the chauffeur upsell ON, but this
+  // spec proves the MANUAL toggleChauffeurUpsell appends the option, so it must start off.
+  await recordRequestedService(page, 'private');
   await page.locator('[data-action="approveReady"]').click();
 
   const qrow = page.locator('#view .qrow', { hasText: custName });
@@ -403,6 +422,7 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
   // Unique customer name so we can find the row unambiguously
   const custName = 'E2E Status ' + Date.now();
   await fillCustomerName(page, custName);
+  await recordRequestedService(page, 'private');
 
   // Founder self-approves the draft in one hop: approveReady() saves, PATCHes status→ready,
   // and navigates back to the queue.
@@ -429,19 +449,22 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
 
   const custName = 'E2E Reopen ' + Date.now();
   await fillCustomerName(page, custName);
+  await recordRequestedService(page, 'private');
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Start a fresh quote so we can prove the reopen repopulates the name. "+ New quote" lives
-  // in the queue now (data-qnew), so go there and start a blank quote — no unsaved-changes
+  // in the queue now (data-qnew): return to the queue with the builder's own "← Queue" button
+  // (backToQueue → opsGoQuotes, the same return the approve flow uses). Clicking the Quotes nav
+  // from inside the builder does NOT collapse the detail view back to the list. No unsaved-changes
   // confirm fires because the save above cleared the dirty flag.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await page.locator('[data-action="backToQueue"]').click();
   await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#f-firstName')).toHaveValue('');
   await expect(page.locator('#f-lastName')).toHaveValue('');
 
-  // Back to the queue and click this quote's row to reopen it.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // Back to the queue (via the builder's "← Queue" button) and click this quote's row to reopen it.
+  await page.locator('[data-action="backToQueue"]').click();
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
@@ -490,11 +513,13 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
 
   const custName = 'E2E Age ' + Date.now();
   await fillCustomerName(page, custName);
+  await recordRequestedService(page, 'private');
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
-  // Back to the queue; the row for this quote carries a `.qage` chip, calm tone (just created).
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // Back to the queue (via the builder's "← Queue" button); the row for this quote carries a
+  // `.qage` chip, calm tone (just created).
+  await page.locator('[data-action="backToQueue"]').click();
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   const age = row.locator('.qage');
@@ -517,11 +542,13 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
   const custName = 'E2E Reprice ' + Date.now();
   await fillCustomerName(page, custName);
+  await recordRequestedService(page, 'private');
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
-  // Reopen it from the queue — reopened legs come back in manual-distance mode.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // Reopen it from the queue (via the builder's "← Queue" button) — reopened legs come back in
+  // manual-distance mode.
+  await page.locator('[data-action="backToQueue"]').click();
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
