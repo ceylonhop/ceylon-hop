@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { compress } from 'hono/compress';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -29,9 +30,14 @@ function uiHtml(googleClientId: string, devLoginEnabled: boolean, mapsBrowserKey
     .replaceAll('{{MAPS_KEY}}', mapsBrowserKey);
 }
 
+// Mounted at BOTH /ops and the bare root "/" (so ops.ceylonhop.com serves the tool, not only
+// /ops). Compression is route-level here — not an app.use('/ops') in app.ts — so it travels
+// with the router to whichever path(s) it's mounted at, and never leaks onto the JSON API.
+// The ~190KB shell gzips to ~40KB on the wire; Hono's compress only fires when the request
+// sends Accept-Encoding: gzip/deflate, so non-gzip clients still get the raw HTML.
 export function opsUiRoutes(googleClientId = '', devLoginEnabled = false, mapsBrowserKey = ''): Hono {
   const app = new Hono();
-  app.get('/', (c) => {
+  app.get('/', compress(), (c) => {
     const html = uiHtml(googleClientId, devLoginEnabled, mapsBrowserKey);
     if (html == null) return c.html('<h1>ops dashboard unavailable</h1>', 500);
     return c.html(html);

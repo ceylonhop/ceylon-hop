@@ -6,12 +6,14 @@ export const QUOTE_STATUSES: readonly QuoteStatus[] =
   ['draft', 'pending_review', 'changes_requested', 'ready', 'sent', 'won', 'lost', 'expired'];
 const DECIDED: readonly QuoteStatus[] = ['won', 'lost', 'expired'];
 
-// Legal status moves in the maker-checker review lifecycle (structural legality only — the
-// route separately requires quote:approve for → ready / → changes_requested, so draft → ready
-// is a legal SELF-APPROVE that a non-approver still can't perform).
+// Legal status moves in the maker-checker review lifecycle. Approval (→ ready) is reachable
+// ONLY from pending_review: a quote must be Submitted for review before it can be approved, for
+// everyone — the founder-only "self-approve straight from a draft" shortcut was removed
+// (2026-07-19) so the lifecycle is respected end to end. The route additionally requires
+// quote:approve for → ready / → changes_requested (a non-approver still can't approve).
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
-  draft:             ['pending_review', 'ready'],
-  changes_requested: ['pending_review', 'ready', 'draft'],
+  draft:             ['pending_review'],
+  changes_requested: ['pending_review', 'draft'],
   pending_review:    ['ready', 'changes_requested', 'draft'],
   ready:             ['sent', 'draft'],
   sent:              ['draft'], // reopen-to-edit a sent quote (founder-gated in the route)
