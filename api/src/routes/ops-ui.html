@@ -803,6 +803,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-date { flex: none; }
 .qv .ch-leg-date input { border: 1px solid var(--line); background: var(--cream); border-radius: 7px; padding: 6px 8px; font-size: 12px; font-family: inherit; color: var(--ink); outline: none; }
 .qv .ch-leg-date input:focus { border-color: var(--blue); background: var(--surface); }
+.qv .ch-leg-date.invalid input { border-color: var(--red); background: rgba(236,58,36,.06); }
+.qv .ch-leg-date-hint { display: block; font-size: 10px; font-weight: 600; color: var(--red); margin-top: 3px; text-align: center; }
 
 .qv .ch-leg-dist { flex: none; display: flex; align-items: center; gap: 4px; }
 .qv .ch-leg-price { flex: none; font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--ink); min-width: 54px; text-align: right; }
@@ -2182,6 +2184,15 @@ async function _runEstimate() {
     st.service = 'private';
   }
 
+  // Chauffeur with a dated-and-undated mix: the server would 400 ("date on every leg"). Don't
+  // fire that doomed request — priceNeeds() surfaces exactly which legs need a date instead.
+  if (chauffeurUndatedLegs().length) {
+    lastEstimate = null;
+    lastEstimateError = null; // priceNeeds() carries the reason (it wins the summary display)
+    render();
+    return;
+  }
+
   // Build the payload (Task 2 mapping)
   var payload = {
     service: st.service || 'private',
@@ -2416,6 +2427,16 @@ function distinctLegDateCount() {
     if (leg.date) seen[leg.date] = true;
   });
   return Object.keys(seen).length;
+}
+
+// The exact condition the server rejects with "chauffeur trips need a date on every leg":
+// priced as chauffeur AND 2+ distinct leg dates (so it won't auto-downgrade to point-to-point)
+// AND some leg has no date. Returns those undated legs so the UI can flag them and block the
+// save/estimate up front, instead of firing a request that 400s into a disappearing toast.
+function chauffeurUndatedLegs() {
+  if (state.service !== 'chauffeur') return [];
+  if (distinctLegDateCount() < 2) return []; // <2 distinct dates → priced as point-to-point, dates moot
+  return (state.legs || []).filter(function(leg) { return !leg.date; });
 }
 
 function updateLeg(id, patch) {
@@ -2693,6 +2714,13 @@ async function saveQuote(opts) {
   opts = opts || {};
   if (!state.vehicleType) {
     showToast('Choose a vehicle type first');
+    return false;
+  }
+  // Block a chauffeur save the server is guaranteed to reject (an undated leg drops a day rate).
+  // render() flags the offending legs' date fields; the toast says what to do — no silent 400.
+  var _gaps = chauffeurUndatedLegs();
+  if (_gaps.length) {
+    if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing'); }
     return false;
   }
   var res = await apiSave(savePayload());
@@ -2999,9 +3027,11 @@ function renderLegCard(leg, idx, total) {
 
   // Date pill (KEEP input[type=date][data-field=date]). min = today so a past date can't be
   // picked from the native calendar (the change handler also rejects a typed past value).
+  var dateNeeded = state.service === 'chauffeur' && distinctLegDateCount() >= 2 && !leg.date;
   var dateHtml = [
-    '<div class="ch-leg-date">',
+    '<div class="ch-leg-date' + (dateNeeded ? ' invalid' : '') + '">',
     '  <input type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    (dateNeeded ? '  <span class="ch-leg-date-hint">date required</span>' : ''),
     '</div>',
   ].join('');
 
@@ -3352,6 +3382,8 @@ function priceNeeds() {
     if (l.category !== 'stay_day' && !(parseFloat(l.distanceKm) > 0)) undist++;
   });
   if (undist > 0) needs.push(undist === 1 ? 'one leg distance' : undist + ' leg distances');
+  var undated = chauffeurUndatedLegs().length;
+  if (undated > 0) needs.push(undated === 1 ? 'a date on the undated leg (chauffeur)' : 'a date on ' + undated + ' legs (chauffeur)');
   return needs;
 }
 
