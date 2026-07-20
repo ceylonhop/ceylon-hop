@@ -159,6 +159,50 @@ describe('ops UI shell', () => {
   });
 });
 
+// Bare-root alias (2026-07-19): ops.ceylonhop.com/ should serve the tool, not only /ops.
+// The shell is served at BOTH "/" and "/ops" (same-origin, same cookie); the client builds
+// URLs from location.pathname (ops-ui.html), so at the bare root the URL stays at "/".
+describe('ops UI — bare-root alias (ops.ceylonhop.com/)', () => {
+  it('serves the same shell at "/" as at "/ops"', async () => {
+    const app = createApp();
+    const root = await app.request('/');
+    expect(root.status).toBe(200);
+    expect(root.headers.get('content-type')).toContain('text/html');
+    const rootBody = await root.text();
+    expect(rootBody).toContain('Ceylon Hop');
+    expect(rootBody).toContain('/admin/ops'); // wired to the real API, not mock data
+    // Byte-identical to the /ops shell — one tool, two paths.
+    const opsBody = await (await app.request('/ops')).text();
+    expect(rootBody).toBe(opsBody);
+  });
+
+  it('gzip-compresses the "/" shell for clients that accept it', async () => {
+    const app = createApp();
+    const res = await app.request('/', { headers: { 'accept-encoding': 'gzip' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    const gz = Buffer.from(await res.arrayBuffer());
+    const body = gunzipSync(gz).toString('utf8');
+    expect(body).toContain('Ceylon Hop');
+    expect(gz.length).toBeLessThan(body.length / 2);
+  });
+
+  it('keeps the /ops path working, still gzipped (regression)', async () => {
+    const app = createApp();
+    const res = await app.request('/ops', { headers: { 'accept-encoding': 'gzip' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+  });
+
+  it('does not shadow other routes — /health is still its JSON, not the shell', async () => {
+    const app = createApp();
+    const res = await app.request('/health');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({ status: 'ok' });
+  });
+});
+
 // Quote intent (spec 2026-07-17): the submitter records what the CUSTOMER asked for, which the
 // reviewer reads to know which options to focus on.
 describe('ops UI — quote intent', () => {

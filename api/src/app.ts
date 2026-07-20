@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { compress } from 'hono/compress';
 import { secureHeaders } from 'hono/secure-headers';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
@@ -199,11 +198,15 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
-  // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
-  // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
-  // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
-  app.use('/ops', compress());
-  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? ''));
+  // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
+  // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
+  // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
+  // builds its URLs from location.pathname, so at the bare root the URL stays at "/". Only
+  // "/" is added (the router defines just GET /), so other root routes are unaffected.
+  // Compression lives inside opsUiRoutes (route-level) so it applies to both mounts.
+  const opsUi = opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? '');
+  app.route('/ops', opsUi);
+  app.route('/', opsUi);
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
