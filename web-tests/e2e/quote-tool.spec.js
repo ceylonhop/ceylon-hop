@@ -80,6 +80,27 @@ async function chooseVehicle(page, value) {
   await page.waitForTimeout(600);
 }
 
+// Record what the customer asked for — required before a quote can be submitted for review
+// (spec 2026-07-17). 'private' = the Point-to-point chip.
+async function recordRequest(page, req = 'private') {
+  await page.locator(`[data-action="setRequestedService"][data-req="${req}"]`).click();
+  await page.waitForTimeout(200);
+}
+
+// Approve a draft the lifecycle-legal way. The founder-only "self-approve straight from a draft"
+// was removed (2026-07-19): record the request, Submit for review (bounces to the queue), reopen
+// the quote's row (now pending_review), then Approve. Leaves the page on the Quotes queue, with
+// the quote in `ready` — same end state the old one-hop approveReady() produced.
+async function submitReopenApprove(page, custName) {
+  await recordRequest(page);
+  await page.locator('[data-action="submitForReview"]').click();
+  const row = page.locator('#view .qrow', { hasText: custName });
+  await expect(row).toBeVisible({ timeout: 8000 });
+  await row.click();
+  await expect(page.locator('[data-action="approveReady"]')).toBeVisible({ timeout: 8000 });
+  await page.locator('[data-action="approveReady"]').click();
+}
+
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
   // The itinerary is gated until the trip basics are filled — vehicle + name + a valid contact —
@@ -246,12 +267,12 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   // The customer message is gated behind approval now (commit c268d13): while the quote is a
   // draft the WhatsApp/Email body is replaced by a `.ch-copy-lock` card, so `.ch-pre` is
-  // hidden (copyUnlocked() → status==='ready'||'sent'). Approve it first — approveReady()
-  // saves, PATCHes status→ready, and bounces to the Quotes queue — then reopen the quote from
-  // the queue (which re-prices it) and read the now-unlocked message.
+  // hidden (copyUnlocked() → status==='ready'||'sent'). Approve it first — the lifecycle-legal
+  // way (submit for review → reopen → approve; self-approve was removed 2026-07-19) — which
+  // ends on the Quotes queue, then reopen the quote (which re-prices it) and read the message.
   const custName = 'E2E Stay ' + Date.now();
   await fillCustomerName(page, custName);
-  await page.locator('[data-action="approveReady"]').click();
+  await submitReopenApprove(page, custName);
 
   // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
   const qrow = page.locator('#view .qrow', { hasText: custName });
@@ -363,8 +384,8 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   await page.waitForTimeout(600);
 
   const custName = 'E2E Both Modes ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
-  await page.locator('[data-action="approveReady"]').click();
+  await fillCustomerName(page, custName);
+  await submitReopenApprove(page, custName);
 
   const qrow = page.locator('#view .qrow', { hasText: custName });
   await expect(qrow).toBeVisible({ timeout: 8000 });
@@ -404,9 +425,9 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
   const custName = 'E2E Status ' + Date.now();
   await fillCustomerName(page, custName);
 
-  // Founder self-approves the draft in one hop: approveReady() saves, PATCHes status→ready,
-  // and navigates back to the queue.
-  await page.locator('[data-action="approveReady"]').click();
+  // Approve via the review lifecycle (submit → reopen → approve; self-approve was removed
+  // 2026-07-19): the final Approve PATCHes status→ready and bounces back to the queue.
+  await submitReopenApprove(page, custName);
 
   // On the queue, this quote's row shows the Ready pill (QSTATUS.ready.label = 'Ready to send').
   const row = page.locator('#view .qrow', { hasText: custName });
@@ -477,6 +498,41 @@ test('legs can be reordered and out-of-order dates raise a flag', async ({ page 
   await page.locator('.ch-tl-item').nth(1).locator('[data-action="moveLegUp"]').click();
   await page.waitForTimeout(400);
   await expect(outOfOrderFlag).toHaveCount(0);
+});
+
+// Feature (2026-07-19): a leg that doesn't start where the previous one ended raises an advisory
+// "Legs don't connect" flag. Mirrors the customer site's gap detection, but surfaced as an agent
+// warning — in the builder a gap almost always means a missed or mis-typed leg. No save needed:
+// the flag is computed live from the itinerary, like the out-of-order flag above.
+test('a non-sequential leg raises the "Legs don’t connect" flag', async ({ page }) => {
+  const gapFlag = page.locator('.ch-flag', { hasText: /Legs don.t connect/i });
+
+  // Build a connected route: each new leg auto-fills its pick-up from the previous drop-off.
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="pickupLocation"]').first(), 'Kand', 'Kandy');
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="dropoffLocation"]').first(), 'Ella', 'Ella');
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(2);
+  await pickPlace(page, page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]'), 'Galle', 'Galle');
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(3);
+  await pickPlace(page, page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]'), 'Colombo', 'Colombo');
+  await page.waitForTimeout(400);
+
+  // Fully connected Kandy → Ella → Galle → Colombo — no gap.
+  await expect(gapFlag).toHaveCount(0);
+
+  // Reorder leg 3 (Galle → Colombo) above leg 2 (Ella → Galle): now leg 2 departs Galle while
+  // leg 1 ends in Ella, so the Ella → Galle stretch is unaccounted for → the gap flag fires.
+  await page.locator('.ch-tl-item').nth(2).locator('[data-action="moveLegUp"]').click();
+  await page.waitForTimeout(400);
+  await expect(gapFlag.first()).toBeVisible({ timeout: 5000 });
+
+  // Put it back → connected again → the flag clears.
+  await page.locator('.ch-tl-item').nth(1).locator('[data-action="moveLegDown"]').click();
+  await page.waitForTimeout(400);
+  await expect(gapFlag).toHaveCount(0);
 });
 
 // Spec 7: the queue shows an age-since-request chip on each row, coloured for urgency. A

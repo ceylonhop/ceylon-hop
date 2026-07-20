@@ -3431,6 +3431,30 @@ function renderSummaryCardBody() {
 }
 
 // ── Flags computation (client-side) ──────────────────────────────────────────
+// Itinerary continuity check (pure, DOM-free — unit-tested in opsUi.test.ts). Returns a warning
+// string when a leg doesn't start where the previous one ended, or null when the route connects.
+// In the builder a gap almost always means a missed or mis-typed leg (the customer site treats
+// the same gap as a deliberate self-arranged stretch — different context, different call). Place
+// names are compared loosely — lower-cased, parentheticals dropped, first comma-segment only,
+// non-alphanumerics stripped — so Google's ", Sri Lanka" suffix and "(CMB)" tags never raise a
+// phantom gap. Advisory only: it flags for a second look, it never blocks submitting or sending.
+function itineraryGapDetail(legs) {
+  function spotKey(s) {
+    return String(s || '').toLowerCase().replace(/\(.*?\)/g, '').split(',')[0].replace(/[^a-z0-9]/g, '');
+  }
+  // A stay day keeps the traveller put, so its start and end are the same single location.
+  function legStart(leg) { return leg.category === 'stay_day' ? leg.dropoffLocation : leg.pickupLocation; }
+  for (var i = 1; i < legs.length; i++) {
+    var start = legStart(legs[i]) || '', end = legs[i - 1].dropoffLocation || '';
+    if (!start || !end) continue;                    // half-built leg — don't nag mid-entry
+    if (spotKey(start) !== spotKey(end)) {
+      return 'Leg ' + (i + 1) + ' starts at ' + start + ', but leg ' + i + ' ends at ' + end +
+        ' — add the missing leg, or fix the pick-up/drop-off if the gap is intentional.';
+    }
+  }
+  return null;                                        // route connects end to end (or is too short to gap)
+}
+
 function computeFlags() {
   var st = state;
   var flags = [];
@@ -3497,6 +3521,12 @@ function computeFlags() {
       prevDate = d;
     }
   })();
+
+  // orange: itinerary gap — a leg doesn't start where the previous one ended (see itineraryGapDetail).
+  var gapDetail = itineraryGapDetail(st.legs);
+  if (gapDetail) {
+    flags.push({ level: 'orange', title: 'Legs don’t connect', detail: gapDetail });
+  }
 
   // orange: capacity — server-derived caps; null until rate card loads / for 'custom'
   var vcap = vehicleCaps(st.vehicleType);
@@ -4095,7 +4125,10 @@ function renderActionBar() {
   var GB = function(action, label, cls) { return B(action, label, cls, needReq, needReq ? reqHint : null); }; // gated button
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
-    if (s === 'draft' || s === 'changes_requested') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-outline'), SAVE); }
+    // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
+    // before it can be Approved (no self-approve straight from a draft). Approve appears only in
+    // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
+    if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }

@@ -250,6 +250,58 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
   });
 });
 
+// itineraryGapDetail is pure and DOM-free (it takes the legs array), so — like requestMismatch —
+// we lift it out of the inlined shell script and table-test the continuity cases directly.
+// It warns when a leg doesn't start where the previous one ended (an agent's missed/mis-typed
+// leg), and stays silent when the route connects, when a segment is half-built, or when the
+// place names differ only by Google's ", Sri Lanka" suffix / "(CMB)" tag.
+describe('itineraryGapDetail (ops builder — non-sequential legs)', () => {
+  type Leg = { category?: string; pickupLocation?: string; dropoffLocation?: string };
+  let gap: (legs: Leg[]) => string | null;
+  beforeAll(async () => {
+    const body = await (await createApp().request('/ops')).text();
+    const start = body.indexOf('function itineraryGapDetail(');
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    const src = body.slice(start, i + 1);
+    gap = new Function(`${src}; return itineraryGapDetail;`)() as typeof gap;
+  });
+  const t = (pickupLocation: string, dropoffLocation: string, category = 'transfer'): Leg => ({ category, pickupLocation, dropoffLocation });
+  const stay = (loc: string): Leg => ({ category: 'stay_day', pickupLocation: loc, dropoffLocation: loc });
+
+  it('is silent for a single leg (nothing to connect to)', () => {
+    expect(gap([t('Colombo', 'Kandy')])).toBeNull();
+  });
+  it('is silent when every leg starts where the previous ended', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('Kandy', 'Ella'), t('Ella', 'Galle')])).toBeNull();
+  });
+  it('flags a leg that starts somewhere the previous leg did not end', () => {
+    // The reported case: A→B then C→C leaves the B→C stretch unaccounted for.
+    const d = gap([t('A', 'B'), t('C', 'C')]);
+    expect(d).toMatch(/Leg 2 starts at C, but leg 1 ends at B/);
+  });
+  it('names the first gap when there are several legs', () => {
+    const d = gap([t('Colombo', 'Kandy'), t('Kandy', 'Ella'), t('Colombo', 'Trincomalee')]);
+    expect(d).toMatch(/Leg 3 starts at Colombo, but leg 2 ends at Ella/);
+  });
+  it('does not gap on Google name variants (", Sri Lanka" suffix / "(CMB)" tag)', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('Kandy, Sri Lanka', 'Ella')])).toBeNull();
+    expect(gap([t('Colombo City', 'Colombo Airport (CMB)'), t('Colombo Airport', 'Kandy')])).toBeNull();
+  });
+  it('stays quiet while a leg is still half-built (no phantom gap mid-entry)', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('', '')])).toBeNull();
+    expect(gap([t('Colombo', 'Kandy'), t('', 'Ella')])).toBeNull();
+  });
+  it('treats a stay day as staying put — connected before and after', () => {
+    expect(gap([t('Colombo', 'Kandy'), stay('Kandy'), t('Kandy', 'Ella')])).toBeNull();
+    expect(gap([t('Colombo', 'Kandy'), stay('Ella')])).toMatch(/Leg 2 starts at Ella, but leg 1 ends at Kandy/);
+  });
+});
+
 // Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit/Approve are
 // disabled until the customer request is recorded, and a bypassed 400 gets friendly copy.
 describe('ops UI — submit gated on recorded request', () => {
