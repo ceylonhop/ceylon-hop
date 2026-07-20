@@ -177,7 +177,7 @@ describe('internal quoting tool route', () => {
   it('POST /save on a READY (approved) quote is rejected (409) — maker-checker lock', async () => {
     const app = createApp();
     const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
-    await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' }); // founder-approved, content now locked
+    await approve(app, saved.id); // founder-approved (via review), content now locked
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Cheaper', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 5 })] });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('not_editable');
@@ -220,8 +220,8 @@ describe('internal quoting tool route', () => {
     const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await authedGet(app, '/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
-    // reach 'won' the legal way: draft → ready (founder self-approve) → won
-    await patch(app, `/admin/quote/${a.id}`, { status: 'ready' });
+    // reach 'won' the legal way: draft → review → ready → won
+    await approve(app, a.id);
     await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
     const won = await (await authedGet(app, '/admin/quote/list?status=won')).json();
     expect(won.quotes.map((q: { id: string }) => q.id)).toEqual([a.id]);
@@ -230,7 +230,7 @@ describe('internal quoting tool route', () => {
   it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
     const app = createApp();
     const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
-    await patch(app, `/admin/quote/${q.id}`, { status: 'ready' }); // draft → ready (self-approve)
+    await approve(app, q.id); // draft → review → ready
     const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
     expect(sent.status).toBe('sent');
     expect(sent.sentAt).not.toBeNull();
@@ -257,25 +257,37 @@ describe('internal quoting tool route', () => {
     const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] });
     return r.json();
   };
+  // Approve a draft the lifecycle-legal way: Submit for review, then Approve. The founder-only
+  // "self-approve straight from a draft" shortcut was removed (2026-07-19), so any setup that
+  // needs a ready/sent quote now walks it through review first.
+  const approve = async (app: App, id: string, email = 'f@x.com') => {
+    await patchAs(email, app, `/admin/quote/${id}`, { status: 'pending_review' });
+    return patchAs(email, app, `/admin/quote/${id}`, { status: 'ready' });
+  };
 
   it('ops can submit a draft for review but cannot approve or self-approve', async () => {
     const app = createApp();
     const id = (await draft(app, 'op@x.com')).id;
     expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
     const forbid = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
-    expect(forbid.status).toBe(403);
+    expect(forbid.status).toBe(403); // pending_review → ready is a legal move, but ops lacks quote:approve
     expect((await forbid.json()).error).toBe('approve_forbidden');
-    const id2 = (await draft(app, 'op@x.com')).id; // self-approve draft → ready also blocked
-    expect((await patchAs('op@x.com', app, `/admin/quote/${id2}`, { status: 'ready' })).status).toBe(403);
+    const id2 = (await draft(app, 'op@x.com')).id; // and a self-approve draft → ready is now illegal for anyone
+    const selfApprove = await patchAs('op@x.com', app, `/admin/quote/${id2}`, { status: 'ready' });
+    expect(selfApprove.status).toBe(409);
+    expect((await selfApprove.json()).error).toBe('illegal_transition');
   });
 
-  it('founder approves a pending_review quote and can self-approve a draft', async () => {
+  it('founder approves a pending_review quote but cannot self-approve a draft', async () => {
     const app = createApp();
     const a = (await draft(app)).id;
     await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'pending_review' });
     expect((await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'ready' })).status).toBe(200);
+    // Even a founder can't jump a fresh draft straight to ready — review is mandatory now.
     const b = (await draft(app)).id;
-    expect((await patchAs('f@x.com', app, `/admin/quote/${b}`, { status: 'ready' })).status).toBe(200); // self-approve
+    const selfApprove = await patchAs('f@x.com', app, `/admin/quote/${b}`, { status: 'ready' });
+    expect(selfApprove.status).toBe(409);
+    expect((await selfApprove.json()).error).toBe('illegal_transition');
   });
 
   it('rejects an illegal transition (draft → sent) with 409', async () => {
@@ -289,7 +301,7 @@ describe('internal quoting tool route', () => {
   it('reopens a SENT quote to draft (founder-only), unlocking it for edits + re-save', async () => {
     const app = createApp();
     const id = (await draft(app)).id;
-    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+    await approve(app, id);
     await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
 
     // while sent, a content re-save is refused (the bug the operator hit)
@@ -325,7 +337,7 @@ describe('internal quoting tool route', () => {
       name: 'Brett', vehicle: 'van_9', passengerCount: 4, luggageCount: 4, requestedService: 'private',
       legs: [leg({ distanceKm: 130, date: '2026-08-27' }), leg({ distanceKm: 290, date: '2026-08-31' })],
     })).json();
-    await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' });
+    await approve(app, saved.id);
 
     const q = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
     expect(q.status).toBe('ready');
@@ -934,6 +946,12 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   // a quote can't reach pending_review/ready without it recorded.
   const saveDraft = async (app: App) =>
     (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+  // Approve the lifecycle-legal way (submit → approve). Founders can no longer self-approve a
+  // draft straight to ready (2026-07-19), so freeze-on-approval is reached via review here.
+  const approveRL = async (app: App, id: string) => {
+    await patchAsRL('f@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    return patchAsRL('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+  };
 
   it('a fresh draft carries no rate lock', async () => {
     const app = createApp();
@@ -946,7 +964,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('approving a quote (→ ready) freezes the current rate card with no expiry', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('ready');
     expect(got.rateCardJson.version).toBe(RATE_CARD.version); // the whole card is snapshotted
@@ -957,7 +975,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('reopening a ready quote to edit (→ draft) clears the lock', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'draft' });
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('draft');
@@ -968,7 +986,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('sending a ready quote (→ sent) keeps the frozen snapshot', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'sent' });
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('sent');
@@ -978,7 +996,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('the locked snapshot (cost-bearing) is stripped for non-margin roles', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const asFounder = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(asFounder.rateCardJson).not.toBeNull(); // margin:view keeps it
@@ -991,7 +1009,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     const app = createApp();
     const q = await saveDraft(app);
     const beforeApproval = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.estimate).toBeTruthy();
     // The shipped estimate matches the quote's own stored total — no live drift.
@@ -1004,7 +1022,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('the locked estimate omits margin for non-margin roles', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(asFinance.estimate).toBeTruthy();
     expect(asFinance.estimate.margin).toBeUndefined(); // shape() drops margin for non-margin:view
@@ -1326,12 +1344,14 @@ describe('quote intent — submit gate', () => {
     expect((await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review' })).status).toBe(200);
   });
 
-  it("gates the founder's draft → ready self-approve identically", async () => {
+  it('no longer offers a draft → ready self-approve — it 409s before the intent gate', async () => {
+    // The founder-only self-approve was removed (2026-07-19): draft → ready is now an illegal
+    // transition for everyone, rejected before the requested-service gate is ever consulted.
     const app = createApp();
     const q = await draft(app);
     const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'ready' });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe('requested_service_required');
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('illegal_transition');
   });
 
   it('gates ONLY pending_review/ready — other legal moves pass with nothing recorded', async () => {

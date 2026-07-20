@@ -2,15 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
 
 describe('canTransition (quote review lifecycle)', () => {
-  it('allows the maker-checker path and founder self-approve', () => {
+  it('allows the maker-checker path but requires review before approval', () => {
     expect(canTransition('draft', 'pending_review')).toBe(true);
-    expect(canTransition('draft', 'ready')).toBe(true); // self-approve (capability-gated at the route)
-    expect(canTransition('pending_review', 'ready')).toBe(true);
+    expect(canTransition('pending_review', 'ready')).toBe(true); // approval happens only from review
     expect(canTransition('pending_review', 'changes_requested')).toBe(true);
     expect(canTransition('changes_requested', 'pending_review')).toBe(true);
     expect(canTransition('ready', 'sent')).toBe(true);
     expect(canTransition('ready', 'draft')).toBe(true); // reopen to edit
     expect(canTransition('sent', 'draft')).toBe(true);  // reopen a sent quote to edit (founder-gated at the route)
+  });
+  it('rejects approving without going through review (no self-approve from a draft)', () => {
+    // A quote must be Submitted for review before it can be approved — for everyone, founders
+    // included. The founder-only self-approve shortcut was removed (2026-07-19).
+    expect(canTransition('draft', 'ready')).toBe(false);
+    expect(canTransition('changes_requested', 'ready')).toBe(false);
   });
   it('rejects skipping the review gate', () => {
     expect(canTransition('draft', 'sent')).toBe(false);
