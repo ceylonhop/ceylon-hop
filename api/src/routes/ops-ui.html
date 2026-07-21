@@ -3757,7 +3757,7 @@ function routeText(leg) {
   var s = (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
   // Route-choice note — only when the operator explicitly picked a road (2026-07-20).
   if (leg.routeVariant === 'no_tolls') s += ' (via local road, no highway tolls)';
-  else if (leg.routeVariant === 'fastest' && leg.routeOptions) s += ' (via expressway E01)';
+  else if (leg.routeVariant === 'fastest' && leg.routeOptions) s += ' (via expressway)';
   return s;
 }
 

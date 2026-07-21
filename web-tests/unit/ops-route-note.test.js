@@ -30,7 +30,7 @@ describe('ops quote route note (owner-approved copy, 2026-07-21)', () => {
 
   it('an explicit expressway pick appends the exact approved note', () => {
     expect(routeText(leg({ routeVariant: 'fastest', routeOptions: OPTIONS })))
-      .toBe('Colombo City → Ella (via expressway E01)');
+      .toBe('Colombo City → Ella (via expressway)');
   });
 
   it('no picked variant → no note (pre-feature and auto-resolved legs)', () => {
