@@ -7,10 +7,24 @@ export interface DistanceResult {
   durationMin: number;
 }
 
+export interface RouteVariants {
+  fastest: DistanceResult; // always present when the pair resolves at all
+  noTolls: DistanceResult | null; // present ONLY when it is a materially different road
+  hasChoice: boolean; // noTolls !== null
+}
+
+// Display rule: below this gap, the two routes are reported as "same route" (no choice offered).
+export const CHOICE_MIN_TIME_SAVED_MIN = 30;
+
 export interface MapsAdapter {
   readonly provider: string;
   // Returns null when the route can't be resolved (e.g. the fake doesn't know a typed address).
   distance(from: string, to: string): Promise<DistanceResult | null>;
+  // Compares the default (fastest) route against an avoid=tolls route. Returns null when the
+  // pair can't be resolved at all; otherwise `fastest` is always present (falling back to the
+  // offline estimate for known places), and `noTolls`/`hasChoice` are set only when BOTH the
+  // default and avoid=tolls calls succeeded against Google with a materially different result.
+  distanceVariants(from: string, to: string): Promise<RouteVariants | null>;
   // Place suggestions for autocomplete. At most 6 display-name strings; [] when none/unavailable.
   places(query: string): Promise<string[]>;
 }
@@ -84,10 +98,36 @@ function offlineEstimate(from: string, to: string): DistanceResult | null {
   return { km, durationMin: Math.round((km / 42) * 60) };
 }
 
+// Synthetic route-choice pairs for keyless dev + e2e, so the "Compare routes" picker has
+// something real to show without a Google key. Owner's real corridor figures, 2026-07-20.
+const FAKE_VARIANT_PAIRS: [string, string, DistanceResult, DistanceResult][] = [
+  ['colombo city', 'ella', { km: 292, durationMin: 330 }, { km: 205, durationMin: 390 }],
+  ['colombo airport (cmb)', 'galle', { km: 148, durationMin: 120 }, { km: 130, durationMin: 205 }],
+];
+
+function fakeVariantPair(from: string, to: string): RouteVariants | null {
+  const a = norm(from);
+  const b = norm(to);
+  for (const [x, y, fastest, noTolls] of FAKE_VARIANT_PAIRS) {
+    if ((a === x && b === y) || (a === y && b === x)) {
+      return { fastest, noTolls, hasChoice: true };
+    }
+  }
+  return null;
+}
+
 export class FakeMapsAdapter implements MapsAdapter {
   readonly provider = 'fake';
   async distance(from: string, to: string): Promise<DistanceResult | null> {
     return offlineEstimate(from, to);
+  }
+
+  async distanceVariants(from: string, to: string): Promise<RouteVariants | null> {
+    const choice = fakeVariantPair(from, to);
+    if (choice) return choice;
+    const fastest = offlineEstimate(from, to);
+    if (!fastest) return null;
+    return { fastest, noTolls: null, hasChoice: false };
   }
 
   // Mirrors the offline fallback the route used to do itself: case-insensitive substring
@@ -103,11 +143,37 @@ export class GoogleMapsAdapter implements MapsAdapter {
   readonly provider = 'google';
   constructor(private readonly apiKey: string) {}
 
+  // On-demand default-vs-avoid=tolls comparisons. Keyed by normalized "from|to". Cached only
+  // on full success (see distanceVariants) — a transient Google failure must be retryable
+  // immediately, never hidden behind a 24h cache entry.
+  private variantsCache = new Map<string, { expires: number; value: RouteVariants }>();
+
   async distance(from: string, to: string): Promise<DistanceResult | null> {
     return (await this.googleDistance(from, to)) ?? offlineEstimate(from, to);
   }
 
-  private async googleDistance(from: string, to: string): Promise<DistanceResult | null> {
+  async distanceVariants(from: string, to: string): Promise<RouteVariants | null> {
+    const key = `${norm(from)}|${norm(to)}`;
+    const hit = this.variantsCache.get(key);
+    if (hit && hit.expires > Date.now()) return hit.value;
+    const [fast, slow] = await Promise.all([
+      this.googleDistance(from, to),
+      this.googleDistance(from, to, true),
+    ]);
+    const fastest = fast ?? offlineEstimate(from, to);
+    if (!fastest) return null;
+    // A choice requires BOTH answers from Google (never the offline estimate) + a material gap.
+    const hasChoice = !!fast && !!slow && slow.durationMin - fast.durationMin >= CHOICE_MIN_TIME_SAVED_MIN;
+    const value: RouteVariants = { fastest, noTolls: hasChoice ? slow : null, hasChoice };
+    // Cache ONLY full successes: a failed/partial comparison must be retryable immediately.
+    if (fast && slow) {
+      if (this.variantsCache.size >= 500) this.variantsCache.clear();
+      this.variantsCache.set(key, { expires: Date.now() + 24 * 60 * 60 * 1000, value });
+    }
+    return value;
+  }
+
+  private async googleDistance(from: string, to: string, avoidTolls = false): Promise<DistanceResult | null> {
     // A known place goes to Google as its exact "lat,lng", never the bare name: a name like
     // "Ella" (which exists in many countries) otherwise geocodes outside Sri Lanka and gets
     // rejected as implausible, so picking a "Popular route" suggestion resolved no distance.
@@ -118,7 +184,8 @@ export class GoogleMapsAdapter implements MapsAdapter {
     const url =
       'https://maps.googleapis.com/maps/api/distancematrix/json' +
       `?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(dest)}` +
-      `&mode=driving&region=lk&key=${this.apiKey}`;
+      `&mode=driving&region=lk&key=${this.apiKey}` +
+      (avoidTolls ? '&avoid=tolls' : '');
     let res: Response;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

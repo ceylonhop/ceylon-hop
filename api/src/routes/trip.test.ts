@@ -93,6 +93,7 @@ describe('POST /bookings/trip', () => {
     const counting: MapsAdapter = {
       provider: 'counting',
       distance: (f, t) => { calls++; return fake.distance(f, t); },
+      distanceVariants: (f, t) => fake.distanceVariants(f, t),
       places: (q) => fake.places(q),
     };
     const app = createApp({ maps: counting });
