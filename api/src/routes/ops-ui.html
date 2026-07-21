@@ -2118,6 +2118,9 @@ var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
 var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
 var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
+var _renderSwapping = false; // true during render()'s innerHTML swap — change/blur events fired
+                             // by the swap ripping out a dirty focused input are render
+                             // artifacts, not operator actions, and must never commit state
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
 var outputOpen = null;
@@ -4682,7 +4685,9 @@ function render() {
   // Was an autocomplete menu open? The innerHTML swap below destroys it (it's a
   // child of the render target), so capture the intent to rebuild it afterwards.
   var _menuWasOpen = !!_ac.menuEl;
+  _renderSwapping = true;
   document.querySelector('#quoteRoot .ch-app').innerHTML = html;
+  _renderSwapping = false;
   applyContentLock();
   attachEventListeners();
   restoreEditorFocus(_focusSnap, _menuWasOpen);
@@ -4928,11 +4933,21 @@ function attachEventListeners() {
 
   // Leg field change delegation
   app.addEventListener('change', function(e) {
+    // The innerHTML swap in render() rips out a dirty focused input, which makes Chromium
+    // fire a native 'change' that bubbles here mid-swap. Committing it would write the
+    // operator's HALF-TYPED text into state → auto-distance + re-price → render → another
+    // artifact 'change': the typing-flicker loop (docs/bug-ops-quote-typing-flicker.md).
+    if (_renderSwapping) return;
     var el = e.target;
     if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
     if (!legId || !field) return;
+    // Same loop, second guard: a 'change' whose value matches state is a render artifact or
+    // a repeat — updateLeg would still markDirty + re-render + re-price, sustaining the
+    // loop, so a no-change commit must be a true no-op.
+    var legNow = state.legs.find(function(l) { return l.id === legId; });
+    if (legNow && el.type !== 'checkbox' && String(legNow[field] == null ? '' : legNow[field]) === String(el.value)) return;
 
     var val;
     if (el.type === 'checkbox') {
@@ -5578,6 +5593,13 @@ function attachAutoComplete() {
     // Close on blur — small delay so mousedown on an item fires first
     input.addEventListener('blur', function() {
       setTimeout(function() {
+        // A background re-render (a landing /estimate or auto-distance result swaps the
+        // panel's innerHTML) detaches this input mid-type; the orphaned old node then fires
+        // this delayed blur. The live replacement node holds the real value and fires the
+        // real blur — an orphaned node must NEVER commit (doing so re-triggered
+        // auto-distance + a re-price → render → another orphan blur: the typing-flicker
+        // loop that blanked the price panel).
+        if (!document.contains(input)) return;
         if (_ac.inputEl === input) acClose();
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });

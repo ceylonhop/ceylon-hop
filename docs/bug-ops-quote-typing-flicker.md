@@ -1,6 +1,6 @@
 # Bug: ops quote tool flickers and blanks prices while typing a leg location
 
-**Status:** OPEN — root-caused, not yet fixed (parked 2026-07-21)
+**Status:** FIXED 2026-07-21 — Defect B shipped (orphan-blur guard + render-swap change-event guards in ops-ui.html, regression spec web-tests/e2e/ops-typing-flicker.spec.js). NOTE: the loop had a third leg the original analysis missed — the delegated 'change' handler commits the half-typed text when render()'s innerHTML swap rips out a dirty focused input (Chromium fires a bubbling native 'change' mid-swap), and updateLeg re-renders even on a same-value commit. Guards: _renderSwapping flag around the swap + same-value no-op in the change handler. Defect A (prices blank while a leg is incomplete) remains OPEN — separate proposal pending.
 **Area:** `api/src/routes/ops-ui.html` (the ops quote builder, `QuoteView`)
 **Reported by:** Roshen, while quoting a multi-day itinerary on staging
 **Severity:** medium — cosmetic churn + transient loss of the price panel; no bad data is saved
