@@ -40,18 +40,25 @@ async function stubOps(page) {
   // A valid-shaped estimate is REQUIRED: an empty {} makes the money-card renderer throw on
   // est.total.cents, which aborts render() before input listeners re-attach — every later
   // interaction then hits dead DOM (found the hard way; see PR 3).
-  await page.route('**/admin/quote/estimate', (r) => r.fulfill(json({
-    total: { cents: 9800, lkr: 'Rs 31,360' },
-    amountDueNow: { cents: 980, lkr: 'Rs 3,136' },
-    lineItems: [{ label: 'Colombo City → Ella', amountCents: 9800, lkr: 'Rs 31,360' }],
-    breakdown: { km: { distanceKm: 292, bufferKm: 29, billableKm: 321 } },
-    fxUsdToLkr: 320,
-    warnings: [],
-    services: {
-      pointToPoint: { total: { cents: 9800, lkr: 'Rs 31,360' } },
-      chauffeur: { error: 'single-day trip — point-to-point only' },
-    },
-  })));
+  // Prices by km so each route variant prices differently: 50¢/km, and breakdown.legs carries
+  // the per-leg priceCents the modal reads back (the real engine returns this too).
+  await page.route('**/admin/quote/estimate', (r) => {
+    const b = r.request().postDataJSON() || {};
+    const km = (b.legs && b.legs[0] && b.legs[0].distanceKm) || 0;
+    const priceCents = km * 50;
+    return r.fulfill(json({
+      total: { cents: priceCents, lkr: 'Rs ' + (priceCents * 3) },
+      amountDueNow: { cents: Math.round(priceCents / 10), lkr: 'Rs 0' },
+      lineItems: [{ label: 'Colombo City → Ella', amountCents: priceCents, lkr: 'Rs 0' }],
+      breakdown: { km: { distanceKm: km, bufferKm: 0, billableKm: km }, legs: [{ priceCents }] },
+      fxUsdToLkr: 320,
+      warnings: [],
+      services: {
+        pointToPoint: { total: { cents: priceCents, lkr: 'Rs 0' } },
+        chauffeur: { error: 'single-day trip — point-to-point only' },
+      },
+    }));
+  });
   await page.route('**/admin/ops/whoami', (r) =>
     r.fulfill(json({ email: 'founder@e2e.test', role: 'founder', caps: ['quote:manage'] })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
@@ -117,6 +124,19 @@ test('a fork leg auto-opens the modal with both option cards (and no inline pill
   await expect(modal.locator('.ch-rc-card[data-route="local"]')).toContainText('205 km');
   // The Phase-1 inline pills are gone.
   await expect(page.locator('.ch-route-pill')).toHaveCount(0);
+});
+
+test('each option shows its engine-priced fare, and local road shows the saving', async ({ page }) => {
+  await stubOps(page);
+  await bootQuote(page);
+  await setLegRoute(page, 'Colombo City', 'Ella');
+  const modal = page.locator('.ch-rc-modal');
+  await expect(modal).toBeVisible({ timeout: 10000 });
+  // Expressway 292 km × 50¢ = $146.00; local 205 km × 50¢ = $102.50; saves $43.50 — real prices
+  // from the estimate engine (this leg's km overridden per variant), not a client-side formula.
+  await expect(modal.locator('.ch-rc-card[data-route="fastest"]')).toContainText('$146.00', { timeout: 10000 });
+  await expect(modal.locator('.ch-rc-card[data-route="local"]')).toContainText('$102.50');
+  await expect(modal.locator('.ch-rc-card[data-route="local"]')).toContainText('saves $43.50');
 });
 
 test('picking Local road applies km + note; payload carries the fields; chip reflects the pick', async ({ page }) => {
