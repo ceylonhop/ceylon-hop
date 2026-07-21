@@ -1,5 +1,6 @@
 import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
-import type { PrivateLeg, LineItem } from './types';
+import type { Ride, LineItem } from './types';
+import { rideRawKm } from './types';
 
 function bufferedKm(rawKm: number, rateCard: RateCard): number {
   const unclamped = Math.round(rawKm * (rateCard.bufferPct / 100));
@@ -25,7 +26,7 @@ export function legPriceCents(
 }
 
 export function quotePrivateLegs(
-  legs: PrivateLeg[],
+  legs: Ride[],
   vehicle: Vehicle,
   perKmCentsOverride?: number,
   rateCard: RateCard = RATE_CARD,
@@ -37,17 +38,23 @@ export function quotePrivateLegs(
   const dollars = `$${rateCard.floorCents[vehicle] / 100}`;
   const rate = perKmCentsOverride ?? rateCard.perKmCents[vehicle];
 
-  for (const leg of legs) {
-    const bKm = billableKm(leg.distanceKm, rateCard);
+  for (const ride of legs) {
+    const rawKm = rideRawKm(ride);
+    const bKm = billableKm(rawKm, rateCard);
     const amountCents = legPriceCents(bKm, vehicle, perKmCentsOverride, rateCard);
     if (amountCents === floor && Math.round(bKm * rate) < floor) {
-      warnings.push(`${leg.from}→${leg.to} hit the ${dollars} ${vehicle} minimum`);
+      warnings.push(
+        ride.stops.length === 2
+          ? `${ride.stops[0]}→${ride.stops[1]} hit the ${dollars} ${vehicle} minimum` // byte-exact legacy form
+          : `${ride.stops.join(' → ')} hit the ${dollars} ${vehicle} minimum`,
+      );
     }
-    lineItems.push({
-      label: `${leg.from} → ${leg.to} (${vehicle})`,
-      amountCents,
-      meta: { distanceKm: leg.distanceKm, billableKm: bKm, vehicle },
-    });
+    const meta: Record<string, unknown> = { distanceKm: rawKm, billableKm: bKm, vehicle };
+    if (ride.stops.length >= 3) {
+      meta.stops = ride.stops;
+      meta.segmentKms = ride.segmentKms;
+    }
+    lineItems.push({ label: `${ride.stops.join(' → ')} (${vehicle})`, amountCents, meta });
     subtotalCents += amountCents;
   }
   return { lineItems, subtotalCents, warnings };

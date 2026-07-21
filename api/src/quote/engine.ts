@@ -1,6 +1,7 @@
 // api/src/quote/engine.ts
 import { RATE_CARD, type RateCard, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
+import { normalizeRide, normalizeChauffeurDay } from './types';
 import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
@@ -46,7 +47,7 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     // against the PRICED vehicle (an upgrade INTO van14/custom keeps the operator's rate —
     // the rate is set for the trip; the tier is capacity).
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle);
-    const p = quotePrivateLegs(req.legs, vehicle, perKmOverride, rateCard);
+    const p = quotePrivateLegs(req.legs.map(normalizeRide), vehicle, perKmOverride, rateCard);
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
@@ -70,7 +71,7 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
       if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
     }
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle); // GL-1d (validate against the priced tier)
-    const c = quoteChauffeur({ ...req, vehicle }, rateCard);
+    const c = quoteChauffeur({ ...req, vehicle, travelDays: req.travelDays.map(normalizeChauffeurDay) }, rateCard);
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];

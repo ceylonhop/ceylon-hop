@@ -1,7 +1,8 @@
 // api/src/quote/chauffeur.ts
 import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
 import { billableKm } from './private';
-import type { ChauffeurTravelDay, LineItem } from './types';
+import type { ChauffeurRideDay, LineItem } from './types';
+import { rideRawKm } from './types';
 
 // Parse only the YYYY-MM-DD part as UTC midnight, so a time/offset never shifts the day count.
 function dayNumber(date: string): number {
@@ -14,7 +15,7 @@ export function quoteChauffeur(
     vehicle: Vehicle;
     firstDate: string;
     lastDate: string;
-    travelDays: ChauffeurTravelDay[];
+    travelDays: ChauffeurRideDay[];
     // GL-1d: operator's custom rate for van14/custom — validated by engine.ts.
     customPerKmCents?: number;
   },
@@ -23,8 +24,8 @@ export function quoteChauffeur(
   const { vehicle, firstDate, lastDate, travelDays } = input;
   const days = Math.max(1, dayNumber(lastDate) - dayNumber(firstDate) + 1);
   const idleDays = Math.max(0, days - travelDays.length);
-  const travelKm = travelDays.reduce((sum, d) => sum + d.distanceKm, 0);
-  const bufferedTravelKm = travelDays.reduce((sum, d) => sum + billableKm(d.distanceKm, rateCard), 0);
+  const travelKm = travelDays.reduce((sum, d) => sum + rideRawKm(d), 0);
+  const bufferedTravelKm = travelDays.reduce((sum, d) => sum + billableKm(rideRawKm(d), rateCard), 0);
   const idleKm = idleDays * rateCard.chauffeur.idleMinKm[vehicle];
   // Buffer applies to each travel leg only; idle-day minimum km are NOT buffered (decision I1-b)
   const bill = bufferedTravelKm + idleKm;
