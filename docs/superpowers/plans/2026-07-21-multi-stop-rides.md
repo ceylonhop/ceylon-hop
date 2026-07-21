@@ -168,7 +168,7 @@ git commit -m "test(quote): golden corpus pinning pre-ride-model engine outputs 
 - Produces (later tasks rely on these exact names):
   - `interface Ride { stops: string[]; segmentKms: number[] }`
   - `interface ChauffeurRideDay extends Ride { date: string }`
-  - `QuoteRequest` private arm: `legs: (PrivateLeg | Ride)[]`; chauffeur arm: `travelDays: (ChauffeurTravelDay | ChauffeurRideDay)[]`
+  - **(AMENDED 2026-07-21, compile atomicity):** the `QuoteRequest` union widening is DEFERRED to Task 4 — widening it before the consumers normalize breaks `tsc` in `breakdown.ts`/`engine.ts`/`quoteToBooking.ts`. Task 2 ships types + helpers only; `QuoteRequest` stays as-is.
   - `function normalizeRide(leg: PrivateLeg | Ride): Ride`
   - `function normalizeChauffeurDay(day: ChauffeurTravelDay | ChauffeurRideDay): ChauffeurRideDay`
   - `function rideRawKm(ride: Ride): number` — `segmentKms` sum
@@ -220,8 +220,12 @@ Chauffeur: `travelKm = Σ rideRawKm(day)`; `bufferedTravelKm = Σ billableKm(rid
 ### Task 4: Engine + breakdown integration
 
 **Files:**
+- Modify: `api/src/quote/types.ts` (**AMENDED:** the deferred `QuoteRequest` union widening lands HERE — private arm `legs: (PrivateLeg | Ride)[]`, chauffeur arm `travelDays: (ChauffeurTravelDay | ChauffeurRideDay)[]`)
 - Modify: `api/src/quote/engine.ts`, `api/src/quote/breakdown.ts`
+- Modify: `api/src/quote/quoteToBooking.ts` + `api/src/quote/quoteToBooking.test.ts` (**AMENDED:** third raw-`QuoteRequest` consumer the spec's audit missed — it reads `.from/.to/.distanceKm` off stored engine requests)
 - Modify: `api/src/quote/breakdown.test.ts` (internal suite), add cases to `api/src/quote/engine.test.ts` (black-box additions only — existing cases must not change)
+
+**quoteToBooking ride semantics (binding):** normalize each leg/day via `normalizeRide`/`normalizeChauffeurDay` first. `distanceKm` sums via `rideRawKm`. Private single ride with exactly 2 stops → `mode:'single'` with `from/to = stops[0]/stops[1]` (today's behavior); a single 3+-stop ride → `mode:'trip'` with `stops = ride.stops`. Multi-ride trip stop chain generalizes today's `[legs[0].from, ...legs.map(l => l.to)]` as `rides[0].stops` followed by `r.stops.slice(1)` for each later ride — i.e. a later ride contributes everything after its first stop, exactly as a later leg contributes only its `to` today. For old-shape (all 2-stop) input this reproduces today's list byte-identically, including today's quirk that a NON-chaining leg's `from` is silently dropped — that quirk is pre-existing behavior; do NOT fix it (GC-13), pin it with a test.
 
 **Interfaces:**
 - Consumes: Task 2 normalizers, Task 3 pricers.
