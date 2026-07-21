@@ -606,6 +606,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-dist-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--cream); color: var(--ink); }
 .qv .ch-dist-pill.auto { background: rgba(10,185,182,.12); color: var(--blue-d); }
 .qv .ch-dist-pill.warn { background: rgba(249,164,41,.13); color: #b9760f; }
+/* route choice (2026-07-20): expressway vs local-road picker, rendered inline (never a popover
+   — background estimate renders wipe floating DOM) */
+.qv .ch-route-pick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.qv .ch-route-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--cream); color: var(--ink); border: 1px solid transparent; cursor: pointer; }
+.qv .ch-route-pill.is-active { background: rgba(10,185,182,.12); color: var(--blue-d); border-color: rgba(10,185,182,.35); }
+.qv .ch-route-same { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .qv .ch-dist-manual { display: flex; align-items: center; gap: 7px; }
 .qv .ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
 .qv .ch-link:hover { opacity: 1; }
@@ -2209,6 +2215,8 @@ async function _runEstimate() {
         addSightseeingFee: !!leg.addSightseeingFee,
         addWaitingFee:    !!leg.addWaitingFee,
         addSafariWait:    !!leg.addSafariWait,
+        routeVariant:     leg.routeVariant || undefined,
+        routeOptions:     leg.routeOptions || undefined,
       };
     }),
   };
@@ -2548,12 +2556,12 @@ async function apiPlaces(q) {
   } catch (e) { return []; }
 }
 
-async function apiDistance(from, to) {
+async function apiDistance(from, to, compare) {
   try {
     var r = await api('/admin/quote/distance', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from: from, to: to }),
+      body: JSON.stringify(compare ? { from: from, to: to, compare: true } : { from: from, to: to }),
     });
     if (!r.ok) return null;
     return await r.json();
@@ -2698,6 +2706,8 @@ function savePayload() {
         addSightseeingFee: !!leg.addSightseeingFee,
         addWaitingFee:    !!leg.addWaitingFee,
         addSafariWait:    !!leg.addSafariWait,
+        routeVariant:     leg.routeVariant || undefined,
+        routeOptions:     leg.routeOptions || undefined,
       };
     }),
   };
@@ -2872,6 +2882,10 @@ async function reopenQuote(id) {
     leg.addSightseeingFee = !!tl.addSightseeingFee;
     leg.addWaitingFee = !!tl.addWaitingFee;
     leg.addSafariWait = !!tl.addSafariWait;
+    // Route choice (2026-07-20): restore what was picked/offered so the message note and
+    // pills survive a reopen (the persisted km stays manual per the rule above).
+    leg.routeVariant = tl.routeVariant || undefined;
+    leg.routeOptions = tl.routeOptions || null;
     return leg;
   });
   if (legs.length === 0) legs = [newLeg()];
@@ -3061,6 +3075,25 @@ function renderLegCard(leg, idx, total) {
         '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '">set</button>',
         '</div>',
       ].join('');
+    }
+    // Route choice (2026-07-20): on-demand comparison — a link until fetched, then the
+    // two-pill picker (inline, render-safe markup; state lives on the leg, not the DOM).
+    var rcFrom = (leg.pickupLocation || '').trim();
+    var rcTo = (leg.dropoffLocation || '').trim();
+    if (rcFrom && rcTo) {
+      if (leg.routeOptions) {
+        var rcF = leg.routeOptions.fastest, rcN = leg.routeOptions.noTolls;
+        distHtml += [
+          '<div class="ch-route-pick">',
+          '  <button class="ch-route-pill' + (leg.routeVariant === 'fastest' ? ' is-active' : '') + '" data-action="routeFastest" data-leg="' + esc(leg.id) + '">Expressway · ' + esc(fmtDur(rcF.durationMin / 60)) + ' · ' + esc(String(rcF.km)) + ' km</button>',
+          '  <button class="ch-route-pill' + (leg.routeVariant === 'no_tolls' ? ' is-active' : '') + '" data-action="routeNoTolls" data-leg="' + esc(leg.id) + '">Local road · ' + esc(fmtDur(rcN.durationMin / 60)) + ' · ' + esc(String(rcN.km)) + ' km</button>',
+          '</div>',
+        ].join('');
+      } else if (leg._sameRoute) {
+        distHtml += '<div class="ch-route-same">Same route — no expressway on this trip</div>';
+      } else {
+        distHtml += '<div><button class="ch-link ch-route-compare" data-action="compareRoutes" data-leg="' + esc(leg.id) + '">Compare routes</button></div>';
+      }
     }
   }
 
@@ -3721,7 +3754,11 @@ function routeText(leg) {
   if (leg.category === 'stay_day') {
     return 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
   }
-  return (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
+  var s = (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
+  // Route-choice note — only when the operator explicitly picked a road (2026-07-20).
+  if (leg.routeVariant === 'no_tolls') s += ' (via local road, no highway tolls)';
+  else if (leg.routeVariant === 'fastest' && leg.routeOptions) s += ' (via expressway)';
+  return s;
 }
 
 // M(priceCents) — convert cents to display currency
@@ -4769,11 +4806,21 @@ function attachEventListeners() {
       outputOpen = !eff;
       render();
     } else if (action === 'manualDistance') {
-      updateLeg(legId, { manualDistance: true });
+      // Manual km wins: a typed number is not a Google route, so the variant label must go.
+      updateLeg(legId, { manualDistance: true, routeVariant: undefined });
     } else if (action === 'autoDistance') {
       delete _distCache[legId];
-      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0 });
+      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0, routeVariant: undefined, routeOptions: null, _sameRoute: false });
       scheduleAutoDistance(legId);
+    } else if (action === 'compareRoutes') {
+      compareRoutes(legId);
+    } else if (action === 'routeFastest' || action === 'routeNoTolls') {
+      var rcLeg = state.legs.find(function(l) { return l.id === legId; });
+      var rcName = action === 'routeNoTolls' ? 'no_tolls' : 'fastest';
+      var rcOpt = rcLeg && rcLeg.routeOptions && (rcName === 'no_tolls' ? rcLeg.routeOptions.noTolls : rcLeg.routeOptions.fastest);
+      if (rcOpt) {
+        updateLeg(legId, { distanceKm: rcOpt.km, driveTimeHours: Math.round((rcOpt.durationMin / 60) * 100) / 100, routeVariant: rcName, manualDistance: false, autoMatched: true });
+      }
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'copyOutput') {
@@ -4820,6 +4867,14 @@ function attachEventListeners() {
     }
     var patch = {};
     patch[field] = val;
+    // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
+    // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
+    // both invalidate a picked route, so the choice resets here too, same as the blur path.
+    if (field === 'pickupLocation' || field === 'dropoffLocation') {
+      patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false;
+    } else if (field === 'distanceKm') {
+      patch.routeVariant = undefined;
+    }
     updateLeg(legId, patch);
   });
 
@@ -4909,8 +4964,34 @@ async function runAutoDistance(legId) {
     var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
     updateLeg(legId, { distanceKm: seg.km, driveTimeHours: hrs, autoMatched: true });
   } else {
-    // No distance found → "No distance" warn state
-    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
+    // No distance found → "No distance" warn state (also drops any stale route choice)
+    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false, routeVariant: undefined, routeOptions: null, _sameRoute: false });
+  }
+}
+
+// Route choice (2026-07-20): operator-initiated expressway/local-road comparison — never
+// automatic. Mirrors runAutoDistance's stale-response guards.
+async function compareRoutes(legId) {
+  var leg = state.legs.find(function(l) { return l.id === legId; });
+  if (!leg) return;
+  var from = (leg.pickupLocation || '').trim();
+  var to = (leg.dropoffLocation || '').trim();
+  if (!from || !to) return;
+  var r = await apiDistance(from, to, true);
+  // Guard: leg/locations may have changed while we awaited.
+  var current = state.legs.find(function(l) { return l.id === legId; });
+  if (!current) return;
+  if ((current.pickupLocation || '').trim() !== from) return;
+  if ((current.dropoffLocation || '').trim() !== to) return;
+  if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations'); return; }
+  if (r.variants) {
+    // Show the pills only — NO variant is picked yet. Auto-setting 'fastest' here would put
+    // the "via expressway" note into the customer message on a mere comparison (final review
+    // 2026-07-21; plan contract 7: the note requires an explicit pick). A non-manual leg
+    // already holds the auto-resolved fastest km, so there is nothing to apply either.
+    updateLeg(legId, { routeOptions: r.variants, _sameRoute: false });
+  } else {
+    updateLeg(legId, { _sameRoute: true });
   }
 }
 
@@ -5148,6 +5229,10 @@ function acPick(item) {
   // new place kept the stale saved distance and the quote never re-priced.
   patch.manualDistance = false;
   patch.autoMatched = false;
+  // Route choice (2026-07-20): a new place invalidates any picked/offered route.
+  patch.routeVariant = undefined;
+  patch.routeOptions = null;
+  patch._sameRoute = false;
   // Clear cache so a new distance fetch runs after the leg updates
   delete _distCache[legId];
   // Use direct state mutation to avoid two renders
@@ -5277,7 +5362,7 @@ function attachAutoComplete() {
             // for the new route (reopened legs are manual to preserve the saved price).
             delete _distCache[legId];
             state.legs = state.legs.map(function(l) {
-              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; return p; })()) : l;
+              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; return p; })()) : l;
             });
             markDirty();
             scheduleAutoDistance(legId);
