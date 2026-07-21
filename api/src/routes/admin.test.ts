@@ -5,6 +5,7 @@ import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
+import { nextIsoWeekday } from '../testSupport/dates';
 import { Hono } from 'hono';
 
 const KEY = 'secret-key';
@@ -237,7 +238,7 @@ describe('POST /admin/jobs/watchdog', () => {
 describe('shared seat release on cancel/refund', () => {
   const shared = {
     corridorId: 'hill-line', // capacity 12
-    date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
+    date: nextIsoWeekday(3), // a Wednesday — a shared service day (corridors run Wed & Sat)
     time: '08:00',
     seats: 12, // the whole bus, so a leaked hold is observable as a sold-out 409
     customer: valid.customer,
