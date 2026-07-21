@@ -5,7 +5,7 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
-import type { QuoteRequest, QuoteResult } from '../quote/types';
+import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types';
 import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
@@ -43,6 +43,12 @@ const ToolLegSchema = z.object({
   from: z.string(),
   to: z.string(),
   distanceKm: z.number().min(0).optional(),
+  // Multi-stop rides (phase 2): a leg may carry an ordered stop chain (2–8) instead of a single
+  // from→to. `from`/`to` stay required (= first/last stop; the UI keeps sending them). segmentKms,
+  // when present, is one entry per segment (stops.length−1); a null/≤0 entry is auto-resolved by
+  // resolveAndPrice. Absent stops = the old point-to-point path, byte-for-byte unchanged.
+  stops: z.array(z.string()).min(2, 'a ride needs at least 2 stops').max(8, 'a ride can have at most 8 stops').optional(),
+  segmentKms: z.array(z.number().min(0).nullable()).optional(),
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
@@ -56,6 +62,26 @@ const ToolLegSchema = z.object({
       noTolls: z.object({ km: z.number(), durationMin: z.number() }),
     })
     .optional(),
+}).superRefine((leg, ctx) => {
+  // Cross-field rules for a multi-stop leg (GC-9). Human-readable messages: this route 400s
+  // with the FIRST issue's message. Only fire when `stops` is present (the old path has none).
+  if (!leg.stops) return;
+  if ((leg.category || 'transfer') === 'stay_day') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stay day can\'t have stops', path: ['stops'] });
+  }
+  if (leg.segmentKms && leg.segmentKms.length !== leg.stops.length - 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `segmentKms needs one entry per segment (${leg.stops.length - 1})`,
+      path: ['segmentKms'],
+    });
+  }
+  for (let i = 0; i < leg.stops.length - 1; i++) {
+    if (leg.stops[i].trim() === leg.stops[i + 1].trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stop can\'t be the same as the one before it', path: ['stops', i] });
+      break;
+    }
+  }
 });
 const ToolRequestSchema = z.object({
   firstName: z.string().optional(),
@@ -135,7 +161,11 @@ async function resolveAndPrice(
     throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
   }
   for (const l of driving) {
-    if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+    if (l.stops) {
+      // Multi-stop leg: resolve each null/≤0 segment; mirror distanceKm = segment sum.
+      await resolveRideSegments(l, maps);
+    } else if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+      // Old point-to-point path — untouched.
       l.distanceKm = await resolveLegKm(l, maps);
     }
   }
@@ -158,6 +188,29 @@ async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
   return Math.round(d.km);
 }
 
+// Resolve a multi-stop leg's segment distances in place (one maps.distance per null/≤0 segment,
+// sequential — mirrors resolveLegKm's per-PAIR error message, naming the failing stop pair).
+// A missing segmentKms array is treated as all-null. Mutates the leg: segmentKms → resolved
+// numbers, and distanceKm → the segment sum (legacy mirror, updated even when all were manual).
+async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void> {
+  const stops = l.stops as string[];
+  const segs: (number | null)[] = l.segmentKms ? [...l.segmentKms] : new Array<null>(stops.length - 1).fill(null);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const km = segs[i];
+    if (km == null || km <= 0) {
+      const from = stops[i];
+      const to = stops[i + 1];
+      const d = await maps.distance(from, to);
+      if (!d) {
+        throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
+      }
+      segs[i] = Math.round(d.km);
+    }
+  }
+  l.segmentKms = segs as number[];
+  l.distanceKm = (segs as number[]).reduce((sum, k) => sum + k, 0);
+}
+
 const fxRate = RATE_CARD.fxUsdToLkr;
 const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
@@ -169,6 +222,21 @@ function drives(l: ToolLeg): boolean {
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
+// Map one driving tool leg to its engine shape. A leg WITH stops → a Ride (segmentKms are
+// guaranteed all-numbers post-resolve — narrowed here with a runtime guard, never a blind cast);
+// WITHOUT stops → the old { from, to, distanceKm } exactly as before.
+function toEngineLeg(l: ToolLeg): PrivateLeg | Ride {
+  if (l.stops) {
+    const segmentKms = (l.segmentKms ?? []).map((k) => {
+      // resolveRideSegments runs first and fills every entry; a null here means it was skipped.
+      if (typeof k !== 'number') throw new PriceError('a ride segment distance is missing — enter the km manually', 422);
+      return k;
+    });
+    return { stops: l.stops, segmentKms };
+  }
+  return { from: l.from, to: l.to, distanceKm: Number(l.distanceKm) };
+}
+
 function collectExtras(legs: ToolLeg[]): ExtraCode[] {
   const out: ExtraCode[] = [];
   for (const l of legs) {
@@ -213,13 +281,14 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
       pax: req.passengerCount, bags: req.luggageCount, // let the engine upgrade an undersized vehicle
-      travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
+      // With stops → { date, stops, segmentKms }; without → the old flat { date, from, to, distanceKm }.
+      travelDays: driving.map((l) => ({ date: l.date as string, ...toEngineLeg(l) })),
       extras, customPerKmCents,
     };
   }
   return {
     product: 'private', vehicle, pax: req.passengerCount, bags: req.luggageCount,
-    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras, customPerKmCents,
+    legs: driving.map(toEngineLeg), extras, customPerKmCents,
   };
 }
 
