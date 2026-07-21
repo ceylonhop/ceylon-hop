@@ -382,8 +382,35 @@ describe('distanceVariants', () => {
     expect(r?.hasChoice).toBe(true);
   });
 
+  it('a slower route with near-identical km is NOT a choice (below the 15% km bar)', async () => {
+    // Price is per-km, so ~same distance means ~same quote: a fork that only trades time
+    // for nothing is noise. 280 vs 292 km is a 4% gap — under the bar despite +90 min.
+    global.fetch = (async (url: string) => {
+      if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(280, 420);
+      return distanceMatrixResponse(292, 330);
+    }) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distanceVariants('Colombo City', 'Ella');
+    expect(r).toEqual({
+      fastest: { km: 292, durationMin: 330 },
+      noTolls: null,
+      hasChoice: false,
+    });
+  });
+
+  it('a km gap just under 15% is NOT a choice; at 15% it is', async () => {
+    const run = async (slowKm: number) => {
+      global.fetch = (async (url: string) => {
+        if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(slowKm, 420);
+        return distanceMatrixResponse(300, 330);
+      }) as typeof fetch;
+      return new GoogleMapsAdapter('test-key').distanceVariants('Colombo City', 'Ella');
+    };
+    expect((await run(256))?.hasChoice).toBe(false); // 44/300 ≈ 14.7%
+    expect((await run(255))?.hasChoice).toBe(true); // 45/300 = 15%
+  });
+
   describe('FakeMapsAdapter.distanceVariants', () => {
-    it('returns synthetic choice pairs both ways (Colombo City↔Ella, Airport↔Galle)', async () => {
+    it('gates synthetic pairs both ways (Colombo City↔Ella forks, Airport↔Galle does not)', async () => {
       const fake = new FakeMapsAdapter();
       const a = await fake.distanceVariants('Colombo City', 'Ella');
       expect(a).toEqual({
@@ -393,11 +420,13 @@ describe('distanceVariants', () => {
       });
       expect(await fake.distanceVariants('Ella', 'Colombo City')).toEqual(a);
 
+      // Airport↔Galle's real corridor figures (148 vs 130 km) sit under the 15% km bar:
+      // the coastal road only trades +85 min for ~$8 — same gate as the Google adapter.
       const b = await fake.distanceVariants('Colombo Airport (CMB)', 'Galle');
       expect(b).toEqual({
         fastest: { km: 148, durationMin: 120 },
-        noTolls: { km: 130, durationMin: 205 },
-        hasChoice: true,
+        noTolls: null,
+        hasChoice: false,
       });
       expect(await fake.distanceVariants('Galle', 'Colombo Airport (CMB)')).toEqual(b);
     });

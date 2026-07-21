@@ -13,8 +13,17 @@ export interface RouteVariants {
   hasChoice: boolean; // noTolls !== null
 }
 
-// Display rule: below this gap, the two routes are reported as "same route" (no choice offered).
+// Display rule: below these gaps, the two routes are reported as "same route" (no choice
+// offered). Both must hold: quotes price per km, so a fork with near-identical distances
+// produces near-identical prices — a "choice" that only trades time for nothing.
 export const CHOICE_MIN_TIME_SAVED_MIN = 45;
+export const CHOICE_MIN_KM_DIFF_PCT = 0.15;
+
+export function isMaterialRouteChoice(fastest: DistanceResult, noTolls: DistanceResult): boolean {
+  if (noTolls.durationMin - fastest.durationMin < CHOICE_MIN_TIME_SAVED_MIN) return false;
+  if (fastest.km <= 0) return false;
+  return Math.abs(fastest.km - noTolls.km) / fastest.km >= CHOICE_MIN_KM_DIFF_PCT;
+}
 
 export interface MapsAdapter {
   readonly provider: string;
@@ -110,7 +119,9 @@ function fakeVariantPair(from: string, to: string): RouteVariants | null {
   const b = norm(to);
   for (const [x, y, fastest, noTolls] of FAKE_VARIANT_PAIRS) {
     if ((a === x && b === y) || (a === y && b === x)) {
-      return { fastest, noTolls, hasChoice: true };
+      // Same gate as the real adapter, so keyless dev never shows a fork prod would suppress.
+      const hasChoice = isMaterialRouteChoice(fastest, noTolls);
+      return { fastest, noTolls: hasChoice ? noTolls : null, hasChoice };
     }
   }
   return null;
@@ -163,7 +174,7 @@ export class GoogleMapsAdapter implements MapsAdapter {
     const fastest = fast ?? offlineEstimate(from, to);
     if (!fastest) return null;
     // A choice requires BOTH answers from Google (never the offline estimate) + a material gap.
-    const hasChoice = !!fast && !!slow && slow.durationMin - fast.durationMin >= CHOICE_MIN_TIME_SAVED_MIN;
+    const hasChoice = !!fast && !!slow && isMaterialRouteChoice(fast, slow);
     const value: RouteVariants = { fastest, noTolls: hasChoice ? slow : null, hasChoice };
     // Cache ONLY full successes: a failed/partial comparison must be retryable immediately.
     if (fast && slow) {
