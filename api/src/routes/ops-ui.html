@@ -994,6 +994,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-rc-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; }
 .qv .ch-rc-tag { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
 .qv .ch-rc-hero { font-size: 20px; font-weight: 700; margin: 6px 0 2px; }
+.qv .ch-rc-price { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
 .qv .ch-rc-save { font-size: 12px; font-weight: 500; color: #8a5610; }
 .qv .ch-rc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
 .qv .ch-rc-stats b { display: block; color: var(--ink); font-weight: 600; }
@@ -2113,6 +2114,7 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
+var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
 var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
@@ -2173,6 +2175,33 @@ var DRIVING_CATS = {
   transfer: true, train_support: true, airport: true,
 };
 
+// Build the /estimate payload from state. `override` (optional) forces one leg's distanceKm so a
+// route variant can be priced by the canonical engine without mutating the leg: { legId, km }.
+function buildEstimatePayload(override) {
+  var st = state;
+  return {
+    service: st.service || 'private',
+    vehicle: st.vehicleType,
+    passengerCount: st.passengerCount,
+    luggageCount: st.luggageCount,
+    legs: st.legs.map(function(leg) {
+      var km = (override && leg.id === override.legId) ? override.km : (leg.distanceKm || 0);
+      return {
+        category:         leg.category,
+        from:             leg.pickupLocation || '',
+        to:               leg.dropoffLocation || '',
+        distanceKm:       km,
+        date:             leg.date || '',
+        addSightseeingFee: !!leg.addSightseeingFee,
+        addWaitingFee:    !!leg.addWaitingFee,
+        addSafariWait:    !!leg.addSafariWait,
+        routeVariant:     leg.routeVariant || undefined,
+        routeOptions:     leg.routeOptions || undefined,
+      };
+    }),
+  };
+}
+
 function refreshEstimate() {
   clearTimeout(_estimateTimer);
   _estimateTimer = setTimeout(function() {
@@ -2220,26 +2249,7 @@ async function _runEstimate() {
   }
 
   // Build the payload (Task 2 mapping)
-  var payload = {
-    service: st.service || 'private',
-    vehicle: st.vehicleType,
-    passengerCount: st.passengerCount,
-    luggageCount: st.luggageCount,
-    legs: st.legs.map(function(leg) {
-      return {
-        category:         leg.category,
-        from:             leg.pickupLocation || '',
-        to:               leg.dropoffLocation || '',
-        distanceKm:       leg.distanceKm || 0,
-        date:             leg.date || '',
-        addSightseeingFee: !!leg.addSightseeingFee,
-        addWaitingFee:    !!leg.addWaitingFee,
-        addSafariWait:    !!leg.addSafariWait,
-        routeVariant:     leg.routeVariant || undefined,
-        routeOptions:     leg.routeOptions || undefined,
-      };
-    }),
-  };
+  var payload = buildEstimatePayload();
 
   var result = await apiEstimate(payload);
 
@@ -4632,12 +4642,14 @@ function render() {
         '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
         '            <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
+        '            <div class="ch-rc-price">' + esc(d.fast.price) + '</div>',
         '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
         '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
         '          </button>',
         '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
         '            <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
+        '            <div class="ch-rc-price">' + esc(d.local.price) + (d.local.save ? ' <span class="ch-rc-save">' + esc(d.local.save) + '</span>' : '') + '</div>',
         '            <div class="ch-rc-stats"><span><b>' + esc(d.local.km) + '</b>distance</span><span><b>Toll-free</b>local road</span></div>',
         '            <div class="ch-rc-fit">Cheaper &middot; best for budget or scenic hill country</div>',
         '          </button>',
@@ -5072,15 +5084,48 @@ function getRouteModalData(legId) {
   if (!leg || !leg.routeOptions || !leg.routeOptions.fastest || !leg.routeOptions.noTolls) return null;
   var f = leg.routeOptions.fastest, n = leg.routeOptions.noTolls;
   var slowerMin = Math.max(0, Math.round(n.durationMin - f.durationMin));
+  var pr = _rcPrices[legId] || {};
+  var priceStr = function (cents) { return cents != null ? fmtUsd(cents) : (pr.loading ? '…' : ''); };
+  var save = (pr.fastest != null && pr.no_tolls != null && pr.no_tolls < pr.fastest) ? 'saves ' + fmtUsd(pr.fastest - pr.no_tolls) : '';
   return {
     from: (leg.pickupLocation || '').trim(),
     to: (leg.dropoffLocation || '').trim(),
     selected: _rcSel || leg.routeVariant || 'fastest',
-    fast:  { time: fmtDur(f.durationMin / 60), km: f.km + ' km' },
-    local: { time: fmtDur(n.durationMin / 60), km: n.km + ' km', slower: slowerMin ? '+' + fmtDur(slowerMin / 60) : '' },
+    fast:  { time: fmtDur(f.durationMin / 60), km: f.km + ' km', price: priceStr(pr.fastest) },
+    local: { time: fmtDur(n.durationMin / 60), km: n.km + ' km', slower: slowerMin ? '+' + fmtDur(slowerMin / 60) : '', price: priceStr(pr.no_tolls), save: save },
   };
 }
-function openRouteModal(legId) { _rcSel = null; routeModalLegId = legId; render(); }
+function openRouteModal(legId) { _rcSel = null; routeModalLegId = legId; render(); computeRouteModalPrices(legId); }
+
+// Price each route variant through the canonical estimate engine (this leg's km overridden per
+// variant) and read the per-leg priceCents back — never a client-side price formula. Two extra
+// /estimate calls per modal open; results cached per (leg, km-pair, vehicle, service).
+async function priceVariant(legId, km) {
+  var legIdx = -1;
+  for (var i = 0; i < state.legs.length; i++) { if (state.legs[i].id === legId) { legIdx = i; break; } }
+  if (legIdx < 0) return null;
+  var di = drivingIndex(legIdx);
+  if (di < 0) return null;
+  var result = await apiEstimate(buildEstimatePayload({ legId: legId, km: km }));
+  if (!result || result.error || !result.breakdown || !result.breakdown.legs) return null;
+  var bleg = result.breakdown.legs[di];
+  return (bleg && bleg.priceCents != null) ? bleg.priceCents : null;
+}
+async function computeRouteModalPrices(legId) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  if (!leg || !leg.routeOptions || !leg.routeOptions.fastest || !leg.routeOptions.noTolls) return;
+  var f = leg.routeOptions.fastest, n = leg.routeOptions.noTolls;
+  var sig = legId + '|' + f.km + '|' + n.km + '|' + (state.vehicleType || '') + '|' + (state.service || '');
+  var have = _rcPrices[legId];
+  if (have && have.sig === sig && !have.loading) return; // already priced this exact context
+  _rcPrices[legId] = { sig: sig, fastest: null, no_tolls: null, loading: true };
+  render();
+  var pf = await priceVariant(legId, f.km);
+  var pn = await priceVariant(legId, n.km);
+  if (routeModalLegId !== legId) return; // modal closed or moved on while we priced
+  _rcPrices[legId] = { sig: sig, fastest: pf, no_tolls: pn, loading: false };
+  render();
+}
 function closeRouteModal(markPrompted) {
   var legId = routeModalLegId; routeModalLegId = null; _rcSel = null;
   if (markPrompted && legId) { var l = state.legs.find(function (x) { return x.id === legId; }); if (l) l._promptedRouteChoice = true; }
