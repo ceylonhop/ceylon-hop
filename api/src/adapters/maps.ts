@@ -14,7 +14,7 @@ export interface RouteVariants {
 }
 
 // Display rule: below this gap, the two routes are reported as "same route" (no choice offered).
-export const CHOICE_MIN_TIME_SAVED_MIN = 30;
+export const CHOICE_MIN_TIME_SAVED_MIN = 45;
 
 export interface MapsAdapter {
   readonly provider: string;

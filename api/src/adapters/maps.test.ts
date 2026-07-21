@@ -361,6 +361,27 @@ describe('distanceVariants', () => {
     expect(fetchCount).toBe(4); // nothing served from cache after the failure
   });
 
+  it('a 40-minute-slower toll-free route is NOT a choice (below the 45-min bar)', async () => {
+    global.fetch = (async (url: string) => {
+      if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(205, 370); // 370 - 330 = 40
+      return distanceMatrixResponse(292, 330);
+    }) as typeof fetch;
+    const adapter = new GoogleMapsAdapter('test-key');
+    const r = await adapter.distanceVariants('Colombo City', 'Ella');
+    expect(r?.hasChoice).toBe(false);
+    expect(r?.noTolls).toBeNull();
+  });
+
+  it('a 60-minute-slower toll-free route IS a choice (at/above the 45-min bar)', async () => {
+    global.fetch = (async (url: string) => {
+      if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(205, 390); // 390 - 330 = 60
+      return distanceMatrixResponse(292, 330);
+    }) as typeof fetch;
+    const adapter = new GoogleMapsAdapter('test-key');
+    const r = await adapter.distanceVariants('Colombo City', 'Ella');
+    expect(r?.hasChoice).toBe(true);
+  });
+
   describe('FakeMapsAdapter.distanceVariants', () => {
     it('returns synthetic choice pairs both ways (Colombo City↔Ella, Airport↔Galle)', async () => {
       const fake = new FakeMapsAdapter();
