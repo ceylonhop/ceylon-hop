@@ -4969,6 +4969,20 @@ async function runAutoDistance(legId) {
   }
 }
 
+// Route choice (2026-07-21): pure guard for the auto-open modal. Self-contained (no DOM,
+// no closure state) so web-tests can extract + eval it. Returns true only when a leg has a
+// real, undecided fork and it is safe to interrupt the operator exactly once.
+function shouldPromptRouteChoice(leg, ctx) {
+  if (!leg || !ctx) return false;
+  if (!ctx.editable || ctx.modalOpen) return false;
+  if (!leg.routeOptions) return false;          // no fork was fetched
+  if (leg.routeVariant) return false;           // already decided
+  if (leg._promptedRouteChoice) return false;   // already auto-prompted once
+  if (leg.manualDistance) return false;
+  if (leg.category === 'stay_day') return false;
+  return true;
+}
+
 // Route choice (2026-07-20): operator-initiated expressway/local-road comparison — never
 // automatic. Mirrors runAutoDistance's stale-response guards.
 async function compareRoutes(legId) {
