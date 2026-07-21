@@ -46,6 +46,16 @@ const ToolLegSchema = z.object({
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
+  // Route-choice (2026-07-20): which road the operator picked + what was offered when they
+  // compared. Passthrough only — distanceKm stays the sole pricing input; both fields ride
+  // into the saved quote's request_json verbatim (Phase-2 conversion data).
+  routeVariant: z.enum(['fastest', 'no_tolls']).optional(),
+  routeOptions: z
+    .object({
+      fastest: z.object({ km: z.number(), durationMin: z.number() }),
+      noTolls: z.object({ km: z.number(), durationMin: z.number() }),
+    })
+    .optional(),
 });
 const ToolRequestSchema = z.object({
   firstName: z.string().optional(),
@@ -398,9 +408,21 @@ export function internalQuoteRoutes(deps: {
   });
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
+  // With compare:true (the ops "Compare routes" button) the response also carries the
+  // expressway-vs-local-road variants when a materially different toll-free route exists;
+  // top-level km/durationMin stay = fastest so the auto-resolve path's shape is unchanged.
   r.post('/distance', csrf, async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string } | null;
+    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string; compare?: boolean } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
+    if (b.compare) {
+      const v = await deps.maps.distanceVariants(b.from, b.to);
+      if (!v) return c.json({ error: 'unknown route' }, 404);
+      return c.json({
+        ...v.fastest,
+        hasChoice: v.hasChoice,
+        ...(v.hasChoice && v.noTolls ? { variants: { fastest: v.fastest, noTolls: v.noTolls } } : {}),
+      });
+    }
     const d = await deps.maps.distance(b.from, b.to);
     return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
   });
