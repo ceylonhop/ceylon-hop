@@ -4,11 +4,15 @@ import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { futureIsoDate } from '../testSupport/dates';
+
+// Anchored to "now" so the past-date rule never expires these (see testSupport/dates).
+const tripDates = [futureIsoDate(30), futureIsoDate(32)];
 
 const valid = {
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
   nights: [1, 2, 0],
-  dates: ['2026-07-20', '2026-07-22'],
+  dates: tripDates,
   pax: 2,
   vehicleType: 'van',
   serviceType: 'private',
@@ -52,7 +56,7 @@ describe('POST /bookings/trip', () => {
       nights: [1, 2, 0],
       vehicleType: 'car',
       serviceType: 'chauffeur',
-      dates: ['2026-07-20', '2026-07-22'],
+      dates: tripDates,
     });
     expect(res.status).toBe(201);
     const b = await res.json();
