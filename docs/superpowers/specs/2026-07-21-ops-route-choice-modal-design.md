@@ -39,7 +39,7 @@ The "computed threshold" trigger we want is therefore **already implemented** as
 
 - When a **point-to-point driving leg** has both endpoints resolved and its distance auto-resolves (the existing auto-distance path), fire the compare fetch automatically — the same `POST /admin/quote/distance { compare: true }` call `compareRoutes` uses today, debounced, instead of waiting for a click.
 - If the response includes `variants` (i.e. `hasChoice`), and **all** guardrails below pass, open the modal for that leg.
-- Reuse `CHOICE_MIN_TIME_SAVED_MIN = 30` as the bar for v1. (See open decision 3 — whether to also gate on a minimum dollar saving.)
+- **Raise `CHOICE_MIN_TIME_SAVED_MIN` from 30 to 45.** Only auto-pop when the toll-free route is ≥ 45 minutes slower — a higher bar than the current on-demand value, chosen so the modal fires only for genuinely significant forks. No dollar-saving condition. This constant is the single source of truth for "has a fork," so there is no divergent behavior once the on-demand pills are removed.
 - Skip the fetch entirely for: manual-distance legs, non–point-to-point legs (stays, per-day chauffeur legs), and legs missing an endpoint.
 
 ### Guardrails (so it never nags)
@@ -59,14 +59,9 @@ The "computed threshold" trigger we want is therefore **already implemented** as
   - Selecting a card emphasizes its route on the map and updates the primary button.
 - Footer: ghost `Keep expressway, decide later` (dismiss) + primary `Use expressway` / `Use local road`.
 
-### The map (open decision 1)
+### The map
 
-The `variants` payload carries only `{ km, durationMin }` — **no route geometry**. Two ways to draw both lines:
-
-- **A — Real Google map (recommended for v1).** Reuse the existing Maps JS + polyline rendering already used by the itinerary "Route on map" section; render two routes (default and `avoid: tolls`) via the client `DirectionsService`. Low risk, accurate, ships fast. Trades away the stylized look of the mock.
-- **B — Stylized SVG map (the mock's look).** Project each route's real polyline (from `DirectionsService`) onto a fixed Sri Lanka silhouette via a lat/lng→SVG transform. Matches the approved mock but is more work and more fragile.
-
-Recommendation: ship **A** for correctness, treat **B** as a fast-follow polish item if the plain map feels cheap in context.
+The `variants` payload carries only `{ km, durationMin }` — **no route geometry**. The modal therefore draws both lines with a **real Google map** (decided): reuse the existing Maps JS + polyline rendering already used by the itinerary "Route on map" section, and render two routes (default and `avoid: tolls`) via the client `DirectionsService`, styled so the selected route is emphasized. Accurate, low-risk, and reuses code that already ships. The stylized SVG map from the mock is **not** planned for v1.
 
 ### On pick
 
@@ -97,15 +92,15 @@ One extra Distance call per point-to-point leg (the `avoid=tolls` compare), wher
 ## Out of scope
 
 - Customer-facing booker route choice (Phase 2 — separate spec).
-- A curated corridor list (open decision 2 keeps the computed threshold; a list can replace/augment it later without touching the UI).
-- Changing the 30-minute threshold value (open decision 3).
+- A curated corridor list (a list could replace/augment the computed threshold later without touching the UI).
+- The stylized SVG map (v1 uses a real Google map).
 
-## Open decisions for review
+## Decisions (resolved 2026-07-21)
 
-1. **Map:** real Google map (A, recommended) vs stylized SVG (B, the mock's look) for v1.
-2. **Trigger source:** keep the computed `hasChoice` threshold (recommended) vs a curated corridor list.
-3. **Threshold:** keep `CHOICE_MIN_TIME_SAVED_MIN = 30` as-is, or also require a minimum dollar saving (e.g. ≥ $8) before auto-popping.
-4. **Pills:** remove the Phase 1 inline pills entirely (modal + compact chip become the only picker) — confirm that's the intent.
+1. **Map:** real Google map with two `DirectionsService` routes. Stylized SVG deferred.
+2. **Trigger source:** computed `hasChoice` threshold (no curated list).
+3. **Threshold:** `CHOICE_MIN_TIME_SAVED_MIN` raised 30 → **45** minutes; no dollar condition.
+4. **Pills:** the Phase 1 inline two-pill picker is **removed**; the modal plus the compact inline chip are the only picker.
 
 ## Testing
 
