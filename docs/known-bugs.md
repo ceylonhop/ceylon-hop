@@ -18,3 +18,4 @@ when you find a bug that's out of scope for the current change —
 | Date | Symptom | Where / root-cause guess | Status |
 |---|---|---|---|
 | 2026-07-21 | Ops quote tool flickers and blanks the price panel while typing a leg location | `api/src/routes/ops-ui.html` — background `render()` orphans the focused input; its delayed `blur` commits half-typed text → re-price → render → loop. Full report → [bug-ops-quote-typing-flicker.md](bug-ops-quote-typing-flicker.md) | OPEN, parked |
+| 2026-07-21 | Typed (not clicked) leg location never triggers auto-distance — "No distance" + `distCheck`, ops enter km by hand | `api/src/routes/ops-ui.html` — generic delegated `change` handler commits the location on blur before the per-input blur handler runs, so the blur handler sees no diff and skips `scheduleAutoDistance`. Full report → [bug-ops-quote-typed-location-no-autodistance.md](bug-ops-quote-typed-location-no-autodistance.md) | OPEN, parked |
