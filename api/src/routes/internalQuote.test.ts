@@ -1527,3 +1527,68 @@ describe('review lock — /save refuses content edits while in review', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ── Route-choice compare mode (2026-07-20 plan, Task 2) ──────────────────────
+describe('route-choice compare mode', () => {
+  const ROUTE_OPTIONS = { fastest: { km: 292, durationMin: 330 }, noTolls: { km: 205, durationMin: 390 } };
+
+  it('POST /distance with compare:true returns both variants for a choice pair', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Colombo City', to: 'Ella', compare: true });
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b.km).toBe(292); // top level stays = fastest (back-compat)
+    expect(b.durationMin).toBe(330);
+    expect(b.hasChoice).toBe(true);
+    expect(b.variants).toEqual(ROUTE_OPTIONS);
+  });
+
+  it('POST /distance with compare:true omits variants when there is no real choice', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Kandy', to: 'Trincomalee', compare: true });
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b.km).toBeGreaterThan(0);
+    expect(b.hasChoice).toBe(false);
+    expect(b).not.toHaveProperty('variants');
+  });
+
+  it('POST /distance with compare:true is 404 for an unknown route', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Nowhereville', to: 'Elsewhereton', compare: true });
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /distance WITHOUT compare keeps today’s exact response shape', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Colombo City', to: 'Ella' });
+    expect(res.status).toBe(200);
+    expect(Object.keys(await res.json()).sort()).toEqual(['durationMin', 'km']);
+  });
+
+  it('/estimate output is identical with and without the passthrough route fields', async () => {
+    const base = { vehicle: 'car', passengerCount: 2, luggageCount: 2 };
+    const withFields = await (await post(createApp(), '/admin/quote/estimate', {
+      ...base, legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'no_tolls', routeOptions: ROUTE_OPTIONS })],
+    })).json();
+    const without = await (await post(createApp(), '/admin/quote/estimate', {
+      ...base, legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205 })],
+    })).json();
+    expect(withFields).toEqual(without); // routeVariant/routeOptions must never touch pricing
+  });
+
+  it('/estimate rejects an unknown routeVariant value', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'scenic' })],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('/save round-trips routeVariant + routeOptions verbatim in the stored tool request', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'no_tolls', routeOptions: ROUTE_OPTIONS })],
+    })).json();
+    const got = await (await authedGet(app, '/admin/quote/' + saved.id)).json();
+    expect(got.request.tool.legs[0].routeVariant).toBe('no_tolls');
+    expect(got.request.tool.legs[0].routeOptions).toEqual(ROUTE_OPTIONS);
+  });
+});
