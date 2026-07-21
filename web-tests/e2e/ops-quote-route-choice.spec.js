@@ -170,7 +170,7 @@ test('dismiss keeps the default (no note) and does not re-pop on a re-render', a
   await setLegRoute(page, 'Colombo City', 'Ella');
   await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
 
-  await page.getByRole('button', { name: 'Keep expressway, decide later' }).click();
+  await page.locator('.ch-rc-modal .ch-x-btn').click(); // the X ('Keep default and close') is the only dismiss control
   await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
   // No pick → undecided chip offers "Compare routes".
   await expect(page.locator('.ch-route-chip').first()).toContainText('Compare routes');
@@ -198,7 +198,7 @@ test('the chip reopens the modal after a dismiss', async ({ page }) => {
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Ella');
   await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
-  await page.getByRole('button', { name: 'Keep expressway, decide later' }).click();
+  await page.locator('.ch-rc-modal .ch-x-btn').click(); // the X ('Keep default and close') is the only dismiss control
   await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
 
   await page.locator('.ch-route-chip').first().click();
