@@ -819,7 +819,7 @@ describe('quoting tool — fail-closed with no auth', () => {
 describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns local known places before adapter-backed Google suggestions', async () => {
     const a = new Hono();
-    const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
+    const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null, distanceVariants: async () => null };
     a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=colombo', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
@@ -832,7 +832,7 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns [] for a too-short query without touching the adapter', async () => {
     const a = new Hono();
     let called = false;
-    const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
+    const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null, distanceVariants: async () => null };
     a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=c', { headers: { cookie: await cookie('op@x.com') } });
     expect((await res.json()).places).toEqual([]);

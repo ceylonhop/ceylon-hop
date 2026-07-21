@@ -111,6 +111,7 @@ describe('priceSingle (engine-backed)', () => {
     const broken: MapsAdapter = {
       provider: 'broken',
       distance: async () => { throw new Error('upstream down'); },
+      distanceVariants: async () => { throw new Error('upstream down'); },
       places: async () => [],
     };
     const p = await priceSingle(single, broken);
