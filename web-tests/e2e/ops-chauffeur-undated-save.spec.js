@@ -21,6 +21,10 @@ async function stubOps(page, counters) {
     };
   });
   const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
+  // Register the broad catch-all FIRST: Playwright matches page.route handlers in reverse
+  // registration order (last-registered wins), so the specific stubs below must come AFTER it —
+  // otherwise the catch-all's {} shadows /admin/ops/whoami and the ops SPA never boots.
+  await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await page.route('**/admin/quote/save', (r) => { counters.save++; r.fulfill(json({ id: 'q1', reference: 'Q-TEST', status: 'draft' })); });
   await page.route('**/admin/quote/estimate', (r) => { counters.estimate++; r.fulfill(json({ error: 'chauffeur trips need a date on every leg (including stay days)' })); });
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 180, durationMin: 200 })));
@@ -30,7 +34,6 @@ async function stubOps(page, counters) {
     rateCardVersion: '2026-07-09', perKmCents: { car: 35, van: 47, van9: 47, van14: 48, custom: 175 },
     floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, chauffeurDayRateCents: 3500, fxUsdToLkr: 330, bufferPct: 10,
   })));
-  await page.route('**/admin/**', (r) => r.fulfill(json({})));
 }
 
 async function setLegField(page, i, field, value) {
@@ -46,7 +49,7 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
   await stubOps(page, counters);
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  await page.locator('[data-action="setVehicle"][data-veh="van6"]').click();
+  await page.locator('[data-action="setVehicle"][data-veh="van_6"]').click();
   await page.fill('#f-firstName', 'Diana');
   await page.fill('#f-lastName', 'Test');
   await page.fill('#f-contact', '+94771234567');
@@ -83,7 +86,7 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
 
   // The doomed estimate was NOT fired for the undated-chauffeur state.
   const estimateBefore = counters.estimate;
-  await page.evaluate(() => window.saveQuote && window.saveQuote());
+  await page.locator('[data-action="saveDraft"]').click();
   await page.waitForTimeout(300);
   expect(counters.save, 'save must be blocked client-side, not sent as a doomed 400').toBe(0);
 
@@ -91,7 +94,7 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
   await setLegField(page, 1, 'date', '2026-10-04');
   await page.waitForTimeout(300);
   await expect(page.locator('.ch-leg-date.invalid')).toHaveCount(0);
-  await page.evaluate(() => window.saveQuote && window.saveQuote());
+  await page.locator('[data-action="saveDraft"]').click();
   await page.waitForTimeout(300);
   expect(counters.save, 'save fires once all legs are dated').toBeGreaterThan(0);
 });
