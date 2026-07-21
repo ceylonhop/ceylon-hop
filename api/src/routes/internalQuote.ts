@@ -62,7 +62,10 @@ const ToolRequestSchema = z.object({
   // Deliberately NOT defaulted from `service` (I4): a pre-filled value gets accepted unread,
   // which is the exact failure this field exists to prevent. No 'legacy' member — there is no
   // exemption (I7), so a client cannot mint one.
-  requestedService: z.enum(['private', 'chauffeur', 'both']).optional(),
+  // .nullable(): the builder always SENDS this key and it is null for a fresh draft; .optional()
+  // alone rejects an explicit null → /save 400s. A null request is intended here (the status-change
+  // gate below requires it, /save does not); the repo folds null/undefined alike via `?? null`.
+  requestedService: z.enum(['private', 'chauffeur', 'both']).nullable().optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
