@@ -5008,6 +5008,12 @@ function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; 
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
+// Monotonic token for the async route draw below. computeRoutes() resolves out of order
+// (a shorter post-removal route can come back before an earlier longer one still in flight),
+// so without this the last response to *resolve* — not the last requested — wins the polyline
+// swap, leaving a stale route on the map after a leg is removed. Every drawItinRoute call
+// claims the next id; a superseded call bails after each await before mutating map state.
+var _mapReqSeq = 0;
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
   if (!slot) return; // no map this render
@@ -5033,8 +5039,10 @@ function syncItinMap() {
 }
 
 async function drawItinRoute(hostEl, stops) {
+  var reqId = ++_mapReqSeq;
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
+  if (reqId !== _mapReqSeq) return; // superseded while the Maps libs loaded — let the newer request win
   if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
   if (!_mapMap || _mapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
@@ -5053,6 +5061,7 @@ async function drawItinRoute(hostEl, stops) {
     });
     route = res && res.routes && res.routes[0];
   } catch (e) { /* unroutable → the "couldn't map" note below */ }
+  if (reqId !== _mapReqSeq) return; // stale response — a newer itinerary request has since fired; don't repaint
   if (!route) {
     hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
     _mapMap = null; return;
