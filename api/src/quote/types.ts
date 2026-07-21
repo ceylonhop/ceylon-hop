@@ -14,12 +14,15 @@ export interface ChauffeurRideDay extends Ride { date: string }
 // customPerKmCents (GL-1d): van14/custom have no fixed owner rate — the operator sets the
 // per-km rate at quote time (rate-card values are prefill defaults only). The engine rejects
 // an override when the priced vehicle is any other tier.
+// legs/travelDays accept the OLD point-to-point shape AND the new Ride shape interchangeably
+// (multi-stop rides, phase 1). Every consumer normalizes via normalizeRide/normalizeChauffeurDay
+// at entry, so an old-shape leg and its 2-stop Ride equivalent price identically.
 export type QuoteRequest =
   | { product: 'shared'; legs: SharedLeg[] }
-  | { product: 'private'; vehicle: Vehicle; pax: number; bags: number; legs: PrivateLeg[]; extras?: ExtraCode[]; customPerKmCents?: number }
+  | { product: 'private'; vehicle: Vehicle; pax: number; bags: number; legs: (PrivateLeg | Ride)[]; extras?: ExtraCode[]; customPerKmCents?: number }
   // pax/bags optional: when present, the engine upgrades an undersized vehicle to fit (like
   // private); when absent, no capacity upgrade (back-compat for callers that don't pass them).
-  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: ChauffeurTravelDay[]; pax?: number; bags?: number; extras?: ExtraCode[]; customPerKmCents?: number };
+  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: (ChauffeurTravelDay | ChauffeurRideDay)[]; pax?: number; bags?: number; extras?: ExtraCode[]; customPerKmCents?: number };
 
 // normalizeRide / normalizeChauffeurDay: discriminate old vs. new shape via 'stops' in leg,
 // so a Ride/ChauffeurRideDay passes through unchanged (same array references — no copy drift).

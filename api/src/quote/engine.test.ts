@@ -278,6 +278,50 @@ describe('quote()', () => {
     });
   });
 
+  // ── Multi-stop rides (phase 1): the engine accepts Ride-shaped legs/days alongside the
+  // old point-to-point shape, normalizing once at entry. Floors + protected minimum are
+  // counted PER RIDE (a 3-stop ride is ONE ride, not two legs). ──────────────────────────
+  describe('multi-stop rides', () => {
+    it('private: a 3-stop ride is buffered ONCE as a single ride (not per segment)', () => {
+      const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ stops: ['Kandy', 'Dambulla', 'Habarana'], segmentKms: [72, 23] }] });
+      // raw 95km buffered once → +10 → billable 105; round(105 × 40.25¢) = 4226 (one leg line, above floor).
+      // (The old 2-leg spelling of the same day buffers each leg → 79+28 = 107 billable, 6080¢ — see goldens.)
+      expect(r.subtotalCents).toBe(4226);
+      expect(r.lineItems[0].label).toBe('Kandy → Dambulla → Habarana (car)');
+      expect(r.marginEstimateCents).toBe(r.totalCents - Math.round(105 * 35)); // cost per RIDE, single buffer
+    });
+
+    it('private: mixing an old-shape leg and a 3-stop ride — floors + protected minimum counted per ride (2)', () => {
+      // Two rides that both price to the van floor. subtotal = 2 × 5000. The charm candidate
+      // (9900, a 1% cut within the 2.5% cap) is blocked ONLY by protectedMinimum = 2 rides × 5000.
+      // If the engine miscounted rides (e.g. 1), the finish would slip to 9900.
+      const r = quote({ product: 'private', vehicle: 'van', pax: 4, bags: 4, legs: [
+        { from: 'A', to: 'B', distanceKm: 10 },                        // old-shape ride → floor 5000
+        { stops: ['C', 'D', 'E'], segmentKms: [5, 5] },               // 3-stop ride, raw 10 → floor 5000
+      ] });
+      expect(r.subtotalCents).toBe(10000);
+      expect(r.totalCents).toBe(10000); // protected minimum (2 × 5000) forbids the downward finish
+    });
+
+    it('private: an invalid ride (segment count mismatch) surfaces INVALID_RIDE from quote()', () => {
+      expect(() => quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ stops: ['A', 'B', 'C'], segmentKms: [10] }] })).toThrow('INVALID_RIDE');
+    });
+
+    it('chauffeur: an invalid ride day (repeated consecutive stop) surfaces INVALID_RIDE', () => {
+      expect(() => quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-08-01', lastDate: '2026-08-01',
+        travelDays: [{ date: '2026-08-01', stops: ['A', 'A'], segmentKms: [10] }] })).toThrow('INVALID_RIDE');
+    });
+
+    it('chauffeur: a multi-stop ride day prices off its summed segments (single travel buffer)', () => {
+      const r = quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-08-01', lastDate: '2026-08-01',
+        travelDays: [{ date: '2026-08-01', stops: ['A', 'B', 'C'], segmentKms: [100, 50] }] });
+      // 1 day × $31.05 + billable 165km (raw 150 + 15 max buffer) × 40.25¢ = 3105 + 6641
+      expect(r.subtotalCents).toBe(3105 + 6641);
+    });
+  });
+
   it('throws NO_LEGS on an empty private request', () => {
     expect(() => quote({ product: 'private', vehicle: 'car', pax: 1, bags: 0, legs: [] })).toThrow('NO_LEGS');
   });
