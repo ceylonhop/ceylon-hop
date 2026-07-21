@@ -991,12 +991,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-rc-card:hover { border-color: var(--line-strong, #cfc8b8); }
 .qv .ch-rc-card[data-route="fastest"].is-sel { border-color: #2F6FE0; box-shadow: inset 0 0 0 1px #2F6FE0; }
 .qv .ch-rc-card[data-route="local"].is-sel { border-color: #BA7517; box-shadow: inset 0 0 0 1px #BA7517; }
-.qv .ch-rc-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.qv .ch-rc-name { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 7px; }
 .qv .ch-rc-tag { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
-.qv .ch-rc-hero { font-size: 20px; font-weight: 700; margin: 6px 0 2px; }
-.qv .ch-rc-price { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
+.qv .ch-rc-hero-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 6px 0 8px; }
+.qv .ch-rc-hero { font-size: 20px; font-weight: 700; }
+.qv .ch-rc-price { font-size: 20px; font-weight: 700; text-align: right; }
+.qv .ch-rc-price .ch-rc-save { display: block; }
 .qv .ch-rc-save { font-size: 12px; font-weight: 500; color: #8a5610; }
-.qv .ch-rc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
+.qv .ch-rc-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
 .qv .ch-rc-stats b { display: block; color: var(--ink); font-weight: 600; }
 .qv .ch-rc-fit { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .qv .ch-rc-swatch-fast { color: #2F6FE0; } .qv .ch-rc-swatch-local { color: #BA7517; }
@@ -4641,22 +4643,25 @@ function render() {
         '        <div class="ch-rc-cards">',
         '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
-        '            <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
-        '            <div class="ch-rc-price">' + esc(d.fast.price) + '</div>',
+        '            <div class="ch-rc-hero-row">',
+        '              <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
+        '              <div class="ch-rc-price">' + esc(d.fast.price) + '</div>',
+        '            </div>',
         '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
         '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
         '          </button>',
         '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
-        '            <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
-        '            <div class="ch-rc-price">' + esc(d.local.price) + (d.local.save ? ' <span class="ch-rc-save">' + esc(d.local.save) + '</span>' : '') + '</div>',
+        '            <div class="ch-rc-hero-row">',
+        '              <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
+        '              <div class="ch-rc-price">' + esc(d.local.price) + (d.local.save ? ' <span class="ch-rc-save">' + esc(d.local.save) + '</span>' : '') + '</div>',
+        '            </div>',
         '            <div class="ch-rc-stats"><span><b>' + esc(d.local.km) + '</b>distance</span><span><b>Toll-free</b>local road</span></div>',
         '            <div class="ch-rc-fit">Cheaper &middot; best for budget or scenic hill country</div>',
         '          </button>',
         '        </div>',
         '      </div>',
-        '      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">',
-        '        <button class="ch-link" data-action="routeModalDismiss">Keep expressway, decide later</button>',
+        '      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px">',
         '        <button class="ch-btn ch-btn-teal" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
         '      </div>',
         '    </div>',
