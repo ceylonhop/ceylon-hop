@@ -982,6 +982,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .qv .ch-modal-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; }
 .qv .ch-modal-body { padding: 18px 20px 22px; overflow-y: auto; }
+/* Route-choice modal (2026-07-21): blue = expressway, amber = local road — deliberately NOT the brand teal. */
+.qv .ch-rc-body { display: flex; gap: 16px; align-items: stretch; }
+.qv .ch-rc-map { flex: 0 0 220px; min-height: 300px; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface-warm); }
+.qv .ch-rc-map-note { font-size: 12px; color: var(--muted); padding: 16px; text-align: center; }
+.qv .ch-rc-cards { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.qv .ch-rc-card { text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; cursor: pointer; font: inherit; color: inherit; }
+.qv .ch-rc-card:hover { border-color: var(--line-strong, #cfc8b8); }
+.qv .ch-rc-card[data-route="fastest"].is-sel { border-color: #2F6FE0; box-shadow: inset 0 0 0 1px #2F6FE0; }
+.qv .ch-rc-card[data-route="local"].is-sel { border-color: #BA7517; box-shadow: inset 0 0 0 1px #BA7517; }
+.qv .ch-rc-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.qv .ch-rc-tag { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.qv .ch-rc-hero { font-size: 20px; font-weight: 700; margin: 6px 0 2px; }
+.qv .ch-rc-save { font-size: 12px; font-weight: 500; color: #8a5610; }
+.qv .ch-rc-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
+.qv .ch-rc-stats b { display: block; color: var(--ink); font-weight: 600; }
+.qv .ch-rc-fit { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.qv .ch-rc-swatch-fast { color: #2F6FE0; } .qv .ch-rc-swatch-local { color: #BA7517; }
+.qv .ch-route-chip { white-space: nowrap; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    CONTAINMENT — the cockpit above was authored for a full viewport; here it
@@ -2093,6 +2111,8 @@ var _delegatesWired = false;
 var ratesOpen = false;    // Rate Settings modal
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var routeModalLegId = null; // legId the route-choice modal is open for, or null
+var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
 var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
@@ -3082,18 +3102,16 @@ function renderLegCard(leg, idx, total) {
     var rcTo = (leg.dropoffLocation || '').trim();
     if (rcFrom && rcTo) {
       if (leg.routeOptions) {
-        var rcF = leg.routeOptions.fastest, rcN = leg.routeOptions.noTolls;
-        distHtml += [
-          '<div class="ch-route-pick">',
-          '  <button class="ch-route-pill' + (leg.routeVariant === 'fastest' ? ' is-active' : '') + '" data-action="routeFastest" data-leg="' + esc(leg.id) + '">Expressway · ' + esc(fmtDur(rcF.durationMin / 60)) + ' · ' + esc(String(rcF.km)) + ' km</button>',
-          '  <button class="ch-route-pill' + (leg.routeVariant === 'no_tolls' ? ' is-active' : '') + '" data-action="routeNoTolls" data-leg="' + esc(leg.id) + '">Local road · ' + esc(fmtDur(rcN.durationMin / 60)) + ' · ' + esc(String(rcN.km)) + ' km</button>',
-          '</div>',
-        ].join('');
+        // Route choice (2026-07-21): the modal is the picker now. A fork leg shows a compact chip
+        // — "Compare routes" while undecided, "Route: <pick> ▾" once chosen — both open the modal.
+        var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
+        distHtml += rcPicked
+          ? '<div><button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button></div>'
+          : '<div><button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button></div>';
       } else if (leg._sameRoute) {
         distHtml += '<div class="ch-route-same">Same route — no expressway on this trip</div>';
-      } else {
-        distHtml += '<div><button class="ch-link ch-route-compare" data-action="compareRoutes" data-leg="' + esc(leg.id) + '">Compare routes</button></div>';
       }
+      // (Unresolved legs show nothing until runAutoDistance sets routeOptions / _sameRoute.)
     }
   }
 
@@ -4595,6 +4613,46 @@ function render() {
       '</div>',
     ].join('') : ''),
 
+    // ══ Route-choice modal (2026-07-21) ══
+    (routeModalLegId ? (function () {
+      var d = getRouteModalData(routeModalLegId); if (!d) return '';
+      return [
+        '<div class="ch-scrim show" data-action="routeModalDismiss"></div>',
+        '<div class="ch-modal ch-rc-modal">',
+        '  <div class="ch-modal-card">',
+        '    <div class="ch-modal-head">',
+        '      <h2>Two routes for this leg</h2>',
+        '      <button class="ch-x-btn" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
+        '    </div>',
+        '    <div class="ch-modal-body">',
+        '      <div class="ch-lock-note">' + esc(d.from) + ' &rarr; ' + esc(d.to) + ' &middot; pick which one to quote</div>',
+        '      <div class="ch-rc-body">',
+        '        <div class="ch-rc-map" id="route-modal-map"></div>',
+        '        <div class="ch-rc-cards">',
+        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
+        '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
+        '            <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
+        '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
+        '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
+        '          </button>',
+        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
+        '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
+        '            <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
+        '            <div class="ch-rc-stats"><span><b>' + esc(d.local.km) + '</b>distance</span><span><b>Toll-free</b>local road</span></div>',
+        '            <div class="ch-rc-fit">Cheaper &middot; best for budget or scenic hill country</div>',
+        '          </button>',
+        '        </div>',
+        '      </div>',
+        '      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">',
+        '        <button class="ch-link" data-action="routeModalDismiss">Keep expressway, decide later</button>',
+        '        <button class="ch-btn ch-btn-teal" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
+        '      </div>',
+        '    </div>',
+        '  </div>',
+        '</div>',
+      ].join('');
+    })() : ''),
+
   ].join('');
 
   // V19: render() replaces the render target's innerHTML wholesale, destroying whatever
@@ -4613,6 +4671,7 @@ function render() {
   restoreEditorFocus(_focusSnap, _menuWasOpen);
   if (_menuWasOpen) reopenAutoCompleteMenu();
   syncItinMap(); // move/refresh the persistent route map into this render's slot
+  syncRouteModalMap(); // draw both routes in the open route-choice modal (no-op when closed)
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -4810,17 +4869,26 @@ function attachEventListeners() {
       updateLeg(legId, { manualDistance: true, routeVariant: undefined });
     } else if (action === 'autoDistance') {
       delete _distCache[legId];
-      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0, routeVariant: undefined, routeOptions: null, _sameRoute: false });
+      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0, routeVariant: undefined, routeOptions: null, _sameRoute: false, _promptedRouteChoice: false });
       scheduleAutoDistance(legId);
-    } else if (action === 'compareRoutes') {
-      compareRoutes(legId);
-    } else if (action === 'routeFastest' || action === 'routeNoTolls') {
-      var rcLeg = state.legs.find(function(l) { return l.id === legId; });
-      var rcName = action === 'routeNoTolls' ? 'no_tolls' : 'fastest';
-      var rcOpt = rcLeg && rcLeg.routeOptions && (rcName === 'no_tolls' ? rcLeg.routeOptions.noTolls : rcLeg.routeOptions.fastest);
-      if (rcOpt) {
-        updateLeg(legId, { distanceKm: rcOpt.km, driveTimeHours: Math.round((rcOpt.durationMin / 60) * 100) / 100, routeVariant: rcName, manualDistance: false, autoMatched: true });
-      }
+    } else if (action === 'openRouteModal' || action === 'compareRoutes') {
+      // Ensure variants are loaded (auto-resolve usually has them already), then open the modal.
+      (async function () {
+        var l = state.legs.find(function (x) { return x.id === legId; });
+        if (l && !l.routeOptions) { await compareRoutes(legId); }
+        var l2 = state.legs.find(function (x) { return x.id === legId; });
+        if (l2 && l2.routeOptions) openRouteModal(legId);
+      })();
+    } else if (action === 'routeModalSelectFast') {
+      _rcSel = 'fastest'; render();   // display-only highlight; nothing commits until "Use"
+    } else if (action === 'routeModalSelectLocal') {
+      _rcSel = 'no_tolls'; render();
+    } else if (action === 'routeModalPickFast') {
+      pickRoute(routeModalLegId, 'fastest');
+    } else if (action === 'routeModalPickLocal') {
+      pickRoute(routeModalLegId, 'no_tolls');
+    } else if (action === 'routeModalDismiss') {
+      closeRouteModal(true);
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'copyOutput') {
@@ -4871,7 +4939,7 @@ function attachEventListeners() {
     // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
     // both invalidate a picked route, so the choice resets here too, same as the blur path.
     if (field === 'pickupLocation' || field === 'dropoffLocation') {
-      patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false;
+      patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false; patch._promptedRouteChoice = false;
     } else if (field === 'distanceKm') {
       patch.routeVariant = undefined;
     }
@@ -4963,6 +5031,19 @@ async function runAutoDistance(legId) {
   if (seg && seg.km != null) {
     var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
     updateLeg(legId, { distanceKm: seg.km, driveTimeHours: hrs, autoMatched: true });
+    // Route choice (2026-07-21): proactively detect a materially different toll-free route and
+    // auto-open the modal once (guarded). One compare call per resolved leg; maps.ts caches
+    // variants 24h so re-renders/edits don't re-bill.
+    var v = await apiDistance(from, to, true);
+    var live = state.legs.find(function (l) { return l.id === legId; });
+    if (live && (live.pickupLocation || '').trim() === from && (live.dropoffLocation || '').trim() === to && !live.manualDistance) {
+      if (v && v.variants) { live.routeOptions = v.variants; live._sameRoute = false; }
+      else { live.routeOptions = null; live._sameRoute = true; }
+      render();
+      if (shouldPromptRouteChoice(live, { editable: isEditableNow(), modalOpen: !!routeModalLegId })) {
+        openRouteModal(legId);
+      }
+    }
   } else {
     // No distance found → "No distance" warn state (also drops any stale route choice)
     updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false, routeVariant: undefined, routeOptions: null, _sameRoute: false });
@@ -4981,6 +5062,38 @@ function shouldPromptRouteChoice(leg, ctx) {
   if (leg.manualDistance) return false;
   if (leg.category === 'stay_day') return false;
   return true;
+}
+
+// Route choice (2026-07-21): modal data builder + open/close/pick helpers. v1 shows the real,
+// comparable metrics from routeOptions (drive time + distance + tolls) and does NOT print a
+// per-variant dollar figure — a cross-variant price needs a second estimate; omit over fabricate.
+function getRouteModalData(legId) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  if (!leg || !leg.routeOptions || !leg.routeOptions.fastest || !leg.routeOptions.noTolls) return null;
+  var f = leg.routeOptions.fastest, n = leg.routeOptions.noTolls;
+  var slowerMin = Math.max(0, Math.round(n.durationMin - f.durationMin));
+  return {
+    from: (leg.pickupLocation || '').trim(),
+    to: (leg.dropoffLocation || '').trim(),
+    selected: _rcSel || leg.routeVariant || 'fastest',
+    fast:  { time: fmtDur(f.durationMin / 60), km: f.km + ' km' },
+    local: { time: fmtDur(n.durationMin / 60), km: n.km + ' km', slower: slowerMin ? '+' + fmtDur(slowerMin / 60) : '' },
+  };
+}
+function openRouteModal(legId) { _rcSel = null; routeModalLegId = legId; render(); }
+function closeRouteModal(markPrompted) {
+  var legId = routeModalLegId; routeModalLegId = null; _rcSel = null;
+  if (markPrompted && legId) { var l = state.legs.find(function (x) { return x.id === legId; }); if (l) l._promptedRouteChoice = true; }
+  render();
+}
+function pickRoute(legId, variant) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  var opt = leg && leg.routeOptions && (variant === 'no_tolls' ? leg.routeOptions.noTolls : leg.routeOptions.fastest);
+  routeModalLegId = null; _rcSel = null;
+  if (opt) {
+    leg._promptedRouteChoice = true; // carried onto the new leg object by updateLeg's Object.assign
+    updateLeg(legId, { distanceKm: opt.km, driveTimeHours: Math.round((opt.durationMin / 60) * 100) / 100, routeVariant: variant, manualDistance: false, autoMatched: true });
+  } else { render(); }
 }
 
 // Route choice (2026-07-20): operator-initiated expressway/local-road comparison — never
@@ -5133,6 +5246,59 @@ function syncItinMap() {
   drawItinRoute(_mapEl, stops);
 }
 
+// Route choice (2026-07-21): the modal's two-route map. Persistent map element re-parented into
+// the modal slot each render (like syncItinMap), redrawn only when from/to/selection changes.
+// Degrades to a note — never throws — when Maps can't load (offline/keyless e2e stubs it to {}).
+var _rcMapEl = null, _rcMapMap = null, _rcMapSig = null;
+function syncRouteModalMap() {
+  var slot = document.getElementById('route-modal-map');
+  if (!slot || !routeModalLegId) return;
+  if (!_rcMapEl) { _rcMapEl = document.createElement('div'); _rcMapEl.style.width = '100%'; _rcMapEl.style.height = '100%'; _rcMapEl.style.minHeight = '300px'; }
+  if (_rcMapEl.parentNode !== slot) {
+    slot.innerHTML = ''; slot.appendChild(_rcMapEl);
+    if (_rcMapMap && window.google && google.maps && google.maps.event) google.maps.event.trigger(_rcMapMap, 'resize');
+  }
+  var leg = state.legs.find(function (l) { return l.id === routeModalLegId; });
+  if (!leg || !leg.routeOptions) return;
+  var from = (leg.pickupLocation || '').trim(), to = (leg.dropoffLocation || '').trim();
+  var sel = _rcSel || leg.routeVariant || 'fastest';
+  var sig = from + '||' + to + '||' + sel;
+  if (sig === _rcMapSig) return;
+  _rcMapSig = sig;
+  drawRouteModalRoutes(_rcMapEl, from, to, sel);
+}
+async function drawRouteModalRoutes(hostEl, from, to, sel) {
+  var ok = await loadMapsJs();
+  var libs = ok ? await mapsLibs() : null;
+  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">Map preview needs the live Google key.</div>'; _rcMapMap = null; return; }
+  if (!_rcMapMap || _rcMapMap.__host !== hostEl) {
+    hostEl.innerHTML = '';
+    _rcMapMap = new libs.Map(hostEl, { center: { lat: 7.6, lng: 80.9 }, zoom: 7, disableDefaultUI: true, gestureHandling: 'none', clickableIcons: false });
+    _rcMapMap.__host = hostEl;
+  }
+  if (_rcMapMap.__lines) { _rcMapMap.__lines.forEach(function (p) { p.setMap(null); }); }
+  _rcMapMap.__lines = [];
+  async function draw(avoidTolls, color, emphasized) {
+    try {
+      var res = await libs.Route.computeRoutes({
+        origin: routeLoc(from), destination: routeLoc(to), travelMode: 'DRIVING', region: 'lk',
+        routeModifiers: avoidTolls ? { avoidTolls: true } : undefined, fields: ['path', 'viewport'],
+      });
+      var route = res && res.routes && res.routes[0];
+      if (!route) return null;
+      route.createPolylines().forEach(function (p) {
+        p.setOptions({ strokeColor: color, strokeWeight: emphasized ? 6 : 3, strokeOpacity: emphasized ? 0.95 : 0.45, zIndex: emphasized ? 3 : 1 });
+        p.setMap(_rcMapMap); _rcMapMap.__lines.push(p);
+      });
+      return route;
+    } catch (e) { return null; }
+  }
+  var rf = await draw(false, '#2F6FE0', sel === 'fastest');   // expressway (blue)
+  var rn = await draw(true, '#BA7517', sel === 'no_tolls');    // local road (amber)
+  var vp = (rf && rf.viewport) || (rn && rn.viewport);
+  if (vp) _rcMapMap.fitBounds(vp, 20);
+}
+
 async function drawItinRoute(hostEl, stops) {
   var reqId = ++_mapReqSeq;
   var ok = await loadMapsJs();
@@ -5247,6 +5413,7 @@ function acPick(item) {
   patch.routeVariant = undefined;
   patch.routeOptions = null;
   patch._sameRoute = false;
+  patch._promptedRouteChoice = false;
   // Clear cache so a new distance fetch runs after the leg updates
   delete _distCache[legId];
   // Use direct state mutation to avoid two renders
@@ -5376,7 +5543,7 @@ function attachAutoComplete() {
             // for the new route (reopened legs are manual to preserve the saved price).
             delete _distCache[legId];
             state.legs = state.legs.map(function(l) {
-              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; return p; })()) : l;
+              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; p._promptedRouteChoice = false; return p; })()) : l;
             });
             markDirty();
             scheduleAutoDistance(legId);

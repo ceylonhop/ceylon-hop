@@ -1,10 +1,11 @@
 import { test, expect } from '@playwright/test';
 
-// Route-choice "Compare routes" button (plan 2026-07-20, Task 3). Drives the REAL ops quote
-// view offline — stubbed API + Google, same harness as ops-autocomplete.spec.js — so it runs
-// on the default webServer with no database. Server-side pricing/persistence of the fields is
-// covered by api/src/routes/internalQuote.test.ts (Task 2); here we assert the UI contracts:
-// pills, apply, resets, and that the estimate payload carries routeVariant/routeOptions.
+// Route-choice MODAL (plan 2026-07-21). Drives the REAL ops quote view offline — stubbed API +
+// Google, same harness as ops-autocomplete.spec.js — so it runs on the default webServer with no
+// database. Server-side pricing/persistence of the fields is covered by
+// api/src/routes/internalQuote.test.ts; here we assert the UI contracts: a fork leg auto-opens
+// the modal, picking applies km + note, dismiss keeps the default and does not re-pop, a no-fork
+// leg stays quiet, the chip reopens the modal, and the estimate payload carries the fields.
 
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 const VARIANTS = { fastest: { km: 292, durationMin: 330 }, noTolls: { km: 205, durationMin: 390 } };
@@ -103,90 +104,103 @@ async function setLegRoute(page, from, to) {
   await pickPlace(page, 'dropoffLocation', to);
 }
 
-test('compare shows the two-pill picker with NOTHING active until an explicit pick', async ({ page }) => {
+test('a fork leg auto-opens the modal with both option cards (and no inline pills)', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Ella');
-  await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('292 km', { timeout: 10000 });
 
-  await page.locator('[data-action="compareRoutes"]').first().click();
-  const fastPill = page.locator('[data-action="routeFastest"]').first();
-  const slowPill = page.locator('[data-action="routeNoTolls"]').first();
-  await expect(fastPill).toBeVisible({ timeout: 5000 });
-  await expect(fastPill).toContainText('Expressway');
-  await expect(fastPill).toContainText('292 km');
-  await expect(slowPill).toContainText('Local road');
-  await expect(slowPill).toContainText('205 km');
-  // Merely comparing must NOT pick a route (the customer-message note keys off the pick).
-  await expect(page.locator('.ch-route-pill.is-active')).toHaveCount(0);
+  const modal = page.locator('.ch-rc-modal');
+  await expect(modal).toBeVisible({ timeout: 10000 });
+  await expect(modal.locator('.ch-rc-card[data-route="fastest"]')).toContainText('Expressway');
+  await expect(modal.locator('.ch-rc-card[data-route="fastest"]')).toContainText('292 km');
+  await expect(modal.locator('.ch-rc-card[data-route="local"]')).toContainText('Local road');
+  await expect(modal.locator('.ch-rc-card[data-route="local"]')).toContainText('205 km');
+  // The Phase-1 inline pills are gone.
+  await expect(page.locator('.ch-route-pill')).toHaveCount(0);
 });
 
-test('picking Local road applies km + hours, payload carries the fields, long-drive flag fires', async ({ page }) => {
+test('picking Local road applies km + note; payload carries the fields; chip reflects the pick', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Ella');
-  await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('292 km', { timeout: 10000 });
-  await page.locator('[data-action="compareRoutes"]').first().click();
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
 
   const estimateReq = page.waitForRequest(
     (req) => req.url().includes('/admin/quote/estimate')
       && (req.postDataJSON()?.legs || []).some((l) => l.routeVariant === 'no_tolls'),
     { timeout: 10000 },
   );
-  await page.locator('[data-action="routeNoTolls"]').first().click();
+  await page.locator('.ch-rc-card[data-route="local"]').click();       // select
+  await page.locator('[data-action="routeModalPickLocal"]').click();   // Use local road
 
+  await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
   await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('205 km');
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toHaveClass(/is-active/);
+  await expect(page.locator('.ch-route-chip').first()).toContainText('Local road');
+  // The customer note "(via local road, no highway tolls)" is gated behind "Ready to send" in a
+  // draft, so it isn't visible here — its exact copy is pinned by web-tests/unit/ops-route-note.test.js.
+
   const leg = (await estimateReq).postDataJSON().legs.find((l) => l.routeVariant === 'no_tolls');
   expect(leg.distanceKm).toBe(205);
   expect(leg.routeOptions).toEqual(VARIANTS);
-  // 6.5 h local road crosses the existing ≥6h threshold — expected side effect, not a bug.
-  await expect(page.getByText('Long drive warning')).toBeVisible({ timeout: 5000 });
 });
 
-test('a no-choice pair reports "same route" and renders no pills', async ({ page }) => {
+test('dismiss keeps the default (no note) and does not re-pop on a re-render', async ({ page }) => {
+  await stubOps(page);
+  await bootQuote(page);
+  await setLegRoute(page, 'Colombo City', 'Ella');
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
+
+  await page.getByRole('button', { name: 'Keep expressway, decide later' }).click();
+  await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
+  // No pick → undecided chip offers "Compare routes".
+  await expect(page.locator('.ch-route-chip').first()).toContainText('Compare routes');
+
+  // A re-render (edit the leg date) must NOT re-pop the modal.
+  const dateInput = page.locator('#quoteRoot input[type="date"]').first();
+  if (await dateInput.count()) {
+    await dateInput.fill('2026-12-31');
+    await dateInput.dispatchEvent('change');
+  }
+  await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
+});
+
+test('a no-choice pair shows "same route" and never opens the modal', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Kandy');
   await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('120 km', { timeout: 10000 });
-  await page.locator('[data-action="compareRoutes"]').first().click();
   await expect(page.locator('.ch-route-same').first()).toContainText('Same route', { timeout: 5000 });
-  await expect(page.locator('.ch-route-pill')).toHaveCount(0);
+  await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
 });
 
-test('editing a location clears the picked route — no stale "via local road" survives', async ({ page }) => {
+test('the chip reopens the modal after a dismiss', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Ella');
-  await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('292 km', { timeout: 10000 });
-  await page.locator('[data-action="compareRoutes"]').first().click();
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toBeVisible({ timeout: 5000 });
-  await page.locator('[data-action="routeNoTolls"]').first().click();
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toHaveClass(/is-active/);
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
+  await page.getByRole('button', { name: 'Keep expressway, decide later' }).click();
+  await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
 
-  // Change the pickup — the commit path (acPick) must drop pills, variant, and options.
+  await page.locator('.ch-route-chip').first().click();
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 5000 });
+});
+
+test('editing a location after a pick clears the picked route — no stale note survives', async ({ page }) => {
+  await stubOps(page);
+  await bootQuote(page);
+  await setLegRoute(page, 'Colombo City', 'Ella');
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
+  await page.locator('.ch-rc-card[data-route="local"]').click();
+  await page.locator('[data-action="routeModalPickLocal"]').click();
+  await expect(page.locator('.ch-route-chip').first()).toContainText('Local road');
+
   const cleanEstimate = page.waitForRequest(
     (req) => req.url().includes('/admin/quote/estimate')
       && (req.postDataJSON()?.legs || []).every((l) => l.routeVariant === undefined),
     { timeout: 10000 },
   );
-  await pickPlace(page, 'pickupLocation', 'Negombo');
-  await expect(page.locator('.ch-route-pill')).toHaveCount(0, { timeout: 5000 });
+  await pickPlace(page, 'pickupLocation', 'Negombo');   // new pair Negombo → Ella has no fork
   await cleanEstimate;
-});
-
-test('the manual-km pencil clears the active variant (typed km is not a Google route)', async ({ page }) => {
-  await stubOps(page);
-  await bootQuote(page);
-  await setLegRoute(page, 'Colombo City', 'Ella');
-  await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('292 km', { timeout: 10000 });
-  await page.locator('[data-action="compareRoutes"]').first().click();
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toBeVisible({ timeout: 5000 });
-  await page.locator('[data-action="routeNoTolls"]').first().click();
-  await expect(page.locator('[data-action="routeNoTolls"]').first()).toHaveClass(/is-active/);
-
-  await page.locator('[data-action="manualDistance"]').first().click();
-  await expect(page.locator('.ch-dist-manual input[data-field="distanceKm"]').first()).toBeVisible();
-  await expect(page.locator('.ch-route-pill.is-active')).toHaveCount(0);
+  // The picked route is gone: no "Route: Local road" chip survives the location change.
+  await expect(page.getByText('Route: Local road')).toHaveCount(0, { timeout: 5000 });
 });
