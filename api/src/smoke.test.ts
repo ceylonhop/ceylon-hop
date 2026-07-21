@@ -6,6 +6,21 @@ import { FakeEmailAdapter } from './adapters/email';
 import { InMemoryConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { InMemoryBookingRepo } from './db/bookingRepo';
 import { issueSessionCookie } from './lib/opsMiddleware';
+import { isoToday, isoWeekday } from './domain/dateRules';
+
+// Dates relative to now so the smoke fixtures never roll into the past (routes reject past
+// dates). SOON/SOON2 are 2 days apart (a trip's two leg dates); SERVICE_WED is a future
+// Wednesday, one of the shared corridors' service days (they run Wed & Sat).
+const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
+const SOON2 = isoToday('Asia/Colombo', new Date(Date.now() + 32 * 86_400_000));
+function futureWednesday(): string {
+  for (let i = 14; i < 90; i++) {
+    const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+    if (isoWeekday(iso) === 3) return iso;
+  }
+  throw new Error('no future Wednesday found');
+}
+const SERVICE_WED = futureWednesday();
 
 // /admin/bookings now requires a session with bookings:read — x-admin-key resolves to
 // `system`, which per the capability matrix lacks bookings:read. Mint a founder cookie
@@ -23,7 +38,7 @@ async function founderCookie() {
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
-  date: '2026-08-01',
+  date: SOON,
   time: '09:00',
   vehicleType: 'van',
   adults: 3,
@@ -81,7 +96,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const trip = {
       stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
       nights: [1, 2, 0],
-      dates: ['2026-07-20', '2026-07-22'],
+      dates: [SOON, SOON2],
       pax: 2,
       vehicleType: 'van',
       serviceType: 'private',
@@ -122,7 +137,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
 
     const shared = {
       corridorId: 'hill-line',
-      date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
+      date: SERVICE_WED, // a future Wednesday — a shared service day (corridors run Wed & Sat)
       time: '08:00',
       seats: 2,
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },

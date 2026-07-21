@@ -4,11 +4,18 @@ import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { isoToday } from '../domain/dateRules';
+
+// Leg dates computed relative to now so the fixtures never roll into the past (the /trip route
+// rejects any past leg date). Two dates, 2 days apart — chauffeur pricing derives its billed
+// day-span from exactly that gap, so the exact-total assertions below stay stable.
+const LEG_1 = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
+const LEG_2 = isoToday('Asia/Colombo', new Date(Date.now() + 32 * 86_400_000));
 
 const valid = {
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
   nights: [1, 2, 0],
-  dates: ['2026-07-20', '2026-07-22'],
+  dates: [LEG_1, LEG_2],
   pax: 2,
   vehicleType: 'van',
   serviceType: 'private',
@@ -52,7 +59,7 @@ describe('POST /bookings/trip', () => {
       nights: [1, 2, 0],
       vehicleType: 'car',
       serviceType: 'chauffeur',
-      dates: ['2026-07-20', '2026-07-22'],
+      dates: [LEG_1, LEG_2],
     });
     expect(res.status).toBe(201);
     const b = await res.json();

@@ -8,11 +8,17 @@ import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { isoToday } from '../domain/dateRules';
+
+// Dates relative to now so the fixtures never roll into the past (routes reject past dates).
+// SOON/SOON2 are 2 days apart — a chauffeur trip's billed day-span comes from that gap.
+const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
+const SOON2 = isoToday('Asia/Colombo', new Date(Date.now() + 32 * 86_400_000));
 
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
-  date: '2026-08-01',
+  date: SOON,
   time: '09:00',
   vehicleType: 'car',
   adults: 2,
@@ -122,7 +128,7 @@ describe('POST /webhooks/payments', () => {
         body: JSON.stringify({
           stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
           nights: [1, 2, 0],
-          dates: ['2026-07-20', '2026-07-22'],
+          dates: [SOON, SOON2],
           pax: 2,
           vehicleType: 'car',
           serviceType: 'chauffeur',
