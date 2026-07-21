@@ -34,6 +34,7 @@ function memoizeDistance(maps: MapsAdapter): MapsAdapter {
   return {
     provider: maps.provider,
     places: (q) => maps.places(q),
+    distanceVariants: (from, to) => maps.distanceVariants(from, to),
     distance(from, to) {
       const key = `${from}|${to}`;
       let hit = cache.get(key);
