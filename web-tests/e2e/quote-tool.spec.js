@@ -101,6 +101,21 @@ async function submitReopenApprove(page, custName) {
   await page.locator('[data-action="approveReady"]').click();
 }
 
+// Go to the Quotes queue from inside the builder. The ops rail auto-hides while you work in the
+// main area (ops-ui.html: 4s idle timer + collapse-on-content-click), and BY DESIGN the first
+// click on a collapsed rail only re-opens it — it doesn't fire the nav button (commit a2f7943,
+// "open collapsed rail from the rail itself"). So click, and if the queue didn't come up, click
+// once more now that the rail is open. A real operator does the same two-step. Ends on the queue
+// with "+ New quote" visible. (The login helper's nav click is exempt: the rail is still expanded
+// right after sign-in, before any content click has collapsed it.)
+async function gotoQueue(page) {
+  const nav = page.locator('#nav button[data-route="quotes"]');
+  const qnew = page.locator('#view [data-qnew]');
+  await nav.click();
+  if (!(await qnew.isVisible().catch(() => false))) await nav.click();
+  await expect(qnew).toBeVisible({ timeout: 8000 });
+}
+
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
   // The itinerary is gated until the trip basics are filled — vehicle + name + a valid contact —
@@ -439,6 +454,11 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
 // was retired when the builder merged into the ops shell; the Quotes queue IS the list now.
 // Clicking a queue row (.qrow) reopens the saved quote and repopulates the customer name.
 test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
+  // "+ New quote" guards against losing work with a confirm() when the builder still holds
+  // pending edits (startNew() in ops-ui.html). Re-entering the builder to start fresh can leave
+  // the form marked dirty, so the guard fires here — accept it, since we deliberately want to
+  // discard and start blank. Without a handler Playwright auto-dismisses it and the reset aborts.
+  page.on('dialog', (d) => d.accept());
   await chooseVehicle(page, 'van_6');
 
   const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
@@ -454,15 +474,15 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Start a fresh quote so we can prove the reopen repopulates the name. "+ New quote" lives
-  // in the queue now (data-qnew), so go there and start a blank quote — no unsaved-changes
-  // confirm fires because the save above cleared the dirty flag.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // in the queue now (data-qnew), so go there and start a blank quote (the dialog handler above
+  // accepts the "unsaved changes" guard).
+  await gotoQueue(page);
   await page.locator('#view [data-qnew]').click();
   await expect(page.locator('#f-firstName')).toHaveValue('');
   await expect(page.locator('#f-lastName')).toHaveValue('');
 
   // Back to the queue and click this quote's row to reopen it.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
@@ -550,7 +570,7 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Back to the queue; the row for this quote carries a `.qage` chip, calm tone (just created).
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   const age = row.locator('.qage');
@@ -577,7 +597,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Reopen it from the queue — reopened legs come back in manual-distance mode.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
