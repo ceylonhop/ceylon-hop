@@ -2458,13 +2458,10 @@ function addLeg(cat) {
     if (cat === 'stay_day') {
       leg.dropoffLocation = prev.dropoffLocation || '';
     }
-    // Auto-increment date by 1 day
-    if (prev.date) {
-      // V6: parse + format locally so the +1-day roll never shifts under any TZ.
-      var d = parseISODateLocal(prev.date);
-      d.setDate(d.getDate() + 1);
-      leg.date = fmtISODateLocal(d);
-    }
+    // A new leg starts with a BLANK date — do not guess it from the previous leg.
+    // Auto-incrementing (+1 day) invented dates the customer never gave, so a 4-leg
+    // itinerary looked fully scheduled when the operator had only dated the first leg.
+    // Dates are optional for point-to-point pricing; the operator fills each one.
   }
   state.legs = state.legs.concat([leg]);
   refreshEstimate();
