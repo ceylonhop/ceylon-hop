@@ -103,7 +103,7 @@ async function setLegRoute(page, from, to) {
   await pickPlace(page, 'dropoffLocation', to);
 }
 
-test('compare shows the two-pill picker for a choice pair, expressway active by default', async ({ page }) => {
+test('compare shows the two-pill picker with NOTHING active until an explicit pick', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Ella');
@@ -115,10 +115,10 @@ test('compare shows the two-pill picker for a choice pair, expressway active by 
   await expect(fastPill).toBeVisible({ timeout: 5000 });
   await expect(fastPill).toContainText('Expressway');
   await expect(fastPill).toContainText('292 km');
-  await expect(fastPill).toHaveClass(/is-active/);
   await expect(slowPill).toContainText('Local road');
   await expect(slowPill).toContainText('205 km');
-  await expect(slowPill).not.toHaveClass(/is-active/);
+  // Merely comparing must NOT pick a route (the customer-message note keys off the pick).
+  await expect(page.locator('.ch-route-pill.is-active')).toHaveCount(0);
 });
 
 test('picking Local road applies km + hours, payload carries the fields, long-drive flag fires', async ({ page }) => {

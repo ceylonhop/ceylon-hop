@@ -4985,16 +4985,11 @@ async function compareRoutes(legId) {
   if ((current.dropoffLocation || '').trim() !== to) return;
   if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations'); return; }
   if (r.variants) {
-    var patch = { routeOptions: r.variants, _sameRoute: false };
-    // Default to the expressway ONLY when the leg isn't holding a manual km — a manual
-    // number stays untouched until the operator explicitly picks a pill.
-    if (!current.manualDistance) {
-      patch.distanceKm = r.variants.fastest.km;
-      patch.driveTimeHours = Math.round((r.variants.fastest.durationMin / 60) * 100) / 100;
-      patch.routeVariant = 'fastest';
-      patch.autoMatched = true;
-    }
-    updateLeg(legId, patch);
+    // Show the pills only — NO variant is picked yet. Auto-setting 'fastest' here would put
+    // the "via expressway" note into the customer message on a mere comparison (final review
+    // 2026-07-21; plan contract 7: the note requires an explicit pick). A non-manual leg
+    // already holds the auto-resolved fastest km, so there is nothing to apply either.
+    updateLeg(legId, { routeOptions: r.variants, _sameRoute: false });
   } else {
     updateLeg(legId, { _sameRoute: true });
   }
