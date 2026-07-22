@@ -65,6 +65,8 @@ const ToolRequestSchema = z.object({
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
+  // Internal ops notes (spec 2026-07-22) — free-text scratchpad, persisted to quotes.internal_notes.
+  internalNotes: z.string().optional(),
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
@@ -487,6 +489,7 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        internalNotes: body.internalNotes ?? null,
         // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
         // check; it also rides inside request.tool above, which is what the builder reopens from.
         requestedService: body.requestedService ?? null,
@@ -628,6 +631,7 @@ export function internalQuoteRoutes(deps: {
         status: z.string().optional(),
         lostReason: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        internalNotes: z.string().nullable().optional(),
         assignedTo: z.string().nullable().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
@@ -692,6 +696,7 @@ export function internalQuoteRoutes(deps: {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
       notes: body.notes,
+      internalNotes: body.internalNotes,
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
@@ -735,6 +740,31 @@ export function internalQuoteRoutes(deps: {
     // status/notes edit by finance/ops must not echo cost/margin back to them.
     const canMargin = can(c.get('identity').role, 'margin:view');
     return c.json(canMargin ? updated : stripQuoteMargin(updated));
+  });
+
+  // Delete a quote (spec 2026-07-22). SOFT delete — the row is hidden from the queue/tool but
+  // retained in the table (recoverable, audit-preserving), never a hard wipe. Gated by lifecycle
+  // state, layered on top of the route-wide quote:manage requirement:
+  //   draft | changes_requested → any quote:manage holder (ops) — unlocked, never sent
+  //   pending_review | ready     → founder only (quote:approve)  — locked, not yet sent
+  //   sent | won | lost | expired → NOBODY                        — customer-facing / decided
+  const DELETABLE_BY_OPS: readonly QuoteStatus[] = ['draft', 'changes_requested'];
+  const DELETABLE_BY_FOUNDER: readonly QuoteStatus[] = ['pending_review', 'ready'];
+  r.delete('/:id', csrf, async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const st = quote.status;
+    if (!DELETABLE_BY_OPS.includes(st) && !DELETABLE_BY_FOUNDER.includes(st)) {
+      // sent / won / lost / expired — a quote the customer has seen is never deletable.
+      return c.json({ error: 'not_deletable', reason: 'sent_or_decided' }, 409);
+    }
+    if (DELETABLE_BY_FOUNDER.includes(st) && !can(c.get('identity').role, 'quote:approve')) {
+      return c.json({ error: 'forbidden', reason: 'founder_only' }, 403);
+    }
+    const deleted = await deps.quotes.softDelete(id, c.get('identity').email);
+    if (!deleted) return c.json({ error: 'not_found' }, 404); // raced with another delete
+    return c.json({ id: deleted.id, deleted: true }, 200);
   });
 
   return r;

@@ -219,6 +219,11 @@ export const quotes = pgTable('quotes', {
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
+  // Internal ops notes (spec 2026-07-22): a free-text scratchpad on the quote, distinct from
+  // `notes` (which carries the founder's send-back reason surfaced in the review banner). Kept
+  // separate so an ops person jotting trip context can never clobber a send-back reason and
+  // vice-versa. Nullable; never shown to the customer.
+  internalNotes: text('internal_notes'),
   // Quote intent (spec 2026-07-17): which service the CUSTOMER asked for — 'private' |
   // 'chauffeur' | 'both' — as distinct from `product`, which is what was actually priced.
   // Nullable: rows predating this have none, and the requirement is a workflow gate at submit
@@ -233,6 +238,12 @@ export const quotes = pgTable('quotes', {
   assignedAt: timestamp('assigned_at', { withTimezone: true }),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),
+  // Soft delete (spec 2026-07-22): a deleted quote is hidden from get()/list() but retained in the
+  // table (never a hard wipe — keeps the audit trail and lets a mistaken delete be recovered).
+  // Role-gated in the route: ops delete drafts, founders delete locked-but-unsent; sent quotes
+  // can never be deleted.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
 import { genReference, parseDateFilter } from './quoteRepo';
@@ -49,11 +49,14 @@ function toSaved(r: Row): SavedQuote {
     rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
+    internalNotes: r.internalNotes,
     requestedService: r.requestedService,
     assignedTo: r.assignedTo,
     assignedAt: r.assignedAt,
     createdBy: r.createdBy,
     updatedBy: r.updatedBy,
+    deletedAt: r.deletedAt,
+    deletedBy: r.deletedBy,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     sentAt: r.sentAt,
@@ -86,6 +89,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
+            internalNotes: q.internalNotes ?? null,
             requestedService: q.requestedService ?? null,
             createdBy: q.createdBy ?? null,
             updatedBy: q.updatedBy ?? null,
@@ -101,12 +105,15 @@ export class PostgresQuoteRepo implements QuoteRepo {
   }
 
   async get(id: string): Promise<SavedQuote | null> {
-    const rows = await this.db.select().from(quotes).where(eq(quotes.id, id));
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
     return rows[0] ? toSaved(rows[0]) : null;
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
-    const conds = [];
+    const conds = [isNull(quotes.deletedAt)]; // soft-deleted quotes never appear in the queue
     if (filter.channel) conds.push(eq(quotes.channel, filter.channel));
     if (filter.status) conds.push(eq(quotes.status, filter.status));
     if (filter.product) conds.push(eq(quotes.product, filter.product));
@@ -151,6 +158,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(patch.status ? { status: patch.status } : {}),
         ...(patch.lostReason !== undefined ? { lostReason: patch.lostReason } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        ...(patch.internalNotes !== undefined ? { internalNotes: patch.internalNotes } : {}),
         ...(patch.rateLock !== undefined
           ? {
               rateCardJson: (patch.rateLock?.rateCardJson ?? null) as object | null,
@@ -201,11 +209,24 @@ export class PostgresQuoteRepo implements QuoteRepo {
         rateCardJson: (q.rateCardJson ?? null) as object | null,
         rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
+        internalNotes: q.internalNotes ?? null,
         requestedService: q.requestedService ?? null,
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(quotes.id, id))
+      .returning();
+    return row ? toSaved(row) : null;
+  }
+
+  async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
+    // Only stamp a row that isn't already deleted, so a double-delete returns null rather than
+    // silently re-stamping (and moving deletedBy/updatedAt).
+    const now = new Date();
+    const [row] = await this.db
+      .update(quotes)
+      .set({ deletedAt: now, deletedBy, updatedAt: now })
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
     return row ? toSaved(row) : null;
   }
