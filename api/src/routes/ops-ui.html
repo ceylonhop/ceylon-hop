@@ -768,16 +768,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* Foot of the itinerary (2026-07-22): internal notes on the left, a PORTRAIT route map on the
    right. The map went vertical because Sri Lanka is a teardrop (tall, narrow), which frees the
    space on its left for the ops-only notes scratchpad. Wraps to stacked on a narrow pane. */
-.qv .ch-itin-aside { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: flex-start; }
-.qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
-.qv .ch-note-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 0 0 6px; display: inline-flex; align-items: center; gap: 6px; }
+.qv .ch-itin-aside { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: stretch; }
+/* Notes is now a CARD that mirrors the route-map card beside it (same frame + header bar),
+   so the two read as a matched pair instead of a raw textarea next to a finished card. It
+   stretches to the map's height when the map is open (no empty void); its own min-height
+   keeps it usable when the map is collapsed (the map opts out of stretch — see below). */
+.qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); transition: border-color .15s, box-shadow .15s; }
+.qv .ch-notes-block:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line); }
+.qv .ch-note-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 0; display: inline-flex; align-items: center; gap: 8px; }
 .qv .ch-note-ico { color: var(--teal-d); flex: none; }
-.qv .ch-notes-area { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; }
-.qv .ch-notes-area:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-cap { font-size: 11px; color: var(--muted); flex: none; }
+.qv .ch-notes-area { flex: 1 1 auto; min-height: 128px; width: 100%; box-sizing: border-box; resize: none; border: 0; border-radius: 0; background: transparent; padding: 12px 15px; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink); outline: none; }
 .qv .ch-notes-area::placeholder { color: var(--muted); }
-.qv .ch-notes-hint { font-size: 10.5px; color: var(--muted); margin-top: 5px; }
 /* Collapsible PORTRAIT route map — a fixed-width right column (see .ch-itin-aside) */
-.qv .ch-map-block { flex: 0 1 290px; margin-top: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
+/* align-self:flex-start opts the map out of the row's stretch — a collapsed map stays its
+   own short height (no whitespace under the toggle) while the notes card fills the row. */
+.qv .ch-map-block { flex: 0 1 290px; align-self: flex-start; margin-top: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
 .qv .ch-map-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-soft); transition: background .15s, color .15s; }
 .qv .ch-map-toggle:hover { background: var(--cream); color: var(--ink); }
 .qv .ch-map-toggle-lbl { display: inline-flex; align-items: center; gap: 8px; }
@@ -4954,9 +4961,11 @@ function render() {
       // a toggle so it never pops in unbidden, and is populated (portrait) by syncItinMap.
       '        <div class="ch-itin-aside">',
       '          <div class="ch-notes-block">',
-      '            <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '            <div class="ch-notes-head">',
+      '              <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '              <span class="ch-notes-cap">Ops-only &middot; autosaves</span>',
+      '            </div>',
       '            <textarea class="ch-notes-area" id="f-internalNotes" placeholder="Private notes for the team — trip context, customer preferences, follow-ups. Never shown to the customer.">' + esc(st.internalNotes || '') + '</textarea>',
-      '            <div class="ch-notes-hint">Ops-only &middot; autosaves with the quote</div>',
       '          </div>',
       (itinMapAvailable() ? [
         '          <div class="ch-map-block' + (_mapOpen ? ' open' : '') + '">',
