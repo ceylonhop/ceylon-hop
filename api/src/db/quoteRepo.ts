@@ -43,6 +43,8 @@ export interface NewQuote {
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
   notes?: string | null;
+  // Internal ops notes (spec 2026-07-22) — free-text, distinct from the send-back `notes`.
+  internalNotes?: string | null;
   // Quote intent (spec 2026-07-17). What the customer ASKED for ('private'|'chauffeur'|'both'),
   // vs `product` = what was priced. Optional here; the submit gate lives in the route.
   requestedService?: string | null;
@@ -51,6 +53,10 @@ export interface NewQuote {
   // never becomes its author.
   createdBy?: string | null;
   updatedBy?: string | null;
+  // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
+  // lands in their "Assigned to me". Reassignment still happens only via the patch/picker, and
+  // update() leaves assignment untouched — so this only takes effect on insert.
+  assignedTo?: string | null;
 }
 
 export interface SavedQuote {
@@ -73,11 +79,14 @@ export interface SavedQuote {
   rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
+  internalNotes: string | null;
   requestedService: string | null;
   assignedTo: string | null;
   assignedAt: Date | null;
   createdBy: string | null;
   updatedBy: string | null;
+  deletedAt: Date | null;
+  deletedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   sentAt: Date | null;
@@ -112,6 +121,7 @@ export interface QuotePatch {
   status?: QuoteStatus;
   lostReason?: string | null;
   notes?: string | null;
+  internalNotes?: string | null;
   // Rate-lock (spec 2026-07-11). The snapshot + expiry always move together, so they patch as a
   // unit: `undefined` = leave the lock untouched; an object = stamp it (ops freeze at approval);
   // `null` = clear it (reopen-to-edit → back to the live card). See api/src/quote/rateLock.ts.
@@ -137,6 +147,10 @@ export interface QuoteRepo {
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
   // duplicate. Returns null for an unknown id.
   update(id: string, q: NewQuote): Promise<SavedQuote | null>;
+  // Soft-delete: stamp deletedAt/deletedBy and hide the row from get()/list() while keeping it in
+  // the table. Idempotent-ish: returns null for an unknown or already-deleted id. Role/status
+  // gating lives in the route, not here — the repo only records the intent.
+  softDelete(id: string, deletedBy: string): Promise<SavedQuote | null>;
 }
 
 // Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
@@ -215,11 +229,14 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
+      internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
-      assignedTo: null, // manual-only: a new quote is nobody's until someone assigns it
-      assignedAt: null,
+      assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on save (spec 2026-07-22)
+      assignedAt: q.assignedTo ? now : null,
       createdBy: q.createdBy ?? null,
       updatedBy: q.updatedBy ?? null,
+      deletedAt: null,
+      deletedBy: null,
       createdAt: now,
       updatedAt: now,
       sentAt: null,
@@ -231,11 +248,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async get(id: string): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    return row ? { ...row } : null;
+    return row && !row.deletedAt ? { ...row } : null;
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
-    let rows = [...this.rows.values()];
+    let rows = [...this.rows.values()].filter((r) => !r.deletedAt);
     if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
     if (filter.status) rows = rows.filter((r) => r.status === filter.status);
     if (filter.product) rows = rows.filter((r) => r.product === filter.product);
@@ -260,6 +277,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
+    if (patch.internalNotes !== undefined) row.internalNotes = patch.internalNotes;
     if (patch.rateLock !== undefined) {
       row.rateCardJson = patch.rateLock?.rateCardJson ?? null;
       row.rateLockedUntil = patch.rateLock?.rateLockedUntil ?? null;
@@ -291,11 +309,22 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
+    row.internalNotes = q.internalNotes ?? null;
     row.requestedService = q.requestedService ?? null;
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
     row.updatedAt = new Date();
+    return { ...row };
+  }
+
+  async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
+    const row = this.rows.get(id);
+    if (!row || row.deletedAt) return null; // unknown or already deleted
+    const now = new Date();
+    row.deletedAt = now;
+    row.deletedBy = deletedBy;
+    row.updatedAt = now;
     return { ...row };
   }
 }

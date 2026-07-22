@@ -5,7 +5,7 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
-import type { QuoteRequest, QuoteResult } from '../quote/types';
+import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types';
 import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
@@ -43,6 +43,12 @@ const ToolLegSchema = z.object({
   from: z.string(),
   to: z.string(),
   distanceKm: z.number().min(0).optional(),
+  // Multi-stop rides (phase 2): a leg may carry an ordered stop chain (2–8) instead of a single
+  // from→to. `from`/`to` stay required (= first/last stop; the UI keeps sending them). segmentKms,
+  // when present, is one entry per segment (stops.length−1); a null/≤0 entry is auto-resolved by
+  // resolveAndPrice. Absent stops = the old point-to-point path, byte-for-byte unchanged.
+  stops: z.array(z.string()).min(2, 'a ride needs at least 2 stops').max(8, 'a ride can have at most 8 stops').optional(),
+  segmentKms: z.array(z.number().min(0).nullable()).optional(),
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
@@ -56,6 +62,26 @@ const ToolLegSchema = z.object({
       noTolls: z.object({ km: z.number(), durationMin: z.number() }),
     })
     .optional(),
+}).superRefine((leg, ctx) => {
+  // Cross-field rules for a multi-stop leg (GC-9). Human-readable messages: this route 400s
+  // with the FIRST issue's message. Only fire when `stops` is present (the old path has none).
+  if (!leg.stops) return;
+  if ((leg.category || 'transfer') === 'stay_day') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stay day can\'t have stops', path: ['stops'] });
+  }
+  if (leg.segmentKms && leg.segmentKms.length !== leg.stops.length - 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `segmentKms needs one entry per segment (${leg.stops.length - 1})`,
+      path: ['segmentKms'],
+    });
+  }
+  for (let i = 0; i < leg.stops.length - 1; i++) {
+    if (leg.stops[i].trim() === leg.stops[i + 1].trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stop can\'t be the same as the one before it', path: ['stops', i] });
+      break;
+    }
+  }
 });
 const ToolRequestSchema = z.object({
   firstName: z.string().optional(),
@@ -65,6 +91,8 @@ const ToolRequestSchema = z.object({
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
+  // Internal ops notes (spec 2026-07-22) — free-text scratchpad, persisted to quotes.internal_notes.
+  internalNotes: z.string().optional(),
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
@@ -135,7 +163,11 @@ async function resolveAndPrice(
     throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
   }
   for (const l of driving) {
-    if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+    if (l.stops) {
+      // Multi-stop leg: resolve each null/≤0 segment; mirror distanceKm = segment sum.
+      await resolveRideSegments(l, maps);
+    } else if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+      // Old point-to-point path — untouched.
       l.distanceKm = await resolveLegKm(l, maps);
     }
   }
@@ -158,6 +190,29 @@ async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
   return Math.round(d.km);
 }
 
+// Resolve a multi-stop leg's segment distances in place (one maps.distance per null/≤0 segment,
+// sequential — mirrors resolveLegKm's per-PAIR error message, naming the failing stop pair).
+// A missing segmentKms array is treated as all-null. Mutates the leg: segmentKms → resolved
+// numbers, and distanceKm → the segment sum (legacy mirror, updated even when all were manual).
+async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void> {
+  const stops = l.stops as string[];
+  const segs: (number | null)[] = l.segmentKms ? [...l.segmentKms] : new Array<null>(stops.length - 1).fill(null);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const km = segs[i];
+    if (km == null || km <= 0) {
+      const from = stops[i];
+      const to = stops[i + 1];
+      const d = await maps.distance(from, to);
+      if (!d) {
+        throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
+      }
+      segs[i] = Math.round(d.km);
+    }
+  }
+  l.segmentKms = segs as number[];
+  l.distanceKm = (segs as number[]).reduce((sum, k) => sum + k, 0);
+}
+
 const fxRate = RATE_CARD.fxUsdToLkr;
 const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
@@ -169,6 +224,21 @@ function drives(l: ToolLeg): boolean {
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
+// Map one driving tool leg to its engine shape. A leg WITH stops → a Ride (segmentKms are
+// guaranteed all-numbers post-resolve — narrowed here with a runtime guard, never a blind cast);
+// WITHOUT stops → the old { from, to, distanceKm } exactly as before.
+function toEngineLeg(l: ToolLeg): PrivateLeg | Ride {
+  if (l.stops) {
+    const segmentKms = (l.segmentKms ?? []).map((k) => {
+      // resolveRideSegments runs first and fills every entry; a null here means it was skipped.
+      if (typeof k !== 'number') throw new PriceError('a ride segment distance is missing — enter the km manually', 422);
+      return k;
+    });
+    return { stops: l.stops, segmentKms };
+  }
+  return { from: l.from, to: l.to, distanceKm: Number(l.distanceKm) };
+}
+
 function collectExtras(legs: ToolLeg[]): ExtraCode[] {
   const out: ExtraCode[] = [];
   for (const l of legs) {
@@ -213,13 +283,14 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
       pax: req.passengerCount, bags: req.luggageCount, // let the engine upgrade an undersized vehicle
-      travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
+      // With stops → { date, stops, segmentKms }; without → the old flat { date, from, to, distanceKm }.
+      travelDays: driving.map((l) => ({ date: l.date as string, ...toEngineLeg(l) })),
       extras, customPerKmCents,
     };
   }
   return {
     product: 'private', vehicle, pax: req.passengerCount, bags: req.luggageCount,
-    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras, customPerKmCents,
+    legs: driving.map(toEngineLeg), extras, customPerKmCents,
   };
 }
 
@@ -487,6 +558,7 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        internalNotes: body.internalNotes ?? null,
         // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
         // check; it also rides inside request.tool above, which is what the builder reopens from.
         requestedService: body.requestedService ?? null,
@@ -497,8 +569,12 @@ export function internalQuoteRoutes(deps: {
       };
       const updated = existingId ? await deps.quotes.update(existingId, content) : null;
       if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
-      const saved = await deps.quotes.save(content);
-      return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
+      // Auto-assign a NEW quote to its creator (spec 2026-07-22) so it lands in their "Assigned to
+      // me". Insert-only: update() above leaves assignment to the picker.
+      const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });
+      // Return assignedTo so the builder reflects the auto-assignment immediately (the update path
+      // above omits it — a re-save must not move the assignee client-side either).
+      return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
       throw e;
@@ -628,6 +704,7 @@ export function internalQuoteRoutes(deps: {
         status: z.string().optional(),
         lostReason: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        internalNotes: z.string().nullable().optional(),
         assignedTo: z.string().nullable().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
@@ -692,6 +769,7 @@ export function internalQuoteRoutes(deps: {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
       notes: body.notes,
+      internalNotes: body.internalNotes,
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
@@ -735,6 +813,31 @@ export function internalQuoteRoutes(deps: {
     // status/notes edit by finance/ops must not echo cost/margin back to them.
     const canMargin = can(c.get('identity').role, 'margin:view');
     return c.json(canMargin ? updated : stripQuoteMargin(updated));
+  });
+
+  // Delete a quote (spec 2026-07-22). SOFT delete — the row is hidden from the queue/tool but
+  // retained in the table (recoverable, audit-preserving), never a hard wipe. Gated by lifecycle
+  // state, layered on top of the route-wide quote:manage requirement:
+  //   draft | changes_requested → any quote:manage holder (ops) — unlocked, never sent
+  //   pending_review | ready     → founder only (quote:approve)  — locked, not yet sent
+  //   sent | won | lost | expired → NOBODY                        — customer-facing / decided
+  const DELETABLE_BY_OPS: readonly QuoteStatus[] = ['draft', 'changes_requested'];
+  const DELETABLE_BY_FOUNDER: readonly QuoteStatus[] = ['pending_review', 'ready'];
+  r.delete('/:id', csrf, async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const st = quote.status;
+    if (!DELETABLE_BY_OPS.includes(st) && !DELETABLE_BY_FOUNDER.includes(st)) {
+      // sent / won / lost / expired — a quote the customer has seen is never deletable.
+      return c.json({ error: 'not_deletable', reason: 'sent_or_decided' }, 409);
+    }
+    if (DELETABLE_BY_FOUNDER.includes(st) && !can(c.get('identity').role, 'quote:approve')) {
+      return c.json({ error: 'forbidden', reason: 'founder_only' }, 403);
+    }
+    const deleted = await deps.quotes.softDelete(id, c.get('identity').email);
+    if (!deleted) return c.json({ error: 'not_found' }, 404); // raced with another delete
+    return c.json({ id: deleted.id, deleted: true }, 200);
   });
 
   return r;

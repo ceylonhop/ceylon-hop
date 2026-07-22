@@ -290,6 +290,43 @@ describe('internal quoting tool route', () => {
     expect((await selfApprove.json()).error).toBe('illegal_transition');
   });
 
+  // Role-gated soft delete (spec 2026-07-22).
+  const del = (email: string, app: App, path: string) =>
+    app.request(path, { method: 'DELETE', headers: { cookie: cookie(email) } });
+
+  it('DELETE /:id soft-deletes a draft (ops) — hidden from get + list, row retained', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    const res = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).deleted).toBe(true);
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(404); // gone from the tool
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    expect(list.quotes.map((q: { id: string }) => q.id)).not.toContain(id); // gone from the queue
+  });
+
+  it('DELETE /:id: ops cannot delete a locked (pending_review) quote — founder only', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    const forbid = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(forbid.status).toBe(403);
+    expect((await forbid.json()).reason).toBe('founder_only');
+    const ok = await del('f@x.com', app, `/admin/quote/${id}`); // founder can delete the locked quote
+    expect(ok.status).toBe(200);
+  });
+
+  it('DELETE /:id: a sent quote can never be deleted (409), founder included', async () => {
+    const app = createApp();
+    const id = (await draft(app)).id;
+    await approve(app, id); // → ready (founder, via review)
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
+    const founderTry = await del('f@x.com', app, `/admin/quote/${id}`);
+    expect(founderTry.status).toBe(409);
+    expect((await founderTry.json()).reason).toBe('sent_or_decided');
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(200); // still there
+  });
+
   it('rejects an illegal transition (draft → sent) with 409', async () => {
     const app = createApp();
     const id = (await draft(app, 'op@x.com')).id;
@@ -1074,14 +1111,15 @@ describe('quote assignment + audit trail', () => {
   const draftAs = async (app: App, email: string) =>
     (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
 
-  it('stamps createdBy/updatedBy on save and leaves the quote unassigned', async () => {
+  it('stamps createdBy/updatedBy on save and auto-assigns the new quote to its creator (2026-07-22)', async () => {
     const app = createApp();
     const { id } = await draftAs(app, 'op@x.com');
     const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
     expect(q.createdBy).toBe('op@x.com');
     expect(q.updatedBy).toBe('op@x.com');
-    expect(q.assignedTo).toBeNull();
-    expect(q.assignedAt).toBeNull();
+    // A new quote lands in its creator's "Assigned to me" — no longer unassigned on save.
+    expect(q.assignedTo).toBe('op@x.com');
+    expect(q.assignedAt).not.toBeNull();
   });
 
   it('assigns to an OPS_USERS member, stamping assignedAt + updatedBy but never createdBy', async () => {
@@ -1590,5 +1628,161 @@ describe('route-choice compare mode', () => {
     const got = await (await authedGet(app, '/admin/quote/' + saved.id)).json();
     expect(got.request.tool.legs[0].routeVariant).toBe('no_tolls');
     expect(got.request.tool.legs[0].routeOptions).toEqual(ROUTE_OPTIONS);
+  });
+});
+
+// Multi-stop rides (phase 2, 2026-07-20). The ops wire gains OPTIONAL per-leg `stops`/`segmentKms`;
+// the engine already speaks the Ride shape (phase 1). A leg WITHOUT stops takes the old path,
+// byte-for-byte — the no-stops assertions below pin that. `from`/`to` are still required by the
+// schema (Task 7 UI keeps sending them = first/last stop), so a stops leg carries both.
+describe('multi-stop rides — ops wire (stops + segmentKms)', () => {
+  // A 3-stop leg over known places so the null segment resolves against the offline adapter.
+  const ride3 = (o: Record<string, unknown> = {}) => ({
+    category: 'transfer', from: 'Colombo City', to: 'Ella',
+    stops: ['Colombo City', 'Kandy', 'Ella'], ...o,
+  });
+
+  it('Zod accepts a 3-stop leg with segmentKms [12, null]', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [12, null] })],
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a 9-stop ride (over the 8-stop cap) with a human-readable 400', async () => {
+    const nine = ['Colombo City', 'Negombo', 'Bentota', 'Galle', 'Weligama', 'Mirissa', 'Kandy', 'Ella', 'Yala'];
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Yala', stops: nine }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/at most 8 stops/i);
+  });
+
+  it('rejects a segmentKms length mismatch (3 stops need 2 segments) with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [12, 34, 56] })],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/one entry per segment/i);
+  });
+
+  it('rejects consecutive duplicate stops (A,A,B) with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'Kandy', to: 'Kandy', stops: ['Kandy', 'Kandy', 'Ella'] }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/same as the (one|stop) before/i);
+  });
+
+  it('rejects stops on a stay_day leg with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Colombo City', to: 'Kandy', distanceKm: 100, date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', date: '2026-02-15', stops: ['Kandy', 'Ella'] },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 60, date: '2026-02-16' },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/stay day/i);
+  });
+
+  it('/estimate resolves a null segment via the offline adapter → ONE line item labeled with all stops', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [100, null] })],
+    });
+    expect(res.status).toBe(200);
+    const d = await res.json();
+    // ONE travel line item, labeled by the full stop chain (engine's `stops.join(' → ') (car)`).
+    expect(d.lineItems[0].label).toBe('Colombo City → Kandy → Ella (car)');
+    // The null second segment was resolved to a positive km; the manual first stays 100.
+    expect(d.lineItems[0].meta.segmentKms[0]).toBe(100);
+    expect(d.lineItems[0].meta.segmentKms[1]).toBeGreaterThan(0);
+    expect(d.lineItems[0].meta.stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+  });
+
+  it('a mixed manual/auto ride [40, null] keeps the manual 40 and resolves only the null', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Mix', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [40, null] })],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    const eng = got.request.engine.legs[0];
+    expect(eng.segmentKms[0]).toBe(40); // manual segment preserved
+    expect(eng.segmentKms[1]).toBeGreaterThan(0); // null segment resolved
+    // Legacy mirror: distanceKm on the tool leg == segment sum.
+    expect(got.request.tool.legs[0].distanceKm).toBe(40 + eng.segmentKms[1]);
+  });
+
+  it('an all-manual ride still updates the distanceKm legacy mirror to the segment sum', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'AllManual', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [55, 66] })],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.engine.legs[0].segmentKms).toEqual([55, 66]);
+    expect(got.request.tool.legs[0].distanceKm).toBe(121); // 55 + 66, mirror updated even with no resolve
+  });
+
+  it('/save persists request.tool with stops and request.engine with the ride; GET /:id echoes them', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Reo', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [100, null] })],
+    })).json();
+    expect(saved.status).toBe('draft');
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.tool.legs[0].stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+    expect(got.request.engine.product).toBe('private');
+    expect(got.request.engine.legs[0].stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+    expect(got.request.engine.legs[0].segmentKms).toHaveLength(2);
+    expect(got.request.engine.legs[0].segmentKms.every((k: number) => typeof k === 'number' && k > 0)).toBe(true);
+  });
+
+  it('a chauffeur ride day carries { date, stops, segmentKms } into the engine request', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Chauf', vehicle: 'car', passengerCount: 2, luggageCount: 1, service: 'chauffeur', requestedService: 'chauffeur',
+      legs: [
+        { category: 'transfer', from: 'Colombo City', to: 'Kandy', stops: ['Colombo City', 'Sigiriya / Dambulla', 'Kandy'], segmentKms: [90, null], date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', date: '2026-02-15' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.engine.product).toBe('chauffeur');
+    const day0 = got.request.engine.travelDays[0];
+    expect(day0.date).toBe('2026-02-14');
+    expect(day0.stops).toEqual(['Colombo City', 'Sigiriya / Dambulla', 'Kandy']);
+    expect(day0.segmentKms[0]).toBe(90);
+    expect(day0.segmentKms[1]).toBeGreaterThan(0);
+    // The old-shape day (no stops) keeps its flat { from, to, distanceKm } shape.
+    expect(got.request.engine.travelDays[1]).toMatchObject({ from: 'Kandy', to: 'Ella', distanceKm: 140 });
+    expect(got.request.engine.travelDays[1].stops).toBeUndefined();
+  });
+
+  it('a stops ride with an unresolvable segment 400s naming the failing PAIR', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'Colombo City', to: 'Ella', stops: ['Colombo City', 'Nowhereville', 'Ella'], segmentKms: [null, null] }],
+    });
+    expect(res.status).toBe(400);
+    // Names the FAILING pair (Colombo City → Nowhereville), not the leg's from/to.
+    expect((await res.json()).error).toBe("couldn't find the distance for Colombo City → Nowhereville — enter the km manually");
+  });
+
+  // The no-stops path must be byte-for-byte unchanged. Pin a plain leg's full /estimate response.
+  it('a no-stops leg round-trips identically (old path untouched)', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ from: 'A', to: 'B', distanceKm: 80 })],
+    })).json();
+    expect(d.total.cents).toBe(3550);
+    expect(d.amountDueNow.cents).toBe(3550);
+    expect(d.lineItems[0].label).toBe('A → B (car)');
+    expect(d.lineItems[0].meta.billableKm).toBe(88);
+    expect(d.lineItems[0].meta.stops).toBeUndefined(); // 2-stop leg never carries a stops array
+    expect(d.lineItems[0].meta.segmentKms).toBeUndefined();
   });
 });

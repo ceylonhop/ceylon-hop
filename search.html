@@ -92,6 +92,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .add-stops:hover{text-decoration:underline}
   .add-stops svg{width:15px;height:15px}
   .add-stops[hidden]{display:none}
+  .complex-route{margin-top:14px;font-size:.9rem;color:var(--ink-soft);max-width:56ch;line-height:1.5}
+  .complex-route a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+  .complex-route a:hover{text-decoration:underline}
   @media(max-width:640px){
     body[data-page="search"] .section{padding-top:16px!important}
     .route-head{margin-bottom:18px}
@@ -206,6 +209,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <h1 id="route-title"></h1>
       <div class="route-meta" id="route-meta"></div>
       <a class="add-stops" id="add-stops" hidden></a>
+      <p class="complex-route">Want a stop along the way, a day trip and back, or a longer route? <a href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20I%27d%20like%20a%20quote%20for%20a%20custom%20route%20with%20a%20few%20stops." target="_blank" rel="noopener">Message us</a> — we'll price it in minutes.</p>
     </div>
     <div id="results"></div>
     <div class="srch-help" id="srch-help"></div>

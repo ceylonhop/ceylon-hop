@@ -207,3 +207,57 @@ describe('requestedService', () => {
     expect(updated!.requestedService).toBe('chauffeur');
   });
 });
+
+// Internal ops notes (spec 2026-07-22): a free-text scratchpad, kept separate from `notes`
+// (the send-back reason) so neither can clobber the other.
+describe('internalNotes', () => {
+  it('round-trips through save and get, defaulting to null', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const blank = await repo.save(sample());
+    expect(blank.internalNotes).toBeNull();
+    const withNote = await repo.save(sample({ internalNotes: 'Prefers an AC van; call before 9am.' }));
+    expect(withNote.internalNotes).toBe('Prefers an AC van; call before 9am.');
+    expect((await repo.get(withNote.id))!.internalNotes).toBe('Prefers an AC van; call before 9am.');
+  });
+
+  it('patch edits internalNotes without touching the send-back notes, and vice versa', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ notes: 'send-back reason', internalNotes: 'ops context' }));
+    const a = await repo.patch(saved.id, { internalNotes: 'updated ops context' });
+    expect(a!.internalNotes).toBe('updated ops context');
+    expect(a!.notes).toBe('send-back reason'); // untouched
+    const b = await repo.patch(saved.id, { notes: 'new reason' });
+    expect(b!.notes).toBe('new reason');
+    expect(b!.internalNotes).toBe('updated ops context'); // untouched
+  });
+
+  it('update() rewrites internalNotes on a content re-save', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ internalNotes: 'first' }));
+    const updated = await repo.update(saved.id, sample({ internalNotes: 'second' }));
+    expect(updated!.internalNotes).toBe('second');
+  });
+});
+
+// Soft delete (spec 2026-07-22): a deleted quote is hidden but retained; role/status gating is
+// the route's job, not the repo's.
+describe('softDelete', () => {
+  it('hides the quote from get() and list() but keeps the row (recoverable)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    const b = await repo.save(sample());
+    const deleted = await repo.softDelete(a.id, 'op@x.com');
+    expect(deleted!.deletedBy).toBe('op@x.com');
+    expect(deleted!.deletedAt).toBeInstanceOf(Date);
+    expect(await repo.get(a.id)).toBeNull();                       // gone from the tool
+    expect((await repo.list()).map((q) => q.id)).toEqual([b.id]);  // gone from the queue, b remains
+  });
+
+  it('is null for an unknown id and for a double delete', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    expect(await repo.softDelete('no-such-id', 'op@x.com')).toBeNull();
+    await repo.softDelete(a.id, 'op@x.com');
+    expect(await repo.softDelete(a.id, 'op@x.com')).toBeNull(); // already deleted
+  });
+});

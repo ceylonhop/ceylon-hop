@@ -1,11 +1,14 @@
 import { billableKm, legPriceCents } from './private';
 import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
-import type { QuoteRequest } from './types';
+import type { QuoteRequest, Ride } from './types';
+import { normalizeRide, normalizeChauffeurDay, rideRawKm } from './types';
 import { pricedVehicle } from './vehicle';
 
 export interface LegBreakdown {
   from: string;
   to: string;
+  // Present ONLY for a Ride with ≥3 stops (GC-4); old-shape / 2-stop rows omit it entirely.
+  stops?: string[];
   distanceKm: number;
   billableKm: number;
   priceCents: number;
@@ -28,18 +31,26 @@ export function quoteBreakdown(req: QuoteRequest, rateCard: RateCard = RATE_CARD
   const override =
     req.product !== 'shared' && (vehicle === 'van14' || vehicle === 'custom') ? req.customPerKmCents : undefined;
   const perKm = override ?? rateCard.perKmCents[vehicle];
-  const src =
-    req.product === 'chauffeur' ? req.travelDays : req.product === 'private' ? req.legs : [];
-  const legs: LegBreakdown[] = src.map((l) => {
-    const bKm = billableKm(l.distanceKm, rateCard);
+  // Second raw-request consumer (ops /estimate calls this directly): normalize identically to
+  // the engine so old-shape and Ride inputs collapse to the same per-ride rows.
+  const src: Ride[] =
+    req.product === 'chauffeur' ? req.travelDays.map(normalizeChauffeurDay)
+      : req.product === 'private' ? req.legs.map(normalizeRide)
+      : [];
+  const legs: LegBreakdown[] = src.map((ride) => {
+    const rawKm = rideRawKm(ride);
+    const bKm = billableKm(rawKm, rateCard);
     const raw = Math.round(bKm * perKm);
-    if (req.product === 'chauffeur') {
-      // Chauffeur per-leg prices are the km-charge share only (no per-leg floor) — day
-      // rate / idle-day minimum km are separate engine line items (see chauffeur.ts).
-      return { from: l.from, to: l.to, distanceKm: l.distanceKm, billableKm: bKm, priceCents: raw, cls: vehicle, minApplied: false };
-    }
-    const minApplied = raw < rateCard.floorCents[vehicle];
-    return { from: l.from, to: l.to, distanceKm: l.distanceKm, billableKm: bKm, priceCents: legPriceCents(bKm, vehicle, override, rateCard), cls: vehicle, minApplied };
+    const from = ride.stops[0];
+    const to = ride.stops[ride.stops.length - 1];
+    // Chauffeur per-leg prices are the km-charge share only (no per-leg floor); private applies
+    // the tier floor. from/to are always first/last stop; distanceKm is the segment sum.
+    const row: LegBreakdown =
+      req.product === 'chauffeur'
+        ? { from, to, distanceKm: rawKm, billableKm: bKm, priceCents: raw, cls: vehicle, minApplied: false }
+        : { from, to, distanceKm: rawKm, billableKm: bKm, priceCents: legPriceCents(bKm, vehicle, override, rateCard), cls: vehicle, minApplied: raw < rateCard.floorCents[vehicle] };
+    if (ride.stops.length >= 3) row.stops = ride.stops; // GC-4: only multi-stop rides carry stops
+    return row;
   });
   const distanceKm = legs.reduce((s, l) => s + l.distanceKm, 0);
   const billable = legs.reduce((s, l) => s + l.billableKm, 0);

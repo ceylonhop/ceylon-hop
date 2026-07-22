@@ -131,12 +131,12 @@ test.beforeEach(async ({ page }) => {
 test('timeline autocomplete → priced LKR summary → save reference toast', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  // Fill first leg: "From" field (first .ch-tl-title with data-field="pickupLocation")
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  // Fill first leg: "From" field (first stop input, data-field="stop" data-stop="0")
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
 
-  // Fill second leg: "Destination" field (first .ch-tl-title with data-field="dropoffLocation")
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  // Fill second leg: "Destination" field (last stop input, data-field="stop" data-stop="1")
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   // A date is required — the API rejects an empty-string date on any leg.
   await fillFirstLegDate(page, '2026-08-01');
@@ -182,7 +182,7 @@ test('ops autocomplete shows pending search and stays closed after scroll', asyn
     });
   });
 
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await toInput.click();
   await toInput.fill('Kitulgala');
 
@@ -203,7 +203,7 @@ test('autocomplete stays closed after picking a place (does not reopen on re-ren
   // ("autocomplete pops out multiple times even after choosing an item").
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
 
   // The menu closes on pick…
@@ -243,9 +243,9 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
 
   // Leg 1 (transfer): Kandy → Ella, Aug 1. (Settle waits: render() replaces #app
   // wholesale ~350ms after each mutation; see the app's debounce.)
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -256,7 +256,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
@@ -265,7 +265,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-tl-item')).toHaveCount(3);
   await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-04');
   await page.waitForTimeout(600);
-  const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
   await page.waitForTimeout(600);
 
@@ -338,9 +338,9 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await chooseVehicle(page, 'van_6');
 
   // Undated single leg → chauffeur disabled.
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
   await expect(chBtn).toBeDisabled();
@@ -361,7 +361,7 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await expect(chBtn).toBeEnabled({ timeout: 10000 });
   await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
@@ -384,9 +384,9 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
 test('point-to-point customer output can append the chauffeur option', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -394,7 +394,7 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
@@ -429,9 +429,9 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
 test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
@@ -461,9 +461,9 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   page.on('dialog', (d) => d.accept());
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
@@ -528,16 +528,16 @@ test('a non-sequential leg raises the "Legs don’t connect" flag', async ({ pag
   const gapFlag = page.locator('.ch-flag', { hasText: /Legs don.t connect/i });
 
   // Build a connected route: each new leg auto-fills its pick-up from the previous drop-off.
-  await pickPlace(page, page.locator('.ch-tl-title[data-field="pickupLocation"]').first(), 'Kand', 'Kandy');
-  await pickPlace(page, page.locator('.ch-tl-title[data-field="dropoffLocation"]').first(), 'Ella', 'Ella');
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first(), 'Kand', 'Kandy');
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first(), 'Ella', 'Ella');
 
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
-  await pickPlace(page, page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]'), 'Galle', 'Galle');
+  await pickPlace(page, page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]'), 'Galle', 'Galle');
 
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(3);
-  await pickPlace(page, page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]'), 'Colombo', 'Colombo');
+  await pickPlace(page, page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="stop"][data-stop="1"]'), 'Colombo', 'Colombo');
   await page.waitForTimeout(400);
 
   // Fully connected Kandy → Ella → Galle → Colombo — no gap.
@@ -558,9 +558,9 @@ test('a non-sequential leg raises the "Legs don’t connect" flag', async ({ pag
 // Spec 7: the queue shows an age-since-request chip on each row, coloured for urgency. A
 // freshly-saved quote is <1h old, so its chip renders with the calm "fresh" tone (not amber/red).
 test('queue row shows a fresh age chip for a just-saved quote', async ({ page }) => {
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
 
@@ -585,9 +585,9 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
 test('changing a reopened quote destination re-prices it', async ({ page }) => {
   // Build + save a Kandy → Ella car quote (distance auto-resolves; price is set).
   await chooseVehicle(page, 'car');
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
@@ -607,7 +607,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
 
   // Change the destination to a much farther place (clear it, then pick Mirissa). The price
   // MUST recompute — previously the reopened leg's frozen manual distance kept it unchanged.
-  const toReopened = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toReopened = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await toReopened.fill('');
   await pickPlace(page, toReopened, 'Miri', 'Mirissa');
   await expect
@@ -622,9 +622,9 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
 // transfer.
 test('reducing a chauffeur trip to one day reverts to point-to-point (drops the day rate)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -634,7 +634,7 @@ test('reducing a chauffeur trip to one day reverts to point-to-point (drops the 
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 

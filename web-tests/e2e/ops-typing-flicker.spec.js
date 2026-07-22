@@ -63,7 +63,10 @@ async function stubOps(page, calls) {
 }
 
 async function pickPlace(page, legIndex, field, name) {
-  const input = page.locator('.ch-tl-title[data-field="' + field + '"]').nth(legIndex);
+  const stopSel = field === 'pickupLocation' ? '[data-field="stop"][data-stop="0"]'
+    : field === 'dropoffLocation' ? '[data-field="stop"][data-stop="1"]'
+    : '[data-field="' + field + '"]';
+  const input = page.locator('.ch-tl-title' + stopSel).nth(legIndex);
   await expect(input).toBeVisible({ timeout: 10000 });
   await input.click();
   await input.fill('');
@@ -94,7 +97,7 @@ test('typing a place while a background render lands never commits the half-type
   await pickPlace(page, 1, 'pickupLocation', 'Kandy');
 
   // …then immediately type a partial drop-off, char by char, while those renders land.
-  const dropoff = page.locator('.ch-tl-title[data-field="dropoffLocation"]').nth(1);
+  const dropoff = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').nth(1);
   await dropoff.click();
   await page.keyboard.type(PARTIAL, { delay: 60 });
 

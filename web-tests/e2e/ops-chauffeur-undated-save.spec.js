@@ -36,8 +36,15 @@ async function stubOps(page, counters) {
   })));
 }
 
+// Multi-stop rides (Task 8): pickup/dropoff are stop 0 / the last stop of a 2-stop leg,
+// addressed via data-field="stop" + data-stop. Translate the legacy field names.
+function stopSelector(field) {
+  if (field === 'pickupLocation') return '[data-field="stop"][data-stop="0"]';
+  if (field === 'dropoffLocation') return '[data-field="stop"][data-stop="1"]';
+  return `[data-field="${field}"]`;
+}
 async function setLegField(page, i, field, value) {
-  const input = page.locator('.ch-leg').nth(i).locator(`[data-field="${field}"]`);
+  const input = page.locator('.ch-leg').nth(i).locator(stopSelector(field));
   await input.fill(value);
   await input.dispatchEvent('change');
   await page.waitForTimeout(60);
