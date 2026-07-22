@@ -606,6 +606,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-dist-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--cream); color: var(--ink); }
 .qv .ch-dist-pill.auto { background: rgba(10,185,182,.12); color: var(--blue-d); }
 .qv .ch-dist-pill.warn { background: rgba(249,164,41,.13); color: #b9760f; }
+/* route choice (2026-07-20): expressway vs local-road picker, rendered inline (never a popover
+   — background estimate renders wipe floating DOM) */
+.qv .ch-route-pick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.qv .ch-route-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--cream); color: var(--ink); border: 1px solid transparent; cursor: pointer; }
+.qv .ch-route-pill.is-active { background: rgba(10,185,182,.12); color: var(--blue-d); border-color: rgba(10,185,182,.35); }
 .qv .ch-dist-manual { display: flex; align-items: center; gap: 7px; }
 .qv .ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
 .qv .ch-link:hover { opacity: 1; }
@@ -812,7 +817,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
 /* second thin line: add-ons chip row (always present on point-to-point driving legs) */
-.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; }
+.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; align-items: center; gap: 16px; }
 /* empty state: a quiet inline text action, not an orphaned button */
 .qv .ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
 .qv .ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
@@ -976,6 +981,27 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .qv .ch-modal-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; }
 .qv .ch-modal-body { padding: 18px 20px 22px; overflow-y: auto; }
+/* Route-choice modal (2026-07-21): blue = expressway, amber = local road — deliberately NOT the brand teal. */
+.qv .ch-rc-body { display: flex; gap: 16px; align-items: stretch; }
+.qv .ch-rc-map { flex: 0 0 220px; min-height: 300px; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface-warm); }
+.qv .ch-rc-map-note { font-size: 12px; color: var(--muted); padding: 16px; text-align: center; }
+.qv .ch-rc-cards { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.qv .ch-rc-card { text-align: left; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; cursor: pointer; font: inherit; color: inherit; }
+.qv .ch-rc-card:hover { border-color: var(--line-strong, #cfc8b8); }
+.qv .ch-rc-card[data-route="fastest"].is-sel { border-color: #2F6FE0; box-shadow: inset 0 0 0 1px #2F6FE0; }
+.qv .ch-rc-card[data-route="local"].is-sel { border-color: #BA7517; box-shadow: inset 0 0 0 1px #BA7517; }
+.qv .ch-rc-name { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 7px; }
+.qv .ch-rc-tag { font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.qv .ch-rc-hero-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 6px 0 8px; }
+.qv .ch-rc-hero { font-size: 20px; font-weight: 700; }
+.qv .ch-rc-price { font-size: 20px; font-weight: 700; text-align: right; }
+.qv .ch-rc-price .ch-rc-save { display: block; }
+.qv .ch-rc-save { font-size: 12px; font-weight: 500; color: #8a5610; }
+.qv .ch-rc-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px; color: var(--muted); }
+.qv .ch-rc-stats b { display: block; color: var(--ink); font-weight: 600; }
+.qv .ch-rc-fit { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.qv .ch-rc-swatch-fast { color: #2F6FE0; } .qv .ch-rc-swatch-local { color: #BA7517; }
+.qv .ch-route-chip { white-space: nowrap; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    CONTAINMENT — the cockpit above was authored for a full viewport; here it
@@ -1974,6 +2000,14 @@ window.initGoogleButton=initGoogleButton;
 })();
 </script>
 <script>
+/* Vendored: morphdom v2.7.4 (https://github.com/patrick-steele-idem/morphdom, MIT).
+   DOM-diffing for the quote builder's render(): patch only what changed instead of an
+   innerHTML swap, so untouched components (map, inputs, cards) are never rebuilt —
+   the root cause of the every-edit flicker/reload. Update by re-fetching the UMD
+   build from unpkg at the pinned version. */
+(function(global,factory){typeof exports==="object"&&typeof module!=="undefined"?module.exports=factory():typeof define==="function"&&define.amd?define(factory):(global=global||self,global.morphdom=factory())})(this,function(){"use strict";var DOCUMENT_FRAGMENT_NODE=11;function morphAttrs(fromNode,toNode){var toNodeAttrs=toNode.attributes;var attr;var attrName;var attrNamespaceURI;var attrValue;var fromValue;if(toNode.nodeType===DOCUMENT_FRAGMENT_NODE||fromNode.nodeType===DOCUMENT_FRAGMENT_NODE){return}for(var i=toNodeAttrs.length-1;i>=0;i--){attr=toNodeAttrs[i];attrName=attr.name;attrNamespaceURI=attr.namespaceURI;attrValue=attr.value;if(attrNamespaceURI){attrName=attr.localName||attrName;fromValue=fromNode.getAttributeNS(attrNamespaceURI,attrName);if(fromValue!==attrValue){if(attr.prefix==="xmlns"){attrName=attr.name}fromNode.setAttributeNS(attrNamespaceURI,attrName,attrValue)}}else{fromValue=fromNode.getAttribute(attrName);if(fromValue!==attrValue){fromNode.setAttribute(attrName,attrValue)}}}var fromNodeAttrs=fromNode.attributes;for(var d=fromNodeAttrs.length-1;d>=0;d--){attr=fromNodeAttrs[d];attrName=attr.name;attrNamespaceURI=attr.namespaceURI;if(attrNamespaceURI){attrName=attr.localName||attrName;if(!toNode.hasAttributeNS(attrNamespaceURI,attrName)){fromNode.removeAttributeNS(attrNamespaceURI,attrName)}}else{if(!toNode.hasAttribute(attrName)){fromNode.removeAttribute(attrName)}}}}var range;var NS_XHTML="http://www.w3.org/1999/xhtml";var doc=typeof document==="undefined"?undefined:document;var HAS_TEMPLATE_SUPPORT=!!doc&&"content"in doc.createElement("template");var HAS_RANGE_SUPPORT=!!doc&&doc.createRange&&"createContextualFragment"in doc.createRange();function createFragmentFromTemplate(str){var template=doc.createElement("template");template.innerHTML=str;return template.content.childNodes[0]}function createFragmentFromRange(str){if(!range){range=doc.createRange();range.selectNode(doc.body)}var fragment=range.createContextualFragment(str);return fragment.childNodes[0]}function createFragmentFromWrap(str){var fragment=doc.createElement("body");fragment.innerHTML=str;return fragment.childNodes[0]}function toElement(str){str=str.trim();if(HAS_TEMPLATE_SUPPORT){return createFragmentFromTemplate(str)}else if(HAS_RANGE_SUPPORT){return createFragmentFromRange(str)}return createFragmentFromWrap(str)}function compareNodeNames(fromEl,toEl){var fromNodeName=fromEl.nodeName;var toNodeName=toEl.nodeName;var fromCodeStart,toCodeStart;if(fromNodeName===toNodeName){return true}fromCodeStart=fromNodeName.charCodeAt(0);toCodeStart=toNodeName.charCodeAt(0);if(fromCodeStart<=90&&toCodeStart>=97){return fromNodeName===toNodeName.toUpperCase()}else if(toCodeStart<=90&&fromCodeStart>=97){return toNodeName===fromNodeName.toUpperCase()}else{return false}}function createElementNS(name,namespaceURI){return!namespaceURI||namespaceURI===NS_XHTML?doc.createElement(name):doc.createElementNS(namespaceURI,name)}function moveChildren(fromEl,toEl){var curChild=fromEl.firstChild;while(curChild){var nextChild=curChild.nextSibling;toEl.appendChild(curChild);curChild=nextChild}return toEl}function syncBooleanAttrProp(fromEl,toEl,name){if(fromEl[name]!==toEl[name]){fromEl[name]=toEl[name];if(fromEl[name]){fromEl.setAttribute(name,"")}else{fromEl.removeAttribute(name)}}}var specialElHandlers={OPTION:function(fromEl,toEl){var parentNode=fromEl.parentNode;if(parentNode){var parentName=parentNode.nodeName.toUpperCase();if(parentName==="OPTGROUP"){parentNode=parentNode.parentNode;parentName=parentNode&&parentNode.nodeName.toUpperCase()}if(parentName==="SELECT"&&!parentNode.hasAttribute("multiple")){if(fromEl.hasAttribute("selected")&&!toEl.selected){fromEl.setAttribute("selected","selected");fromEl.removeAttribute("selected")}parentNode.selectedIndex=-1}}syncBooleanAttrProp(fromEl,toEl,"selected")},INPUT:function(fromEl,toEl){syncBooleanAttrProp(fromEl,toEl,"checked");syncBooleanAttrProp(fromEl,toEl,"disabled");if(fromEl.value!==toEl.value){fromEl.value=toEl.value}if(!toEl.hasAttribute("value")){fromEl.removeAttribute("value")}},TEXTAREA:function(fromEl,toEl){var newValue=toEl.value;if(fromEl.value!==newValue){fromEl.value=newValue}var firstChild=fromEl.firstChild;if(firstChild){var oldValue=firstChild.nodeValue;if(oldValue==newValue||!newValue&&oldValue==fromEl.placeholder){return}firstChild.nodeValue=newValue}},SELECT:function(fromEl,toEl){if(!toEl.hasAttribute("multiple")){var selectedIndex=-1;var i=0;var curChild=fromEl.firstChild;var optgroup;var nodeName;while(curChild){nodeName=curChild.nodeName&&curChild.nodeName.toUpperCase();if(nodeName==="OPTGROUP"){optgroup=curChild;curChild=optgroup.firstChild}else{if(nodeName==="OPTION"){if(curChild.hasAttribute("selected")){selectedIndex=i;break}i++}curChild=curChild.nextSibling;if(!curChild&&optgroup){curChild=optgroup.nextSibling;optgroup=null}}}fromEl.selectedIndex=selectedIndex}}};var ELEMENT_NODE=1;var DOCUMENT_FRAGMENT_NODE$1=11;var TEXT_NODE=3;var COMMENT_NODE=8;function noop(){}function defaultGetNodeKey(node){if(node){return node.getAttribute&&node.getAttribute("id")||node.id}}function morphdomFactory(morphAttrs){return function morphdom(fromNode,toNode,options){if(!options){options={}}if(typeof toNode==="string"){if(fromNode.nodeName==="#document"||fromNode.nodeName==="HTML"||fromNode.nodeName==="BODY"){var toNodeHtml=toNode;toNode=doc.createElement("html");toNode.innerHTML=toNodeHtml}else{toNode=toElement(toNode)}}else if(toNode.nodeType===DOCUMENT_FRAGMENT_NODE$1){toNode=toNode.firstElementChild}var getNodeKey=options.getNodeKey||defaultGetNodeKey;var onBeforeNodeAdded=options.onBeforeNodeAdded||noop;var onNodeAdded=options.onNodeAdded||noop;var onBeforeElUpdated=options.onBeforeElUpdated||noop;var onElUpdated=options.onElUpdated||noop;var onBeforeNodeDiscarded=options.onBeforeNodeDiscarded||noop;var onNodeDiscarded=options.onNodeDiscarded||noop;var onBeforeElChildrenUpdated=options.onBeforeElChildrenUpdated||noop;var skipFromChildren=options.skipFromChildren||noop;var addChild=options.addChild||function(parent,child){return parent.appendChild(child)};var childrenOnly=options.childrenOnly===true;var fromNodesLookup=Object.create(null);var keyedRemovalList=[];function addKeyedRemoval(key){keyedRemovalList.push(key)}function walkDiscardedChildNodes(node,skipKeyedNodes){if(node.nodeType===ELEMENT_NODE){var curChild=node.firstChild;while(curChild){var key=undefined;if(skipKeyedNodes&&(key=getNodeKey(curChild))){addKeyedRemoval(key)}else{onNodeDiscarded(curChild);if(curChild.firstChild){walkDiscardedChildNodes(curChild,skipKeyedNodes)}}curChild=curChild.nextSibling}}}function removeNode(node,parentNode,skipKeyedNodes){if(onBeforeNodeDiscarded(node)===false){return}if(parentNode){parentNode.removeChild(node)}onNodeDiscarded(node);walkDiscardedChildNodes(node,skipKeyedNodes)}function indexTree(node){if(node.nodeType===ELEMENT_NODE||node.nodeType===DOCUMENT_FRAGMENT_NODE$1){var curChild=node.firstChild;while(curChild){var key=getNodeKey(curChild);if(key){fromNodesLookup[key]=curChild}indexTree(curChild);curChild=curChild.nextSibling}}}indexTree(fromNode);function handleNodeAdded(el){onNodeAdded(el);var curChild=el.firstChild;while(curChild){var nextSibling=curChild.nextSibling;var key=getNodeKey(curChild);if(key){var unmatchedFromEl=fromNodesLookup[key];if(unmatchedFromEl&&compareNodeNames(curChild,unmatchedFromEl)){curChild.parentNode.replaceChild(unmatchedFromEl,curChild);morphEl(unmatchedFromEl,curChild)}else{handleNodeAdded(curChild)}}else{handleNodeAdded(curChild)}curChild=nextSibling}}function cleanupFromEl(fromEl,curFromNodeChild,curFromNodeKey){while(curFromNodeChild){var fromNextSibling=curFromNodeChild.nextSibling;if(curFromNodeKey=getNodeKey(curFromNodeChild)){addKeyedRemoval(curFromNodeKey)}else{removeNode(curFromNodeChild,fromEl,true)}curFromNodeChild=fromNextSibling}}function morphEl(fromEl,toEl,childrenOnly){var toElKey=getNodeKey(toEl);if(toElKey){delete fromNodesLookup[toElKey]}if(!childrenOnly){var beforeUpdateResult=onBeforeElUpdated(fromEl,toEl);if(beforeUpdateResult===false){return}else if(beforeUpdateResult instanceof HTMLElement){fromEl=beforeUpdateResult;indexTree(fromEl)}morphAttrs(fromEl,toEl);onElUpdated(fromEl);if(onBeforeElChildrenUpdated(fromEl,toEl)===false){return}}if(fromEl.nodeName!=="TEXTAREA"){morphChildren(fromEl,toEl)}else{specialElHandlers.TEXTAREA(fromEl,toEl)}}function morphChildren(fromEl,toEl){var skipFrom=skipFromChildren(fromEl,toEl);var curToNodeChild=toEl.firstChild;var curFromNodeChild=fromEl.firstChild;var curToNodeKey;var curFromNodeKey;var fromNextSibling;var toNextSibling;var matchingFromEl;outer:while(curToNodeChild){toNextSibling=curToNodeChild.nextSibling;curToNodeKey=getNodeKey(curToNodeChild);while(!skipFrom&&curFromNodeChild){fromNextSibling=curFromNodeChild.nextSibling;if(curToNodeChild.isSameNode&&curToNodeChild.isSameNode(curFromNodeChild)){curToNodeChild=toNextSibling;curFromNodeChild=fromNextSibling;continue outer}curFromNodeKey=getNodeKey(curFromNodeChild);var curFromNodeType=curFromNodeChild.nodeType;var isCompatible=undefined;if(curFromNodeType===curToNodeChild.nodeType){if(curFromNodeType===ELEMENT_NODE){if(curToNodeKey){if(curToNodeKey!==curFromNodeKey){if(matchingFromEl=fromNodesLookup[curToNodeKey]){if(fromNextSibling===matchingFromEl){isCompatible=false}else{fromEl.insertBefore(matchingFromEl,curFromNodeChild);if(curFromNodeKey){addKeyedRemoval(curFromNodeKey)}else{removeNode(curFromNodeChild,fromEl,true)}curFromNodeChild=matchingFromEl;curFromNodeKey=getNodeKey(curFromNodeChild)}}else{isCompatible=false}}}else if(curFromNodeKey){isCompatible=false}isCompatible=isCompatible!==false&&compareNodeNames(curFromNodeChild,curToNodeChild);if(isCompatible){morphEl(curFromNodeChild,curToNodeChild)}}else if(curFromNodeType===TEXT_NODE||curFromNodeType==COMMENT_NODE){isCompatible=true;if(curFromNodeChild.nodeValue!==curToNodeChild.nodeValue){curFromNodeChild.nodeValue=curToNodeChild.nodeValue}}}if(isCompatible){curToNodeChild=toNextSibling;curFromNodeChild=fromNextSibling;continue outer}if(curFromNodeKey){addKeyedRemoval(curFromNodeKey)}else{removeNode(curFromNodeChild,fromEl,true)}curFromNodeChild=fromNextSibling}if(curToNodeKey&&(matchingFromEl=fromNodesLookup[curToNodeKey])&&compareNodeNames(matchingFromEl,curToNodeChild)){if(!skipFrom){addChild(fromEl,matchingFromEl)}morphEl(matchingFromEl,curToNodeChild)}else{var onBeforeNodeAddedResult=onBeforeNodeAdded(curToNodeChild);if(onBeforeNodeAddedResult!==false){if(onBeforeNodeAddedResult){curToNodeChild=onBeforeNodeAddedResult}if(curToNodeChild.actualize){curToNodeChild=curToNodeChild.actualize(fromEl.ownerDocument||doc)}addChild(fromEl,curToNodeChild);handleNodeAdded(curToNodeChild)}}curToNodeChild=toNextSibling;curFromNodeChild=fromNextSibling}cleanupFromEl(fromEl,curFromNodeChild,curFromNodeKey);var specialElHandler=specialElHandlers[fromEl.nodeName];if(specialElHandler){specialElHandler(fromEl,toEl)}}var morphedNode=fromNode;var morphedNodeType=morphedNode.nodeType;var toNodeType=toNode.nodeType;if(!childrenOnly){if(morphedNodeType===ELEMENT_NODE){if(toNodeType===ELEMENT_NODE){if(!compareNodeNames(fromNode,toNode)){onNodeDiscarded(fromNode);morphedNode=moveChildren(fromNode,createElementNS(toNode.nodeName,toNode.namespaceURI))}}else{morphedNode=toNode}}else if(morphedNodeType===TEXT_NODE||morphedNodeType===COMMENT_NODE){if(toNodeType===morphedNodeType){if(morphedNode.nodeValue!==toNode.nodeValue){morphedNode.nodeValue=toNode.nodeValue}return morphedNode}else{morphedNode=toNode}}}if(morphedNode===toNode){onNodeDiscarded(fromNode)}else{if(toNode.isSameNode&&toNode.isSameNode(morphedNode)){return}morphEl(morphedNode,toNode,childrenOnly);if(keyedRemovalList){for(var i=0,len=keyedRemovalList.length;i<len;i++){var elToRemove=fromNodesLookup[keyedRemovalList[i]];if(elToRemove){removeNode(elToRemove,elToRemove.parentNode,false)}}}}if(!childrenOnly&&morphedNode!==fromNode&&fromNode.parentNode){if(morphedNode.actualize){morphedNode=morphedNode.actualize(fromNode.ownerDocument||doc)}fromNode.parentNode.replaceChild(morphedNode,fromNode)}return morphedNode}}var morphdom=morphdomFactory(morphAttrs);return morphdom});
+</script>
+<script>
 /* ══════════════════════════════════════════════════════════════════════════
    QUOTE VIEW MODULE (T5) — the quote tool's entire JS, ported verbatim from
    quote-tool.html and closure-scoped so none of its ~120 top-level names
@@ -2087,7 +2121,13 @@ var _delegatesWired = false;
 var ratesOpen = false;    // Rate Settings modal
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var routeModalLegId = null; // legId the route-choice modal is open for, or null
+var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
+var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
 var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
+var _renderSwapping = false; // true during render()'s innerHTML swap — change/blur events fired
+                             // by the swap ripping out a dirty focused input are render
+                             // artifacts, not operator actions, and must never commit state
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
 var outputOpen = null;
@@ -2147,6 +2187,33 @@ var DRIVING_CATS = {
   transfer: true, train_support: true, airport: true,
 };
 
+// Build the /estimate payload from state. `override` (optional) forces one leg's distanceKm so a
+// route variant can be priced by the canonical engine without mutating the leg: { legId, km }.
+function buildEstimatePayload(override) {
+  var st = state;
+  return {
+    service: st.service || 'private',
+    vehicle: st.vehicleType,
+    passengerCount: st.passengerCount,
+    luggageCount: st.luggageCount,
+    legs: st.legs.map(function(leg) {
+      var km = (override && leg.id === override.legId) ? override.km : (leg.distanceKm || 0);
+      return {
+        category:         leg.category,
+        from:             leg.pickupLocation || '',
+        to:               leg.dropoffLocation || '',
+        distanceKm:       km,
+        date:             leg.date || '',
+        addSightseeingFee: !!leg.addSightseeingFee,
+        addWaitingFee:    !!leg.addWaitingFee,
+        addSafariWait:    !!leg.addSafariWait,
+        routeVariant:     leg.routeVariant || undefined,
+        routeOptions:     leg.routeOptions || undefined,
+      };
+    }),
+  };
+}
+
 function refreshEstimate() {
   clearTimeout(_estimateTimer);
   _estimateTimer = setTimeout(function() {
@@ -2194,24 +2261,7 @@ async function _runEstimate() {
   }
 
   // Build the payload (Task 2 mapping)
-  var payload = {
-    service: st.service || 'private',
-    vehicle: st.vehicleType,
-    passengerCount: st.passengerCount,
-    luggageCount: st.luggageCount,
-    legs: st.legs.map(function(leg) {
-      return {
-        category:         leg.category,
-        from:             leg.pickupLocation || '',
-        to:               leg.dropoffLocation || '',
-        distanceKm:       leg.distanceKm || 0,
-        date:             leg.date || '',
-        addSightseeingFee: !!leg.addSightseeingFee,
-        addWaitingFee:    !!leg.addWaitingFee,
-        addSafariWait:    !!leg.addSafariWait,
-      };
-    }),
-  };
+  var payload = buildEstimatePayload();
 
   var result = await apiEstimate(payload);
 
@@ -2458,13 +2508,10 @@ function addLeg(cat) {
     if (cat === 'stay_day') {
       leg.dropoffLocation = prev.dropoffLocation || '';
     }
-    // Auto-increment date by 1 day
-    if (prev.date) {
-      // V6: parse + format locally so the +1-day roll never shifts under any TZ.
-      var d = parseISODateLocal(prev.date);
-      d.setDate(d.getDate() + 1);
-      leg.date = fmtISODateLocal(d);
-    }
+    // A new leg starts with a BLANK date — do not guess it from the previous leg.
+    // Auto-incrementing (+1 day) invented dates the customer never gave, so a 4-leg
+    // itinerary looked fully scheduled when the operator had only dated the first leg.
+    // Dates are optional for point-to-point pricing; the operator fills each one.
   }
   state.legs = state.legs.concat([leg]);
   refreshEstimate();
@@ -2551,12 +2598,12 @@ async function apiPlaces(q) {
   } catch (e) { return []; }
 }
 
-async function apiDistance(from, to) {
+async function apiDistance(from, to, compare) {
   try {
     var r = await api('/admin/quote/distance', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ from: from, to: to }),
+      body: JSON.stringify(compare ? { from: from, to: to, compare: true } : { from: from, to: to }),
     });
     if (!r.ok) return null;
     return await r.json();
@@ -2701,6 +2748,8 @@ function savePayload() {
         addSightseeingFee: !!leg.addSightseeingFee,
         addWaitingFee:    !!leg.addWaitingFee,
         addSafariWait:    !!leg.addSafariWait,
+        routeVariant:     leg.routeVariant || undefined,
+        routeOptions:     leg.routeOptions || undefined,
       };
     }),
   };
@@ -2875,6 +2924,10 @@ async function reopenQuote(id) {
     leg.addSightseeingFee = !!tl.addSightseeingFee;
     leg.addWaitingFee = !!tl.addWaitingFee;
     leg.addSafariWait = !!tl.addSafariWait;
+    // Route choice (2026-07-20): restore what was picked/offered so the message note and
+    // pills survive a reopen (the persisted km stays manual per the rule above).
+    leg.routeVariant = tl.routeVariant || undefined;
+    leg.routeOptions = tl.routeOptions || null;
     return leg;
   });
   if (legs.length === 0) legs = [newLeg()];
@@ -3037,6 +3090,7 @@ function renderLegCard(leg, idx, total) {
 
   // Distance pill (only for travel legs)
   var distHtml = '';
+  var routeChipHtml = ''; // rendered on the add-ons line, built alongside the distance state
   if (!isStay) {
     if (leg.manualDistance) {
       distHtml = [
@@ -3065,6 +3119,18 @@ function renderLegCard(leg, idx, total) {
         '</div>',
       ].join('');
     }
+    // Route choice (2026-07-21): the modal is the picker. A fork leg shows a compact chip
+    // — "Compare routes" while undecided, "Route: <pick> ▾" once chosen — both open the
+    // modal. Renders on the add-ons line below the leg (owner call 2026-07-21), and a
+    // no-fork pair shows nothing at all (the "Same route" caption was noise).
+    var rcFrom = (leg.pickupLocation || '').trim();
+    var rcTo = (leg.dropoffLocation || '').trim();
+    if (rcFrom && rcTo && leg.routeOptions) {
+      var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
+      routeChipHtml = rcPicked
+        ? '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button>'
+        : '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button>';
+    }
   }
 
   // Per-leg price (from breakdown)
@@ -3089,13 +3155,15 @@ function renderLegCard(leg, idx, total) {
   if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
   if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
   var anyAddon = activeAddonLabels.length > 0;
-  var addonChipRow = (!isChauffeur && !isStay) ? [
-    '<div class="ch-leg-addonrow">',
-    anyAddon
-      ? '  <button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
-      : '  <button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>',
-    '</div>',
-  ].join('') : '';
+  var addonChipHtml = (!isChauffeur && !isStay)
+    ? (anyAddon
+      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
+      : '<button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>')
+    : '';
+  // Second line: fees/add-ons chip + the route chip share one quiet row under the leg.
+  var addonChipRow = (addonChipHtml || routeChipHtml)
+    ? '<div class="ch-leg-addonrow">' + addonChipHtml + routeChipHtml + '</div>'
+    : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -3724,7 +3792,11 @@ function routeText(leg) {
   if (leg.category === 'stay_day') {
     return 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
   }
-  return (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
+  var s = (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
+  // Route-choice note — only when the operator explicitly picked a road (2026-07-20).
+  if (leg.routeVariant === 'no_tolls') s += ' (via local road, no highway tolls)';
+  else if (leg.routeVariant === 'fastest' && leg.routeOptions) s += ' (via expressway)';
+  return s;
 }
 
 // M(priceCents) — convert cents to display currency
@@ -4296,6 +4368,32 @@ function renderBookModal() {
   ].join('');
 }
 
+// ── Number tick (2026-07-21) ──────────────────────────────────────────────────
+// When the diff-render updates a number (a leg price, a km pill, the totals), settle it
+// in with a soft fade-and-rise instead of a hard character swap. The diff's onElUpdated
+// hook collects exactly the changed elements; nothing animates on renders that didn't
+// touch it. Respects prefers-reduced-motion.
+var NUM_TICK_SELECTOR = '.ch-leg-price, .ch-dist-pill, .ch-total-usd, .ch-total-lkr, .ch-km.hero, .ch-line-val';
+var _numTickEls = [];
+function runNumberTicks() {
+  var els = _numTickEls;
+  _numTickEls = [];
+  if (!els.length) return;
+  try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+  // An updated total fires for both the row and the value span inside it — animate only
+  // the outermost of any nested pair so opacities don't compound.
+  els = els.filter(function (el) {
+    return !els.some(function (other) { return other !== el && other.contains(el); });
+  });
+  els.forEach(function (el) {
+    if (!el.isConnected || typeof el.animate !== 'function') return;
+    el.animate(
+      [{ opacity: 0.3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 260, easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)' }
+    );
+  });
+}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render() {
   var st = state;
@@ -4561,6 +4659,51 @@ function render() {
       '</div>',
     ].join('') : ''),
 
+    // ══ Route-choice modal (2026-07-21) ══
+    (routeModalLegId ? (function () {
+      var d = getRouteModalData(routeModalLegId); if (!d) return '';
+      return [
+        '<div class="ch-scrim show" data-action="routeModalDismiss"></div>',
+        '<div class="ch-modal ch-rc-modal">',
+        '  <div class="ch-modal-card">',
+        '    <div class="ch-modal-head">',
+        '      <h2>Two routes for this leg</h2>',
+        '      <button class="ch-x-btn" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
+        '    </div>',
+        '    <div class="ch-modal-body">',
+        '      <div class="ch-lock-note">' + esc(d.from) + ' &rarr; ' + esc(d.to) + ' &middot; pick which one to quote</div>',
+        '      <div class="ch-rc-body">',
+        '        <div class="ch-rc-map" id="route-modal-map"></div>',
+        '        <div class="ch-rc-cards">',
+        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
+        '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
+        '            <div class="ch-rc-hero-row">',
+        '              <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
+        '              <div class="ch-rc-price">' + esc(d.fast.price) + '</div>',
+        '            </div>',
+        '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
+        '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
+        '          </button>',
+        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
+        '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
+        '            <div class="ch-rc-hero-row">',
+        '              <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
+        '              <div class="ch-rc-price">' + esc(d.local.price) + (d.local.save ? ' <span class="ch-rc-save">' + esc(d.local.save) + '</span>' : '') + '</div>',
+        '            </div>',
+        '            <div class="ch-rc-stats"><span><b>' + esc(d.local.km) + '</b>distance</span><span><b>Toll-free</b>local road</span></div>',
+        '            <div class="ch-rc-fit">Cheaper &middot; best for budget or scenic hill country</div>',
+        '          </button>',
+        '        </div>',
+        '      </div>',
+        '      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px">',
+        '        <button class="ch-btn ch-btn-teal" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
+        '      </div>',
+        '    </div>',
+        '  </div>',
+        '</div>',
+      ].join('');
+    })() : ''),
+
   ].join('');
 
   // V19: render() replaces the render target's innerHTML wholesale, destroying whatever
@@ -4573,12 +4716,48 @@ function render() {
   // Was an autocomplete menu open? The innerHTML swap below destroys it (it's a
   // child of the render target), so capture the intent to rebuild it afterwards.
   var _menuWasOpen = !!_ac.menuEl;
-  document.querySelector('#quoteRoot .ch-app').innerHTML = html;
+  // Diff-render (2026-07-21): patch the live DOM against the new tree instead of an
+  // innerHTML swap. Nodes whose rendered output didn't change are left alone — no repaint,
+  // no image/map reload, no focus or scroll loss. This retires the whole class of
+  // "every edit makes the builder flicker" bugs the swap kept producing.
+  _numTickEls = [];
+  _renderSwapping = true;
+  morphdom(document.querySelector('#quoteRoot .ch-app'), '<div>' + html + '</div>', {
+    childrenOnly: true,
+    getNodeKey: function (node) {
+      if (node.nodeType !== 1) return undefined;
+      // Leg cards are keyed by leg id so a reorder/insert moves nodes instead of
+      // rewriting every row after the change.
+      return node.id || node.getAttribute('data-leg-id') || undefined;
+    },
+    onBeforeElUpdated: function (fromEl, toEl) {
+      if (fromEl.isEqualNode(toEl)) return false; // unchanged subtree — skip entirely
+      // The persistent map hosts are populated OUTSIDE render() (syncItinMap /
+      // syncRouteModalMap keep a long-lived map element inside them). Their children
+      // aren't in the rendered HTML, so the diff must never descend into them.
+      if (fromEl.id === 'itin-map-slot' || fromEl.id === 'route-modal-map') return false;
+      return true;
+    },
+    onElUpdated: function (el) {
+      // The diff already knows which elements changed — collect the number-bearing
+      // ones so runNumberTicks() can settle them in softly instead of a hard swap.
+      if (el.nodeType === 1 && el.matches && el.matches(NUM_TICK_SELECTOR)) _numTickEls.push(el);
+    },
+    onBeforeNodeDiscarded: function (node) {
+      // The open autocomplete menu is interaction state appended next to its input,
+      // not render output — the diff must not remove it mid-selection.
+      if (node.nodeType === 1 && node.classList && node.classList.contains('ch-ac-menu')) return false;
+      return true;
+    },
+  });
+  _renderSwapping = false;
+  runNumberTicks();
   applyContentLock();
   attachEventListeners();
   restoreEditorFocus(_focusSnap, _menuWasOpen);
   if (_menuWasOpen) reopenAutoCompleteMenu();
   syncItinMap(); // move/refresh the persistent route map into this render's slot
+  syncRouteModalMap(); // draw both routes in the open route-choice modal (no-op when closed)
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -4772,11 +4951,30 @@ function attachEventListeners() {
       outputOpen = !eff;
       render();
     } else if (action === 'manualDistance') {
-      updateLeg(legId, { manualDistance: true });
+      // Manual km wins: a typed number is not a Google route, so the variant label must go.
+      updateLeg(legId, { manualDistance: true, routeVariant: undefined });
     } else if (action === 'autoDistance') {
       delete _distCache[legId];
-      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0 });
+      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0, routeVariant: undefined, routeOptions: null, _sameRoute: false, _promptedRouteChoice: false });
       scheduleAutoDistance(legId);
+    } else if (action === 'openRouteModal' || action === 'compareRoutes') {
+      // Ensure variants are loaded (auto-resolve usually has them already), then open the modal.
+      (async function () {
+        var l = state.legs.find(function (x) { return x.id === legId; });
+        if (l && !l.routeOptions) { await compareRoutes(legId); }
+        var l2 = state.legs.find(function (x) { return x.id === legId; });
+        if (l2 && l2.routeOptions) openRouteModal(legId);
+      })();
+    } else if (action === 'routeModalSelectFast') {
+      _rcSel = 'fastest'; render();   // display-only highlight; nothing commits until "Use"
+    } else if (action === 'routeModalSelectLocal') {
+      _rcSel = 'no_tolls'; render();
+    } else if (action === 'routeModalPickFast') {
+      pickRoute(routeModalLegId, 'fastest');
+    } else if (action === 'routeModalPickLocal') {
+      pickRoute(routeModalLegId, 'no_tolls');
+    } else if (action === 'routeModalDismiss') {
+      closeRouteModal(true);
     } else if (action === 'setCurrency') {
       mutate({ outputCurrency: el.getAttribute('data-val') });
     } else if (action === 'copyOutput') {
@@ -4799,11 +4997,21 @@ function attachEventListeners() {
 
   // Leg field change delegation
   app.addEventListener('change', function(e) {
+    // The innerHTML swap in render() rips out a dirty focused input, which makes Chromium
+    // fire a native 'change' that bubbles here mid-swap. Committing it would write the
+    // operator's HALF-TYPED text into state → auto-distance + re-price → render → another
+    // artifact 'change': the typing-flicker loop (docs/bug-ops-quote-typing-flicker.md).
+    if (_renderSwapping) return;
     var el = e.target;
     if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
     if (!legId || !field) return;
+    // Same loop, second guard: a 'change' whose value matches state is a render artifact or
+    // a repeat — updateLeg would still markDirty + re-render + re-price, sustaining the
+    // loop, so a no-change commit must be a true no-op.
+    var legNow = state.legs.find(function(l) { return l.id === legId; });
+    if (legNow && el.type !== 'checkbox' && String(legNow[field] == null ? '' : legNow[field]) === String(el.value)) return;
 
     var val;
     if (el.type === 'checkbox') {
@@ -4823,6 +5031,14 @@ function attachEventListeners() {
     }
     var patch = {};
     patch[field] = val;
+    // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
+    // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
+    // both invalidate a picked route, so the choice resets here too, same as the blur path.
+    if (field === 'pickupLocation' || field === 'dropoffLocation') {
+      patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false; patch._promptedRouteChoice = false;
+    } else if (field === 'distanceKm') {
+      patch.routeVariant = undefined;
+    }
     updateLeg(legId, patch);
   });
 
@@ -4911,9 +5127,127 @@ async function runAutoDistance(legId) {
   if (seg && seg.km != null) {
     var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
     updateLeg(legId, { distanceKm: seg.km, driveTimeHours: hrs, autoMatched: true });
+    // Route choice (2026-07-21): proactively detect a materially different toll-free route and
+    // auto-open the modal once (guarded). One compare call per resolved leg; maps.ts caches
+    // variants 24h so re-renders/edits don't re-bill.
+    var v = await apiDistance(from, to, true);
+    var live = state.legs.find(function (l) { return l.id === legId; });
+    if (live && (live.pickupLocation || '').trim() === from && (live.dropoffLocation || '').trim() === to && !live.manualDistance) {
+      if (v && v.variants) { live.routeOptions = v.variants; live._sameRoute = false; }
+      else { live.routeOptions = null; live._sameRoute = true; }
+      render();
+      if (shouldPromptRouteChoice(live, { editable: isEditableNow(), modalOpen: !!routeModalLegId })) {
+        openRouteModal(legId);
+      }
+    }
   } else {
-    // No distance found → "No distance" warn state
-    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false });
+    // No distance found → "No distance" warn state (also drops any stale route choice)
+    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false, routeVariant: undefined, routeOptions: null, _sameRoute: false });
+  }
+}
+
+// Route choice (2026-07-21): pure guard for the auto-open modal. Self-contained (no DOM,
+// no closure state) so web-tests can extract + eval it. Returns true only when a leg has a
+// real, undecided fork and it is safe to interrupt the operator exactly once.
+function shouldPromptRouteChoice(leg, ctx) {
+  if (!leg || !ctx) return false;
+  if (!ctx.editable || ctx.modalOpen) return false;
+  if (!leg.routeOptions) return false;          // no fork was fetched
+  if (leg.routeVariant) return false;           // already decided
+  if (leg._promptedRouteChoice) return false;   // already auto-prompted once
+  if (leg.manualDistance) return false;
+  if (leg.category === 'stay_day') return false;
+  return true;
+}
+
+// Route choice (2026-07-21): modal data builder + open/close/pick helpers. v1 shows the real,
+// comparable metrics from routeOptions (drive time + distance + tolls) and does NOT print a
+// per-variant dollar figure — a cross-variant price needs a second estimate; omit over fabricate.
+function getRouteModalData(legId) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  if (!leg || !leg.routeOptions || !leg.routeOptions.fastest || !leg.routeOptions.noTolls) return null;
+  var f = leg.routeOptions.fastest, n = leg.routeOptions.noTolls;
+  var slowerMin = Math.max(0, Math.round(n.durationMin - f.durationMin));
+  var pr = _rcPrices[legId] || {};
+  var priceStr = function (cents) { return cents != null ? fmtUsd(cents) : (pr.loading ? '…' : ''); };
+  var save = (pr.fastest != null && pr.no_tolls != null && pr.no_tolls < pr.fastest) ? 'saves ' + fmtUsd(pr.fastest - pr.no_tolls) : '';
+  return {
+    from: (leg.pickupLocation || '').trim(),
+    to: (leg.dropoffLocation || '').trim(),
+    selected: _rcSel || leg.routeVariant || 'fastest',
+    fast:  { time: fmtDur(f.durationMin / 60), km: f.km + ' km', price: priceStr(pr.fastest) },
+    local: { time: fmtDur(n.durationMin / 60), km: n.km + ' km', slower: slowerMin ? '+' + fmtDur(slowerMin / 60) : '', price: priceStr(pr.no_tolls), save: save },
+  };
+}
+function openRouteModal(legId) { _rcSel = null; routeModalLegId = legId; render(); computeRouteModalPrices(legId); }
+
+// Price each route variant through the canonical estimate engine (this leg's km overridden per
+// variant) and read the per-leg priceCents back — never a client-side price formula. Two extra
+// /estimate calls per modal open; results cached per (leg, km-pair, vehicle, service).
+async function priceVariant(legId, km) {
+  var legIdx = -1;
+  for (var i = 0; i < state.legs.length; i++) { if (state.legs[i].id === legId) { legIdx = i; break; } }
+  if (legIdx < 0) return null;
+  var di = drivingIndex(legIdx);
+  if (di < 0) return null;
+  var result = await apiEstimate(buildEstimatePayload({ legId: legId, km: km }));
+  if (!result || result.error || !result.breakdown || !result.breakdown.legs) return null;
+  var bleg = result.breakdown.legs[di];
+  return (bleg && bleg.priceCents != null) ? bleg.priceCents : null;
+}
+async function computeRouteModalPrices(legId) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  if (!leg || !leg.routeOptions || !leg.routeOptions.fastest || !leg.routeOptions.noTolls) return;
+  var f = leg.routeOptions.fastest, n = leg.routeOptions.noTolls;
+  var sig = legId + '|' + f.km + '|' + n.km + '|' + (state.vehicleType || '') + '|' + (state.service || '');
+  var have = _rcPrices[legId];
+  if (have && have.sig === sig && !have.loading) return; // already priced this exact context
+  _rcPrices[legId] = { sig: sig, fastest: null, no_tolls: null, loading: true };
+  render();
+  var pf = await priceVariant(legId, f.km);
+  var pn = await priceVariant(legId, n.km);
+  if (routeModalLegId !== legId) return; // modal closed or moved on while we priced
+  _rcPrices[legId] = { sig: sig, fastest: pf, no_tolls: pn, loading: false };
+  render();
+}
+function closeRouteModal(markPrompted) {
+  var legId = routeModalLegId; routeModalLegId = null; _rcSel = null;
+  if (markPrompted && legId) { var l = state.legs.find(function (x) { return x.id === legId; }); if (l) l._promptedRouteChoice = true; }
+  render();
+}
+function pickRoute(legId, variant) {
+  var leg = state.legs.find(function (l) { return l.id === legId; });
+  var opt = leg && leg.routeOptions && (variant === 'no_tolls' ? leg.routeOptions.noTolls : leg.routeOptions.fastest);
+  routeModalLegId = null; _rcSel = null;
+  if (opt) {
+    leg._promptedRouteChoice = true; // carried onto the new leg object by updateLeg's Object.assign
+    updateLeg(legId, { distanceKm: opt.km, driveTimeHours: Math.round((opt.durationMin / 60) * 100) / 100, routeVariant: variant, manualDistance: false, autoMatched: true });
+  } else { render(); }
+}
+
+// Route choice (2026-07-20): operator-initiated expressway/local-road comparison — never
+// automatic. Mirrors runAutoDistance's stale-response guards.
+async function compareRoutes(legId) {
+  var leg = state.legs.find(function(l) { return l.id === legId; });
+  if (!leg) return;
+  var from = (leg.pickupLocation || '').trim();
+  var to = (leg.dropoffLocation || '').trim();
+  if (!from || !to) return;
+  var r = await apiDistance(from, to, true);
+  // Guard: leg/locations may have changed while we awaited.
+  var current = state.legs.find(function(l) { return l.id === legId; });
+  if (!current) return;
+  if ((current.pickupLocation || '').trim() !== from) return;
+  if ((current.dropoffLocation || '').trim() !== to) return;
+  if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations'); return; }
+  if (r.variants) {
+    // Show the pills only — NO variant is picked yet. Auto-setting 'fastest' here would put
+    // the "via expressway" note into the customer message on a mere comparison (final review
+    // 2026-07-21; plan contract 7: the note requires an explicit pick). A non-manual leg
+    // already holds the auto-resolved fastest km, so there is nothing to apply either.
+    updateLeg(legId, { routeOptions: r.variants, _sameRoute: false });
+  } else {
+    updateLeg(legId, { _sameRoute: true });
   }
 }
 
@@ -5011,6 +5345,12 @@ function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; 
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
+// Monotonic token for the async route draw below. computeRoutes() resolves out of order
+// (a shorter post-removal route can come back before an earlier longer one still in flight),
+// so without this the last response to *resolve* — not the last requested — wins the polyline
+// swap, leaving a stale route on the map after a leg is removed. Every drawItinRoute call
+// claims the next id; a superseded call bails after each await before mutating map state.
+var _mapReqSeq = 0;
 function syncItinMap() {
   var slot = document.getElementById('itin-map-slot');
   if (!slot) return; // no map this render
@@ -5035,9 +5375,64 @@ function syncItinMap() {
   drawItinRoute(_mapEl, stops);
 }
 
-async function drawItinRoute(hostEl, stops) {
+// Route choice (2026-07-21): the modal's two-route map. Persistent map element re-parented into
+// the modal slot each render (like syncItinMap), redrawn only when from/to/selection changes.
+// Degrades to a note — never throws — when Maps can't load (offline/keyless e2e stubs it to {}).
+var _rcMapEl = null, _rcMapMap = null, _rcMapSig = null;
+function syncRouteModalMap() {
+  var slot = document.getElementById('route-modal-map');
+  if (!slot || !routeModalLegId) return;
+  if (!_rcMapEl) { _rcMapEl = document.createElement('div'); _rcMapEl.style.width = '100%'; _rcMapEl.style.height = '100%'; _rcMapEl.style.minHeight = '300px'; }
+  if (_rcMapEl.parentNode !== slot) {
+    slot.innerHTML = ''; slot.appendChild(_rcMapEl);
+    if (_rcMapMap && window.google && google.maps && google.maps.event) google.maps.event.trigger(_rcMapMap, 'resize');
+  }
+  var leg = state.legs.find(function (l) { return l.id === routeModalLegId; });
+  if (!leg || !leg.routeOptions) return;
+  var from = (leg.pickupLocation || '').trim(), to = (leg.dropoffLocation || '').trim();
+  var sel = _rcSel || leg.routeVariant || 'fastest';
+  var sig = from + '||' + to + '||' + sel;
+  if (sig === _rcMapSig) return;
+  _rcMapSig = sig;
+  drawRouteModalRoutes(_rcMapEl, from, to, sel);
+}
+async function drawRouteModalRoutes(hostEl, from, to, sel) {
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
+  if (!libs) { hostEl.innerHTML = '<div class="ch-rc-map-note">Map preview needs the live Google key.</div>'; _rcMapMap = null; return; }
+  if (!_rcMapMap || _rcMapMap.__host !== hostEl) {
+    hostEl.innerHTML = '';
+    _rcMapMap = new libs.Map(hostEl, { center: { lat: 7.6, lng: 80.9 }, zoom: 7, disableDefaultUI: true, gestureHandling: 'none', clickableIcons: false });
+    _rcMapMap.__host = hostEl;
+  }
+  if (_rcMapMap.__lines) { _rcMapMap.__lines.forEach(function (p) { p.setMap(null); }); }
+  _rcMapMap.__lines = [];
+  async function draw(avoidTolls, color, emphasized) {
+    try {
+      var res = await libs.Route.computeRoutes({
+        origin: routeLoc(from), destination: routeLoc(to), travelMode: 'DRIVING', region: 'lk',
+        routeModifiers: avoidTolls ? { avoidTolls: true } : undefined, fields: ['path', 'viewport'],
+      });
+      var route = res && res.routes && res.routes[0];
+      if (!route) return null;
+      route.createPolylines().forEach(function (p) {
+        p.setOptions({ strokeColor: color, strokeWeight: emphasized ? 6 : 3, strokeOpacity: emphasized ? 0.95 : 0.45, zIndex: emphasized ? 3 : 1 });
+        p.setMap(_rcMapMap); _rcMapMap.__lines.push(p);
+      });
+      return route;
+    } catch (e) { return null; }
+  }
+  var rf = await draw(false, '#2F6FE0', sel === 'fastest');   // expressway (blue)
+  var rn = await draw(true, '#BA7517', sel === 'no_tolls');    // local road (amber)
+  var vp = (rf && rf.viewport) || (rn && rn.viewport);
+  if (vp) _rcMapMap.fitBounds(vp, 20);
+}
+
+async function drawItinRoute(hostEl, stops) {
+  var reqId = ++_mapReqSeq;
+  var ok = await loadMapsJs();
+  var libs = ok ? await mapsLibs() : null;
+  if (reqId !== _mapReqSeq) return; // superseded while the Maps libs loaded — let the newer request win
   if (!libs) { hostEl.innerHTML = '<div class="ch-itin-map-note">Route map could not load.</div>'; _mapMap = null; return; }
   if (!_mapMap || _mapMap.__host !== hostEl) {
     hostEl.innerHTML = '';
@@ -5056,6 +5451,7 @@ async function drawItinRoute(hostEl, stops) {
     });
     route = res && res.routes && res.routes[0];
   } catch (e) { /* unroutable → the "couldn't map" note below */ }
+  if (reqId !== _mapReqSeq) return; // stale response — a newer itinerary request has since fired; don't repaint
   if (!route) {
     hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
     _mapMap = null; return;
@@ -5142,6 +5538,11 @@ function acPick(item) {
   // new place kept the stale saved distance and the quote never re-priced.
   patch.manualDistance = false;
   patch.autoMatched = false;
+  // Route choice (2026-07-20): a new place invalidates any picked/offered route.
+  patch.routeVariant = undefined;
+  patch.routeOptions = null;
+  patch._sameRoute = false;
+  patch._promptedRouteChoice = false;
   // Clear cache so a new distance fetch runs after the leg updates
   delete _distCache[legId];
   // Use direct state mutation to avoid two renders
@@ -5256,6 +5657,13 @@ function attachAutoComplete() {
     // Close on blur — small delay so mousedown on an item fires first
     input.addEventListener('blur', function() {
       setTimeout(function() {
+        // A background re-render (a landing /estimate or auto-distance result swaps the
+        // panel's innerHTML) detaches this input mid-type; the orphaned old node then fires
+        // this delayed blur. The live replacement node holds the real value and fires the
+        // real blur — an orphaned node must NEVER commit (doing so re-triggered
+        // auto-distance + a re-price → render → another orphan blur: the typing-flicker
+        // loop that blanked the price panel).
+        if (!document.contains(input)) return;
         if (_ac.inputEl === input) acClose();
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });
@@ -5271,7 +5679,7 @@ function attachAutoComplete() {
             // for the new route (reopened legs are manual to preserve the saved price).
             delete _distCache[legId];
             state.legs = state.legs.map(function(l) {
-              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; return p; })()) : l;
+              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; p._promptedRouteChoice = false; return p; })()) : l;
             });
             markDirty();
             scheduleAutoDistance(legId);

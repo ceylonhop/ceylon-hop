@@ -16,11 +16,15 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: ceylonhop_test
         ports: ['5432:5432']
+        # Probe as the real role against the real DB. The default `pg_isready` runs as the
+        # container's root user, which makes Postgres log a misleading `role "root" does not
+        # exist` — noise, since the probe still passes, but it hides the real signal.
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d ceylonhop_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --health-start-period 10s
     env:
       DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/ceylonhop_test
     steps:
@@ -28,13 +32,44 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: run api checks if present
+      - name: detect api/
+        id: guard
         run: |
           if [ -f api/package.json ]; then
-            cd api && npm ci && npm run check
+            echo "present=true" >> "$GITHUB_OUTPUT"
           else
+            echo "present=false" >> "$GITHUB_OUTPUT"
             echo "No api/ yet — skipping API checks."
           fi
+      - name: install api deps
+        if: steps.guard.outputs.present == 'true'
+        run: cd api && npm ci
+      # The service health check can pass during Postgres's init double-start (it briefly
+      # listens on an in-container socket to create the DB, is marked healthy, then restarts to
+      # bind the mapped TCP port). Wait here for a real TCP connection from the runner so tests
+      # never race a not-yet-listening server (the flaky `connection refused` + half-applied
+      # migrations that surface as bogus assertion failures).
+      - name: wait for postgres (real TCP connection from the runner)
+        if: steps.guard.outputs.present == 'true'
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres -d ceylonhop_test >/dev/null 2>&1; then
+              echo "postgres is accepting TCP connections"
+              exit 0
+            fi
+            echo "waiting for postgres over TCP… ($i/30)"
+            sleep 2
+          done
+          echo "::error::postgres never accepted a TCP connection — aborting before tests"
+          exit 1
+      # Apply the schema up front and fail loudly if it doesn't, so a migration failure is an
+      # obvious red step, not a mystery `relation "…" does not exist` inside the test run.
+      - name: migrate the test DB
+        if: steps.guard.outputs.present == 'true'
+        run: cd api && npm run migrate:test
+      - name: api checks (typecheck + lint + test)
+        if: steps.guard.outputs.present == 'true'
+        run: cd api && npm run check
 
   web-tests:
     name: web-tests unit (SEO codegen + invariants)

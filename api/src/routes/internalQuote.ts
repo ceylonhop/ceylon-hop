@@ -46,6 +46,16 @@ const ToolLegSchema = z.object({
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
+  // Route-choice (2026-07-20): which road the operator picked + what was offered when they
+  // compared. Passthrough only — distanceKm stays the sole pricing input; both fields ride
+  // into the saved quote's request_json verbatim (Phase-2 conversion data).
+  routeVariant: z.enum(['fastest', 'no_tolls']).optional(),
+  routeOptions: z
+    .object({
+      fastest: z.object({ km: z.number(), durationMin: z.number() }),
+      noTolls: z.object({ km: z.number(), durationMin: z.number() }),
+    })
+    .optional(),
 });
 const ToolRequestSchema = z.object({
   firstName: z.string().optional(),
@@ -62,7 +72,10 @@ const ToolRequestSchema = z.object({
   // Deliberately NOT defaulted from `service` (I4): a pre-filled value gets accepted unread,
   // which is the exact failure this field exists to prevent. No 'legacy' member — there is no
   // exemption (I7), so a client cannot mint one.
-  requestedService: z.enum(['private', 'chauffeur', 'both']).optional(),
+  // .nullable(): the builder always SENDS this key and it is null for a fresh draft; .optional()
+  // alone rejects an explicit null → /save 400s. A null request is intended here (the status-change
+  // gate below requires it, /save does not); the repo folds null/undefined alike via `?? null`.
+  requestedService: z.enum(['private', 'chauffeur', 'both']).nullable().optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
@@ -395,9 +408,21 @@ export function internalQuoteRoutes(deps: {
   });
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
+  // With compare:true (the ops "Compare routes" button) the response also carries the
+  // expressway-vs-local-road variants when a materially different toll-free route exists;
+  // top-level km/durationMin stay = fastest so the auto-resolve path's shape is unchanged.
   r.post('/distance', csrf, async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string } | null;
+    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string; compare?: boolean } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
+    if (b.compare) {
+      const v = await deps.maps.distanceVariants(b.from, b.to);
+      if (!v) return c.json({ error: 'unknown route' }, 404);
+      return c.json({
+        ...v.fastest,
+        hasChoice: v.hasChoice,
+        ...(v.hasChoice && v.noTolls ? { variants: { fastest: v.fastest, noTolls: v.noTolls } } : {}),
+      });
+    }
     const d = await deps.maps.distance(b.from, b.to);
     return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
   });

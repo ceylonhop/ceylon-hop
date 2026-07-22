@@ -8,11 +8,12 @@ import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { futureIsoDate } from '../testSupport/dates';
 
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
-  date: '2026-08-01',
+  date: futureIsoDate(30), // anchored to "now" so the past-date rule never expires it
   time: '09:00',
   vehicleType: 'car',
   adults: 2,
@@ -122,7 +123,7 @@ describe('POST /webhooks/payments', () => {
         body: JSON.stringify({
           stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
           nights: [1, 2, 0],
-          dates: ['2026-07-20', '2026-07-22'],
+          dates: [futureIsoDate(30), futureIsoDate(32)],
           pax: 2,
           vehicleType: 'car',
           serviceType: 'chauffeur',
