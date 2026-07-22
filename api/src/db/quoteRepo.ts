@@ -53,6 +53,10 @@ export interface NewQuote {
   // never becomes its author.
   createdBy?: string | null;
   updatedBy?: string | null;
+  // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
+  // lands in their "Assigned to me". Reassignment still happens only via the patch/picker, and
+  // update() leaves assignment untouched — so this only takes effect on insert.
+  assignedTo?: string | null;
 }
 
 export interface SavedQuote {
@@ -227,8 +231,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
-      assignedTo: null, // manual-only: a new quote is nobody's until someone assigns it
-      assignedAt: null,
+      assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on save (spec 2026-07-22)
+      assignedAt: q.assignedTo ? now : null,
       createdBy: q.createdBy ?? null,
       updatedBy: q.updatedBy ?? null,
       deletedAt: null,

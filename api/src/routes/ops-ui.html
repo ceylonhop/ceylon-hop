@@ -416,6 +416,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-assign-lbl { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
 .qv .ch-assign-sel { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
 .qv .ch-assign-sel:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.qv .ch-head-assign { max-width: 148px; font-size: 12.5px; font-weight: 600; padding: 7px 9px; color: var(--ink-soft); }
+.qv .ch-head-assign.mine { color: #0a7d78; background: #dff5f3; border-color: #bfe9e5; }
+.qv .ch-head-assign.none { color: var(--ink-faint); border-style: dashed; border-color: var(--cream-deep); }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
 .qv .ch-review-banner span { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qv .ch-review-banner.tone-amber { background: #fdf3e0; border-color: #f6e3c0; color: #7a4f0c; }
@@ -3023,6 +3026,9 @@ async function saveQuote(opts) {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
     if (res.status) state.status = res.status; // the server is the source of truth for status
+    // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
+    // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
+    if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
     if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
@@ -4673,9 +4679,11 @@ async function loadOpsUsers() {
   } catch (e) { /* leave the roster empty; assigning is not required to quote */ }
 }
 
-// Assign + audit. Assignment is what notifies someone, so it is a first-class control here
-// rather than buried in a menu. Hidden until the quote is saved: there is no id to assign.
-function renderAssignStrip() {
+// Assignee picker — lives in the header next to the action buttons (spec 2026-07-22). No label:
+// the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
+// someone, so it stays a first-class control; hidden until the quote is saved (no id to assign).
+// A new quote is auto-assigned to its creator server-side, so this opens already on the maker.
+function renderHeaderAssign() {
   if (!state.savedId) return '';
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
@@ -4688,14 +4696,20 @@ function renderAssignStrip() {
       ' title="' + esc(u.email) + '">' +
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
+  var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
+  return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
+    + ' aria-label="Assign this quote" title="Assign this quote — click to reassign">' + opts.join('') + '</select>';
+}
+
+// Provenance — a quiet created/updated-by line above the editor. The interactive assignee moved to
+// the header (renderHeaderAssign); this is the read-only audit that used to sit beside it.
+function renderAssignStrip() {
+  if (!state.savedId) return '';
   var audit = [];
   if (state.createdBy) audit.push('Created by ' + esc(state.createdBy));
   if (state.updatedBy) audit.push('last updated by ' + esc(state.updatedBy));
-  return '<div class="ch-assign">' +
-    '<label class="ch-assign-lbl" for="assignSel">Assigned to</label>' +
-    '<select class="ch-assign-sel" id="assignSel" data-action="assignQuote">' + opts.join('') + '</select>' +
-    (audit.length ? '<span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span>' : '') +
-    '</div>';
+  if (!audit.length) return '';
+  return '<div class="ch-assign"><span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span></div>';
 }
 
 // Hand the quote to someone (or nobody). The server validates the assignee against OPS_USERS
@@ -4860,6 +4874,7 @@ function render() {
     '    ' + renderSaveState(),
     '    <div class="ch-header-spacer"></div>',
     '    <div class="ch-header-tools ch-actionbar">',
+    renderHeaderAssign(),
     renderActionBar(),
     // Rates (the rate-card settings modal) is a founder-only concern.
     (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),

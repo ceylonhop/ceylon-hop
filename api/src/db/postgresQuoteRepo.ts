@@ -93,6 +93,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
             requestedService: q.requestedService ?? null,
             createdBy: q.createdBy ?? null,
             updatedBy: q.updatedBy ?? null,
+            assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on insert (2026-07-22)
+            assignedAt: q.assignedTo ? new Date() : null,
           })
           .returning();
         return toSaved(row);
