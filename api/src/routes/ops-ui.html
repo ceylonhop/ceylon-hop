@@ -4305,6 +4305,10 @@ function renderStatusPill() {
   return '<span class="ch-status-pill tone-' + (STATUS_PILL_TONE[state.status] || 'slate') + '">' + esc(label) + '</span>';
 }
 
+// States where a quote is locked (submitted/approved) but not yet sent — deletable by a founder
+// only (mirrors the server's DELETABLE_BY_FOUNDER). Defined out here, not inline in
+// renderActionBar, so the review-lock test's per-line scan isn't tripped by a non-row mention.
+var DELETABLE_LOCKED_STATES = ['pending_review', 'ready'];
 // Role- and status-aware action bar. A support agent (no quote:approve) can submit and,
 // once approved, mark sent — never approve. The founder reviews, approves (or self-approves
 // a draft in one hop), sends back, or edits in place. Buttons are data-action delegated.
@@ -4342,7 +4346,7 @@ function renderActionBar() {
   // (founder) only; sent/decided → never (no button). The server is authoritative regardless.
   var canDelete = !!state.savedId && (
     s === 'draft' || s === 'changes_requested' ||
-    ((s === 'pending_review' || s === 'ready') && approver)
+    (DELETABLE_LOCKED_STATES.indexOf(s) >= 0 && approver)
   );
   if (canDelete) out.push(B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
   return out.join('');
