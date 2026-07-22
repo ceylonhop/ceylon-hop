@@ -60,15 +60,22 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await page.dispatchEvent('#f-contact', 'change');
   await expect(page.locator('.ch-leg-date input[type="date"]').first()).toBeVisible({ timeout: 10000 });
 
+  // Two distinct FUTURE dates (past dates are rejected + cleared by the tool). Computed
+  // dynamically so the test never rots — the old literals 2026-07-09/23 expired.
+  const [legDate1, legDate2] = await page.evaluate(() => {
+    const iso = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    return [iso(30), iso(44)];
+  });
+
   // Faithful repro of the reported screenshot: long place names + set dates + 2 legs.
   await setLegField(page, 0, 'pickupLocation', 'Colombo Airport (CMB)');
   await setLegField(page, 0, 'dropoffLocation', 'Jaffna, Sri Lanka');
-  await setLegField(page, 0, 'date', '2026-07-09');
+  await setLegField(page, 0, 'date', legDate1);
   await page.getByText('Add leg').click();
   await page.waitForTimeout(120);
   await setLegField(page, 1, 'pickupLocation', 'Jaffna, Sri Lanka');
   await setLegField(page, 1, 'dropoffLocation', 'Colombo Airport (CMB)');
-  await setLegField(page, 1, 'date', '2026-07-23');
+  await setLegField(page, 1, 'date', legDate2);
 
   // Force chauffeur mode.
   await page.evaluate(() => {

@@ -61,14 +61,16 @@ test('adding a leg leaves its date blank (no auto-increment) but chains the pick
   await page.dispatchEvent('#f-contact', 'change');
   await expect(page.locator('.ch-leg-date input[type="date"]').first()).toBeVisible({ timeout: 10000 });
 
-  // Date the first leg and give it a drop-off, then add a second leg.
+  // Date the first leg (dynamic FUTURE date — a past literal gets rejected + cleared) and give
+  // it a drop-off, then add a second leg.
+  const legDate = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); });
   await setLegField(page, 0, 'pickupLocation', 'Colombo Airport (CMB)');
   await setLegField(page, 0, 'dropoffLocation', 'Sigiriya / Dambulla');
-  await setLegField(page, 0, 'date', '2026-07-21');
+  await setLegField(page, 0, 'date', legDate);
   await page.getByText('Add leg').click();
   await page.waitForTimeout(120);
 
-  // The new leg's date must be blank — NOT 2026-07-22 (the old +1-day auto-increment).
+  // The new leg's date must be blank — NOT auto-incremented (+1 day) from the first leg's date.
   const secondDate = page.locator('.ch-leg').nth(1).locator('[data-field="date"]');
   await expect(secondDate).toHaveValue('');
 
