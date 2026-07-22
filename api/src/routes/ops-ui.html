@@ -788,7 +788,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 @keyframes chMapIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Dense itinerary rows ---------- */
-.qv .ch-legs { display: flex; flex-direction: column; gap: 8px; container-type: inline-size; container-name: legs; }
+.qv .ch-legs { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; container-name: legs; }
 /* .ch-leg also carries .ch-tl-item (e2e hook) whose legacy timeline rule sets
    display:grid — override it back to a plain block so the two rows stack. */
 .qv .ch-leg.ch-tl-item { display: block; grid-template-columns: none; gap: 0; }
@@ -807,11 +807,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-mini-btn:disabled { opacity: .3; cursor: default; }
 .qv .ch-mini-btn.danger:hover { border-color: var(--red); color: var(--red); }
 
-.qv .ch-leg-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+/* numbered leg badge (leg N of the itinerary) — stay legs keep the small dashed dot */
+.qv .ch-leg-dot { width: 18px; height: 18px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 600; line-height: 1; }
 .qv .ch-leg-dot.tone-teal { background: var(--teal); }
 .qv .ch-leg-dot.tone-red { background: var(--red); }
 .qv .ch-leg-dot.tone-blue { background: var(--blue); }
-.qv .ch-leg-dot.tone-stay { background: var(--surface); border: 2px dashed var(--muted-2); }
+.qv .ch-leg-dot.tone-stay { width: 10px; height: 10px; background: var(--surface); border: 2px dashed var(--muted-2); }
 
 /* route inputs — normal 14px, not the 21px serif */
 .qv .ch-leg-route { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; }
@@ -845,16 +846,39 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* second thin line: add-on toggles (only when the popover is open) */
 .qv .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 
-/* Multi-stop rides (Task 8): a 3+-stop leg drops the stop chain onto its own full-width
-   line (same trick as the narrow-container wrap below) and renders it as a vertical list —
-   one row per stop, one thin per-segment distance row between consecutive stops. */
-.qv .ch-leg.is-multistop .ch-leg-main { flex-wrap: wrap; }
-.qv .ch-leg.is-multistop .ch-leg-route { flex: 1 1 100%; order: 5; }
-.qv .ch-leg-route.ch-stops-multi { flex-direction: column; align-items: stretch; gap: 5px; }
-.qv .ch-stop-row { display: flex; align-items: center; gap: 6px; }
+/* Multi-stop rides (Task 8 + route-rail restyle): a 3+-stop leg renders its stop chain
+   as a vertical list in a dedicated block BELOW the main row (.ch-leg-stoplist — the main
+   row becomes a tone-tinted header band), connected by a continuous rail line in the
+   leg's tone color: one dot per stop (destination ringed), one thin per-segment distance
+   row hanging off the rail between consecutive stops. This makes each leg read as ONE
+   ride, so consecutive legs stay visually separate even when both are expanded. */
+.qv .ch-leg.is-multistop .ch-leg-main { min-height: 46px; border-bottom: 1px solid var(--line-soft); border-radius: calc(var(--r-md) - 2px) calc(var(--r-md) - 2px) 0 0; }
+.qv .ch-leg.is-multistop.tone-teal .ch-leg-main { background: rgba(10,185,182,.06); }
+.qv .ch-leg.is-multistop.tone-blue .ch-leg-main { background: rgba(10,185,182,.06); }
+.qv .ch-leg.is-multistop.tone-red .ch-leg-main { background: rgba(236,58,36,.05); }
+.qv .ch-leg-stoplist { padding: 10px 12px 6px 24px; }
+.qv .ch-leg-route.ch-stops-multi { position: relative; flex-direction: column; align-items: stretch; gap: 5px; padding-left: 18px; }
+.qv .ch-leg-route.ch-stops-multi::before { content: ''; position: absolute; left: 3px; top: 16px; bottom: 16px; width: 2px; border-radius: 2px; }
+.qv .tone-teal .ch-stops-multi::before { background: var(--teal); }
+.qv .tone-blue .ch-stops-multi::before { background: var(--blue); }
+.qv .tone-red .ch-stops-multi::before { background: var(--red); }
+.qv .ch-stop-row { position: relative; display: flex; align-items: center; gap: 6px; }
 .qv .ch-stop-row .ch-leg-ac { flex: 1 1 auto; }
-.qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 18px; min-height: 22px; }
-.qv .ch-seg-row::before { content: ''; width: 10px; height: 10px; border-left: 2px dotted var(--muted-2); margin-left: -12px; }
+.qv .ch-stop-dot { position: absolute; left: -18px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; }
+.qv .tone-teal .ch-stop-dot { background: var(--teal); }
+.qv .tone-blue .ch-stop-dot { background: var(--blue); }
+.qv .tone-red .ch-stop-dot { background: var(--red); }
+/* destination dot: ringed, paper core (after the tone fills so source order wins) */
+.qv .ch-stop-dot.end { width: 4px; height: 4px; border: 2px solid; background: var(--paper); }
+.qv .tone-teal .ch-stop-dot.end { border-color: var(--teal); }
+.qv .tone-blue .ch-stop-dot.end { border-color: var(--blue); }
+.qv .tone-red .ch-stop-dot.end { border-color: var(--red); }
+/* stop inputs sit quiet on the card so the card (not each row) is the visual unit;
+   they surface back to a normal input on hover/focus */
+.qv .ch-stops-multi .ch-leg-in { background: transparent; border-color: var(--line-soft); }
+.qv .ch-stops-multi .ch-leg-in:hover { border-color: var(--line); }
+.qv .ch-stops-multi .ch-leg-in:focus { background: var(--surface); }
+.qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 10px; min-height: 20px; }
 /* third thin line: stop-list controls (+ stop / and return) on driving legs */
 .qv .ch-stop-ctrls { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; gap: 14px; align-items: center; }
 .qv .ch-stop-ctrls .ch-link { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
@@ -3306,7 +3330,9 @@ function renderLegCard(leg, idx, total) {
   var isStay = leg.category === 'stay_day';
   var isChauffeur = (state.service === 'chauffeur');
 
-  var dotTone = tone === 'stay' ? 'stay' : tone;       // teal | red | blue | stay
+  // Stay legs always take the small dashed dot (they carry no leg number), even in
+  // first/last position where legTone() gives them teal/red.
+  var dotTone = (leg.category === 'stay_day') ? 'stay' : tone; // teal | red | blue | stay
   var legToneClass = 'tone-' + (tone === 'stay' ? 'stay' : (tone === 'teal' ? 'teal' : (tone === 'red' ? 'red' : 'blue')));
 
   // Reorder controls
@@ -3383,6 +3409,7 @@ function renderLegCard(leg, idx, total) {
     var stopRows = [];
     for (var sri = 0; sri < leg.stops.length; sri++) {
       stopRows.push('<div class="ch-stop-row">'
+        + '<span class="ch-stop-dot' + (sri === leg.stops.length - 1 ? ' end' : '') + '"></span>'
         + stopInput(sri, sri === 0 ? 'From' : (sri === leg.stops.length - 1 ? 'To' : 'Stop'))
         + '<button class="ch-mini-btn danger" title="Remove stop" data-action="removeStop" data-leg="' + esc(leg.id) + '" data-stop="' + sri + '">&times;</button>'
         + '</div>');
@@ -3502,17 +3529,21 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('') : '';
 
+  // Multi-stop: the stop chain renders in its own block BELOW the main row, so the main
+  // row can act as the leg's header band (see the route-rail CSS). Compact 2-stop legs
+  // keep the route inline in the main row, exactly as before.
   return [
     '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
-    '    <span class="ch-leg-dot tone-' + esc(dotTone) + '"></span>',
-    routeHtml,
+    '    <span class="ch-leg-dot tone-' + esc(dotTone) + '">' + (isStay ? '' : (idx + 1)) + '</span>',
+    (isMulti ? '' : routeHtml),
     dateHtml,
     distHtml,
     priceHtml,
     actions,
     '  </div>',
+    (isMulti ? '<div class="ch-leg-stoplist">' + routeHtml + '</div>' : ''),
     stopCtrls,
     addonChipRow,
     addonLine,
