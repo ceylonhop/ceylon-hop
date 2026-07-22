@@ -5014,14 +5014,14 @@ function render() {
         '  <div class="ch-modal-card">',
         '    <div class="ch-modal-head">',
         '      <h2>Two routes for this leg</h2>',
-        '      <button class="ch-x-btn" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
+        '      <button class="ch-x-btn" id="rc-dismiss" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
         '    </div>',
         '    <div class="ch-modal-body">',
         '      <div class="ch-lock-note">' + esc(d.from) + ' &rarr; ' + esc(d.to) + ' &middot; pick which one to quote</div>',
         '      <div class="ch-rc-body">',
         '        <div class="ch-rc-map" id="route-modal-map"></div>',
         '        <div class="ch-rc-cards">',
-        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
+        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" id="rc-card-fast" data-route="fastest" data-action="routeModalSelectFast">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
         '            <div class="ch-rc-hero-row">',
         '              <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
@@ -5030,7 +5030,7 @@ function render() {
         '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
         '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
         '          </button>',
-        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
+        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" id="rc-card-local" data-route="local" data-action="routeModalSelectLocal">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
         '            <div class="ch-rc-hero-row">',
         '              <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
@@ -5042,7 +5042,7 @@ function render() {
         '        </div>',
         '      </div>',
         '      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px">',
-        '        <button class="ch-btn ch-btn-teal" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
+        '        <button class="ch-btn ch-btn-teal" id="rc-use-btn" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
         '      </div>',
         '    </div>',
         '  </div>',
@@ -5456,14 +5456,18 @@ function attachEventListeners() {
     // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
     // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
     // both invalidate a picked route, so the choice resets here too, same as the blur path.
-    // KNOWN BUG CONTOUR (docs/bug-ops-quote-typed-location-no-autodistance.md): this path
-    // deliberately does NOT clear _distCache or call scheduleAutoDistance — a typed-only
-    // location commit never auto-resolves. Do not "fix" that here.
+    // A committed stop (typed + blurred, or an autocomplete pick's change). On the ride model this
+    // DOES auto-resolve distance (D3, below); the older "typed-only never auto-resolves" contour was
+    // fixed on main (#103) and is ported here.
     if (field === 'stop') {
       var cLeg = state.legs.find(function(l) { return l.id === legId; });
       if (!cLeg) return;
       var cSi = parseInt(el.getAttribute('data-stop'), 10);
       if (isNaN(cSi) || cSi < 0 || cSi >= cLeg.stops.length) return;
+      // A no-op blur (value unchanged — e.g. a mousedown elsewhere blurs an already-picked stop)
+      // must NOT reset the route choice: clearing routeOptions here collapses the route-choice
+      // modal the instant the operator presses one of its cards. Only proceed on a real change.
+      if ((cLeg.stops[cSi] || '') === (val || '')) return;
       // Per-segment: rebuildSegments resets the changed pairs' segments (structural
       // invalidation, spec §5). Any stop index — Task 8 replaced the two-value enum.
       patch = stopPatch(cLeg, cSi, val);
