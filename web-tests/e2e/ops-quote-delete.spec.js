@@ -33,9 +33,9 @@ async function buildDraft(page) {
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
   await page.locator('[data-action="setRequestedService"][data-req="private"]').first().click();
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change');
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }

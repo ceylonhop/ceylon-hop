@@ -69,9 +69,9 @@ async function buildRoute(page) {
   await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change');
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }
@@ -131,7 +131,7 @@ test('a failed route does not re-query on unrelated edits — only a stop change
 
   // Changing an actual stop is the only thing that can fix a failed route → exactly
   // that triggers a retry.
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await to.fill('Ella');
   await to.dispatchEvent('change');
   await expect
@@ -152,10 +152,14 @@ test('disconnected legs draw as separate routes — no line bridging the gap', a
   await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
 
   const setField = async (legIndex, field, value) => {
-    const input = page.locator('.ch-leg').nth(legIndex).locator(`.ch-tl-title[data-field="${field}"]`);
+    // Ride model: pickup/dropoff are stop 0/last of the leg's stop chain (data-field="stop").
+    const stopSel = field === 'pickupLocation' ? '[data-field="stop"][data-stop="0"]'
+      : field === 'dropoffLocation' ? '[data-field="stop"][data-stop="1"]'
+      : `[data-field="${field}"]`;
+    const input = page.locator('.ch-leg').nth(legIndex).locator('.ch-tl-title' + stopSel);
     await input.fill(value);
     await input.dispatchEvent('change');
     await page.waitForTimeout(120);

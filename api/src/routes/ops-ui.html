@@ -845,6 +845,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* second thin line: add-on toggles (only when the popover is open) */
 .qv .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 
+/* Multi-stop rides (Task 8): a 3+-stop leg drops the stop chain onto its own full-width
+   line (same trick as the narrow-container wrap below) and renders it as a vertical list —
+   one row per stop, one thin per-segment distance row between consecutive stops. */
+.qv .ch-leg.is-multistop .ch-leg-main { flex-wrap: wrap; }
+.qv .ch-leg.is-multistop .ch-leg-route { flex: 1 1 100%; order: 5; }
+.qv .ch-leg-route.ch-stops-multi { flex-direction: column; align-items: stretch; gap: 5px; }
+.qv .ch-stop-row { display: flex; align-items: center; gap: 6px; }
+.qv .ch-stop-row .ch-leg-ac { flex: 1 1 auto; }
+.qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 18px; min-height: 22px; }
+.qv .ch-seg-row::before { content: ''; width: 10px; height: 10px; border-left: 2px dotted var(--muted-2); margin-left: -12px; }
+/* third thin line: stop-list controls (+ stop / and return) on driving legs */
+.qv .ch-stop-ctrls { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; gap: 14px; align-items: center; }
+.qv .ch-stop-ctrls .ch-link { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.qv .ch-stop-ctrls .ch-link:hover { color: var(--blue-d); text-decoration: underline; text-underline-offset: 2px; }
+
 /* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
    keep From→To readable alongside the date/distance/action controls, drop the
    route onto its own full-width line below the controls. Keyed to the container
@@ -2229,27 +2244,22 @@ var DRIVING_CATS = {
 
 // Build the /estimate payload from state. `override` (optional) forces one leg's distanceKm so a
 // route variant can be priced by the canonical engine without mutating the leg: { legId, km }.
+// Route variants exist only on 2-stop legs, so the override targets a single-segment leg — we
+// reuse the ride-model wire builder (toolLegPayload) and just stamp the variant's km onto the
+// legacy mirror + that segment. (pickupLocation/dropoffLocation are retired — legFrom/legTo now.)
 function buildEstimatePayload(override) {
-  var st = state;
   return {
-    service: st.service || 'private',
-    vehicle: st.vehicleType,
-    passengerCount: st.passengerCount,
-    luggageCount: st.luggageCount,
-    legs: st.legs.map(function(leg) {
-      var km = (override && leg.id === override.legId) ? override.km : (leg.distanceKm || 0);
-      return {
-        category:         leg.category,
-        from:             leg.pickupLocation || '',
-        to:               leg.dropoffLocation || '',
-        distanceKm:       km,
-        date:             leg.date || '',
-        addSightseeingFee: !!leg.addSightseeingFee,
-        addWaitingFee:    !!leg.addWaitingFee,
-        addSafariWait:    !!leg.addSafariWait,
-        routeVariant:     leg.routeVariant || undefined,
-        routeOptions:     leg.routeOptions || undefined,
-      };
+    service: state.service || 'private',
+    vehicle: state.vehicleType,
+    passengerCount: state.passengerCount,
+    luggageCount: state.luggageCount,
+    legs: state.legs.map(function(leg) {
+      var out = toolLegPayload(leg);
+      if (override && leg.id === override.legId) {
+        out.distanceKm = override.km;
+        if (out.segmentKms) out.segmentKms = out.segmentKms.map(function() { return override.km; });
+      }
+      return out;
     }),
   };
 }
@@ -2300,8 +2310,9 @@ async function _runEstimate() {
     return;
   }
 
-  // Build the payload (Task 2 mapping)
-  var payload = buildEstimatePayload();
+  // Build the payload (Task 2 mapping; Task 7: shared wire builder — estimate + save send
+  // the same leg shape, per-segment stops/segmentKms + the legacy from/to/distanceKm mirror)
+  var payload = buildToolRequest();
 
   var result = await apiEstimate(payload);
 
@@ -2328,21 +2339,154 @@ async function _runEstimate() {
 // ── State model ───────────────────────────────────────────────────────────────
 let legSeq = 0;
 
+// Per-segment model (multi-stop rides, Task 7): one segment per consecutive stop pair.
+// The old leg-level scalars (distanceKm/driveTimeHours/manualDistance/autoMatched) live
+// HERE now, per segment.
+function newSegment() {
+  return { km: 0, driveTimeHours: 0, manual: false, autoMatched: false };
+}
+
 function newLeg() {
   return {
     id: 'leg_' + (legSeq++),
     category: 'transfer',
-    pickupLocation: '',
-    dropoffLocation: '',
-    distanceKm: 0,
-    driveTimeHours: 0,
-    manualDistance: false,
-    autoMatched: false,
+    // The ordered stop chain + one segment per consecutive pair. pickupLocation/dropoffLocation
+    // are gone: every DOM place input carries data-field="stop" + data-stop="<index>" (Task 8).
+    // Route-choice state (routeVariant/routeOptions/_sameRoute/_promptedRouteChoice) stays
+    // LEG-level but is only ever set while stops.length === 2 (GC-10) — any transition to
+    // >2 stops clears it. stay_day keeps the degenerate ['',''] chain; its single location
+    // lives in the LAST stop (the old dropoffLocation slot).
+    stops: ['', ''],
+    segments: [newSegment()],
     addSightseeingFee: false,
     addWaitingFee: false,
     addSafariWait: false,
     notes: '',
     date: '',
+  };
+}
+
+// ── Per-segment accessors (Task 7 contract — Task 8 + e2e depend on these names) ──
+function legFrom(leg) { return leg.stops[0] || ''; }
+function legTo(leg) { return leg.stops[leg.stops.length - 1] || ''; }
+// Total leg km: the segment sum, or 0 while ANY segment is unresolved — a partial sum would
+// price a partial route as if it were the whole leg.
+function legKm(leg) {
+  var sum = 0;
+  for (var i = 0; i < leg.segments.length; i++) {
+    var km = parseFloat(leg.segments[i].km);
+    if (!(km > 0)) return 0;
+    sum += km;
+  }
+  return sum;
+}
+function legDriveHours(leg) {
+  var sum = 0;
+  for (var i = 0; i < leg.segments.length; i++) sum += (parseFloat(leg.segments[i].driveTimeHours) || 0);
+  return sum;
+}
+// Chain validity (Task 8): a 3+-stop ride with two consecutive equal stops (BOTH non-blank)
+// can't go on the wire as a chain — stopsChainSendable drops it to the legacy from/to mirror,
+// which would silently price only first→last. The needs strip + flags card surface it via
+// this predicate so that fallback is never silent for a real multi-stop ride. Deliberately
+// independent of stopsChainSendable: a still-blank interior stop (mid-build, e.g. just after
+// "+ stop") is incompleteness, not a duplicate — the distance-needs line covers it, and this
+// "same stop" copy must not fire for stops the operator hasn't filled yet.
+function legChainDuplicate(leg) {
+  if (leg.category === 'stay_day' || leg.stops.length <= 2) return false;
+  for (var i = 0; i < leg.stops.length - 1; i++) {
+    var a = (leg.stops[i] || '').trim(), b = (leg.stops[i + 1] || '').trim();
+    if (a && b && a === b) return true;
+  }
+  return false;
+}
+
+// Structural invalidation (spec §5): every stop-list change (edit/insert/delete/reorder) goes
+// through this. A segment survives — km/driveTimeHours/manual/autoMatched carried over — only
+// if its (from, to) TRIMMED pair is unchanged; duplicate pairs consume old segments first-match
+// -first; everything else resets to a fresh unresolved segment.
+function rebuildSegments(oldStops, oldSegments, newStops) {
+  var consumed = oldSegments.map(function() { return false; });
+  var out = [];
+  for (var i = 0; i < newStops.length - 1; i++) {
+    var nf = (newStops[i] || '').trim(), nt = (newStops[i + 1] || '').trim();
+    var kept = null;
+    for (var j = 0; j < oldSegments.length; j++) {
+      if (consumed[j]) continue;
+      if ((oldStops[j] || '').trim() === nf && (oldStops[j + 1] || '').trim() === nt) {
+        consumed[j] = true;
+        kept = oldSegments[j];
+        break;
+      }
+    }
+    out.push(kept ? Object.assign({}, kept) : newSegment());
+  }
+  return out;
+}
+
+// One stop replaced (by index) → the { stops, segments } patch with the carry-over rules
+// applied. Callers merge their extra fields (route-choice resets) into the returned patch.
+function stopPatch(leg, idx, value) {
+  var newStops = leg.stops.slice();
+  newStops[idx] = value;
+  return { stops: newStops, segments: rebuildSegments(leg.stops, leg.segments, newStops) };
+}
+// Immutable single-segment patch: leg.segments with segments[idx] shallow-patched.
+function segmentsWith(leg, idx, patch) {
+  var segs = leg.segments.slice();
+  if (segs[idx]) segs[idx] = Object.assign({}, segs[idx], patch);
+  return segs;
+}
+
+// buildToolRequest wire shape (Task 7). Per DRIVING leg: the stop chain (`stops`, 2–8) +
+// `segmentKms` (number when the segment is manual or resolved; null = "resolve for me") PLUS
+// the legacy `from`/`to`/`distanceKm` mirror (first/last stop, segment sum or 0). stay_day
+// sends the legacy fields only (the server rejects stops on a stay day). The chain is also
+// omitted when any consecutive pair is trim-equal — e.g. a fresh leg's ['',''] — because the
+// server's structural rules would 400 it, where the legacy mirror path prices/errors exactly
+// as it always has.
+function stopsChainSendable(stops) {
+  if (!stops || stops.length < 2 || stops.length > 8) return false;
+  // Any blank stop → not a resolvable chain; fall back to the legacy from/to mirror so the
+  // half-built leg prices/errors exactly as it did before multi-stop (a raw "couldn't find
+  // the distance for A → " server error would otherwise replace the friendly needs line while
+  // the operator is still typing the new stop). Same philosophy as the fresh ['',''] case.
+  for (var i = 0; i < stops.length; i++) {
+    if (!(stops[i] || '').trim()) return false;
+  }
+  for (var i = 0; i < stops.length - 1; i++) {
+    if ((stops[i] || '').trim() === (stops[i + 1] || '').trim()) return false;
+  }
+  return true;
+}
+function toolLegPayload(leg) {
+  var out = {
+    category:         leg.category,
+    from:             legFrom(leg) || '',
+    to:               legTo(leg) || '',
+    distanceKm:       legKm(leg) || 0,
+    date:             leg.date || '',
+    addSightseeingFee: !!leg.addSightseeingFee,
+    addWaitingFee:    !!leg.addWaitingFee,
+    addSafariWait:    !!leg.addSafariWait,
+    routeVariant:     leg.routeVariant || undefined,
+    routeOptions:     leg.routeOptions || undefined,
+  };
+  if (leg.category !== 'stay_day' && stopsChainSendable(leg.stops)) {
+    out.stops = leg.stops.slice();
+    out.segmentKms = leg.segments.map(function(s) {
+      return (s.manual || s.autoMatched) ? (Number(s.km) || 0) : null;
+    });
+  }
+  return out;
+}
+function buildToolRequest() {
+  return {
+    service: state.service || 'private',
+    vehicle: state.vehicleType,
+    passengerCount: state.passengerCount,
+    luggageCount: state.luggageCount,
+    legs: state.legs.map(toolLegPayload),
   };
 }
 
@@ -2545,9 +2689,9 @@ function addLeg(cat) {
   var leg = newLeg();
   leg.category = cat || 'transfer';
   if (prev) {
-    leg.pickupLocation = prev.dropoffLocation || '';
+    leg.stops[0] = legTo(prev) || '';
     if (cat === 'stay_day') {
-      leg.dropoffLocation = prev.dropoffLocation || '';
+      leg.stops[1] = legTo(prev) || '';
     }
     // A new leg starts with a BLANK date — do not guess it from the previous leg.
     // Auto-incrementing (+1 day) invented dates the customer never gave, so a 4-leg
@@ -2589,6 +2733,16 @@ function dupLeg(id) {
   if (idx < 0) return;
   var src = state.legs[idx];
   var copy = Object.assign({}, src, { id: 'leg_' + (legSeq++) });
+  // Deep-clone the array/object state (Task 7): a shallow copy would SHARE stops/segments/
+  // routeOptions between the two legs, so editing one would silently mutate the other.
+  copy.stops = src.stops.slice();
+  copy.segments = src.segments.map(function(s) { return Object.assign({}, s); });
+  if (src.routeOptions) {
+    copy.routeOptions = {
+      fastest: Object.assign({}, src.routeOptions.fastest),
+      noTolls: Object.assign({}, src.routeOptions.noTolls),
+    };
+  }
   var next = state.legs.slice(0, idx + 1).concat([copy]).concat(state.legs.slice(idx + 1));
   state.legs = next;
   markDirty();
@@ -2776,7 +2930,10 @@ function startNew() {
 }
 
 function savePayload() {
-  return {
+  // Task 7: service/vehicle/pax/bags/legs come from the shared buildToolRequest() so save and
+  // estimate can never drift apart on the leg wire shape (per-segment stops/segmentKms + the
+  // legacy from/to/distanceKm mirror).
+  return Object.assign({
     // When the quote is already saved, send its id so the server updates it in place
     // (same row, lifecycle preserved) instead of inserting a duplicate.
     id: state.savedId || undefined,
@@ -2784,27 +2941,9 @@ function savePayload() {
     lastName: state.lastName,
     contact: state.contact,
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
-    internalNotes: state.internalNotes || '',
-    service: state.service || 'private',
+    internalNotes: state.internalNotes || '', // ops-only scratchpad (punch list); `service` now comes from buildToolRequest()
     requestedService: state.requestedService,
-    vehicle: state.vehicleType,
-    passengerCount: state.passengerCount,
-    luggageCount: state.luggageCount,
-    legs: state.legs.map(function(leg) {
-      return {
-        category:         leg.category,
-        from:             leg.pickupLocation || '',
-        to:               leg.dropoffLocation || '',
-        distanceKm:       leg.distanceKm || 0,
-        date:             leg.date || '',
-        addSightseeingFee: !!leg.addSightseeingFee,
-        addWaitingFee:    !!leg.addWaitingFee,
-        addSafariWait:    !!leg.addSafariWait,
-        routeVariant:     leg.routeVariant || undefined,
-        routeOptions:     leg.routeOptions || undefined,
-      };
-    }),
-  };
+  }, buildToolRequest());
 }
 
 // Persist the quote's content. Because savePayload() carries state.savedId as `id`,
@@ -2994,24 +3133,37 @@ async function reopenQuote(id) {
     return;
   }
 
-  // Map persisted tool legs (from/to) back to state legs (pickup/dropoff).
+  // Map persisted tool legs back to state legs (Task 7: per-segment). A multi-stop chain
+  // comes back as stops+segmentKms; a legacy payload (from/to/distanceKm) becomes the
+  // degenerate 2-stop chain — this normalizer must agree with the server's.
   legSeq = 0;
   var legs = (tool.legs || []).map(function(tl) {
     var leg = newLeg();
     leg.category = tl.category || 'transfer';
-    leg.pickupLocation = tl.from || '';
-    leg.dropoffLocation = tl.to || '';
-    leg.distanceKm = tl.distanceKm || 0;
-    // Treat the persisted distance as manual so prices don't re-resolve differently.
-    leg.manualDistance = (tl.distanceKm || 0) > 0;
+    var stops = (tl.stops && tl.stops.length >= 2)
+      ? tl.stops.map(function(s) { return s || ''; })
+      : [tl.from || '', tl.to || ''];
+    var kms = tl.segmentKms || [tl.distanceKm || 0];
+    leg.stops = stops;
+    leg.segments = [];
+    for (var si = 0; si < stops.length - 1; si++) {
+      var km = Number(kms[si]) || 0;
+      // Treat each persisted segment distance as MANUAL so prices don't re-resolve
+      // differently on reopen (km > 0 ⇒ manual — the old leg-level rule, per segment now;
+      // a location change on that pair clears it via rebuildSegments).
+      leg.segments.push({ km: km, driveTimeHours: 0, manual: km > 0, autoMatched: false });
+    }
     leg.date = tl.date || '';
     leg.addSightseeingFee = !!tl.addSightseeingFee;
     leg.addWaitingFee = !!tl.addWaitingFee;
     leg.addSafariWait = !!tl.addSafariWait;
     // Route choice (2026-07-20): restore what was picked/offered so the message note and
-    // pills survive a reopen (the persisted km stays manual per the rule above).
-    leg.routeVariant = tl.routeVariant || undefined;
-    leg.routeOptions = tl.routeOptions || null;
+    // pills survive a reopen (the persisted km stays manual per the rule above). 2-stop legs
+    // ONLY (GC-10) — a multi-stop chain drops any persisted route choice.
+    if (stops.length === 2) {
+      leg.routeVariant = tl.routeVariant || undefined;
+      leg.routeOptions = tl.routeOptions || null;
+    }
     return leg;
   });
   if (legs.length === 0) legs = [newLeg()];
@@ -3136,32 +3288,82 @@ function renderLegCard(leg, idx, total) {
   // the leg dates by the engine — no explicit "stay" leg is needed. Legacy stay_day legs on
   // a reopened quote still render read-only below.)
 
-  // Route: [from → to] as normal 14px inputs (KEEP .ch-tl-title + data-field hooks for e2e/autocomplete)
+  // Route (Task 8, multi-stop): the stop chain as real inputs. EVERY place input carries
+  // data-leg + data-field="stop" + data-stop="<index>" — the two-value pickupLocation/
+  // dropoffLocation enum is GONE from the DOM; autocomplete, focus-restore and the
+  // pick/blur location sync all key on (leg, 'stop', index) now. 2 stops keep the compact
+  // From → To row; 3+ stops render the vertical list with a per-segment distance row
+  // between consecutive stops. stay_day keeps its single-location input (the LAST stop —
+  // the old dropoffLocation slot), no stop controls.
+  var isMulti = !isStay && leg.stops.length > 2;
+  function stopInput(i, placeholder) {
+    return [
+      '  <div class="ch-leg-ac">',
+      '    <input class="ch-leg-in ch-tl-title" type="text" placeholder="' + placeholder + '"',
+      '      value="' + esc(leg.stops[i] || '') + '"',
+      '      data-leg="' + esc(leg.id) + '" data-field="stop" data-stop="' + i + '" />',
+      '  </div>',
+    ].join('');
+  }
+  // One segment's distance control (km pill / manual km input / "set"), carrying
+  // data-leg + data-seg. This is the ONLY km UI — the old aggregate-km-input-writes-
+  // segments[0] interim hack is gone; a 2-stop leg is just the si=0 case of this.
+  function segmentHtml(si) {
+    var s = leg.segments[si];
+    if (!s) return '';
+    if (s.manual) {
+      return [
+        '<div class="ch-leg-dist ch-dist-manual">',
+        '  <div class="ch-input-wrap" style="width:92px;padding:0 8px">',
+        '    <input class="ch-input" type="number" min="0" value="' + esc(s.km) + '"',
+        '      data-leg="' + esc(leg.id) + '" data-seg="' + si + '" data-field="distanceKm" style="width:56px" />',
+        '    <span class="ch-input-suffix">km</span>',
+        '  </div>',
+        '  <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '">auto</button>',
+        '</div>',
+      ].join('');
+    }
+    if (s.autoMatched) {
+      var segDur = fmtDur(parseFloat(s.driveTimeHours) || 0);
+      return [
+        '<div class="ch-leg-dist">',
+        '  <span class="ch-dist-pill auto"><b>' + esc(s.km) + ' km</b>' + (segDur ? '<span class="ch-dist-time">' + esc(segDur) + '</span>' : '') + '</span>',
+        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '" title="Edit distance">&#9998;</button>',
+        '</div>',
+      ].join('');
+    }
+    return [
+      '<div class="ch-leg-dist">',
+      '  <span class="ch-dist-pill warn">No distance</span>',
+      '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '">set</button>',
+      '</div>',
+    ].join('');
+  }
   var routeHtml;
   if (isStay) {
     routeHtml = [
       '<div class="ch-leg-route">',
-      '  <div class="ch-leg-ac">',
-      '    <input class="ch-leg-in ch-tl-title" type="text" placeholder="Staying at…"',
-      '      value="' + esc(leg.dropoffLocation) + '"',
-      '      data-leg="' + esc(leg.id) + '" data-field="dropoffLocation" />',
-      '  </div>',
+      stopInput(leg.stops.length - 1, 'Staying at…'),
       '</div>',
     ].join('');
+  } else if (isMulti) {
+    var stopRows = [];
+    for (var sri = 0; sri < leg.stops.length; sri++) {
+      stopRows.push('<div class="ch-stop-row">'
+        + stopInput(sri, sri === 0 ? 'From' : (sri === leg.stops.length - 1 ? 'To' : 'Stop'))
+        + '<button class="ch-mini-btn danger" title="Remove stop" data-action="removeStop" data-leg="' + esc(leg.id) + '" data-stop="' + sri + '">&times;</button>'
+        + '</div>');
+      if (sri < leg.stops.length - 1) {
+        stopRows.push('<div class="ch-seg-row">' + segmentHtml(sri) + '</div>');
+      }
+    }
+    routeHtml = '<div class="ch-leg-route ch-stops-multi">' + stopRows.join('') + '</div>';
   } else {
     routeHtml = [
       '<div class="ch-leg-route">',
-      '  <div class="ch-leg-ac">',
-      '    <input class="ch-leg-in ch-tl-title" type="text" placeholder="From"',
-      '      value="' + esc(leg.pickupLocation) + '"',
-      '      data-leg="' + esc(leg.id) + '" data-field="pickupLocation" />',
-      '  </div>',
+      stopInput(0, 'From'),
       '  <span class="ch-leg-arrow">&#8594;</span>',
-      '  <div class="ch-leg-ac">',
-      '    <input class="ch-leg-in ch-tl-title" type="text" placeholder="To"',
-      '      value="' + esc(leg.dropoffLocation) + '"',
-      '      data-leg="' + esc(leg.id) + '" data-field="dropoffLocation" />',
-      '  </div>',
+      stopInput(1, 'To'),
       '</div>',
     ].join('');
   }
@@ -3176,44 +3378,31 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('');
 
-  // Distance pill (only for travel legs)
+  // Distance display (only for travel legs). Per-segment now (Task 8): a 2-stop leg shows
+  // its single segment's control here (same slot as always); a multi-stop leg carries the
+  // per-segment controls in the stop list above, so this slot shows only the read-only
+  // ride total (segment sum + summed drive time) once every segment is resolved.
   var distHtml = '';
   var routeChipHtml = ''; // rendered on the add-ons line, built alongside the distance state
   if (!isStay) {
-    if (leg.manualDistance) {
-      distHtml = [
-        '<div class="ch-leg-dist ch-dist-manual">',
-        '  <div class="ch-input-wrap" style="width:92px;padding:0 8px">',
-        '    <input class="ch-input" type="number" min="0" value="' + esc(leg.distanceKm) + '"',
-        '      data-leg="' + esc(leg.id) + '" data-field="distanceKm" style="width:56px" />',
-        '    <span class="ch-input-suffix">km</span>',
-        '  </div>',
-        '  <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '">auto</button>',
-        '</div>',
-      ].join('');
-    } else if (leg.autoMatched) {
-      var durStr = fmtDur(leg.driveTimeHours);
+    if (!isMulti) {
+      distHtml = segmentHtml(0);
+    } else if (legKm(leg) > 0) {
+      var totDur = fmtDur(legDriveHours(leg));
       distHtml = [
         '<div class="ch-leg-dist">',
-        '  <span class="ch-dist-pill auto"><b>' + esc(leg.distanceKm) + ' km</b>' + (durStr ? '<span class="ch-dist-time">' + esc(durStr) + '</span>' : '') + '</span>',
-        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" title="Edit distance">&#9998;</button>',
-        '</div>',
-      ].join('');
-    } else {
-      distHtml = [
-        '<div class="ch-leg-dist">',
-        '  <span class="ch-dist-pill warn">No distance</span>',
-        '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '">set</button>',
+        '  <span class="ch-dist-pill" title="Ride total"><b>' + esc(legKm(leg)) + ' km</b>' + (totDur ? '<span class="ch-dist-time">' + esc(totDur) + '</span>' : '') + '</span>',
         '</div>',
       ].join('');
     }
-    // Route choice (2026-07-21): the modal is the picker. A fork leg shows a compact chip
-    // — "Compare routes" while undecided, "Route: <pick> ▾" once chosen — both open the
-    // modal. Renders on the add-ons line below the leg (owner call 2026-07-21), and a
-    // no-fork pair shows nothing at all (the "Same route" caption was noise).
-    var rcFrom = (leg.pickupLocation || '').trim();
-    var rcTo = (leg.dropoffLocation || '').trim();
-    if (rcFrom && rcTo && leg.routeOptions) {
+    // Route choice: the modal is the picker. A fork leg shows a compact chip — "Compare
+    // routes" while undecided, "Route: <pick> ▾" once chosen — both open the modal, rendered
+    // on the add-ons line below the leg (owner call 2026-07-21). Only a 2-stop leg has an
+    // expressway/local fork (a multi-stop chain has none — GC-10); no "Same route" caption
+    // (removed as noise, #100). Uses the ride-model accessors, not the retired pickup/dropoff.
+    var rcFrom = legFrom(leg).trim();
+    var rcTo = legTo(leg).trim();
+    if (rcFrom && rcTo && leg.stops.length === 2 && leg.routeOptions) {
       var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
       routeChipHtml = rcPicked
         ? '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button>'
@@ -3234,6 +3423,21 @@ function renderLegCard(leg, idx, total) {
     '  <button class="ch-mini-btn danger" title="Remove" data-action="removeLeg" data-leg="' + esc(leg.id) + '">&times;</button>',
     '</div>',
   ].join('');
+
+  // Stop-list controls (thin line, driving legs only): "+ stop" inserts a new empty stop
+  // BEFORE the last one; "and return" appends a copy of stops[0] (pure sugar — rendered
+  // only while stops[0] is set and the ride doesn't already end back there). Both are
+  // hidden at the 8-stop wire cap.
+  var stopCtrls = '';
+  if (!isStay) {
+    var atStopCap = leg.stops.length >= 8;
+    var rideStart = (leg.stops[0] || '').trim();
+    var endsAtStart = !!rideStart && legTo(leg).trim() === rideStart;
+    var ctrls = [];
+    if (!atStopCap) ctrls.push('  <button class="ch-link" data-action="addStop" data-leg="' + esc(leg.id) + '">&#43; stop</button>');
+    if (!atStopCap && rideStart && !endsAtStart) ctrls.push('  <button class="ch-link" data-action="andReturn" data-leg="' + esc(leg.id) + '">and return</button>');
+    if (ctrls.length) stopCtrls = '<div class="ch-stop-ctrls">' + ctrls.join('') + '</div>';
+  }
 
   // Add-ons chip (thin second line, point-to-point driving legs only). Shows a
   // muted dashed "+ Add-ons" pill when none are active, or a solid orange-tinted
@@ -3266,7 +3470,7 @@ function renderLegCard(leg, idx, total) {
   ].join('') : '';
 
   return [
-    '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + '" data-leg-id="' + esc(leg.id) + '">',
+    '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '"></span>',
@@ -3276,6 +3480,7 @@ function renderLegCard(leg, idx, total) {
     priceHtml,
     actions,
     '  </div>',
+    stopCtrls,
     addonChipRow,
     addonLine,
     '</div>',
@@ -3533,9 +3738,15 @@ function renderServiceChooser() {
 function priceNeeds() {
   var needs = [];
   if (!state.vehicleType) needs.push('a vehicle');
+  // Task 8: an invalid 3+-stop chain must surface here, never silently price as legacy
+  // from/to (see legChainDuplicate). Named before the distance count — the duplicate IS
+  // why the distance can't resolve.
+  if ((state.legs || []).some(legChainDuplicate)) {
+    needs.push('two consecutive stops are the same — remove or edit one');
+  }
   var undist = 0;
   (state.legs || []).forEach(function(l) {
-    if (l.category !== 'stay_day' && !(parseFloat(l.distanceKm) > 0)) undist++;
+    if (l.category !== 'stay_day' && !(legKm(l) > 0)) undist++;
   });
   if (undist > 0) needs.push(undist === 1 ? 'one leg distance' : undist + ' leg distances');
   var undated = chauffeurUndatedLegs().length;
@@ -3630,10 +3841,16 @@ function itineraryGapDetail(legs) {
   function spotKey(s) {
     return String(s || '').toLowerCase().replace(/\(.*?\)/g, '').split(',')[0].replace(/[^a-z0-9]/g, '');
   }
-  // A stay day keeps the traveller put, so its start and end are the same single location.
-  function legStart(leg) { return leg.category === 'stay_day' ? leg.dropoffLocation : leg.pickupLocation; }
+  // Dual-shape reads (SELF-CONTAINED — opsUi.test.ts extracts this function by source and
+  // evals it against legacy-scalar fixture legs): live legs carry the per-segment stop chain
+  // (stops[]); fixtures use pickupLocation/dropoffLocation.
+  function endOf(leg) { return (leg.stops ? leg.stops[leg.stops.length - 1] : leg.dropoffLocation) || ''; }
+  function startOf(leg) { return (leg.stops ? leg.stops[0] : leg.pickupLocation) || ''; }
+  // A stay day keeps the traveller put, so its start and end are the same single location
+  // (the LAST stop — the old dropoffLocation slot).
+  function legStart(leg) { return leg.category === 'stay_day' ? endOf(leg) : startOf(leg); }
   for (var i = 1; i < legs.length; i++) {
-    var start = legStart(legs[i]) || '', end = legs[i - 1].dropoffLocation || '';
+    var start = legStart(legs[i]) || '', end = endOf(legs[i - 1]) || '';
     if (!start || !end) continue;                    // half-built leg — don't nag mid-entry
     if (spotKey(start) !== spotKey(end)) {
       return 'Leg ' + (i + 1) + ' starts at ' + start + ', but leg ' + i + ' ends at ' + end +
@@ -3666,8 +3883,8 @@ function computeFlags() {
     });
   }
 
-  // red: long drive warning — any leg driveTimeHours >= 6 (add once)
-  var hasLongDrive = st.legs.some(function(leg) { return (leg.driveTimeHours || 0) >= 6; });
+  // red: long drive warning — any leg's total drive time >= 6h (add once)
+  var hasLongDrive = st.legs.some(function(leg) { return legDriveHours(leg) >= 6; });
   if (hasLongDrive) {
     flags.push({
       level: 'red',
@@ -3710,6 +3927,17 @@ function computeFlags() {
     }
   })();
 
+  // orange: duplicate consecutive stops on a multi-stop ride (Task 8). While a duplicate
+  // pair exists the chain can't be sent, so pricing would silently fall back to the legacy
+  // first→last mirror — flag it even when a manual km lets that fallback price.
+  if (st.legs.some(legChainDuplicate)) {
+    flags.push({
+      level: 'orange',
+      title: 'Duplicate consecutive stops',
+      detail: 'A ride has two consecutive stops that are the same — remove or edit one so the multi-stop route can price correctly.',
+    });
+  }
+
   // orange: itinerary gap — a leg doesn't start where the previous one ended (see itineraryGapDetail).
   var gapDetail = itineraryGapDetail(st.legs);
   if (gapDetail) {
@@ -3742,8 +3970,8 @@ function computeFlags() {
       });
     }
 
-    // blue: airport timing
-    if (!flagSeen.airport && (leg.category === 'airport' || /airport|cmb|katunayake/i.test((leg.pickupLocation || '') + ' ' + (leg.dropoffLocation || '')))) {
+    // blue: airport timing — scan EVERY stop in the chain, not just the endpoints
+    if (!flagSeen.airport && (leg.category === 'airport' || /airport|cmb|katunayake/i.test(leg.stops.join(' ')))) {
       flagSeen.airport = true;
       flags.push({
         level: 'blue',
@@ -3752,12 +3980,14 @@ function computeFlags() {
       });
     }
 
-    // blue: check distances — driving leg with BOTH endpoints entered but still no distance,
-    // not auto-matched, not manual. D4: gate on both endpoints so a half-filled or empty leg
-    // doesn't claim it "couldn't be auto-located" before any location has been typed — that
-    // reads as a failure when the operator simply hasn't finished the leg yet.
-    var distFrom = (leg.pickupLocation || '').trim(), distTo = (leg.dropoffLocation || '').trim();
-    if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && distFrom && distTo && (leg.distanceKm || 0) <= 0 && !leg.autoMatched && !leg.manualDistance) {
+    // blue: check distances — a driving segment with no distance, not auto-matched, not manual
+    // (per-segment now). D4: gate on BOTH of the segment's stop endpoints being filled, so a
+    // half-built leg doesn't claim it "couldn't be auto-located" before the operator has
+    // finished entering it (that reads as a failure when they simply aren't done yet).
+    if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && leg.segments.some(function(s, i) {
+      var a = (leg.stops[i] || '').trim(), b = (leg.stops[i + 1] || '').trim();
+      return a && b && (s.km || 0) <= 0 && !s.autoMatched && !s.manual;
+    })) {
       flagSeen.distCheck = true;
       flags.push({
         level: 'blue',
@@ -3881,10 +4111,14 @@ function fmtDate(iso) {
 }
 
 function routeText(leg) {
+  // Dual-shape reads (SELF-CONTAINED — web-tests/unit/ops-route-note.test.js extracts this
+  // function by source and evals it against legacy-scalar fixture legs): live legs carry the
+  // per-segment stop chain (stops[]); fixtures use pickupLocation/dropoffLocation.
+  var stops = leg.stops || [leg.pickupLocation, leg.dropoffLocation];
   if (leg.category === 'stay_day') {
-    return 'Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?');
+    return 'Stay in ' + (stops[stops.length - 1] || stops[0] || '?');
   }
-  var s = (leg.pickupLocation || '?') + ' → ' + (leg.dropoffLocation || '?');
+  var s = stops.map(function(p) { return p || '?'; }).join(' → ');
   // Route-choice note — only when the operator explicitly picked a road (2026-07-20).
   if (leg.routeVariant === 'no_tolls') s += ' (via local road, no highway tolls)';
   else if (leg.routeVariant === 'fastest' && leg.routeOptions) s += ' (via expressway)';
@@ -4036,7 +4270,7 @@ function generatedWhatsappMessage() {
       if (legDrives(leg)) {
         lines.push(fmtDate(leg.date) + ' — ' + routeText(leg));
       } else {
-        lines.push(fmtDate(leg.date) + ' — Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?'));
+        lines.push(fmtDate(leg.date) + ' — Stay in ' + (legTo(leg) || legFrom(leg) || '?'));
       }
     });
     lines.push('');
@@ -4077,7 +4311,7 @@ function generatedEmailMessage() {
       if (legDrives(leg)) {
         lines.push('  ' + fmtDate(leg.date) + '   ' + routeText(leg));
       } else {
-        lines.push('  ' + fmtDate(leg.date) + '   Stay in ' + (leg.dropoffLocation || leg.pickupLocation || '?'));
+        lines.push('  ' + fmtDate(leg.date) + '   Stay in ' + (legTo(leg) || legFrom(leg) || '?'));
       }
     });
     lines.push('');
@@ -4528,7 +4762,7 @@ function render() {
   var basicsDone = basicsComplete();
   var _unlockedNow = basicsDone && !_basicsUnlocked; // D5: gate just flipped open this render
   _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
-  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return (l.pickupLocation || '').trim() !== '' || (l.dropoffLocation || '').trim() !== ''; });
+  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
   var showItinerary = basicsDone || hasBuiltItinerary;
   var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 
@@ -4780,14 +5014,14 @@ function render() {
         '  <div class="ch-modal-card">',
         '    <div class="ch-modal-head">',
         '      <h2>Two routes for this leg</h2>',
-        '      <button class="ch-x-btn" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
+        '      <button class="ch-x-btn" id="rc-dismiss" data-action="routeModalDismiss" title="Keep default and close">&times;</button>',
         '    </div>',
         '    <div class="ch-modal-body">',
         '      <div class="ch-lock-note">' + esc(d.from) + ' &rarr; ' + esc(d.to) + ' &middot; pick which one to quote</div>',
         '      <div class="ch-rc-body">',
         '        <div class="ch-rc-map" id="route-modal-map"></div>',
         '        <div class="ch-rc-cards">',
-        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" data-route="fastest" data-action="routeModalSelectFast">',
+        '          <button class="ch-rc-card' + (d.selected === 'fastest' ? ' is-sel' : '') + '" id="rc-card-fast" data-route="fastest" data-action="routeModalSelectFast">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-fast">&#9473;</span> Expressway <span class="ch-rc-tag">current</span></div>',
         '            <div class="ch-rc-hero-row">',
         '              <div class="ch-rc-hero">' + esc(d.fast.time) + '</div>',
@@ -4796,7 +5030,7 @@ function render() {
         '            <div class="ch-rc-stats"><span><b>' + esc(d.fast.km) + '</b>distance</span><span><b>Tolled</b>expressway</span></div>',
         '            <div class="ch-rc-fit">Fastest &middot; best for tight flight connections</div>',
         '          </button>',
-        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" data-route="local" data-action="routeModalSelectLocal">',
+        '          <button class="ch-rc-card' + (d.selected === 'no_tolls' ? ' is-sel' : '') + '" id="rc-card-local" data-route="local" data-action="routeModalSelectLocal">',
         '            <div class="ch-rc-name"><span class="ch-rc-swatch-local">&#9548;</span> Local road</div>',
         '            <div class="ch-rc-hero-row">',
         '              <div class="ch-rc-hero">' + esc(d.local.time) + (d.local.slower ? ' <span class="ch-rc-save">' + esc(d.local.slower) + '</span>' : '') + '</div>',
@@ -4808,7 +5042,7 @@ function render() {
         '        </div>',
         '      </div>',
         '      <div style="display:flex;justify-content:flex-end;align-items:center;margin-top:16px">',
-        '        <button class="ch-btn ch-btn-teal" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
+        '        <button class="ch-btn ch-btn-teal" id="rc-use-btn" data-action="' + (d.selected === 'no_tolls' ? 'routeModalPickLocal' : 'routeModalPickFast') + '">' + (d.selected === 'no_tolls' ? 'Use local road' : 'Use expressway') + '</button>',
         '      </div>',
         '    </div>',
         '  </div>',
@@ -4879,8 +5113,7 @@ function render() {
 // fetched items + highlight index; we just need the new DOM node to anchor to.
 function reopenAutoCompleteMenu() {
   if (!_ac.legId || !_ac.field || !_ac.items || _ac.items.length === 0) return;
-  var sel = '#quoteRoot .ch-app [data-leg="' + _ac.legId + '"][data-field="' + _ac.field + '"]';
-  var input = document.querySelector(sel);
+  var input = document.querySelector(acInputSelector(_ac.legId, _ac.field, _ac.stop));
   if (!input) return;
   // Only reopen while the operator is actually in this field.
   if (document.activeElement !== input) return;
@@ -4888,9 +5121,19 @@ function reopenAutoCompleteMenu() {
   acRenderMenu(input, _ac.items, input.value || '');
 }
 
+// Selector for one leg editor input. data-leg + data-field, PLUS the data-stop /
+// data-seg index when given — Task 8 renders many stop inputs (field="stop") and many
+// per-segment km inputs (field="distanceKm") per leg, so leg+field alone is ambiguous.
+function acInputSelector(legId, field, stopIdx, segIdx) {
+  var sel = '#quoteRoot .ch-app [data-leg="' + legId + '"][data-field="' + field + '"]';
+  if (stopIdx != null) sel += '[data-stop="' + stopIdx + '"]';
+  if (segIdx != null) sel += '[data-seg="' + segIdx + '"]';
+  return sel;
+}
+
 // Capture the currently-focused editor input so a full re-render doesn't lose
-// the operator's typing. Identified by data-leg+data-field (leg place/distance
-// inputs) or element id (customer fields). Returns null when focus is elsewhere.
+// the operator's typing. Identified by data-leg+data-field (+data-stop/data-seg
+// index) or element id (customer fields). Returns null when focus is elsewhere.
 function captureEditorFocus() {
   var el = document.activeElement;
   if (!el || typeof el.matches !== 'function') return null;
@@ -4899,7 +5142,7 @@ function captureEditorFocus() {
   var field = el.getAttribute('data-field');
   var id = el.id || null;
   if (!leg && !id) return null;
-  var snap = { leg: leg, field: field, id: id, value: el.value, start: null, end: null };
+  var snap = { leg: leg, field: field, stop: el.getAttribute('data-stop'), seg: el.getAttribute('data-seg'), id: id, value: el.value, start: null, end: null };
   // selectionStart throws on some input types (e.g. type=number/date) — guard it.
   try { snap.start = el.selectionStart; snap.end = el.selectionEnd; } catch (e) {}
   return snap;
@@ -4909,7 +5152,7 @@ function restoreEditorFocus(snap, menuWasOpen) {
   if (!snap) return;
   var sel;
   if (snap.leg && snap.field) {
-    sel = '#quoteRoot .ch-app [data-leg="' + snap.leg + '"][data-field="' + snap.field + '"]';
+    sel = acInputSelector(snap.leg, snap.field, snap.stop, snap.seg);
   } else if (snap.id) {
     sel = '#quoteRoot .ch-app #' + snap.id;
   } else {
@@ -4931,7 +5174,7 @@ function restoreEditorFocus(snap, menuWasOpen) {
   // menu the operator had dismissed (e.g. scrolled/wheeled away) — the "menu pops back after I
   // scroll it closed" regression.
   if (snap.leg && snap.field && el.classList && el.classList.contains('ch-tl-title') && !_ac.committed && menuWasOpen) {
-    requestAutocomplete(el, snap.leg, snap.field, (el.value || '').trim());
+    requestAutocomplete(el, snap.leg, snap.field, snap.stop, (el.value || '').trim());
   }
 }
 
@@ -5010,6 +5253,42 @@ function attachEventListeners() {
       moveLeg(legId, -1);
     } else if (action === 'moveLegDown') {
       moveLeg(legId, 1);
+    } else if (action === 'addStop' || action === 'removeStop' || action === 'andReturn') {
+      // Multi-stop rides (Task 8). Every stop-list change goes through rebuildSegments
+      // (structural invalidation, spec §5) and clears the 2-stop-only route-choice state
+      // (GC-10) — any stop-count transition invalidates a picked/offered fork.
+      var sLeg = state.legs.find(function(l) { return l.id === legId; });
+      if (sLeg && sLeg.category !== 'stay_day') {
+        var newStops = sLeg.stops.slice();
+        if (action === 'addStop' && newStops.length < 8) {
+          newStops.splice(newStops.length - 1, 0, ''); // new empty stop BEFORE the last
+        } else if (action === 'removeStop' && newStops.length > 2) {
+          var rmIdx = parseInt(el.getAttribute('data-stop'), 10);
+          if (!isNaN(rmIdx) && rmIdx >= 0 && rmIdx < newStops.length) newStops.splice(rmIdx, 1);
+        } else if (action === 'andReturn' && newStops.length < 8 && (newStops[0] || '').trim()) {
+          newStops.push(newStops[0]); // out-and-back sugar: end where the ride starts
+        }
+        if (newStops.length !== sLeg.stops.length) {
+          // Segment indices shifted — the per-index distance cache keys are stale.
+          delete _distCache[legId];
+          // Neutralize any pending autocomplete blur commit: a stop input that blurred when
+          // this button was pressed has a 200ms delayed commit still captured at its OLD
+          // stop index; after this shift that index points at a different stop, so the
+          // commit would write stale text there. Bumping the token makes that callback skip.
+          _stopMutationSeq++;
+          updateLeg(legId, {
+            stops: newStops,
+            segments: rebuildSegments(sLeg.stops, sLeg.segments, newStops),
+            routeVariant: undefined, routeOptions: null, _sameRoute: false, _promptedRouteChoice: false,
+          });
+          scheduleAutoDistance(legId);
+          if (action === 'addStop') {
+            // Put the caret in the stop just inserted (index = second-to-last).
+            var freshStop = document.querySelector('#quoteRoot .ch-app [data-leg="' + legId + '"][data-field="stop"][data-stop="' + (newStops.length - 2) + '"]');
+            if (freshStop) freshStop.focus();
+          }
+        }
+      }
     } else if (action === 'setService') {
       if (el.disabled) return;
       setService(el.getAttribute('data-service'));
@@ -5079,11 +5358,28 @@ function attachEventListeners() {
       render();
     } else if (action === 'manualDistance') {
       // Manual km wins: a typed number is not a Google route, so the variant label must go.
-      updateLeg(legId, { manualDistance: true, routeVariant: undefined });
+      // Per-segment (Task 8): every km affordance carries data-seg; absent → segment 0.
+      var mLeg = state.legs.find(function(l) { return l.id === legId; });
+      if (mLeg) {
+        var mSi = parseInt(el.getAttribute('data-seg'), 10); if (isNaN(mSi)) mSi = 0;
+        updateLeg(legId, { segments: segmentsWith(mLeg, mSi, { manual: true }), routeVariant: undefined });
+      }
     } else if (action === 'autoDistance') {
-      delete _distCache[legId];
-      updateLeg(legId, { manualDistance: false, autoMatched: false, distanceKm: 0, routeVariant: undefined, routeOptions: null, _sameRoute: false, _promptedRouteChoice: false });
-      scheduleAutoDistance(legId);
+      var aLeg = state.legs.find(function(l) { return l.id === legId; });
+      if (aLeg) {
+        var aSi = parseInt(el.getAttribute('data-seg'), 10);
+        // data-seg → that segment back to auto (only its cache entry dropped, so the other
+        // segments of a multi-stop ride don't re-bill a fetch); absent → the whole leg
+        // (kept for safety). Stale driveTimeHours is deliberately kept until the
+        // re-resolve lands — exactly what the old leg-level reset did.
+        if (isNaN(aSi)) delete _distCache[legId];
+        else if (_distCache[legId]) delete _distCache[legId][aSi];
+        var aSegs = isNaN(aSi)
+          ? aLeg.segments.map(function(s) { return Object.assign({}, s, { manual: false, autoMatched: false, km: 0 }); })
+          : segmentsWith(aLeg, aSi, { manual: false, autoMatched: false, km: 0 });
+        updateLeg(legId, { segments: aSegs, routeVariant: undefined, routeOptions: null, _sameRoute: false, _promptedRouteChoice: false });
+        scheduleAutoDistance(legId);
+      }
     } else if (action === 'openRouteModal' || action === 'compareRoutes') {
       // Ensure variants are loaded (auto-resolve usually has them already), then open the modal.
       (async function () {
@@ -5157,12 +5453,24 @@ function attachEventListeners() {
       return;
     }
     var patch = {};
-    patch[field] = val;
     // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
     // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
     // both invalidate a picked route, so the choice resets here too, same as the blur path.
-    var typedLocation = (field === 'pickupLocation' || field === 'dropoffLocation');
-    if (typedLocation) {
+    // A committed stop (typed + blurred, or an autocomplete pick's change). On the ride model this
+    // DOES auto-resolve distance (D3, below); the older "typed-only never auto-resolves" contour was
+    // fixed on main (#103) and is ported here.
+    if (field === 'stop') {
+      var cLeg = state.legs.find(function(l) { return l.id === legId; });
+      if (!cLeg) return;
+      var cSi = parseInt(el.getAttribute('data-stop'), 10);
+      if (isNaN(cSi) || cSi < 0 || cSi >= cLeg.stops.length) return;
+      // A no-op blur (value unchanged — e.g. a mousedown elsewhere blurs an already-picked stop)
+      // must NOT reset the route choice: clearing routeOptions here collapses the route-choice
+      // modal the instant the operator presses one of its cards. Only proceed on a real change.
+      if ((cLeg.stops[cSi] || '') === (val || '')) return;
+      // Per-segment: rebuildSegments resets the changed pairs' segments (structural
+      // invalidation, spec §5). Any stop index — Task 8 replaced the two-value enum.
+      patch = stopPatch(cLeg, cSi, val);
       patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false; patch._promptedRouteChoice = false;
       // D3: a typed-and-blurred location must resolve its distance exactly like picking from the
       // autocomplete (acPick) does — otherwise the leg keeps its stale/zero km and shows the amber
@@ -5170,10 +5478,19 @@ function attachEventListeners() {
       // from the same typed strings server-side. Clear manual/auto + cache so auto-distance re-runs.
       patch.manualDistance = false; patch.autoMatched = false;
     } else if (field === 'distanceKm') {
-      patch.routeVariant = undefined;
+      var kLeg = state.legs.find(function(l) { return l.id === legId; });
+      if (!kLeg) return;
+      var kSi = parseInt(el.getAttribute('data-seg'), 10); if (isNaN(kSi)) kSi = 0;
+      patch = { segments: segmentsWith(kLeg, kSi, { km: val }), routeVariant: undefined };
+    } else {
+      patch[field] = val;
     }
     updateLeg(legId, patch);
-    if (typedLocation) { delete _distCache[legId]; scheduleAutoDistance(legId); }
+    // D3 on the ride model: a typed-and-blurred STOP must resolve its distance like an
+    // autocomplete pick — clear the cache + schedule auto-distance so the leg gets its km
+    // instead of sitting on the amber "No distance" pill while the server already prices it.
+    // (field === 'stop' is the ride-model successor to the retired pickup/dropoff typed commit.)
+    if (field === 'stop') { delete _distCache[legId]; scheduleAutoDistance(legId); }
   });
 
   // D2: keyboard-first. Enter in a leg field appends the next leg (never while the place
@@ -5226,9 +5543,15 @@ function attachEventListeners() {
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
-// Per-leg debounce timers and last-fetched from/to cache to avoid redundant fetches.
+// Per-leg debounce timers and last-fetched pair cache to avoid redundant fetches.
+// Task 7: the cache is per SEGMENT — _distCache[legId] is { segIdx → 'from||to' } — so the
+// existing `delete _distCache[legId]` sites still invalidate the whole leg in one shot.
 var _distTimers = {};      // legId → setTimeout handle
-var _distCache = {};       // legId → 'from||to' string of the last fetch
+var _distCache = {};       // legId → { segIdx → 'from||to' string of the last fetch }
+// Task 8 fix: bumped whenever a stop-list structural mutation (addStop/removeStop/andReturn)
+// shifts stop indices. The autocomplete blur commit captures this at blur time and skips its
+// stale-index commit if it changed before the delayed callback ran — see the blur handler.
+var _stopMutationSeq = 0;
 
 function scheduleAutoDistance(legId) {
   clearTimeout(_distTimers[legId]);
@@ -5240,33 +5563,75 @@ function scheduleAutoDistance(legId) {
 async function runAutoDistance(legId) {
   var leg = state.legs.find(function(l) { return l.id === legId; });
   if (!leg) return;
-  // Only drive auto-distance for non-stay legs with both endpoints set, not in manual mode
+  // Only drive auto-distance for non-stay legs
   if (leg.category === 'stay_day') return;
-  if (leg.manualDistance) return;
-  var from = (leg.pickupLocation || '').trim();
-  var to = (leg.dropoffLocation || '').trim();
+  // Per-segment resolve (Task 7). A 2-stop leg keeps the ORIGINAL single-pair pipeline,
+  // including the route-compare follow-up; a multi-stop leg resolves each unresolved,
+  // non-manual pair with NO route compare (GC-10: route choice exists only for 2-stop legs).
+  if (leg.stops.length === 2) return runAutoDistanceSingle(legId);
+  for (var i = 0; i < leg.segments.length; i++) {
+    await resolveSegmentDistance(legId, i);
+  }
+}
+
+// Resolve ONE segment pair of a multi-stop leg (no route compare).
+async function resolveSegmentDistance(legId, i) {
+  var leg = state.legs.find(function(l) { return l.id === legId; });
+  if (!leg || !leg.segments[i] || leg.segments[i].manual) return;
+  var from = (leg.stops[i] || '').trim();
+  var to = (leg.stops[i + 1] || '').trim();
   if (!from || !to) return;
   var cacheKey = from + '||' + to;
-  if (_distCache[legId] === cacheKey) return; // already fetched this exact from/to
-  _distCache[legId] = cacheKey;
+  var cached = _distCache[legId] || (_distCache[legId] = {});
+  if (cached[i] === cacheKey) return; // already fetched this exact pair
+  cached[i] = cacheKey;
+
+  var seg = await apiDistance(from, to);
+
+  // Guard: leg/stops may have changed while we awaited
+  var current = state.legs.find(function(l) { return l.id === legId; });
+  if (!current || !current.segments[i] || current.segments[i].manual) return;
+  if ((current.stops[i] || '').trim() !== from) return;
+  if ((current.stops[i + 1] || '').trim() !== to) return;
+
+  if (seg && seg.km != null) {
+    var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
+    updateLeg(legId, { segments: segmentsWith(current, i, { km: seg.km, driveTimeHours: hrs, autoMatched: true }) });
+  } else {
+    updateLeg(legId, { segments: segmentsWith(current, i, { km: 0, driveTimeHours: 0, autoMatched: false }) });
+  }
+}
+
+// The original 2-stop pipeline: resolve the single pair, then offer the route comparison.
+async function runAutoDistanceSingle(legId) {
+  var leg = state.legs.find(function(l) { return l.id === legId; });
+  if (!leg) return;
+  if (leg.segments[0].manual) return;
+  var from = legFrom(leg).trim();
+  var to = legTo(leg).trim();
+  if (!from || !to) return;
+  var cacheKey = from + '||' + to;
+  var cached = _distCache[legId] || (_distCache[legId] = {});
+  if (cached[0] === cacheKey) return; // already fetched this exact from/to
+  cached[0] = cacheKey;
 
   var seg = await apiDistance(from, to);
 
   // Guard: leg may have changed while we awaited
   var current = state.legs.find(function(l) { return l.id === legId; });
-  if (!current || current.manualDistance) return;
-  if ((current.pickupLocation || '').trim() !== from) return;
-  if ((current.dropoffLocation || '').trim() !== to) return;
+  if (!current || current.stops.length !== 2 || current.segments[0].manual) return;
+  if (legFrom(current).trim() !== from) return;
+  if (legTo(current).trim() !== to) return;
 
   if (seg && seg.km != null) {
     var hrs = Math.round(((seg.durationMin || 0) / 60) * 100) / 100;
-    updateLeg(legId, { distanceKm: seg.km, driveTimeHours: hrs, autoMatched: true });
+    updateLeg(legId, { segments: segmentsWith(current, 0, { km: seg.km, driveTimeHours: hrs, autoMatched: true }) });
     // Route choice (2026-07-21): proactively detect a materially different toll-free route and
     // auto-open the modal once (guarded). One compare call per resolved leg; maps.ts caches
     // variants 24h so re-renders/edits don't re-bill.
     var v = await apiDistance(from, to, true);
     var live = state.legs.find(function (l) { return l.id === legId; });
-    if (live && (live.pickupLocation || '').trim() === from && (live.dropoffLocation || '').trim() === to && !live.manualDistance) {
+    if (live && live.stops.length === 2 && legFrom(live).trim() === from && legTo(live).trim() === to && !live.segments[0].manual) {
       if (v && v.variants) { live.routeOptions = v.variants; live._sameRoute = false; }
       else { live.routeOptions = null; live._sameRoute = true; }
       render();
@@ -5276,7 +5641,7 @@ async function runAutoDistance(legId) {
     }
   } else {
     // No distance found → "No distance" warn state (also drops any stale route choice)
-    updateLeg(legId, { distanceKm: 0, driveTimeHours: 0, autoMatched: false, routeVariant: undefined, routeOptions: null, _sameRoute: false });
+    updateLeg(legId, { segments: segmentsWith(current, 0, { km: 0, driveTimeHours: 0, autoMatched: false }), routeVariant: undefined, routeOptions: null, _sameRoute: false });
   }
 }
 
@@ -5289,7 +5654,11 @@ function shouldPromptRouteChoice(leg, ctx) {
   if (!leg.routeOptions) return false;          // no fork was fetched
   if (leg.routeVariant) return false;           // already decided
   if (leg._promptedRouteChoice) return false;   // already auto-prompted once
+  // Manual distance — dual-shape (SELF-CONTAINED — web-tests extracts + evals this function):
+  // live legs carry per-segment `segments[].manual`; test fixtures use the legacy scalar.
   if (leg.manualDistance) return false;
+  if (leg.segments && leg.segments.some(function(s) { return s.manual; })) return false;
+  if (leg.stops && leg.stops.length !== 2) return false; // route choice is 2-stop only (GC-10)
   if (leg.category === 'stay_day') return false;
   return true;
 }
@@ -5306,8 +5675,8 @@ function getRouteModalData(legId) {
   var priceStr = function (cents) { return cents != null ? fmtUsd(cents) : (pr.loading ? '…' : ''); };
   var save = (pr.fastest != null && pr.no_tolls != null && pr.no_tolls < pr.fastest) ? 'saves ' + fmtUsd(pr.fastest - pr.no_tolls) : '';
   return {
-    from: (leg.pickupLocation || '').trim(),
-    to: (leg.dropoffLocation || '').trim(),
+    from: legFrom(leg).trim(),
+    to: legTo(leg).trim(),
     selected: _rcSel || leg.routeVariant || 'fastest',
     fast:  { time: fmtDur(f.durationMin / 60), km: f.km + ' km', price: priceStr(pr.fastest) },
     local: { time: fmtDur(n.durationMin / 60), km: n.km + ' km', slower: slowerMin ? '+' + fmtDur(slowerMin / 60) : '', price: priceStr(pr.no_tolls), save: save },
@@ -5351,11 +5720,12 @@ function closeRouteModal(markPrompted) {
 }
 function pickRoute(legId, variant) {
   var leg = state.legs.find(function (l) { return l.id === legId; });
-  var opt = leg && leg.routeOptions && (variant === 'no_tolls' ? leg.routeOptions.noTolls : leg.routeOptions.fastest);
+  // Route options only ever exist on a 2-stop leg (GC-10), so the pick lands on segment 0.
+  var opt = leg && leg.stops.length === 2 && leg.routeOptions && (variant === 'no_tolls' ? leg.routeOptions.noTolls : leg.routeOptions.fastest);
   routeModalLegId = null; _rcSel = null;
   if (opt) {
     leg._promptedRouteChoice = true; // carried onto the new leg object by updateLeg's Object.assign
-    updateLeg(legId, { distanceKm: opt.km, driveTimeHours: Math.round((opt.durationMin / 60) * 100) / 100, routeVariant: variant, manualDistance: false, autoMatched: true });
+    updateLeg(legId, { segments: segmentsWith(leg, 0, { km: opt.km, driveTimeHours: Math.round((opt.durationMin / 60) * 100) / 100, manual: false, autoMatched: true }), routeVariant: variant });
   } else { render(); }
 }
 
@@ -5364,15 +5734,16 @@ function pickRoute(legId, variant) {
 async function compareRoutes(legId) {
   var leg = state.legs.find(function(l) { return l.id === legId; });
   if (!leg) return;
-  var from = (leg.pickupLocation || '').trim();
-  var to = (leg.dropoffLocation || '').trim();
+  if (leg.stops.length !== 2) return; // route choice is 2-stop only (GC-10)
+  var from = legFrom(leg).trim();
+  var to = legTo(leg).trim();
   if (!from || !to) return;
   var r = await apiDistance(from, to, true);
   // Guard: leg/locations may have changed while we awaited.
   var current = state.legs.find(function(l) { return l.id === legId; });
-  if (!current) return;
-  if ((current.pickupLocation || '').trim() !== from) return;
-  if ((current.dropoffLocation || '').trim() !== to) return;
+  if (!current || current.stops.length !== 2) return;
+  if (legFrom(current).trim() !== from) return;
+  if (legTo(current).trim() !== to) return;
   if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations'); return; }
   if (r.variants) {
     // Show the pills only — NO variant is picked yet. Auto-setting 'fastest' here would put
@@ -5472,17 +5843,19 @@ function itinChains() {
   var cur = null;
   state.legs.forEach(function (l) {
     if ((l.category || 'transfer') === 'stay_day') return;
-    var from = (l.pickupLocation || '').trim();
-    var to = (l.dropoffLocation || '').trim();
-    if (!from && !to) return;
-    if (cur && from && cur[cur.length - 1] === from) {
-      // Continues the current chain — append the drop-off (dedup a repeated stop).
-      if (to && cur[cur.length - 1] !== to) cur.push(to);
+    // Ride model: a leg is an ordered stop list. Group legs into connected chains (#102) — a
+    // gap where one leg's last stop isn't the next leg's first opens a fresh chain, so
+    // disconnected legs never get a line stitched across the gap.
+    var stops = (l.stops || []).map(function (s) { return (s || '').trim(); }).filter(Boolean);
+    if (!stops.length) return;
+    var from = stops[0];
+    if (cur && cur[cur.length - 1] === from) {
+      // Continues the current chain — append this ride's stops (dedup the shared join stop).
+      stops.forEach(function (s) { if (cur[cur.length - 1] !== s) cur.push(s); });
     } else {
       // First leg, or a gap the previous chain didn't reach → open a fresh chain.
       cur = [];
-      if (from) cur.push(from);
-      if (to && cur[cur.length - 1] !== to) cur.push(to);
+      stops.forEach(function (s) { if (cur[cur.length - 1] !== s) cur.push(s); });
       chains.push(cur);
     }
   });
@@ -5537,7 +5910,7 @@ function syncRouteModalMap() {
   }
   var leg = state.legs.find(function (l) { return l.id === routeModalLegId; });
   if (!leg || !leg.routeOptions) return;
-  var from = (leg.pickupLocation || '').trim(), to = (leg.dropoffLocation || '').trim();
+  var from = legFrom(leg).trim(), to = legTo(leg).trim();
   var sel = _rcSel || leg.routeVariant || 'fastest';
   var sig = from + '||' + to + '||' + sel;
   if (sig === _rcMapSig) return;
@@ -5668,6 +6041,7 @@ async function drawItinRoute(hostEl, chains) {
 var _ac = {
   legId: null,
   field: null,
+  stop: null, // data-stop index of the active stop input (Task 8: field is 'stop' + index)
   items: [],
   hiIdx: -1,
   inputEl: null,
@@ -5685,6 +6059,7 @@ function acClose(invalidate) {
   }
   _ac.legId = null;
   _ac.field = null;
+  _ac.stop = null;
   _ac.items = [];
   _ac.hiIdx = -1;
   _ac.inputEl = null;
@@ -5695,7 +6070,8 @@ function acClose(invalidate) {
 function acPick(item) {
   var legId = _ac.legId;
   var field = _ac.field;
-  if (!legId || !field) { acClose(); return; }
+  var stopIdx = parseInt(_ac.stop, 10);
+  if (!legId || !field || isNaN(stopIdx)) { acClose(); return; }
   var name = (typeof item === 'string') ? item : (item && item.label) || '';
   _ac.committed = true;
   _ac.seq++;
@@ -5710,13 +6086,13 @@ function acPick(item) {
   _ac.committed = true;
 
   // Patch leg state (this calls render(), wiping the menu — already gone)
-  var patch = {};
-  patch[field] = name;
-  // The place changed → drop any manual/reopened distance so auto-distance re-resolves for the
-  // NEW route. Reopened legs are manual (to preserve their saved price); without this, picking a
-  // new place kept the stale saved distance and the quote never re-priced.
-  patch.manualDistance = false;
-  patch.autoMatched = false;
+  // Per-segment: rebuildSegments resets the changed pairs' segments (manual + autoMatched
+  // dropped) so auto-distance re-resolves for the NEW route. Reopened legs are manual (to
+  // preserve their saved price); without this, picking a new place kept the stale saved
+  // distance and the quote never re-priced. Task 8: any stop index, not just the endpoints.
+  var pickedLeg = state.legs.find(function(l) { return l.id === legId; });
+  var patch = (pickedLeg && stopIdx >= 0 && stopIdx < pickedLeg.stops.length)
+    ? stopPatch(pickedLeg, stopIdx, name) : {};
   // Route choice (2026-07-20): a new place invalidates any picked/offered route.
   patch.routeVariant = undefined;
   patch.routeOptions = null;
@@ -5796,20 +6172,21 @@ function acUpdateHighlight() {
 }
 
 function attachAutoComplete() {
-  // Find all place inputs in the current DOM
-  var inputs = document.querySelectorAll('.ch-tl-title[data-field="pickupLocation"], .ch-tl-title[data-field="dropoffLocation"]');
+  // Find all place inputs in the current DOM (Task 8: every stop input, any index)
+  var inputs = document.querySelectorAll('.ch-tl-title[data-field="stop"]');
 
   inputs.forEach(function(input) {
     var legId = input.getAttribute('data-leg');
     var field = input.getAttribute('data-field');
-    if (!legId || !field) return;
+    var stopIdx = parseInt(input.getAttribute('data-stop'), 10);
+    if (!legId || !field || isNaN(stopIdx)) return;
 
     // Debounced input handler — fetch suggestions. The typed place syncs to state (and the
     // quote re-prices) on commit: an autocomplete pick (acPick) or blur. Re-pricing per
     // keystroke was tried and reverted — it re-rendered mid-type and popped the suggestion
     // menu open repeatedly.
     input.addEventListener('input', function() {
-      requestAutocomplete(input, legId, field, input.value.trim());
+      requestAutocomplete(input, legId, field, stopIdx, input.value.trim());
     });
 
     // Keyboard navigation
@@ -5835,6 +6212,13 @@ function attachAutoComplete() {
 
     // Close on blur — small delay so mousedown on an item fires first
     input.addEventListener('blur', function() {
+      // Capture the stop-mutation token NOW (blur fires on the button's mousedown, before its
+      // click mutates the stop list). If a +stop/remove/return shifts indices before the
+      // delayed commit below runs, this orphaned node's captured stopIdx no longer names the
+      // stop it held — skip the commit (the re-rendered inputs carry the correct per-stop
+      // values). Only structural mutations bump the token, so an ordinary background re-render
+      // leaves the parked typing-flicker path (docs/bug-ops-quote-typing-flicker.md) untouched.
+      var mutSeqAtBlur = _stopMutationSeq;
       setTimeout(function() {
         // A background re-render (a landing /estimate or auto-distance result swaps the
         // panel's innerHTML) detaches this input mid-type; the orphaned old node then fires
@@ -5844,6 +6228,7 @@ function attachAutoComplete() {
         // loop that blanked the price panel).
         if (!document.contains(input)) return;
         if (_ac.inputEl === input) acClose();
+        if (_stopMutationSeq !== mutSeqAtBlur) return;
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });
         if (leg) {
@@ -5853,12 +6238,19 @@ function attachAutoComplete() {
           // unchanged value. Re-pricing on that looped render→blur→estimate→render — the
           // destination field flickering and "calculating distance" forever.
           var currentVal = input.value;
-          if (leg[field] !== currentVal) {
+          var stateVal = stopIdx < leg.stops.length ? (leg.stops[stopIdx] || '') : null;
+          if (stateVal !== null && stateVal !== currentVal) {
             // The place changed → drop any manual/reopened distance so auto-distance re-resolves
             // for the new route (reopened legs are manual to preserve the saved price).
+            // Per-segment: stopPatch + rebuildSegments reset the changed pairs' segments,
+            // which is exactly the old manualDistance/autoMatched clear.
             delete _distCache[legId];
             state.legs = state.legs.map(function(l) {
-              return l.id === legId ? Object.assign({}, l, (function() { var p = {}; p[field] = currentVal; p.manualDistance = false; p.autoMatched = false; p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; p._promptedRouteChoice = false; return p; })()) : l;
+              if (l.id !== legId) return l;
+              if (stopIdx >= l.stops.length) return l;
+              var p = stopPatch(l, stopIdx, currentVal);
+              p.routeVariant = undefined; p.routeOptions = null; p._sameRoute = false; p._promptedRouteChoice = false;
+              return Object.assign({}, l, p);
             });
             markDirty();
             scheduleAutoDistance(legId);
@@ -5871,7 +6263,7 @@ function attachAutoComplete() {
 
 }
 
-function requestAutocomplete(input, legId, field, q) {
+function requestAutocomplete(input, legId, field, stopIdx, q) {
   clearTimeout(_ac.timer);
 
   if (q.length < 2) {
@@ -5882,6 +6274,7 @@ function requestAutocomplete(input, legId, field, q) {
   // Track which input is active
   _ac.legId = legId;
   _ac.field = field;
+  _ac.stop = stopIdx;
   _ac.inputEl = input;
   _ac.hiIdx = -1;
   _ac.committed = false;
@@ -5896,7 +6289,7 @@ function requestAutocomplete(input, legId, field, q) {
       // re-anchor to the fresh focused field instead of dropping valid suggestions.
       var targetInput = input;
       if (_ac.inputEl !== input) {
-        var fresh = document.querySelector('#quoteRoot .ch-app [data-leg="' + legId + '"][data-field="' + field + '"]');
+        var fresh = document.querySelector(acInputSelector(legId, field, stopIdx));
         if (!fresh || document.activeElement !== fresh || (fresh.value || '').trim() !== q) return;
         _ac.inputEl = fresh;
         targetInput = fresh;

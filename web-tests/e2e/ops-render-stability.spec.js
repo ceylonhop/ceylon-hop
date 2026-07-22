@@ -75,7 +75,10 @@ async function stubOps(page, { mapKey } = {}) {
 }
 
 async function pickPlace(page, legIndex, field, name) {
-  const input = page.locator('.ch-tl-title[data-field="' + field + '"]').nth(legIndex);
+  const stopSel = field === 'pickupLocation' ? '[data-field="stop"][data-stop="0"]'
+    : field === 'dropoffLocation' ? '[data-field="stop"][data-stop="1"]'
+    : '[data-field="' + field + '"]';
+  const input = page.locator('.ch-tl-title' + stopSel).nth(legIndex);
   await expect(input).toBeVisible({ timeout: 10000 });
   await input.click();
   await input.fill('');
@@ -108,7 +111,7 @@ test('committing one change leaves unrelated DOM nodes untouched (no wholesale r
       legCard: tag(document.querySelector('[data-leg-id]')),
       vehicleChip: tag(document.querySelector('[data-action="setVehicle"][data-veh="car"]')),
       mapSlot: tag(document.getElementById('itin-map-slot')),
-      pickupInput: tag(document.querySelector('.ch-tl-title[data-field="pickupLocation"]')),
+      pickupInput: tag(document.querySelector('.ch-tl-title[data-field="stop"][data-stop="0"]')),
     };
   });
   expect(tagged).toEqual({ legCard: true, vehicleChip: true, mapSlot: true, pickupInput: true });
@@ -122,7 +125,7 @@ test('committing one change leaves unrelated DOM nodes untouched (no wholesale r
     legCard: !!(document.querySelector('[data-leg-id]') || {}).__stableTag,
     vehicleChip: !!(document.querySelector('[data-action="setVehicle"][data-veh="car"]') || {}).__stableTag,
     mapSlot: !!(document.getElementById('itin-map-slot') || {}).__stableTag,
-    pickupInput: !!(document.querySelector('.ch-tl-title[data-field="pickupLocation"]') || {}).__stableTag,
+    pickupInput: !!(document.querySelector('.ch-tl-title[data-field="stop"][data-stop="0"]') || {}).__stableTag,
   }));
   expect(survived).toEqual({ legCard: true, vehicleChip: true, mapSlot: true, pickupInput: true });
 });
