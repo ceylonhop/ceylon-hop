@@ -184,12 +184,15 @@ test('dismiss keeps the default (no note) and does not re-pop on a re-render', a
   await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
 });
 
-test('a no-choice pair shows "same route" and never opens the modal', async ({ page }) => {
+test('a no-choice pair shows nothing route-related and never opens the modal', async ({ page }) => {
   await stubOps(page);
   await bootQuote(page);
   await setLegRoute(page, 'Colombo City', 'Kandy');
   await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('120 km', { timeout: 10000 });
-  await expect(page.locator('.ch-route-same').first()).toContainText('Same route', { timeout: 5000 });
+  // The "Same route — no expressway" caption was removed (owner call 2026-07-21):
+  // a no-fork leg stays completely quiet — no caption, no chip, no modal.
+  await expect(page.locator('.ch-route-same')).toHaveCount(0);
+  await expect(page.locator('.ch-route-chip')).toHaveCount(0);
   await expect(page.locator('.ch-rc-modal')).toHaveCount(0);
 });
 

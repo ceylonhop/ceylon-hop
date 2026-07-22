@@ -611,7 +611,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-route-pick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .qv .ch-route-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--cream); color: var(--ink); border: 1px solid transparent; cursor: pointer; }
 .qv .ch-route-pill.is-active { background: rgba(10,185,182,.12); color: var(--blue-d); border-color: rgba(10,185,182,.35); }
-.qv .ch-route-same { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .qv .ch-dist-manual { display: flex; align-items: center; gap: 7px; }
 .qv .ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
 .qv .ch-link:hover { opacity: 1; }
@@ -818,7 +817,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
 /* second thin line: add-ons chip row (always present on point-to-point driving legs) */
-.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; }
+.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; align-items: center; gap: 16px; }
 /* empty state: a quiet inline text action, not an orphaned button */
 .qv .ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
 .qv .ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
@@ -3091,6 +3090,7 @@ function renderLegCard(leg, idx, total) {
 
   // Distance pill (only for travel legs)
   var distHtml = '';
+  var routeChipHtml = ''; // rendered on the add-ons line, built alongside the distance state
   if (!isStay) {
     if (leg.manualDistance) {
       distHtml = [
@@ -3119,22 +3119,17 @@ function renderLegCard(leg, idx, total) {
         '</div>',
       ].join('');
     }
-    // Route choice (2026-07-20): on-demand comparison — a link until fetched, then the
-    // two-pill picker (inline, render-safe markup; state lives on the leg, not the DOM).
+    // Route choice (2026-07-21): the modal is the picker. A fork leg shows a compact chip
+    // — "Compare routes" while undecided, "Route: <pick> ▾" once chosen — both open the
+    // modal. Renders on the add-ons line below the leg (owner call 2026-07-21), and a
+    // no-fork pair shows nothing at all (the "Same route" caption was noise).
     var rcFrom = (leg.pickupLocation || '').trim();
     var rcTo = (leg.dropoffLocation || '').trim();
-    if (rcFrom && rcTo) {
-      if (leg.routeOptions) {
-        // Route choice (2026-07-21): the modal is the picker now. A fork leg shows a compact chip
-        // — "Compare routes" while undecided, "Route: <pick> ▾" once chosen — both open the modal.
-        var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
-        distHtml += rcPicked
-          ? '<div><button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button></div>'
-          : '<div><button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button></div>';
-      } else if (leg._sameRoute) {
-        distHtml += '<div class="ch-route-same">Same route — no expressway on this trip</div>';
-      }
-      // (Unresolved legs show nothing until runAutoDistance sets routeOptions / _sameRoute.)
+    if (rcFrom && rcTo && leg.routeOptions) {
+      var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
+      routeChipHtml = rcPicked
+        ? '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button>'
+        : '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button>';
     }
   }
 
@@ -3160,13 +3155,15 @@ function renderLegCard(leg, idx, total) {
   if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
   if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
   var anyAddon = activeAddonLabels.length > 0;
-  var addonChipRow = (!isChauffeur && !isStay) ? [
-    '<div class="ch-leg-addonrow">',
-    anyAddon
-      ? '  <button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
-      : '  <button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>',
-    '</div>',
-  ].join('') : '';
+  var addonChipHtml = (!isChauffeur && !isStay)
+    ? (anyAddon
+      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
+      : '<button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>')
+    : '';
+  // Second line: fees/add-ons chip + the route chip share one quiet row under the leg.
+  var addonChipRow = (addonChipHtml || routeChipHtml)
+    ? '<div class="ch-leg-addonrow">' + addonChipHtml + routeChipHtml + '</div>'
+    : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -4371,6 +4368,32 @@ function renderBookModal() {
   ].join('');
 }
 
+// ── Number tick (2026-07-21) ──────────────────────────────────────────────────
+// When the diff-render updates a number (a leg price, a km pill, the totals), settle it
+// in with a soft fade-and-rise instead of a hard character swap. The diff's onElUpdated
+// hook collects exactly the changed elements; nothing animates on renders that didn't
+// touch it. Respects prefers-reduced-motion.
+var NUM_TICK_SELECTOR = '.ch-leg-price, .ch-dist-pill, .ch-total-usd, .ch-total-lkr, .ch-km.hero, .ch-line-val';
+var _numTickEls = [];
+function runNumberTicks() {
+  var els = _numTickEls;
+  _numTickEls = [];
+  if (!els.length) return;
+  try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+  // An updated total fires for both the row and the value span inside it — animate only
+  // the outermost of any nested pair so opacities don't compound.
+  els = els.filter(function (el) {
+    return !els.some(function (other) { return other !== el && other.contains(el); });
+  });
+  els.forEach(function (el) {
+    if (!el.isConnected || typeof el.animate !== 'function') return;
+    el.animate(
+      [{ opacity: 0.3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration: 260, easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)' }
+    );
+  });
+}
+
 // ── Main render ───────────────────────────────────────────────────────────────
 function render() {
   var st = state;
@@ -4697,6 +4720,7 @@ function render() {
   // innerHTML swap. Nodes whose rendered output didn't change are left alone — no repaint,
   // no image/map reload, no focus or scroll loss. This retires the whole class of
   // "every edit makes the builder flicker" bugs the swap kept producing.
+  _numTickEls = [];
   _renderSwapping = true;
   morphdom(document.querySelector('#quoteRoot .ch-app'), '<div>' + html + '</div>', {
     childrenOnly: true,
@@ -4714,6 +4738,11 @@ function render() {
       if (fromEl.id === 'itin-map-slot' || fromEl.id === 'route-modal-map') return false;
       return true;
     },
+    onElUpdated: function (el) {
+      // The diff already knows which elements changed — collect the number-bearing
+      // ones so runNumberTicks() can settle them in softly instead of a hard swap.
+      if (el.nodeType === 1 && el.matches && el.matches(NUM_TICK_SELECTOR)) _numTickEls.push(el);
+    },
     onBeforeNodeDiscarded: function (node) {
       // The open autocomplete menu is interaction state appended next to its input,
       // not render output — the diff must not remove it mid-selection.
@@ -4722,6 +4751,7 @@ function render() {
     },
   });
   _renderSwapping = false;
+  runNumberTicks();
   applyContentLock();
   attachEventListeners();
   restoreEditorFocus(_focusSnap, _menuWasOpen);
