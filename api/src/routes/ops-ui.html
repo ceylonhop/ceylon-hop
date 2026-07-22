@@ -1284,6 +1284,7 @@ function rowToTicket(row){
 }
 
 let tickets=[];
+let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 
 function routeStateFromUrl(canQuote){
@@ -1322,7 +1323,7 @@ function applyRouteFromUrl(mode){
 }
 
 async function loadQueue(){
-  const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);
+  const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);_bookingsLoaded=true;
   // Booking data only feeds the Bookings surface + the nav attention count. Re-rendering the
   // whole app here re-painted the quote/quotes surfaces too (which don't use it) — the visible
   // "double render". So re-render only on Bookings; elsewhere just refresh the count.
@@ -1417,7 +1418,16 @@ function viewTickets(){
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
     html+=`<div class="sec${g==='Pending'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
   });
-  if(!list.length)html+='<p class="muted">No bookings match.</p>';
+  if(!list.length){
+    // Empty state, matched to the Quotes queue's .qempty standard. Three cases: still loading
+    // (don't flash "none" before the fetch lands), a genuinely empty pipeline, or a filter/search
+    // that hides everything.
+    html+=!_bookingsLoaded
+      ? `<div class="qempty"><div class="qempty-icon">⏳</div><div class="qempty-title">Loading bookings…</div></div>`
+      : tickets.length
+        ? `<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No bookings match</div><div class="qempty-sub">Try a different filter, channel, or search term.</div></div>`
+        : `<div class="qempty"><div class="qempty-icon">🚐</div><div class="qempty-title">No bookings yet</div><div class="qempty-sub">Paid &amp; upcoming trips land here — from the website and WhatsApp.</div></div>`;
+  }
   $('#view').innerHTML=html;
 }
 
