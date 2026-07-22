@@ -60,6 +60,14 @@ const COORDS: Record<string, [number, number]> = {
   yala: [6.37, 81.52],
   'arugam bay': [6.84, 81.84],
   trincomalee: [8.59, 81.21],
+  // Multi-stop via-stops (Phase 2 §5 catalog pre-check): en-route POIs / hubs customers ask
+  // for on multi-stop days but that weren't in the point-to-point catalog. Coords feed the
+  // offline crow-flies estimate + autocomplete; existing pairs are unaffected.
+  polonnaruwa: [7.94, 81.0],
+  habarana: [8.04, 80.75],
+  'nilaveli beach': [8.7, 81.19],
+  'nanu oya': [6.94, 80.77],
+  thanthirimale: [8.42, 80.22],
 };
 
 // Display names for the known places (each normalizes to a COORDS key above). The internal quoting
@@ -68,6 +76,8 @@ export const KNOWN_PLACES: string[] = [
   'Colombo Airport (CMB)', 'Colombo City', 'Negombo', 'Bentota', 'Hikkaduwa', 'Galle', 'Weligama',
   'Mirissa', 'Kandy', 'Nuwara Eliya', 'Ella', 'Sigiriya / Dambulla', 'Anuradhapura', 'Yala',
   'Arugam Bay', 'Trincomalee',
+  // Multi-stop via-stops (Phase 2 §5 catalog pre-check).
+  'Polonnaruwa', 'Habarana', 'Nilaveli Beach', 'Nanu Oya', 'Thanthirimale',
 ];
 
 const norm = (s: string): string => s.trim().toLowerCase();
