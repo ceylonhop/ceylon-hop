@@ -219,6 +219,11 @@ export const quotes = pgTable('quotes', {
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
+  // Internal ops notes (spec 2026-07-22): a free-text scratchpad on the quote, distinct from
+  // `notes` (which carries the founder's send-back reason surfaced in the review banner). Kept
+  // separate so an ops person jotting trip context can never clobber a send-back reason and
+  // vice-versa. Nullable; never shown to the customer.
+  internalNotes: text('internal_notes'),
   // Quote intent (spec 2026-07-17): which service the CUSTOMER asked for — 'private' |
   // 'chauffeur' | 'both' — as distinct from `product`, which is what was actually priced.
   // Nullable: rows predating this have none, and the requirement is a workflow gate at submit

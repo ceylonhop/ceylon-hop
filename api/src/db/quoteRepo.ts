@@ -43,6 +43,8 @@ export interface NewQuote {
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
   notes?: string | null;
+  // Internal ops notes (spec 2026-07-22) — free-text, distinct from the send-back `notes`.
+  internalNotes?: string | null;
   // Quote intent (spec 2026-07-17). What the customer ASKED for ('private'|'chauffeur'|'both'),
   // vs `product` = what was priced. Optional here; the submit gate lives in the route.
   requestedService?: string | null;
@@ -73,6 +75,7 @@ export interface SavedQuote {
   rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
+  internalNotes: string | null;
   requestedService: string | null;
   assignedTo: string | null;
   assignedAt: Date | null;
@@ -112,6 +115,7 @@ export interface QuotePatch {
   status?: QuoteStatus;
   lostReason?: string | null;
   notes?: string | null;
+  internalNotes?: string | null;
   // Rate-lock (spec 2026-07-11). The snapshot + expiry always move together, so they patch as a
   // unit: `undefined` = leave the lock untouched; an object = stamp it (ops freeze at approval);
   // `null` = clear it (reopen-to-edit → back to the live card). See api/src/quote/rateLock.ts.
@@ -215,6 +219,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
+      internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
       assignedTo: null, // manual-only: a new quote is nobody's until someone assigns it
       assignedAt: null,
@@ -260,6 +265,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
+    if (patch.internalNotes !== undefined) row.internalNotes = patch.internalNotes;
     if (patch.rateLock !== undefined) {
       row.rateCardJson = patch.rateLock?.rateCardJson ?? null;
       row.rateLockedUntil = patch.rateLock?.rateLockedUntil ?? null;
@@ -291,6 +297,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
+    row.internalNotes = q.internalNotes ?? null;
     row.requestedService = q.requestedService ?? null;
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().

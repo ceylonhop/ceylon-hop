@@ -49,6 +49,7 @@ function toSaved(r: Row): SavedQuote {
     rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
+    internalNotes: r.internalNotes,
     requestedService: r.requestedService,
     assignedTo: r.assignedTo,
     assignedAt: r.assignedAt,
@@ -86,6 +87,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
+            internalNotes: q.internalNotes ?? null,
             requestedService: q.requestedService ?? null,
             createdBy: q.createdBy ?? null,
             updatedBy: q.updatedBy ?? null,
@@ -151,6 +153,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(patch.status ? { status: patch.status } : {}),
         ...(patch.lostReason !== undefined ? { lostReason: patch.lostReason } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        ...(patch.internalNotes !== undefined ? { internalNotes: patch.internalNotes } : {}),
         ...(patch.rateLock !== undefined
           ? {
               rateCardJson: (patch.rateLock?.rateCardJson ?? null) as object | null,
@@ -201,6 +204,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         rateCardJson: (q.rateCardJson ?? null) as object | null,
         rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
+        internalNotes: q.internalNotes ?? null,
         requestedService: q.requestedService ?? null,
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),

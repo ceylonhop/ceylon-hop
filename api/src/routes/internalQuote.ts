@@ -65,6 +65,8 @@ const ToolRequestSchema = z.object({
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
+  // Internal ops notes (spec 2026-07-22) — free-text scratchpad, persisted to quotes.internal_notes.
+  internalNotes: z.string().optional(),
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
@@ -487,6 +489,7 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        internalNotes: body.internalNotes ?? null,
         // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
         // check; it also rides inside request.tool above, which is what the builder reopens from.
         requestedService: body.requestedService ?? null,
@@ -628,6 +631,7 @@ export function internalQuoteRoutes(deps: {
         status: z.string().optional(),
         lostReason: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        internalNotes: z.string().nullable().optional(),
         assignedTo: z.string().nullable().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
@@ -692,6 +696,7 @@ export function internalQuoteRoutes(deps: {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
       notes: body.notes,
+      internalNotes: body.internalNotes,
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
