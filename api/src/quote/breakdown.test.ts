@@ -66,6 +66,42 @@ describe('quoteBreakdown', () => {
     const b = quoteBreakdown(req);
     expect(b.legs[0].cls).toBe('car');
   });
+
+  // ── Multi-stop rides (phase 1): a Ride with ≥3 stops collapses to ONE row whose from/to are
+  // the first/last stop, distanceKm is the segment sum, billableKm is the single-ride buffer, and
+  // it carries a `stops` array. Old-shape (2-stop) rows must NOT gain a `stops` key (GC-4). ──────
+  it('private: a 3-stop ride → one row with stops, from/to = first/last, single-ride buffer', () => {
+    const req: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [{ stops: ['Kandy', 'Dambulla', 'Habarana'], segmentKms: [72, 23] }] };
+    const b = quoteBreakdown(req);
+    expect(b.legs).toHaveLength(1);
+    expect(b.legs[0]).toEqual({
+      from: 'Kandy', to: 'Habarana', stops: ['Kandy', 'Dambulla', 'Habarana'],
+      distanceKm: 95, billableKm: 105, priceCents: 4226, cls: 'car', minApplied: false,
+    });
+    expect(b.km).toEqual({ distanceKm: 95, bufferKm: 10, billableKm: 105 });
+  });
+
+  it('private: an old-shape (2-stop) row has NO stops key', () => {
+    const req: QuoteRequest = { product: 'private', vehicle: 'van', pax: 4, bags: 4,
+      legs: [{ from: 'Kandy', to: 'Ella', distanceKm: 140 }] };
+    const b = quoteBreakdown(req);
+    expect(b.legs[0]).not.toHaveProperty('stops');
+  });
+
+  it('chauffeur: a 3-stop ride day → one row with stops, minApplied stays false (no floor)', () => {
+    const req: QuoteRequest = {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-14',
+      travelDays: [{ date: '2026-02-14', stops: ['A', 'B', 'C'], segmentKms: [100, 50] }],
+    };
+    const b = quoteBreakdown(req);
+    expect(b.legs).toHaveLength(1);
+    // raw 150 → billable 165 (single 15km max buffer); km-charge round(165 × 40.25¢) = 6641, no floor
+    expect(b.legs[0]).toEqual({
+      from: 'A', to: 'C', stops: ['A', 'B', 'C'],
+      distanceKm: 150, billableKm: 165, priceCents: 6641, cls: 'car', minApplied: false,
+    });
+  });
 });
 
 function billableSum(km: number): number {

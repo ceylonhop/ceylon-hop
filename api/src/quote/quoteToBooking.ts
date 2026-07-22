@@ -1,5 +1,6 @@
 import type { SavedQuote } from '../db/quoteRepo';
-import type { QuoteRequest } from './types';
+import type { QuoteRequest, Ride } from './types';
+import { normalizeRide, normalizeChauffeurDay, rideRawKm } from './types';
 import type { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 
@@ -20,10 +21,18 @@ export type MappedBooking =
 // The quote has no bookable itinerary (shared, or a legacy row with no engine request).
 export class QuoteNotBookableError extends Error {}
 
-function sumKm(legs: { distanceKm: number }[]): number | null {
-  if (!legs.length) return null;
-  const total = legs.reduce((a, l) => a + (Number(l.distanceKm) || 0), 0);
+function sumKm(rides: Ride[]): number | null {
+  if (!rides.length) return null;
+  const total = rides.reduce((a, r) => a + rideRawKm(r), 0);
   return total > 0 ? Math.round(total) : null;
+}
+
+// Generalize today's [rides[0].from, ...rides.map(r => r.to)] chain to multi-stop rides:
+// the first ride contributes all its stops; every later ride contributes everything AFTER
+// its first stop (r.stops.slice(1)). For all-2-stop input this is byte-identical to today,
+// including the quirk that a non-chaining later ride's first stop is silently dropped (GC-13).
+function chainStops(rides: Ride[]): string[] {
+  return [...rides[0].stops, ...rides.slice(1).flatMap((r) => r.stops.slice(1))];
 }
 
 // Inclusive day span between two ISO dates (e.g. 08-01..08-03 = 3 days).
@@ -43,16 +52,18 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
   }
 
   if (engine.product === 'private') {
-    const legs = engine.legs;
-    if (!legs.length) throw new QuoteNotBookableError('private quote has no legs');
-    const distanceKm = sumKm(legs);
-    if (legs.length === 1) {
+    if (!engine.legs.length) throw new QuoteNotBookableError('private quote has no legs');
+    const rides = engine.legs.map(normalizeRide);
+    const distanceKm = sumKm(rides);
+    // A single 2-stop ride is a point-to-point transfer (today's behavior); a single 3+-stop
+    // ride, or any multi-ride itinerary, is a trip.
+    if (rides.length === 1 && rides[0].stops.length === 2) {
       return {
         mode: 'single',
         distanceKm,
         input: {
-          from: legs[0].from,
-          to: legs[0].to,
+          from: rides[0].stops[0],
+          to: rides[0].stops[1],
           date: details.date,
           time: details.time,
           vehicleType: details.vehicleType,
@@ -63,7 +74,7 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
         },
       };
     }
-    const stops = [legs[0].from, ...legs.map((l) => l.to)];
+    const stops = chainStops(rides);
     return {
       mode: 'trip',
       distanceKm,
@@ -80,10 +91,10 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
   }
 
   // chauffeur
-  const days = [...engine.travelDays].sort((a, b) => a.date.localeCompare(b.date));
-  if (!days.length) throw new QuoteNotBookableError('chauffeur quote has no travel days');
+  if (!engine.travelDays.length) throw new QuoteNotBookableError('chauffeur quote has no travel days');
+  const days = engine.travelDays.map(normalizeChauffeurDay).sort((a, b) => a.date.localeCompare(b.date));
   const span = daySpan(engine.firstDate, engine.lastDate);
-  const stops = [days[0].from, ...days.map((d) => d.to)];
+  const stops = chainStops(days);
   return {
     mode: 'trip',
     distanceKm: sumKm(days),

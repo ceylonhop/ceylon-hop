@@ -73,8 +73,8 @@ test('a typed-and-blurred leg resolves distance like a pick — no stale "No dis
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   await fillBasics(page);
 
-  const from = '.ch-tl-title[data-field="pickupLocation"]';
-  const to = '.ch-tl-title[data-field="dropoffLocation"]';
+  const from = '.ch-tl-title[data-field="stop"][data-stop="0"]';
+  const to = '.ch-tl-title[data-field="stop"][data-stop="1"]';
   await expect(page.locator(from).first()).toBeVisible({ timeout: 10000 });
 
   // Commit both endpoints by TYPING + native 'change' (blur) — never touching autocomplete.
@@ -98,6 +98,6 @@ test('the "Check distances" warning does not fire on a leg with no locations yet
 
   // Trip basics are filled but the single leg has NO pickup/dropoff — the warning must not
   // claim the leg "couldn't be auto-located"; that reads as a failure before any input.
-  await expect(page.locator('.ch-tl-title[data-field="pickupLocation"]').first()).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first()).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ch-flag', { hasText: 'Check distances' })).toHaveCount(0);
 });

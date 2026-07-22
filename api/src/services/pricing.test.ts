@@ -3,6 +3,7 @@ import { quoteSingleTransfer, quoteTrip, quoteShared, priceSingle, priceTrip, pr
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
+import { RATE_CARD } from '../quote/rateCard';
 
 const base: SingleTransferInput = {
   from: 'A',
@@ -131,6 +132,27 @@ describe('priceTrip (engine-backed) — private', () => {
   it('returns priced:false when any leg cannot be resolved', async () => {
     const p = await priceTrip({ ...knownTrip, stops: ['Colombo Airport (CMB)', '17 Random Lane', 'Ella'] }, maps);
     expect(p.priced).toBe(false);
+  });
+
+  // Spec 2026-07-20-multi-stop-rides-design.md §8 "Pin the booking path": the customer web
+  // trip flow derives PAIRWISE legs from a flat stop list and must keep pricing a 3-stop
+  // trip as TWO separately-floored legs (rides) — never one collapsed multi-stop ride. A
+  // well-meaning Phase 1/2 change that rewired priceTrip to build one Ride from the whole
+  // stop list would silently drop the checkout total below the shown estimate. Nothing else
+  // pins this behavior today.
+  it('prices a 3-stop trip as 2 separately-floored legs, never one collapsed ride', async () => {
+    // Negombo→CMB (7 km) and CMB→Colombo City (38 km) each floor individually — both stay
+    // well under the car floor even after the 10% buffer. If the two hops were collapsed
+    // into one 3-stop Ride instead, the engine would buffer + floor ONCE for the combined
+    // 45 raw km (still under floor) instead of twice, halving the total.
+    const threeStop: TripInput = { ...trip, stops: ['Negombo', 'Colombo Airport (CMB)', 'Colombo City'] };
+    const p = await priceTrip(threeStop, maps);
+    expect(p.priced).toBe(true);
+    if (!p.priced) return;
+    // Exact cents, derived from the live rate card (not hardcoded) — 2 legs × the car floor.
+    expect(p.totalCents).toBe(2 * RATE_CARD.floorCents.car);
+    // The collapsed-ride outcome (one floor, not two) would be this — assert it's NOT that.
+    expect(p.totalCents).not.toBe(RATE_CARD.floorCents.car);
   });
 });
 

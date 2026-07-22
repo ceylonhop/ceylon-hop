@@ -34,8 +34,15 @@ async function stubOps(page) {
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 152, durationMin: 190 })));
 }
 
+// Multi-stop rides (Task 8): pickup/dropoff are stop 0 / the last stop of a 2-stop leg,
+// addressed via data-field="stop" + data-stop. Translate the legacy field names.
+function stopSelector(field) {
+  if (field === 'pickupLocation') return '[data-field="stop"][data-stop="0"]';
+  if (field === 'dropoffLocation') return '[data-field="stop"][data-stop="1"]';
+  return `[data-field="${field}"]`;
+}
 async function setLegField(page, legIndex, field, value) {
-  const input = page.locator('.ch-leg').nth(legIndex).locator(`[data-field="${field}"]`);
+  const input = page.locator('.ch-leg').nth(legIndex).locator(stopSelector(field));
   await input.fill(value);
   await input.dispatchEvent('change');
   await page.waitForTimeout(80);
@@ -66,6 +73,6 @@ test('adding a leg leaves its date blank (no auto-increment) but chains the pick
   await expect(secondDate).toHaveValue('');
 
   // Pickup still chains from the previous leg's drop-off (unchanged, wanted behavior).
-  const secondPickup = page.locator('.ch-leg').nth(1).locator('[data-field="pickupLocation"]');
+  const secondPickup = page.locator('.ch-leg').nth(1).locator('[data-field="stop"][data-stop="0"]');
   await expect(secondPickup).toHaveValue('Sigiriya / Dambulla');
 });

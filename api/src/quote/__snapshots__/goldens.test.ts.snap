@@ -1,0 +1,616 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_car_no_pax 1`] = `
+{
+  "amountDueNowCents": 16750,
+  "currency": "USD",
+  "depositCents": 1675,
+  "lineItems": [
+    {
+      "amountCents": 6210,
+      "label": "Chauffeur day rate — 2 day(s)",
+    },
+    {
+      "amountCents": 10546,
+      "label": "Distance — 262 km (262 buffered travel + 0 idle-day min)",
+      "meta": {
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": -6,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 2180,
+  "priceAdjustmentCents": -6,
+  "priceStrategy": "nearest_50_cents",
+  "product": "chauffeur",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 16756,
+  "totalCents": 16750,
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_van_span_idle 1`] = `
+{
+  "amountDueNowCents": 52900,
+  "currency": "USD",
+  "depositCents": 5000,
+  "lineItems": [
+    {
+      "amountCents": 15525,
+      "label": "Chauffeur day rate — 5 day(s)",
+    },
+    {
+      "amountCents": 37997,
+      "label": "Distance — 703 km (503 buffered travel + 200 idle-day min)",
+      "meta": {
+        "vehicle": "van",
+      },
+    },
+    {
+      "amountCents": 0,
+      "label": "Sightseeing stops (up to 3h) (included)",
+    },
+    {
+      "amountCents": -622,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "charm",
+      },
+    },
+  ],
+  "marginEstimateCents": 6359,
+  "priceAdjustmentCents": -622,
+  "priceStrategy": "charm",
+  "product": "chauffeur",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 53522,
+  "totalCents": 52900,
+  "warnings": [
+    "sightseeing included in chauffeur day rate",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_single_floor 1`] = `
+{
+  "amountDueNowCents": 2900,
+  "currency": "USD",
+  "depositCents": 290,
+  "lineItems": [
+    {
+      "amountCents": 2900,
+      "label": "Dambulla → Habarana (car)",
+      "meta": {
+        "billableKm": 28,
+        "distanceKm": 23,
+        "vehicle": "car",
+      },
+    },
+  ],
+  "marginEstimateCents": 1920,
+  "priceAdjustmentCents": 0,
+  "priceStrategy": "unchanged",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 2900,
+  "totalCents": 2900,
+  "warnings": [
+    "Dambulla→Habarana hit the $29 car minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_single_long 1`] = `
+{
+  "amountDueNowCents": 8850,
+  "currency": "USD",
+  "depositCents": 885,
+  "lineItems": [
+    {
+      "amountCents": 8855,
+      "label": "Colombo Airport (CMB) → Ella (car)",
+      "meta": {
+        "billableKm": 220,
+        "distanceKm": 205,
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": -5,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 1150,
+  "priceAdjustmentCents": -5,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 8855,
+  "totalCents": 8850,
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_two_legs_spec_example 1`] = `
+{
+  "amountDueNowCents": 6100,
+  "currency": "USD",
+  "depositCents": 610,
+  "lineItems": [
+    {
+      "amountCents": 3180,
+      "label": "Kandy → Dambulla (car)",
+      "meta": {
+        "billableKm": 79,
+        "distanceKm": 72,
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": 2900,
+      "label": "Dambulla → Habarana (car)",
+      "meta": {
+        "billableKm": 28,
+        "distanceKm": 23,
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": 20,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 2355,
+  "priceAdjustmentCents": 20,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 6080,
+  "totalCents": 6100,
+  "warnings": [
+    "Dambulla→Habarana hit the $29 car minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_zero_km 1`] = `
+{
+  "amountDueNowCents": 2900,
+  "currency": "USD",
+  "depositCents": 290,
+  "lineItems": [
+    {
+      "amountCents": 2900,
+      "label": "Fort → Fort Station (car)",
+      "meta": {
+        "billableKm": 5,
+        "distanceKm": 0,
+        "vehicle": "car",
+      },
+    },
+  ],
+  "marginEstimateCents": 2725,
+  "priceAdjustmentCents": 0,
+  "priceStrategy": "unchanged",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 2900,
+  "totalCents": 2900,
+  "warnings": [
+    "Fort→Fort Station hit the $29 car minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_upgrade_car_to_van 1`] = `
+{
+  "amountDueNowCents": 5000,
+  "currency": "USD",
+  "depositCents": 500,
+  "lineItems": [
+    {
+      "amountCents": 5000,
+      "label": "Galle → Mirissa (van)",
+      "meta": {
+        "billableKm": 50,
+        "distanceKm": 45,
+        "vehicle": "van",
+      },
+    },
+  ],
+  "marginEstimateCents": 2650,
+  "priceAdjustmentCents": 0,
+  "priceStrategy": "unchanged",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 5000,
+  "totalCents": 5000,
+  "warnings": [
+    "vehicle set to van for 6 pax / 4 bags",
+    "Galle→Mirissa hit the $50 van minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_three_legs_extras 1`] = `
+{
+  "amountDueNowCents": 18850,
+  "currency": "USD",
+  "depositCents": 1885,
+  "lineItems": [
+    {
+      "amountCents": 6864,
+      "label": "Colombo Airport (CMB) → Kandy (van)",
+      "meta": {
+        "billableKm": 127,
+        "distanceKm": 115,
+        "vehicle": "van",
+      },
+    },
+    {
+      "amountCents": 5000,
+      "label": "Kandy → Nuwara Eliya (van)",
+      "meta": {
+        "billableKm": 85,
+        "distanceKm": 77,
+        "vehicle": "van",
+      },
+    },
+    {
+      "amountCents": 5000,
+      "label": "Nuwara Eliya → Ella (van)",
+      "meta": {
+        "billableKm": 62,
+        "distanceKm": 56,
+        "vehicle": "van",
+      },
+    },
+    {
+      "amountCents": 1000,
+      "label": "Sightseeing stops (up to 3h)",
+    },
+    {
+      "amountCents": 1000,
+      "label": "Waiting fee",
+    },
+    {
+      "amountCents": -14,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 5972,
+  "priceAdjustmentCents": -14,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 18864,
+  "totalCents": 18850,
+  "warnings": [
+    "Kandy→Nuwara Eliya hit the $50 van minimum",
+    "Nuwara Eliya→Ella hit the $50 van minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van14_custom_rate 1`] = `
+{
+  "amountDueNowCents": 14900,
+  "currency": "USD",
+  "depositCents": 1490,
+  "lineItems": [
+    {
+      "amountCents": 15240,
+      "label": "Colombo → Kandy (van14)",
+      "meta": {
+        "billableKm": 127,
+        "distanceKm": 115,
+        "vehicle": "van14",
+      },
+    },
+    {
+      "amountCents": -340,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "charm",
+      },
+    },
+  ],
+  "marginEstimateCents": 1692,
+  "priceAdjustmentCents": -340,
+  "priceStrategy": "charm",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 15240,
+  "totalCents": 14900,
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): shared_two_seats 1`] = `
+{
+  "amountDueNowCents": 5900,
+  "currency": "USD",
+  "depositCents": 590,
+  "lineItems": [
+    {
+      "amountCents": 5900,
+      "label": "ella-kandy × 2 seat(s)",
+    },
+  ],
+  "marginEstimateCents": null,
+  "priceAdjustmentCents": 0,
+  "priceStrategy": "unchanged",
+  "product": "shared",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 5900,
+  "totalCents": 5900,
+  "warnings": [
+    "margin not modelled for shared",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): chauffeur_car_no_pax 1`] = `
+{
+  "km": {
+    "billableKm": 262,
+    "bufferKm": 24,
+    "distanceKm": 238,
+  },
+  "legs": [
+    {
+      "billableKm": 163,
+      "cls": "car",
+      "distanceKm": 148,
+      "from": "Negombo",
+      "minApplied": false,
+      "priceCents": 6561,
+      "to": "Sigiriya",
+    },
+    {
+      "billableKm": 99,
+      "cls": "car",
+      "distanceKm": 90,
+      "from": "Sigiriya",
+      "minApplied": false,
+      "priceCents": 3985,
+      "to": "Kandy",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): chauffeur_van_span_idle 1`] = `
+{
+  "km": {
+    "billableKm": 503,
+    "bufferKm": 41,
+    "distanceKm": 462,
+  },
+  "legs": [
+    {
+      "billableKm": 127,
+      "cls": "van",
+      "distanceKm": 115,
+      "from": "Colombo Airport (CMB)",
+      "minApplied": false,
+      "priceCents": 6864,
+      "to": "Kandy",
+    },
+    {
+      "billableKm": 151,
+      "cls": "van",
+      "distanceKm": 137,
+      "from": "Kandy",
+      "minApplied": false,
+      "priceCents": 8162,
+      "to": "Ella",
+    },
+    {
+      "billableKm": 225,
+      "cls": "van",
+      "distanceKm": 210,
+      "from": "Ella",
+      "minApplied": false,
+      "priceCents": 12161,
+      "to": "Colombo",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_single_floor 1`] = `
+{
+  "km": {
+    "billableKm": 28,
+    "bufferKm": 5,
+    "distanceKm": 23,
+  },
+  "legs": [
+    {
+      "billableKm": 28,
+      "cls": "car",
+      "distanceKm": 23,
+      "from": "Dambulla",
+      "minApplied": true,
+      "priceCents": 2900,
+      "to": "Habarana",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_single_long 1`] = `
+{
+  "km": {
+    "billableKm": 220,
+    "bufferKm": 15,
+    "distanceKm": 205,
+  },
+  "legs": [
+    {
+      "billableKm": 220,
+      "cls": "car",
+      "distanceKm": 205,
+      "from": "Colombo Airport (CMB)",
+      "minApplied": false,
+      "priceCents": 8855,
+      "to": "Ella",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_two_legs_spec_example 1`] = `
+{
+  "km": {
+    "billableKm": 107,
+    "bufferKm": 12,
+    "distanceKm": 95,
+  },
+  "legs": [
+    {
+      "billableKm": 79,
+      "cls": "car",
+      "distanceKm": 72,
+      "from": "Kandy",
+      "minApplied": false,
+      "priceCents": 3180,
+      "to": "Dambulla",
+    },
+    {
+      "billableKm": 28,
+      "cls": "car",
+      "distanceKm": 23,
+      "from": "Dambulla",
+      "minApplied": true,
+      "priceCents": 2900,
+      "to": "Habarana",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_zero_km 1`] = `
+{
+  "km": {
+    "billableKm": 5,
+    "bufferKm": 5,
+    "distanceKm": 0,
+  },
+  "legs": [
+    {
+      "billableKm": 5,
+      "cls": "car",
+      "distanceKm": 0,
+      "from": "Fort",
+      "minApplied": true,
+      "priceCents": 2900,
+      "to": "Fort Station",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_upgrade_car_to_van 1`] = `
+{
+  "km": {
+    "billableKm": 50,
+    "bufferKm": 5,
+    "distanceKm": 45,
+  },
+  "legs": [
+    {
+      "billableKm": 50,
+      "cls": "van",
+      "distanceKm": 45,
+      "from": "Galle",
+      "minApplied": true,
+      "priceCents": 5000,
+      "to": "Mirissa",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_van_three_legs_extras 1`] = `
+{
+  "km": {
+    "billableKm": 274,
+    "bufferKm": 26,
+    "distanceKm": 248,
+  },
+  "legs": [
+    {
+      "billableKm": 127,
+      "cls": "van",
+      "distanceKm": 115,
+      "from": "Colombo Airport (CMB)",
+      "minApplied": false,
+      "priceCents": 6864,
+      "to": "Kandy",
+    },
+    {
+      "billableKm": 85,
+      "cls": "van",
+      "distanceKm": 77,
+      "from": "Kandy",
+      "minApplied": true,
+      "priceCents": 5000,
+      "to": "Nuwara Eliya",
+    },
+    {
+      "billableKm": 62,
+      "cls": "van",
+      "distanceKm": 56,
+      "from": "Nuwara Eliya",
+      "minApplied": true,
+      "priceCents": 5000,
+      "to": "Ella",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_van14_custom_rate 1`] = `
+{
+  "km": {
+    "billableKm": 127,
+    "bufferKm": 12,
+    "distanceKm": 115,
+  },
+  "legs": [
+    {
+      "billableKm": 127,
+      "cls": "van14",
+      "distanceKm": 115,
+      "from": "Colombo",
+      "minApplied": false,
+      "priceCents": 15240,
+      "to": "Kandy",
+    },
+  ],
+}
+`;
