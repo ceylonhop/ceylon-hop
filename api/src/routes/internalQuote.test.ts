@@ -1111,14 +1111,15 @@ describe('quote assignment + audit trail', () => {
   const draftAs = async (app: App, email: string) =>
     (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
 
-  it('stamps createdBy/updatedBy on save and leaves the quote unassigned', async () => {
+  it('stamps createdBy/updatedBy on save and auto-assigns the new quote to its creator (2026-07-22)', async () => {
     const app = createApp();
     const { id } = await draftAs(app, 'op@x.com');
     const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
     expect(q.createdBy).toBe('op@x.com');
     expect(q.updatedBy).toBe('op@x.com');
-    expect(q.assignedTo).toBeNull();
-    expect(q.assignedAt).toBeNull();
+    // A new quote lands in its creator's "Assigned to me" — no longer unassigned on save.
+    expect(q.assignedTo).toBe('op@x.com');
+    expect(q.assignedAt).not.toBeNull();
   });
 
   it('assigns to an OPS_USERS member, stamping assignedAt + updatedBy but never createdBy', async () => {

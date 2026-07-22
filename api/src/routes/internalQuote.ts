@@ -569,8 +569,12 @@ export function internalQuoteRoutes(deps: {
       };
       const updated = existingId ? await deps.quotes.update(existingId, content) : null;
       if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
-      const saved = await deps.quotes.save(content);
-      return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
+      // Auto-assign a NEW quote to its creator (spec 2026-07-22) so it lands in their "Assigned to
+      // me". Insert-only: update() above leaves assignment to the picker.
+      const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });
+      // Return assignedTo so the builder reflects the auto-assignment immediately (the update path
+      // above omits it — a re-save must not move the assignee client-side either).
+      return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
       throw e;
