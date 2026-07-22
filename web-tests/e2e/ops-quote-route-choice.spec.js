@@ -86,11 +86,18 @@ async function bootQuote(page) {
   await page.dispatchEvent('#f-contact', 'change');
 }
 
+// Multi-stop rides (Task 8): pickup/dropoff are stop 0 / the last stop of a 2-stop leg,
+// addressed via data-field="stop" + data-stop. Translate the legacy field names.
+function stopSelector(field) {
+  if (field === 'pickupLocation') return '[data-field="stop"][data-stop="0"]';
+  if (field === 'dropoffLocation') return '[data-field="stop"][data-stop="1"]';
+  return '[data-field="' + field + '"]';
+}
 async function pickPlace(page, field, name) {
   // Commit via the autocomplete pick (acPick) — the path real ops take, and the one that
   // reliably schedules auto-distance. The places stub echoes the typed text back as the
   // single suggestion.
-  const input = page.locator('.ch-tl-title[data-field="' + field + '"]').first();
+  const input = page.locator('.ch-tl-title' + stopSelector(field)).first();
   await expect(input).toBeVisible({ timeout: 10000 });
   await input.click();
   await input.fill('');

@@ -60,7 +60,7 @@ test('ops quote autocomplete stays closed after picking a place', async ({ page 
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await expect(fromInput).toBeVisible({ timeout: 10000 });
 
   await fromInput.click();
@@ -98,7 +98,7 @@ test('wheeling inside the autocomplete scrolls the list; outside still dismisses
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await expect(fromInput).toBeVisible({ timeout: 10000 });
   await fromInput.click();
   await page.keyboard.type('Kand', { delay: 40 });

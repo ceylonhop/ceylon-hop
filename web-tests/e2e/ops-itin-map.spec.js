@@ -69,9 +69,9 @@ async function buildRoute(page) {
   await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change');
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }
@@ -131,7 +131,7 @@ test('a failed route does not re-query on unrelated edits — only a stop change
 
   // Changing an actual stop is the only thing that can fix a failed route → exactly
   // that triggers a retry.
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await to.fill('Ella');
   await to.dispatchEvent('change');
   await expect

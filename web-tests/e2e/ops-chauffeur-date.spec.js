@@ -31,8 +31,16 @@ async function stubOps(page) {
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 373, durationMin: 436 })));
 }
 
+// Multi-stop rides (Task 8): pickup/dropoff are now stop 0 / the last stop of a 2-stop leg,
+// addressed via data-field="stop" + data-stop. Translate the legacy field names so call sites
+// read unchanged.
+function stopSelector(field) {
+  if (field === 'pickupLocation') return '[data-field="stop"][data-stop="0"]';
+  if (field === 'dropoffLocation') return '[data-field="stop"][data-stop="1"]';
+  return `[data-field="${field}"]`;
+}
 async function setLegField(page, legIndex, field, value) {
-  const input = page.locator('.ch-leg').nth(legIndex).locator(`[data-field="${field}"]`);
+  const input = page.locator('.ch-leg').nth(legIndex).locator(stopSelector(field));
   await input.fill(value);
   await input.dispatchEvent('change');
   await page.waitForTimeout(80);
@@ -81,7 +89,7 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await expect(page.locator('.ch-dist-pill.auto').first()).toBeVisible({ timeout: 5000 });
 
   const dateInput = page.locator('.ch-leg-date input[type="date"]').first();
-  const toInput = page.locator('.ch-leg').first().locator('[data-field="dropoffLocation"]');
+  const toInput = page.locator('.ch-leg').first().locator('[data-field="stop"][data-stop="1"]');
   // The date input must never be overlapped/clipped by the "to" field (the reported bug: the
   // date shows only "/09/"). If space is tight the route drops to its own line instead.
   for (const width of [1280, 1100, 1000, 960, 900, 820]) {
