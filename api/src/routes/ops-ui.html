@@ -35,7 +35,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   body{font-family:var(--body);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
   ::selection{background:var(--saffron);color:var(--ink)}
   button{font-family:inherit;cursor:pointer;color:inherit}
-  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden;transition:grid-template-columns .22s ease}
+  /* D2: expand/collapse switches the column width instantly. Animating grid-template-columns
+     dragged the rail through in-between widths (~178px) where the logo wrapped, "Bookings"
+     truncated and the footer overlapped — an ugly, sometimes-stuck broken frame. A snap is
+     cleaner than a janky reflow here. */
+  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden}
   .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2}
   .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
   .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative}
@@ -1769,8 +1773,9 @@ function render(){
 document.addEventListener('click',e=>{
   const root=$('#approot');
   if(root&&!root.hidden&&root.classList.contains('rail-collapsed')&&e.target.closest('.rail')){
-    e.preventDefault();
-    e.stopPropagation();
+    /* D1: expand on a collapsed-rail click, but DON'T swallow it — the click still reaches the
+       nav button underneath, so a single click both reveals the rail and navigates. (Swallowing
+       here forced a two-click flow and made the theme button look dead on a mis-timed click.) */
     expandRail();
   }
 },true);
@@ -1859,10 +1864,23 @@ document.addEventListener('input',e=>{if(e.target.id==='kbarIn'){kbarSel=0;kbarR
 /* ── D6: theme ─────────────────────────────────────────────────────────────── */
 function applyTheme(t){
   document.documentElement.dataset.theme=t;
+  /* D9: keep the UA colour-scheme in step so native controls (the search field, <select>s)
+     follow the theme and repaint with it, rather than sampling the OS scheme. */
+  document.documentElement.style.colorScheme=(t==='dark')?'dark':'light';
   try{localStorage.setItem('ch_ops_theme',t);}catch(e){}
   const b=$('#railTheme');if(b)b.innerHTML=(t==='dark')?'&#9788;':'&#9789;';
 }
-function toggleTheme(){applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');}
+function toggleTheme(){
+  applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+  /* D9: rebuild the current shell view so the frosted topbar search box and the queue filter
+     chips repaint under the new theme. A bare data-theme swap left those composited surfaces
+     showing stale (dark-on-dark) colours until the next navigation repainted them. Only the two
+     shell lists are rebuilt; the builder reads the same CSS variables and needs no rebuild. */
+  if(!$('#approot').hidden){
+    if(state.route==='tickets')viewTickets();
+    else if(state.route==='quotes')viewQuotes();
+  }
+}
 document.addEventListener('click',e=>{if(e.target.closest('#railTheme'))toggleTheme();});
 applyTheme(document.documentElement.dataset.theme||'light');
 document.addEventListener('click',e=>{
@@ -1908,6 +1926,7 @@ function bootApp(identity){
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
+  window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
   window.opsEmail=identity.email||''; /* the builder labels the assign picker's "(you)" option */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
@@ -2900,7 +2919,18 @@ async function reopenQuote(id) {
   if (!id) return;
   var q = await apiGetQuote(id);
   if (!q || q.error) {
-    showToast('Could not open quote — ' + ((q && q.error) || 'unknown error'));
+    // D6: a bad deep link (e.g. /ops?quote=Q-FHEXB — a reference, not the internal key the
+    // lookup expects) used to fail silently and strand the operator in a blank New-quote
+    // builder. Say what happened (naming the quote when it's a reference) and drop back to the
+    // queue rather than leaving an empty builder that looks like a fresh quote. Prefer the
+    // shell toast — after opsGoQuotes() the builder's own #ch-toast is hidden with the pane.
+    var isRef = /^Q-/i.test(String(id || ''));
+    var notFound = q && q.error === 'not_found';
+    var msg = notFound
+      ? (isRef ? 'Quote ' + id + ' not found' : 'Quote not found')
+      : ('Couldn’t open the quote' + (q && q.error && q.error !== 'not_found' ? ' — ' + q.error : ''));
+    if (window.opsToast) window.opsToast(msg); else showToast(msg);
+    if (window.opsGoQuotes) window.opsGoQuotes();
     return;
   }
   var tool = q.request && q.request.tool;
@@ -2974,7 +3004,10 @@ async function reopenQuote(id) {
     render();
     refreshEstimate();
   }
-  showToast('Reopened ' + (q.reference || q.id));
+  // D7: this just loads a quote into the builder for viewing/editing — it is NOT the
+  // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" on a locked
+  // in-review quote contradicts its own "In review — locked" banner. "Opened" is honest.
+  showToast('Opened ' + (q.reference || q.id));
 }
 
 // ── Leg tone helpers ──────────────────────────────────────────────────────────
@@ -3664,8 +3697,12 @@ function computeFlags() {
       });
     }
 
-    // blue: check distances — driving leg with no distance, not auto-matched, not manual
-    if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && (leg.distanceKm || 0) <= 0 && !leg.autoMatched && !leg.manualDistance) {
+    // blue: check distances — driving leg with BOTH endpoints entered but still no distance,
+    // not auto-matched, not manual. D4: gate on both endpoints so a half-filled or empty leg
+    // doesn't claim it "couldn't be auto-located" before any location has been typed — that
+    // reads as a failure when the operator simply hasn't finished the leg yet.
+    var distFrom = (leg.pickupLocation || '').trim(), distTo = (leg.dropoffLocation || '').trim();
+    if (!flagSeen.distCheck && DRIVING_CATS[leg.category] && distFrom && distTo && (leg.distanceKm || 0) <= 0 && !leg.autoMatched && !leg.manualDistance) {
       flagSeen.distCheck = true;
       flags.push({
         level: 'blue',
@@ -4904,6 +4941,11 @@ function attachEventListeners() {
       _mapOpen = !_mapOpen;
       render();
     } else if (action === 'backToQueue') {
+      // D5: guard in-app back navigation the same way "+ New quote" and the browser's
+      // beforeunload do — an unsaved builder shouldn't be discarded on a single click with no
+      // warning. Autosave only covers already-saved quotes, so a brand-new unsaved quote has
+      // nothing to fall back on.
+      if (_dirty && !confirm('Leave this quote? Unsaved changes will be lost.')) return;
       if (window.opsGoQuotes) window.opsGoQuotes();
     } else if (action === 'saveDraft') {
       saveQuote();
@@ -5034,12 +5076,19 @@ function attachEventListeners() {
     // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
     // 'change' fires on blur before the dedicated blur handler sees it) and manual km edits —
     // both invalidate a picked route, so the choice resets here too, same as the blur path.
-    if (field === 'pickupLocation' || field === 'dropoffLocation') {
+    var typedLocation = (field === 'pickupLocation' || field === 'dropoffLocation');
+    if (typedLocation) {
       patch.routeVariant = undefined; patch.routeOptions = null; patch._sameRoute = false; patch._promptedRouteChoice = false;
+      // D3: a typed-and-blurred location must resolve its distance exactly like picking from the
+      // autocomplete (acPick) does — otherwise the leg keeps its stale/zero km and shows the amber
+      // "No distance" pill + "Check distances" warning while the right rail already prices the leg
+      // from the same typed strings server-side. Clear manual/auto + cache so auto-distance re-runs.
+      patch.manualDistance = false; patch.autoMatched = false;
     } else if (field === 'distanceKm') {
       patch.routeVariant = undefined;
     }
     updateLeg(legId, patch);
+    if (typedLocation) { delete _distCache[legId]; scheduleAutoDistance(legId); }
   });
 
   // D2: keyboard-first. Enter in a leg field appends the next leg (never while the place
@@ -5515,6 +5564,18 @@ async function drawItinRoute(hostEl, chains) {
   });
   _mapBounds = bounds;
   if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
+  // D8: the map host can still be settling (open animation / container-query relayout) when the
+  // map is first created, so Google measures a stale, smaller size and letterboxes the tiles —
+  // a small map centered in a larger grey box, most visible on a wide multi-leg route. Re-measure
+  // and refit once layout has settled so the route fills the container.
+  if (_mapBounds && window.requestAnimationFrame && window.google && google.maps && google.maps.event) {
+    var _m = _mapMap, _b = _mapBounds;
+    requestAnimationFrame(function () {
+      if (_m !== _mapMap) return; // superseded by a newer map
+      google.maps.event.trigger(_m, 'resize');
+      _m.fitBounds(_b, 30);
+    });
+  }
 }
 
 // ── Place autocomplete ────────────────────────────────────────────────────────
