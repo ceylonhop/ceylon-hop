@@ -742,5 +742,30 @@ export function internalQuoteRoutes(deps: {
     return c.json(canMargin ? updated : stripQuoteMargin(updated));
   });
 
+  // Delete a quote (spec 2026-07-22). SOFT delete — the row is hidden from the queue/tool but
+  // retained in the table (recoverable, audit-preserving), never a hard wipe. Gated by lifecycle
+  // state, layered on top of the route-wide quote:manage requirement:
+  //   draft | changes_requested → any quote:manage holder (ops) — unlocked, never sent
+  //   pending_review | ready     → founder only (quote:approve)  — locked, not yet sent
+  //   sent | won | lost | expired → NOBODY                        — customer-facing / decided
+  const DELETABLE_BY_OPS: readonly QuoteStatus[] = ['draft', 'changes_requested'];
+  const DELETABLE_BY_FOUNDER: readonly QuoteStatus[] = ['pending_review', 'ready'];
+  r.delete('/:id', csrf, async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const st = quote.status;
+    if (!DELETABLE_BY_OPS.includes(st) && !DELETABLE_BY_FOUNDER.includes(st)) {
+      // sent / won / lost / expired — a quote the customer has seen is never deletable.
+      return c.json({ error: 'not_deletable', reason: 'sent_or_decided' }, 409);
+    }
+    if (DELETABLE_BY_FOUNDER.includes(st) && !can(c.get('identity').role, 'quote:approve')) {
+      return c.json({ error: 'forbidden', reason: 'founder_only' }, 403);
+    }
+    const deleted = await deps.quotes.softDelete(id, c.get('identity').email);
+    if (!deleted) return c.json({ error: 'not_found' }, 404); // raced with another delete
+    return c.json({ id: deleted.id, deleted: true }, 200);
+  });
+
   return r;
 }

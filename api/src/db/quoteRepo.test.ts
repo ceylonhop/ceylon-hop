@@ -238,3 +238,26 @@ describe('internalNotes', () => {
     expect(updated!.internalNotes).toBe('second');
   });
 });
+
+// Soft delete (spec 2026-07-22): a deleted quote is hidden but retained; role/status gating is
+// the route's job, not the repo's.
+describe('softDelete', () => {
+  it('hides the quote from get() and list() but keeps the row (recoverable)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    const b = await repo.save(sample());
+    const deleted = await repo.softDelete(a.id, 'op@x.com');
+    expect(deleted!.deletedBy).toBe('op@x.com');
+    expect(deleted!.deletedAt).toBeInstanceOf(Date);
+    expect(await repo.get(a.id)).toBeNull();                       // gone from the tool
+    expect((await repo.list()).map((q) => q.id)).toEqual([b.id]);  // gone from the queue, b remains
+  });
+
+  it('is null for an unknown id and for a double delete', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    expect(await repo.softDelete('no-such-id', 'op@x.com')).toBeNull();
+    await repo.softDelete(a.id, 'op@x.com');
+    expect(await repo.softDelete(a.id, 'op@x.com')).toBeNull(); // already deleted
+  });
+});

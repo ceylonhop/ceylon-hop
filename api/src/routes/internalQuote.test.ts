@@ -290,6 +290,43 @@ describe('internal quoting tool route', () => {
     expect((await selfApprove.json()).error).toBe('illegal_transition');
   });
 
+  // Role-gated soft delete (spec 2026-07-22).
+  const del = (email: string, app: App, path: string) =>
+    app.request(path, { method: 'DELETE', headers: { cookie: cookie(email) } });
+
+  it('DELETE /:id soft-deletes a draft (ops) — hidden from get + list, row retained', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    const res = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).deleted).toBe(true);
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(404); // gone from the tool
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    expect(list.quotes.map((q: { id: string }) => q.id)).not.toContain(id); // gone from the queue
+  });
+
+  it('DELETE /:id: ops cannot delete a locked (pending_review) quote — founder only', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    const forbid = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(forbid.status).toBe(403);
+    expect((await forbid.json()).reason).toBe('founder_only');
+    const ok = await del('f@x.com', app, `/admin/quote/${id}`); // founder can delete the locked quote
+    expect(ok.status).toBe(200);
+  });
+
+  it('DELETE /:id: a sent quote can never be deleted (409), founder included', async () => {
+    const app = createApp();
+    const id = (await draft(app)).id;
+    await approve(app, id); // → ready (founder, via review)
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
+    const founderTry = await del('f@x.com', app, `/admin/quote/${id}`);
+    expect(founderTry.status).toBe(409);
+    expect((await founderTry.json()).reason).toBe('sent_or_decided');
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(200); // still there
+  });
+
   it('rejects an illegal transition (draft → sent) with 409', async () => {
     const app = createApp();
     const id = (await draft(app, 'op@x.com')).id;

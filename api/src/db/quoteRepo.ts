@@ -81,6 +81,8 @@ export interface SavedQuote {
   assignedAt: Date | null;
   createdBy: string | null;
   updatedBy: string | null;
+  deletedAt: Date | null;
+  deletedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   sentAt: Date | null;
@@ -141,6 +143,10 @@ export interface QuoteRepo {
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
   // duplicate. Returns null for an unknown id.
   update(id: string, q: NewQuote): Promise<SavedQuote | null>;
+  // Soft-delete: stamp deletedAt/deletedBy and hide the row from get()/list() while keeping it in
+  // the table. Idempotent-ish: returns null for an unknown or already-deleted id. Role/status
+  // gating lives in the route, not here — the repo only records the intent.
+  softDelete(id: string, deletedBy: string): Promise<SavedQuote | null>;
 }
 
 // Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
@@ -225,6 +231,8 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       assignedAt: null,
       createdBy: q.createdBy ?? null,
       updatedBy: q.updatedBy ?? null,
+      deletedAt: null,
+      deletedBy: null,
       createdAt: now,
       updatedAt: now,
       sentAt: null,
@@ -236,11 +244,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async get(id: string): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    return row ? { ...row } : null;
+    return row && !row.deletedAt ? { ...row } : null;
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
-    let rows = [...this.rows.values()];
+    let rows = [...this.rows.values()].filter((r) => !r.deletedAt);
     if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
     if (filter.status) rows = rows.filter((r) => r.status === filter.status);
     if (filter.product) rows = rows.filter((r) => r.product === filter.product);
@@ -303,6 +311,16 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
     row.updatedAt = new Date();
+    return { ...row };
+  }
+
+  async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
+    const row = this.rows.get(id);
+    if (!row || row.deletedAt) return null; // unknown or already deleted
+    const now = new Date();
+    row.deletedAt = now;
+    row.deletedBy = deletedBy;
+    row.updatedAt = now;
     return { ...row };
   }
 }

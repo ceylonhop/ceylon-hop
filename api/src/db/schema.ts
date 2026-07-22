@@ -238,6 +238,12 @@ export const quotes = pgTable('quotes', {
   assignedAt: timestamp('assigned_at', { withTimezone: true }),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),
+  // Soft delete (spec 2026-07-22): a deleted quote is hidden from get()/list() but retained in the
+  // table (never a hard wipe — keeps the audit trail and lets a mistaken delete be recovered).
+  // Role-gated in the route: ops delete drafts, founders delete locked-but-unsent; sent quotes
+  // can never be deleted.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),

@@ -2698,6 +2698,15 @@ async function apiPatch(id, patch) {
   } catch (e) { return { error: 'Network error' }; }
 }
 
+async function apiDelete(id) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id), { method: 'DELETE' });
+    var body = await jsonOrNull(r);
+    if (!r.ok) return body || { error: 'HTTP ' + r.status }; // carry { error, reason } for friendly copy
+    return body || { deleted: true };
+  } catch (e) { return { error: 'Network error' }; }
+}
+
 // V19: fetch a full saved quote (incl. request.tool) for reopening.
 async function apiGetQuote(id) {
   try {
@@ -2869,6 +2878,27 @@ function approveReady()    { transition('ready', { toast: 'Approved — ready to
 function markSent()        { transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 function markOutcome(s)    { transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
 function reopenToDraft()   { transition('draft', { toast: 'Reopened for editing' }); }
+
+// Delete (spec 2026-07-22): soft delete + back to the queue. The button only shows for the
+// states/roles the server allows, but the server is authoritative — so map its refusals to
+// friendly copy rather than trusting the button alone.
+async function deleteQuote() {
+  if (!state.savedId) return;
+  var ref = state.reference || 'this quote';
+  if (!confirm('Delete quote ' + ref + '?\n\nIt will be removed from the queue. Only an admin can bring it back.')) return;
+  var res = await apiDelete(state.savedId);
+  if (res && res.deleted) {
+    _dirty = false; // deleted — no unsaved-changes prompt on the way out
+    if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+    if (window.opsGoQuotes) window.opsGoQuotes(); // back to the queue
+    showToast('Quote ' + ref + ' deleted');
+    return;
+  }
+  var reason = res && res.reason;
+  if (reason === 'founder_only') showToast('Only a founder can delete a locked quote');
+  else if (reason === 'sent_or_decided') showToast('A quote already sent to the customer can’t be deleted');
+  else showToast('Could not delete — ' + ((res && res.error) || 'unknown error'));
+}
 // Send-back uses an inline note composer (not a native prompt): confirmSendBack reads
 // the textarea and PATCHes the quote to changes_requested with the note attached.
 function confirmSendBack() {
@@ -4307,6 +4337,14 @@ function renderActionBar() {
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
+  // Delete (spec 2026-07-22): soft delete, only for a SAVED quote, gated by state + role to mirror
+  // the server. draft/changes_requested → anyone here (ops); pending_review/ready → approver
+  // (founder) only; sent/decided → never (no button). The server is authoritative regardless.
+  var canDelete = !!state.savedId && (
+    s === 'draft' || s === 'changes_requested' ||
+    ((s === 'pending_review' || s === 'ready') && approver)
+  );
+  if (canDelete) out.push(B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
   return out.join('');
 }
 
@@ -5018,6 +5056,8 @@ function attachEventListeners() {
       render();
     } else if (action === 'reopenToDraft') {
       reopenToDraft();
+    } else if (action === 'deleteQuote') {
+      deleteQuote();
     } else if (action === 'openRates') {
       if (!viewerCan('margin:view')) return; // founder-only rate card
       ratesOpen = true;
