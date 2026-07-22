@@ -455,6 +455,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 0; }
 .qv .ch-field-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; display: flex; align-items: center; gap: 3px; }
 .qv .ch-field-label .req { color: var(--red); font-style: normal; }
+.qv .ch-field-label .ch-opt { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 9.5px; opacity: .8; }
 .qv .ch-field-hint { font-size: 11px; color: var(--red); }
 .qv .ch-card-body > .ch-field { margin-top: 14px; }
 
@@ -2106,7 +2107,7 @@ function contactOk(s) { s = (s || '').trim(); return s === '' || contactValid(s)
 function basicsComplete() {
   return !!state.vehicleType
     && (state.firstName || '').trim() !== ''
-    && (state.lastName || '').trim() !== ''
+    // Last name is OPTIONAL — many enquiries arrive first-name-only (Instagram/WhatsApp).
     && contactOk(state.contact)
     && state.passengerCount >= 1
     && state.luggageCount >= 0;
@@ -2114,7 +2115,6 @@ function basicsComplete() {
 function basicsMissingText() {
   var m = [];
   if ((state.firstName || '').trim() === '') m.push('first name');
-  if ((state.lastName || '').trim() === '') m.push('last name');
   // Only flag contact when the operator typed one that isn't valid — blank is allowed.
   if (!contactOk(state.contact)) m.push('a valid WhatsApp number (with country code) or email, or clear the field');
   if (!state.vehicleType) m.push('a vehicle');
@@ -4521,7 +4521,7 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-firstName" type="text" placeholder="e.g. Karen" value="' + esc(st.firstName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">Last name <em class="req">*</em></label>',
+    '            <label class="ch-field-label">Last name <span class="ch-opt">optional</span></label>',
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-lastName" type="text" placeholder="e.g. Silva" value="' + esc(st.lastName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
