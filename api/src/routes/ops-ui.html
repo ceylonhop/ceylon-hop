@@ -5328,20 +5328,34 @@ function routeLoc(name) {
   return (name || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka';
 }
 
-// Ordered, consecutive-deduplicated stop names across the travel legs.
-function itinStops() {
-  var out = [];
+// Group the travel legs into connected chains of stop names. A chain is a run of legs
+// where each leg's pick-up continues the previous leg's drop-off; a gap (leg N ends
+// somewhere leg N+1 doesn't start) begins a NEW chain. Each chain is drawn as its own
+// route — so disconnected legs never get a line stitched across the gap between them.
+// Stops within a chain are consecutive-deduplicated; chains too short to route are dropped.
+function itinChains() {
+  var chains = [];
+  var cur = null;
   state.legs.forEach(function (l) {
     if ((l.category || 'transfer') === 'stay_day') return;
     var from = (l.pickupLocation || '').trim();
     var to = (l.dropoffLocation || '').trim();
-    if (from && out[out.length - 1] !== from) out.push(from);
-    if (to && out[out.length - 1] !== to) out.push(to);
+    if (!from && !to) return;
+    if (cur && from && cur[cur.length - 1] === from) {
+      // Continues the current chain — append the drop-off (dedup a repeated stop).
+      if (to && cur[cur.length - 1] !== to) cur.push(to);
+    } else {
+      // First leg, or a gap the previous chain didn't reach → open a fresh chain.
+      cur = [];
+      if (from) cur.push(from);
+      if (to && cur[cur.length - 1] !== to) cur.push(to);
+      chains.push(cur);
+    }
   });
-  return out;
+  return chains.filter(function (c) { return c.length >= 2; }); // need ≥2 stops to route
 }
-// Show the map once there's a routable itinerary and a key is configured.
-function itinMapAvailable() { return !!OPS_MAPS_KEY && itinStops().length >= 2; }
+// Show the map once there's at least one routable chain and a key is configured.
+function itinMapAvailable() { return !!OPS_MAPS_KEY && itinChains().length >= 1; }
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
@@ -5363,8 +5377,8 @@ function syncItinMap() {
       if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
     }
   }
-  var stops = itinStops();
-  var sig = stops.join(' | ');
+  var chains = itinChains();
+  var sig = chains.map(function (c) { return c.join(' | '); }).join(' || ');
   // Route unchanged → nothing to do, whatever state the map is in: keep a live map,
   // keep a failure note (retrying identical stops can't succeed and re-billed a route
   // query on EVERY render — each date/price/checkbox edit), and let an in-flight draw
@@ -5372,7 +5386,7 @@ function syncItinMap() {
   // or in-flight route re-draws only when a stop actually changes.
   if (sig === _mapSig) return;
   _mapSig = sig;
-  drawItinRoute(_mapEl, stops);
+  drawItinRoute(_mapEl, chains);
 }
 
 // Route choice (2026-07-21): the modal's two-route map. Persistent map element re-parented into
@@ -5428,7 +5442,7 @@ async function drawRouteModalRoutes(hostEl, from, to, sel) {
   if (vp) _rcMapMap.fitBounds(vp, 20);
 }
 
-async function drawItinRoute(hostEl, stops) {
+async function drawItinRoute(hostEl, chains) {
   var reqId = ++_mapReqSeq;
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
@@ -5439,48 +5453,67 @@ async function drawItinRoute(hostEl, stops) {
     _mapMap = new libs.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
     _mapMap.__host = hostEl;
   }
-  var route = null;
-  try {
-    var res = await libs.Route.computeRoutes({
+  // Route each connected chain on its own — a disconnected leg is a separate query, so
+  // Google never stitches a driving line across the gap between two unconnected legs.
+  var routes = await Promise.all((chains || []).map(function (stops) {
+    return libs.Route.computeRoutes({
       origin: routeLoc(stops[0]),
       destination: routeLoc(stops[stops.length - 1]),
       intermediates: stops.slice(1, -1).map(function (n) { return { location: routeLoc(n) }; }),
       travelMode: 'DRIVING',
       region: 'lk',
       fields: ['path', 'legs', 'viewport'],
-    });
-    route = res && res.routes && res.routes[0];
-  } catch (e) { /* unroutable → the "couldn't map" note below */ }
+    }).then(function (res) { return res && res.routes && res.routes[0]; })
+      .catch(function () { return null; }); // unroutable chain → drop it, others still draw
+  }));
   if (reqId !== _mapReqSeq) return; // stale response — a newer itinerary request has since fired; don't repaint
-  if (!route) {
+  routes = routes.filter(Boolean);
+  if (!routes.length) {
     hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
     _mapMap = null; return;
   }
-  // Swap in this route's polylines, styled like the old DirectionsRenderer line (the
+  // Swap in every chain's polylines, styled like the old DirectionsRenderer line (the
   // renderer used to replace the previous line for us; now we clear it ourselves).
   _mapPolylines.forEach(function (p) { p.setMap(null); });
-  _mapPolylines = route.createPolylines();
-  _mapPolylines.forEach(function (p) {
-    p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 });
-    p.setMap(_mapMap);
+  _mapPolylines = [];
+  routes.forEach(function (route) {
+    route.createPolylines().forEach(function (p) {
+      p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.9 });
+      p.setMap(_mapMap);
+      _mapPolylines.push(p);
+    });
   });
-  // A brand pin at EVERY stop (createWaypointAdvancedMarkers needs a map ID, so we keep our
-  // own pins): green start, teal for the stops in between, orange final drop-off — so the
-  // ops map shows the whole itinerary, not just the two endpoints (matches the customer
-  // site's map). Clear the previous render's pins first so they don't pile up.
+  // A brand pin at EVERY stop across all chains (createWaypointAdvancedMarkers needs a map
+  // ID, so we keep our own pins): green at the itinerary's very first stop, orange at its
+  // very last, teal for everything in between — including where a disconnected chain begins.
+  // Clear the previous render's pins first so they don't pile up.
   try {
     _mapMarkers.forEach(function (m) { m.setMap(null); });
     _mapMarkers = [];
-    var rlegs = route.legs;
     var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22) }; };
     var at = function (loc) { return { lat: loc.lat, lng: loc.lng }; }; // DirectionalLocation → LatLngLiteral
-    _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(rlegs[0].startLocation), icon: pin('#0a7d6f'), zIndex: 6 }));
-    for (var li = 0; li < rlegs.length; li++) {
-      var isLast = li === rlegs.length - 1;
-      _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(rlegs[li].endLocation), icon: pin(isLast ? '#e8623a' : '#0AB9B6'), zIndex: isLast ? 6 : 5 }));
-    }
+    var pts = []; // every stop, in itinerary order, across all chains
+    routes.forEach(function (route) {
+      var rlegs = route.legs || [];
+      if (!rlegs.length) return;
+      pts.push(rlegs[0].startLocation);
+      for (var li = 0; li < rlegs.length; li++) pts.push(rlegs[li].endLocation);
+    });
+    pts.forEach(function (loc, i) {
+      var isFirst = i === 0, isLast = i === pts.length - 1;
+      var fill = isFirst ? '#0a7d6f' : (isLast ? '#e8623a' : '#0AB9B6');
+      _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(loc), icon: pin(fill), zIndex: (isFirst || isLast) ? 6 : 5 }));
+    });
   } catch (e) { /* markers are non-essential */ }
-  _mapBounds = route.viewport || null;
+  // Fit to every chain: union the per-route viewports (LatLngBounds.union), so a
+  // multi-chain itinerary frames all of its separate segments, not just the first.
+  var bounds = null;
+  routes.forEach(function (route) {
+    var vp = route.viewport;
+    if (!vp) return;
+    bounds = (bounds && bounds.union) ? bounds.union(vp) : vp;
+  });
+  _mapBounds = bounds;
   if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
 }
 
