@@ -2309,14 +2309,20 @@ function legDriveHours(leg) {
   for (var i = 0; i < leg.segments.length; i++) sum += (parseFloat(leg.segments[i].driveTimeHours) || 0);
   return sum;
 }
-// Chain validity (Task 8): a 3+-stop ride with two consecutive trim-equal stops can't go
-// on the wire as a chain (the server 400s it) — stopsChainSendable drops it to the legacy
-// from/to mirror. That fallback must never be SILENT for a real multi-stop ride, so the
-// needs strip + flags card surface it via this predicate. The two legacy-degenerate 2-stop
-// cases (fresh blank ['',''] leg, genuine from==to leg) stay quiet — they price exactly as
-// they always have.
+// Chain validity (Task 8): a 3+-stop ride with two consecutive equal stops (BOTH non-blank)
+// can't go on the wire as a chain — stopsChainSendable drops it to the legacy from/to mirror,
+// which would silently price only first→last. The needs strip + flags card surface it via
+// this predicate so that fallback is never silent for a real multi-stop ride. Deliberately
+// independent of stopsChainSendable: a still-blank interior stop (mid-build, e.g. just after
+// "+ stop") is incompleteness, not a duplicate — the distance-needs line covers it, and this
+// "same stop" copy must not fire for stops the operator hasn't filled yet.
 function legChainDuplicate(leg) {
-  return leg.category !== 'stay_day' && leg.stops.length > 2 && !stopsChainSendable(leg.stops);
+  if (leg.category === 'stay_day' || leg.stops.length <= 2) return false;
+  for (var i = 0; i < leg.stops.length - 1; i++) {
+    var a = (leg.stops[i] || '').trim(), b = (leg.stops[i + 1] || '').trim();
+    if (a && b && a === b) return true;
+  }
+  return false;
 }
 
 // Structural invalidation (spec §5): every stop-list change (edit/insert/delete/reorder) goes
@@ -2365,6 +2371,13 @@ function segmentsWith(leg, idx, patch) {
 // as it always has.
 function stopsChainSendable(stops) {
   if (!stops || stops.length < 2 || stops.length > 8) return false;
+  // Any blank stop → not a resolvable chain; fall back to the legacy from/to mirror so the
+  // half-built leg prices/errors exactly as it did before multi-stop (a raw "couldn't find
+  // the distance for A → " server error would otherwise replace the friendly needs line while
+  // the operator is still typing the new stop). Same philosophy as the fresh ['',''] case.
+  for (var i = 0; i < stops.length; i++) {
+    if (!(stops[i] || '').trim()) return false;
+  }
   for (var i = 0; i < stops.length - 1; i++) {
     if ((stops[i] || '').trim() === (stops[i + 1] || '').trim()) return false;
   }
@@ -5037,6 +5050,11 @@ function attachEventListeners() {
         if (newStops.length !== sLeg.stops.length) {
           // Segment indices shifted — the per-index distance cache keys are stale.
           delete _distCache[legId];
+          // Neutralize any pending autocomplete blur commit: a stop input that blurred when
+          // this button was pressed has a 200ms delayed commit still captured at its OLD
+          // stop index; after this shift that index points at a different stop, so the
+          // commit would write stale text there. Bumping the token makes that callback skip.
+          _stopMutationSeq++;
           updateLeg(legId, {
             stops: newStops,
             segments: rebuildSegments(sLeg.stops, sLeg.segments, newStops),
@@ -5278,6 +5296,10 @@ function attachEventListeners() {
 // existing `delete _distCache[legId]` sites still invalidate the whole leg in one shot.
 var _distTimers = {};      // legId → setTimeout handle
 var _distCache = {};       // legId → { segIdx → 'from||to' string of the last fetch }
+// Task 8 fix: bumped whenever a stop-list structural mutation (addStop/removeStop/andReturn)
+// shifts stop indices. The autocomplete blur commit captures this at blur time and skips its
+// stale-index commit if it changed before the delayed callback ran — see the blur handler.
+var _stopMutationSeq = 0;
 
 function scheduleAutoDistance(legId) {
   clearTimeout(_distTimers[legId]);
@@ -5858,8 +5880,16 @@ function attachAutoComplete() {
 
     // Close on blur — small delay so mousedown on an item fires first
     input.addEventListener('blur', function() {
+      // Capture the stop-mutation token NOW (blur fires on the button's mousedown, before its
+      // click mutates the stop list). If a +stop/remove/return shifts indices before the
+      // delayed commit below runs, this orphaned node's captured stopIdx no longer names the
+      // stop it held — skip the commit (the re-rendered inputs carry the correct per-stop
+      // values). Only structural mutations bump the token, so an ordinary background re-render
+      // leaves the parked typing-flicker path (docs/bug-ops-quote-typing-flicker.md) untouched.
+      var mutSeqAtBlur = _stopMutationSeq;
       setTimeout(function() {
         if (_ac.inputEl === input) acClose();
+        if (_stopMutationSeq !== mutSeqAtBlur) return;
         // Also trigger auto-distance when the user finishes typing manually
         var leg = state.legs.find(function(l) { return l.id === legId; });
         if (leg) {
