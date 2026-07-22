@@ -43,11 +43,18 @@ export function rideRawKm(ride: Ride): number {
 // validateRide: engine-level shape/consistency checks only. The 8-stop cap is an ops-schema
 // rule, not enforced here — the engine accepts any length >= 2. Out-and-back (['A','B','A'])
 // is accepted: only CONSECUTIVE stop pairs equal after trim are rejected.
+//
+// The consecutive-differ rule (spec §3: "no zero-length A → A segments") is a MULTI-STOP rule
+// and applies only to rides with 3+ stops. A normalized old-shape 2-stop leg is EXEMPT: the
+// pre-ride-model engine never compared from/to and priced a same-place leg (with a manual
+// round-trip km) fine, so rejecting it here would 422 stored quotes on reopen (GC-5 back-compat).
 export function validateRide(ride: Ride): void {
   if (ride.stops.length < 2) throw new Error('INVALID_RIDE');
   if (ride.segmentKms.length !== ride.stops.length - 1) throw new Error('INVALID_RIDE');
-  for (let i = 0; i < ride.stops.length - 1; i++) {
-    if (ride.stops[i].trim() === ride.stops[i + 1].trim()) throw new Error('INVALID_RIDE');
+  if (ride.stops.length >= 3) {
+    for (let i = 0; i < ride.stops.length - 1; i++) {
+      if (ride.stops[i].trim() === ride.stops[i + 1].trim()) throw new Error('INVALID_RIDE');
+    }
   }
   for (const km of ride.segmentKms) {
     if (!Number.isFinite(km) || km < 0) throw new Error('INVALID_RIDE');

@@ -309,9 +309,19 @@ describe('quote()', () => {
         legs: [{ stops: ['A', 'B', 'C'], segmentKms: [10] }] })).toThrow('INVALID_RIDE');
     });
 
-    it('chauffeur: an invalid ride day (repeated consecutive stop) surfaces INVALID_RIDE', () => {
+    it('chauffeur: an invalid MULTI-STOP ride day (repeated consecutive stop) surfaces INVALID_RIDE', () => {
       expect(() => quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-08-01', lastDate: '2026-08-01',
-        travelDays: [{ date: '2026-08-01', stops: ['A', 'A'], segmentKms: [10] }] })).toThrow('INVALID_RIDE');
+        travelDays: [{ date: '2026-08-01', stops: ['A', 'A', 'B'], segmentKms: [10, 10] }] })).toThrow('INVALID_RIDE');
+    });
+
+    it('back-compat (GC-5): a 2-stop leg whose from == to still PRICES, never INVALID_RIDE', () => {
+      // The pre-ride-model engine never compared from/to; a same-place leg with a manual
+      // round-trip km priced fine. A stored quote like this must reopen + reprice, not 422.
+      const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ from: 'Ella', to: 'Ella', distanceKm: 80 }] });
+      // raw 80 + 8 buffer = 88 billable × 40.25¢ = 3542, above the car floor.
+      expect(r.subtotalCents).toBe(3542);
+      expect(r.lineItems[0].label).toBe('Ella → Ella (car)');
     });
 
     it('chauffeur: a multi-stop ride day prices off its summed segments (single travel buffer)', () => {
