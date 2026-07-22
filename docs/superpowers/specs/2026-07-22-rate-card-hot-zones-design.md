@@ -1,156 +1,219 @@
-# Rate-card hot zones — design (DRAFT for owner review)
+# Rate-card hot zones — design (RESOLVED — awaiting explicit build go)
 
-**Status:** proposal only. No code written. Owner asked (2026-07-22) to *design, critique, and commit a plan* for later review.
-**Revised 2026-07-22** after owner discussion: **D3** matching is now **name-first** (against the known-places list) with the geo-radius demoted to an optional fallback; **D9** the premium is **founder-only** (rides the existing `margin:view` gate — hidden from ops *and* the customer). Sections 4, 5, 6, 10, 11, 12 updated to match.
+**Status:** spec fully resolved — the owner answered all five open questions on 2026-07-22 (folded in below as revision 4). **No code written; the 4-phase build (§8) starts only on a fresh explicit go.**
+**Revision 4 (2026-07-22)** — owner answers folded in: drive-throughs OUT (D2); shared rides OUT (D8); website cadence = next regenerate/deploy, drift guard covers the gap, no auto-regenerate-on-save (§6); boost cap = hard 0–100 with a **warn above 20%** (D4/R3); and the boost books into the **cost basis** — it does not inflate reported margin (D6, which changes the engine's cost-side math).
+**Revision 3 (2026-07-22)** — after a full code-verified critique. Major corrections: §2/§6 now describe the website integration **honestly** (the codegen exports constants and the front-end recomputes prices — it never calls the engine); a new constraint **C3** covers the web checkout drift guard (the page↔checkout mismatch class fixed once before in PR #43); **D1/D9 reconciled** (the boost lives *inside* the leg amount — there is no separate premium line); **D3** gains a concrete matching spec with Sri-Lanka-specific edge cases; **D10** adds the missing chauffeur design (chauffeur pricing is aggregate, not per-leg); **D11** decides the custom-rate interplay; phases re-cut in §8 so the website can never disagree with the server. Earlier revisions: D2 any-touch (no pickup/drop-off distinction), D3 name-first, D9 founder-only.
 **Guardrail:** this touches pricing. Per CLAUDE.md ("STOP and ask before touching pricing"), nothing here ships without an explicit owner go on this doc.
 
 ## 1. Goal (owner, 2026-07-22)
 
 > "Create a hot zone for the rate card. If a certain list of cities/towns are searched and we calculate rates, boost the rate by X%. Founder-editable, and it applies to **all** rates generated in ops **and** the website."
 
-A *hot zone* is a premium area (e.g. a resort town, a festival hotspot, a hard-to-service region). When a trip touches one, its price goes up by a founder-set percentage. The list of zones and their percentages are the founder's to change, and the change must flow through **both** pricing surfaces at once: the ops quote tool and the generated website prices.
+A *hot zone* is a premium area (e.g. a resort town, a festival hotspot, a hard-to-service region). When a trip touches one, its price goes up by a founder-set percentage. The list of zones and their percentages are the founder's to change, and the change must flow through **both** pricing surfaces: the ops quote tool and the website.
 
 ## 2. Where prices are computed today (the surfaces a boost must reach)
 
-Backend is the single source of truth for pricing ([[ceylon-hop-pricing-source-of-truth]]).
+Backend is the single source of truth for pricing ([[ceylon-hop-pricing-source-of-truth]]) — but "source of truth" does **not** mean every surface calls the engine. Verified against the code:
 
-| Product | Function | File | Basis |
-|---|---|---|---|
-| Private (per leg) | `legPriceCents()` / `quotePrivateLegs()` | `api/src/quote/private.ts:16` | `max(floor, km × perKmCents)` — has `leg.from` / `leg.to` |
-| Chauffeur | `quoteChauffeur()` | `api/src/quote/chauffeur.ts` | day rate + `billableKm × perKmCents` |
-| Shared | `quoteSharedLegs()` + `CORRIDOR_ROUTES` | `api/src/quote/shared.ts`, `departureRepo.ts` | fixed per-seat corridor price (NOT per-km) |
-| Orchestration + final rounding | `quote()` → `finishPrice()` | `api/src/quote/engine.ts:23`, `:99` | applies price-finishing once, after the core calc |
-| **Website** (generated, not live) | `tools/generate-pricing.mjs` → `routes-data.js`, `transfers-data.js`, `trip/*/index.html` | run via `npm run generate`; parity-guarded by `web-tests/unit/*-price-parity.test.js` |
+| Surface | How it prices | Files |
+|---|---|---|
+| Ops quote tool | live engine call per estimate/save | `internalQuote.ts` → `engine.ts` |
+| Private legs (engine) | `max(floor, billableKm × perKmCents)` per leg | `private.ts:16` (`legPriceCents` / `quotePrivateLegs`) |
+| Chauffeur (engine) | day rate × days + **ONE aggregate** distance charge (`Σ buffered travel km + idle-min km`) × perKm | `chauffeur.ts` — **not per-leg** (see D10) |
+| Shared (engine) | fixed per-seat corridor price — not per-km | `shared.ts`, `departureRepo.ts` |
+| Final rounding | `finishPrice()` once, after the core calc | `engine.ts` |
+| **Website route pages / booking UI** | **front-end JS recomputes prices** from constants (`PER_KM`, `FLOORS`, `BUFFER_PCT`…) that `tools/generate-pricing.mjs` dumps from the backend (`dump:pricing`) into fenced blocks in `transfers-data.js` / `routes-data.js`. **The codegen never calls the engine.** | `tools/generate-pricing.mjs`, `booking.js`, parity-guarded by `web-tests/unit/*-price-parity.test.js` |
+| **Website checkout** | front-end computes `quotedTotal` client-side (`booking.js:1514`) and submits it; the **server re-prices with the engine and applies a drift guard** (`bookings.ts:25`) that flags/limits divergence | `bookings.ts` |
 
-Two hard constraints fall straight out of this table:
+Three hard constraints:
 
-- **C1 — one engine, two emitters.** A boost implemented in the engine (`private.ts` / `chauffeur.ts`) is automatically correct for ops *and* for the website, **provided the website codegen calls the same engine with the same zone data**. The generator must read zones from the same place the engine does; hand-editing `routes-data.js` is forbidden (parity tests fail — [[ceylon-hop-pricing-source-of-truth]]).
-- **C2 — rate-lock.** An approved quote is priced against a *locked snapshot* of the rate card ([[ceylon-hop-rate-lock]], `RateCard` type in `rateCard.ts`). If zones aren't part of that snapshot, a locked quote would silently re-price when the founder later edits a zone. **Zones must live inside the `RateCard` snapshot** so a locked quote keeps the zones it was priced with.
+- **C1 — one formula, two implementations.** The engine and the front-end mirror compute the same formula from the same dumped constants, held together by parity tests. A zone boost therefore must be implemented **twice**: in the engine, and in the front-end mirror (with the zone list dumped alongside the other constants). There is no shortcut where the website "calls the engine" — it doesn't.
+- **C2 — rate-lock.** An approved quote is priced against a *locked snapshot* of the rate card ([[ceylon-hop-rate-lock]]). Zones must live **inside** the `RateCard` snapshot so a locked quote keeps the zones it was priced with; a later zone edit must never re-price an approved quote. (Bonus, verified: `stripQuoteMargin()` already deletes `rateCardJson` for non-founder roles, so the zone list inside a locked snapshot is hidden from ops for free.)
+- **C3 — checkout drift guard.** If the server boosts a route the front-end doesn't know is boosted, **every zone-touching web booking becomes a page-says-$121 / server-says-$139 mismatch** and trips the `quotedTotal` drift guard. This exact page↔checkout mismatch class was a real production bug fixed by the psychological-pricing work (PR #43). Consequence: **server-side zone pricing for web-reachable paths and the front-end zone mirror must ship in the same release** — the rollout in §8 is cut around this.
 
 ## 3. Design decisions
 
-### D1 — What does "boost the rate" mean? → per-leg multiplier on the per-km price
-Options: (a) bump `perKmCents`; (b) multiply the leg's *price*; (c) surcharge the whole quote if any leg touches a zone.
-**Recommend (a): multiply the per-km rate for a leg whose endpoint is in a zone**, i.e. `rate → rate × (1 + boost)`, then `max(floor, km × boostedRate)` as today. Rationale: localizes the premium to the affected leg, reads naturally in the existing line item, and keeps the floor as a protection. A multi-leg trip where only one leg touches Ella is only boosted on that leg — which is what "boost the rate for that area" should mean.
+### D1 — What does "boost the rate" mean? → per-leg multiplier folded INTO the leg amount (no separate line)
+The boost multiplies the per-km rate for a zone-touching leg: `rate → rate × (1 + boost)`, then `max(floor, km × boostedRate)` as today. The premium therefore lives **inside the leg's own line-item amount** — there is **no separate "premium" line item**. This matters for D9: line items are visible to every role and are what the money-pane build-up and the customer message are assembled from; a hidden separate line would make ops see lines that don't sum to the total. Folding it in keeps every role's arithmetic consistent; the founder-only *annotation* (D9) is metadata, not a line.
 
 ### D2 — Which part of the leg counts? → any touch; no pickup/drop-off distinction
-**Decided 2026-07-22 (owner):** don't record pickup vs drop-off separately — if a leg touches a hot town at all, elevate the price. A leg `from → to` is "in a zone" when its start **or** its end is a hot town, and the two are treated identically. Rationale: the premium is the cost of *servicing the area*, which is the same in either direction — so direction simply doesn't enter the check (no loophole where "Ella → Colombo" dodges a premium that "Colombo → Ella" pays).
+**Decided (owner):** if a leg touches a hot town at either end, elevate the price — start and end are treated identically. The premium is the cost of *servicing the area*, which is direction-neutral (no loophole where "Ella → Colombo" dodges what "Colombo → Ella" pays).
+**Drive-throughs — DECIDED (owner, 2026-07-22): out of v1.** A leg that only passes through a zone (neither end is the town) is not boosted — endpoints use data we already have; drive-through would need the route polyline, which manual-distance legs don't carry. Revisit only if real trips are seen slipping through.
 
-**Still open — drive-throughs.** A leg whose start and end are *both* outside a zone but whose route passes *through* one (e.g. Colombo → Badulla driving the Ella hills without stopping). **Recommend leaving this out of v1:** the endpoints use data we already have (leg names/coords), whereas a drive-through needs the route *polyline* — which isn't always available (manual-distance legs carry none) and adds a per-zone geometry test on every leg. It's a clean add later if wanted; see §12 Q1.
+### D3 — How is a location matched to a zone? → name-first (known-places), with an explicit matching spec
+**Decided (owner):** match on the **town name**, not a pin+radius. A zone *is* a `KNOWN_PLACES` town the founder picks from the same list the tool autocompletes from. Zero new Google calls.
 
-### D3 — How is a location matched to a zone? → name-first (known-places), geo-radius as optional fallback
-**Decided 2026-07-22 (owner):** match on the **town name**, not a pin+radius.
+The phrase "word-boundary contains" is not enough — the matching rules must be explicit, because Sri Lankan names collide:
 
-What we get from Google today ([`api/src/adapters/maps.ts`](../../../api/src/adapters/maps.ts)): **Distance Matrix** (road distance) + **Places Autocomplete** (display-name *strings* like "Ella, Sri Lanka" — 6 of them). We do **not** currently fetch the structured `locality`/`address_components` a Geocoding/Place-Details call would give. But we do keep a curated **`KNOWN_PLACES`** list (SL town names → coordinates) that the ops autocomplete and every website route are built from.
+**Matching algorithm (in order):**
+1. Normalize both sides: trim, lowercase (the existing `norm()` in `maps.ts`).
+2. **Exact match** — endpoint name equals `place_name` → match.
+3. **Compound known-place split** — `KNOWN_PLACES` has compound entries (`'Sigiriya / Dambulla'`, `'Colombo Airport (CMB)'`). Split `place_name` on `/` and strip parentheticals; an endpoint exactly matching any part (`'sigiriya'`, `'dambulla'`) → match.
+4. **Free-typed fallback** — for an endpoint that is NOT a known place (a Google display string like `"Nine Arch Bridge, Ella, Sri Lanka"`): match if the zone's town appears as a **comma-delimited address component** of the string — not a bare substring, not merely word-boundary. `"…, Ella, Sri Lanka"` → the component `"Ella"` matches zone *Ella*. `"Galle Face Green, Colombo"` → components are `"Galle Face Green"` and `"Colombo"`; **no component equals "Galle"**, so a *Galle* zone does NOT match (Galle Face is in Colombo, 120 km away — word-boundary "contains" would have false-positived here).
+5. **Optional geo fallback** — a zone may carry `{ lat, lng, radiusKm }`; an endpoint with resolved coordinates inside that haversine circle also matches. For the one case names miss: a GPS pickup near a hot town that Google labels as a neighbouring village.
 
-**Recommend name-first against `KNOWN_PLACES`:** a zone *is* a known town name (the founder picks it from the same list the tool autocompletes from), and a leg endpoint is "in the zone" when its resolved name equals that town (case-insensitive; exact for a known place, word-boundary contains for a free-typed display string). This is **simpler for the founder** (tick which towns are hot — no pins, no radius), **exact** (no "Bella matches Ella" substring trap, because we match the *resolved* place, not raw text), and needs **zero new Google calls**.
+**Worked examples (these become `hotZones.test.ts` cases):**
 
-Keep the **geo-radius (haversine) as an optional fallback** for the one case name-matching misses: an exact GPS pickup that sits near a hot town but that Google labels as a *neighbouring* village. A zone may carry an optional `{ lat, lng, radiusKm }`; when set, an endpoint with coordinates within that circle also matches. Skip it unless a zone needs it.
+| Zone | Endpoint | Match? | Why |
+|---|---|---|---|
+| Ella | `Ella` | ✅ | exact |
+| Ella | `Nine Arch Bridge, Ella, Sri Lanka` | ✅ | address component |
+| Ella | `Bella Vista Hotel, Colombo` | ❌ | no component equals "Ella" |
+| Galle | `Galle Face Green, Colombo` | ❌ | component is "Galle Face Green", not "Galle" |
+| Galle | `Galle Fort, Galle` | ✅ | address component |
+| Sigiriya / Dambulla | `Dambulla` | ✅ | compound split |
+| Colombo City | `Colombo Airport (CMB)` | ❌ | airport ≠ city; no shared component |
 
-Caveat (see R2): name-first trusts the label. If an operator free-types an establishment and Google returns the *venue* name rather than the town, a pure name match can miss it — that's exactly when the optional radius earns its keep.
+Caveat (R2): a free-typed *venue* whose display string omits the town (Google returns just the establishment) is missed by names — that's what the optional radius is for.
 
-### D4 — Where do zones live + how does the founder edit them? → new `pricing_zones` table + founder admin
-Founder-editable ⇒ database, not a code constant. There is **no founder rate-card admin API today** — it's a documented deferred item (`internalQuote.ts` comment "when the deferred founder rate-card API lands"). This feature can be its **first slice**: a small, self-contained `pricing_zones` CRUD, gated by `quote:approve` (founder-only — `opsAuth.ts`), surfaced in the existing founder-only Rate Settings modal (`renderRateCardBody()`, already `margin:view`-gated).
-Zone shape (name-first, per D3): `{ id, place_name, boost_pct, active, lat?, lng?, radius_km?, created_at, updated_at }` — `place_name` is the match key; `lat/lng/radius_km` are the optional geo fallback.
+### D4 — Where do zones live + who edits them? → `pricing_zones` table + founder admin, with audit + kill switch
+Founder-editable ⇒ database. No founder rate-card admin exists today (documented deferred item); this is its first slice: a self-contained CRUD gated by `quote:approve` (founder-only), surfaced in the Rate Settings modal. Notes:
+- **Audit:** zone edits are pricing changes — every row carries `created_by` / `updated_by` (staff email, same pattern quotes gained in migration 0015). No silent % changes.
+- **Kill switch:** env var `HOT_ZONES_DISABLED=1` makes `activeZones()` return `[]` — one flip turns a fat-fingered zone incident into a non-event without touching data.
+- **Cap note:** the panel is visible under `margin:view`, edits gated by `quote:approve`. Today both = founder exactly; the doc records the assumption in case roles ever diverge.
 
 ### D5 — How do zones reach the engine + the snapshot? → fold into the `RateCard` object
-Add an optional `hotZones?: HotZone[]` to the `RateCard` type (`rateCard.ts`). The live card composes `RATE_CARD` + `activeZones()` from the DB at request time; a **locked** quote carries the zones it was priced with inside its `rate_card_json` snapshot (satisfies C2 automatically, because the snapshot already round-trips the whole `RateCard`). Legacy snapshots with no `hotZones` behave exactly as today (no boost) — same back-compat pattern `priceFinishing?` already uses.
+Optional `hotZones?: HotZone[]` on the `RateCard` type. Live pricing composes `{ ...RATE_CARD, hotZones: await zonesRepo.activeZones() }`; a **locked** quote reads `hotZones` from its `rate_card_json` snapshot (satisfies C2 automatically — the snapshot already round-trips the whole card; same optional-field back-compat precedent as `priceFinishing?`). Legacy snapshots without `hotZones` = no boost, exactly today's behaviour.
 
-### D6 — Floor & price-finishing interaction → boost the rate, floor still protects, finish still runs last
-`legPriceCents` becomes `max(floor, round(km × rate × (1 + boost)))`. The boost lifts the per-km component; a leg still below the floor after boosting is charged the floor (boost simply had no room to apply). `finishPrice()` continues to run once at the end, unchanged. The boost is **pure margin** (cost is unchanged), so `marginEstimateCents` rises correctly with no cost-side edit.
+### D6 — Floor & finishing → boost the rate, floor still protects, finish runs last; boost books as COST
+`legPriceCents` becomes `max(floor, round(km × rate × (1 + boost)))`. A short leg still under the floor after boosting pays the floor (the boost had no room). `finishPrice()` runs once, last, unchanged. Expectation-setting: **a zone does nothing to floor-priced short hops** — a +15% Ella zone leaves a $29-floor 10 km hop at $29.
 
-### D7 — Stacking → at most one zone per leg (the max applicable)
-If both endpoints hit zones, or a zone overlaps another, apply a **single** boost = the largest applicable `boost_pct`, never the sum. Keeps prices predictable and prevents a runaway double-charge from overlapping radii.
+**Margin or cost — DECIDED (owner, 2026-07-22): COST.** The boost is treated as the real, higher cost of servicing the area (deadhead, mountain roads), not as extra profit — so the **cost basis scales by the same `(1 + boost)` as the sell rate**. Reported margin on a zone trip keeps the standard markup relationship instead of being inflated by the full boost. Engine consequence (this is *why* the decision matters mechanically): the cost-side computations must apply the same per-leg/per-day boost factor as the sell side —
+- private (`engine.ts`): `costCents += billableKm × costPerKm × (1 + boostForLeg)` per leg (today it's unboosted `Σ billableKm × costPerKm`);
+- chauffeur: the same factor on each travel/idle day's km cost per D10 (day-rate cost untouched, matching the unboosted day rate).
 
-### D8 — Shared corridors → out of scope for v1
-Shared is a fixed per-seat corridor price, not per-km — a per-km multiplier doesn't map onto it. **Recommend v1 = private + chauffeur only.** If the owner wants shared boosted too, that's a separate mechanism (a per-corridor multiplier) and should be its own decision.
+A future refinement may split the boost between cost and margin by a founder-set ratio; **v1 books the full boost into cost** — the simple, non-margin-inflating end of the spectrum.
 
-### D9 — Visibility → founder-only, via the existing `margin:view` gate
-**Decided 2026-07-22 (owner):** the premium (the "buffer") is visible to the **founder only** — not to ops/finance, not to the customer. This needs **no new permission**: it maps onto the existing **`margin:view`** capability, which is already founder-only (`opsAuth.ts` — finance/ops don't have it), and the existing `stripQuoteMargin()` already removes cost/margin from what those roles and the customer see.
+### D7 — Stacking → at most one boost per leg (the max applicable)
+Both ends in zones, or overlapping zones → apply a **single** boost = the largest applicable `boost_pct`, never the sum.
 
-| Who | Sees the final (boosted) total? | Sees the "Ella premium +15%" line? |
+### D8 — Shared corridors → OUT (decided, owner, 2026-07-22)
+Shared is a fixed per-seat corridor price; a per-km multiplier doesn't map onto it. **v1 = private + chauffeur only, confirmed.** If shared ever needs boosting, that's a per-corridor multiplier — its own future decision.
+
+### D9 — Visibility → founder-only; implemented as gated METADATA, not a hidden line
+**Decided (owner):** the premium is visible to the founder only — not ops/finance, not the customer.
+
+| Who | Sees the final (boosted) total? | Sees "Ella premium +15%"? |
 |---|---|---|
 | Founder (`margin:view`) | yes | **yes** |
 | Ops / finance | yes — they must quote it | **no** |
 | Customer | yes | no |
 
-So the boost line item is **tagged margin-gated**: `stripQuoteMargin()` drops it for non-founders, and the customer message never carries it. Ops still sees the higher *total* (they need the number to send the quote) — they just don't see that it's a zone premium, exactly as they already don't see cost or margin. Implementation is one line of policy on the boost line item, no new plumbing.
+**Corrected implementation (verified against the code — this is NOT "no new plumbing"):** `shape()` currently passes `lineItems` *including `meta`* and `warnings` to **all** roles, and `stripQuoteMargin()` strips only `marginCents` / `rateCardJson` / `marginEstimateCents`. So:
+- The boost is folded into the leg amount (D1) — nothing to hide in the amounts, sums stay consistent for everyone.
+- The founder-only annotation (zone name + %) rides in the leg line's **`meta`** — and **both wire paths must be extended to strip zone meta for non-`margin:view` callers**: `shape()` (estimates) and `stripQuoteMargin()` (stored quotes). A leak-test is mandatory (§9).
+- **Warnings must never mention zones** — `warnings` go to every role. No "hit the Ella premium" strings.
+- The zone list inside a locked snapshot is already hidden (C2 bonus: `rateCardJson` is stripped for non-founders).
+- **Known consequence (accepted by D9):** ops cannot explain a zone-driven price move. A draft re-priced after a zone edit just… changes, and support has no visible reason (R8). That is the price of founder-only invisibility; the owner should confirm they're comfortable with it.
+
+### D10 — Chauffeur (NEW): per-day restructure, because today's charge is aggregate
+`quoteChauffeur()` computes **one** distance charge over `Σ buffered travel km + idle-day minimum km`. There is no per-leg rate to multiply — §5's "hook" requires restructuring the distance charge into a **per-day sum**:
+- **Travel day:** `buffered(day.km) × perKm × (1 + boostForDay)`, where `boostForDay = zoneBoostFor(day.from) ∨ zoneBoostFor(day.to)` (max, per D7). A day touching Ella is boosted; other days aren't.
+- **Idle day:** an idle day has **no location in the data at all** (idle days are the *absence* of a travel leg). Rule: an idle day inherits the location of the **previous travel day's `to`** (where the vehicle is parked). Idle-min km for a day parked in Ella are boosted; parked in Colombo, not.
+- **Day rate:** **not boosted** (recommendation). The premium models distance/servicing cost, and the day rate is the driver's flat fee. If the owner wants premium day rates in hot towns, that's a deliberate extension, not a default.
+- The line-item labels keep their current shape (one aggregate "Distance — N km" line is fine to *display*); only the internal computation becomes per-day. Total = Σ per-day charges, so the invariant sum(lines)=total holds.
+
+### D11 — Custom per-km rates (GL-1d, NEW): zones do NOT apply to operator-priced tiers
+Van14/custom take an operator-supplied per-km rate; the engine also imputes cost from it (`override / 1.15`). Recommendation: **a custom rate is authoritative — no zone boost on top.** Rationale: the operator hand-prices these trips end-to-end (with founder review at approval); silently inflating a hand-typed rate — invisibly, per D9 — would make the operator's own number wrong in ways they can't see or explain. The founder sees margin at approval and can adjust the custom rate directly. (Consequence, stated honestly: a van14/custom Ella trip escapes the automatic premium; the founder applies it by hand via the custom rate. Owner may veto in review.)
 
 ## 4. Data model
 
 ```sql
--- migration 0020 (next free number after 0019_quote_soft_delete)
+-- migration number: NEXT FREE at build time — 0020 today, but multi-stop rides and
+-- discounts (M18) are pending builds in other worktrees; whoever lands first takes it.
 CREATE TABLE pricing_zones (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   place_name text NOT NULL,               -- match key: a KNOWN_PLACES town, e.g. "Ella" (D3)
   boost_pct  integer NOT NULL,            -- whole percent, e.g. 15 = +15%
   active     boolean NOT NULL DEFAULT true,
-  -- optional geo fallback (D3): used only when set, for a GPS spot near the town that
-  -- Google labels as a neighbouring village. Name match is primary.
+  -- optional geo fallback (D3 step 5): all-or-nothing trio
   lat        double precision,
   lng        double precision,
   radius_km  double precision,
+  -- audit (D4): pricing changes are never anonymous
+  created_by text,
+  updated_by text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 ```
 
-`boost_pct` as a whole integer keeps the money math in integer cents (mirrors `markupPct`). Validation: `place_name` non-empty (ideally chosen from `KNOWN_PLACES`), `boost_pct` in a sane range (say 0–100), and `radius_km` > 0 **when** lat/lng are set (the geo columns are all-or-nothing).
+Validation (decided, owner, 2026-07-22): `place_name` non-empty (chosen from `KNOWN_PLACES` in the UI); `boost_pct` hard range **0–100**, with a UI **warning above 20%** (a deliberate low bar — a >20% premium should feel unusual, not routine); `radius_km > 0` when lat/lng set (trio all-or-nothing).
 
-## 5. Engine integration (exact hook points)
+## 5. Engine integration (exact hook points, corrected)
 
-1. `rateCard.ts` — add `HotZone` type + optional `hotZones` on `RateCard`; `RATE_CARD` literal keeps none (zones are DB-only).
-2. New `api/src/quote/hotZones.ts` — a pure `zoneBoostFor(endpoint, zones): number` (returns the max applicable multiplier, or 1). **Name-first** (D3): compare the endpoint's resolved name to each active zone's `place_name` (case-insensitive; exact for a known place, word-boundary contains for a free-typed display string), then the optional coords-in-radius fallback. Unit-tested in isolation (name match, radius fallback, D7 max-not-sum, inactive skipped).
-3. `private.ts::legPriceCents` / `quotePrivateLegs` — apply `zoneBoostFor(leg.from/to)` to `rate` before `max(floor, …)`. The leg already carries `from`/`to` as **names**, which is the primary match key; coords are only consulted for the optional radius fallback (see D3).
-4. `chauffeur.ts` — apply the same per-leg/per-day boost to its `billableKm × perKm` component (so chauffeur trips don't escape the boost — the Explore review flagged this as the easy-to-miss path).
-5. `engine.ts` — no structural change; it already passes `rateCard` through. `finishPrice()` still runs once, last. The zone-premium **line item is tagged margin-gated** so `stripQuoteMargin()` hides it from non-founders and the customer (D9).
-6. **Zone loading:** a `zonesRepo` (Postgres + in-memory, mirroring `quoteRepo`) exposes `activeZones()`; the request assembles `{ ...RATE_CARD, hotZones: await zonesRepo.activeZones() }` for a *live* price, and reads `hotZones` straight from the snapshot for a *locked* one.
+1. `rateCard.ts` — `HotZone` type + optional `hotZones` on `RateCard`; the `RATE_CARD` literal carries none (zones are DB-only).
+2. New `api/src/quote/hotZones.ts` — pure `zoneBoostFor(endpointName, coords, zones): number` implementing the D3 algorithm (returns the max applicable multiplier, or 1). Unit-tested against the D3 worked-examples table + D7 + inactive-skipped + kill switch.
+3. `private.ts` — **hook is `quotePrivateLegs`, not `legPriceCents` as-is**: `legPriceCents(distanceKm, vehicle, override?, card?)` doesn't receive the leg's names — either extend its signature with an optional `boost` or apply the boosted rate in `quotePrivateLegs`' loop. **The floor-warning comparison (`Math.round(bKm × rate) < floor`) must use the boosted rate**, or "hit the minimum" warnings misfire on boosted legs.
+4. `chauffeur.ts` — per-day restructure per **D10** (travel-day boost by that day's endpoints; idle days inherit the previous `to`; day rate unboosted).
+5. `engine.ts` — no structural change; `finishPrice()` still runs once, last. Zone annotation goes into leg-item `meta` only (D9); **never** into `warnings`.
+6. **Wire gating (new plumbing, per D9):** extend `shape()` and `stripQuoteMargin()` to strip zone `meta` for non-`margin:view` callers.
+7. **Zone loading:** `zonesRepo` (Postgres + in-memory, mirroring `quoteRepo`) exposes `activeZones()` (returns `[]` when `HOT_ZONES_DISABLED=1`). Live pricing composes the card at the call site; locked quotes read `hotZones` from the snapshot. **v1-ops wiring:** only `internalQuote.ts` composes zones (Phase 2); `bookings.ts` joins in Phase 3 together with the front-end mirror (C3).
+8. `engine.ts` custom-rate path — per **D11**, when `customPerKmCents` is set, skip the boost.
 
-## 6. Website / codegen integration
+## 6. Website integration (rewritten — the codegen does NOT call the engine)
 
-- `tools/generate-pricing.mjs` already prices routes off the rate card. It must load `activeZones()` (same repo) and pass them into the engine so generated `routes-data.js` / `transfers-data.js` / `trip/*` bake in the boosted price for any route whose endpoint is in a zone. Name-first matching (D3) is *especially* clean here: every website route runs between named `KNOWN_PLACES`, so the match is exact and stable — no coordinate lookups needed for the generated pages.
-- **Codegen is now data-dependent** (it reads the DB), which is a change from today's pure-from-constants generation. Decide: run `npm run generate` on a schedule / on zone edit, or accept that the website reflects a zone change only on the next generate+deploy. Flag for owner. (The ops tool is always live; the website lags by a regenerate — probably fine, but should be a conscious choice.)
-- Update `web-tests/unit/*-price-parity.test.js` to assert parity *with zones applied*, so a hand-edit still fails but the boosted numbers are the expected ones.
+The website recomputes prices in front-end JS from constants dumped by `dump:pricing` → `generate-pricing.mjs`. Therefore:
+
+- **Zones ship as another dumped constant.** `dump:pricing` adds `HOT_ZONES` (active zones only: `place_name`, `boost_pct`, optional geo) to the payload; `generate-pricing.mjs` injects it into the fenced block like `PER_KM` et al. The committed generated files therefore carry a **zones snapshot** — which is also what makes CI parity testable (below).
+- **The front-end mirror implements the matching + boost a second time** (C1): the same D3 name rules + D7 max + D6 floor interaction, in `booking.js`'s price computation. This is unavoidable double-implementation — held together by parity tests, exactly like the rest of the mirror.
+- **`bookings.ts` (server re-price for web checkout) starts composing zones in the same release** — never before the mirror ships (C3), or every zone booking trips the drift guard.
+- **CI/parity story:** CI has no prod DB. Parity tests assert **internal consistency against the committed `HOT_ZONES` snapshot** (generated files ↔ engine fed that same snapshot), not DB freshness.
+- **Cadence — DECIDED (owner, 2026-07-22): Option A.** A founder zone edit changes ops prices immediately; **website prices update on the next `npm run generate` + deploy** — no auto-regenerate wired into the zone save. During the gap the page shows the pre-edit price while the server prices with the new zones; **the drift guard covers that window**, so its tolerance must be kept **≥ the max active `boost_pct`** (a build-time assertion in Phase 3 should enforce this — activating a zone bigger than the tolerance without a regenerate would start flagging bookings).
+- Update `web-tests/unit/*-price-parity.test.js` to cover boosted routes.
 
 ## 7. Founder admin (API + UI)
 
-- `GET /admin/quote/zones`, `POST/PATCH/DELETE /admin/quote/zones/:id` — all `quote:approve`-gated (founder only), CSRF-protected like the other quote mutations.
-- UI: a "Hot zones" panel inside the existing founder Rate Settings modal (`renderRateCardBody()`). Per D3 the primary control is dead simple: **pick a town** (from the same `KNOWN_PLACES` list the tool autocompletes from) and set a **boost %**, with an active toggle. The optional geo-fallback (lat/lng + radius) is an "advanced" affordance, not the default path — most zones are just a town + a percentage.
+- `GET/POST/PATCH/DELETE /admin/quote/zones[/:id]` — `quote:approve`-gated, CSRF-protected, stamping `created_by`/`updated_by` from the session identity.
+- UI: a "Hot zones" panel in the Rate Settings modal — pick a town (from `KNOWN_PLACES`), set a boost %, active toggle; the geo trio is an "advanced" affordance. Mockup: `hotzones-mockup.html` (2026-07-22).
+- A visible "all zones paused" banner when `HOT_ZONES_DISABLED` is set, so the kill switch is never silently on.
 
-## 8. Rollout (phased, each independently shippable & reversible)
+## 8. Rollout (re-cut so the website can never disagree with the server — C3)
 
-1. **Data + engine, dormant.** Migration 0020, `zonesRepo`, `hotZones.ts`, wire into `private.ts`/`chauffeur.ts`. With zero active zones, **every price is byte-identical to today** (regression-safe). Ship behind an empty table.
-2. **Founder admin.** The CRUD API + Rate Settings panel. Now the founder can create a zone; ops prices react live.
-3. **Website codegen.** Teach `generate-pricing.mjs` to read zones; update parity tests; regenerate.
-4. **Founder-only polish.** Tag the boost line item margin-gated and label it (e.g. "Ella premium +15%") in the founder's margin view; `stripQuoteMargin()` already hides it from ops/finance and the customer (D9). No customer-facing display.
+1. **Dormant plumbing.** Migration, `zonesRepo`, `hotZones.ts`, engine wiring (private per D1/D3, chauffeur per D10, custom-rate skip per D11), wire-gating in `shape()`/`stripQuoteMargin()`. Zero active zones ⇒ **every price byte-identical to today**. `bookings.ts` untouched.
+2. **Founder admin, ops-only effect.** CRUD + panel. Activating a zone boosts **ops quotes only** (`internalQuote.ts` composes zones; `bookings.ts` still doesn't). Stated honestly: during this phase a zone-touching route is quoted higher in ops than the website sells it — acceptable because ops quotes are bespoke, but the owner should know.
+3. **Website, as ONE unit.** `dump:pricing` `HOT_ZONES` + front-end mirror matching + `bookings.ts` composing zones + parity tests — shipped together, never piecemeal (C3).
+4. **Polish.** Founder-only meta label ("Ella premium +15%") rendering in the ops money pane's founder view; leak-tests hardened.
 
 ## 9. Test plan
 
-- `hotZones.test.ts` — name match (exact known-place + word-boundary free-typed), optional radius fallback, inactive skipped, D7 (max not sum), no-zone = ×1.
-- `private.test.ts` / `chauffeur.test.ts` — a leg in a zone is boosted; floor still wins when it should; **zero active zones ⇒ prices unchanged** (the regression guard for Phase 1).
-- Rate-lock test — a quote locked with a zone keeps its boosted price after the zone's `boost_pct` is later changed (C2).
-- Margin-gating test (D9) — the founder sees the premium line; the ops/finance and customer views (`stripQuoteMargin()`) do not, while the boosted total is unchanged for all.
-- Route/RBAC test — non-founder gets 403 on the zones CRUD.
-- Parity test — website generated prices match the engine *with zones applied*.
+- `hotZones.test.ts` — the **D3 worked-examples table verbatim** (Galle/Galle Face, compound split, address-component fallback), radius fallback, D7 max-not-sum, inactive skipped, `HOT_ZONES_DISABLED` ⇒ `[]`.
+- `private.test.ts` — boosted leg; floor still wins; **floor-warning uses the boosted rate**; zero active zones ⇒ unchanged (Phase-1 regression guard).
+- `chauffeur.test.ts` — D10: only the zone-touching day boosted; idle-day inherits previous `to` (boosted when parked in a zone); day rate unboosted; totals = Σ per-day.
+- Engine — D11: custom-rate quote ignores zones.
+- **Cost basis (D6)** — a boosted leg's `costCents` scales by the same `(1 + boost)`; `marginEstimateCents` on a zone trip keeps the standard markup relationship (NOT inflated by the boost); zero-zone margin unchanged.
+- Rate-lock — a quote locked with a zone keeps its price after the zone's % changes (C2).
+- **Leak tests (D9)** — non-`margin:view` estimate + stored-quote responses contain **no** zone meta, no zone warnings; founder responses do; totals identical for all roles.
+- RBAC — non-founder 403 on zones CRUD.
+- Parity — generated files ↔ engine **fed the committed `HOT_ZONES` snapshot** (§6), boosted routes included.
+- Drift — web checkout on a boosted route with the mirror shipped: `quotedTotal` within guard tolerance.
 
 ## 10. Self-critique / risks
 
-- **R1 — codegen becomes stateful.** Today the website price is a pure function of constants; after this it depends on DB rows. A zone edit silently changes what the *next* `npm run generate` emits. Mitigation: log which routes a zone affected on generate; make regenerate part of the "save zone" founder flow, or document the lag explicitly (§6).
-- **R2 — matching precision.** Name-first trusts the label our resolver returns. A known-place endpoint matches exactly; a free-typed endpoint is matched on its display string (word-boundary, so "Ella" ≠ "Bella…"), which can *miss* when Google returns a venue name instead of the town. Mitigation: word-boundary matching, the optional radius fallback (D3) for exactly those spots, and the founder-visible boost line (D9) so a missed/wrong boost is caught at approval.
-- **R3 — silent margin/price movement.** A founder fat-fingers `boost_pct: 150` and every Ella trip triples. Mitigation: validate range (0–100), and consider a confirm on large values. The founder sees the premium as an explicit line (D9) at approval, so a bad zone is visible before anything is sent.
-- **R4 — rate-lock leakage (the subtle one).** If zones were read live at *approval* instead of from the snapshot, an approved quote could re-price. The whole point of D5/C2 is to fold zones into `rate_card_json`; the test in §9 is the guard. This is the mistake most likely to ship unnoticed — call it out in review.
-- **R5 — chauffeur path missed.** Easy to boost `private.ts` and forget `chauffeur.ts`, letting chauffeur trips dodge the premium. §5.4 + the chauffeur test exist precisely to prevent this.
-- **R6 — scope creep on "all rates."** Owner said "all rates"; D8 excludes shared corridors. If that's wrong, shared needs its own mechanism — confirm before building.
+- **R1 — page↔checkout mismatch (repo precedent: PR #43).** The sharpest risk, now a hard constraint (C3) + phase cut (§8.3). Residual: the regenerate lag between a zone edit and the next deploy — accepted by the owner's cadence decision (§6), with the drift-guard tolerance ≥ max active boost as the safety net.
+- **R2 — matching precision.** Name rules are now a spec with tests (D3); residual miss = venue strings that omit the town → optional radius fallback; a wrong/missed boost is visible to the founder at approval (D9).
+- **R3 — fat-finger.** Hard 0–100 validation, UI warning above 20% (owner call), kill switch (D4), founder-visible premium at approval.
+- **R4 — rate-lock leakage.** Zones fold into `rate_card_json` (D5/C2) — guarded by the §9 lock test. Still the likeliest silent mistake; call it out in code review.
+- **R5 — chauffeur drift.** D10 restructures the aggregate charge; the per-day tests are the guard against a rewrite regressing existing chauffeur totals (zero-zone case must be byte-identical).
+- **R6 — "all rates" scope.** D8 excludes shared; D11 excludes custom-rate tiers. Both are explicit owner-reviewable exclusions now, not accidents.
+- **R7 — double-implementation drift.** The front-end mirror reimplements matching+boost (C1); parity tests against the committed snapshot are the only guard. Any future D3 rule change must touch both implementations.
+- **R8 — invisible price moves for ops.** A draft re-priced after a zone edit changes with no reason ops can see (D9 consequence, accepted). Support cannot answer "why did my draft change?" — the founder can.
 
 ## 11. Out of scope (v1)
-Pass-through detection (D2), shared-corridor boosts (D8), a structured-geocode locality lookup (we use name-match against `KNOWN_PLACES` instead — D3), a map-pick UI for the optional zone radius, and time-windowed zones (e.g. "boost during the festival only").
+Drive-through detection (D2), shared-corridor boosts (D8), zone boosts on custom-rate tiers (D11), structured-geocode locality lookup, map-pick UI for the geo trio, time-windowed zones, premium day rates (D10).
 
-## 12. Open questions for the owner
+## 12. Decisions record — ALL RESOLVED (owner, 2026-07-22)
 
-**Decided 2026-07-22 (this doc):** a leg is boosted if it **touches** a zone at either end — no pickup/drop-off distinction (D2); matching = **name-first** against `KNOWN_PLACES`, geo-radius optional fallback (D3); premium visibility = **founder-only** via the existing `margin:view` gate — hidden from ops *and* the customer (D9).
+Every design question is now answered; nothing is open. For the record:
 
-Still open:
-1. Drive-throughs: boost a leg that only *passes through* a zone (neither end is the town), or leave it out? (D2 — recommend leave out for v1; endpoints are cheap, drive-through needs the route path.)
-2. Shared rides in or out? (D8 — recommend out.)
-3. Website: accept "updates on next regenerate/deploy", or wire regenerate into the founder save? (§6/R1.)
-4. Any cap on `boost_pct`? (R3 — recommend 0–100 with a confirm above, say, 50.)
+| # | Question | Owner's answer |
+|---|---|---|
+| 1 | Drive-throughs | **Out of v1** — endpoint-touch only (D2) |
+| 2 | Shared rides | **Out of v1** — private + chauffeur only (D8) |
+| 3 | Website cadence | **Next regenerate/deploy** — no auto-regenerate on zone save; drift guard covers the gap, tolerance kept ≥ max active boost (§6) |
+| 4 | Boost cap | **Hard 0–100, warn above 20%** (D4/R3) |
+| 5 | Margin or cost | **Cost** — the boost scales the cost basis too; reported margin is not inflated. A cost/margin split ratio is a possible future refinement (D6) |
+
+Also decided along the way: any-touch, direction-neutral (D2) · name-first matching with the spec table (D3) · founder-only via gated meta (D9) · boost folded into the leg amount, no separate line (D1) · chauffeur per-day with idle-inherit, day rate unboosted (D10) · custom rates exempt (D11).
+
+**Spec status: build-ready. The 4-phase build (§8) starts only on a fresh, explicit owner go — per the pricing guardrail, this doc alone is not that go.**
