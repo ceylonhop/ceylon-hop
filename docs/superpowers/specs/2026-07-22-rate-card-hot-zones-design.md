@@ -33,8 +33,10 @@ Two hard constraints fall straight out of this table:
 Options: (a) bump `perKmCents`; (b) multiply the leg's *price*; (c) surcharge the whole quote if any leg touches a zone.
 **Recommend (a): multiply the per-km rate for a leg whose endpoint is in a zone**, i.e. `rate → rate × (1 + boost)`, then `max(floor, km × boostedRate)` as today. Rationale: localizes the premium to the affected leg, reads naturally in the existing line item, and keeps the floor as a protection. A multi-leg trip where only one leg touches Ella is only boosted on that leg — which is what "boost the rate for that area" should mean.
 
-### D2 — Which endpoint counts? → origin OR destination
-A leg `from → to` is "in a zone" if **either** endpoint is in a zone. (You pay the premium whether you're going *to* Ella or coming *from* it.) Flag for owner: is a *pass-through* (neither endpoint, but the route crosses a zone) in scope? **Recommend no** for v1 — endpoint-only is predictable and cheap; pass-through needs the polyline, which we don't always have.
+### D2 — Which part of the leg counts? → any touch; no pickup/drop-off distinction
+**Decided 2026-07-22 (owner):** don't record pickup vs drop-off separately — if a leg touches a hot town at all, elevate the price. A leg `from → to` is "in a zone" when its start **or** its end is a hot town, and the two are treated identically. Rationale: the premium is the cost of *servicing the area*, which is the same in either direction — so direction simply doesn't enter the check (no loophole where "Ella → Colombo" dodges a premium that "Colombo → Ella" pays).
+
+**Still open — drive-throughs.** A leg whose start and end are *both* outside a zone but whose route passes *through* one (e.g. Colombo → Badulla driving the Ella hills without stopping). **Recommend leaving this out of v1:** the endpoints use data we already have (leg names/coords), whereas a drive-through needs the route *polyline* — which isn't always available (manual-distance legs carry none) and adds a per-zone geometry test on every leg. It's a clean add later if wanted; see §12 Q1.
 
 ### D3 — How is a location matched to a zone? → name-first (known-places), geo-radius as optional fallback
 **Decided 2026-07-22 (owner):** match on the **town name**, not a pin+radius.
@@ -145,10 +147,10 @@ Pass-through detection (D2), shared-corridor boosts (D8), a structured-geocode l
 
 ## 12. Open questions for the owner
 
-**Decided 2026-07-22 (this doc):** matching = **name-first** against `KNOWN_PLACES`, geo-radius optional fallback (D3); premium visibility = **founder-only** via the existing `margin:view` gate — hidden from ops *and* the customer (D9).
+**Decided 2026-07-22 (this doc):** a leg is boosted if it **touches** a zone at either end — no pickup/drop-off distinction (D2); matching = **name-first** against `KNOWN_PLACES`, geo-radius optional fallback (D3); premium visibility = **founder-only** via the existing `margin:view` gate — hidden from ops *and* the customer (D9).
 
 Still open:
-1. Endpoint-only, or should a route *passing through* a zone also be boosted? (D2 — recommend endpoint-only.)
+1. Drive-throughs: boost a leg that only *passes through* a zone (neither end is the town), or leave it out? (D2 — recommend leave out for v1; endpoints are cheap, drive-through needs the route path.)
 2. Shared rides in or out? (D8 — recommend out.)
 3. Website: accept "updates on next regenerate/deploy", or wire regenerate into the founder save? (§6/R1.)
 4. Any cap on `boost_pct`? (R3 — recommend 0–100 with a confirm above, say, 50.)
