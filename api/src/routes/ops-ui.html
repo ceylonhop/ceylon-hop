@@ -762,8 +762,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-itin-locked-icon { font-size: 24px; }
 .qv .ch-itin-locked-title { font-weight: 700; font-size: 14px; color: var(--ink); margin-top: 6px; }
 .qv .ch-itin-locked-sub { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
-/* Collapsible route map at the foot of the itinerary */
-.qv .ch-map-block { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
+/* Foot of the itinerary (2026-07-22): internal notes on the left, a PORTRAIT route map on the
+   right. The map went vertical because Sri Lanka is a teardrop (tall, narrow), which frees the
+   space on its left for the ops-only notes scratchpad. Wraps to stacked on a narrow pane. */
+.qv .ch-itin-aside { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: flex-start; }
+.qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
+.qv .ch-note-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 0 0 6px; display: inline-flex; align-items: center; gap: 6px; }
+.qv .ch-note-ico { color: var(--teal-d); flex: none; }
+.qv .ch-notes-area { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-notes-area:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-area::placeholder { color: var(--muted); }
+.qv .ch-notes-hint { font-size: 10.5px; color: var(--muted); margin-top: 5px; }
+/* Collapsible PORTRAIT route map — a fixed-width right column (see .ch-itin-aside) */
+.qv .ch-map-block { flex: 0 1 290px; margin-top: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
 .qv .ch-map-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-soft); transition: background .15s, color .15s; }
 .qv .ch-map-toggle:hover { background: var(--cream); color: var(--ink); }
 .qv .ch-map-toggle-lbl { display: inline-flex; align-items: center; gap: 8px; }
@@ -772,7 +783,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-map-block.open .ch-map-toggle { border-bottom: 1px solid var(--line); }
 .qv .ch-map-block.open .ch-map-chev { transform: rotate(0deg); color: var(--teal-d); }
 .qv .ch-itin-map-slot { animation: chMapIn .26s cubic-bezier(.2,.7,.3,1); }
-.qv .ch-itin-map { width: 100%; height: 240px; background: var(--line-soft); display: block; }
+.qv .ch-itin-map { width: 100%; height: 360px; background: var(--line-soft); display: block; }
 .qv .ch-itin-map-note { padding: 22px; text-align: center; color: var(--muted); font-size: 12.5px; }
 @keyframes chMapIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 
@@ -2341,6 +2352,7 @@ let state = {
   outputCurrency: 'USD',
   status: 'draft',
   notes: '',
+  internalNotes: '', // ops-only scratchpad (quotes.internal_notes) — distinct from send-back `notes`
   legs: [newLeg()],
 };
 
@@ -2714,6 +2726,7 @@ function resetToNew() {
     outputCurrency: 'USD',
     status: 'draft',
     notes: '',
+    internalNotes: '',
     legs: [newLeg()],
     savedId: null,
     reference: null,
@@ -2752,6 +2765,7 @@ function savePayload() {
     lastName: state.lastName,
     contact: state.contact,
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
+    internalNotes: state.internalNotes || '',
     service: state.service || 'private',
     requestedService: state.requestedService,
     vehicle: state.vehicleType,
@@ -2979,6 +2993,7 @@ async function reopenQuote(id) {
   state.legs = legs;
   state.status = q.status || 'draft';
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
+  state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
   state.savedId = q.id;
   state.reference = q.reference || q.id;
   state.assignedTo = q.assignedTo || null;
@@ -4562,17 +4577,25 @@ function render() {
         '          <button class="ch-btn ch-btn-dashed ch-btn-sm" data-action="addLeg" data-cat="transfer"><span class="ch-btn-icon">&#xFF0B;</span> Add leg</button>',
         '        </div>',
       ].join('') : ''),
-      // Route map of the itinerary on the SL map — collapsed by default behind a toggle so it
-      // never pops in unbidden. The map itself (populated by syncItinMap) mounts only when open.
+      // Foot of the itinerary (2026-07-22): ops-only notes on the left, a PORTRAIT route map on
+      // the right. Notes render whether or not the route is mappable; the map is collapsed behind
+      // a toggle so it never pops in unbidden, and is populated (portrait) by syncItinMap.
+      '        <div class="ch-itin-aside">',
+      '          <div class="ch-notes-block">',
+      '            <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '            <textarea class="ch-notes-area" id="f-internalNotes" placeholder="Private notes for the team — trip context, customer preferences, follow-ups. Never shown to the customer.">' + esc(st.internalNotes || '') + '</textarea>',
+      '            <div class="ch-notes-hint">Ops-only &middot; autosaves with the quote</div>',
+      '          </div>',
       (itinMapAvailable() ? [
-        '        <div class="ch-map-block' + (_mapOpen ? ' open' : '') + '">',
-        '          <button type="button" class="ch-map-toggle" data-action="toggleMap" aria-expanded="' + (_mapOpen ? 'true' : 'false') + '">',
-        '            <span class="ch-map-toggle-lbl">' + MAP_PIN_SVG + 'Route on map</span>',
-        '            <span class="ch-map-chev">&#x2303;</span>',
-        '          </button>',
-        (_mapOpen ? '          <div class="ch-itin-map-slot" id="itin-map-slot"></div>' : ''),
-        '        </div>',
+        '          <div class="ch-map-block' + (_mapOpen ? ' open' : '') + '">',
+        '            <button type="button" class="ch-map-toggle" data-action="toggleMap" aria-expanded="' + (_mapOpen ? 'true' : 'false') + '">',
+        '              <span class="ch-map-toggle-lbl">' + MAP_PIN_SVG + 'Route on map</span>',
+        '              <span class="ch-map-chev">&#x2303;</span>',
+        '            </button>',
+        (_mapOpen ? '            <div class="ch-itin-map-slot" id="itin-map-slot"></div>' : ''),
+        '          </div>',
       ].join('') : ''),
+      '        </div>',
     ].join('') : [
       '        <div class="ch-itin-locked">',
       '          <div class="ch-itin-locked-icon">&#x1F4CB;</div>',
@@ -4909,6 +4932,14 @@ function attachEventListeners() {
 
   if (!_delegatesWired) {
     _delegatesWired = true;
+
+  // Internal-notes textarea (2026-07-22): lives inside the re-rendered itinerary, so it's wired
+  // by delegation on the persistent app node rather than a per-render listener. markDirty() arms
+  // the same 2.5s autosave the rest of the builder uses; the diff-render preserves the caret.
+  app.addEventListener('input', function(e) {
+    var t = e.target;
+    if (t && t.id === 'f-internalNotes') { state.internalNotes = t.value; markDirty(); }
+  });
 
   app.addEventListener('click', function(e) {
     var el = e.target.closest('[data-action]');
