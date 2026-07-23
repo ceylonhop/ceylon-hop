@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // Founder analytics (spec 2026-07-23): the Analytics surface is analytics:view-gated.
 // Founder sees the nav item and both tabs render from the API payloads; an ops session has
-// no nav item and a #analytics deep link bounces to Bookings. Offline: whoami + analytics
+// no nav item and a #analytics deep link bounces to the default landing. Offline: whoami + analytics
 // endpoints are stubbed (server-side 403 enforcement is covered by api's opsAnalytics.test.ts).
 
 const OPS_FILE = '/api/src/routes/ops-ui.html';
@@ -82,12 +82,13 @@ test('founder: Analytics nav renders, Funnel tiles + chart paint, Demand tab ren
   await expect(page.locator('#view')).toContainText('4 of 5 quotes');
 });
 
-test('ops role: no Analytics nav; #analytics deep link bounces to Bookings', async ({ page }) => {
+test('ops role: no Analytics nav; #analytics deep link bounces to the default landing (Quotes)', async ({ page }) => {
   await bootAs(page, ['quote:manage', 'bookings:operate', 'bookings:read']);
   await page.goto(OPS_FILE + '#analytics');
   await page.waitForSelector('#nav [data-route="tickets"]', { timeout: 10000 });
   await expect(page.locator('[data-testid="analytics-nav"]')).toHaveCount(0);
-  // Bounced: the Bookings surface is what actually painted.
-  await expect(page.locator('#view')).toContainText('Bookings');
+  // Bounced: the unrecognised hash falls through to the default landing, which for a
+  // quote:manage holder is the Quotes queue (landing change 2026-07-23) — not Analytics.
+  await expect(page.locator('#view .qhead h1')).toHaveText('Quotes');
   await expect(page.locator('[data-testid="analytics-tiles"]')).toHaveCount(0);
 });

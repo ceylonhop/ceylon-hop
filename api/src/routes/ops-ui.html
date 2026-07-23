@@ -189,6 +189,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* ── analytics (founder-only) ── */
   .an-controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:2px 0 14px}
   .an-controls .an-sep{width:1px;height:22px;background:var(--line);margin:0 3px}
+  .an-glabel{font-size:.66rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint)}
+  .an-seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:var(--shadow-s)}
+  .an-seg button{border:0;background:transparent;color:var(--ink-soft);font:inherit;font-weight:700;font-size:.85rem;padding:9px 18px;cursor:pointer;transition:background .16s,color .16s}
+  .an-seg button+button{border-left:1px solid var(--line)}
+  .an-seg button:hover{color:var(--ink)}
+  .an-seg button.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff}
+  .an-seg.sm button{padding:6px 13px;font-size:.78rem}
   .an-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:16px}
   .an-tile{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-s)}
   .an-tile .an-n{font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
@@ -1418,14 +1425,17 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null };
-  return { route:'tickets', routeQuoteId:null };
+  if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null };
+  // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
+  // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
+  return canQuote?{ route:'quotes', routeQuoteId:null }:{ route:'tickets', routeQuoteId:null };
 }
 function syncUrl(route, quoteId, mode){
   const url=new URL(window.location.href);
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
-  else url.hash='';
+  else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
   const next=url.pathname+url.search+url.hash;
@@ -1488,11 +1498,13 @@ function collapseRail(){
 
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
    (D-A: founder/finance/ops all get it — server strips margin for non-margin:view roles) */
+/* Rounded, representative marks: Bookings = event ticket (notched, perforated),
+   Quotes = price tag (with the tag's eyelet), Analytics = trend line over an axis. */
 const NAV_ICONS={
-  tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg>',
-  quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
-  quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
-  analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
+  quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
+  quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
+  analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
@@ -1501,8 +1513,9 @@ function setNav(){
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
   // open in the builder keeps the Quotes nav highlighted so the queue reads as "home".
+  const attn=tickets.filter(isAttn).length; /* badge only when there's something to act on — a red "0" is noise */
   $('#nav').innerHTML=
-    `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span><span class="count" id="nav-attn">${tickets.filter(isAttn).length}</span></button>`+
+    `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
 }
@@ -1854,6 +1867,10 @@ function anHBars(items){
 function anChips(list,activeId,dataAttr){
   return list.map(c=>`<button class="qfilter ${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('');
 }
+function anSeg(list,activeId,dataAttr,cls){
+  /* joined segmented control — reads as a mode switch, unlike the pill filter chips */
+  return `<div class="an-seg${cls?' '+cls:''}">`+list.map(c=>`<button class="${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('')+'</div>';
+}
 function anFunnelHtml(d){
   const t=d.tiles;
   let html='';
@@ -1904,10 +1921,11 @@ function anDemandHtml(d){
 function anControlsHtml(){
   const showBucket=anState.tab==='funnel';
   return `<div class="an-controls">
-    ${anChips([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
+    ${anSeg([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
     <span class="an-sep"></span>
+    <span class="an-glabel">Range</span>
     ${anChips(AN_PRESETS,anState.preset,'anpreset')}
-    ${showBucket?'<span class="an-sep"></span>'+anChips([{id:'day',label:'Day'},{id:'week',label:'Week'}],anEffectiveBucket(),'anbucket'):''}
+    ${showBucket?'<span class="an-sep"></span><span class="an-glabel">By</span>'+anSeg([{id:'day',label:'Day'},{id:'week',label:'Week'}],anEffectiveBucket(),'anbucket','sm'):''}
   </div>`;
 }
 function viewAnalytics(){

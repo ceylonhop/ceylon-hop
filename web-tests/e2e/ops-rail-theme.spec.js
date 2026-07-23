@@ -32,17 +32,20 @@ test('D1: a single click on the collapsed rail navigates (no swallowed first cli
   await page.evaluate(() => { localStorage.setItem('ch_ops_rail', '1'); applyRailState(); });
   await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
 
-  // ONE click on the Quotes nav button must navigate — before the fix a capture handler
-  // swallowed it (only expanding), so the route didn't change until a second click.
-  await page.locator('#nav [data-route="quotes"]').click();
-  await expect(page.locator('#view [data-qnew]')).toBeVisible({ timeout: 5000 });
-  expect(new URL(page.url()).hash).toContain('quotes');
+  // ONE click on a nav button must navigate — before the fix a capture handler swallowed
+  // it (only expanding), so the route didn't change until a second click. Boot now lands
+  // on Quotes (landing change 2026-07-23), so navigate AWAY — to Bookings — to prove it.
+  await page.locator('#nav [data-route="tickets"]').click();
+  await expect(page.locator('#q')).toBeVisible({ timeout: 5000 });
+  expect(new URL(page.url()).hash).toContain('bookings');
 });
 
 test('D9: toggling the theme repaints the topbar search field (no stale dark chrome)', async ({ page }) => {
   await stubShell(page); // boots in dark (localStorage above)
   await page.goto(OPS_FILE);
   await page.waitForSelector('#approot:not([hidden]) #topbar', { timeout: 10000 });
+  // Boot lands on Quotes (empty #topbar) — the search field under test lives on Bookings.
+  await page.locator('#nav [data-route="tickets"]').click();
   await expect(page.locator('#q')).toBeVisible({ timeout: 5000 });
 
   const bg = () => page.locator('#q').evaluate((el) => getComputedStyle(el).backgroundColor);
