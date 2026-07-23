@@ -261,3 +261,100 @@ describe('softDelete', () => {
     expect(await repo.softDelete(a.id, 'op@x.com')).toBeNull(); // already deleted
   });
 });
+
+// Analytics projections (spec 2026-07-23 founder analytics): bounded fetches — funnel rows are
+// scalars-only (never the JSON blobs); demand rows are the ONLY projection carrying request_json
+// and are bounded to created-in-range. Both exclude soft-deleted rows and default to the ops
+// channel. `channel` is a parameter so later customer-website analytics is not a rework.
+describe('analytics projections', () => {
+  const DAY = 24 * 3600 * 1000;
+
+  // Build a repo with a controlled history using fake timers:
+  //   oldSent     — created 100d ago, sent 95d ago, STILL open in 'sent'  (live-set arm)
+  //   oldDecided  — created 100d ago, won 90d ago                         (dead history)
+  //   recentDraft — created 10d ago
+  //   recentWon   — created 8d ago, sent 7d ago, won 5d ago
+  //   webRecent   — created 6d ago on the 'web' channel
+  //   deletedRecent — created 4d ago then soft-deleted
+  async function seeded() {
+    const repo = new InMemoryQuoteRepo();
+    const now = Date.now();
+    const at = async <T>(daysAgo: number, fn: () => Promise<T>): Promise<T> => {
+      vi.setSystemTime(new Date(now - daysAgo * DAY));
+      return fn();
+    };
+    vi.useFakeTimers();
+    try {
+      const oldSent = await at(100, () => repo.save(sample()));
+      await at(95, () => repo.patch(oldSent.id, { status: 'sent' }));
+      const oldDecided = await at(100, () => repo.save(sample()));
+      await at(90, () => repo.patch(oldDecided.id, { status: 'won' }));
+      const recentDraft = await at(10, () => repo.save(sample()));
+      const recentWon = await at(8, () => repo.save(sample()));
+      await at(7, () => repo.patch(recentWon.id, { status: 'sent' }));
+      await at(5, () => repo.patch(recentWon.id, { status: 'won' }));
+      const webRecent = await at(6, () => repo.save(sample({ channel: 'web' })));
+      const deletedRecent = await at(4, () => repo.save(sample()));
+      await at(4, () => repo.softDelete(deletedRecent.id, 'op@x.com'));
+      return { repo, now, oldSent, oldDecided, recentDraft, recentWon, webRecent, deletedRecent };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('listFunnelRows: window rows + the live set, ops channel, no soft-deleted, no blobs', async () => {
+    const { repo, now, oldSent, oldDecided, recentDraft, recentWon, webRecent, deletedRecent } = await seeded();
+    const since = new Date(now - 30 * DAY);
+    const { rows, truncated } = await repo.listFunnelRows(since, 100);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(recentDraft.id);
+    expect(ids).toContain(recentWon.id);
+    expect(ids).toContain(oldSent.id);        // old but still open in 'sent' → live-set arm
+    expect(ids).not.toContain(oldDecided.id); // old and decided → outside the window
+    expect(ids).not.toContain(webRecent.id);  // web channel excluded by default
+    expect(ids).not.toContain(deletedRecent.id);
+    expect(truncated).toBe(false);
+    for (const r of rows) {
+      expect(r).not.toHaveProperty('request');
+      expect(r).not.toHaveProperty('result');
+      expect(r.sentAt === null || r.sentAt instanceof Date).toBe(true);
+    }
+  });
+
+  it('listDemandRows: created-in-range only, carries request/requestedService/vehicle', async () => {
+    const { repo, now, oldSent, recentDraft, recentWon, webRecent, deletedRecent } = await seeded();
+    const { rows, truncated } = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 100);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([recentDraft.id, recentWon.id]));
+    expect(ids).not.toContain(oldSent.id);    // open, but created outside range — demand is about creation
+    expect(ids).not.toContain(webRecent.id);
+    expect(ids).not.toContain(deletedRecent.id);
+    expect(truncated).toBe(false);
+    for (const r of rows) {
+      expect(r).toHaveProperty('request');
+      expect(r).toHaveProperty('requestedService');
+      expect(r).toHaveProperty('vehicle');
+    }
+  });
+
+  it('honors limit keeping the most recent rows and flags truncation', async () => {
+    const { repo, now, recentDraft } = await seeded();
+    const funnel = await repo.listFunnelRows(new Date(now - 30 * DAY), 2);
+    expect(funnel.truncated).toBe(true);
+    expect(funnel.rows.length).toBe(2);
+    // createdAt desc → the two most recently created qualifying rows
+    expect(funnel.rows[0].createdAt.getTime()).toBeGreaterThanOrEqual(funnel.rows[1].createdAt.getTime());
+    const demand = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 1);
+    expect(demand.truncated).toBe(true);
+    expect(demand.rows.map((r) => r.id)).not.toContain(recentDraft.id === demand.rows[0].id ? 'x' : recentDraft.id); // most recent kept
+  });
+
+  it("channel 'web' and 'all' widen the filter (future customer-website analytics)", async () => {
+    const { repo, now, webRecent, recentDraft } = await seeded();
+    const web = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 100, 'web');
+    expect(web.rows.map((r) => r.id)).toEqual([webRecent.id]);
+    const all = await repo.listFunnelRows(new Date(now - 30 * DAY), 100, 'all');
+    const ids = all.rows.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
+  });
+});

@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
-import { genReference, parseDateFilter } from './quoteRepo';
+import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
 import type {
   QuoteRepo,
   NewQuote,
@@ -10,6 +10,9 @@ import type {
   QuoteListFilter,
   QuotePatch,
   QuoteStatus,
+  AnalyticsChannel,
+  FunnelQuoteRow,
+  DemandQuoteRow,
 } from './quoteRepo';
 
 type Row = typeof quotes.$inferSelect;
@@ -112,6 +115,67 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .from(quotes)
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
     return rows[0] ? toSaved(rows[0]) : null;
+  }
+
+  // Shared channel arm for the analytics projections ('all' = no channel condition).
+  private channelCond(channel: AnalyticsChannel) {
+    return channel === 'all' ? [] : [eq(quotes.channel, channel)];
+  }
+
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+    // Window arm (any lifecycle stamp after `since`) OR live arm (open statuses, any age) —
+    // the live set is what the pipeline/aging snapshots aggregate and is inherently small.
+    // Scalars only: request_json/result_json are deliberately never selected here (perf).
+    const rows = await this.db
+      .select({
+        id: quotes.id, status: quotes.status, product: quotes.product,
+        totalCents: quotes.totalCents, currency: quotes.currency,
+        marginCents: quotes.marginCents, lostReason: quotes.lostReason,
+        createdAt: quotes.createdAt, sentAt: quotes.sentAt, decidedAt: quotes.decidedAt,
+      })
+      .from(quotes)
+      .where(and(
+        isNull(quotes.deletedAt),
+        ...this.channelCond(channel),
+        or(
+          gte(quotes.createdAt, since),
+          gte(quotes.sentAt, since),
+          gte(quotes.decidedAt, since),
+          inArray(quotes.status, [...LIVE_STATUSES]),
+        ),
+      ))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit + 1); // one extra row = cheap truncation probe
+    const truncated = rows.length > limit;
+    return {
+      rows: rows.slice(0, limit).map((r) => ({ ...r, status: r.status as QuoteStatus })),
+      truncated,
+    };
+  }
+
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+    // The ONLY analytics query that touches request_json — bounded to created-in-range.
+    const rows = await this.db
+      .select({
+        id: quotes.id, status: quotes.status, product: quotes.product,
+        vehicle: quotes.vehicle, requestedService: quotes.requestedService,
+        totalCents: quotes.totalCents, currency: quotes.currency,
+        createdAt: quotes.createdAt, request: quotes.requestJson,
+      })
+      .from(quotes)
+      .where(and(
+        isNull(quotes.deletedAt),
+        ...this.channelCond(channel),
+        gte(quotes.createdAt, from),
+        lte(quotes.createdAt, to),
+      ))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit + 1);
+    const truncated = rows.length > limit;
+    return {
+      rows: rows.slice(0, limit).map((r) => ({ ...r, status: r.status as QuoteStatus })),
+      truncated,
+    };
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
