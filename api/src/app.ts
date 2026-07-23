@@ -12,6 +12,7 @@ import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
+import { opsAnalyticsRoutes } from './routes/opsAnalytics';
 import { opsUiRoutes } from './routes/opsUi';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
@@ -195,6 +196,9 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
+  // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
+  // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
+  app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
     email, notificationLog,
