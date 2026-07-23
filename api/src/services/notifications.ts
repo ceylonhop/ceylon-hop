@@ -2,13 +2,22 @@ import type { Booking } from '../db/bookingRepo';
 import type { EmailAdapter } from '../adapters/email';
 import { signBookingToken } from '../lib/bookingToken';
 
-// Brand palette (kept inline — email clients ignore <style>/external CSS).
+// Brand palette — "concierge letter" direction: warm paper, deep teal, coral, editorial
+// serif. Colours are inline (email clients ignore external CSS); fonts are progressively
+// enhanced via a <head> @import in page() with safe Georgia/Helvetica fallbacks.
 const TEAL = '#0AB9B6';
 const TEAL_DEEP = '#0a7d6f';
-const TOMATO = '#e8623a';
-const INK = '#1b1b1b';
-const MUTED = '#6b7280';
-const FAINT = '#9ca3af';
+const TOMATO = '#cf5a2f'; // coral — route end + cancel/no-show eyebrows
+const INK = '#2b2621'; // warm near-black
+const MUTED = '#8d8272';
+const FAINT = '#a99b86';
+const PAPER = '#f4eee2'; // outer page tone
+const CARD = '#fffefb'; // letter surface
+const HAIR = '#efe6d6'; // hairline dividers
+const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
+const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
+const SANS = "'Hanken Grotesk', Helvetica, Arial, sans-serif";
+const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
 
@@ -36,17 +45,38 @@ function travellers(adults: number, children: number): string {
   return s;
 }
 
-interface Stop { color: string; label: string; place: string }
+interface Stop { color: string; label: string; place: string; sub?: string }
 
-// The journey as labelled, colour-coded stops (pickup → drop-off, or each trip stop).
+// True when a trip's last stop is the same place it started (a round trip). The website
+// has no round-trip flag — it just repeats the origin as the final stop.
+function isRoundTrip(booking: Booking): boolean {
+  if (booking.mode !== 'trip') return false;
+  const s = booking.input.stops;
+  return s.length > 2 && s[0] === s[s.length - 1];
+}
+
+// The journey as labelled, colour-coded stops. For trips each stop also carries a `sub`
+// line: nights stayed there + the travel date of the leg leaving it (both from the booking,
+// so it renders website multi-stop / chauffeur / round-trip itineraries faithfully).
 function journey(booking: Booking): Stop[] {
   if (booking.mode === 'trip') {
     const stops = booking.input.stops;
-    return stops.map((s, i) => ({
-      color: i === 0 ? TEAL_DEEP : i === stops.length - 1 ? TOMATO : TEAL,
-      label: i === 0 ? 'Start' : i === stops.length - 1 ? 'End' : 'Stop',
-      place: s,
-    }));
+    const nights = booking.input.nights ?? [];
+    const dates = booking.input.dates ?? [];
+    const roundTrip = isRoundTrip(booking);
+    return stops.map((s, i) => {
+      const last = i === stops.length - 1;
+      const parts: string[] = [];
+      const n = nights[i] ?? 0;
+      if (n > 0) parts.push(`${n} night${n > 1 ? 's' : ''}`);
+      if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
+      return {
+        color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
+        label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
+        place: s,
+        sub: parts.join(' · ') || undefined,
+      };
+    });
   }
   if (booking.mode === 'shared') {
     return [{ color: TEAL, label: 'Service', place: 'Shared ride' }];
@@ -57,16 +87,35 @@ function journey(booking: Booking): Stop[] {
   ];
 }
 
+// Customer-facing labels for the booking extras (only `sightseeing` is website-selectable
+// today; the rest can arrive on ops-made bookings — render whatever is present).
+const EXTRA_LABELS: Record<string, string> = {
+  sightseeing: 'Sightseeing stops',
+  waiting: 'Driver waiting time',
+  'safari-wait': 'Safari wait',
+  luggage: 'Extra luggage',
+  front: 'Front-seat guide',
+  flex: 'Flexible booking',
+};
+function extrasLabel(extras?: string[]): string | null {
+  if (!extras?.length) return null;
+  const labels = extras.map((c) => EXTRA_LABELS[c] ?? c);
+  return labels.join(', ');
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs.
 function factRows(booking: Booking): [string, string][] {
   if (booking.mode === 'trip') {
     const start = booking.input.dates?.find(Boolean);
-    return [
-      ['Service', booking.input.serviceType === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer'],
+    const chauffeur = booking.input.serviceType === 'chauffeur';
+    const rows: [string, string][] = [
+      ['Service', chauffeur ? 'Chauffeur-guide' : 'Private transfer'],
       ['Vehicle', vehicleLabel(booking.input.vehicleType)],
       ['Travellers', String(booking.input.pax)],
-      ['Dates', start ? `From ${fmtDate(start)}` : 'To confirm'],
     ];
+    if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
+    rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    return rows;
   }
   if (booking.mode === 'shared') {
     return [
@@ -74,11 +123,15 @@ function factRows(booking: Booking): [string, string][] {
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
   }
-  return [
+  const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ['Vehicle', vehicleLabel(booking.input.vehicleType)],
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
   ];
+  if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
+  const extras = extrasLabel(booking.input.extras);
+  if (extras) rows.push(['Extras', extras]);
+  return rows;
 }
 
 function routeText(booking: Booking): string {
@@ -105,6 +158,8 @@ const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e6f0fc', color: '#1f5fb
 const BADGE_CONFIRMED: Badge = { label: 'Confirmed', bg: '#e0f3f0', color: TEAL_DEEP };
 const BADGE_ACTION: Badge = { label: 'Action needed', bg: '#fdf1dc', color: '#8a5a12' };
 const BADGE_NO_SHOW: Badge = { label: 'No-show', bg: '#f1efe9', color: '#6b645f' };
+const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c6b39' };
+const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fdf1dc', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
 // True when a paid booking still has an open detail we must confirm (a flexible/"to
@@ -116,35 +171,130 @@ export function needsDetails(booking: Booking): boolean {
   return !booking.input.date;
 }
 
+// Header lockup: a teal monogram + serif wordmark on the warm card (no heavy band —
+// this is a letter, not a dashboard). The monogram is a coloured cell, not a remote image,
+// so it survives images-off with no hosting dependency.
 function brandHeader(): string {
-  return `<tr><td style="background:${TEAL_DEEP};padding:24px 32px">
-    <span style="color:#ffffff;font-size:21px;font-weight:800;letter-spacing:-.01em">Ceylon Hop</span>
-    <div style="color:#bfeae4;font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-top:3px">Ground transport · Sri Lanka</div>
+  return `<tr><td style="padding:30px 34px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td valign="middle" style="padding-right:11px">
+        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+          <td width="34" height="34" align="center" valign="middle" style="background:${TEAL_DEEP};border-radius:50%;color:#ffffff;font-family:${SERIF};font-size:19px;font-weight:600">C</td>
+        </tr></table>
+      </td>
+      <td valign="middle">
+        <div style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};letter-spacing:.01em">Ceylon Hop</div>
+        <div style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:${FAINT};margin-top:1px">Ground transport · Sri Lanka</div>
+      </td>
+    </tr></table>
   </td></tr>`;
 }
 
 function introBlock(eyebrow: string, eyebrowColor: string, heading: string, lede: string): string {
-  return `<tr><td style="padding:30px 32px 6px">
-    <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${eyebrowColor}">${eyebrow}</div>
-    <h1 style="margin:8px 0 4px;font-size:23px;font-weight:800;color:${INK}">${heading}</h1>
-    <p style="margin:0;color:${MUTED};font-size:15px;line-height:1.5">${lede}</p>
+  return `<tr><td style="padding:26px 34px 0">
+    <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${eyebrowColor}">${eyebrow}</div>
+    <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">${heading}</h1>
+    <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">${lede}</p>
   </td></tr>`;
 }
 
-function refCard(booking: Booking, badge: Badge): string {
-  return `<tr><td style="padding:18px 32px 4px">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1faf8;border:1px solid #d7ece7;border-radius:12px">
-      <tr>
-        <td style="padding:14px 18px">
-          <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED}">Booking reference</div>
-          <div style="font-size:21px;font-weight:800;letter-spacing:1.5px;color:${TEAL_DEEP};margin-top:2px">${esc(booking.reference)}</div>
-        </td>
-        <td align="right" style="padding:14px 18px">
-          <span style="background:${badge.bg};color:${badge.color};border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700">${esc(badge.label)}</span>
-        </td>
-      </tr>
-    </table>
+const EYEBROW = `font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:${FAINT};font-weight:600`;
+
+// A small status pill (colour-coded), sitting beside the reference chip.
+function statusPill(badge: Badge): string {
+  return `<span style="display:inline-block;background:${badge.bg};color:${badge.color};border-radius:999px;padding:5px 12px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">${esc(badge.label)}</span>`;
+}
+
+// A short vehicle/service tag for the centre of the route line.
+function vehicleTag(booking: Booking): string {
+  if (booking.mode === 'shared') return 'Shared ride';
+  const car = booking.input.vehicleType === 'van' ? 'van' : 'car';
+  if (booking.mode === 'trip') return booking.input.serviceType === 'chauffeur' ? 'Chauffeur-guide' : `Private ${car}`;
+  return `Private ${car}`;
+}
+
+// A single dot for the journey line.
+function dot(color: string): string {
+  return `<div style="width:11px;height:11px;border-radius:50%;background:${color}"></div>`;
+}
+
+// The reference chip + status pill row.
+function metaRow(booking: Booking, badge: Badge): string {
+  return `<tr><td style="padding:18px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td valign="middle">
+        <span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${TEAL_DEEP};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(booking.reference)}</span>
+      </td>
+      <td valign="middle" align="right">${statusPill(badge)}</td>
+    </tr></table>
   </td></tr>`;
+}
+
+// The journey as a connected line: centred single (shared), horizontal From → To with a
+// solid line through the dot centres (single transfer), or a vertical timeline (trip).
+function routeRow(booking: Booking): string {
+  const stops = journey(booking);
+  let inner: string;
+  if (stops.length === 1) {
+    inner = `<div style="text-align:center">
+      <div style="${EYEBROW}">${esc(stops[0].label)}</div>
+      <div style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};margin-top:4px">${esc(stops[0].place)}</div>
+    </div>`;
+  } else if (stops.length === 2) {
+    const [a, b] = stops;
+    inner = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td align="left" style="${EYEBROW}">${esc(a.label)}</td><td align="right" style="${EYEBROW}">${esc(b.label)}</td></tr>
+      <tr>
+        <td align="left" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(a.place)}</td>
+        <td align="right" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(b.place)}</td>
+      </tr>
+      <tr><td colspan="2" style="padding-top:13px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr valign="middle">
+          <td width="12">${dot(a.color)}</td>
+          <td><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+          <td align="center" style="padding:0 2px"><div style="font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${MUTED};background:${CARD};border:1px solid #e7dcc7;border-radius:999px;padding:4px 12px;white-space:nowrap">${esc(vehicleTag(booking))}</div></td>
+          <td><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+          <td width="12" align="right">${dot(b.color)}</td>
+        </tr></table>
+      </td></tr>
+    </table>`;
+  } else {
+    const rows = stops
+      .map(
+        (s, i) =>
+          `<tr>
+            <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
+            <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}</td>
+          </tr>`,
+      )
+      .join('');
+    inner = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>`;
+  }
+  return `<tr><td style="padding:24px 34px 0">
+    <div style="border-top:1px solid ${HAIR};padding-top:22px">${inner}</div>
+  </td></tr>`;
+}
+
+// The non-route facts as an editorial list with hairline dividers.
+function detailsRow(booking: Booking): string {
+  const rows = factRows(booking)
+    .map(
+      ([k, v]) =>
+        `<tr>
+          <td style="padding:11px 0;border-top:1px solid ${HAIR};color:${MUTED};font-size:14px">${esc(k)}</td>
+          <td align="right" style="padding:11px 0;border-top:1px solid ${HAIR};color:${INK};font-size:14px;font-weight:600">${esc(v)}</td>
+        </tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:20px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+  </td></tr>`;
+}
+
+// Composes the letter body: reference + status, the journey line, then (optionally) the
+// facts list. Keeps the same call shape the senders already use.
+function ticketCard(booking: Booking, badge: Badge, opts: { facts?: boolean } = {}): string {
+  return metaRow(booking, badge) + routeRow(booking) + (opts.facts !== false ? detailsRow(booking) : '');
 }
 
 // Customer's view-only "manage my booking" link. baseUrl = front-end origin (APP_BASE_URL).
@@ -152,53 +302,20 @@ export function manageUrl(booking: Booking, baseUrl: string, secret: string): st
   return `${baseUrl.replace(/\/$/, '')}/manage.html?t=${signBookingToken(booking.id, secret)}`;
 }
 
-// A CTA block consistent with the other block helpers (returns a table row for page()).
+// Primary CTA (returns a table row for page()). WhatsApp lives in the info box below,
+// so it isn't repeated here.
 function manageButton(url: string): string {
-  return `<tr><td style="padding:4px 32px 26px">`
-    + `<a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;`
-    + `padding:12px 24px;border-radius:999px;font-weight:700;font-size:.95rem">View your booking</a></td></tr>`;
-}
-
-function routeBlock(booking: Booking): string {
-  const stopsHtml = journey(booking)
-    .map(
-      (s) =>
-        `<tr>
-          <td valign="top" style="width:24px;padding:6px 0"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${s.color}"></span></td>
-          <td style="padding:3px 0">
-            <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:${FAINT}">${esc(s.label)}</div>
-            <div style="font-size:16px;font-weight:700;color:${INK}">${esc(s.place)}</div>
-          </td>
-        </tr>`,
-    )
-    .join('');
-  return `<tr><td style="padding:20px 32px 4px">
-    <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${FAINT};margin-bottom:8px">Your route</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${stopsHtml}</table>
-  </td></tr>`;
-}
-
-function factsBlock(booking: Booking): string {
-  const factsHtml = factRows(booking)
-    .map(
-      ([k, v]) =>
-        `<tr>
-          <td style="padding:9px 0;color:${MUTED};font-size:14px">${esc(k)}</td>
-          <td style="padding:9px 0;text-align:right;color:${INK};font-weight:600;font-size:14px">${esc(v)}</td>
-        </tr>`,
-    )
-    .join('');
-  return `<tr><td style="padding:8px 32px 0">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #eee">${factsHtml}</table>
+  return `<tr><td style="padding:24px 34px 4px">
+    <a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px">View your booking</a>
   </td></tr>`;
 }
 
 function totalBlock(label: string, amount: string): string {
-  return `<tr><td style="padding:6px 32px 22px">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #f0efe9">
+  return `<tr><td style="padding:0 34px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #eadfce">
       <tr>
-        <td style="padding:14px 0;font-size:15px;color:${MUTED}">${esc(label)}</td>
-        <td align="right" style="padding:14px 0;font-size:22px;font-weight:800;color:${INK}">${esc(amount)}</td>
+        <td style="padding:15px 0 4px;font-family:${SERIF};font-size:16px;font-weight:600;color:${INK}">${esc(label)}</td>
+        <td align="right" style="padding:15px 0 4px;font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">${esc(amount)}</td>
       </tr>
     </table>
   </td></tr>`;
@@ -208,32 +325,36 @@ interface Cta { href: string; label: string; bg: string }
 const CTA_WHATSAPP: Cta = { href: WA_URL, label: 'Message us on WhatsApp', bg: '#25D366' };
 
 function infoBox(title: string, body: string, note?: string, cta: Cta = CTA_WHATSAPP): string {
-  return `<tr><td style="padding:0 32px 26px">
-    <div style="background:#f7faf9;border-radius:12px;padding:20px">
-      <div style="font-size:15px;font-weight:700;color:${INK};margin-bottom:6px">${title}</div>
-      <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.5">${body}</p>
+  return `<tr><td style="padding:26px 34px 0">
+    <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:20px 22px">
+      <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">${title}</div>
+      <p style="margin:0 0 14px;color:${MUTED};font-size:14px;line-height:1.6">${body}</p>
       <table role="presentation" cellpadding="0" cellspacing="0">
-        <tr><td bgcolor="${cta.bg}" style="border-radius:10px">
-          <a href="${cta.href}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">${cta.label}</a>
+        <tr><td bgcolor="${cta.bg}" style="border-radius:9px">
+          <a href="${cta.href}" style="display:inline-block;padding:12px 20px;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px">${cta.label}</a>
         </td></tr>
       </table>
     </div>
-    ${note ? `<p style="margin:16px 2px 0;color:${FAINT};font-size:13px">${esc(note)}</p>` : ''}
+    ${note ? `<p style="margin:14px 2px 0;color:${FAINT};font-size:13px;line-height:1.6">${esc(note)}</p>` : ''}
   </td></tr>`;
 }
 
 function footer(): string {
-  return `<tr><td style="padding:20px 32px;background:#faf8f2;color:${FAINT};font-size:12px;line-height:1.7">
-    <b style="color:${MUTED}">Ceylon Hop</b> &middot; Ground transport across Sri Lanka<br>
-    Questions? Just reply to this email, or message us on WhatsApp.
+  return `<tr><td style="padding:26px 34px 32px">
+    <div style="border-top:1px solid ${HAIR};padding-top:18px;font-size:13px;line-height:1.6;color:${FAINT}">
+      <span style="font-family:${SERIF};color:${MUTED}">Ceylon Hop</span> &middot; Ground transport across Sri Lanka.<br>
+      Just reply to this email, or message us on WhatsApp &mdash; a real person answers.
+    </div>
   </td></tr>`;
 }
 
 function page(inner: string): string {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#eef0ea;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:${INK};-webkit-font-smoothing:antialiased">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef0ea;padding:28px 12px">
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');</style>
+  </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${CARD};border:1px solid #ece2d0;border-radius:18px;overflow:hidden">
         ${inner}
       </table>
     </td></tr>
@@ -282,11 +403,9 @@ function renderHtml(booking: Booking, manageLink?: string): string {
         `You&rsquo;re all set, ${first}!`,
         'Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.',
       ) +
-      refCard(booking, BADGE_PAID) +
-      (manageLink ? manageButton(manageLink) : '') +
-      routeBlock(booking) +
-      factsBlock(booking) +
+      ticketCard(booking, BADGE_PAID) +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
+      (manageLink ? manageButton(manageLink) : '') +
       infoBox(
         'What happens next',
         'Our team will message you on WhatsApp to confirm your exact pickup time and place. Reply there any time if something changes.',
@@ -331,9 +450,7 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
         `Your booking is cancelled, ${first}`,
         'This booking has been cancelled. We&rsquo;ve kept the details below for your records.',
       ) +
-      refCard(booking, BADGE_CANCELLED) +
-      routeBlock(booking) +
-      factsBlock(booking) +
+      ticketCard(booking, BADGE_CANCELLED) +
       infoBox(
         'Anything we can do?',
         'If you&rsquo;ve already paid, any refund due will be processed separately and you&rsquo;ll get a confirmation. Questions about this cancellation? Just reply or message us on WhatsApp.',
@@ -365,8 +482,7 @@ export async function sendRefundConfirmation(booking: Booking, email: EmailAdapt
         `Your refund is on its way, ${first}`,
         'We&rsquo;ve processed a refund for the booking below.',
       ) +
-      refCard(booking, BADGE_REFUNDED) +
-      routeBlock(booking) +
+      ticketCard(booking, BADGE_REFUNDED, { facts: false }) +
       totalBlock('Amount refunded', amount) +
       infoBox(
         'When will I see it?',
@@ -402,10 +518,8 @@ export async function sendTripReminder(
         `Your trip is almost here, ${first}`,
         'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
       ) +
-      refCard(booking, BADGE_PAID) +
+      ticketCard(booking, BADGE_PAID) +
       (links.manage ? manageButton(links.manage) : '') +
-      routeBlock(booking) +
-      factsBlock(booking) +
       infoBox(
         'Before you travel',
         "Our team will share your driver&rsquo;s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us.",
@@ -437,8 +551,7 @@ export async function sendReviewRequest(booking: Booking, email: EmailAdapter): 
         `Thanks for travelling with us, ${first}!`,
         'We hope your journey was smooth and the views were worth it.',
       ) +
-      refCard(booking, { label: 'Completed', bg: '#e6f4ec', color: '#0c6b39' }) +
-      routeBlock(booking) +
+      ticketCard(booking, { label: 'Completed', bg: '#e6f4ec', color: '#0c6b39' }, { facts: false }) +
       infoBox(
         'How did we do?',
         'A quick Google review would mean the world to our small team &mdash; it helps other travellers find us. Thank you! 🌴',
@@ -483,11 +596,9 @@ export async function sendPaymentIncomplete(
         `You’re almost there, ${first}`,
         'We saved your booking, but the payment didn’t complete — so your spot isn’t held yet.',
       ) +
-      refCard(booking, BADGE_ACTION) +
-      (links.resume ? ctaRow(links.resume, 'Finish your booking') : '') +
-      routeBlock(booking) +
-      factsBlock(booking) +
+      ticketCard(booking, BADGE_ACTION) +
       totalBlock('Amount due', due) +
+      (links.resume ? ctaRow(links.resume, 'Finish your booking') : '') +
       infoBox(
         'Finish in a minute',
         'Pick up where you left off — your details are saved. Once payment clears we’ll confirm everything by email. Trouble paying? Just reply or message us on WhatsApp.',
@@ -502,6 +613,90 @@ export async function sendPaymentIncomplete(
   await email.send({
     to: booking.input.customer.email,
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Payment failed (immediate, on a declined/cancelled checkout) ───────────
+// Fires the moment PayHere reports a non-success on an unsettled payment. The booking
+// stays payment_pending so the customer can retry; this is the instant nudge (distinct
+// from the delayed watchdog recovery email).
+export async function sendPaymentFailed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { resume?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const due = money(booking.amountDueNow ?? booking.total, booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Payment didn’t go through',
+        AMBER,
+        `Let’s try that again, ${first}`,
+        'Your payment didn’t complete, so your booking isn’t held yet — but nothing’s lost. You can pick up right where you left off.',
+      ) +
+      ticketCard(booking, BADGE_FAILED) +
+      totalBlock('Amount due', due) +
+      (links.resume ? ctaRow(links.resume, 'Try payment again') : '') +
+      infoBox(
+        'Trouble paying?',
+        'Some cards block international payments by default — a quick note to your bank usually clears it. Or message us on WhatsApp and we’ll send another way to pay.',
+      ) +
+      footer(),
+  );
+  const text = textShell('your payment didn’t go through', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `Amount due: ${due}`,
+    ...(links.resume ? ['', `Try payment again: ${links.resume}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your payment didn’t go through — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Deposit received (a partial deposit was collected; balance due later) ──
+// Dormant today: the engine charges the full amount for every booking, so no public flow
+// produces amountDueNow < total. Wired to fire only on a real partial deposit.
+export async function sendDepositReceived(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const balance = money(booking.total - (booking.amountDueNow ?? booking.total), booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Deposit received',
+        TEAL_DEEP,
+        `Thanks, ${first} — your deposit is in`,
+        'We’ve received your deposit and your spot is secured. The balance is due before you travel.',
+      ) +
+      ticketCard(booking, BADGE_DEPOSIT) +
+      paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox(
+        'Paying the balance',
+        `Your remaining balance of ${esc(balance)} is due before travel — we’ll share the payment details on WhatsApp closer to the day.`,
+        cancellationPolicy(booking),
+      ) +
+      footer(),
+  );
+  const text = textShell('deposit received', 'We’ve received your deposit — your spot is secured.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
+    '',
+    `Balance due before travel: ${balance}`,
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
   });
@@ -522,10 +717,8 @@ export async function sendBookingConfirmed(
         `You’re confirmed, ${first}!`,
         'Good news — your driver is arranged and your trip is locked in.',
       ) +
-      refCard(booking, BADGE_CONFIRMED) +
+      ticketCard(booking, BADGE_CONFIRMED) +
       (links.manage ? manageButton(links.manage) : '') +
-      routeBlock(booking) +
-      factsBlock(booking) +
       infoBox(
         'Your driver details',
         'We’ll send your driver’s name and vehicle on WhatsApp shortly before pickup. Anything changed? Just reply or message us there.',
@@ -559,9 +752,7 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
         `We missed you, ${first}`,
         'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
       ) +
-      refCard(booking, BADGE_NO_SHOW) +
-      routeBlock(booking) +
-      factsBlock(booking) +
+      ticketCard(booking, BADGE_NO_SHOW) +
       infoBox(
         'About your fare',
         'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
@@ -596,10 +787,8 @@ export async function sendDetailsNeeded(
         `We just need a detail or two, ${first}`,
         'Your booking is paid and safe — we only need to lock in your exact pickup time and spot.',
       ) +
-      refCard(booking, BADGE_ACTION) +
+      ticketCard(booking, BADGE_ACTION) +
       (links.manage ? manageButton(links.manage) : '') +
-      routeBlock(booking) +
-      factsBlock(booking) +
       infoBox(
         'What happens now',
         'Your date/time is still flexible. Our team will reach out on WhatsApp to confirm your exact pickup spot and time — or reply to this email any time with the details.',
@@ -615,6 +804,137 @@ export async function sendDetailsNeeded(
   await email.send({
     to: booking.input.customer.email,
     subject: `We need a couple of details — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Customer quote (an ops-built proposal sent to the customer) ────────────
+// Renders from a decoupled view-model, NOT a DB Quote — the (future) send endpoint maps a
+// quote into this shape. Deliberately a clean proposal: itinerary + one total + validity +
+// a Book CTA. No internal per-leg cost breakdown or margin (owner decision).
+export interface CustomerQuoteView {
+  reference: string;
+  customerFirstName: string;
+  toEmail: string;
+  currency: string;
+  stops: { place: string; label?: string; date?: string; nights?: number }[];
+  serviceSummary?: string; // e.g. "Chauffeur-guide · 7 days" / "Private transfer"
+  vehicleLabel?: string; // e.g. "AC van (up to 6)"
+  pax?: number;
+  totalCents: number;
+  validUntil?: string; // ISO date
+  inclusions?: string[];
+}
+
+function quoteMetaRow(view: CustomerQuoteView): string {
+  return `<tr><td style="padding:18px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td valign="middle"><span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${TEAL_DEEP};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(view.reference)}</span></td>
+      <td valign="middle" align="right">${statusPill({ label: 'Quote', bg: '#e0f3f0', color: TEAL_DEEP })}</td>
+    </tr></table>
+  </td></tr>`;
+}
+
+function quoteTimeline(stops: CustomerQuoteView['stops']): string {
+  const rows = stops
+    .map((s, i) => {
+      const last = i === stops.length - 1;
+      const color = i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL;
+      const parts: string[] = [];
+      if (s.nights) parts.push(`${s.nights} night${s.nights > 1 ? 's' : ''}`);
+      if (s.date) parts.push(fmtDate(s.date));
+      const sub = parts.join(' · ');
+      return `<tr>
+        <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${last ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${color};margin-left:-7px"></div></td>
+        <td style="padding:0 0 ${last ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label ?? (i === 0 ? 'Start' : last ? 'End' : 'Stop'))}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(sub)}</div>` : ''}</td>
+      </tr>`;
+    })
+    .join('');
+  return `<tr><td style="padding:24px 34px 0"><div style="border-top:1px solid ${HAIR};padding-top:22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></div></td></tr>`;
+}
+
+function quoteDetails(view: CustomerQuoteView): string {
+  const rows: [string, string][] = [];
+  if (view.serviceSummary) rows.push(['Service', view.serviceSummary]);
+  if (view.vehicleLabel) rows.push(['Vehicle', view.vehicleLabel]);
+  if (view.pax) rows.push(['Travellers', String(view.pax)]);
+  if (!rows.length) return '';
+  const html = rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:11px 0;border-top:1px solid ${HAIR};color:${MUTED};font-size:14px">${esc(k)}</td><td align="right" style="padding:11px 0;border-top:1px solid ${HAIR};color:${INK};font-size:14px;font-weight:600">${esc(v)}</td></tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:20px 34px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${html}</table></td></tr>`;
+}
+
+function inclusionsBlock(items: string[]): string {
+  const lis = items
+    .map(
+      (i) =>
+        `<tr><td valign="top" style="padding:4px 9px 4px 0;color:${TEAL_DEEP};font-weight:700">&#10003;</td><td style="padding:4px 0;color:${MUTED};font-size:14px;line-height:1.5">${esc(i)}</td></tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:26px 34px 0">
+    <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:18px 22px">
+      <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:8px">What&rsquo;s included</div>
+      <table role="presentation" cellpadding="0" cellspacing="0">${lis}</table>
+    </div>
+  </td></tr>`;
+}
+
+export async function sendCustomerQuote(
+  view: CustomerQuoteView,
+  email: EmailAdapter,
+  links: { book?: string } = {},
+): Promise<void> {
+  const first = esc(view.customerFirstName);
+  const validNote = view.validUntil ? ` We&rsquo;re holding this price until ${fmtDate(view.validUntil)}.` : '';
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Your quote',
+        TEAL_DEEP,
+        `Your Sri Lanka trip, ${first}`,
+        `Here&rsquo;s the itinerary we&rsquo;ve put together for you.${validNote} Have a look, and book whenever you&rsquo;re ready — or just reply if you&rsquo;d like anything changed.`,
+      ) +
+      quoteMetaRow(view) +
+      quoteTimeline(view.stops) +
+      quoteDetails(view) +
+      (view.inclusions?.length ? inclusionsBlock(view.inclusions) : '') +
+      totalBlock('Total', money(view.totalCents, view.currency)) +
+      (links.book ? ctaRow(links.book, 'Book this trip') : '') +
+      infoBox(
+        'Questions, or want to tweak it?',
+        'Want to adjust the route, dates, or vehicle? Just reply to this email or message us on WhatsApp — happy to change anything before you book.',
+        view.validUntil ? `This quote is valid until ${fmtDate(view.validUntil)}.` : undefined,
+      ) +
+      footer(),
+  );
+  const text = [
+    `CEYLON HOP — your quote`,
+    '',
+    `Hi ${view.customerFirstName},`,
+    '',
+    `Here's the trip we've put together for you.${view.validUntil ? ` We're holding this price until ${fmtDate(view.validUntil)}.` : ''}`,
+    '',
+    `Reference: ${view.reference}`,
+    `Itinerary: ${view.stops.map((s) => s.place).join(' → ')}`,
+    ...(view.serviceSummary ? [`Service: ${view.serviceSummary}`] : []),
+    ...(view.vehicleLabel ? [`Vehicle: ${view.vehicleLabel}`] : []),
+    ...(view.inclusions?.length ? ['', 'Included:', ...view.inclusions.map((i) => `- ${i}`)] : []),
+    '',
+    `Total: ${money(view.totalCents, view.currency)}`,
+    ...(links.book ? ['', `Book this trip: ${links.book}`] : []),
+    '',
+    `WhatsApp: ${WA_URL}`,
+    '',
+    'Ceylon Hop · Ground transport across Sri Lanka',
+  ].join('\n');
+  await email.send({
+    to: view.toEmail,
+    subject: `Your Ceylon Hop quote — ${view.reference}`,
     html,
     text,
   });

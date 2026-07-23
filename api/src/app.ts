@@ -17,6 +17,7 @@ import { opsUiRoutes } from './routes/opsUi';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
+import { devEmailRoutes } from './routes/devEmails';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
@@ -245,6 +246,8 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  // Dev-only email preview harness (renders real sender output). Never mounted in prod.
+  if (opsAuthCfg.nodeEnv !== 'production') app.route('/dev/emails', devEmailRoutes());
   return app;
 }
 

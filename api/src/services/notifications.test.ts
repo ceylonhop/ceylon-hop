@@ -6,6 +6,9 @@ import {
   sendRefundConfirmation,
   sendTripReminder,
   sendReviewRequest,
+  sendPaymentFailed,
+  sendDepositReceived,
+  sendCustomerQuote,
 } from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
@@ -343,5 +346,111 @@ describe('needsDetails', () => {
       input: { corridorId: 'cmb-galle', date: '2026-07-10', time: '08:00', seats: 2, customer: single.input.customer },
     } as Booking;
     expect(needsDetails(shared)).toBe(false);
+  });
+});
+
+// Faithful itinerary rendering across the website-bookable shapes.
+describe('itinerary rendering — website booking shapes', () => {
+  it('single transfer renders selected extras and bag count', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = { ...single, input: { ...single.input, bags: 3, extras: ['sightseeing'] } };
+    await sendBookingConfirmation(b, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Sightseeing stops');
+    expect(m.html).toContain('3 bags');
+    expect(m.text).toContain('Sightseeing stops');
+  });
+
+  it('chauffeur trip renders the multi-day duration', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-CHA', id: 'idc',
+      input: { stops: ['Colombo', 'Kandy', 'Ella'], nights: [0, 2, 1], dates: ['2026-08-09', '2026-08-11'], pax: 3, vehicleType: 'van', serviceType: 'chauffeur', days: 6, driverNights: 5, customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    expect(email.sent[0].html).toContain('Duration');
+    expect(email.sent[0].html).toContain('6 days');
+  });
+
+  it('multi-stop trip renders per-stop nights and per-leg travel dates', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-MUL', id: 'idm',
+      input: { stops: ['Colombo Fort', 'Kandy', 'Ella'], nights: [0, 2, 0], dates: ['2026-08-09', '2026-08-11'], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    const html = email.sent[0].html;
+    expect(html).toContain('2 nights');
+    expect(html).toContain('depart');
+  });
+
+  it('round trip (origin repeated) labels the final stop as a return', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-RND', id: 'idr',
+      input: { stops: ['Kandy', 'Sigiriya', 'Kandy'], nights: [0, 1, 0], dates: ['2026-08-09', '2026-08-10'], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    expect(email.sent[0].html).toContain('Return');
+  });
+});
+
+describe('sendPaymentFailed', () => {
+  it('emails a retry nudge with the amount due and a resume link, plus plaintext', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentFailed(single, email, { resume: 'https://ceylonhop.com/booking.html?id=x' });
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('didn’t go through');
+    expect(m.html).toContain('Try payment again');
+    expect(m.html).toContain('$50.00');
+    expect(m.text).toContain('https://ceylonhop.com/booking.html?id=x');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendDepositReceived', () => {
+  it('shows deposit paid + balance due and the balance in the message', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDepositReceived({ ...single, total: 20000, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.subject.toLowerCase()).toContain('deposit');
+    expect(m.html).toContain('Deposit paid');
+    expect(m.html).toContain('Balance due');
+    expect(m.html).toContain('$50.00'); // deposit
+    expect(m.html).toContain('$150.00'); // balance
+    expect(m.text).toContain('Balance due before travel: $150.00');
+  });
+});
+
+describe('sendCustomerQuote', () => {
+  const quote = {
+    reference: 'CHQ-99', customerFirstName: 'Sam', toEmail: 'sam@example.com', currency: 'USD',
+    serviceSummary: 'Chauffeur-guide · 5 days', vehicleLabel: 'AC van (up to 6)', pax: 4,
+    totalCents: 120000, validUntil: '2026-08-20',
+    stops: [
+      { place: 'Colombo Airport', label: 'Start', date: '2026-09-02' },
+      { place: 'Kandy', label: 'Stop', date: '2026-09-04', nights: 2 },
+      { place: 'Ella', label: 'End', nights: 1 },
+    ],
+    inclusions: ['Private van + chauffeur-guide', 'Fuel and tolls'],
+  };
+
+  it('renders the itinerary, one total, validity and a Book CTA — no internal breakdown', async () => {
+    const email = new FakeEmailAdapter();
+    await sendCustomerQuote(quote, email, { book: 'https://ceylonhop.com/quote.html?q=abc' });
+    const m = email.sent[0];
+    expect(m.to).toBe('sam@example.com');
+    expect(m.subject).toContain('CHQ-99');
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('Ella');
+    expect(m.html).toContain('$1,200.00'); // one total
+    expect(m.html).toContain('Book this trip');
+    expect(m.html).toContain('20 Aug 2026'); // validity
+    expect(m.html).toContain('Private van'); // inclusion
+    expect(m.html).not.toMatch(/subtotal|per km|day rate|line ?item/i); // no internal breakdown
+    expect(m.text).toContain('https://ceylonhop.com/quote.html?q=abc');
+    expect(m.text).not.toContain('<');
   });
 });
