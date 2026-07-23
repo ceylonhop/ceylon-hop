@@ -300,11 +300,11 @@ export function manageUrl(booking: Booking, baseUrl: string, secret: string): st
   return `${baseUrl.replace(/\/$/, '')}/manage.html?t=${signBookingToken(booking.id, secret)}`;
 }
 
-// Primary CTA + an outline WhatsApp button, side by side (returns a table row for page()).
+// Primary CTA (returns a table row for page()). WhatsApp lives in the info box below,
+// so it isn't repeated here.
 function manageButton(url: string): string {
   return `<tr><td style="padding:24px 34px 4px">
-    <a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;padding:13px 24px;border-radius:9px;font-weight:600;font-size:14px">View your booking</a>
-    <a href="${WA_URL}" style="display:inline-block;margin-left:8px;color:${TEAL_DEEP};text-decoration:none;padding:13px 20px;border:1px solid #cfe6df;border-radius:9px;font-weight:600;font-size:14px">WhatsApp us</a>
+    <a href="${url}" style="display:inline-block;background:${TEAL_DEEP};color:#fff;text-decoration:none;padding:13px 26px;border-radius:9px;font-weight:600;font-size:14px">View your booking</a>
   </td></tr>`;
 }
 
