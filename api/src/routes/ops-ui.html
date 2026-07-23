@@ -846,13 +846,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
 /* second thin line: add-ons chip row (always present on point-to-point driving legs) */
-.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; align-items: center; gap: 16px; }
+/* Leg tools — ONE quiet utility row at the card's foot (replaces the two stacked text
+   lines). Every control is the same ghost chip: dashed border = "adds something" (the
+   same grammar as the + Add leg pill), solidifying on hover. The route chip right-aligns
+   as a state readout — picked reads as a set decision, not another add. */
+.qv .ch-leg-tools { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
+.qv .ch-tool-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--cream-deep); background: transparent; color: var(--muted); border-radius: 999px; padding: 3.5px 11px; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .1s ease; }
+.qv .ch-tool-chip:hover { color: var(--ink); border-color: var(--line); border-style: solid; background: var(--surface); }
+.qv .ch-tool-chip:active { transform: translateY(1px); }
+.qv .ch-tool-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.qv .ch-tool-chip.route { margin-left: auto; }
+.qv .ch-tool-chip.route.picked { border-style: solid; border-color: var(--line); background: var(--surface); color: var(--ink-soft); }
+.qv .ch-tool-chip.route.picked:hover { border-color: var(--blue); color: var(--blue-d); }
+.qv .ch-tool-caret { font-size: 9px; opacity: .6; }
 /* empty state: a quiet inline text action, not an orphaned button */
-.qv .ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
-.qv .ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
+/* active add-ons keep the orange pill, sized to sit flush with its sibling tool chips */
 /* active state: a solid pill naming the fees */
-.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3.5px 11px; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: border-color .15s ease; }
 .qv .ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
+.qv .ch-addon-chip.on:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
 .qv .ch-dist-time { color: var(--muted); font-weight: 400; margin-left: 5px; padding-left: 6px; border-left: 1px solid currentColor; opacity: .55; }
 
 /* second thin line: add-on toggles (only when the popover is open) */
@@ -891,10 +903,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-stops-multi .ch-leg-in:hover { border-color: var(--line); }
 .qv .ch-stops-multi .ch-leg-in:focus { background: var(--surface); }
 .qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 10px; min-height: 20px; }
-/* third thin line: stop-list controls (+ stop / and return) on driving legs */
-.qv .ch-stop-ctrls { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; gap: 14px; align-items: center; }
-.qv .ch-stop-ctrls .ch-link { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
-.qv .ch-stop-ctrls .ch-link:hover { color: var(--blue-d); text-decoration: underline; text-underline-offset: 2px; }
+/* (stop-list + add-ons + route controls all live on the single .ch-leg-tools row above) */
 
 /* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
    keep From→To readable alongside the date/distance/action controls, drop the
@@ -3503,8 +3512,8 @@ function renderLegCard(leg, idx, total) {
     if (rcFrom && rcTo && leg.stops.length === 2 && leg.routeOptions) {
       var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
       routeChipHtml = rcPicked
-        ? '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button>'
-        : '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button>';
+        ? '<button class="ch-tool-chip route picked ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '" title="Change which road this ride takes">Route: ' + esc(rcPicked) + ' <span class="ch-tool-caret">&#9662;</span></button>'
+        : '<button class="ch-tool-chip route ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '" title="Expressway vs local road — different price and time">&#8644; Compare routes</button>';
     }
   }
 
@@ -3514,7 +3523,7 @@ function renderLegCard(leg, idx, total) {
     ? '<div class="ch-leg-price">' + esc(legPrice) + '</div>'
     : '<div class="ch-leg-price empty">' + (isStay ? 'stay' : '—') + '</div>';
 
-  // Actions cluster (duplicate / remove only — add-ons now lives on the second line)
+  // Actions cluster (duplicate / remove only — add-ons live on the tools row below)
   var actions = [
     '<div class="ch-leg-actions">',
     '  <button class="ch-mini-btn" title="Duplicate" data-action="dupLeg" data-leg="' + esc(leg.id) + '">&#10697;</button>',
@@ -3522,38 +3531,32 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('');
 
-  // Stop-list controls (thin line, driving legs only): "+ stop" inserts a new empty stop
-  // BEFORE the last one; "and return" appends a copy of stops[0] (pure sugar — rendered
-  // only while stops[0] is set and the ride doesn't already end back there). Both are
-  // hidden at the 8-stop wire cap.
-  var stopCtrls = '';
+  // Leg tools — ONE row of matching ghost chips at the card's foot (was two stacked
+  // text lines whose labels ran together as "+ stop and return"). Left group edits the
+  // ride: "+ Stop" inserts a new empty stop BEFORE the last one; "Return to start"
+  // appends a copy of stops[0] (pure sugar — rendered only while stops[0] is set and
+  // the ride doesn't already end back there); both hidden at the 8-stop wire cap.
+  // "+ Fees" (point-to-point only) opens the add-ons tray — a solid orange pill names
+  // the active ones. The route chip right-aligns as the leg's one stateful readout.
+  var tools = [];
   if (!isStay) {
     var atStopCap = leg.stops.length >= 8;
     var rideStart = (leg.stops[0] || '').trim();
     var endsAtStart = !!rideStart && legTo(leg).trim() === rideStart;
-    var ctrls = [];
-    if (!atStopCap) ctrls.push('  <button class="ch-link" data-action="addStop" data-leg="' + esc(leg.id) + '">&#43; stop</button>');
-    if (!atStopCap && rideStart && !endsAtStart) ctrls.push('  <button class="ch-link" data-action="andReturn" data-leg="' + esc(leg.id) + '">and return</button>');
-    if (ctrls.length) stopCtrls = '<div class="ch-stop-ctrls">' + ctrls.join('') + '</div>';
+    if (!atStopCap) tools.push('<button class="ch-tool-chip" data-action="addStop" data-leg="' + esc(leg.id) + '" title="Add a stop along the way">&#43; Stop</button>');
+    if (!atStopCap && rideStart && !endsAtStart) tools.push('<button class="ch-tool-chip" data-action="andReturn" data-leg="' + esc(leg.id) + '" title="End the ride back where it starts">&#8617; Return to start</button>');
   }
-
-  // Add-ons chip (thin second line, point-to-point driving legs only). Shows a
-  // muted dashed "+ Add-ons" pill when none are active, or a solid orange-tinted
-  // pill naming the active ones — both open/close the same toggle popover.
   var activeAddonLabels = [];
   if (leg.addSightseeingFee) activeAddonLabels.push('Sightseeing');
   if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
   if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
-  var anyAddon = activeAddonLabels.length > 0;
-  var addonChipHtml = (!isChauffeur && !isStay)
-    ? (anyAddon
-      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
-      : '<button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>')
-    : '';
-  // Second line: fees/add-ons chip + the route chip share one quiet row under the leg.
-  var addonChipRow = (addonChipHtml || routeChipHtml)
-    ? '<div class="ch-leg-addonrow">' + addonChipHtml + routeChipHtml + '</div>'
-    : '';
+  if (!isChauffeur && !isStay) {
+    tools.push(activeAddonLabels.length
+      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Edit fees &amp; add-ons">' + esc(activeAddonLabels.join(' · ')) + '</button>'
+      : '<button class="ch-tool-chip" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Sightseeing, waiting, and safari-wait fees">&#43; Fees</button>');
+  }
+  if (routeChipHtml) tools.push(routeChipHtml);
+  var toolsRow = tools.length ? '<div class="ch-leg-tools">' + tools.join('') + '</div>' : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -3582,8 +3585,7 @@ function renderLegCard(leg, idx, total) {
     actions,
     '  </div>',
     (isMulti ? '<div class="ch-leg-stoplist">' + routeHtml + '</div>' : ''),
-    stopCtrls,
-    addonChipRow,
+    toolsRow,
     addonLine,
     '</div>',
   ].join('');
