@@ -14,7 +14,11 @@
 (function(){var n=0;
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
-window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});
+/* Handled-failure reporting: the catch blocks below swallow errors into a toast or a silent
+   fallback (right for the operator, invisible to us). They call this so the failure still
+   reaches Sentry — same sink, same 5-per-page cap. ctx names the swallow site. */
+window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.message||String(x)),x.stack)};})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -1578,7 +1582,7 @@ async function loadOpsQuotes(){
     const body=await r.json();
     opsQuotes=(body&&body.quotes)||[];opsQuotesLoaded=true;
     if(state.route==='quotes')viewQuotes();
-  }catch(e){if(e.message!=='auth')toast('Could not load quotes');}
+  }catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadOpsQuotes',e);toast('Could not load quotes');}}
 }
 function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
@@ -1600,7 +1604,7 @@ async function loadOpsRoster(){
     window.opsUsers=users; /* the builder's assign picker reads this rather than re-fetching */
     opsRoster=new Map(users.map(u=>[String(u.email||'').toLowerCase(),u.displayName||shortUser(u.email)]));
     if(state.route==='quotes'&&opsQuotesLoaded)viewQuotes(); /* names arrived after first paint */
-  }catch(e){/* labels fall back to the email local part — the queue still works */}
+  }catch(e){window.opsReportError&&window.opsReportError('loadOpsRoster',e);/* labels fall back to the email local part — the queue still works */}
 }
 function userLabel(email){return opsRoster.get(String(email||'').toLowerCase())||shortUser(email);}
 function isMineEmail(email){const me=(state.email||'').toLowerCase();return !!me&&String(email||'').toLowerCase()===me;}
@@ -1800,7 +1804,7 @@ function renderSheet(){
 async function openDetail(id){
   state.detail=id;state.detailData=null;renderSheet();
   try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
-  catch(e){if(e.message!=='auth')toast('Could not load details');}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
 }
 
 let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -1808,7 +1812,7 @@ let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t
 /* re-fetch the single row after a mutation and splice it in, then re-render */
 async function refreshRow(id){
   try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)state.detail=null;render();}
-  catch(e){if(e.message!=='auth')toast('Refresh failed');}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('refreshRow',e);toast('Refresh failed');}}
 }
 
 /* T6: #view and #quoteRoot are each persistent DOM nodes (only [hidden] toggles, never
@@ -2003,10 +2007,10 @@ document.addEventListener('click',async e=>{
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
-    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not advance');}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not mark no-show');}break;}
-    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Update failed');}break;}
-    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not add note');}break;}
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
   }
 });
@@ -2051,7 +2055,7 @@ function bootApp(identity){
   setNav();
   if(state.route==='quote'||state.route==='quotes'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
-  loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
+  loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings');}});
 }
 
 /* Google Identity Services calls this with the signed ID token credential. */
@@ -2118,7 +2122,7 @@ window.initGoogleButton=initGoogleButton;
     if(r.ok){
       bootApp(await r.json()); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and login paths) */
     }else{showLogin();}
-  }catch(_){showLogin();}
+  }catch(e){window.opsReportError&&window.opsReportError('boot whoami',e);/* a bug in bootApp lands here too — without the beacon it looks like a plain logged-out visit */showLogin();}
 })();
 </script>
 <script>
@@ -2889,7 +2893,7 @@ async function apiPlaces(q) {
       : ((d && d.places) ? d.places.map(function(name) { return { label: name, source: 'google' }; }) : []);
     if (places.length) _placeCache[key] = places; // cache hits only; let empties retry
     return places;
-  } catch (e) { return []; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiPlaces', e); return []; }
 }
 
 async function apiDistance(from, to, compare) {
@@ -2901,7 +2905,7 @@ async function apiDistance(from, to, compare) {
     });
     if (!r.ok) return null;
     return await r.json();
-  } catch (e) { return null; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiDistance', e); return null; }
 }
 
 async function apiEstimate(payload) {
@@ -2914,7 +2918,7 @@ async function apiEstimate(payload) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Estimate failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiEstimate', e); return { error: 'Network error' }; }
 }
 
 async function apiRateCard() {
@@ -2922,7 +2926,7 @@ async function apiRateCard() {
     var r = await api('/admin/quote/rate-card');
     if (!r.ok) return null;
     return await r.json();
-  } catch (e) { return null; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiRateCard', e); return null; }
 }
 
 async function apiSave(payload) {
@@ -2935,7 +2939,7 @@ async function apiSave(payload) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Save failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiSave', e); return { error: 'Network error' }; }
 }
 
 async function apiPatch(id, patch) {
@@ -2948,7 +2952,7 @@ async function apiPatch(id, patch) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Update failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiPatch', e); return { error: 'Network error' }; }
 }
 
 async function apiDelete(id) {
@@ -2957,7 +2961,7 @@ async function apiDelete(id) {
     var body = await jsonOrNull(r);
     if (!r.ok) return body || { error: 'HTTP ' + r.status }; // carry { error, reason } for friendly copy
     return body || { deleted: true };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiDelete', e); return { error: 'Network error' }; }
 }
 
 // V19: fetch a full saved quote (incl. request.tool) for reopening.
@@ -2967,7 +2971,7 @@ async function apiGetQuote(id) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Load failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiGetQuote', e); return { error: 'Network error' }; }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -3224,7 +3228,8 @@ async function reopenQuote(id) {
   // Superseded while in flight (a newer open, + New quote, or logout): this response is
   // stale — drop it entirely. The error path below is gated too, so a stale failure can't
   // toast "not found" or bounce the operator back to the queue mid-edit of another quote.
-  if (seq !== _openSeq) return;
+  // The beacon isn't an error report — it counts how often the race actually fires in prod.
+  if (seq !== _openSeq) { window.opsReportError && window.opsReportError('reopenQuote', 'stale open discarded (superseded while in flight)'); return; }
   if (!q || q.error) {
     // D6: a bad deep link (e.g. /ops?quote=Q-FHEXB — a reference, not the internal key the
     // lookup expects) used to fail silently and strand the operator in a blank New-quote
@@ -3715,7 +3720,7 @@ async function loadHotZones() {
     hotZones = (d && d.zones) ? d.zones : [];
     hotZonesOff = !!(d && d.disabled);
     render();
-  } catch (e) { /* leave prior state; a transient failure just shows the last list */ }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones list', e); /* leave prior state; a transient failure just shows the last list */ }
 }
 
 // Create or update a zone from the (uncontrolled) form inputs, read at click time. Boost > 20%
@@ -3741,7 +3746,7 @@ async function hzSubmitZone() {
     hzEditId = null;
     showToast('Zone saved');
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Save failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed'); render(); }
 }
 
 async function hzToggleZone(id) {
@@ -3753,7 +3758,7 @@ async function hzToggleZone(id) {
     hzBusy = false;
     if (!r.ok) { showToast('Update failed'); render(); return; }
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Update failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed'); render(); }
 }
 
 async function hzDeleteZone(id) {
@@ -3767,7 +3772,7 @@ async function hzDeleteZone(id) {
     if (hzEditId === id) hzEditId = null;
     showToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Delete failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed'); render(); }
 }
 
 function renderHotZonesPanel() {
@@ -4851,7 +4856,7 @@ async function loadOpsUsers() {
     if (!r.ok) return;
     var b = await jsonOrNull(r);
     opsUsers = (b && b.users) || [];
-  } catch (e) { /* leave the roster empty; assigning is not required to quote */ }
+  } catch (e) { window.opsReportError && window.opsReportError('builder roster', e); /* leave the roster empty; assigning is not required to quote */ }
 }
 
 // Assignee picker — lives in the header next to the action buttons (spec 2026-07-22). No label:
