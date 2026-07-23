@@ -2982,8 +2982,15 @@ function showToast(msg) {
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────
+// Open-generation token. Every reopen/reset/teardown bumps it, and a reopen fetch started
+// under an older generation discards its response on arrival. Without this, overlapping
+// opens resolve last-response-wins: a slow GET from a previous open (cold API, first-time
+// builder mount) lands late and paints quote A over the quote B the operator clicked after
+// it (owner report 2026-07-22 — clicked Sandra Wolker's row, got Gahen's quote).
+var _openSeq = 0;
 // Reset the builder to a blank draft (no prompt — callers decide whether to guard).
 function resetToNew() {
+  _openSeq++; // an in-flight reopen must not clobber the fresh draft
   legSeq = 0;
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
@@ -3212,7 +3219,12 @@ async function bookQuote() {
 // ── Reopen a saved quote (V19) ────────────────────────────────────────────────
 async function reopenQuote(id) {
   if (!id) return;
+  var seq = ++_openSeq;
   var q = await apiGetQuote(id);
+  // Superseded while in flight (a newer open, + New quote, or logout): this response is
+  // stale — drop it entirely. The error path below is gated too, so a stale failure can't
+  // toast "not found" or bounce the operator back to the queue mid-edit of another quote.
+  if (seq !== _openSeq) return;
   if (!q || q.error) {
     // D6: a bad deep link (e.g. /ops?quote=Q-FHEXB — a reference, not the internal key the
     // lookup expects) used to fail silently and strand the operator in a blank New-quote
@@ -6619,6 +6631,7 @@ async function init() {
 // Unmount: drop the unsaved-changes flag, stop every pending timer, close the
 // autocomplete, reset the init guard, and empty the render target.
 function teardown() {
+  _openSeq++; // a reopen still in flight at logout must not resurrect state afterwards
   _dirty = false;
   clearTimeout(_estimateTimer);
   _estimateTimer = null;
