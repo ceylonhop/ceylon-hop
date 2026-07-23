@@ -665,6 +665,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qv .ch-hz-grid { grid-template-columns: 1fr 1fr; }
   .qv .ch-hz-cell-town, .qv .ch-hz-actions { grid-column: 1 / -1; }
 }
+/* When the composer sits at the bottom of the Rate Settings modal, the zone picker menu
+   would spill past the (overflow-hidden) card; .flip-up opens it above the field instead. */
+.qv .ch-ac-menu.flip-up { top: auto; bottom: calc(100% + 5px); }
 .qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -6708,6 +6711,11 @@ function hzacRenderMenu(input, items, query, opts) {
   wrap.style.position = 'relative';
   wrap.appendChild(menu);
   _hzac.menuEl = menu;
+  // Flip the menu above the field when a downward menu would spill past the modal's scroll
+  // viewport (the composer sits at the bottom of Rate Settings, which is overflow-hidden).
+  var bound = input.closest('.ch-modal-body');
+  var limit = bound ? Math.min(bound.getBoundingClientRect().bottom, window.innerHeight) : window.innerHeight;
+  if (menu.getBoundingClientRect().bottom > limit - 8) menu.classList.add('flip-up');
 }
 
 // Wire the picker onto #hz-place. Guarded by a JS property (NOT a data-* attribute, which
