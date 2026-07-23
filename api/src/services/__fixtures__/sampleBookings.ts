@@ -122,6 +122,30 @@ const roundTrip: Booking = {
   },
 };
 
+// A rich customer-quote proposal (chauffeur multi-day) for the quote-email preview.
+export const sampleQuote = {
+  reference: 'CHQ-4821',
+  customerFirstName: 'Priya',
+  toEmail: 'traveller@example.com',
+  currency: 'LKR',
+  serviceSummary: 'Chauffeur-guide · 7 days',
+  vehicleLabel: 'AC van (up to 6)',
+  pax: 4,
+  totalCents: 12_600_000,
+  validUntil: '2026-08-20',
+  stops: [
+    { place: 'Colombo Airport', label: 'Start', date: '2026-09-02' },
+    { place: 'Sigiriya', label: 'Stop', date: '2026-09-04', nights: 2 },
+    { place: 'Kandy', label: 'Stop', date: '2026-09-06', nights: 2 },
+    { place: 'Ella', label: 'End', nights: 2 },
+  ],
+  inclusions: [
+    'Private AC van with an English-speaking chauffeur-guide',
+    'Fuel, tolls, parking and the driver’s meals & lodging',
+    'Airport pickup and door-to-door transfers throughout',
+  ],
+};
+
 export function sampleBooking(mode: SampleMode): Booking {
   return byMode[mode];
 }

@@ -808,3 +808,134 @@ export async function sendDetailsNeeded(
     text,
   });
 }
+
+// ── Customer quote (an ops-built proposal sent to the customer) ────────────
+// Renders from a decoupled view-model, NOT a DB Quote — the (future) send endpoint maps a
+// quote into this shape. Deliberately a clean proposal: itinerary + one total + validity +
+// a Book CTA. No internal per-leg cost breakdown or margin (owner decision).
+export interface CustomerQuoteView {
+  reference: string;
+  customerFirstName: string;
+  toEmail: string;
+  currency: string;
+  stops: { place: string; label?: string; date?: string; nights?: number }[];
+  serviceSummary?: string; // e.g. "Chauffeur-guide · 7 days" / "Private transfer"
+  vehicleLabel?: string; // e.g. "AC van (up to 6)"
+  pax?: number;
+  totalCents: number;
+  validUntil?: string; // ISO date
+  inclusions?: string[];
+}
+
+function quoteMetaRow(view: CustomerQuoteView): string {
+  return `<tr><td style="padding:18px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td valign="middle"><span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${TEAL_DEEP};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(view.reference)}</span></td>
+      <td valign="middle" align="right">${statusPill({ label: 'Quote', bg: '#e0f3f0', color: TEAL_DEEP })}</td>
+    </tr></table>
+  </td></tr>`;
+}
+
+function quoteTimeline(stops: CustomerQuoteView['stops']): string {
+  const rows = stops
+    .map((s, i) => {
+      const last = i === stops.length - 1;
+      const color = i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL;
+      const parts: string[] = [];
+      if (s.nights) parts.push(`${s.nights} night${s.nights > 1 ? 's' : ''}`);
+      if (s.date) parts.push(fmtDate(s.date));
+      const sub = parts.join(' · ');
+      return `<tr>
+        <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${last ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${color};margin-left:-7px"></div></td>
+        <td style="padding:0 0 ${last ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label ?? (i === 0 ? 'Start' : last ? 'End' : 'Stop'))}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(sub)}</div>` : ''}</td>
+      </tr>`;
+    })
+    .join('');
+  return `<tr><td style="padding:24px 34px 0"><div style="border-top:1px solid ${HAIR};padding-top:22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></div></td></tr>`;
+}
+
+function quoteDetails(view: CustomerQuoteView): string {
+  const rows: [string, string][] = [];
+  if (view.serviceSummary) rows.push(['Service', view.serviceSummary]);
+  if (view.vehicleLabel) rows.push(['Vehicle', view.vehicleLabel]);
+  if (view.pax) rows.push(['Travellers', String(view.pax)]);
+  if (!rows.length) return '';
+  const html = rows
+    .map(
+      ([k, v]) =>
+        `<tr><td style="padding:11px 0;border-top:1px solid ${HAIR};color:${MUTED};font-size:14px">${esc(k)}</td><td align="right" style="padding:11px 0;border-top:1px solid ${HAIR};color:${INK};font-size:14px;font-weight:600">${esc(v)}</td></tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:20px 34px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${html}</table></td></tr>`;
+}
+
+function inclusionsBlock(items: string[]): string {
+  const lis = items
+    .map(
+      (i) =>
+        `<tr><td valign="top" style="padding:4px 9px 4px 0;color:${TEAL_DEEP};font-weight:700">&#10003;</td><td style="padding:4px 0;color:${MUTED};font-size:14px;line-height:1.5">${esc(i)}</td></tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:26px 34px 0">
+    <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:18px 22px">
+      <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:8px">What&rsquo;s included</div>
+      <table role="presentation" cellpadding="0" cellspacing="0">${lis}</table>
+    </div>
+  </td></tr>`;
+}
+
+export async function sendCustomerQuote(
+  view: CustomerQuoteView,
+  email: EmailAdapter,
+  links: { book?: string } = {},
+): Promise<void> {
+  const first = esc(view.customerFirstName);
+  const validNote = view.validUntil ? ` We&rsquo;re holding this price until ${fmtDate(view.validUntil)}.` : '';
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Your quote',
+        TEAL_DEEP,
+        `Your Sri Lanka trip, ${first}`,
+        `Here&rsquo;s the itinerary we&rsquo;ve put together for you.${validNote} Have a look, and book whenever you&rsquo;re ready — or just reply if you&rsquo;d like anything changed.`,
+      ) +
+      quoteMetaRow(view) +
+      quoteTimeline(view.stops) +
+      quoteDetails(view) +
+      (view.inclusions?.length ? inclusionsBlock(view.inclusions) : '') +
+      totalBlock('Total', money(view.totalCents, view.currency)) +
+      (links.book ? ctaRow(links.book, 'Book this trip') : '') +
+      infoBox(
+        'Questions, or want to tweak it?',
+        'Want to adjust the route, dates, or vehicle? Just reply to this email or message us on WhatsApp — happy to change anything before you book.',
+        view.validUntil ? `This quote is valid until ${fmtDate(view.validUntil)}.` : undefined,
+      ) +
+      footer(),
+  );
+  const text = [
+    `CEYLON HOP — your quote`,
+    '',
+    `Hi ${view.customerFirstName},`,
+    '',
+    `Here's the trip we've put together for you.${view.validUntil ? ` We're holding this price until ${fmtDate(view.validUntil)}.` : ''}`,
+    '',
+    `Reference: ${view.reference}`,
+    `Itinerary: ${view.stops.map((s) => s.place).join(' → ')}`,
+    ...(view.serviceSummary ? [`Service: ${view.serviceSummary}`] : []),
+    ...(view.vehicleLabel ? [`Vehicle: ${view.vehicleLabel}`] : []),
+    ...(view.inclusions?.length ? ['', 'Included:', ...view.inclusions.map((i) => `- ${i}`)] : []),
+    '',
+    `Total: ${money(view.totalCents, view.currency)}`,
+    ...(links.book ? ['', `Book this trip: ${links.book}`] : []),
+    '',
+    `WhatsApp: ${WA_URL}`,
+    '',
+    'Ceylon Hop · Ground transport across Sri Lanka',
+  ].join('\n');
+  await email.send({
+    to: view.toEmail,
+    subject: `Your Ceylon Hop quote — ${view.reference}`,
+    html,
+    text,
+  });
+}

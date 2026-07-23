@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
-import { sampleBooking, sampleVariants, type SampleMode } from '../services/__fixtures__/sampleBookings';
+import { sampleBooking, sampleVariants, sampleQuote, type SampleMode } from '../services/__fixtures__/sampleBookings';
 import {
   sendBookingConfirmation,
   sendDetailsNeeded,
@@ -14,6 +14,7 @@ import {
   sendPaymentIncomplete,
   sendPaymentFailed,
   sendDepositReceived,
+  sendCustomerQuote,
 } from '../services/notifications';
 
 // Dev-only preview harness for the customer emails. Renders the ACTUAL sender output
@@ -23,6 +24,7 @@ import {
 const LINKS = {
   manage: 'https://ceylonhop.com/manage.html?t=preview-token',
   resume: 'https://ceylonhop.com/booking.html?id=preview',
+  book: 'https://ceylonhop.com/quote.html?q=preview',
 };
 
 interface EmailDef {
@@ -43,6 +45,7 @@ const EMAILS: EmailDef[] = [
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
   { name: 'payment-failed', label: 'Payment failed (immediate)', run: (b, e) => sendPaymentFailed(b, e, { resume: LINKS.resume }) },
   { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
+  { name: 'customer-quote', label: 'Customer quote (proposal)', run: (_b, e) => sendCustomerQuote(sampleQuote, e, { book: LINKS.book }) },
 ];
 
 const MODES = ['single', 'trip', 'trip-private', 'roundtrip', 'shared', 'flexible', 'deposit'] as const;

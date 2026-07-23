@@ -8,6 +8,7 @@ import {
   sendReviewRequest,
   sendPaymentFailed,
   sendDepositReceived,
+  sendCustomerQuote,
 } from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
@@ -420,5 +421,36 @@ describe('sendDepositReceived', () => {
     expect(m.html).toContain('$50.00'); // deposit
     expect(m.html).toContain('$150.00'); // balance
     expect(m.text).toContain('Balance due before travel: $150.00');
+  });
+});
+
+describe('sendCustomerQuote', () => {
+  const quote = {
+    reference: 'CHQ-99', customerFirstName: 'Sam', toEmail: 'sam@example.com', currency: 'USD',
+    serviceSummary: 'Chauffeur-guide · 5 days', vehicleLabel: 'AC van (up to 6)', pax: 4,
+    totalCents: 120000, validUntil: '2026-08-20',
+    stops: [
+      { place: 'Colombo Airport', label: 'Start', date: '2026-09-02' },
+      { place: 'Kandy', label: 'Stop', date: '2026-09-04', nights: 2 },
+      { place: 'Ella', label: 'End', nights: 1 },
+    ],
+    inclusions: ['Private van + chauffeur-guide', 'Fuel and tolls'],
+  };
+
+  it('renders the itinerary, one total, validity and a Book CTA — no internal breakdown', async () => {
+    const email = new FakeEmailAdapter();
+    await sendCustomerQuote(quote, email, { book: 'https://ceylonhop.com/quote.html?q=abc' });
+    const m = email.sent[0];
+    expect(m.to).toBe('sam@example.com');
+    expect(m.subject).toContain('CHQ-99');
+    expect(m.html).toContain('Colombo Airport');
+    expect(m.html).toContain('Ella');
+    expect(m.html).toContain('$1,200.00'); // one total
+    expect(m.html).toContain('Book this trip');
+    expect(m.html).toContain('20 Aug 2026'); // validity
+    expect(m.html).toContain('Private van'); // inclusion
+    expect(m.html).not.toMatch(/subtotal|per km|day rate|line ?item/i); // no internal breakdown
+    expect(m.text).toContain('https://ceylonhop.com/quote.html?q=abc');
+    expect(m.text).not.toContain('<');
   });
 });
