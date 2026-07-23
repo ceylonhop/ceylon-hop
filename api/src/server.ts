@@ -16,6 +16,7 @@ import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
+import { PostgresZonesRepo } from './db/postgresZonesRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
 import { initTracking } from './observability/track';
@@ -88,6 +89,7 @@ const app = createApp({
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes: new PostgresQuoteRepo(db),
+  zones: new PostgresZonesRepo(db),
   adapter,
   maps,
   email,

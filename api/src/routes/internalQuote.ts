@@ -11,6 +11,7 @@ import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
+import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
@@ -157,6 +158,7 @@ async function resolveAndPrice(
   body: ToolRequest,
   maps: MapsAdapter,
   serviceOverride?: 'private' | 'chauffeur',
+  rateCard: RateCard = RATE_CARD,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
@@ -173,7 +175,7 @@ async function resolveAndPrice(
   }
   try {
     const req = toEngineRequest(body, serviceOverride);
-    return { req, result: quote(req) };
+    return { req, result: quote(req, rateCard) };
   } catch (e) {
     if (e instanceof PriceError) throw e;
     throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
@@ -308,6 +310,16 @@ function summary(result: QuoteResult): ServiceSummary {
 
 // D-A / spec §3.1: margin is stripped from the wire response unless the caller has
 // margin:view (founder only) — finance/ops price customers without ever seeing cost.
+// Hot zones (D9): the founder-only "Ella premium +15%" annotation rides in a line item's
+// meta.hotZone. It's a margin-class disclosure — WHY a price is elevated — so it must be stripped
+// for any role without margin:view, exactly like marginCents. Returns meta with hotZone removed
+// (undefined when there was no other meta), leaving every other meta field intact.
+function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!meta || !('hotZone' in meta)) return meta;
+  const { hotZone: _hz, ...rest } = meta;
+  return Object.keys(rest).length ? rest : undefined;
+}
+
 function shape(result: QuoteResult, canMargin: boolean) {
   const base = {
     product: result.product,
@@ -316,7 +328,8 @@ function shape(result: QuoteResult, canMargin: boolean) {
     amountDueNow: money(result.amountDueNowCents),
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: li.meta })),
+    // The founder-only zone annotation is stripped for non-margin:view roles (D9).
+    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   if (!canMargin) return base;
   return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
@@ -338,6 +351,13 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   if (rest.result && typeof rest.result === 'object') {
     const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
     delete safeResult.marginEstimateCents;
+    // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
+    // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
+    if (Array.isArray(safeResult.lineItems)) {
+      safeResult.lineItems = (safeResult.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
+        li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
+      );
+    }
     rest.result = safeResult;
   }
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
@@ -427,6 +447,9 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
+  // Optional: with no repo injected the router uses an empty in-memory one ⇒ zero active zones ⇒
+  // pricing identical to pre-hot-zones. Prod injects the Postgres repo (server.ts → app.ts).
+  zones?: ZonesRepo;
   bookings: BookingRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
@@ -436,6 +459,12 @@ export function internalQuoteRoutes(deps: {
   opsBaseUrl?: string; // origin serving /ops, for the email's deep link (config.OPS_BASE_URL)
 }) {
   const r = new Hono();
+
+  // The live rate card composed with the currently-active hot zones (spec D5). Built per request so
+  // a zone edit is reflected on the next quote; frozen into the snapshot at approval (C2). Zero
+  // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
@@ -503,18 +532,22 @@ export function internalQuoteRoutes(deps: {
     try {
       const body = parseToolRequest(raw);
       const canMargin = can(c.get('identity').role, 'margin:view');
+      // Compose the live rate card with the active hot zones once, and price every pass against it
+      // so the total, per-leg breakdown, and the service chooser all agree (a zone boost reaches
+      // ops quotes here; the website is a separate release — see the hot-zones spec §8).
+      const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
       // reuse the selected result for its side; price only the OTHER service additionally.
-      const services = serviceChooserData(body, RATE_CARD, selected, result);
+      const services = serviceChooserData(body, card, selected, result);
 
       return c.json({
         ...shape(result, canMargin),
         fxUsdToLkr: fxRate,
-        breakdown: quoteBreakdown(req),
+        breakdown: quoteBreakdown(req, card),
         services,
       });
     } catch (e) {
@@ -543,7 +576,9 @@ export function internalQuoteRoutes(deps: {
     }
     try {
       const body = parseToolRequest(raw);
-      const { req, result } = await resolveAndPrice(body, deps.maps);
+      // Price against the live card + active zones, so a saved quote's stored total/margin already
+      // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard());
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
@@ -661,6 +696,51 @@ export function internalQuoteRoutes(deps: {
     }),
   );
 
+  // ── Hot zones admin (spec §7) — the founder's pricing lever. Reads are visible under margin:view;
+  // every WRITE is gated by quote:approve ON TOP OF the router's quote:manage guard (both = founder
+  // today, D4). CSRF applies to writes. Audit: created_by/updated_by are stamped from the session
+  // identity — a % change is never anonymous. Registered BEFORE /:id so /zones never matches the
+  // param route.
+  const zoneShape = z.object({
+    placeName: z.string().trim().min(1).max(120),
+    boostPct: z.number().int().min(0).max(100),
+    active: z.boolean().optional(),
+    lat: z.number().nullable().optional(),
+    lng: z.number().nullable().optional(),
+    radiusKm: z.number().nullable().optional(),
+  });
+  // The geo trio is all-or-nothing (spec §4): either none set, or all three with radiusKm > 0.
+  const geoTrioOk = (v: { lat?: number | null; lng?: number | null; radiusKm?: number | null }): boolean => {
+    const present = [v.lat, v.lng, v.radiusKm].filter((x) => x != null).length;
+    return present === 0 || (present === 3 && Number(v.radiusKm) > 0);
+  };
+  const createZone = zoneShape.refine(geoTrioOk, { message: 'lat/lng/radiusKm must be all set (radiusKm > 0) or all empty' });
+  const patchZone = zoneShape.partial().refine(geoTrioOk, { message: 'lat/lng/radiusKm must be all set (radiusKm > 0) or all empty' });
+
+  r.get('/zones', requireCap('margin:view'), async (c) => c.json({ zones: await zonesRepo.list(), disabled: hotZonesDisabled() }));
+
+  r.post('/zones', csrf, requireCap('quote:approve'), async (c) => {
+    const parsed = createZone.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues[0]?.message }, 400);
+    const email = c.get('identity').email;
+    const created = await zonesRepo.create({ ...parsed.data, createdBy: email, updatedBy: email });
+    return c.json(created, 201);
+  });
+
+  r.patch('/zones/:id', csrf, requireCap('quote:approve'), async (c) => {
+    const parsed = patchZone.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues[0]?.message }, 400);
+    const updated = await zonesRepo.patch(c.req.param('id'), { ...parsed.data, updatedBy: c.get('identity').email });
+    if (!updated) return c.json({ error: 'not_found' }, 404);
+    return c.json(updated);
+  });
+
+  r.delete('/zones/:id', csrf, requireCap('quote:approve'), async (c) => {
+    const ok = await zonesRepo.remove(c.req.param('id'));
+    if (!ok) return c.json({ error: 'not_found' }, 404);
+    return c.json({ ok: true });
+  });
+
   // List quotes (newest first), optionally filtered by status/product/from/to.
   // MUST be registered before /:id so that /list doesn't match the param route.
   // Margin note [CORRECTED 2026-07-04 during T-D]: the plan's A-5 assumed QuoteSummary (this
@@ -756,11 +836,11 @@ export function internalQuoteRoutes(deps: {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
       if (to === 'ready') {
-        // Freeze the current card (no expiry — ops locks are held until reopened, not time-boxed).
-        // The stored total was priced against RATE_CARD at /save; today RATE_CARD only changes on
-        // deploy, so the current card is the one that produced this price. When the deferred founder
-        // rate-card API lands (design doc §9), approval should re-price from this snapshot.
-        rateLock = { rateCardJson: RATE_CARD, rateLockedUntil: null };
+        // Freeze the current card + its active HOT ZONES (no expiry — ops locks are held until
+        // reopened, not time-boxed). Composing the zones INTO the snapshot is what satisfies C2: a
+        // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
+        // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
+        rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
       } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
         rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
       }

@@ -20,6 +20,7 @@ import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
+import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
@@ -39,6 +40,7 @@ export interface AppDeps {
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
+  zones?: ZonesRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
   bookingLinkSecret?: string;
@@ -77,6 +79,7 @@ export function createApp(deps: AppDeps = {}) {
   const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
+  const zones = deps.zones ?? new InMemoryZonesRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -212,7 +215,7 @@ export function createApp(deps: AppDeps = {}) {
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, bookings,
+    maps, quotes, zones, bookings,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
