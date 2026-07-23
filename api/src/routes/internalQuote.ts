@@ -316,7 +316,8 @@ function summary(result: QuoteResult): ServiceSummary {
 // (undefined when there was no other meta), leaving every other meta field intact.
 function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!meta || !('hotZone' in meta)) return meta;
-  const { hotZone: _hz, ...rest } = meta;
+  const rest = { ...meta };
+  delete rest.hotZone;
   return Object.keys(rest).length ? rest : undefined;
 }
 
