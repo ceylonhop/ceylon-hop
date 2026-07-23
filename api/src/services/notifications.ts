@@ -1,5 +1,6 @@
 import type { Booking } from '../db/bookingRepo';
 import type { EmailAdapter } from '../adapters/email';
+import { corridorRouteEnds } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette — "concierge letter" direction: warm paper, deep teal, coral, editorial
@@ -79,7 +80,10 @@ function journey(booking: Booking): Stop[] {
     });
   }
   if (booking.mode === 'shared') {
-    return [{ color: TEAL, label: 'Service', place: 'Shared ride' }];
+    // Only the corridorId is stored (not the customer's exact stops), and a seat can run
+    // either way along the corridor — so name the service's route, without an arrow.
+    const ends = corridorRouteEnds(booking.input.corridorId);
+    return [{ color: TEAL, label: 'Service', place: ends ? `${ends.from} – ${ends.to} shared shuttle` : 'Shared ride' }];
   }
   return [
     { color: TEAL_DEEP, label: 'Pickup', place: booking.input.from },
@@ -136,7 +140,10 @@ function factRows(booking: Booking): [string, string][] {
 
 function routeText(booking: Booking): string {
   if (booking.mode === 'trip') return booking.input.stops.join(' → ');
-  if (booking.mode === 'shared') return 'Shared ride';
+  if (booking.mode === 'shared') {
+    const ends = corridorRouteEnds(booking.input.corridorId);
+    return ends ? `Shared shuttle · ${ends.from} – ${ends.to}` : 'Shared ride';
+  }
   return `${booking.input.from} → ${booking.input.to}`;
 }
 

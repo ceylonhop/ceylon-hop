@@ -161,6 +161,30 @@ describe('sendBookingConfirmation — shared seat', () => {
     expect(m.html).toContain('08:00');
     expect(m.html).toContain('$40.00');
   });
+
+  // A shared booking stores only its corridorId; the corridor catalogue lives in code
+  // (departureRepo CORRIDOR_ROUTES), so the email must resolve the service's route name
+  // from it instead of the anonymous "Shared ride".
+  it('names the corridor route when the corridorId is in the catalogue', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(
+      { ...shared, input: { ...shared.input, corridorId: 'hill-line' } },
+      email,
+    );
+    const m = email.sent[0];
+    expect(m.html).toContain('Kandy');
+    expect(m.html).toContain('Ella');
+    expect(m.text).toContain('Kandy');
+    expect(m.text).toContain('Ella');
+  });
+
+  it('falls back to "Shared ride" for a corridorId not in the catalogue', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(shared, email); // 'cmb-galle' is not a catalogue id
+    const m = email.sent[0];
+    expect(m.html).toContain('Shared ride');
+    expect(m.html).not.toContain('Kandy');
+  });
 });
 
 describe('sendCancellationConfirmation', () => {
