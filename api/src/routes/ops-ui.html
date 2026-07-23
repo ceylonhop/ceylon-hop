@@ -3797,14 +3797,14 @@ function renderHotZonesPanel() {
     + '<div style="font-weight:600;margin-bottom:8px">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
     + '<label style="flex:2;min-width:160px;font-size:12px;color:var(--muted)">Town<br>'
-    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="e.g. Ella" value="' + placeVal + '"' + dis + '></label>'
+    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="Search a town…" autocomplete="off" value="' + placeVal + '"' + dis + '></label>'
     + '<label style="flex:1;min-width:90px;font-size:12px;color:var(--muted)">Boost %<br>'
     + '<input id="hz-boost" class="ch-input" style="width:100%" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '></label>'
     + '<label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-bottom:8px"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label>'
     + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
     + (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
     + '</div>'
-    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Match is by town name, as it appears in the quote tool (e.g. Ella, Galle, Sigiriya / Dambulla). A premium above 20% will ask you to confirm.</div>'
+    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Pick the town from the list so the zone matches exactly how the quote tool spells it — free-typing risks a name that never fires. A premium above 20% will ask you to confirm.</div>'
     + '</div>';
 
   return '<div class="ch-hz-panel" style="margin-top:20px">'
@@ -5809,6 +5809,7 @@ function attachEventListeners() {
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
   // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
+  attachHotZoneAutoComplete(); // same picker for the Rate-Settings zone field (#hz-place)
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
@@ -6591,6 +6592,120 @@ window.addEventListener('wheel', function(e) {
 window.addEventListener('touchmove', function(e) {
   if (_ac.menuEl && !_ac.menuEl.contains(e.target)) acClose();
 }, { passive: true });
+
+// ── Hot-zone place picker ──────────────────────────────────────────────────────
+// A small, self-contained autocomplete for the Rate-Settings "Add a zone" town field
+// (#hz-place), reusing apiPlaces() + the shared .ch-ac-menu styling. Kept SEPARATE from the
+// leg autocomplete (_ac), which is bound to leg/stop state and has a delicate flicker history —
+// this touches none of it. Picking a suggestion writes the CANONICAL label into the input, so a
+// zone's stored name matches exactly what the quote tool stores for the same place. That kills
+// the free-typed-spelling mismatch that let towns like "Passikudah" (Google says "Pasikuda")
+// silently never fire.
+var _hzac = { menuEl: null, items: [], hiIdx: -1, timer: null, seq: 0 };
+
+function hzacClose() {
+  _hzac.seq++;
+  if (_hzac.menuEl && _hzac.menuEl.parentNode) _hzac.menuEl.parentNode.removeChild(_hzac.menuEl);
+  _hzac.menuEl = null; _hzac.items = []; _hzac.hiIdx = -1;
+}
+
+function hzacLabel(item) {
+  return (typeof item === 'string') ? item : (item && item.label) || '';
+}
+
+function hzacPick(item) {
+  var input = document.getElementById('hz-place');
+  hzacClose();
+  if (input) { input.value = hzacLabel(item); input.focus(); }
+}
+
+function hzacUpdateHighlight() {
+  if (!_hzac.menuEl) return;
+  _hzac.menuEl.querySelectorAll('.ch-ac-item:not(.loading)').forEach(function(b, i) {
+    b.classList.toggle('hi', i === _hzac.hiIdx);
+  });
+}
+
+function hzacRenderMenu(input, items, query, opts) {
+  opts = opts || {}; items = items || [];
+  _hzac.items = items;
+  if (_hzac.menuEl && _hzac.menuEl.parentNode) { _hzac.menuEl.parentNode.removeChild(_hzac.menuEl); _hzac.menuEl = null; }
+  if (items.length === 0 && !opts.loading) return;
+  var menu = document.createElement('div');
+  menu.className = 'ch-ac-menu';
+  items.forEach(function(item, idx) {
+    var name = hzacLabel(item);
+    var source = (typeof item === 'string') ? 'google' : ((item && item.source) || 'google');
+    var sourceLabel = source === 'known' ? 'Popular Route' : 'Google';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ch-ac-item' + (idx === _hzac.hiIdx ? ' hi' : '');
+    var re = new RegExp('(' + esc(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    btn.innerHTML = '<span class="ch-ac-pin">📍</span><span class="ch-ac-name">' + esc(name).replace(re, '<b>$1</b>') + '</span><span class="ch-ac-source">' + sourceLabel + '</span>';
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); hzacPick(item); });
+    menu.appendChild(btn);
+  });
+  if (opts.loading) {
+    var loading = document.createElement('button');
+    loading.type = 'button'; loading.className = 'ch-ac-item loading'; loading.disabled = true;
+    loading.setAttribute('aria-disabled', 'true');
+    loading.innerHTML = '<span class="ch-ac-pin">⌕</span><span class="ch-ac-name">Searching Google…</span><span class="ch-ac-source">Google</span>';
+    menu.appendChild(loading);
+  }
+  var wrap = input.parentNode;
+  wrap.style.position = 'relative';
+  wrap.appendChild(menu);
+  _hzac.menuEl = menu;
+}
+
+// Wire the picker onto #hz-place. Guarded by a JS property (NOT a data-* attribute, which
+// morphdom would strip on the next diff) so we bind exactly once per live input node —
+// whether render() preserves the node (morphdom) or replaces it (innerHTML swap).
+function attachHotZoneAutoComplete() {
+  var input = document.getElementById('hz-place');
+  if (!input || input._hzWired) return;
+  input._hzWired = true;
+
+  input.addEventListener('input', function() {
+    var q = input.value.trim();
+    clearTimeout(_hzac.timer);
+    if (q.length < 2) { hzacClose(); return; }
+    _hzac.hiIdx = -1;
+    var reqSeq = ++_hzac.seq;
+    hzacRenderMenu(input, [], q, { loading: true });
+    _hzac.timer = setTimeout(function() {
+      apiPlaces(q).then(function(places) {
+        if (reqSeq !== _hzac.seq) return; // a newer keystroke superseded this fetch
+        if (document.activeElement !== input || input.value.trim() !== q) return;
+        hzacRenderMenu(input, places.slice(0, 6), q);
+      });
+    }, 220);
+  });
+
+  input.addEventListener('keydown', function(e) {
+    if (!_hzac.menuEl) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); _hzac.hiIdx = Math.min(_hzac.hiIdx + 1, _hzac.items.length - 1); hzacUpdateHighlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _hzac.hiIdx = Math.max(_hzac.hiIdx - 1, -1); hzacUpdateHighlight(); }
+    else if (e.key === 'Enter') { if (_hzac.hiIdx >= 0 && _hzac.items[_hzac.hiIdx]) { e.preventDefault(); hzacPick(_hzac.items[_hzac.hiIdx]); } }
+    else if (e.key === 'Escape') { hzacClose(); }
+  });
+
+  // Delayed so a menu item's mousedown-pick lands first; an item pick preventDefaults blur anyway.
+  input.addEventListener('blur', function() {
+    setTimeout(function() { if (document.activeElement !== input) hzacClose(); }, 200);
+  });
+}
+
+// Dismiss the zone picker on outside click / wheel / scroll, mirroring the leg autocomplete rules.
+document.addEventListener('mousedown', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target) && document.getElementById('hz-place') !== e.target) hzacClose();
+});
+window.addEventListener('wheel', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target)) hzacClose();
+}, { passive: true });
+document.addEventListener('scroll', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target)) hzacClose();
+}, true);
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // T5: no self-invoke — the ops shell calls QuoteView.init() when the founder
