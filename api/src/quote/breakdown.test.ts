@@ -108,3 +108,55 @@ function billableSum(km: number): number {
   const buffer = Math.min(15, Math.max(5, Math.round(km * 0.1)));
   return km + buffer;
 }
+
+// Hot-zone parity (owner report 2026-07-23): the itinerary leg chips come from quoteBreakdown,
+// the money-pane lines from the engine — and the engine boosts zone-touching rides while the
+// breakdown didn't, so a boosted leg showed two different prices on the same screen ($115.92
+// chip vs $127.51 line). The breakdown must price with the SAME per-ride boost the engine uses.
+describe('quoteBreakdown — hot-zone parity with the engine', () => {
+  const zones = [{ placeName: 'Pasikuda Beach, Sri Lanka', boostPct: 10 }];
+
+  it('private: a zone-touching leg chip equals the engine line item (+10%)', async () => {
+    const { quotePrivateLegs } = await import('./private');
+    const { normalizeRide } = await import('./types');
+    const { RATE_CARD } = await import('./rateCard');
+    const card = { ...RATE_CARD, hotZones: zones };
+    const req: QuoteRequest = {
+      product: 'private', vehicle: 'car', pax: 2, bags: 2,
+      legs: [
+        { from: 'Colombo Airport (CMB)', to: 'Pelmadulla, Sri Lanka', distanceKm: 140 },
+        { from: 'Colombo Airport (CMB)', to: 'Pasikuda Beach, Sri Lanka', distanceKm: 273 },
+      ],
+    };
+    const b = quoteBreakdown(req, card);
+    const engine = quotePrivateLegs(req.legs.map((l) => normalizeRide(l)), 'car', undefined, card);
+    // Chip = line item, for the boosted AND the unboosted leg alike.
+    expect(b.legs.map((l) => l.priceCents)).toEqual(engine.lineItems.map((li) => li.amountCents));
+    // And the boost really is in there: 288 billable × 40.25¢ × 1.10 = 12751.
+    expect(b.legs[1].priceCents).toBe(12751);
+  });
+
+  it('private: custom-rate tiers stay authoritative — no boost in the chip (D11)', async () => {
+    const req: QuoteRequest = {
+      product: 'private', vehicle: 'van14', pax: 10, bags: 10, customPerKmCents: 100,
+      legs: [{ from: 'Colombo', to: 'Pasikuda Beach, Sri Lanka', distanceKm: 273 }],
+    };
+    const { RATE_CARD } = await import('./rateCard');
+    const b = quoteBreakdown(req, { ...RATE_CARD, hotZones: zones });
+    expect(b.legs[0].priceCents).toBe(Math.max(28800, Math.round(288 * 100))); // no ×1.10
+  });
+
+  it('chauffeur: a zone-touching travel day boosts its km-share row', async () => {
+    const { RATE_CARD } = await import('./rateCard');
+    const req: QuoteRequest = {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-15',
+      travelDays: [
+        { date: '2026-02-14', from: 'Colombo', to: 'Pasikuda Beach, Sri Lanka', distanceKm: 273 },
+        { date: '2026-02-15', from: 'Kandy', to: 'Colombo', distanceKm: 115 },
+      ],
+    };
+    const b = quoteBreakdown(req, { ...RATE_CARD, hotZones: zones });
+    expect(b.legs[0].priceCents).toBe(Math.round(288 * RATE_CARD.perKmCents.car * 1.1));
+    expect(b.legs[1].priceCents).toBe(Math.round(127 * RATE_CARD.perKmCents.car)); // untouched day: no boost
+  });
+});
