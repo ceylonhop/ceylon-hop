@@ -12,6 +12,8 @@ import {
   sendTripReminder,
   sendReviewRequest,
   sendPaymentIncomplete,
+  sendPaymentFailed,
+  sendDepositReceived,
 } from '../services/notifications';
 
 // Dev-only preview harness for the customer emails. Renders the ACTUAL sender output
@@ -39,6 +41,8 @@ const EMAILS: EmailDef[] = [
   { name: 'trip-reminder', label: 'Pre-trip reminder', run: (b, e) => sendTripReminder(b, e, { manage: LINKS.manage }) },
   { name: 'review-request', label: 'Review request', run: (b, e) => sendReviewRequest(b, e) },
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
+  { name: 'payment-failed', label: 'Payment failed (immediate)', run: (b, e) => sendPaymentFailed(b, e, { resume: LINKS.resume }) },
+  { name: 'deposit-received', label: 'Deposit received', run: (b, e) => sendDepositReceived(b, e, { manage: LINKS.manage }) },
 ];
 
 const MODES = ['single', 'trip', 'trip-private', 'roundtrip', 'shared', 'flexible', 'deposit'] as const;

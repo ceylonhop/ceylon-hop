@@ -7,7 +7,7 @@ import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { AlertAdapter } from '../adapters/alerts';
-import { sendBookingConfirmation, sendDetailsNeeded, needsDetails, manageUrl } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl } from '../services/notifications';
 
 export function webhookRoutes(deps: {
   bookings: BookingRepo;
@@ -80,6 +80,17 @@ export function webhookRoutes(deps: {
     // the customer can retry — and the stale-hold sweep / watchdog handle abandonment.
     if (event.status !== 'succeeded') {
       await payments.markFailed(payment.id);
+      // Immediate best-effort nudge so the customer can retry. Idempotent (once per booking),
+      // and never fails the webhook — PayHere must not retry over a mail hiccup.
+      const failed = await bookings.get(payment.bookingId);
+      if (failed && failed.status === 'payment_pending' && !(await notificationLog?.wasSent(failed.id, 'payment_failed'))) {
+        try {
+          await sendPaymentFailed(failed, email, { resume: manageUrl(failed, baseUrl, linkSecret) });
+          await notificationLog?.markSent(failed.id, 'payment_failed');
+        } catch (err) {
+          console.error(`payment-failed email failed for ${failed.reference}:`, err);
+        }
+      }
       return c.json({ ok: true, status: 'failed' }, 200);
     }
 
@@ -104,9 +115,17 @@ export function webhookRoutes(deps: {
       // Confirmation email is best-effort: the booking is already paid, so a mail
       // provider hiccup must NOT fail the webhook (which would make PayHere retry).
       try {
-        await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
-        // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
-        await notificationLog?.markSent(paid.id, 'confirmation');
+        // A partial deposit (amountDueNow < total) gets the deposit-received email instead of
+        // the full confirmation. Dormant today — the engine charges the full amount for every
+        // public booking — but wired so reintroducing deposits needs no webhook change.
+        if (paid.amountDueNow != null && paid.amountDueNow < paid.total) {
+          await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          await notificationLog?.markSent(paid.id, 'deposit_received');
+        } else {
+          await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
+          await notificationLog?.markSent(paid.id, 'confirmation');
+        }
         // Paid but the date/time is still flexible → a follow-up nudge that we'll
         // confirm the exact pickup on WhatsApp. Best-effort; never fails the webhook.
         if (needsDetails(paid)) {

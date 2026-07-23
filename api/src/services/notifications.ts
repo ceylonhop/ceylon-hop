@@ -158,6 +158,8 @@ const BADGE_REFUNDED: Badge = { label: 'Refunded', bg: '#e6f0fc', color: '#1f5fb
 const BADGE_CONFIRMED: Badge = { label: 'Confirmed', bg: '#e0f3f0', color: TEAL_DEEP };
 const BADGE_ACTION: Badge = { label: 'Action needed', bg: '#fdf1dc', color: '#8a5a12' };
 const BADGE_NO_SHOW: Badge = { label: 'No-show', bg: '#f1efe9', color: '#6b645f' };
+const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c6b39' };
+const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fdf1dc', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
 // True when a paid booking still has an open detail we must confirm (a flexible/"to
@@ -611,6 +613,90 @@ export async function sendPaymentIncomplete(
   await email.send({
     to: booking.input.customer.email,
     subject: `Finish your Ceylon Hop booking — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Payment failed (immediate, on a declined/cancelled checkout) ───────────
+// Fires the moment PayHere reports a non-success on an unsettled payment. The booking
+// stays payment_pending so the customer can retry; this is the instant nudge (distinct
+// from the delayed watchdog recovery email).
+export async function sendPaymentFailed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { resume?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const due = money(booking.amountDueNow ?? booking.total, booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Payment didn’t go through',
+        AMBER,
+        `Let’s try that again, ${first}`,
+        'Your payment didn’t complete, so your booking isn’t held yet — but nothing’s lost. You can pick up right where you left off.',
+      ) +
+      ticketCard(booking, BADGE_FAILED) +
+      totalBlock('Amount due', due) +
+      (links.resume ? ctaRow(links.resume, 'Try payment again') : '') +
+      infoBox(
+        'Trouble paying?',
+        'Some cards block international payments by default — a quick note to your bank usually clears it. Or message us on WhatsApp and we’ll send another way to pay.',
+      ) +
+      footer(),
+  );
+  const text = textShell('your payment didn’t go through', 'Your payment didn’t complete, so your booking isn’t held yet.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `Amount due: ${due}`,
+    ...(links.resume ? ['', `Try payment again: ${links.resume}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Your payment didn’t go through — ${booking.reference}`,
+    html,
+    text,
+  });
+}
+
+// ── Deposit received (a partial deposit was collected; balance due later) ──
+// Dormant today: the engine charges the full amount for every booking, so no public flow
+// produces amountDueNow < total. Wired to fire only on a real partial deposit.
+export async function sendDepositReceived(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<void> {
+  const first = esc(booking.input.customer.firstName);
+  const balance = money(booking.total - (booking.amountDueNow ?? booking.total), booking.currency);
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Deposit received',
+        TEAL_DEEP,
+        `Thanks, ${first} — your deposit is in`,
+        'We’ve received your deposit and your spot is secured. The balance is due before you travel.',
+      ) +
+      ticketCard(booking, BADGE_DEPOSIT) +
+      paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox(
+        'Paying the balance',
+        `Your remaining balance of ${esc(balance)} is due before travel — we’ll share the payment details on WhatsApp closer to the day.`,
+        cancellationPolicy(booking),
+      ) +
+      footer(),
+  );
+  const text = textShell('deposit received', 'We’ve received your deposit — your spot is secured.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
+    '',
+    `Balance due before travel: ${balance}`,
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `We’ve received your deposit — ${booking.reference}`,
     html,
     text,
   });

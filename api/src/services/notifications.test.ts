@@ -6,6 +6,8 @@ import {
   sendRefundConfirmation,
   sendTripReminder,
   sendReviewRequest,
+  sendPaymentFailed,
+  sendDepositReceived,
 } from './notifications';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { Booking } from '../db/bookingRepo';
@@ -389,5 +391,34 @@ describe('itinerary rendering — website booking shapes', () => {
     } as Booking;
     await sendBookingConfirmation(b, email);
     expect(email.sent[0].html).toContain('Return');
+  });
+});
+
+describe('sendPaymentFailed', () => {
+  it('emails a retry nudge with the amount due and a resume link, plus plaintext', async () => {
+    const email = new FakeEmailAdapter();
+    await sendPaymentFailed(single, email, { resume: 'https://ceylonhop.com/booking.html?id=x' });
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('CH-ABC12');
+    expect(m.subject.toLowerCase()).toContain('didn’t go through');
+    expect(m.html).toContain('Try payment again');
+    expect(m.html).toContain('$50.00');
+    expect(m.text).toContain('https://ceylonhop.com/booking.html?id=x');
+    expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendDepositReceived', () => {
+  it('shows deposit paid + balance due and the balance in the message', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDepositReceived({ ...single, total: 20000, amountDueNow: 5000 }, email);
+    const m = email.sent[0];
+    expect(m.subject.toLowerCase()).toContain('deposit');
+    expect(m.html).toContain('Deposit paid');
+    expect(m.html).toContain('Balance due');
+    expect(m.html).toContain('$50.00'); // deposit
+    expect(m.html).toContain('$150.00'); // balance
+    expect(m.text).toContain('Balance due before travel: $150.00');
   });
 });
