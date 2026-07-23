@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -248,7 +249,16 @@ export const quotes = pgTable('quotes', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
-});
+},
+// Founder-analytics indexes (spec 2026-07-23): the analytics projections filter on the three
+// lifecycle stamps and on the live-status set. Created while the table is tiny so they already
+// exist when it isn't — the owner's "never let analytics slow the dashboard/site later" rule.
+(t) => [
+  index('idx_quotes_created_at').on(t.createdAt),
+  index('idx_quotes_sent_at').on(t.sentAt),
+  index('idx_quotes_decided_at').on(t.decidedAt),
+  index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
+]);
 
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced
 // trip touches one (by name, per the D3 matching rules), its per-km rate is boosted by boost_pct.
