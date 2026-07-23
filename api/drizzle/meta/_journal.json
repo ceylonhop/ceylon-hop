@@ -148,6 +148,13 @@
       "when": 1784764241479,
       "tag": "0020_pricing_zones",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784807384515,
+      "tag": "0021_analytics_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -14,7 +14,11 @@
 (function(){var n=0;
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
-window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});
+/* Handled-failure reporting: the catch blocks below swallow errors into a toast or a silent
+   fallback (right for the operator, invisible to us). They call this so the failure still
+   reaches Sentry — same sink, same 5-per-page cap. ctx names the swallow site. */
+window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.message||String(x)),x.stack)};})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -182,6 +186,38 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .qfilter .qfilter-n{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);font-variant-numeric:tabular-nums}
   .qfilter.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-color:transparent;box-shadow:0 10px 22px -14px rgba(10,185,182,.8)}
   .qfilter.on .qfilter-n{color:rgba(255,255,255,.85)}
+  /* ── analytics (founder-only) ── */
+  .an-controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:2px 0 14px}
+  .an-controls .an-sep{width:1px;height:22px;background:var(--line);margin:0 3px}
+  .an-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:16px}
+  .an-tile{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-s)}
+  .an-tile .an-n{font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+  .an-tile .an-l{font-size:.74rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
+  .an-tile .an-d{font-size:.78rem;font-weight:700;margin-top:2px;color:var(--ink-faint)}
+  .an-tile .an-d.up{color:var(--ok)} .an-tile .an-d.down{color:var(--alert)}
+  .an-tile .an-sub{font-size:.78rem;color:var(--ink-soft);margin-top:2px}
+  .an-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+  .an-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-s)}
+  .an-card h3{margin:0 0 4px;font-size:.95rem}
+  .an-card .an-cap{font-size:.76rem;color:var(--ink-faint);margin:0 0 10px}
+  .an-card svg{width:100%;height:auto;display:block}
+  .an-hrow{display:flex;align-items:center;gap:10px;margin:7px 0;font-size:.84rem}
+  .an-hrow .an-hlabel{flex:0 0 38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .an-hrow .an-htrack{flex:1;height:10px;background:var(--line-soft);border-radius:5px;overflow:hidden}
+  .an-hrow .an-hfill{height:100%;background:var(--go);border-radius:5px}
+  .an-hrow .an-hn{font-family:var(--mono);font-size:.76rem;color:var(--ink-soft);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .an-age{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+  .an-agebtn{font:inherit;text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;transition:transform .16s,border-color .16s}
+  .an-agebtn:hover{transform:translateY(-1px);border-color:var(--cream-deep)}
+  .an-agebtn.warn{border-color:var(--wait);background:var(--wait-bg)}
+  .an-agebtn .an-n{font-size:1.2rem;font-weight:700}
+  .an-agebtn .an-l{font-size:.72rem;color:var(--ink-soft)}
+  .an-banner{border:1px solid var(--wait);background:var(--wait-bg);color:var(--ink);border-radius:12px;padding:10px 14px;font-size:.85rem;margin-bottom:14px}
+  .an-mover{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 8px 8px 0;font-size:.84rem;font-weight:700}
+  .an-mover.up{color:var(--ok)} .an-mover.down{color:var(--alert)}
+  .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
+  .an-skel{height:74px;border-radius:14px;background:linear-gradient(100deg,var(--line-soft),var(--cream-deep),var(--line-soft));background-size:200% 100%;animation:anshimmer 1.2s infinite linear}
+  @keyframes anshimmer{to{background-position:-200% 0}}
   /* Role-aware queue sections */
   .qsection{margin-top:26px}
   .qsection-head{display:flex;align-items:baseline;gap:12px;margin:0 2px 11px;flex-wrap:wrap}
@@ -642,6 +678,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-stay-toggle.on.tone-teal .ch-stay-state { background: var(--teal); color: #fff; }
 .qv .ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(10,185,182,.08); }
 .qv .ch-stay-toggle.on.tone-blue .ch-stay-state { background: var(--blue); color: #fff; }
+
+/* Hot-zones "Add a zone" composer (Rate Settings) — an inset card so it reads as a
+   deliberate compose area; fields use the shared .ch-input-wrap; the caption sits ABOVE
+   the row so the autocomplete menu (anchored under the town field) never collides with it. */
+.qv .ch-hz-form { margin-top: 16px; padding: 15px 16px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--cream); }
+.qv .ch-hz-head { font-size: 13px; font-weight: 700; color: var(--ink); }
+.qv .ch-hz-caption { font-size: 11.5px; line-height: 1.5; color: var(--muted-2); margin: 4px 0 13px; max-width: 66ch; }
+.qv .ch-hz-grid { display: grid; grid-template-columns: minmax(0,1fr) 104px auto auto; gap: 12px; align-items: end; }
+.qv .ch-hz-lbl { display: block; font-size: 10px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+.qv .ch-hz-acwrap { position: relative; }
+.qv .ch-hz-form .ch-input-wrap { background: #fff; }
+.qv .ch-hz-prefix { font-size: 13px; opacity: .65; }
+.qv .ch-hz-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; cursor: pointer; padding-bottom: 9px; }
+.qv .ch-hz-toggle input { accent-color: var(--teal); width: 15px; height: 15px; cursor: pointer; }
+.qv .ch-hz-actions { display: flex; gap: 8px; align-items: end; padding-bottom: 1px; }
+@media (max-width: 580px) {
+  .qv .ch-hz-grid { grid-template-columns: 1fr 1fr; }
+  .qv .ch-hz-cell-town, .qv .ch-hz-actions { grid-column: 1 / -1; }
+}
+/* When the composer sits at the bottom of the Rate Settings modal, the zone picker menu
+   would spill past the (overflow-hidden) card; .flip-up opens it above the field instead. */
+.qv .ch-ac-menu.flip-up { top: auto; bottom: calc(100% + 5px); }
 .qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -666,6 +724,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
    and align-items:baseline pins it to the label's FIRST line (top-right). */
 .qv .ch-line-label { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .qv .ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
+/* Hot-zone premium chip on a boosted cost line (founder-only: the server strips meta.hotZone
+   for roles without margin:view, so rendering is unconditional). Amber = "price is elevated,
+   deliberately" — distinct from the red warning tones. */
+.qv .ch-hz-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; color: #8a5a00; background: #fdf0d2; border: 1px solid #f0d9a0; vertical-align: 1px; }
+:root[data-theme="dark"] .qv .ch-hz-chip { color: #f5c96a; background: rgba(245,201,106,.12); border-color: rgba(245,201,106,.35); }
 .qv .ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .qv .ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
 .qv .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
@@ -1354,12 +1417,14 @@ function routeStateFromUrl(canQuote){
   if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId };
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null };
+  if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null };
   return { route:'tickets', routeQuoteId:null };
 }
 function syncUrl(route, quoteId, mode){
   const url=new URL(window.location.href);
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
+  else if(route==='analytics')url.hash='#analytics';
   else url.hash='';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
@@ -1427,16 +1492,19 @@ const NAV_ICONS={
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+  analytics:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
 };
 function setNav(){
   const canQuote=state.caps&&state.caps.includes('quote:manage');
+  const canAnalytics=state.caps&&state.caps.includes('analytics:view');
   // Merged surface (D6): one Quotes item = the queue. The builder is a detail view
   // reached from the queue ("+ New quote" or a row), not its own nav tab. The `quote`
   // route is still active — it's just no longer a top-level destination. A row being
   // open in the builder keeps the Quotes nav highlighted so the queue reads as "home".
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span><span class="count" id="nav-attn">${tickets.filter(isAttn).length}</span></button>`+
-    (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'');
+    (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
+    (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'');
 }
 
 function ticketRow(t,i){
@@ -1578,7 +1646,7 @@ async function loadOpsQuotes(){
     const body=await r.json();
     opsQuotes=(body&&body.quotes)||[];opsQuotesLoaded=true;
     if(state.route==='quotes')viewQuotes();
-  }catch(e){if(e.message!=='auth')toast('Could not load quotes');}
+  }catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadOpsQuotes',e);toast('Could not load quotes');}}
 }
 function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
@@ -1600,7 +1668,7 @@ async function loadOpsRoster(){
     window.opsUsers=users; /* the builder's assign picker reads this rather than re-fetching */
     opsRoster=new Map(users.map(u=>[String(u.email||'').toLowerCase(),u.displayName||shortUser(u.email)]));
     if(state.route==='quotes'&&opsQuotesLoaded)viewQuotes(); /* names arrived after first paint */
-  }catch(e){/* labels fall back to the email local part — the queue still works */}
+  }catch(e){window.opsReportError&&window.opsReportError('loadOpsRoster',e);/* labels fall back to the email local part — the queue still works */}
 }
 function userLabel(email){return opsRoster.get(String(email||'').toLowerCase())||shortUser(email);}
 function isMineEmail(email){const me=(state.email||'').toLowerCase();return !!me&&String(email||'').toLowerCase()===me;}
@@ -1701,6 +1769,190 @@ function viewQuotes(){
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
   paintQuotesView(html);
 }
+
+/* ── founder analytics (spec 2026-07-23) ─────────────────────────────────────
+   Two sub-tabs (Funnel · Demand) over /admin/ops/analytics. Self-contained:
+   fetches lazily on tab open / range change, 60s cache per tab+range, NO
+   polling — the background booking refresh never touches this view. A
+   truncated:true response always renders a visible banner (never silently
+   partial numbers). Charts are hand-rolled SVG/CSS — no chart library. */
+const AN_PRESETS=[
+  {id:'7d',label:'7d'},{id:'28d',label:'28d'},{id:'12w',label:'12w'},
+  {id:'month',label:'This month'},{id:'lastmonth',label:'Last month'},{id:'all',label:'All'},
+];
+const AN_EPOCH='2026-01-01'; /* "All time" floor — before the business wrote its first quote */
+const anState={tab:'funnel',preset:'28d',bucket:'day',cache:{},inflight:null};
+function anColomboToday(){return new Date(Date.now()+5.5*3600e3).toISOString().slice(0,10);}
+function anShiftDays(iso,days){return new Date(Date.parse(iso+'T00:00:00Z')+days*864e5).toISOString().slice(0,10);}
+function anRange(){
+  const today=anColomboToday();
+  const p=anState.preset;
+  if(p==='7d')return {from:anShiftDays(today,-6),to:today};
+  if(p==='28d')return {from:anShiftDays(today,-27),to:today};
+  if(p==='12w')return {from:anShiftDays(today,-83),to:today};
+  if(p==='month')return {from:today.slice(0,8)+'01',to:today};
+  if(p==='lastmonth'){
+    const first=new Date(Date.parse(today.slice(0,8)+'01T00:00:00Z'));
+    const lastPrev=new Date(first.getTime()-864e5).toISOString().slice(0,10);
+    return {from:lastPrev.slice(0,8)+'01',to:lastPrev};
+  }
+  return {from:AN_EPOCH,to:today};
+}
+/* 12w and All default to week bars (84+ daily bars are unreadable); the toggle still wins after. */
+function anEffectiveBucket(){return anState.bucketTouched?anState.bucket:((anState.preset==='12w'||anState.preset==='all')?'week':'day');}
+async function anFetch(tab){
+  const r=anRange();
+  const bucket=anEffectiveBucket();
+  const key=tab+'|'+r.from+'|'+r.to+'|'+(tab==='funnel'?bucket:'-');
+  const hit=anState.cache[key];
+  if(hit&&Date.now()-hit.at<60e3)return hit.data;
+  const qs='?from='+r.from+'&to='+r.to+(tab==='funnel'?'&bucket='+bucket:'');
+  const data=await api.get('/analytics/'+tab+qs); /* shell api prefixes /admin/ops + handles 401 */
+  anState.cache[key]={at:Date.now(),data};
+  return data;
+}
+function anMoney(map){
+  const parts=Object.keys(map||{}).sort().map(cur=>{
+    const v=(map[cur]||0)/100;
+    const n=v>=1000?Math.round(v).toLocaleString('en-US'):v.toLocaleString('en-US',{maximumFractionDigits:0});
+    return (cur==='USD'?'$':cur+' ')+n;
+  });
+  return parts.length?parts.join(' · '):'$0';
+}
+function anRatio(r){
+  if(!r||!r.den)return '—';
+  if(r.den<5)return r.num+' of '+r.den; /* tiny samples must not masquerade as statistics */
+  return Math.round(100*r.num/r.den)+'%';
+}
+function anDelta(d){
+  if(!d||d.prev===d.value&&d.prev===0)return '';
+  const diff=d.value-d.prev;
+  if(diff===0)return '<span class="an-d">= prev</span>';
+  return `<span class="an-d ${diff>0?'up':'down'}">${diff>0?'▲':'▼'} ${Math.abs(diff)} vs prev</span>`;
+}
+function anTile(label,value,extra){return `<div class="an-tile"><div class="an-l">${label}</div><div class="an-n">${value}</div>${extra||''}</div>`;}
+function anSvgBars(series,fields){
+  /* grouped-by-bucket vertical bars: fields = [{key,color},...]; sparse labels (first/last). */
+  if(!series.length)return '<div class="an-empty">No quotes in this range yet</div>';
+  const W=560,H=150,pad=4,lblH=16;
+  const max=Math.max(1,...series.map(b=>Math.max(...fields.map(f=>b[f.key]))));
+  const bw=(W-pad*2)/series.length;
+  let bars='';
+  series.forEach((b,i)=>{
+    fields.forEach((f,fi)=>{
+      const v=b[f.key],h=v?Math.max(2,(H-lblH-6)*v/max):0;
+      if(!h)return;
+      const w=Math.max(1.5,bw*0.72/fields.length);
+      const x=pad+i*bw+bw*0.14+fi*w;
+      bars+=`<rect x="${x.toFixed(1)}" y="${(H-lblH-h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${f.color}"><title>${b.bucketStart}: ${v}</title></rect>`;
+    });
+  });
+  const lbl=(i)=>`<text x="${(pad+i*bw+bw/2).toFixed(1)}" y="${H-3}" font-size="10" fill="var(--ink-faint)" text-anchor="middle">${series[i].bucketStart.slice(5)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${bars}${lbl(0)}${series.length>1?lbl(series.length-1):''}</svg>`;
+}
+function anHBars(items){
+  /* horizontal bar list; items = [{label,n,sub}] */
+  if(!items.length)return '<div class="an-empty">Nothing in this range yet</div>';
+  const max=Math.max(...items.map(i=>i.n),1);
+  return items.map(i=>`<div class="an-hrow"><span class="an-hlabel" title="${esc(i.label)}">${esc(i.label)}</span><span class="an-htrack"><span class="an-hfill" style="width:${Math.max(3,100*i.n/max)}%"></span></span><span class="an-hn">${i.n}${i.sub?' · '+esc(i.sub):''}</span></div>`).join('');
+}
+function anChips(list,activeId,dataAttr){
+  return list.map(c=>`<button class="qfilter ${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('');
+}
+function anStatCard(title,stat,unit){
+  const body=stat?`<div class="an-n">${Math.round(stat.median*10)/10}${unit}</div><div class="an-sub">median · p90 ${Math.round(stat.p90*10)/10}${unit} · n=${stat.n}</div>`:'<div class="an-n">—</div><div class="an-sub">no data yet</div>';
+  return `<div class="an-tile"><div class="an-l">${title}</div>${body}</div>`;
+}
+function anFunnelHtml(d){
+  const t=d.tiles;
+  let html='';
+  if(d.truncated)html+=`<div class="an-banner">Large range — showing the most recent quotes only. Narrow the range for exact numbers.</div>`;
+  html+=`<div class="an-tiles" data-testid="analytics-tiles">`+
+    anTile('Created',t.created.value,anDelta(t.created))+
+    anTile('Sent',t.sent.value,anDelta(t.sent))+
+    anTile('Won',t.won.value,anDelta(t.won))+
+    anTile('Lost',t.lost.value,anDelta(t.lost))+
+    anTile('Expired',t.expired.value,anDelta(t.expired))+
+    anTile('Win rate',anRatio(t.winRate),'<div class="an-sub">of decided</div>')+
+    anTile('Send rate',anRatio(t.sendRate),'<div class="an-sub">of created</div>')+
+    anTile('Open pipeline',t.pipeline.count,`<div class="an-sub">${anMoney(t.pipeline.valueCents)} awaiting decision</div>`)+
+    anTile('In review',t.inReview.count,`<div class="an-sub">${anMoney(t.inReview.valueCents)} internal</div>`)+
+  '</div>';
+  const fmax=Math.max(d.funnel.created,1);
+  html+='<div class="an-grid">';
+  html+=`<div class="an-card" data-testid="analytics-chart-created"><h3>Quotes per ${d.range.bucket}</h3><p class="an-cap">created (teal) · sent (amber) · won (green)</p>${anSvgBars(d.series,[{key:'created',color:'var(--go)'},{key:'sent',color:'var(--wait)'},{key:'won',color:'var(--ok)'}])}</div>`;
+  html+=`<div class="an-card"><h3>Cohort funnel</h3><p class="an-cap">of quotes created in this range</p>${anHBars([
+    {label:'Created',n:d.funnel.created},{label:'Sent',n:d.funnel.sent},{label:'Won',n:d.funnel.won},
+  ])}</div>`;
+  html+=`<div class="an-card"><h3>Pipeline aging</h3><p class="an-cap">open sent quotes by days waiting — click to open the queue</p><div class="an-age">${d.aging.map(b=>
+    `<button class="an-agebtn ${b.bucket==='15+'&&b.count?'warn':''}" data-anage="1"><div class="an-n">${b.count}</div><div class="an-l">${b.bucket} days</div><div class="an-l">${anMoney(b.valueCents)}</div></button>`
+  ).join('')}</div></div>`;
+  html+=`<div class="an-card"><h3>Lost reasons</h3><p class="an-cap">quotes lost in this range</p>${anHBars(d.lostReasons.map(r=>({label:r.reason||'(no reason recorded)',n:r.count,sub:anMoney(r.valueCents)})))}</div>`;
+  html+=`<div class="an-card"><h3>Cycle times</h3><p class="an-cap">how fast quotes move</p><div class="an-tiles" style="margin:0">${anStatCard('Draft → sent',d.cycles.draftToSentHours,'h')}${anStatCard('Sent → decided',d.cycles.sentToDecidedDays,'d')}</div></div>`;
+  html+='</div>';
+  return html;
+}
+function anDemandHtml(d){
+  const t=d.tiles,sm=t.serviceMix;
+  const cov=d.coverage&&d.coverage.parsed<d.coverage.total?`based on ${d.coverage.parsed} of ${d.coverage.total} quotes (shared rides carry no place names)`:'';
+  let html='';
+  if(d.truncated)html+=`<div class="an-banner">Large range — showing the most recent quotes only. Narrow the range for exact numbers.</div>`;
+  const svcTotal=sm.private+sm.chauffeur+sm.both+sm.unrecorded;
+  html+=`<div class="an-tiles" data-testid="analytics-tiles">`+
+    anTile('Quotes',svcTotal,'')+
+    anTile('Private',sm.private,'<div class="an-sub">requested</div>')+
+    anTile('Chauffeur',sm.chauffeur,'<div class="an-sub">requested</div>')+
+    anTile('Both',sm.both,'<div class="an-sub">upsell open</div>')+
+    anTile('Unrecorded',sm.unrecorded,'<div class="an-sub">no intent saved</div>')+
+    anTile('Avg trip',t.avgTripKm===null?'—':t.avgTripKm+' km','')+
+    anTile('Avg group',t.avgPax===null?'—':t.avgPax+' pax','')+
+  '</div>';
+  html+='<div class="an-grid">';
+  html+=`<div class="an-card" data-testid="analytics-top-destinations"><h3>Top destinations</h3><p class="an-cap">${cov||'touches per quote'}</p>${anHBars(d.topDestinations.map(x=>({label:x.place,n:x.touches,sub:Object.keys(x.wonValueCents).length?anMoney(x.wonValueCents)+' won':''})))}</div>`;
+  html+=`<div class="an-card"><h3>Top corridors</h3><p class="an-cap">directional, first → last stop${cov?' · '+cov:''}</p>${anHBars(d.topCorridors.map(c=>({label:c.from+' → '+c.to,n:c.count,sub:c.avgKm===null?'':c.avgKm+' km avg'})))}</div>`;
+  const movers=d.movers.map(m=>`<span class="an-mover ${m.changePct>0?'up':'down'}">${m.changePct>0?'▲':'▼'} ${esc(m.place)} <span class="an-hn">${m.prior}→${m.recent}</span></span>`).join('');
+  html+=`<div class="an-card"><h3>Rising & falling</h3><p class="an-cap">recent half vs prior half of the range (3+ touches, ±50%)</p>${movers||'<div class="an-empty">No clear movers yet — needs more volume</div>'}</div>`;
+  html+=`<div class="an-card"><h3>Requested service by week</h3><p class="an-cap">private (teal) · chauffeur (amber) · both (green)</p>${anSvgBars(d.serviceTrend,[{key:'private',color:'var(--go)'},{key:'chauffeur',color:'var(--wait)'},{key:'both',color:'var(--ok)'}])}</div>`;
+  html+=`<div class="an-card"><h3>Trip distance</h3><p class="an-cap">priced km per quote</p>${anHBars(t.kmBuckets.map(b=>({label:b.bucket+' km',n:b.count})))}</div>`;
+  html+='</div>';
+  return html;
+}
+function anControlsHtml(){
+  const showBucket=anState.tab==='funnel';
+  return `<div class="an-controls">
+    ${anChips([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
+    <span class="an-sep"></span>
+    ${anChips(AN_PRESETS,anState.preset,'anpreset')}
+    ${showBucket?'<span class="an-sep"></span>'+anChips([{id:'day',label:'Day'},{id:'week',label:'Week'}],anEffectiveBucket(),'anbucket'):''}
+  </div>`;
+}
+function viewAnalytics(){
+  $('#topbar').innerHTML='';
+  const head=`<div class="qhead pagehead"><h1>Analytics</h1></div>
+    <p class="pagesub"><b>Founder view</b> · quote funnel, pipeline and demand</p>`+anControlsHtml();
+  const view=$('#view');
+  view.innerHTML=head+'<div class="an-tiles"><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div></div>';
+  const tab=anState.tab;
+  anFetch(tab).then(data=>{
+    if(state.route!=='analytics'||anState.tab!==tab)return; /* stale response — view moved on */
+    view.innerHTML=head+(tab==='funnel'?anFunnelHtml(data):anDemandHtml(data));
+  }).catch(()=>{
+    if(state.route!=='analytics')return;
+    view.innerHTML=head+'<div class="an-empty">Couldn’t load analytics — check the connection and try again.</div>';
+  });
+}
+document.addEventListener('click',e=>{
+  if(state.route!=='analytics')return;
+  const tab=e.target.closest('#view [data-antab]');
+  if(tab){anState.tab=tab.dataset.antab;viewAnalytics();return;}
+  const preset=e.target.closest('#view [data-anpreset]');
+  if(preset){anState.preset=preset.dataset.anpreset;anState.bucketTouched=false;viewAnalytics();return;}
+  const bucket=e.target.closest('#view [data-anbucket]');
+  if(bucket){anState.bucket=bucket.dataset.anbucket;anState.bucketTouched=true;viewAnalytics();return;}
+  const age=e.target.closest('#view [data-anage]');
+  if(age){queueFilter='sent';setShellRoute('quotes',{});return;} /* v1: status-filter only */
+});
+
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
   setShellRoute('quote',{ quoteId:id });
@@ -1800,7 +2052,7 @@ function renderSheet(){
 async function openDetail(id){
   state.detail=id;state.detailData=null;renderSheet();
   try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
-  catch(e){if(e.message!=='auth')toast('Could not load details');}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
 }
 
 let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -1808,7 +2060,7 @@ let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t
 /* re-fetch the single row after a mutation and splice it in, then re-render */
 async function refreshRow(id){
   try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)state.detail=null;render();}
-  catch(e){if(e.message!=='auth')toast('Refresh failed');}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('refreshRow',e);toast('Refresh failed');}}
 }
 
 /* T6: #view and #quoteRoot are each persistent DOM nodes (only [hidden] toggles, never
@@ -1839,6 +2091,7 @@ function hideQuoteView(){$('#quoteRoot').hidden=true;$('#view').hidden=false;$('
 let _lastRenderedRoute=null;
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
+  if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
   const entering=state.route!==_lastRenderedRoute;
   setNav();
   if(state.route==='quote'){
@@ -1859,6 +2112,14 @@ function render(){
     if(entering){
       loadOpsQuotes(); /* refresh on every entry so newly-saved quotes show up */
       const navBtn=document.querySelector('#nav [data-route="quotes"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='analytics'){
+    hideQuoteView();
+    if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
+    viewAnalytics();
+    if(entering){
+      const navBtn=document.querySelector('#nav [data-route="analytics"]');
       if(navBtn)navBtn.focus();
     }
   }else{
@@ -1899,6 +2160,7 @@ document.addEventListener('click',e=>{
   const btn=e.target.closest('#nav [data-route]');if(!btn)return;
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
+  if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   setShellRoute(route,{});
 });
 
@@ -2003,10 +2265,10 @@ document.addEventListener('click',async e=>{
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
-    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not advance');}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not mark no-show');}break;}
-    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Update failed');}break;}
-    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth')toast('Could not add note');}break;}
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
   }
 });
@@ -2049,9 +2311,9 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote surface immediately — it needs no booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics surface immediately — neither needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
-  loadQueue().catch(e=>{if(e.message!=='auth')toast('Could not load bookings');});
+  loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings');}});
 }
 
 /* Google Identity Services calls this with the signed ID token credential. */
@@ -2118,7 +2380,7 @@ window.initGoogleButton=initGoogleButton;
     if(r.ok){
       bootApp(await r.json()); /* T6 deep-link resolution lives in bootApp now (honored on both the whoami and login paths) */
     }else{showLogin();}
-  }catch(_){showLogin();}
+  }catch(e){window.opsReportError&&window.opsReportError('boot whoami',e);/* a bug in bootApp lands here too — without the beacon it looks like a plain logged-out visit */showLogin();}
 })();
 </script>
 <script>
@@ -2889,7 +3151,7 @@ async function apiPlaces(q) {
       : ((d && d.places) ? d.places.map(function(name) { return { label: name, source: 'google' }; }) : []);
     if (places.length) _placeCache[key] = places; // cache hits only; let empties retry
     return places;
-  } catch (e) { return []; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiPlaces', e); return []; }
 }
 
 async function apiDistance(from, to, compare) {
@@ -2901,7 +3163,7 @@ async function apiDistance(from, to, compare) {
     });
     if (!r.ok) return null;
     return await r.json();
-  } catch (e) { return null; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiDistance', e); return null; }
 }
 
 async function apiEstimate(payload) {
@@ -2914,7 +3176,7 @@ async function apiEstimate(payload) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Estimate failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiEstimate', e); return { error: 'Network error' }; }
 }
 
 async function apiRateCard() {
@@ -2922,7 +3184,7 @@ async function apiRateCard() {
     var r = await api('/admin/quote/rate-card');
     if (!r.ok) return null;
     return await r.json();
-  } catch (e) { return null; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiRateCard', e); return null; }
 }
 
 async function apiSave(payload) {
@@ -2935,7 +3197,7 @@ async function apiSave(payload) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Save failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiSave', e); return { error: 'Network error' }; }
 }
 
 async function apiPatch(id, patch) {
@@ -2948,7 +3210,7 @@ async function apiPatch(id, patch) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Update failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiPatch', e); return { error: 'Network error' }; }
 }
 
 async function apiDelete(id) {
@@ -2957,7 +3219,7 @@ async function apiDelete(id) {
     var body = await jsonOrNull(r);
     if (!r.ok) return body || { error: 'HTTP ' + r.status }; // carry { error, reason } for friendly copy
     return body || { deleted: true };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiDelete', e); return { error: 'Network error' }; }
 }
 
 // V19: fetch a full saved quote (incl. request.tool) for reopening.
@@ -2967,7 +3229,7 @@ async function apiGetQuote(id) {
     if (!r.ok) return await errPayload(r);
     var body = await jsonOrNull(r);
     return body || { error: 'Load failed' };
-  } catch (e) { return { error: 'Network error' }; }
+  } catch (e) { window.opsReportError && window.opsReportError('apiGetQuote', e); return { error: 'Network error' }; }
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -2982,8 +3244,15 @@ function showToast(msg) {
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────
+// Open-generation token. Every reopen/reset/teardown bumps it, and a reopen fetch started
+// under an older generation discards its response on arrival. Without this, overlapping
+// opens resolve last-response-wins: a slow GET from a previous open (cold API, first-time
+// builder mount) lands late and paints quote A over the quote B the operator clicked after
+// it (owner report 2026-07-22 — clicked Sandra Wolker's row, got Gahen's quote).
+var _openSeq = 0;
 // Reset the builder to a blank draft (no prompt — callers decide whether to guard).
 function resetToNew() {
+  _openSeq++; // an in-flight reopen must not clobber the fresh draft
   legSeq = 0;
   state = {
     id: 'Q-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
@@ -3212,7 +3481,13 @@ async function bookQuote() {
 // ── Reopen a saved quote (V19) ────────────────────────────────────────────────
 async function reopenQuote(id) {
   if (!id) return;
+  var seq = ++_openSeq;
   var q = await apiGetQuote(id);
+  // Superseded while in flight (a newer open, + New quote, or logout): this response is
+  // stale — drop it entirely. The error path below is gated too, so a stale failure can't
+  // toast "not found" or bounce the operator back to the queue mid-edit of another quote.
+  // The beacon isn't an error report — it counts how often the race actually fires in prod.
+  if (seq !== _openSeq) { window.opsReportError && window.opsReportError('reopenQuote', 'stale open discarded (superseded while in flight)'); return; }
   if (!q || q.error) {
     // D6: a bad deep link (e.g. /ops?quote=Q-FHEXB — a reference, not the internal key the
     // lookup expects) used to fail silently and strand the operator in a blank New-quote
@@ -3703,7 +3978,7 @@ async function loadHotZones() {
     hotZones = (d && d.zones) ? d.zones : [];
     hotZonesOff = !!(d && d.disabled);
     render();
-  } catch (e) { /* leave prior state; a transient failure just shows the last list */ }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones list', e); /* leave prior state; a transient failure just shows the last list */ }
 }
 
 // Create or update a zone from the (uncontrolled) form inputs, read at click time. Boost > 20%
@@ -3729,7 +4004,7 @@ async function hzSubmitZone() {
     hzEditId = null;
     showToast('Zone saved');
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Save failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed'); render(); }
 }
 
 async function hzToggleZone(id) {
@@ -3741,7 +4016,7 @@ async function hzToggleZone(id) {
     hzBusy = false;
     if (!r.ok) { showToast('Update failed'); render(); return; }
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Update failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed'); render(); }
 }
 
 async function hzDeleteZone(id) {
@@ -3755,7 +4030,7 @@ async function hzDeleteZone(id) {
     if (hzEditId === id) hzEditId = null;
     showToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { hzBusy = false; showToast('Delete failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed'); render(); }
 }
 
 function renderHotZonesPanel() {
@@ -3793,18 +4068,32 @@ function renderHotZonesPanel() {
     ? '<div class="ch-lock-note" style="border-color:var(--danger,#c0392b)">&#9888; Hot zones are PAUSED globally (HOT_ZONES_DISABLED). Quotes ignore every zone until this env flag is cleared.</div>'
     : '';
 
-  var form = '<div class="ch-hz-form" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">'
-    + '<div style="font-weight:600;margin-bottom:8px">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
-    + '<label style="flex:2;min-width:160px;font-size:12px;color:var(--muted)">Town<br>'
-    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="e.g. Ella" value="' + placeVal + '"' + dis + '></label>'
-    + '<label style="flex:1;min-width:90px;font-size:12px;color:var(--muted)">Boost %<br>'
-    + '<input id="hz-boost" class="ch-input" style="width:100%" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '></label>'
-    + '<label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-bottom:8px"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label>'
-    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
-    + (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+  var form = '<div class="ch-hz-form">'
+    + '<div class="ch-hz-head">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
+    + '<div class="ch-hz-caption">Pick the town from the list so the zone matches exactly how the quote tool spells it — free-typing risks a name that never fires. A premium above 20% will ask you to confirm.</div>'
+    + '<div class="ch-hz-grid">'
+    +   '<div class="ch-hz-cell-town">'
+    +     '<label class="ch-hz-lbl" for="hz-place">Town</label>'
+    +     '<div class="ch-hz-acwrap">'
+    +       '<div class="ch-input-wrap">'
+    +         '<span class="ch-input-prefix ch-hz-prefix">&#128269;</span>'
+    +         '<input id="hz-place" class="ch-input" placeholder="Search a town…" autocomplete="off" value="' + placeVal + '"' + dis + '>'
+    +       '</div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div>'
+    +     '<label class="ch-hz-lbl" for="hz-boost">Boost</label>'
+    +     '<div class="ch-input-wrap">'
+    +       '<input id="hz-boost" class="ch-input" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '>'
+    +       '<span class="ch-input-suffix">%</span>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div><label class="ch-hz-toggle"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label></div>'
+    +   '<div class="ch-hz-actions">'
+    +     '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
+    +     (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+    +   '</div>'
     + '</div>'
-    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Match is by town name, as it appears in the quote tool (e.g. Ella, Galle, Sigiriya / Dambulla). A premium above 20% will ask you to confirm.</div>'
     + '</div>';
 
   return '<div class="ch-hz-panel" style="margin-top:20px">'
@@ -4021,8 +4310,14 @@ function renderSummaryCardBody() {
   // Cost build-up lines (from server, tightened)
   var lineItems = est.lineItems || [];
   lineItems.forEach(function(item) {
+    // Hot-zone chip (D9): the server annotates a boosted line with meta.hotZone — and already
+    // strips it for roles without margin:view, so presence alone means "safe to show". Without
+    // this the only trace of a premium was forensic arithmetic on the leg price (owner, 2026-07-23).
+    var hz = item.meta && item.meta.hotZone;
     lines.push('<div class="ch-line">');
-    lines.push('  <span class="ch-line-label">' + esc(item.label) + '</span>');
+    lines.push('  <span class="ch-line-label">' + esc(item.label)
+      + (hz ? '<span class="ch-hz-chip" title="Hot zone applied: ' + esc(hz.label || '') + '">&#9889; ' + esc(hz.placeName) + ' +' + esc(String(hz.boostPct)) + '%</span>' : '')
+      + '</span>');
     lines.push('  <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
     lines.push('</div>');
   });
@@ -4839,7 +5134,7 @@ async function loadOpsUsers() {
     if (!r.ok) return;
     var b = await jsonOrNull(r);
     opsUsers = (b && b.users) || [];
-  } catch (e) { /* leave the roster empty; assigning is not required to quote */ }
+  } catch (e) { window.opsReportError && window.opsReportError('builder roster', e); /* leave the roster empty; assigning is not required to quote */ }
 }
 
 // Assignee picker — lives in the header next to the action buttons (spec 2026-07-22). No label:
@@ -5809,6 +6104,7 @@ function attachEventListeners() {
   // Wire place autocomplete on all ch-tl-title inputs (re-attached every render
   // because the input elements themselves are replaced by innerHTML).
   attachAutoComplete();
+  attachHotZoneAutoComplete(); // same picker for the Rate-Settings zone field (#hz-place)
 }
 
 // ── Auto-distance ─────────────────────────────────────────────────────────────
@@ -6592,6 +6888,127 @@ window.addEventListener('touchmove', function(e) {
   if (_ac.menuEl && !_ac.menuEl.contains(e.target)) acClose();
 }, { passive: true });
 
+// ── Hot-zone place picker ──────────────────────────────────────────────────────
+// A small, self-contained autocomplete for the Rate-Settings "Add a zone" town field
+// (#hz-place), reusing apiPlaces() + the shared .ch-ac-menu styling. Kept SEPARATE from the
+// leg autocomplete (_ac), which is bound to leg/stop state and has a delicate flicker history —
+// this touches none of it. Picking a suggestion writes the CANONICAL label into the input, so a
+// zone's stored name matches exactly what the quote tool stores for the same place. That kills
+// the free-typed-spelling mismatch that let towns like "Passikudah" (Google says "Pasikuda")
+// silently never fire.
+var _hzac = { menuEl: null, items: [], hiIdx: -1, timer: null, seq: 0 };
+
+function hzacClose() {
+  _hzac.seq++;
+  if (_hzac.menuEl && _hzac.menuEl.parentNode) _hzac.menuEl.parentNode.removeChild(_hzac.menuEl);
+  _hzac.menuEl = null; _hzac.items = []; _hzac.hiIdx = -1;
+}
+
+function hzacLabel(item) {
+  return (typeof item === 'string') ? item : (item && item.label) || '';
+}
+
+function hzacPick(item) {
+  var input = document.getElementById('hz-place');
+  hzacClose();
+  if (input) { input.value = hzacLabel(item); input.focus(); }
+}
+
+function hzacUpdateHighlight() {
+  if (!_hzac.menuEl) return;
+  _hzac.menuEl.querySelectorAll('.ch-ac-item:not(.loading)').forEach(function(b, i) {
+    b.classList.toggle('hi', i === _hzac.hiIdx);
+  });
+}
+
+function hzacRenderMenu(input, items, query, opts) {
+  opts = opts || {}; items = items || [];
+  _hzac.items = items;
+  if (_hzac.menuEl && _hzac.menuEl.parentNode) { _hzac.menuEl.parentNode.removeChild(_hzac.menuEl); _hzac.menuEl = null; }
+  if (items.length === 0 && !opts.loading) return;
+  var menu = document.createElement('div');
+  menu.className = 'ch-ac-menu';
+  items.forEach(function(item, idx) {
+    var name = hzacLabel(item);
+    var source = (typeof item === 'string') ? 'google' : ((item && item.source) || 'google');
+    var sourceLabel = source === 'known' ? 'Popular Route' : 'Google';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ch-ac-item' + (idx === _hzac.hiIdx ? ' hi' : '');
+    var re = new RegExp('(' + esc(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    btn.innerHTML = '<span class="ch-ac-pin">📍</span><span class="ch-ac-name">' + esc(name).replace(re, '<b>$1</b>') + '</span><span class="ch-ac-source">' + sourceLabel + '</span>';
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); hzacPick(item); });
+    menu.appendChild(btn);
+  });
+  if (opts.loading) {
+    var loading = document.createElement('button');
+    loading.type = 'button'; loading.className = 'ch-ac-item loading'; loading.disabled = true;
+    loading.setAttribute('aria-disabled', 'true');
+    loading.innerHTML = '<span class="ch-ac-pin">⌕</span><span class="ch-ac-name">Searching Google…</span><span class="ch-ac-source">Google</span>';
+    menu.appendChild(loading);
+  }
+  // Anchor under the whole town field (the .ch-hz-acwrap), not the bare input — so the menu
+  // sits flush beneath the bordered input-wrap instead of being offset by its label.
+  var wrap = input.closest('.ch-hz-acwrap') || input.parentNode;
+  wrap.style.position = 'relative';
+  wrap.appendChild(menu);
+  _hzac.menuEl = menu;
+  // Flip the menu above the field when a downward menu would spill past the modal's scroll
+  // viewport (the composer sits at the bottom of Rate Settings, which is overflow-hidden).
+  var bound = input.closest('.ch-modal-body');
+  var limit = bound ? Math.min(bound.getBoundingClientRect().bottom, window.innerHeight) : window.innerHeight;
+  if (menu.getBoundingClientRect().bottom > limit - 8) menu.classList.add('flip-up');
+}
+
+// Wire the picker onto #hz-place. Guarded by a JS property (NOT a data-* attribute, which
+// morphdom would strip on the next diff) so we bind exactly once per live input node —
+// whether render() preserves the node (morphdom) or replaces it (innerHTML swap).
+function attachHotZoneAutoComplete() {
+  var input = document.getElementById('hz-place');
+  if (!input || input._hzWired) return;
+  input._hzWired = true;
+
+  input.addEventListener('input', function() {
+    var q = input.value.trim();
+    clearTimeout(_hzac.timer);
+    if (q.length < 2) { hzacClose(); return; }
+    _hzac.hiIdx = -1;
+    var reqSeq = ++_hzac.seq;
+    hzacRenderMenu(input, [], q, { loading: true });
+    _hzac.timer = setTimeout(function() {
+      apiPlaces(q).then(function(places) {
+        if (reqSeq !== _hzac.seq) return; // a newer keystroke superseded this fetch
+        if (document.activeElement !== input || input.value.trim() !== q) return;
+        hzacRenderMenu(input, places.slice(0, 6), q);
+      });
+    }, 220);
+  });
+
+  input.addEventListener('keydown', function(e) {
+    if (!_hzac.menuEl) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); _hzac.hiIdx = Math.min(_hzac.hiIdx + 1, _hzac.items.length - 1); hzacUpdateHighlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); _hzac.hiIdx = Math.max(_hzac.hiIdx - 1, -1); hzacUpdateHighlight(); }
+    else if (e.key === 'Enter') { if (_hzac.hiIdx >= 0 && _hzac.items[_hzac.hiIdx]) { e.preventDefault(); hzacPick(_hzac.items[_hzac.hiIdx]); } }
+    else if (e.key === 'Escape') { hzacClose(); }
+  });
+
+  // Delayed so a menu item's mousedown-pick lands first; an item pick preventDefaults blur anyway.
+  input.addEventListener('blur', function() {
+    setTimeout(function() { if (document.activeElement !== input) hzacClose(); }, 200);
+  });
+}
+
+// Dismiss the zone picker on outside click / wheel / scroll, mirroring the leg autocomplete rules.
+document.addEventListener('mousedown', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target) && document.getElementById('hz-place') !== e.target) hzacClose();
+});
+window.addEventListener('wheel', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target)) hzacClose();
+}, { passive: true });
+document.addEventListener('scroll', function(e) {
+  if (_hzac.menuEl && !_hzac.menuEl.contains(e.target)) hzacClose();
+}, true);
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 // T5: no self-invoke — the ops shell calls QuoteView.init() when the founder
 // opens the Quote view; _inited makes repeated calls no-ops.
@@ -6619,6 +7036,7 @@ async function init() {
 // Unmount: drop the unsaved-changes flag, stop every pending timer, close the
 // autocomplete, reset the init guard, and empty the render target.
 function teardown() {
+  _openSeq++; // a reopen still in flight at logout must not resurrect state afterwards
   _dirty = false;
   clearTimeout(_estimateTimer);
   _estimateTimer = null;

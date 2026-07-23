@@ -137,10 +137,52 @@ export interface QuotePatch {
   convertedBookingId?: string;
 }
 
+// Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
+// cost scales with the viewed window, not table age (owner perf requirement):
+//   - Funnel rows are scalars only — request_json/result_json are never pulled for the funnel.
+//   - Demand rows are the ONLY projection carrying request_json, bounded to created-in-range.
+// `channel` defaults to 'ops' (the internal quoting funnel); 'web'/'all' exist so later
+// customer-website analytics is a parameter, not a rework.
+export type AnalyticsChannel = 'ops' | 'web' | 'all';
+
+export interface FunnelQuoteRow {
+  id: string;
+  status: QuoteStatus;
+  product: string;
+  totalCents: number;
+  currency: string;
+  marginCents: number | null;
+  lostReason: string | null;
+  createdAt: Date;
+  sentAt: Date | null;
+  decidedAt: Date | null;
+}
+
+export interface DemandQuoteRow {
+  id: string;
+  status: QuoteStatus;
+  product: string;
+  vehicle: string | null;
+  requestedService: string | null;
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+  request: unknown;
+}
+
+// Statuses that are "live" right now — the pipeline/aging/in-review snapshots need this whole
+// set regardless of age, so listFunnelRows includes them outside the time window too.
+export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 'changes_requested', 'ready'];
+
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
+  // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
+  // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
+  listFunnelRows(since: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }>;
+  // Rows created in [from, to]. Ordered createdAt desc so a truncation keeps the most recent.
+  listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
   // Rewrite an existing quote's priced CONTENT in place (re-priced server-side on save).
   // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
@@ -264,6 +306,40 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       return a.reference < b.reference ? 1 : a.reference > b.reference ? -1 : 0;
     });
     return rows.map(toSummary);
+  }
+
+  private analyticsBase(channel: AnalyticsChannel): SavedQuote[] {
+    return [...this.rows.values()].filter(
+      (r) => !r.deletedAt && (channel === 'all' || r.channel === channel),
+    );
+  }
+
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel)
+      .filter((r) =>
+        r.createdAt >= since ||
+        (r.sentAt && r.sentAt >= since) ||
+        (r.decidedAt && r.decidedAt >= since) ||
+        LIVE_STATUSES.includes(r.status))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
+      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
+      currency: r.currency, marginCents: r.marginCents, lostReason: r.lostReason,
+      createdAt: r.createdAt, sentAt: r.sentAt, decidedAt: r.decidedAt,
+    }));
+    return { rows, truncated: all.length > limit };
+  }
+
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel)
+      .filter((r) => r.createdAt >= from && r.createdAt <= to)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
+      id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
+      requestedService: r.requestedService, totalCents: r.totalCents,
+      currency: r.currency, createdAt: r.createdAt, request: r.request,
+    }));
+    return { rows, truncated: all.length > limit };
   }
 
   async patch(id: string, patch: QuotePatch): Promise<SavedQuote | null> {

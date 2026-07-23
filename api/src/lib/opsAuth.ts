@@ -3,12 +3,12 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'margin:view' | 'bookings:operate'
-  | 'bookings:read' | 'payments:act' | 'admin:jobs';
+  | 'bookings:read' | 'payments:act' | 'admin:jobs' | 'analytics:view';
 
 // The capability matrix as data (spec §3). Adding a capability is one row here.
 // quote:approve — the maker-checker gate: only the founder can mark a quote ready to send.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
   ops: new Set(['quote:manage', 'bookings:operate', 'bookings:read']),
   system: new Set(['admin:jobs']),
