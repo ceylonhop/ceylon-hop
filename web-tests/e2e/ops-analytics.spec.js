@@ -12,16 +12,14 @@ const FUNNEL = {
   range: { from: '2026-06-25T00:00:00.000Z', to: '2026-07-23T00:00:00.000Z', bucket: 'day' },
   tiles: {
     created: { value: 5, prev: 2 }, sent: { value: 3, prev: 1 },
-    won: { value: 1, prev: 0 }, lost: { value: 1, prev: 0 }, expired: { value: 0, prev: 0 },
-    winRate: { num: 1, den: 2 }, sendRate: { num: 3, den: 5 },
+    won: { value: 1, prev: 0 },
+    wonValue: { USD: 30000 }, sentValue: { USD: 87000 }, avgSentCents: { USD: 29000 },
     pipeline: { count: 2, valueCents: { USD: 45000 } },
-    inReview: { count: 1, valueCents: { USD: 12000 } },
   },
   series: [
     { bucketStart: '2026-07-20', created: 2, sent: 1, won: 0 },
     { bucketStart: '2026-07-21', created: 3, sent: 2, won: 1 },
   ],
-  funnel: { created: 5, sent: 3, won: 1 },
   lostReasons: [{ reason: 'price', count: 1, valueCents: { USD: 9000 } }],
   aging: [
     { bucket: '0-2', count: 1, valueCents: { USD: 20000 } },
@@ -29,7 +27,6 @@ const FUNNEL = {
     { bucket: '8-14', count: 0, valueCents: {} },
     { bucket: '15+', count: 0, valueCents: {} },
   ],
-  cycles: { draftToSentHours: { median: 4, p90: 9, n: 3 }, sentToDecidedDays: null },
   truncated: false,
 };
 
@@ -71,10 +68,11 @@ test('founder: Analytics nav renders, Funnel tiles + chart paint, Demand tab ren
   await page.waitForSelector('[data-testid="analytics-tiles"]');
   await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('Created');
   await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('5');
+  // Money tiles are first-class: won value renders as a headline $ figure.
+  await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('Won value');
+  await expect(page.locator('[data-testid="analytics-tiles"]')).toContainText('$300');
   await expect(page.locator('[data-testid="analytics-chart-created"] svg')).toBeVisible();
   await expect(page.locator('#view')).toContainText('Pipeline aging');
-  // Ratio with den < 5 renders as "x of y", never a fake percentage.
-  await expect(page.locator('#view')).toContainText('1 of 2');
 
   await page.click('#view [data-antab="demand"]');
   await page.waitForSelector('[data-testid="analytics-top-destinations"]');

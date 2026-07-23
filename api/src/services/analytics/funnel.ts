@@ -1,56 +1,38 @@
-import type { FunnelQuoteRow, QuoteStatus } from '../../db/quoteRepo';
+import type { FunnelQuoteRow } from '../../db/quoteRepo';
 import { colomboBucketKey, nextBucketKey } from './time';
 
-// Funnel & pipeline aggregation (founder analytics spec 2026-07-23, §A). Pure function over an
-// already-fetched row set: the repo does a bounded SUPERSET fetch, exact range filtering happens
-// here where it is unit-tested. Every definition below is pinned by funnel.test.ts.
+// Funnel & pipeline aggregation (founder analytics spec 2026-07-23, §A, simplified per the
+// 2026-07-23 funnel-simplification spec: fewer tiles, quote $ values first-class). Pure
+// function over an already-fetched row set: the repo does a bounded SUPERSET fetch, exact
+// range filtering happens here where it is unit-tested. Definitions pinned by funnel.test.ts.
 
 export interface AnalyticsRange { from: Date; to: Date; bucket: 'day' | 'week'; now: Date }
 
 export interface Delta { value: number; prev: number }
-export interface Ratio { num: number; den: number } // UI renders "x of y" when den < 5
 export type CurrencyMap = Record<string, number>;   // cents keyed by ISO currency — never merged
 export interface Snapshot { count: number; valueCents: CurrencyMap }
-interface Stat { median: number; p90: number; n: number }
 
 export interface FunnelReport {
   range: { from: string; to: string; bucket: 'day' | 'week' };
   tiles: {
-    created: Delta; sent: Delta;
-    won: Delta; lost: Delta; expired: Delta;
-    winRate: Ratio;
-    sendRate: Ratio;
+    created: Delta; sent: Delta; won: Delta;
+    wonValue: CurrencyMap;    // totals of quotes won (decided) in range
+    sentValue: CurrencyMap;   // totals of quotes sent in range, regardless of outcome
+    avgSentCents: CurrencyMap; // per-currency mean quote size over sent-in-range, whole cents
     pipeline: Snapshot;
-    inReview: Snapshot;
   };
   series: { bucketStart: string; created: number; sent: number; won: number }[];
-  funnel: { created: number; sent: number; won: number };
   lostReasons: { reason: string | null; count: number; valueCents: CurrencyMap }[];
   aging: { bucket: '0-2' | '3-7' | '8-14' | '15+'; count: number; valueCents: CurrencyMap }[];
-  cycles: {
-    draftToSentHours: Stat | null;
-    sentToDecidedDays: Stat | null;
-  };
 }
 
 const DAY_MS = 24 * 3600 * 1000;
-const IN_REVIEW: readonly QuoteStatus[] = ['pending_review', 'changes_requested', 'ready'];
 
 const inRange = (t: Date | null, from: Date, to: Date): boolean =>
   !!t && t.getTime() >= from.getTime() && t.getTime() <= to.getTime();
 
 function addCurrency(map: CurrencyMap, currency: string, cents: number): void {
   map[currency] = (map[currency] ?? 0) + cents;
-}
-
-// Nearest-rank p90; median averages the middle pair on even n.
-function stat(values: number[]): Stat | null {
-  if (values.length === 0) return null;
-  const s = [...values].sort((a, b) => a - b);
-  const mid = s.length / 2;
-  const median = s.length % 2 === 1 ? s[Math.floor(mid)] : (s[mid - 1] + s[mid]) / 2;
-  const p90 = s[Math.max(0, Math.ceil(0.9 * s.length) - 1)];
-  return { median, p90, n: s.length };
 }
 
 export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): FunnelReport {
@@ -69,23 +51,23 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
   const created = count((r) => r.createdAt);
   const sent = count((r) => r.sentAt);
   const won = count((r) => r.decidedAt, (r) => r.status === 'won');
-  const lost = count((r) => r.decidedAt, (r) => r.status === 'lost');
-  const expired = count((r) => r.decidedAt, (r) => r.status === 'expired');
 
-  const decidedNow = rows.filter((r) => decidedIn(r, from, to));
-  const winRate: Ratio = { num: decidedNow.filter((r) => r.status === 'won').length, den: decidedNow.length };
+  // Quote $ values — same in-range rules as the Won/Sent count tiles they sit beside.
+  const wonValue: CurrencyMap = {};
+  const sentValue: CurrencyMap = {};
+  const sentCount: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.status === 'won' && decidedIn(r, from, to)) addCurrency(wonValue, r.currency, r.totalCents);
+    if (inRange(r.sentAt, from, to)) {
+      addCurrency(sentValue, r.currency, r.totalCents);
+      sentCount[r.currency] = (sentCount[r.currency] ?? 0) + 1;
+    }
+  }
+  const avgSentCents: CurrencyMap = {};
+  for (const cur of Object.keys(sentValue)) avgSentCents[cur] = Math.round(sentValue[cur] / sentCount[cur]);
 
-  const cohort = rows.filter((r) => inRange(r.createdAt, from, to));
-  const sendRate: Ratio = { num: cohort.filter((r) => r.sentAt).length, den: cohort.length };
-  const funnel = {
-    created: cohort.length,
-    sent: cohort.filter((r) => r.sentAt).length,
-    won: cohort.filter((r) => r.status === 'won').length,
-  };
-
-  // Live snapshots — `now`-anchored, deliberately ignore the range.
+  // Live snapshot — `now`-anchored, deliberately ignores the range.
   const pipeline: Snapshot = { count: 0, valueCents: {} };
-  const inReview: Snapshot = { count: 0, valueCents: {} };
   const agingBuckets = [
     { bucket: '0-2' as const, count: 0, valueCents: {} as CurrencyMap },
     { bucket: '3-7' as const, count: 0, valueCents: {} as CurrencyMap },
@@ -100,9 +82,6 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
       const b = days < 3 ? agingBuckets[0] : days < 8 ? agingBuckets[1] : days < 15 ? agingBuckets[2] : agingBuckets[3];
       b.count += 1;
       addCurrency(b.valueCents, r.currency, r.totalCents);
-    } else if (IN_REVIEW.includes(r.status)) {
-      inReview.count += 1;
-      addCurrency(inReview.valueCents, r.currency, r.totalCents);
     }
   }
 
@@ -135,20 +114,11 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
     reasonMap.set(key, entry);
   }
 
-  const cycleHours = rows
-    .filter((r) => inRange(r.sentAt, from, to))
-    .map((r) => (r.sentAt!.getTime() - r.createdAt.getTime()) / (3600 * 1000));
-  const cycleDays = rows
-    .filter((r) => r.sentAt && decidedIn(r, from, to))
-    .map((r) => (r.decidedAt!.getTime() - r.sentAt!.getTime()) / DAY_MS);
-
   return {
     range: { from: from.toISOString(), to: to.toISOString(), bucket },
-    tiles: { created, sent, won, lost, expired, winRate, sendRate, pipeline, inReview },
+    tiles: { created, sent, won, wonValue, sentValue, avgSentCents, pipeline },
     series: [...seriesMap.values()],
-    funnel,
     lostReasons: [...reasonMap.values()].sort((a, b) => b.count - a.count),
     aging: agingBuckets,
-    cycles: { draftToSentHours: stat(cycleHours), sentToDecidedDays: stat(cycleDays) },
   };
 }
