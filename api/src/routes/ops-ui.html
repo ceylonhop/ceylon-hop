@@ -420,6 +420,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-head-assign.mine { color: #0a7d78; background: #dff5f3; border-color: #bfe9e5; }
 .qv .ch-head-assign.none { color: var(--ink-faint); border-style: dashed; border-color: var(--cream-deep); }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
+/* Provenance footer — quiet created/updated-by line at the bottom-right of the builder. */
+.qv .ch-provenance { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line-soft); text-align: right; }
 .qv .ch-review-banner span { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qv .ch-review-banner.tone-amber { background: #fdf3e0; border-color: #f6e3c0; color: #7a4f0c; }
 .qv .ch-review-banner.tone-teal { background: #dff5f3; border-color: #bfe9e5; color: #0a6f6a; }
@@ -4860,15 +4862,17 @@ function renderHeaderAssign() {
     + ' aria-label="Assign this quote" title="Assign this quote — click to reassign">' + opts.join('') + '</select>';
 }
 
-// Provenance — a quiet created/updated-by line above the editor. The interactive assignee moved to
-// the header (renderHeaderAssign); this is the read-only audit that used to sit beside it.
+// Provenance — a quiet created/updated-by footer pinned to the bottom-right of the builder.
+// Names the person (userLabel maps the email to their display name, e.g. 'Roshen W.'), keeping
+// the full email on hover. The interactive assignee lives in the header (renderHeaderAssign).
 function renderAssignStrip() {
   if (!state.savedId) return '';
+  function who(email) { return '<span title="' + esc(email) + '">' + esc(userLabel(email)) + '</span>'; }
   var audit = [];
-  if (state.createdBy) audit.push('Created by ' + esc(state.createdBy));
-  if (state.updatedBy) audit.push('last updated by ' + esc(state.updatedBy));
+  if (state.createdBy) audit.push('Created by ' + who(state.createdBy));
+  if (state.updatedBy) audit.push('last updated by ' + who(state.updatedBy));
   if (!audit.length) return '';
-  return '<div class="ch-assign"><span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span></div>';
+  return '<div class="ch-provenance"><span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span></div>';
 }
 
 // Hand the quote to someone (or nobody). The server validates the assignee against OPS_USERS
@@ -5057,7 +5061,6 @@ function render() {
       '      </div>',
     ].join('') : ''),
     renderReviewBanner(),
-    renderAssignStrip(),
 
     // Customer strip (one compact row)
     '      <div class="ch-cust-strip">',
@@ -5207,6 +5210,7 @@ function render() {
     '    </div>', // ch-money
 
     '  </div>', // ch-cockpit
+    renderAssignStrip(), // provenance footer, bottom-right of the builder
     '</div>', // ch-container
 
     // (The recent-quotes drawer was retired — the ops-shell queue is the quote list now.)
