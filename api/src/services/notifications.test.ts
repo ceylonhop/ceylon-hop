@@ -345,3 +345,49 @@ describe('needsDetails', () => {
     expect(needsDetails(shared)).toBe(false);
   });
 });
+
+// Faithful itinerary rendering across the website-bookable shapes.
+describe('itinerary rendering — website booking shapes', () => {
+  it('single transfer renders selected extras and bag count', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = { ...single, input: { ...single.input, bags: 3, extras: ['sightseeing'] } };
+    await sendBookingConfirmation(b, email);
+    const m = email.sent[0];
+    expect(m.html).toContain('Sightseeing stops');
+    expect(m.html).toContain('3 bags');
+    expect(m.text).toContain('Sightseeing stops');
+  });
+
+  it('chauffeur trip renders the multi-day duration', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-CHA', id: 'idc',
+      input: { stops: ['Colombo', 'Kandy', 'Ella'], nights: [0, 2, 1], dates: ['2026-08-09', '2026-08-11'], pax: 3, vehicleType: 'van', serviceType: 'chauffeur', days: 6, driverNights: 5, customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    expect(email.sent[0].html).toContain('Duration');
+    expect(email.sent[0].html).toContain('6 days');
+  });
+
+  it('multi-stop trip renders per-stop nights and per-leg travel dates', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-MUL', id: 'idm',
+      input: { stops: ['Colombo Fort', 'Kandy', 'Ella'], nights: [0, 2, 0], dates: ['2026-08-09', '2026-08-11'], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    const html = email.sent[0].html;
+    expect(html).toContain('2 nights');
+    expect(html).toContain('depart');
+  });
+
+  it('round trip (origin repeated) labels the final stop as a return', async () => {
+    const email = new FakeEmailAdapter();
+    const b: Booking = {
+      ...single, mode: 'trip', reference: 'CH-RND', id: 'idr',
+      input: { stops: ['Kandy', 'Sigiriya', 'Kandy'], nights: [0, 1, 0], dates: ['2026-08-09', '2026-08-10'], pax: 2, vehicleType: 'car', serviceType: 'private', customer: single.input.customer },
+    } as Booking;
+    await sendBookingConfirmation(b, email);
+    expect(email.sent[0].html).toContain('Return');
+  });
+});

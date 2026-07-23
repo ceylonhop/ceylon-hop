@@ -35,9 +35,11 @@ const single: Booking = {
     children: 0,
     bags: 2,
     customer,
+    extras: ['sightseeing'],
   },
 };
 
+// Chauffeur multi-day (car kept, driver nights, day rate).
 const trip: Booking = {
   ...base,
   reference: 'CH-TRIP1',
@@ -51,6 +53,8 @@ const trip: Booking = {
     pax: 3,
     vehicleType: 'van',
     serviceType: 'chauffeur',
+    days: 7,
+    driverNights: 6,
     customer,
   },
 };
@@ -82,8 +86,44 @@ const singleFlexible: Booking = { ...single, reference: 'CH-FLEX9', input: { ...
 // and the (dormant) deposit-received email.
 const singleDeposit: Booking = { ...single, reference: 'CH-DEP22', amountDueNow: 185_000 };
 
+// A private multi-stop trip (not chauffeur) — per-stop nights + per-leg dates, no day rate.
+const tripPrivate: Booking = {
+  ...base,
+  reference: 'CH-TRP07',
+  mode: 'trip',
+  total: 5_400_000,
+  channel: 'website',
+  input: {
+    stops: ['Colombo Fort', 'Kandy', 'Nuwara Eliya', 'Ella'],
+    nights: [0, 1, 1, 0],
+    dates: ['2026-08-09', '2026-08-10', '2026-08-11'],
+    pax: 2,
+    vehicleType: 'car',
+    serviceType: 'private',
+    customer,
+  },
+};
+
+// A round trip — the origin is repeated as the final stop (the website has no round-trip flag).
+const roundTrip: Booking = {
+  ...base,
+  reference: 'CH-RND09',
+  mode: 'trip',
+  total: 3_200_000,
+  channel: 'website',
+  input: {
+    stops: ['Kandy', 'Sigiriya', 'Kandy'],
+    nights: [0, 1, 0],
+    dates: ['2026-08-09', '2026-08-10'],
+    pax: 2,
+    vehicleType: 'car',
+    serviceType: 'private',
+    customer,
+  },
+};
+
 export function sampleBooking(mode: SampleMode): Booking {
   return byMode[mode];
 }
 
-export const sampleVariants = { single, trip, shared, singleFlexible, singleDeposit };
+export const sampleVariants = { single, trip, shared, singleFlexible, singleDeposit, tripPrivate, roundTrip };

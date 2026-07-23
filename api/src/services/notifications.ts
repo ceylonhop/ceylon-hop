@@ -45,17 +45,38 @@ function travellers(adults: number, children: number): string {
   return s;
 }
 
-interface Stop { color: string; label: string; place: string }
+interface Stop { color: string; label: string; place: string; sub?: string }
 
-// The journey as labelled, colour-coded stops (pickup → drop-off, or each trip stop).
+// True when a trip's last stop is the same place it started (a round trip). The website
+// has no round-trip flag — it just repeats the origin as the final stop.
+function isRoundTrip(booking: Booking): boolean {
+  if (booking.mode !== 'trip') return false;
+  const s = booking.input.stops;
+  return s.length > 2 && s[0] === s[s.length - 1];
+}
+
+// The journey as labelled, colour-coded stops. For trips each stop also carries a `sub`
+// line: nights stayed there + the travel date of the leg leaving it (both from the booking,
+// so it renders website multi-stop / chauffeur / round-trip itineraries faithfully).
 function journey(booking: Booking): Stop[] {
   if (booking.mode === 'trip') {
     const stops = booking.input.stops;
-    return stops.map((s, i) => ({
-      color: i === 0 ? TEAL_DEEP : i === stops.length - 1 ? TOMATO : TEAL,
-      label: i === 0 ? 'Start' : i === stops.length - 1 ? 'End' : 'Stop',
-      place: s,
-    }));
+    const nights = booking.input.nights ?? [];
+    const dates = booking.input.dates ?? [];
+    const roundTrip = isRoundTrip(booking);
+    return stops.map((s, i) => {
+      const last = i === stops.length - 1;
+      const parts: string[] = [];
+      const n = nights[i] ?? 0;
+      if (n > 0) parts.push(`${n} night${n > 1 ? 's' : ''}`);
+      if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
+      return {
+        color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
+        label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
+        place: s,
+        sub: parts.join(' · ') || undefined,
+      };
+    });
   }
   if (booking.mode === 'shared') {
     return [{ color: TEAL, label: 'Service', place: 'Shared ride' }];
@@ -66,16 +87,35 @@ function journey(booking: Booking): Stop[] {
   ];
 }
 
+// Customer-facing labels for the booking extras (only `sightseeing` is website-selectable
+// today; the rest can arrive on ops-made bookings — render whatever is present).
+const EXTRA_LABELS: Record<string, string> = {
+  sightseeing: 'Sightseeing stops',
+  waiting: 'Driver waiting time',
+  'safari-wait': 'Safari wait',
+  luggage: 'Extra luggage',
+  front: 'Front-seat guide',
+  flex: 'Flexible booking',
+};
+function extrasLabel(extras?: string[]): string | null {
+  if (!extras?.length) return null;
+  const labels = extras.map((c) => EXTRA_LABELS[c] ?? c);
+  return labels.join(', ');
+}
+
 // The non-route facts (date, vehicle, travellers, …) as label/value pairs.
 function factRows(booking: Booking): [string, string][] {
   if (booking.mode === 'trip') {
     const start = booking.input.dates?.find(Boolean);
-    return [
-      ['Service', booking.input.serviceType === 'chauffeur' ? 'Chauffeur-guide' : 'Private transfer'],
+    const chauffeur = booking.input.serviceType === 'chauffeur';
+    const rows: [string, string][] = [
+      ['Service', chauffeur ? 'Chauffeur-guide' : 'Private transfer'],
       ['Vehicle', vehicleLabel(booking.input.vehicleType)],
       ['Travellers', String(booking.input.pax)],
-      ['Dates', start ? `From ${fmtDate(start)}` : 'To confirm'],
     ];
+    if (chauffeur && booking.input.days) rows.push(['Duration', `${booking.input.days} day${booking.input.days > 1 ? 's' : ''} · car & driver-guide`]);
+    rows.push(['Dates', start ? `From ${fmtDate(start)}` : 'To confirm']);
+    return rows;
   }
   if (booking.mode === 'shared') {
     return [
@@ -83,11 +123,15 @@ function factRows(booking: Booking): [string, string][] {
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
   }
-  return [
+  const rows: [string, string][] = [
     ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ['Vehicle', vehicleLabel(booking.input.vehicleType)],
     ['Travellers', travellers(booking.input.adults, booking.input.children)],
   ];
+  if (booking.input.bags > 0) rows.push(['Luggage', `${booking.input.bags} bag${booking.input.bags > 1 ? 's' : ''}`]);
+  const extras = extrasLabel(booking.input.extras);
+  if (extras) rows.push(['Extras', extras]);
+  return rows;
 }
 
 function routeText(booking: Booking): string {
@@ -218,7 +262,7 @@ function routeRow(booking: Booking): string {
         (s, i) =>
           `<tr>
             <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
-            <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div></td>
+            <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}</td>
           </tr>`,
       )
       .join('');

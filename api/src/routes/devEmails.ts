@@ -41,11 +41,13 @@ const EMAILS: EmailDef[] = [
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
 ];
 
-const MODES = ['single', 'trip', 'shared', 'flexible', 'deposit'] as const;
+const MODES = ['single', 'trip', 'trip-private', 'roundtrip', 'shared', 'flexible', 'deposit'] as const;
 
 function resolveBooking(mode: string): Booking {
   if (mode === 'flexible') return sampleVariants.singleFlexible;
   if (mode === 'deposit') return sampleVariants.singleDeposit;
+  if (mode === 'trip-private') return sampleVariants.tripPrivate;
+  if (mode === 'roundtrip') return sampleVariants.roundTrip;
   if (mode === 'trip' || mode === 'shared' || mode === 'single') return sampleBooking(mode as SampleMode);
   return sampleBooking('single');
 }
