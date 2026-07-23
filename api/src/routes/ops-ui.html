@@ -642,6 +642,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-stay-toggle.on.tone-teal .ch-stay-state { background: var(--teal); color: #fff; }
 .qv .ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(10,185,182,.08); }
 .qv .ch-stay-toggle.on.tone-blue .ch-stay-state { background: var(--blue); color: #fff; }
+
+/* Hot-zones "Add a zone" composer (Rate Settings) — an inset card so it reads as a
+   deliberate compose area; fields use the shared .ch-input-wrap; the caption sits ABOVE
+   the row so the autocomplete menu (anchored under the town field) never collides with it. */
+.qv .ch-hz-form { margin-top: 16px; padding: 15px 16px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--cream); }
+.qv .ch-hz-head { font-size: 13px; font-weight: 700; color: var(--ink); }
+.qv .ch-hz-caption { font-size: 11.5px; line-height: 1.5; color: var(--muted-2); margin: 4px 0 13px; max-width: 66ch; }
+.qv .ch-hz-grid { display: grid; grid-template-columns: minmax(0,1fr) 104px auto auto; gap: 12px; align-items: end; }
+.qv .ch-hz-lbl { display: block; font-size: 10px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--muted-2); margin-bottom: 6px; }
+.qv .ch-hz-acwrap { position: relative; }
+.qv .ch-hz-form .ch-input-wrap { background: #fff; }
+.qv .ch-hz-prefix { font-size: 13px; opacity: .65; }
+.qv .ch-hz-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; cursor: pointer; padding-bottom: 9px; }
+.qv .ch-hz-toggle input { accent-color: var(--teal); width: 15px; height: 15px; cursor: pointer; }
+.qv .ch-hz-actions { display: flex; gap: 8px; align-items: end; padding-bottom: 1px; }
+@media (max-width: 580px) {
+  .qv .ch-hz-grid { grid-template-columns: 1fr 1fr; }
+  .qv .ch-hz-cell-town, .qv .ch-hz-actions { grid-column: 1 / -1; }
+}
 .qv .ch-stays-note { font-size: 11.5px; color: var(--teal-d); font-weight: 600; }
 
 .qv .ch-tl-fees { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
@@ -3805,18 +3824,32 @@ function renderHotZonesPanel() {
     ? '<div class="ch-lock-note" style="border-color:var(--danger,#c0392b)">&#9888; Hot zones are PAUSED globally (HOT_ZONES_DISABLED). Quotes ignore every zone until this env flag is cleared.</div>'
     : '';
 
-  var form = '<div class="ch-hz-form" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">'
-    + '<div style="font-weight:600;margin-bottom:8px">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
-    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
-    + '<label style="flex:2;min-width:160px;font-size:12px;color:var(--muted)">Town<br>'
-    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="Search a town…" autocomplete="off" value="' + placeVal + '"' + dis + '></label>'
-    + '<label style="flex:1;min-width:90px;font-size:12px;color:var(--muted)">Boost %<br>'
-    + '<input id="hz-boost" class="ch-input" style="width:100%" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '></label>'
-    + '<label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-bottom:8px"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label>'
-    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
-    + (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+  var form = '<div class="ch-hz-form">'
+    + '<div class="ch-hz-head">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
+    + '<div class="ch-hz-caption">Pick the town from the list so the zone matches exactly how the quote tool spells it — free-typing risks a name that never fires. A premium above 20% will ask you to confirm.</div>'
+    + '<div class="ch-hz-grid">'
+    +   '<div class="ch-hz-cell-town">'
+    +     '<label class="ch-hz-lbl" for="hz-place">Town</label>'
+    +     '<div class="ch-hz-acwrap">'
+    +       '<div class="ch-input-wrap">'
+    +         '<span class="ch-input-prefix ch-hz-prefix">&#128269;</span>'
+    +         '<input id="hz-place" class="ch-input" placeholder="Search a town…" autocomplete="off" value="' + placeVal + '"' + dis + '>'
+    +       '</div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div>'
+    +     '<label class="ch-hz-lbl" for="hz-boost">Boost</label>'
+    +     '<div class="ch-input-wrap">'
+    +       '<input id="hz-boost" class="ch-input" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '>'
+    +       '<span class="ch-input-suffix">%</span>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div><label class="ch-hz-toggle"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label></div>'
+    +   '<div class="ch-hz-actions">'
+    +     '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
+    +     (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+    +   '</div>'
     + '</div>'
-    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Pick the town from the list so the zone matches exactly how the quote tool spells it — free-typing risks a name that never fires. A premium above 20% will ask you to confirm.</div>'
     + '</div>';
 
   return '<div class="ch-hz-panel" style="margin-top:20px">'
@@ -6664,7 +6697,9 @@ function hzacRenderMenu(input, items, query, opts) {
     loading.innerHTML = '<span class="ch-ac-pin">⌕</span><span class="ch-ac-name">Searching Google…</span><span class="ch-ac-source">Google</span>';
     menu.appendChild(loading);
   }
-  var wrap = input.parentNode;
+  // Anchor under the whole town field (the .ch-hz-acwrap), not the bare input — so the menu
+  // sits flush beneath the bordered input-wrap instead of being offset by its label.
+  var wrap = input.closest('.ch-hz-acwrap') || input.parentNode;
   wrap.style.position = 'relative';
   wrap.appendChild(menu);
   _hzac.menuEl = menu;
