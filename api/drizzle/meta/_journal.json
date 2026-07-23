@@ -141,6 +141,13 @@
       "when": 1784723780160,
       "tag": "0019_quote_soft_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784764241479,
+      "tag": "0020_pricing_zones",
+      "breakpoints": true
     }
   ]
 }
