@@ -724,6 +724,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    and align-items:baseline pins it to the label's FIRST line (top-right). */
 .qv .ch-line-label { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .qv .ch-line-label i { font-style: normal; color: var(--muted-2); font-size: 11.5px; }
+/* Hot-zone premium chip on a boosted cost line (founder-only: the server strips meta.hotZone
+   for roles without margin:view, so rendering is unconditional). Amber = "price is elevated,
+   deliberately" — distinct from the red warning tones. */
+.qv .ch-hz-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; color: #8a5a00; background: #fdf0d2; border: 1px solid #f0d9a0; vertical-align: 1px; }
+:root[data-theme="dark"] .qv .ch-hz-chip { color: #f5c96a; background: rgba(245,201,106,.12); border-color: rgba(245,201,106,.35); }
 .qv .ch-line-val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 .qv .ch-line.strong { border-top: 1px solid var(--line); margin-top: 5px; padding-top: 9px; }
 .qv .ch-line.strong .ch-line-label { color: var(--ink); font-weight: 600; }
@@ -4305,8 +4310,14 @@ function renderSummaryCardBody() {
   // Cost build-up lines (from server, tightened)
   var lineItems = est.lineItems || [];
   lineItems.forEach(function(item) {
+    // Hot-zone chip (D9): the server annotates a boosted line with meta.hotZone — and already
+    // strips it for roles without margin:view, so presence alone means "safe to show". Without
+    // this the only trace of a premium was forensic arithmetic on the leg price (owner, 2026-07-23).
+    var hz = item.meta && item.meta.hotZone;
     lines.push('<div class="ch-line">');
-    lines.push('  <span class="ch-line-label">' + esc(item.label) + '</span>');
+    lines.push('  <span class="ch-line-label">' + esc(item.label)
+      + (hz ? '<span class="ch-hz-chip" title="Hot zone applied: ' + esc(hz.label || '') + '">&#9889; ' + esc(hz.placeName) + ' +' + esc(String(hz.boostPct)) + '%</span>' : '')
+      + '</span>');
     lines.push('  <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
     lines.push('</div>');
   });
