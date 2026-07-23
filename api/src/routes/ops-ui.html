@@ -189,6 +189,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* ── analytics (founder-only) ── */
   .an-controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:2px 0 14px}
   .an-controls .an-sep{width:1px;height:22px;background:var(--line);margin:0 3px}
+  .an-glabel{font-size:.66rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint)}
+  .an-seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper);box-shadow:var(--shadow-s)}
+  .an-seg button{border:0;background:transparent;color:var(--ink-soft);font:inherit;font-weight:700;font-size:.85rem;padding:9px 18px;cursor:pointer;transition:background .16s,color .16s}
+  .an-seg button+button{border-left:1px solid var(--line)}
+  .an-seg button:hover{color:var(--ink)}
+  .an-seg button.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff}
+  .an-seg.sm button{padding:6px 13px;font-size:.78rem}
   .an-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-bottom:16px}
   .an-tile{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-s)}
   .an-tile .an-n{font-size:1.45rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
@@ -1854,6 +1861,10 @@ function anHBars(items){
 function anChips(list,activeId,dataAttr){
   return list.map(c=>`<button class="qfilter ${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('');
 }
+function anSeg(list,activeId,dataAttr,cls){
+  /* joined segmented control — reads as a mode switch, unlike the pill filter chips */
+  return `<div class="an-seg${cls?' '+cls:''}">`+list.map(c=>`<button class="${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('')+'</div>';
+}
 function anFunnelHtml(d){
   const t=d.tiles;
   let html='';
@@ -1904,10 +1915,11 @@ function anDemandHtml(d){
 function anControlsHtml(){
   const showBucket=anState.tab==='funnel';
   return `<div class="an-controls">
-    ${anChips([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
+    ${anSeg([{id:'funnel',label:'Funnel'},{id:'demand',label:'Demand'}],anState.tab,'antab')}
     <span class="an-sep"></span>
+    <span class="an-glabel">Range</span>
     ${anChips(AN_PRESETS,anState.preset,'anpreset')}
-    ${showBucket?'<span class="an-sep"></span>'+anChips([{id:'day',label:'Day'},{id:'week',label:'Week'}],anEffectiveBucket(),'anbucket'):''}
+    ${showBucket?'<span class="an-sep"></span><span class="an-glabel">By</span>'+anSeg([{id:'day',label:'Day'},{id:'week',label:'Week'}],anEffectiveBucket(),'anbucket','sm'):''}
   </div>`;
 }
 function viewAnalytics(){
