@@ -770,16 +770,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 /* Foot of the itinerary (2026-07-22): internal notes on the left, a PORTRAIT route map on the
    right. The map went vertical because Sri Lanka is a teardrop (tall, narrow), which frees the
    space on its left for the ops-only notes scratchpad. Wraps to stacked on a narrow pane. */
-.qv .ch-itin-aside { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: flex-start; }
-.qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; }
-.qv .ch-note-label { font-size: 11.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin: 0 0 6px; display: inline-flex; align-items: center; gap: 6px; }
+.qv .ch-itin-aside { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; align-items: stretch; }
+/* Notes is now a CARD that mirrors the route-map card beside it (same frame + header bar),
+   so the two read as a matched pair instead of a raw textarea next to a finished card. It
+   stretches to the map's height when the map is open (no empty void); its own min-height
+   keeps it usable when the map is collapsed (the map opts out of stretch — see below). */
+.qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); transition: border-color .15s, box-shadow .15s; }
+.qv .ch-notes-block:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line); }
+.qv .ch-note-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 0; display: inline-flex; align-items: center; gap: 8px; }
 .qv .ch-note-ico { color: var(--teal-d); flex: none; }
-.qv .ch-notes-area { flex: 1 1 auto; min-height: 200px; width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink); outline: none; transition: border-color .15s, box-shadow .15s; }
-.qv .ch-notes-area:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-cap { font-size: 11px; color: var(--muted); flex: none; }
+.qv .ch-notes-area { flex: 1 1 auto; min-height: 128px; width: 100%; box-sizing: border-box; resize: none; border: 0; border-radius: 0; background: transparent; padding: 12px 15px; font: inherit; font-size: 13px; line-height: 1.5; color: var(--ink); outline: none; }
 .qv .ch-notes-area::placeholder { color: var(--muted); }
-.qv .ch-notes-hint { font-size: 10.5px; color: var(--muted); margin-top: 5px; }
 /* Collapsible PORTRAIT route map — a fixed-width right column (see .ch-itin-aside) */
-.qv .ch-map-block { flex: 0 1 290px; margin-top: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
+/* align-self:flex-start opts the map out of the row's stretch — a collapsed map stays its
+   own short height (no whitespace under the toggle) while the notes card fills the row. */
+.qv .ch-map-block { flex: 0 1 290px; align-self: flex-start; margin-top: 0; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); }
 .qv .ch-map-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; background: none; border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-soft); transition: background .15s, color .15s; }
 .qv .ch-map-toggle:hover { background: var(--cream); color: var(--ink); }
 .qv .ch-map-toggle-lbl { display: inline-flex; align-items: center; gap: 8px; }
@@ -1609,6 +1616,26 @@ function quoteRowHtml(q,hideAssignee){
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
+// Diff-render the quotes list (mirrors the builder's render() at #quoteRoot): patch #view
+// against the new tree with morphdom instead of swapping innerHTML. viewQuotes() runs 2–3
+// times per entry as async data lands — the initial paint, then /admin/quote/list, then the
+// staff names from /admin/ops/users — and a full innerHTML swap each time wiped and rebuilt
+// the whole list, the visible "reloads a few times" flicker. Now unchanged rows are left
+// untouched (keyed by quote id) so only what actually changed repaints; scroll survives too.
+function paintQuotesView(html){
+  const view=$('#view');
+  if(!view)return;
+  // childrenOnly keeps the #view element (and its id) intact; a route change (e.g. Bookings →
+  // Quotes) just leaves foreign children for morphdom to diff away on the first paint.
+  morphdom(view,'<div>'+html+'</div>',{
+    childrenOnly:true,
+    getNodeKey:function(node){
+      if(node.nodeType!==1)return undefined;
+      return (node.getAttribute&&node.getAttribute('data-qopen'))||node.id||undefined;
+    },
+    onBeforeElUpdated:function(fromEl,toEl){return !fromEl.isEqualNode(toEl);}, // skip unchanged subtrees
+  });
+}
 function viewQuotes(){
   $('#topbar').innerHTML='';
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
@@ -1625,10 +1652,10 @@ function viewQuotes(){
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
     </div>
     <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}</p>`;
-  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';$('#view').innerHTML=html;return;}
+  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';paintQuotesView(html);return;}
   if(!opsQuotes.length){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
-    $('#view').innerHTML=html;return;
+    paintQuotesView(html);return;
   }
   // Filter toggles (coarse status groups). Counts reflect the whole queue, not the section.
   html+='<div class="qfilters">'+QUEUE_FILTERS.map(f=>{
@@ -1663,7 +1690,7 @@ function viewQuotes(){
     </div>`;
   });
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
-  $('#view').innerHTML=html;
+  paintQuotesView(html);
 }
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
@@ -2204,6 +2231,9 @@ var _delegatesWired = false;
 
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
 var ratesOpen = false;    // Rate Settings modal
+var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
+var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
+var hzBusy = false;       // a hot-zones write is in flight (disables the form)
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
@@ -3655,6 +3685,135 @@ function renderRateCardBody() {
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
 }
 
+// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever inside Rate Settings. ──
+// A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
+// (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
+// release). The whole app re-renders by innerHTML swap, so the form inputs are UNCONTROLLED —
+// their values are read from the DOM only at submit time (hzSubmit), never bound per keystroke,
+// which sidesteps the focus-wipe-on-render problem entirely.
+var hotZonesOff = false; // mirror of HOT_ZONES_DISABLED from the server (kill switch banner)
+
+async function loadHotZones() {
+  try {
+    var r = await api('/admin/quote/zones');
+    if (!r.ok) return; // 403 handled by api(); leave list as-is
+    var d = await jsonOrNull(r);
+    hotZones = (d && d.zones) ? d.zones : [];
+    hotZonesOff = !!(d && d.disabled);
+    render();
+  } catch (e) { /* leave prior state; a transient failure just shows the last list */ }
+}
+
+// Create or update a zone from the (uncontrolled) form inputs, read at click time. Boost > 20%
+// asks for confirmation (spec D4/R3) — a high premium should feel deliberate, not routine.
+async function hzSubmitZone() {
+  var placeEl = document.getElementById('hz-place');
+  var boostEl = document.getElementById('hz-boost');
+  var activeEl = document.getElementById('hz-active');
+  if (!placeEl || !boostEl) return;
+  var placeName = (placeEl.value || '').trim();
+  var boostPct = parseInt(boostEl.value, 10);
+  var active = activeEl ? !!activeEl.checked : true;
+  if (!placeName) { showToast('Enter a town name'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%'); return; }
+  if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
+  hzBusy = true; render();
+  try {
+    var path = hzEditId ? '/admin/quote/zones/' + hzEditId : '/admin/quote/zones';
+    var method = hzEditId ? 'PATCH' : 'POST';
+    var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
+    hzBusy = false;
+    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed')); render(); return; }
+    hzEditId = null;
+    showToast('Zone saved');
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Save failed'); render(); }
+}
+
+async function hzToggleZone(id) {
+  var z = (hotZones || []).find(function(x) { return x.id === id; });
+  if (!z) return;
+  hzBusy = true; render();
+  try {
+    var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
+    hzBusy = false;
+    if (!r.ok) { showToast('Update failed'); render(); return; }
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Update failed'); render(); }
+}
+
+async function hzDeleteZone(id) {
+  var z = (hotZones || []).find(function(x) { return x.id === id; });
+  if (z && !window.confirm('Delete the ' + z.placeName + ' hot zone?')) return;
+  hzBusy = true; render();
+  try {
+    var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
+    hzBusy = false;
+    if (!r.ok) { showToast('Delete failed'); render(); return; }
+    if (hzEditId === id) hzEditId = null;
+    showToast('Zone deleted');
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Delete failed'); render(); }
+}
+
+function renderHotZonesPanel() {
+  if (!viewerCan('margin:view')) return ''; // founder-only (defence-in-depth; the button is gated too)
+  var rows = '';
+  if (hotZones === null) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading zones…</div>';
+  } else if (hotZones.length === 0) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No hot zones yet. Add a town below to boost every quote that touches it.</div>';
+  } else {
+    rows = hotZones.map(function(z) {
+      var hot = z.boostPct > 20;
+      var pill = z.active
+        ? '<span class="ch-badge tone-teal">active</span>'
+        : '<span class="ch-badge tone-slate">paused</span>';
+      return '<div class="ch-hz-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
+        + '<div style="flex:1;min-width:0"><b>' + esc(z.placeName) + '</b> '
+        + '<span style="color:' + (hot ? 'var(--danger,#c0392b)' : 'var(--muted-2)') + '">+' + esc(String(z.boostPct)) + '%</span>'
+        + (hot ? ' <span title="Above 20% is unusually high">&#9888;</span>' : '') + '</div>'
+        + pill
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzEditStart" data-id="' + esc(z.id) + '">Edit</button>'
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzToggleActive" data-id="' + esc(z.id) + '">' + (z.active ? 'Pause' : 'Resume') + '</button>'
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzDelete" data-id="' + esc(z.id) + '">Delete</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  var editing = hzEditId ? (hotZones || []).find(function(z) { return z.id === hzEditId; }) : null;
+  var placeVal = editing ? esc(editing.placeName) : '';
+  var boostVal = editing ? esc(String(editing.boostPct)) : '';
+  var activeChecked = editing ? (editing.active ? ' checked' : '') : ' checked';
+  var dis = hzBusy ? ' disabled' : '';
+
+  var banner = hotZonesOff
+    ? '<div class="ch-lock-note" style="border-color:var(--danger,#c0392b)">&#9888; Hot zones are PAUSED globally (HOT_ZONES_DISABLED). Quotes ignore every zone until this env flag is cleared.</div>'
+    : '';
+
+  var form = '<div class="ch-hz-form" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">'
+    + '<div style="font-weight:600;margin-bottom:8px">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    + '<label style="flex:2;min-width:160px;font-size:12px;color:var(--muted)">Town<br>'
+    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="e.g. Ella" value="' + placeVal + '"' + dis + '></label>'
+    + '<label style="flex:1;min-width:90px;font-size:12px;color:var(--muted)">Boost %<br>'
+    + '<input id="hz-boost" class="ch-input" style="width:100%" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '></label>'
+    + '<label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-bottom:8px"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label>'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
+    + (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Match is by town name, as it appears in the quote tool (e.g. Ella, Galle, Sigiriya / Dambulla). A premium above 20% will ask you to confirm.</div>'
+    + '</div>';
+
+  return '<div class="ch-hz-panel" style="margin-top:20px">'
+    + '<h3 style="margin:0 0 4px;font-size:15px">Hot zones</h3>'
+    + '<div class="ch-lock-note">Premium towns. A quote that touches one is boosted by its %. Affects ops quotes now; the website updates on the next deploy.</div>'
+    + banner
+    + rows
+    + form
+    + '</div>';
+}
+
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
 // Two side-by-side price boxes (Point-to-point | Chauffeur-guide) that ARE the
 // chooser. The selected box gets the teal-accent border/fill; each shows its
@@ -4957,9 +5116,11 @@ function render() {
       // a toggle so it never pops in unbidden, and is populated (portrait) by syncItinMap.
       '        <div class="ch-itin-aside">',
       '          <div class="ch-notes-block">',
-      '            <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '            <div class="ch-notes-head">',
+      '              <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '              <span class="ch-notes-cap">Ops-only &middot; autosaves</span>',
+      '            </div>',
       '            <textarea class="ch-notes-area" id="f-internalNotes" placeholder="Private notes for the team — trip context, customer preferences, follow-ups. Never shown to the customer.">' + esc(st.internalNotes || '') + '</textarea>',
-      '            <div class="ch-notes-hint">Ops-only &middot; autosaves with the quote</div>',
       '          </div>',
       (itinMapAvailable() ? [
         '          <div class="ch-map-block' + (_mapOpen ? ' open' : '') + '">',
@@ -5069,6 +5230,7 @@ function render() {
       '    <div class="ch-modal-body">',
       '      <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
       renderRateCardBody(),
+      renderHotZonesPanel(),
       '    </div>',
       '  </div>',
       '</div>',
@@ -5434,10 +5596,25 @@ function attachEventListeners() {
     } else if (action === 'openRates') {
       if (!viewerCan('margin:view')) return; // founder-only rate card
       ratesOpen = true;
+      hzEditId = null;
+      loadHotZones(); // async: fetches the zone list, then re-renders the panel in place
       render();
     } else if (action === 'closeRates') {
       ratesOpen = false;
+      hzEditId = null;
       render();
+    } else if (action === 'hzSubmit') {
+      hzSubmitZone();
+    } else if (action === 'hzEditStart') {
+      hzEditId = el.getAttribute('data-id');
+      render();
+    } else if (action === 'hzEditCancel') {
+      hzEditId = null;
+      render();
+    } else if (action === 'hzToggleActive') {
+      hzToggleZone(el.getAttribute('data-id'));
+    } else if (action === 'hzDelete') {
+      hzDeleteZone(el.getAttribute('data-id'));
     } else if (action === 'toggleOutput') {
       // Resolve the current effective open state (tri-state → bool), then flip to
       // the explicit opposite so one click always toggles what the operator sees.

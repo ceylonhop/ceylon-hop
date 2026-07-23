@@ -1,6 +1,7 @@
 import { RATE_CARD, type RateCard, type Vehicle } from './rateCard';
 import type { Ride, LineItem } from './types';
 import { rideRawKm } from './types';
+import { winningZoneForStops, zoneAnnotation } from './hotZones';
 
 function bufferedKm(rawKm: number, rateCard: RateCard): number {
   const unclamped = Math.round(rawKm * (rateCard.bufferPct / 100));
@@ -25,14 +26,17 @@ export function legPriceCents(
   return Math.max(rateCard.floorCents[vehicle], perKm);
 }
 
+// perRideBoost: the hot-zone multiplier applied to each ride's per-km rate (1 = none), returned so
+// the engine can scale the COST basis by the SAME factor (D6 — the boost is a cost, not pure margin).
 export function quotePrivateLegs(
   legs: Ride[],
   vehicle: Vehicle,
   perKmCentsOverride?: number,
   rateCard: RateCard = RATE_CARD,
-): { lineItems: LineItem[]; subtotalCents: number; warnings: string[] } {
+): { lineItems: LineItem[]; subtotalCents: number; warnings: string[]; perRideBoost: number[] } {
   const lineItems: LineItem[] = [];
   const warnings: string[] = [];
+  const perRideBoost: number[] = [];
   let subtotalCents = 0;
   const floor = rateCard.floorCents[vehicle];
   const dollars = `$${rateCard.floorCents[vehicle] / 100}`;
@@ -41,8 +45,16 @@ export function quotePrivateLegs(
   for (const ride of legs) {
     const rawKm = rideRawKm(ride);
     const bKm = billableKm(rawKm, rateCard);
-    const amountCents = legPriceCents(bKm, vehicle, perKmCentsOverride, rateCard);
-    if (amountCents === floor && Math.round(bKm * rate) < floor) {
+    // Hot-zone boost: only when NOT a custom-priced tier (D11 — a hand-typed rate is authoritative).
+    // A ride touching a zone at any stop uses a boosted per-km rate (D1/D2); the floor still protects
+    // short hops (D6). At boost=1 every number below is byte-identical to the pre-hot-zones path.
+    const zone = perKmCentsOverride != null ? null : winningZoneForStops(ride.stops, rateCard.hotZones);
+    const boost = zone ? 1 + zone.boostPct / 100 : 1;
+    perRideBoost.push(boost);
+    const perKmCents = Math.round(bKm * rate * boost);
+    const amountCents = Math.max(floor, perKmCents);
+    // Floor warning uses the BOOSTED per-km amount, or a boosted leg still over the floor misfires.
+    if (amountCents === floor && perKmCents < floor) {
       warnings.push(
         ride.stops.length === 2
           ? `${ride.stops[0]}→${ride.stops[1]} hit the ${dollars} ${vehicle} minimum` // byte-exact legacy form
@@ -54,8 +66,11 @@ export function quotePrivateLegs(
       meta.stops = ride.stops;
       meta.segmentKms = ride.segmentKms;
     }
+    // Founder-only annotation (D9): rides in meta, stripped for non-margin:view callers. Never a
+    // warning. Suppressed on a floored leg where the boost had no effect on the charged amount.
+    if (zone && amountCents !== floor) meta.hotZone = zoneAnnotation(zone);
     lineItems.push({ label: `${ride.stops.join(' → ')} (${vehicle})`, amountCents, meta });
     subtotalCents += amountCents;
   }
-  return { lineItems, subtotalCents, warnings };
+  return { lineItems, subtotalCents, warnings, perRideBoost };
 }
