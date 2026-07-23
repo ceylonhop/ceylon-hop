@@ -1819,11 +1819,6 @@ function anMoney(map){
   });
   return parts.length?parts.join(' · '):'$0';
 }
-function anRatio(r){
-  if(!r||!r.den)return '—';
-  if(r.den<5)return r.num+' of '+r.den; /* tiny samples must not masquerade as statistics */
-  return Math.round(100*r.num/r.den)+'%';
-}
 function anDelta(d){
   if(!d||d.prev===d.value&&d.prev===0)return '';
   const diff=d.value-d.prev;
@@ -1859,36 +1854,25 @@ function anHBars(items){
 function anChips(list,activeId,dataAttr){
   return list.map(c=>`<button class="qfilter ${c.id===activeId?'on':''}" data-${dataAttr}="${c.id}">${c.label}</button>`).join('');
 }
-function anStatCard(title,stat,unit){
-  const body=stat?`<div class="an-n">${Math.round(stat.median*10)/10}${unit}</div><div class="an-sub">median · p90 ${Math.round(stat.p90*10)/10}${unit} · n=${stat.n}</div>`:'<div class="an-n">—</div><div class="an-sub">no data yet</div>';
-  return `<div class="an-tile"><div class="an-l">${title}</div>${body}</div>`;
-}
 function anFunnelHtml(d){
   const t=d.tiles;
   let html='';
   if(d.truncated)html+=`<div class="an-banner">Large range — showing the most recent quotes only. Narrow the range for exact numbers.</div>`;
   html+=`<div class="an-tiles" data-testid="analytics-tiles">`+
+    anTile('Won value',anMoney(t.wonValue),'<div class="an-sub">quotes won in range</div>')+
+    anTile('Quoted value',anMoney(t.sentValue),'<div class="an-sub">sent to customers</div>')+
+    anTile('Avg quote size',anMoney(t.avgSentCents),'<div class="an-sub">per quote sent</div>')+
     anTile('Created',t.created.value,anDelta(t.created))+
     anTile('Sent',t.sent.value,anDelta(t.sent))+
     anTile('Won',t.won.value,anDelta(t.won))+
-    anTile('Lost',t.lost.value,anDelta(t.lost))+
-    anTile('Expired',t.expired.value,anDelta(t.expired))+
-    anTile('Win rate',anRatio(t.winRate),'<div class="an-sub">of decided</div>')+
-    anTile('Send rate',anRatio(t.sendRate),'<div class="an-sub">of created</div>')+
     anTile('Open pipeline',t.pipeline.count,`<div class="an-sub">${anMoney(t.pipeline.valueCents)} awaiting decision</div>`)+
-    anTile('In review',t.inReview.count,`<div class="an-sub">${anMoney(t.inReview.valueCents)} internal</div>`)+
   '</div>';
-  const fmax=Math.max(d.funnel.created,1);
   html+='<div class="an-grid">';
   html+=`<div class="an-card" data-testid="analytics-chart-created"><h3>Quotes per ${d.range.bucket}</h3><p class="an-cap">created (teal) · sent (amber) · won (green)</p>${anSvgBars(d.series,[{key:'created',color:'var(--go)'},{key:'sent',color:'var(--wait)'},{key:'won',color:'var(--ok)'}])}</div>`;
-  html+=`<div class="an-card"><h3>Cohort funnel</h3><p class="an-cap">of quotes created in this range</p>${anHBars([
-    {label:'Created',n:d.funnel.created},{label:'Sent',n:d.funnel.sent},{label:'Won',n:d.funnel.won},
-  ])}</div>`;
   html+=`<div class="an-card"><h3>Pipeline aging</h3><p class="an-cap">open sent quotes by days waiting — click to open the queue</p><div class="an-age">${d.aging.map(b=>
     `<button class="an-agebtn ${b.bucket==='15+'&&b.count?'warn':''}" data-anage="1"><div class="an-n">${b.count}</div><div class="an-l">${b.bucket} days</div><div class="an-l">${anMoney(b.valueCents)}</div></button>`
   ).join('')}</div></div>`;
   html+=`<div class="an-card"><h3>Lost reasons</h3><p class="an-cap">quotes lost in this range</p>${anHBars(d.lostReasons.map(r=>({label:r.reason||'(no reason recorded)',n:r.count,sub:anMoney(r.valueCents)})))}</div>`;
-  html+=`<div class="an-card"><h3>Cycle times</h3><p class="an-cap">how fast quotes move</p><div class="an-tiles" style="margin:0">${anStatCard('Draft → sent',d.cycles.draftToSentHours,'h')}${anStatCard('Sent → decided',d.cycles.sentToDecidedDays,'d')}</div></div>`;
   html+='</div>';
   return html;
 }
