@@ -420,6 +420,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-head-assign.mine { color: #0a7d78; background: #dff5f3; border-color: #bfe9e5; }
 .qv .ch-head-assign.none { color: var(--ink-faint); border-style: dashed; border-color: var(--cream-deep); }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
+/* Provenance footer — quiet created/updated-by line at the bottom-right of the builder. */
+.qv .ch-provenance { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line-soft); text-align: right; }
 .qv .ch-review-banner span { font-size: 12px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qv .ch-review-banner.tone-amber { background: #fdf3e0; border-color: #f6e3c0; color: #7a4f0c; }
 .qv .ch-review-banner.tone-teal { background: #dff5f3; border-color: #bfe9e5; color: #0a6f6a; }
@@ -844,13 +846,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
 /* second thin line: add-ons chip row (always present on point-to-point driving legs) */
-.qv .ch-leg-addonrow { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; align-items: center; gap: 16px; }
+/* Leg tools — ONE quiet utility row at the card's foot (replaces the two stacked text
+   lines). Every control is the same ghost chip: dashed border = "adds something" (the
+   same grammar as the + Add leg pill), solidifying on hover. The route chip right-aligns
+   as a state readout — picked reads as a set decision, not another add. */
+.qv .ch-leg-tools { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
+.qv .ch-tool-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--cream-deep); background: transparent; color: var(--muted); border-radius: 999px; padding: 3.5px 11px; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .1s ease; }
+.qv .ch-tool-chip:hover { color: var(--ink); border-color: var(--line); border-style: solid; background: var(--surface); }
+.qv .ch-tool-chip:active { transform: translateY(1px); }
+.qv .ch-tool-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.qv .ch-tool-chip.route { margin-left: auto; }
+.qv .ch-tool-chip.route.picked { border-style: solid; border-color: var(--line); background: var(--surface); color: var(--ink-soft); }
+.qv .ch-tool-chip.route.picked:hover { border-color: var(--blue); color: var(--blue-d); }
+.qv .ch-tool-caret { font-size: 9px; opacity: .6; }
 /* empty state: a quiet inline text action, not an orphaned button */
-.qv .ch-addon-add { border: none; background: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; padding: 0; }
-.qv .ch-addon-add:hover { color: var(--orange); text-decoration: underline; text-underline-offset: 2px; }
+/* active add-ons keep the orange pill, sized to sit flush with its sibling tool chips */
 /* active state: a solid pill naming the fees */
-.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3.5px 11px; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: border-color .15s ease; }
 .qv .ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
+.qv .ch-addon-chip.on:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
 .qv .ch-dist-time { color: var(--muted); font-weight: 400; margin-left: 5px; padding-left: 6px; border-left: 1px solid currentColor; opacity: .55; }
 
 /* second thin line: add-on toggles (only when the popover is open) */
@@ -889,10 +903,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .qv .ch-stops-multi .ch-leg-in:hover { border-color: var(--line); }
 .qv .ch-stops-multi .ch-leg-in:focus { background: var(--surface); }
 .qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 10px; min-height: 20px; }
-/* third thin line: stop-list controls (+ stop / and return) on driving legs */
-.qv .ch-stop-ctrls { padding: 0 12px 8px 44px; margin-top: -2px; display: flex; gap: 14px; align-items: center; }
-.qv .ch-stop-ctrls .ch-link { text-decoration: none; color: var(--muted); font-weight: 600; font-size: 11.5px; }
-.qv .ch-stop-ctrls .ch-link:hover { color: var(--blue-d); text-decoration: underline; text-underline-offset: 2px; }
+/* (stop-list + add-ons + route controls all live on the single .ch-leg-tools row above) */
 
 /* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
    keep From→To readable alongside the date/distance/action controls, drop the
@@ -1614,6 +1625,26 @@ function quoteRowHtml(q,hideAssignee){
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
+// Diff-render the quotes list (mirrors the builder's render() at #quoteRoot): patch #view
+// against the new tree with morphdom instead of swapping innerHTML. viewQuotes() runs 2–3
+// times per entry as async data lands — the initial paint, then /admin/quote/list, then the
+// staff names from /admin/ops/users — and a full innerHTML swap each time wiped and rebuilt
+// the whole list, the visible "reloads a few times" flicker. Now unchanged rows are left
+// untouched (keyed by quote id) so only what actually changed repaints; scroll survives too.
+function paintQuotesView(html){
+  const view=$('#view');
+  if(!view)return;
+  // childrenOnly keeps the #view element (and its id) intact; a route change (e.g. Bookings →
+  // Quotes) just leaves foreign children for morphdom to diff away on the first paint.
+  morphdom(view,'<div>'+html+'</div>',{
+    childrenOnly:true,
+    getNodeKey:function(node){
+      if(node.nodeType!==1)return undefined;
+      return (node.getAttribute&&node.getAttribute('data-qopen'))||node.id||undefined;
+    },
+    onBeforeElUpdated:function(fromEl,toEl){return !fromEl.isEqualNode(toEl);}, // skip unchanged subtrees
+  });
+}
 function viewQuotes(){
   $('#topbar').innerHTML='';
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
@@ -1630,10 +1661,10 @@ function viewQuotes(){
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
     </div>
     <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}</p>`;
-  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';$('#view').innerHTML=html;return;}
+  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';paintQuotesView(html);return;}
   if(!opsQuotes.length){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
-    $('#view').innerHTML=html;return;
+    paintQuotesView(html);return;
   }
   // Filter toggles (coarse status groups). Counts reflect the whole queue, not the section.
   html+='<div class="qfilters">'+QUEUE_FILTERS.map(f=>{
@@ -1668,7 +1699,7 @@ function viewQuotes(){
     </div>`;
   });
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
-  $('#view').innerHTML=html;
+  paintQuotesView(html);
 }
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
@@ -2209,6 +2240,9 @@ var _delegatesWired = false;
 
 // ── Cockpit overlay state ─────────────────────────────────────────────────────
 var ratesOpen = false;    // Rate Settings modal
+var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loaded yet)
+var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
+var hzBusy = false;       // a hot-zones write is in flight (disables the form)
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
@@ -3478,8 +3512,8 @@ function renderLegCard(leg, idx, total) {
     if (rcFrom && rcTo && leg.stops.length === 2 && leg.routeOptions) {
       var rcPicked = leg.routeVariant === 'no_tolls' ? 'Local road' : (leg.routeVariant === 'fastest' ? 'Expressway' : null);
       routeChipHtml = rcPicked
-        ? '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Route: ' + esc(rcPicked) + ' &#9662;</button>'
-        : '<button class="ch-link ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '">Compare routes</button>';
+        ? '<button class="ch-tool-chip route picked ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '" title="Change which road this ride takes">Route: ' + esc(rcPicked) + ' <span class="ch-tool-caret">&#9662;</span></button>'
+        : '<button class="ch-tool-chip route ch-route-chip" data-action="openRouteModal" data-leg="' + esc(leg.id) + '" title="Expressway vs local road — different price and time">&#8644; Compare routes</button>';
     }
   }
 
@@ -3489,7 +3523,7 @@ function renderLegCard(leg, idx, total) {
     ? '<div class="ch-leg-price">' + esc(legPrice) + '</div>'
     : '<div class="ch-leg-price empty">' + (isStay ? 'stay' : '—') + '</div>';
 
-  // Actions cluster (duplicate / remove only — add-ons now lives on the second line)
+  // Actions cluster (duplicate / remove only — add-ons live on the tools row below)
   var actions = [
     '<div class="ch-leg-actions">',
     '  <button class="ch-mini-btn" title="Duplicate" data-action="dupLeg" data-leg="' + esc(leg.id) + '">&#10697;</button>',
@@ -3497,38 +3531,32 @@ function renderLegCard(leg, idx, total) {
     '</div>',
   ].join('');
 
-  // Stop-list controls (thin line, driving legs only): "+ stop" inserts a new empty stop
-  // BEFORE the last one; "and return" appends a copy of stops[0] (pure sugar — rendered
-  // only while stops[0] is set and the ride doesn't already end back there). Both are
-  // hidden at the 8-stop wire cap.
-  var stopCtrls = '';
+  // Leg tools — ONE row of matching ghost chips at the card's foot (was two stacked
+  // text lines whose labels ran together as "+ stop and return"). Left group edits the
+  // ride: "+ Stop" inserts a new empty stop BEFORE the last one; "Return to start"
+  // appends a copy of stops[0] (pure sugar — rendered only while stops[0] is set and
+  // the ride doesn't already end back there); both hidden at the 8-stop wire cap.
+  // "+ Fees" (point-to-point only) opens the add-ons tray — a solid orange pill names
+  // the active ones. The route chip right-aligns as the leg's one stateful readout.
+  var tools = [];
   if (!isStay) {
     var atStopCap = leg.stops.length >= 8;
     var rideStart = (leg.stops[0] || '').trim();
     var endsAtStart = !!rideStart && legTo(leg).trim() === rideStart;
-    var ctrls = [];
-    if (!atStopCap) ctrls.push('  <button class="ch-link" data-action="addStop" data-leg="' + esc(leg.id) + '">&#43; stop</button>');
-    if (!atStopCap && rideStart && !endsAtStart) ctrls.push('  <button class="ch-link" data-action="andReturn" data-leg="' + esc(leg.id) + '">and return</button>');
-    if (ctrls.length) stopCtrls = '<div class="ch-stop-ctrls">' + ctrls.join('') + '</div>';
+    if (!atStopCap) tools.push('<button class="ch-tool-chip" data-action="addStop" data-leg="' + esc(leg.id) + '" title="Add a stop along the way">&#43; Stop</button>');
+    if (!atStopCap && rideStart && !endsAtStart) tools.push('<button class="ch-tool-chip" data-action="andReturn" data-leg="' + esc(leg.id) + '" title="End the ride back where it starts">&#8617; Return to start</button>');
   }
-
-  // Add-ons chip (thin second line, point-to-point driving legs only). Shows a
-  // muted dashed "+ Add-ons" pill when none are active, or a solid orange-tinted
-  // pill naming the active ones — both open/close the same toggle popover.
   var activeAddonLabels = [];
   if (leg.addSightseeingFee) activeAddonLabels.push('Sightseeing');
   if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
   if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
-  var anyAddon = activeAddonLabels.length > 0;
-  var addonChipHtml = (!isChauffeur && !isStay)
-    ? (anyAddon
-      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">' + esc(activeAddonLabels.join(' · ')) + '</button>'
-      : '<button class="ch-addon-add" data-action="toggleAddons" data-leg="' + esc(leg.id) + '">&#43; Fees / add-ons</button>')
-    : '';
-  // Second line: fees/add-ons chip + the route chip share one quiet row under the leg.
-  var addonChipRow = (addonChipHtml || routeChipHtml)
-    ? '<div class="ch-leg-addonrow">' + addonChipHtml + routeChipHtml + '</div>'
-    : '';
+  if (!isChauffeur && !isStay) {
+    tools.push(activeAddonLabels.length
+      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Edit fees &amp; add-ons">' + esc(activeAddonLabels.join(' · ')) + '</button>'
+      : '<button class="ch-tool-chip" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Sightseeing, waiting, and safari-wait fees">&#43; Fees</button>');
+  }
+  if (routeChipHtml) tools.push(routeChipHtml);
+  var toolsRow = tools.length ? '<div class="ch-leg-tools">' + tools.join('') + '</div>' : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -3557,8 +3585,7 @@ function renderLegCard(leg, idx, total) {
     actions,
     '  </div>',
     (isMulti ? '<div class="ch-leg-stoplist">' + routeHtml + '</div>' : ''),
-    stopCtrls,
-    addonChipRow,
+    toolsRow,
     addonLine,
     '</div>',
   ].join('');
@@ -3658,6 +3685,135 @@ function renderRateCardBody() {
   ].join('');
 
   return '<div class="ch-rate-grid">' + leftCol + rightCol + '</div>';
+}
+
+// ── Hot zones admin (spec 2026-07-22) — founder-only pricing lever inside Rate Settings. ──
+// A premium-town list: a quoted trip touching a listed town is boosted by its %. Editable here
+// (unlike the read-only rate card above); zones affect OPS quotes now (the website is a later
+// release). The whole app re-renders by innerHTML swap, so the form inputs are UNCONTROLLED —
+// their values are read from the DOM only at submit time (hzSubmit), never bound per keystroke,
+// which sidesteps the focus-wipe-on-render problem entirely.
+var hotZonesOff = false; // mirror of HOT_ZONES_DISABLED from the server (kill switch banner)
+
+async function loadHotZones() {
+  try {
+    var r = await api('/admin/quote/zones');
+    if (!r.ok) return; // 403 handled by api(); leave list as-is
+    var d = await jsonOrNull(r);
+    hotZones = (d && d.zones) ? d.zones : [];
+    hotZonesOff = !!(d && d.disabled);
+    render();
+  } catch (e) { /* leave prior state; a transient failure just shows the last list */ }
+}
+
+// Create or update a zone from the (uncontrolled) form inputs, read at click time. Boost > 20%
+// asks for confirmation (spec D4/R3) — a high premium should feel deliberate, not routine.
+async function hzSubmitZone() {
+  var placeEl = document.getElementById('hz-place');
+  var boostEl = document.getElementById('hz-boost');
+  var activeEl = document.getElementById('hz-active');
+  if (!placeEl || !boostEl) return;
+  var placeName = (placeEl.value || '').trim();
+  var boostPct = parseInt(boostEl.value, 10);
+  var active = activeEl ? !!activeEl.checked : true;
+  if (!placeName) { showToast('Enter a town name'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%'); return; }
+  if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
+  hzBusy = true; render();
+  try {
+    var path = hzEditId ? '/admin/quote/zones/' + hzEditId : '/admin/quote/zones';
+    var method = hzEditId ? 'PATCH' : 'POST';
+    var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
+    hzBusy = false;
+    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed')); render(); return; }
+    hzEditId = null;
+    showToast('Zone saved');
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Save failed'); render(); }
+}
+
+async function hzToggleZone(id) {
+  var z = (hotZones || []).find(function(x) { return x.id === id; });
+  if (!z) return;
+  hzBusy = true; render();
+  try {
+    var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
+    hzBusy = false;
+    if (!r.ok) { showToast('Update failed'); render(); return; }
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Update failed'); render(); }
+}
+
+async function hzDeleteZone(id) {
+  var z = (hotZones || []).find(function(x) { return x.id === id; });
+  if (z && !window.confirm('Delete the ' + z.placeName + ' hot zone?')) return;
+  hzBusy = true; render();
+  try {
+    var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
+    hzBusy = false;
+    if (!r.ok) { showToast('Delete failed'); render(); return; }
+    if (hzEditId === id) hzEditId = null;
+    showToast('Zone deleted');
+    await loadHotZones();
+  } catch (e) { hzBusy = false; showToast('Delete failed'); render(); }
+}
+
+function renderHotZonesPanel() {
+  if (!viewerCan('margin:view')) return ''; // founder-only (defence-in-depth; the button is gated too)
+  var rows = '';
+  if (hotZones === null) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Loading zones…</div>';
+  } else if (hotZones.length === 0) {
+    rows = '<div style="color:var(--muted);font-size:13px;padding:8px 0">No hot zones yet. Add a town below to boost every quote that touches it.</div>';
+  } else {
+    rows = hotZones.map(function(z) {
+      var hot = z.boostPct > 20;
+      var pill = z.active
+        ? '<span class="ch-badge tone-teal">active</span>'
+        : '<span class="ch-badge tone-slate">paused</span>';
+      return '<div class="ch-hz-row" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)">'
+        + '<div style="flex:1;min-width:0"><b>' + esc(z.placeName) + '</b> '
+        + '<span style="color:' + (hot ? 'var(--danger,#c0392b)' : 'var(--muted-2)') + '">+' + esc(String(z.boostPct)) + '%</span>'
+        + (hot ? ' <span title="Above 20% is unusually high">&#9888;</span>' : '') + '</div>'
+        + pill
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzEditStart" data-id="' + esc(z.id) + '">Edit</button>'
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzToggleActive" data-id="' + esc(z.id) + '">' + (z.active ? 'Pause' : 'Resume') + '</button>'
+        + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="hzDelete" data-id="' + esc(z.id) + '">Delete</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  var editing = hzEditId ? (hotZones || []).find(function(z) { return z.id === hzEditId; }) : null;
+  var placeVal = editing ? esc(editing.placeName) : '';
+  var boostVal = editing ? esc(String(editing.boostPct)) : '';
+  var activeChecked = editing ? (editing.active ? ' checked' : '') : ' checked';
+  var dis = hzBusy ? ' disabled' : '';
+
+  var banner = hotZonesOff
+    ? '<div class="ch-lock-note" style="border-color:var(--danger,#c0392b)">&#9888; Hot zones are PAUSED globally (HOT_ZONES_DISABLED). Quotes ignore every zone until this env flag is cleared.</div>'
+    : '';
+
+  var form = '<div class="ch-hz-form" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">'
+    + '<div style="font-weight:600;margin-bottom:8px">' + (editing ? 'Edit zone' : 'Add a zone') + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    + '<label style="flex:2;min-width:160px;font-size:12px;color:var(--muted)">Town<br>'
+    + '<input id="hz-place" class="ch-input" style="width:100%" placeholder="e.g. Ella" value="' + placeVal + '"' + dis + '></label>'
+    + '<label style="flex:1;min-width:90px;font-size:12px;color:var(--muted)">Boost %<br>'
+    + '<input id="hz-boost" class="ch-input" style="width:100%" type="number" min="0" max="100" step="1" placeholder="15" value="' + boostVal + '"' + dis + '></label>'
+    + '<label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;padding-bottom:8px"><input id="hz-active" type="checkbox"' + activeChecked + dis + '> Active</label>'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="hzSubmit"' + dis + '>' + (editing ? 'Save' : 'Add zone') + '</button>'
+    + (editing ? '<button class="ch-btn ch-btn-outline ch-btn-sm" data-action="hzEditCancel"' + dis + '>Cancel</button>' : '')
+    + '</div>'
+    + '<div style="font-size:11px;color:var(--muted-2);margin-top:6px">Match is by town name, as it appears in the quote tool (e.g. Ella, Galle, Sigiriya / Dambulla). A premium above 20% will ask you to confirm.</div>'
+    + '</div>';
+
+  return '<div class="ch-hz-panel" style="margin-top:20px">'
+    + '<h3 style="margin:0 0 4px;font-size:15px">Hot zones</h3>'
+    + '<div class="ch-lock-note">Premium towns. A quote that touches one is boosted by its %. Affects ops quotes now; the website updates on the next deploy.</div>'
+    + banner
+    + rows
+    + form
+    + '</div>';
 }
 
 // ── Service chooser = money-pane head (R1) ───────────────────────────────────
@@ -4708,15 +4864,17 @@ function renderHeaderAssign() {
     + ' aria-label="Assign this quote" title="Assign this quote — click to reassign">' + opts.join('') + '</select>';
 }
 
-// Provenance — a quiet created/updated-by line above the editor. The interactive assignee moved to
-// the header (renderHeaderAssign); this is the read-only audit that used to sit beside it.
+// Provenance — a quiet created/updated-by footer pinned to the bottom-right of the builder.
+// Names the person (userLabel maps the email to their display name, e.g. 'Roshen W.'), keeping
+// the full email on hover. The interactive assignee lives in the header (renderHeaderAssign).
 function renderAssignStrip() {
   if (!state.savedId) return '';
+  function who(email) { return '<span title="' + esc(email) + '">' + esc(userLabel(email)) + '</span>'; }
   var audit = [];
-  if (state.createdBy) audit.push('Created by ' + esc(state.createdBy));
-  if (state.updatedBy) audit.push('last updated by ' + esc(state.updatedBy));
+  if (state.createdBy) audit.push('Created by ' + who(state.createdBy));
+  if (state.updatedBy) audit.push('last updated by ' + who(state.updatedBy));
   if (!audit.length) return '';
-  return '<div class="ch-assign"><span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span></div>';
+  return '<div class="ch-provenance"><span class="ch-assign-audit">' + audit.join(' &middot; ') + '</span></div>';
 }
 
 // Hand the quote to someone (or nobody). The server validates the assignee against OPS_USERS
@@ -4905,7 +5063,6 @@ function render() {
       '      </div>',
     ].join('') : ''),
     renderReviewBanner(),
-    renderAssignStrip(),
 
     // Customer strip (one compact row)
     '      <div class="ch-cust-strip">',
@@ -5055,6 +5212,7 @@ function render() {
     '    </div>', // ch-money
 
     '  </div>', // ch-cockpit
+    renderAssignStrip(), // provenance footer, bottom-right of the builder
     '</div>', // ch-container
 
     // (The recent-quotes drawer was retired — the ops-shell queue is the quote list now.)
@@ -5074,6 +5232,7 @@ function render() {
       '    <div class="ch-modal-body">',
       '      <div class="ch-lock-note">Rates are fetched from the server and shown read-only. The engine is authoritative — changes must be deployed server-side.</div>',
       renderRateCardBody(),
+      renderHotZonesPanel(),
       '    </div>',
       '  </div>',
       '</div>',
@@ -5439,10 +5598,25 @@ function attachEventListeners() {
     } else if (action === 'openRates') {
       if (!viewerCan('margin:view')) return; // founder-only rate card
       ratesOpen = true;
+      hzEditId = null;
+      loadHotZones(); // async: fetches the zone list, then re-renders the panel in place
       render();
     } else if (action === 'closeRates') {
       ratesOpen = false;
+      hzEditId = null;
       render();
+    } else if (action === 'hzSubmit') {
+      hzSubmitZone();
+    } else if (action === 'hzEditStart') {
+      hzEditId = el.getAttribute('data-id');
+      render();
+    } else if (action === 'hzEditCancel') {
+      hzEditId = null;
+      render();
+    } else if (action === 'hzToggleActive') {
+      hzToggleZone(el.getAttribute('data-id'));
+    } else if (action === 'hzDelete') {
+      hzDeleteZone(el.getAttribute('data-id'));
     } else if (action === 'toggleOutput') {
       // Resolve the current effective open state (tri-state → bool), then flip to
       // the explicit opposite so one click always toggles what the operator sees.
