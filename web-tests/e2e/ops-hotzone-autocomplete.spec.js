@@ -76,3 +76,42 @@ test('hot-zone picker dismisses on Escape and short queries do not open it', asy
   await page.keyboard.press('Escape');
   await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
 });
+
+// Owner report 2026-07-23: the Add-a-zone fields rendered as bare placeholder text — in this
+// design system .ch-input is deliberately borderless (the visible box lives on .ch-input-wrap),
+// and the original hot-zone form used naked inputs. The #122 composer redesign fixed that;
+// this pins its affordance contract so a refactor can't regress to naked inputs: both fields
+// sit inside a wrap that draws a real border, and the town menu anchors to a positioned
+// ancestor of the field (.ch-hz-acwrap — flush under the bordered box, clear of the label).
+test('hot-zone town and boost fields look like fields (visible input box)', async ({ page }) => {
+  await stubOps(page, ['Ella']);
+  await openHotZones(page);
+
+  for (const id of ['#hz-place', '#hz-boost']) {
+    const box = await page.locator(id).evaluate((el) => {
+      const wrap = el.closest('.ch-input-wrap');
+      if (!wrap) return { wrapped: false };
+      const cs = getComputedStyle(wrap);
+      return {
+        wrapped: true,
+        borderPx: parseFloat(cs.borderTopWidth) || 0,
+        borderStyle: cs.borderTopStyle,
+      };
+    });
+    expect(box.wrapped, id + ' sits inside a .ch-input-wrap').toBe(true);
+    expect(box.borderStyle).toBe('solid');
+    expect(box.borderPx).toBeGreaterThan(0);
+  }
+
+  // The dropdown hangs off the field: its parent is position:relative and contains the
+  // town input, so the menu opens under the bordered box wherever the markup nests it.
+  await page.locator('#hz-place').click();
+  await page.keyboard.type('Ell', { delay: 40 });
+  const menu = page.locator('.ch-ac-menu').first();
+  await expect(menu).toBeVisible({ timeout: 5000 });
+  const anchored = await menu.evaluate((m) => {
+    const p = m.parentElement;
+    return !!p.querySelector('#hz-place') && getComputedStyle(p).position === 'relative';
+  });
+  expect(anchored, 'menu anchored to a positioned ancestor of the town field').toBe(true);
+});
