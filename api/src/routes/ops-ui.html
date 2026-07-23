@@ -1614,6 +1614,26 @@ function quoteRowHtml(q,hideAssignee){
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
+// Diff-render the quotes list (mirrors the builder's render() at #quoteRoot): patch #view
+// against the new tree with morphdom instead of swapping innerHTML. viewQuotes() runs 2–3
+// times per entry as async data lands — the initial paint, then /admin/quote/list, then the
+// staff names from /admin/ops/users — and a full innerHTML swap each time wiped and rebuilt
+// the whole list, the visible "reloads a few times" flicker. Now unchanged rows are left
+// untouched (keyed by quote id) so only what actually changed repaints; scroll survives too.
+function paintQuotesView(html){
+  const view=$('#view');
+  if(!view)return;
+  // childrenOnly keeps the #view element (and its id) intact; a route change (e.g. Bookings →
+  // Quotes) just leaves foreign children for morphdom to diff away on the first paint.
+  morphdom(view,'<div>'+html+'</div>',{
+    childrenOnly:true,
+    getNodeKey:function(node){
+      if(node.nodeType!==1)return undefined;
+      return (node.getAttribute&&node.getAttribute('data-qopen'))||node.id||undefined;
+    },
+    onBeforeElUpdated:function(fromEl,toEl){return !fromEl.isEqualNode(toEl);}, // skip unchanged subtrees
+  });
+}
 function viewQuotes(){
   $('#topbar').innerHTML='';
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
@@ -1630,10 +1650,10 @@ function viewQuotes(){
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
     </div>
     <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}</p>`;
-  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';$('#view').innerHTML=html;return;}
+  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';paintQuotesView(html);return;}
   if(!opsQuotes.length){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
-    $('#view').innerHTML=html;return;
+    paintQuotesView(html);return;
   }
   // Filter toggles (coarse status groups). Counts reflect the whole queue, not the section.
   html+='<div class="qfilters">'+QUEUE_FILTERS.map(f=>{
@@ -1668,7 +1688,7 @@ function viewQuotes(){
     </div>`;
   });
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
-  $('#view').innerHTML=html;
+  paintQuotesView(html);
 }
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
