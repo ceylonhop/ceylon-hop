@@ -16,7 +16,7 @@ describe('quoteChauffeur', () => {
       vehicle: 'car', firstDate: '2026-11-02', lastDate: '2026-11-04',
       travelDays: travelDays.map(normalizeChauffeurDay),
     });
-    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 50, billableKm: 455 });
+    expect(r.meta).toEqual({ days: 3, idleDays: 1, travelKm: 375, idleKm: 50, billableKm: 455, boostedBillableKm: 455 });
     expect(r.subtotalCents).toBe(27629); // day 3×31.05=9315 + 455×40.25=18314; travel 165→180 and 210→225, idle 50 (car) unbuffered
   });
 
@@ -32,7 +32,7 @@ describe('quoteChauffeur', () => {
       vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: travelDays.map(normalizeChauffeurDay),
     });
-    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 200, billableKm: 1067 });
+    expect(r.meta).toEqual({ days: 9, idleDays: 4, travelKm: 800, idleKm: 200, billableKm: 1067, boostedBillableKm: 1067 });
     expect(r.subtotalCents).toBe(70892); // day 9×31.05=27945 + 1067×40.25=42947; travel legs buffer individually, idle 200 (car) unbuffered
   });
 

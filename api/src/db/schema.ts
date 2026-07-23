@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision } from 'drizzle-orm/pg-core';
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -248,4 +248,23 @@ export const quotes = pgTable('quotes', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+});
+
+// Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced
+// trip touches one (by name, per the D3 matching rules), its per-km rate is boosted by boost_pct.
+// place_name is a KNOWN_PLACES town (the match key). The optional lat/lng/radius_km trio is a geo
+// fallback for GPS pickups the names miss. created_by/updated_by are staff emails (pricing changes
+// are never anonymous), matching the audit pattern quotes gained in migration 0015.
+export const pricingZones = pgTable('pricing_zones', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  placeName: text('place_name').notNull(),
+  boostPct: integer('boost_pct').notNull(),
+  active: boolean('active').notNull().default(true),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  radiusKm: doublePrecision('radius_km'),
+  createdBy: text('created_by'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

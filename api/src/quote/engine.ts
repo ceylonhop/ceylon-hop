@@ -57,7 +57,10 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     subtotalCents += p.subtotalCents;
     protectedMinimumCents = rides.length * rateCard.floorCents[vehicle];
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
-    costCents += rides.reduce((s, r) => s + Math.round(billableKm(rideRawKm(r), rateCard) * costPerKm), 0);
+    // Cost scales by the SAME per-ride hot-zone boost as the sell rate (D6 — the premium is a real
+    // servicing cost, not pure margin), so reported margin keeps the standard markup on a zone trip.
+    // p.perRideBoost is 1 for every ride at zero zones ⇒ byte-identical to the pre-hot-zones cost.
+    costCents += rides.reduce((s, r, i) => s + Math.round(billableKm(rideRawKm(r), rateCard) * costPerKm * p.perRideBoost[i]), 0);
     if (req.extras?.length) {
       const e = priceExtras(req.extras, rateCard);
       lineItems.push(...e.lineItems);
@@ -83,8 +86,10 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     subtotalCents += c.subtotalCents;
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
     // Cost = day-rate cost (per day) + distance cost, so chauffeur margin reflects the real
-    // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too).
-    costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.billableKm * costPerKm);
+    // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too). The distance
+    // cost uses the boost-weighted km (D6/D10), so a zone day's cost rises with its sell charge;
+    // boostedBillableKm == billableKm at zero zones ⇒ byte-identical. Day-rate cost is NOT boosted.
+    costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.boostedBillableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
       // already covered by the day rate and must never be charged again.
