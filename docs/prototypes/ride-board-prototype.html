@@ -30,6 +30,7 @@
   --maxw:1200px;
 }
 *{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
 html{scroll-behavior:smooth}
 body{margin:0;font-family:var(--body);color:var(--ink);background:var(--cream);font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
 body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
@@ -390,6 +391,46 @@ body.detail-open .detail{display:block}
 .d-share .row{display:flex;gap:8px;justify-content:center}
 .d-share .btn{flex:1}
 .d-faq{margin-top:10px}
+/* ---- profile photos ---- */
+.avatar{overflow:visible}
+.avatar .ini{position:absolute;inset:0;display:grid;place-items:center;z-index:0}
+.avatar img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;z-index:1}
+.avatar .flag{z-index:2}
+.avatar.sm{width:38px;height:38px;font-size:.75rem}
+.avatar.xs{width:28px;height:28px;font-size:.6rem}
+.avatar.xs.stack{margin-left:-8px;border:2px solid var(--paper)}
+.d-person .avatar{width:58px;height:58px;font-size:1.05rem}
+/* ---- countdown urgency ---- */
+.countdown.urgent{color:var(--tomato)!important;font-weight:800}
+.countdown.urgent svg{color:var(--tomato)!important}
+/* ---- $0 cues ---- */
+.lprice .free{color:var(--teal-deep);font-weight:800}
+.zero-hero{display:flex;align-items:baseline;gap:.5rem;margin-bottom:3px}
+.zero-hero b{font-family:var(--display);font-weight:800;font-size:2.7rem;color:var(--teal-deep);line-height:.9}
+.zero-hero span{font-size:.9rem;font-weight:700;color:var(--ink-soft)}
+.zero-sub{font-size:.86rem;color:var(--ink-soft);margin-bottom:12px;line-height:1.45}
+.zero-sub b{color:var(--ink)}
+/* ---- departure time set ---- */
+.tset{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.tset.locked{font-size:1.05rem}.tset.locked b{color:var(--teal-deep)}
+.tset .tlbl{font-size:.82rem;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:10px}
+.topts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.topt{border:1.5px solid var(--line);border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.95rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.topt.lead{background:var(--pc-teal);border-color:rgba(10,185,182,.4);color:var(--teal-deep)}
+.tnote{font-size:.82rem;color:var(--ink-soft);line-height:1.5}
+/* ---- share: live OG card ---- */
+.share-live{font-size:.78rem;color:var(--ink-soft);margin:.75rem 0 0;line-height:1.45}
+.share-live b{color:var(--teal-deep)}
+.og-caption{font-size:.82rem;color:var(--ink-soft);margin:0 0 10px;line-height:1.5}
+.og-caption b{color:var(--ink)}
+.sc-top{position:relative}
+.sc-live{position:absolute;top:12px;right:13px;display:inline-flex;align-items:center;gap:.32rem;font-size:.58rem;font-weight:800;letter-spacing:.1em;color:var(--teal-deep);background:rgba(255,255,255,.72);border-radius:99px;padding:.18rem .48rem}
+.sc-live .d{width:6px;height:6px;border-radius:50%;background:var(--tomato);animation:pulse 1.4s infinite}
+.sc-faces{display:flex;margin:10px 0 0}
+.sc-faces .avatar{margin-left:-8px;border:2px solid #fff}
+.sc-faces .avatar:first-child{margin-left:0}
+.sc-host{display:flex;align-items:center;gap:.4rem;padding:2px 16px 12px;font-size:.76rem;color:var(--ink-soft);font-weight:600}
+.sc-host svg{width:14px;height:14px}
 .proto-note{position:fixed;top:84px;right:14px;z-index:80;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.62rem;letter-spacing:.08em;
   text-transform:uppercase;color:#9a9488;border:1px dashed currentColor;padding:.35rem .6rem;border-radius:6px;background:rgba(255,255,255,.7)}
 @media(max-width:700px){.proto-note{display:none}}
@@ -582,13 +623,17 @@ body.detail-open .detail{display:block}
         <h3 id="done-head">Your name's on the list.</h3>
         <p class="why-share" id="done-sub">1 more name and the van rolls.</p>
         <p class="why-share"><b>Now — who else is heading that way?</b> Drop the list in your hostel group chat or a travel group. That's how lists fill.</p>
+        <p class="og-caption">This is what your link unfurls to on WhatsApp &amp; Facebook — <b>it always shows the live count</b>, even after it locks:</p>
         <div class="share-card">
           <div class="sc-top">
+            <span class="sc-live"><span class="d"></span>LIVE</span>
             <div class="sc-route" id="sc-route">Ella → Mirissa</div>
             <div class="sc-meta" id="sc-meta">Sat 8 Aug · morning · 3 of 4 names up · ≈ $24 each</div>
+            <div class="sc-faces" id="sc-faces"></div>
             <div class="sc-dots" id="sc-dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></div>
           </div>
-          <div class="sc-txt"><b>Join my Ceylon Hop shared ride</b><span id="sc-msg">One seat left to make it run — $0 unless it happens. ceylonhop.com/board/EM-4821</span></div>
+          <div class="sc-txt"><b>Join my Ceylon Hop shared ride 🚐</b><span id="sc-msg">One seat left to make it run — $0 unless it happens.</span></div>
+          <div class="sc-host"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>ceylonhop.com</div>
         </div>
         <div class="share-btns">
           <a class="btn btn-wa" id="wa-share" target="_blank" rel="noopener">
@@ -624,6 +669,21 @@ const PLACES = {
   'galle':'Galle','weligama':'Weligama','mirissa':'Mirissa','kandy':'Kandy','nuwara-eliya':'Nuwara Eliya',
   'ella':'Ella','sigiriya':'Sigiriya','yala':'Yala','arugam-bay':'Arugam Bay'
 };
+/* predefined pick-up / drop-off points per city (from the live shared-taxi routes) */
+const POINTS = {
+  'cmb-airport':'Airport arrivals hall (CMB)','colombo':'Colombo — Fort / Galle Face','negombo':'Negombo — beach road',
+  'bentota':'Bentota — main junction','hikkaduwa':'Hikkaduwa — beach road','galle':'Galle — Fort clock tower',
+  'weligama':'Weligama — bay road','mirissa':'Mirissa — beach entrance','kandy':'Kandy — lake roundabout',
+  'nuwara-eliya':'Nuwara Eliya — town centre','ella':'Ella — main street (by the station)','sigiriya':'Sigiriya — Dambulla junction',
+  'yala':'Tissamaharama — town centre','arugam-bay':'Arugam Bay — main point'
+};
+/* departure windows — the group gathers on a slot; exact time is set when it locks */
+const SLOTS = {
+  morning:   {label:'morning',   range:'departs 7–9 am',  opts:['07:00','08:00','09:00']},
+  afternoon: {label:'afternoon', range:'departs 1–3 pm',  opts:['13:00','14:00','15:00']}
+};
+/* deterministic Google-style profile photo per name (pravatar; falls back to initials offline) */
+function photoFor(name){ let h = 0; for(const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 70) + 1; }
 const CORRIDORS = [
   {id:'airport-cultural',label:'Airport ↔ Cultural Triangle',seat:19,stops:['cmb-airport','colombo','negombo','sigiriya','kandy']},
   {id:'hill-line',label:'Kandy ↔ Hill Country',seat:21,stops:['kandy','nuwara-eliya','ella']},
@@ -633,30 +693,56 @@ const CORRIDORS = [
   {id:'ella-south',label:'Ella ↔ South coast',seat:24,stops:['ella','mirissa','weligama']}
 ];
 function pairCorridor(a, b){ return CORRIDORS.find(c => c.stops.includes(a) && c.stops.includes(b)); }
-const MIN = 4;
+const MIN = 4;   // names needed to lock the van
+const CAP = 6;   // seats in the van
 const AV = ['#0AB9B6','#63BFD6','#F9A429','#8f7ad6','#4aa66a','#d66a9c','#e0745f'];
 const LISTS = [
-  {id:'EM-4821',corridor:'ella-south',from:'ella',to:'mirissa',when:'Sat 8 Aug',time:'morning',deadline:'Thu 6pm',cost:24,
+  {id:'EM-4821',corridor:'ella-south',from:'ella',to:'mirissa',when:'Sat 8 Aug',slot:'morning',cutoffH:31,cost:24,
    names:[['Léa','🇫🇷'],['Tom','🇬🇧']], note:'surfboards welcome — van has racks'},
-  {id:'KE-3310',corridor:'hill-line',from:'kandy',to:'ella',when:'Thu 30 Jul',time:'8:00 am',deadline:'Tue noon',cost:21,
-   names:[['Mia','🇩🇪'],['Jake','🇦🇺'],['Sofia','🇮🇹']], hot:true},
-  {id:'CS-1177',corridor:'airport-cultural',from:'cmb-airport',to:'sigiriya',when:'Fri 31 Jul',time:'7:30 am',deadline:'—',cost:19,
-   names:[['Noah','🇳🇱'],['Emma','🇸🇪'],['Lucas','🇧🇷'],['Yuki','🇯🇵'],['Anna','🇵🇱']], confirmed:true},
-  {id:'GM-2054',corridor:'south-coast',from:'galle',to:'mirissa',when:'Sun 26 Jul',time:'9:00 am',deadline:'Fri 6pm',cost:14,
+  {id:'KE-3310',corridor:'hill-line',from:'kandy',to:'ella',when:'Thu 30 Jul',slot:'morning',cutoffH:8,cost:21,
+   names:[['Mia','🇩🇪'],['Jake','🇦🇺'],['Sofia','🇮🇹']]},
+  {id:'CS-1177',corridor:'airport-cultural',from:'cmb-airport',to:'sigiriya',when:'Fri 31 Jul',slot:'morning',cutoffH:9,cost:19,
+   names:[['Noah','🇳🇱'],['Emma','🇸🇪'],['Lucas','🇧🇷'],['Yuki','🇯🇵'],['Anna','🇵🇱']], confirmed:true, lockedTime:'07:30'},
+  {id:'GM-2054',corridor:'south-coast',from:'galle',to:'mirissa',when:'Sun 26 Jul',slot:'morning',cutoffH:40,cost:14,
    names:[['Sam','🇺🇸']], note:'cheapest hop on the board'},
-  {id:'EY-8832',corridor:'ella-east',from:'ella',to:'yala',when:'Mon 27 Jul',time:'early',deadline:'Sat 6pm',cost:23,
-   names:[['Chloe','🇨🇦'],['Marco','🇪🇸'],['Nina','🇩🇰']], hot:true, note:'safari crew'},
-  {id:'YG-6119',corridor:'yala-south',from:'yala',to:'galle',when:'Wed 5 Aug',time:'morning',deadline:'Mon noon',cost:16,
+  {id:'EY-8832',corridor:'ella-east',from:'ella',to:'yala',when:'Mon 27 Jul',slot:'morning',cutoffH:16,cost:23,
+   names:[['Chloe','🇨🇦'],['Marco','🇪🇸'],['Nina','🇩🇰']], note:'safari crew'},
+  {id:'YG-6119',corridor:'yala-south',from:'yala',to:'galle',when:'Wed 5 Aug',slot:'morning',cutoffH:70,cost:16,
    names:[['Ben','🇮🇪'],['Aria','🇳🇿']], note:'post-safari beach run'}
 ];
+/* real cut-off timestamps for the live countdown (browser clock) */
+LISTS.forEach(L => { L.cutoffMs = Date.now() + L.cutoffH * 3600e3; });
+function fmtLeft(ms){
+  const s = Math.max(0, ms - Date.now());
+  const h = Math.floor(s / 3600e3), m = Math.floor((s % 3600e3) / 60e3), sec = Math.floor((s % 60e3) / 1000);
+  if(h >= 24){ const d = Math.floor(h / 24); return `${d}d ${h % 24}h`; }
+  if(h >= 1) return `${h}h ${String(m).padStart(2,'0')}m`;
+  return `${m}m ${String(sec).padStart(2,'0')}s`;
+}
+const isUrgent = ms => (ms - Date.now()) < 3 * 3600e3;
+const cd = ms => `<span class="cd">closes in ${fmtLeft(ms)}</span>`;
+/* seat scarcity language — "N seats to lock it in" before it runs, "N seats left" after */
+function scarcity(L){
+  const need = Math.max(0, MIN - L.names.length);
+  const conf = L.confirmed || need === 0;
+  const left = CAP - L.names.length;
+  if(conf) return {cls:'pill-teal pill-dot', txt:`Locked in 🚐 · ${left} seat${left === 1 ? '' : 's'} left`};
+  if(need === 1) return {cls:'pill-tomato pill-dot pill-pulse', txt:'1 seat to lock it in — almost there'};
+  return {cls:'pill-saffron pill-dot', txt:`${need} seats to lock it in`};
+}
+function whenLine(L){
+  const s = SLOTS[L.slot] || SLOTS.morning;
+  return L.confirmed && L.lockedTime ? `${L.when} · departs ${L.lockedTime}` : `${L.when} · ${s.label} · ${s.range}`;
+}
 
 /* ============ board ============ */
 const grid = document.getElementById('board-grid');
 let filter = 'all';
 let io = null;
 
-function avatar(n, i, size){
-  return `<span class="avatar" style="background:${AV[i % AV.length]}">${n[0].slice(0,2).toUpperCase()}<span class="flag">${n[1]}</span></span>`;
+function avatar(n, i, cls){
+  const ini = n[0].slice(0, 2).toUpperCase();
+  return `<span class="avatar ${cls || ''}" style="background:${AV[i % AV.length]}"><span class="ini">${ini}</span><img src="https://i.pravatar.cc/120?img=${photoFor(n[0])}" alt="" loading="lazy" onerror="this.remove()"><span class="flag">${n[1]}</span></span>`;
 }
 function listRows(L){
   const rows = [];
@@ -672,7 +758,7 @@ function listRows(L){
   });
   if(over){
     const rest = L.names.slice(MIN - 1);
-    const stack = rest.slice(0, 3).map((n, i) => `<span class="avatar" style="background:${AV[(MIN - 1 + i) % AV.length]};width:26px;height:26px;font-size:.58rem;margin-left:${i ? '-8px' : '0'};border:2px solid var(--paper)">${n[0].slice(0,2).toUpperCase()}</span>`).join('');
+    const stack = rest.slice(0, 3).map((n, i) => avatar(n, (MIN - 1 + i), 'xs' + (i ? ' stack' : ''))).join('');
     rows.push(`<div class="lrow"><span class="num">${MIN}.</span><span style="display:flex;align-items:center">${stack}</span><span class="who" style="font-size:.85rem;color:var(--ink-soft)">+${rest.length} also riding</span></div>`);
   } else {
     for(let i = shown.length; i < MIN; i++){
@@ -695,30 +781,28 @@ function listRows(L){
 function card(L){
   const need = Math.max(0, MIN - L.names.length);
   const conf = L.confirmed || need === 0;
-  const seatsLeft = 6 - L.names.length;
+  const sc = scarcity(L);
   const dots = Array.from({length: MIN}, (_, i) => `<i class="${i < Math.min(L.names.length, MIN) ? 'f' : ''}"></i>`).join('');
-  const status = conf
-    ? `<span class="pill pill-teal pill-dot">Van locked in — ${seatsLeft} seat${seatsLeft === 1 ? '' : 's'} still open</span>`
-    : L.names.length === MIN - 1
-      ? `<span class="pill pill-tomato pill-dot pill-pulse">One name from running</span>`
-      : `<span class="pill pill-saffron pill-dot">Needs ${need} more name${need === 1 ? '' : 's'}</span>`;
+  const clock = conf
+    ? `<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>`
+    : `<span class="m countdown ${isUrgent(L.cutoffMs) ? 'urgent' : ''}" data-cut="${L.cutoffMs}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${cd(L.cutoffMs)}</span>`;
   return `<article class="lcard ${conf ? 'confirmed' : ''} reveal">
     ${conf ? `<span class="stamp ${L.justConfirmed ? 'play' : ''}"><b>It's on!</b>van locked</span>` : ''}
     <div class="lcard-top">
       <div class="lcard-route">${PLACES[L.from]} <span class="arr">→</span> ${PLACES[L.to]}</div>
       <div class="lcard-meta">
-        <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${L.when} · ${L.time}</span>
-        <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${conf ? 'locked ✓' : 'closes ' + L.deadline}</span>
+        <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${whenLine(L)}</span>
+        ${clock}
       </div>
       <div class="lcard-status">
-        ${status}
-        <span class="goal-dots">${dots}<span>runs at ${MIN}</span></span>
+        <span class="pill ${sc.cls}">${sc.txt}</span>
+        <span class="goal-dots">${dots}</span>
       </div>
     </div>
     <div class="tear"></div>
     <div class="lcard-list">${listRows(L)}</div>
     <div class="lcard-foot">
-      <div class="lprice">≈ <b>$${L.cost}</b> each<br>when it runs · $0 if not</div>
+      <div class="lprice">≈ <b>$${L.cost}</b> each · <span class="free">$0 to join</span></div>
       <button class="btn ${conf ? 'btn-ghost' : 'btn-primary'} btn-sm" data-view="${L.id}">${conf ? 'See ride · hop on' : 'See ride & join'}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
     </div>
@@ -772,19 +856,21 @@ function personEl(n, i){
 function renderDetail(L){
   const need = Math.max(0, MIN - L.names.length);
   const conf = L.confirmed || need === 0;
-  const seatsLeft = 6 - L.names.length;
   const slots = conf ? 0 : need;
   const youIn = L.names.some(n => n[0] === 'Roshen');
+  const sc = scarcity(L);
+  const s = SLOTS[L.slot] || SLOTS.morning;
   const people = L.names.map(personEl).join('') +
     Array.from({length: slots}, (_, i) => `<div class="d-person slot" data-detail-join><span class="circ">＋</span><span class="hand">${i === 0 && !youIn ? 'you?' : 'a friend?'}</span></div>`).join('');
   const dots = Array.from({length: MIN}, (_, i) => `<i class="${i < Math.min(L.names.length, MIN) ? 'f' : ''}"></i>`).join('');
-  const whoRow = L.names.slice(0, 5).map((n, i) => avatar(n, i)).join('') +
+  const whoRow = L.names.slice(0, 5).map((n, i) => avatar(n, i, 'sm')).join('') +
     (conf ? '' : Array.from({length: need}, () => `<span class="slotmini">·</span>`).join(''));
-  const status = conf
-    ? `<span class="pill pill-teal pill-dot">Van locked in — ${seatsLeft} seat${seatsLeft === 1 ? '' : 's'} still open</span>`
-    : need === 1
-      ? `<span class="pill pill-tomato pill-dot pill-pulse">One name from running</span>`
-      : `<span class="pill pill-saffron pill-dot">Needs ${need} more name${need === 1 ? '' : 's'}</span>`;
+  const clock = conf
+    ? 'departs ' + (L.lockedTime || '—')
+    : `<span class="countdown ${isUrgent(L.cutoffMs) ? 'urgent' : ''}" data-cut="${L.cutoffMs}">${cd(L.cutoffMs)}</span>`;
+  const timeChips = conf
+    ? `<span class="tset locked">Departure locked: <b>${L.lockedTime}</b></span>`
+    : `<div class="tset"><span class="tlbl">Likely departure — set when the van locks:</span><div class="topts">${s.opts.map((t, i) => `<span class="topt ${i === 1 ? 'lead' : ''}">${t}</span>`).join('')}</div><span class="tnote">Everyone's asked their preferred time when they join; the group's most popular wins.</span></div>`;
   detailInner.innerHTML = `
     <div class="d-head">
       <button class="d-back" id="d-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to the board</button>
@@ -793,35 +879,40 @@ function renderDetail(L){
       <div>
         <h1 class="d-title">${PLACES[L.from]} <span class="arr">→</span> ${PLACES[L.to]}</h1>
         <div class="d-meta">
-          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${L.when} · ${L.time}</span>
-          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${CORRIDOR_TIME[L.corridor]}</span>
-          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · max 6 travellers</span>
+          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${L.when} · ${s.label}</span>
+          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${clock}</span>
+          <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ${CAP} seats</span>
         </div>
-        ${status}
+        <span class="pill ${sc.cls}" style="margin-top:4px">${sc.txt}</span>
 
         <div class="d-block">
-          <h2>Who's in so far <span class="hand">— real names, real people</span></h2>
+          <h2>Who's in so far <span class="hand">— real travellers, verified</span></h2>
           <div class="d-people">${people}</div>
           ${L.note ? `<div class="d-note"><b>${L.names[0][0]} says:</b> "${L.note}"</div>` : ''}
+        </div>
+
+        <div class="d-block">
+          <h2>When it leaves</h2>
+          ${timeChips}
+        </div>
+
+        <div class="d-block">
+          <h2>Pickup &amp; drop-off</h2>
+          <div class="d-route">
+            <div class="rr-stop"><span class="rr-dot a"></span><div><b>Pickup — ${POINTS[L.from]}</b><p>Our set shared-ride pickup for ${PLACES[L.from]}. Staying within ~10 km? We can usually collect from your door — ask when you join.</p></div></div>
+            <div class="rr-stop"><span class="rr-dot b"></span><div><b>Drop-off — ${POINTS[L.to]}</b><p>Dropped right in ${PLACES[L.to]}, not a bus stand. ${CORRIDOR_TIME[L.corridor]} with a comfort stop on the way.</p></div></div>
+          </div>
         </div>
 
         <div class="d-block">
           <h2>How the money works</h2>
           <div class="tl">
             <div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-              <div><h4>Today — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before the deadline and the hold disappears.</p></div></div>
+              <div><h4>Now — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before it closes and the hold disappears.</p></div></div>
             <div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-              <div><h4>${L.deadline === '—' ? 'Deadline' : L.deadline} — the list closes</h4><p>If <b>4 names</b> are up, everyone is charged their share (≈ <b>$${L.cost}</b>) and the van is locked in. If not, <b>nobody pays</b> — you can go private and split that, or take the next shared ride.</p></div></div>
+              <div><h4>When the list closes</h4><p>The moment <b>${MIN} names</b> are up the van locks in and everyone's charged their share (≈ <b>$${L.cost}</b>). <b>If it never fills, you're never charged</b> — go private and split it, or take the next shared ride.</p></div></div>
             <div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>
-              <div><h4>${L.when} — the van rolls</h4><p>Licensed Ceylon Hop driver, door-to-door pickup near ${PLACES[L.from]}. Your driver's name and WhatsApp arrive by email the day before.</p></div></div>
-          </div>
-        </div>
-
-        <div class="d-block">
-          <h2>The route</h2>
-          <div class="d-route">
-            <div class="rr-stop"><span class="rr-dot a"></span><div><b>${PLACES[L.from]}</b><p>Door-to-door pickup — we collect everyone from their stay around ${PLACES[L.from]} (within ~10 km).</p></div></div>
-            <div class="rr-stop"><span class="rr-dot b"></span><div><b>${PLACES[L.to]}</b><p>Dropped at your door, not a bus stand. ${CORRIDOR_TIME[L.corridor]} with a comfort stop on the way.</p></div></div>
+              <div><h4>${L.when} — the van rolls</h4><p>Licensed Ceylon Hop driver from ${POINTS[L.from]}. Your driver's name and WhatsApp arrive by email the evening before.</p></div></div>
           </div>
         </div>
 
@@ -838,26 +929,27 @@ function renderDetail(L){
         <div class="d-block d-faq faq">
           <h2>Quick answers</h2>
           <details><summary>Can I cancel after adding my name?</summary><p>Yes — scratch off anytime <b>before the deadline</b>, no questions, hold released. After the list fills and everyone's charged, normal cancellation terms apply.</p></details>
-          <details><summary>Where exactly is the pickup?</summary><p>Door to door. After the ride locks, we collect everyone's stay locations over email/WhatsApp and plan the loop — you'll get a pickup window the evening before.</p></details>
+          <details><summary>Where exactly is the pickup?</summary><p>Our set shared-ride point for this city — <b>${POINTS[L.from]}</b>. If you're staying within ~10 km we can usually collect from your door instead; just ask when you join. You'll get the exact pickup time the evening before.</p></details>
           <details><summary>Luggage? Surfboards?</summary><p>A backpack + day bag each is always fine. Boards and bikes usually fit — mention it in a note and we'll confirm.</p></details>
         </div>
       </div>
 
       <aside class="d-join">
-        ${status}
-        <div class="price"><b>≈ $${L.cost}</b><span>each, when it runs</span></div>
-        <div class="sub"><b>$0 today.</b> Charged only if ${MIN} names are up by ${L.deadline === '—' ? 'the deadline' : L.deadline}.</div>
+        <div class="zero-hero"><b>$0</b><span>to add your name today</span></div>
+        <div class="zero-sub">You're only charged <b>≈ $${L.cost}</b> if the van locks in. Never a cent before.</div>
+        <span class="pill ${sc.cls}" style="margin:4px 0 2px">${sc.txt}</span>
         <div class="who-row">${whoRow}<span class="lbl">${L.names.length} of ${MIN} in</span></div>
-        <span class="goal-dots" style="margin-bottom:14px;display:inline-flex">${dots}<span>runs at ${MIN}</span></span>
-        <button class="btn btn-primary btn-block" data-detail-join style="margin-top:10px">${conf ? 'Hop on — seats open' : 'Add my name — $0 today'}</button>
+        <span class="goal-dots" style="margin-bottom:12px;display:inline-flex">${dots}<span>${conf ? 'locked' : 'locks at ' + MIN}</span></span>
+        <button class="btn btn-primary btn-block" data-detail-join>${conf ? 'Hop on — seats open' : 'Add my name — free'}</button>
         <p class="fine">Google sign-in · card held by PayHere, <b>never charged unless it runs</b> · scratch off anytime</p>
-        <div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${conf ? 'van locked ✓' : 'list closes ' + L.deadline}</div>
+        <div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${conf ? 'van locked ✓' : `<span class="countdown ${isUrgent(L.cutoffMs) ? 'urgent' : ''}" data-cut="${L.cutoffMs}">${cd(L.cutoffMs)}</span>`}</div>
         <div class="d-share">
           <span class="lbl">Know someone heading that way?</span>
           <div class="row">
             <a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(`shared van ${PLACES[L.from]} → ${PLACES[L.to]}, ${L.when} — ≈$${L.cost} each, $0 unless it runs: https://ceylonhop.com/board/${L.id}`)}">WhatsApp</a>
             <button class="btn btn-ghost btn-sm" data-copy="https://ceylonhop.com/board/${L.id}">Copy link</button>
           </div>
+          <p class="share-live">The link unfurls a live card — <b>always shows the current count</b>, even after it locks.</p>
         </div>
       </aside>
     </div>`;
@@ -939,7 +1031,7 @@ function openModal(id){
     ? (current.confirmed || current.names.length >= MIN ? 'Hop on this ride' : 'Add your name')
     : 'Start a list';
   document.getElementById('m-route').textContent = current
-    ? `${PLACES[current.from]} → ${PLACES[current.to]} · ${current.when} · ${current.time}`
+    ? `${PLACES[current.from]} → ${PLACES[current.to]} · ${current.when} · ${(SLOTS[current.slot] || SLOTS.morning).label}`
     : 'any route · any day · you set it';
   document.getElementById('m-cost').textContent = '$' + (current ? current.cost : (pairCorridor(cFrom.value, cTo.value) || {seat:21}).seat) + '.00';
   document.getElementById('m-deadline').textContent = current ? current.deadline : '48h before departure';
@@ -960,8 +1052,8 @@ document.getElementById('sign-btn').addEventListener('click', () => {
       id: (PLACES[cFrom.value][0] + PLACES[cTo.value][0]).toUpperCase() + '-' + (1000 + Math.floor(Math.random() * 9000)),
       corridor: c.id, from: cFrom.value, to: cTo.value,
       when: d.toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short'}),
-      time: cTime.querySelector('.sel').dataset.t,
-      deadline: '48h before', cost: c.seat, names: [],
+      slot: cTime.querySelector('.sel').dataset.t,
+      cutoffMs: Date.now() + 48 * 3600e3, cost: c.seat, names: [],
       note: cNote.value.trim() || null
     };
     LISTS.unshift(newList);
@@ -1002,17 +1094,19 @@ document.getElementById('sign-btn').addEventListener('click', () => {
 });
 function prepShare(need){
   const from = current ? PLACES[current.from] : 'Ella', to = current ? PLACES[current.to] : 'Kandy';
-  const when = current ? current.when + ' · ' + current.time : 'pick a day';
+  const s = current ? (SLOTS[current.slot] || SLOTS.morning).label : 'morning';
+  const when = current ? `${current.when} · ${s}` : 'pick a day';
   const cost = current ? current.cost : 21;
   const id = current ? current.id : 'NEW-' + Math.floor(Math.random() * 9000 + 1000);
   const url = 'https://ceylonhop.com/board/' + id;
   const n = current ? current.names.length : 1;
   document.getElementById('sc-route').textContent = `${from} → ${to}`;
-  document.getElementById('sc-meta').textContent = `${when} · ${n} of ${MIN} names up · ≈ $${cost} each`;
+  document.getElementById('sc-meta').textContent = `${when} · ${n} of ${MIN} in · ≈ $${cost} each`;
+  document.getElementById('sc-faces').innerHTML = (current ? current.names : [['Roshen','🇱🇰']]).slice(0, 5).map((nm, i) => avatar(nm, i, 'sm')).join('');
   document.getElementById('sc-dots').innerHTML = Array.from({length: MIN}, (_, i) => `<i class="${i < n ? 'f' : ''}"></i>`).join('');
-  document.getElementById('sc-msg').textContent = (need > 0
-    ? `${need} name${need > 1 ? 's' : ''} left to make it run — $0 unless it happens. `
-    : `Van's locked — seats still open. `) + url.replace('https://','');
+  document.getElementById('sc-msg').textContent = need > 0
+    ? `${need} seat${need > 1 ? 's' : ''} to lock it in — you pay $0 unless it runs.`
+    : `The van's locked in — seats still open.`;
   document.getElementById('share-url').value = url;
   const msg = encodeURIComponent(`hey — I put my name on a shared van list, ${from} → ${to}, ${when}. ≈$${cost} each, runs when ${need > 0 ? need + ' more sign' : 'you grab a seat'}, $0 if it doesn't happen. add your name: ${url}`);
   document.getElementById('wa-share').href = 'https://wa.me/?text=' + msg;
@@ -1043,7 +1137,7 @@ function drift(){
   av.firstChild.textContent = person[0].slice(0,2).toUpperCase();
   av.querySelector('.flag').textContent = person[1];
   document.getElementById('toast-name').innerHTML = `<b>${person[0]}</b> added their name`;
-  document.getElementById('toast-sub').textContent = `${PLACES[L.from]} → ${PLACES[L.to]} · ` + (need <= 0 ? 'that list just filled — van locked' : (need === 1 ? 'one line left' : need + ' lines still open'));
+  document.getElementById('toast-sub').textContent = `${PLACES[L.from]} → ${PLACES[L.to]} · ` + (need <= 0 ? 'that list just filled — van locked' : (need === 1 ? '1 seat to lock it in' : need + ' seats to lock it in'));
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 4200);
 }
@@ -1057,6 +1151,16 @@ function openFromHash(){
 }
 openFromHash();
 window.addEventListener('hashchange', openFromHash);
+
+/* live countdown ticker — updates every visible timer without re-rendering the board */
+setInterval(() => {
+  document.querySelectorAll('.countdown[data-cut]').forEach(el => {
+    const ms = +el.dataset.cut;
+    const t = el.querySelector('.cd');
+    if(t) t.textContent = 'closes in ' + fmtLeft(ms);
+    el.classList.toggle('urgent', isUrgent(ms));
+  });
+}, 1000);
 
 /* reveals */
 function observe(){
