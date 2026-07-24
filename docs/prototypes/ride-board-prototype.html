@@ -431,6 +431,18 @@ body.detail-open .detail{display:block}
 .sc-faces .avatar:first-child{margin-left:0}
 .sc-host{display:flex;align-items:center;gap:.4rem;padding:2px 16px 12px;font-size:.76rem;color:var(--ink-soft);font-weight:600}
 .sc-host svg{width:14px;height:14px}
+/* ---- Tripadvisor trust badge ---- */
+.ta{display:inline-flex;align-items:center;gap:.5rem;font-size:.85rem;font-weight:600;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:.42rem .9rem;transition:.15s;white-space:nowrap}
+.ta:hover{box-shadow:var(--shadow-s);transform:translateY(-1px)}
+.ta .owl{display:inline-flex;gap:2px}
+.ta .owl i{width:11px;height:11px;border-radius:50%;background:#00AA6C}
+.ta .owl i.h{background:#fff;box-shadow:inset 0 0 0 2.5px #00AA6C}
+.ta b{font-family:var(--body);font-weight:800;letter-spacing:-.01em}
+.ta .bubbles{display:inline-flex;gap:2.5px}
+.ta .bubbles i{width:13px;height:13px;border-radius:50%;background:#00AA6C}
+.ta .t{color:var(--ink-soft);font-weight:600}
+@media(max-width:520px){.ta .t{display:none}}
 .proto-note{position:fixed;top:84px;right:14px;z-index:80;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.62rem;letter-spacing:.08em;
   text-transform:uppercase;color:#9a9488;border:1px dashed currentColor;padding:.35rem .6rem;border-radius:6px;background:rgba(255,255,255,.7)}
 @media(max-width:700px){.proto-note{display:none}}
@@ -481,6 +493,7 @@ body.detail-open .detail{display:block}
       <p class="eyebrow">The ride board</p>
       <h1>Rides looking for people</h1>
       <p class="lead">Travellers post the ride they want · <b>4 names = we send a van</b> and everyone splits it.</p>
+      <div id="intro-ta" style="margin-top:16px"></div>
     </div>
     <span class="hand-note tomato intro-scribble">
       <svg class="hand-arrow" viewBox="0 0 40 30" fill="none"><path d="M36 4 C 26 22, 16 24, 4 22 M9 16 L4 22 L11 26" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -684,6 +697,10 @@ const SLOTS = {
 };
 /* deterministic Google-style profile photo per name (pravatar; falls back to initials offline) */
 function photoFor(name){ let h = 0; for(const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0; return (h % 70) + 1; }
+const TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
+function taBadge(caption){
+  return `<a class="ta" href="${TA_URL}" target="_blank" rel="noopener" title="Ceylon Hop on Tripadvisor"><span class="owl"><i></i><i class="h"></i></span><b>Tripadvisor</b><span class="bubbles"><i></i><i></i><i></i><i></i><i></i></span><span class="t">${caption || '5.0 · loved by travellers'}</span></a>`;
+}
 const CORRIDORS = [
   {id:'airport-cultural',label:'Airport ↔ Cultural Triangle',seat:19,stops:['cmb-airport','colombo','negombo','sigiriya','kandy']},
   {id:'hill-line',label:'Kandy ↔ Hill Country',seat:21,stops:['kandy','nuwara-eliya','ella']},
@@ -732,8 +749,10 @@ function scarcity(L){
 }
 function whenLine(L){
   const s = SLOTS[L.slot] || SLOTS.morning;
-  return L.confirmed && L.lockedTime ? `${L.when} · departs ${L.lockedTime}` : `${L.when} · ${s.label} · ${s.range}`;
+  return L.confirmed ? `${L.when} · departs ${L.lockedTime || s.opts[1]}` : `${L.when} · ${s.label} · ${s.range}`;
 }
+/* when a list locks, pin the departure to the group's popular time */
+function lockTime(L){ if(!L.lockedTime) L.lockedTime = (SLOTS[L.slot] || SLOTS.morning).opts[1]; }
 
 /* ============ board ============ */
 const grid = document.getElementById('board-grid');
@@ -844,6 +863,7 @@ filters.addEventListener('click', e => {
 });
 renderFilters();
 render();
+document.getElementById('intro-ta').innerHTML = taBadge('Rated 5.0 by 200+ travellers');
 
 /* ============ ride detail page ============ */
 const detailEl = document.getElementById('detail');
@@ -869,7 +889,7 @@ function renderDetail(L){
     ? 'departs ' + (L.lockedTime || '—')
     : `<span class="countdown ${isUrgent(L.cutoffMs) ? 'urgent' : ''}" data-cut="${L.cutoffMs}">${cd(L.cutoffMs)}</span>`;
   const timeChips = conf
-    ? `<span class="tset locked">Departure locked: <b>${L.lockedTime}</b></span>`
+    ? `<span class="tset locked">Departure locked: <b>${L.lockedTime || s.opts[1]}</b></span>`
     : `<div class="tset"><span class="tlbl">Likely departure — set when the van locks:</span><div class="topts">${s.opts.map((t, i) => `<span class="topt ${i === 1 ? 'lead' : ''}">${t}</span>`).join('')}</div><span class="tnote">Everyone's asked their preferred time when they join; the group's most popular wins.</span></div>`;
   detailInner.innerHTML = `
     <div class="d-head">
@@ -883,7 +903,10 @@ function renderDetail(L){
           <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>${clock}</span>
           <span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ${CAP} seats</span>
         </div>
-        <span class="pill ${sc.cls}" style="margin-top:4px">${sc.txt}</span>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">
+          <span class="pill ${sc.cls}">${sc.txt}</span>
+          ${taBadge('5.0 · 200+ real trips')}
+        </div>
 
         <div class="d-block">
           <h2>Who's in so far <span class="hand">— real travellers, verified</span></h2>
@@ -1064,7 +1087,7 @@ document.getElementById('sign-btn').addEventListener('click', () => {
     current.names.push(['Roshen','🇱🇰']);
     lineNo = current.names.length;
     need = Math.max(0, MIN - current.names.length);
-    if(need === 0 && !current.confirmed){ current.confirmed = true; current.justConfirmed = true; }
+    if(need === 0 && !current.confirmed){ current.confirmed = true; current.justConfirmed = true; lockTime(current); }
     render(); renderFilters();
     if(detailId === current.id) renderDetail(current);
   }
@@ -1129,7 +1152,7 @@ function drift(){
   const person = DRIFTERS[dI++ % DRIFTERS.length];
   L.names.push(person);
   const need = MIN - L.names.length;
-  if(need <= 0){ L.confirmed = true; L.justConfirmed = true; }
+  if(need <= 0){ L.confirmed = true; L.justConfirmed = true; lockTime(L); }
   render(); renderFilters();
   if(detailId === L.id) renderDetail(L);
   const av = document.getElementById('toast-av');
