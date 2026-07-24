@@ -122,7 +122,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
 
   /* ledger row — colour spine carries the stage; editorial type leads */
-  .tk{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:17px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 20px 16px 22px;margin-bottom:10px;transition:transform .17s cubic-bezier(.2,.7,.3,1),box-shadow .17s,border-color .17s;box-shadow:var(--shadow-s);cursor:pointer;overflow:hidden;animation:riseIn .44s cubic-bezier(.2,.7,.3,1) both}
+  .tk{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:17px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 20px 16px 22px;margin-bottom:10px;transition:transform .17s cubic-bezier(.2,.7,.3,1),box-shadow .17s,border-color .17s;box-shadow:var(--shadow-s);cursor:pointer;overflow:hidden;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
   .tk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--line));transition:width .17s}
   .tk:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--cream-deep)}
   .tk:hover::before{width:7px}
@@ -147,13 +147,14 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
   /* Quotes tab list rows — same card language as .tk, simpler single-line grid */
   .qlist{margin-top:6px}
-  .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .4s cubic-bezier(.2,.7,.3,1) both}
+  .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
   .qrow:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--cream-deep)}
   .qrow .qref{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);letter-spacing:0}
   .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
   .qrow:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+  .tk:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   /* Read-only status pill (queue rows) — status changes happen in the detail view */
   .qpill{display:inline-flex;align-items:center;gap:6px;font-size:.73rem;font-weight:700;letter-spacing:.01em;padding:4px 10px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
   .qpill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.9}
@@ -173,7 +174,17 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qage.tone-warn{color:#9a6410;background:#fdf3e0;border-color:#f6e3c0}    /* 1–6h — amber */
   .qage.tone-urgent{color:#b4231b;background:#fbe7e4;border-color:#f3ccc6}  /* 6h+ — red */
   .qage.tone-muted{color:#9aa2ad;background:transparent;border-color:transparent} /* sent/closed — faint */
-  @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}}
+  @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}.qrow .qstat{flex-wrap:wrap;justify-content:flex-end}}
+  /* Mobile: the rail is a 64px icon strip; expanding it opens a drawer OVER the content
+     (desktop's side-by-side split left ~38% of a phone to the rail). The existing
+     main-click/idle auto-collapse closes the drawer. */
+  @media(max-width:640px){
+    .app,.app.rail-collapsed{grid-template-columns:64px 1fr}
+    .app:not(.rail-collapsed) .rail{position:fixed;top:0;bottom:0;left:0;width:254px;z-index:70;box-shadow:var(--shadow-lg)}
+    .tk{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:13px 14px}
+    .tk-side{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left;gap:8px 10px;min-width:0}
+    .tk-right{flex:none}
+  }
   /* Queue head: title + "New quote" action */
   .qhead{display:flex;align-items:center;justify-content:space-between;gap:16px}
   .qnew{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border:0;border-radius:11px;padding:10px 16px;font-weight:700;font-size:.9rem;cursor:pointer;box-shadow:0 12px 26px -14px rgba(10,185,182,.8);transition:transform .15s,filter .15s}
@@ -315,6 +326,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
   /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
   .login{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:radial-gradient(135% 90% at 18% -10%,#241d18,#161210 62%);opacity:0;pointer-events:none;transition:opacity .5s cubic-bezier(.2,.7,.3,1)}
+  .login[hidden]{display:none} /* author display:grid beats the UA [hidden] rule without this */
   .login.show{opacity:1;pointer-events:auto}
   .login::before{content:"";position:absolute;inset:0;background:
     radial-gradient(60% 42% at 50% -6%,rgba(10,185,182,.22),transparent 66%),
@@ -340,7 +352,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .login .foot{margin-top:26px;font-size:.72rem;color:#6f6759;letter-spacing:.02em}
   .login-card.shake{animation:shake .42s cubic-bezier(.36,.07,.19,.97)}
 
-  @keyframes riseIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+  @keyframes riseIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   @keyframes nodepulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--c) 7%,transparent)}}
   @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -630,17 +642,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* place autocomplete */
 .qv .ch-ac { position: relative; }
 .qv .ch-tl-title-field .ch-ac { width: 100%; }
-.qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; right: 0; min-width: 230px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
+/* width:max-content lets the menu outgrow a narrow input (up to a cap) so a long place
+   name + source tag sit on ONE line instead of wrapping to three. */
+.qv .ch-ac-menu { position: absolute; top: calc(100% + 5px); left: 0; width: max-content; min-width: max(100%, 230px); max-width: min(340px, 86vw); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-pop); padding: 6px; z-index: 60; max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
 .qv .ch-ac-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); font-family: var(--sans); }
 .qv .ch-ac-item:hover, .qv .ch-ac-item.hi { background: var(--cream); }
 .qv .ch-ac-item.loading { cursor: default; color: var(--muted); }
 .qv .ch-ac-item.loading:hover { background: none; }
 .qv .ch-ac-pin { font-size: 13px; flex: none; opacity: .85; }
-.qv .ch-ac-name { font-weight: 400; color: var(--muted); }
+.qv .ch-ac-name { font-weight: 400; color: var(--muted); flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .qv .ch-ac-name b { font-weight: 700; color: var(--ink); }
 .qv .ch-ac-source { margin-left: auto; flex: none; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--teal-deep); }
 .qv .ch-ac-item.loading .ch-ac-source { color: var(--muted); }
-.qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: var(--surface); outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; }
+.qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: var(--surface); outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; text-overflow: ellipsis; }
 .qv .ch-tl-title:hover { border-color: var(--cream-d); }
 .qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
 .qv .ch-tl-title::placeholder { color: var(--muted-2); font-style: italic; font-weight: 600; }
@@ -1467,7 +1481,11 @@ async function loadQueue(){
 }
 
 /* Rail collapse: reclaims horizontal space while working; the choice persists per browser. */
-function railCollapsed(){try{return localStorage.getItem('ch_ops_rail')==='1';}catch(e){return false;}}
+function railCollapsed(){
+  try{const v=localStorage.getItem('ch_ops_rail');if(v!==null)return v==='1';}catch(e){}
+  /* No stored choice: default collapsed on phones, where the expanded rail is an overlay. */
+  return !!(window.matchMedia&&window.matchMedia('(max-width:640px)').matches);
+}
 function applyRailState(){
   const collapsed=railCollapsed();
   $('#approot').classList.toggle('rail-collapsed',collapsed);
@@ -1522,7 +1540,7 @@ function setNav(){
 
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
-  return `<div class="tk ${attn?'attn':''}" style="${stVars(t.stage)};animation-delay:${(i||0)*42}ms" data-act="open" data-id="${esc(t.id)}">
+  return `<div class="tk ${attn?'attn':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="Booking ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     <div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
@@ -1621,6 +1639,8 @@ const QUEUE_FILTERS=[
 let queueFilter='all';
 function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve'));}
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+// List surfaces show a glance value — whole dollars; detail views keep exact cents.
+function quoteUsdWhole(cents){return '$'+Math.round((cents||0)/100).toLocaleString('en-US');}
 // Age-since-request chip for the queue: how long a quote has waited, coloured to create urgency
 // to get it sent. Clock = the quote's created_at (from /admin/quote/list). Compact label: now/47m/3h/2d.
 function quoteAgeLabel(iso){
@@ -1698,11 +1718,11 @@ function unassignedChip(){
 // says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
 // would pass the array index in as hideAssignee.
 function quoteRowHtml(q,hideAssignee){
-  return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0">
+  return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
-    <span class="qtotal">${esc(quoteUsd(q.totalCents))}</span>
+    <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -2178,7 +2198,11 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{
   if(e.key!=='Enter'&&e.key!==' ')return;
   const row=e.target.closest('#view .qrow[data-qopen]');
-  if(row){e.preventDefault();openOpsQuote(row.dataset.qopen);}
+  if(row){e.preventDefault();openOpsQuote(row.dataset.qopen);return;}
+  /* Booking cards use the same role=button pattern; Enter/Space opens like a click
+     (the click delegation on [data-act] does the actual open). */
+  const card=e.target.closest('#view .tk[data-act="open"]');
+  if(card){e.preventDefault();card.click();}
 });
 
 /* ── D2: command palette (⌘K / Ctrl+K) ───────────────────────────────────── */
@@ -2285,8 +2309,21 @@ function avatarInitials(name,email){
   if(parts.length===1)return parts[0].slice(0,2).toUpperCase();
   return ((email||'').split('@')[0].slice(0,2)||'??').toUpperCase();
 }
-function showLogin(){$('#login').classList.add('show');$('#approot').hidden=true;}
-function hideLogin(){$('#login').classList.remove('show');$('#approot').hidden=false;armRailAutoCollapse();}
+/* The login layer must actually LEAVE the page once signed in (hidden + inert), not just
+   fade to opacity 0 behind the app — otherwise its form stays in the tab order and the
+   accessibility tree. `hidden` lands after the fade so the transition still plays. */
+function showLogin(){
+  const l=$('#login');
+  l.hidden=false;l.removeAttribute('inert');l.removeAttribute('aria-hidden');
+  requestAnimationFrame(()=>l.classList.add('show'));
+  $('#approot').hidden=true;
+}
+function hideLogin(){
+  const l=$('#login');
+  l.classList.remove('show');l.setAttribute('inert','');l.setAttribute('aria-hidden','true');
+  setTimeout(()=>{if(!l.classList.contains('show'))l.hidden=true;},520);
+  $('#approot').hidden=false;armRailAutoCollapse();
+}
 function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
@@ -3684,6 +3721,8 @@ function renderLegCard(leg, idx, total) {
       '  <div class="ch-leg-ac">',
       '    <input class="ch-leg-in ch-tl-title" type="text" placeholder="' + placeholder + '"',
       '      value="' + esc(leg.stops[i] || '') + '"',
+      // title = the committed value, so a name the input clips is still verifiable on hover
+      '      title="' + esc(leg.stops[i] || '') + '"',
       '      data-leg="' + esc(leg.id) + '" data-field="stop" data-stop="' + i + '" />',
       '  </div>',
     ].join('');
