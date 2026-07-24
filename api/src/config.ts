@@ -54,6 +54,10 @@ const Env = z.object({
   BOOKING_LINK_SECRET: z.string().default('dev-booking-link-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
+  // Ride Board customer session (first customer-facing auth) — signs the ch_cust cookie.
+  // A DEDICATED secret (not OPS_SESSION_SECRET) so a customer session can never be
+  // cross-replayed as a staff session. Set to a strong unique value at launch.
+  CUSTOMER_SESSION_SECRET: z.string().default('dev-customer-secret-change-me'),
   // M17 observability — all optional; every feature is dormant until its key is set.
   // ALERT_EMAIL: where ops alerts + the daily digest land (email-only channel, O1).
   ALERT_EMAIL: z.string().optional(),
@@ -68,6 +72,7 @@ const Env = z.object({
 // the repo mint a valid founder cookie. Fail CLOSED at boot; dev/test keep the default.
 const DEV_OPS_SECRET = 'dev-ops-secret-change-me';
 const DEV_BOOKING_SECRET = 'dev-booking-link-secret-change-me';
+const DEV_CUSTOMER_SECRET = 'dev-customer-secret-change-me';
 
 // Exported for tests: build (and validate) a config from an arbitrary env.
 export function buildConfig(env: Record<string, string | undefined>) {
@@ -84,6 +89,14 @@ export function buildConfig(env: Record<string, string | undefined>) {
     throw new Error(
       'BOOKING_LINK_SECRET must be set to a strong unique value in production ' +
         '(the default would let anyone forge a booking-view token and read customer PII) — refusing to boot',
+    );
+  }
+  // Same fail-closed guard for the customer-session secret: the default would let anyone
+  // forge a customer session cookie (add names to lists / scratch others' names).
+  if (cfg.NODE_ENV === 'production' && (!cfg.CUSTOMER_SESSION_SECRET || cfg.CUSTOMER_SESSION_SECRET === DEV_CUSTOMER_SECRET)) {
+    throw new Error(
+      'CUSTOMER_SESSION_SECRET must be set to a strong unique value in production ' +
+        '(the default would let anyone forge a customer session) — refusing to boot',
     );
   }
   return cfg;
