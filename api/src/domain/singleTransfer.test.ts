@@ -52,4 +52,31 @@ describe('SingleTransferInput', () => {
     expect(SingleTransferInput.safeParse({ ...valid, extras: ['luggage', 'front'] }).success).toBe(true);
     expect(SingleTransferInput.safeParse({ ...valid, extras: ['jetpack'] }).success).toBe(false);
   });
+
+  // The web booker emits phoneCountryCode/phoneNumber = "" (not undefined) when a customer types a
+  // "+"-prefixed number that matches no known dial code (e.g. "+0771…"). These fields are display-only
+  // (contact/checkout uses `whatsapp`), so an empty value must be treated as absent, not 400 the booking.
+  it('treats an empty phone country code/number as absent (no false 400 at the pay button)', () => {
+    const res = SingleTransferInput.safeParse({
+      ...valid,
+      customer: { ...valid.customer, phoneCountryCode: '', phoneNumber: '' },
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.customer.phoneCountryCode).toBeUndefined();
+      expect(res.data.customer.phoneNumber).toBeUndefined();
+    }
+  });
+
+  it('still accepts a present, non-empty phone country code + number', () => {
+    const res = SingleTransferInput.safeParse({
+      ...valid,
+      customer: { ...valid.customer, phoneCountryCode: '+94', phoneNumber: '771234567' },
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.customer.phoneCountryCode).toBe('+94');
+      expect(res.data.customer.phoneNumber).toBe('771234567');
+    }
+  });
 });
