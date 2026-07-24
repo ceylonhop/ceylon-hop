@@ -40,7 +40,7 @@ describe('runRideBoardCutoff', () => {
     expect(email.sent.filter((e) => /confirmed/i.test(e.subject))).toHaveLength(4);
   });
 
-  it('expires an under-filled list: nobody charged, everyone gets options', async () => {
+  it('calls off an under-filled list: nobody charged, everyone told', async () => {
     const repo = new InMemoryRideListRepo();
     const paygw = new FakeTokenizedPaymentAdapter();
     const email = new FakeEmailAdapter();
@@ -51,7 +51,7 @@ describe('runRideBoardCutoff', () => {
     expect(res).toMatchObject({ processed: 1, confirmed: 0, expired: 1, charged: 0 });
     expect((await repo.getByCode(list.code))?.list.status).toBe('expired');
     expect(paygw.charges).toHaveLength(0);
-    expect(email.sent.filter((e) => /didn't fill/i.test(e.subject))).toHaveLength(2);
+    expect(email.sent.filter((e) => /called off/i.test(e.subject))).toHaveLength(2);
   });
 
   it('still confirms when one card declines, and emails the at-risk traveller', async () => {

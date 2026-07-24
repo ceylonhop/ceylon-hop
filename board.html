@@ -435,8 +435,17 @@ body.detail-open .detail{display:block}
 .avatar.xs.stack{margin-left:-8px;border:2px solid var(--paper)}
 .d-person .avatar{width:58px;height:58px;font-size:1.05rem}
 /* ---- countdown urgency ---- */
-.countdown.urgent{color:var(--tomato)!important;font-weight:800}
-.countdown.urgent svg{color:var(--tomato)!important}
+/* countdown: tabular digits tick cleanly (no jitter); a quiet urgency gradient */
+.countdown .cd{font-variant-numeric:tabular-nums}
+.countdown.soon{color:#b9780a;font-weight:700}
+.countdown.soon svg{color:#b9780a}
+.countdown.urgent{color:var(--tomato);font-weight:700}
+.countdown.urgent svg{color:var(--tomato)}
+/* a small live "tick" dot — only in the final hour, gentle pulse (not pushy) */
+.countdown.urgent .cd::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;
+  background:currentColor;margin-right:.4rem;vertical-align:baseline;animation:cdtick 1.3s ease-in-out infinite}
+@keyframes cdtick{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:.3;transform:scale(.72)}}
+@media(prefers-reduced-motion:reduce){.countdown.urgent .cd::before{animation:none}}
 /* ---- $0 cues ---- */
 .lprice .free{color:var(--teal-deep);font-weight:800}
 .zero-hero{display:flex;align-items:baseline;gap:.5rem;margin-bottom:3px}
@@ -585,7 +594,7 @@ body.detail-open .detail{display:block}
       <h1>Share a ride. <em>Beat the bus.</em></h1>
       <p class="lead">Travellers heading the same way split an air-con van — a fraction of a private car, worlds nicer than a 7-hour bus. Add your name to a route below.</p>
       <div class="guarantee">
-        <span class="g-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><b>You travel either way</b> — if it doesn't fill, we put you in a private car or the next shared ride at the split price.</span>
+        <span class="g-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><b>$0 unless it runs</b> — if not enough travellers join by the cutoff, the ride's called off and your card is never charged. No risk to starting one.</span>
       </div>
       <div id="intro-ta" style="margin-top:16px"></div>
     </div>
@@ -621,7 +630,7 @@ body.detail-open .detail{display:block}
         </details>
         <details>
           <summary>What if the list doesn't fill?</summary>
-          <p>You choose: <b>upgrade to a private car</b> split between whoever signed, <b>move to the next scheduled shared ride</b>, or simply walk away. The hold disappears. You're never charged for a ride that didn't run.</p>
+          <p>If not enough travellers join by the cutoff (48h before departure), the ride is <b>called off</b> — the card hold is released and <b>you're never charged</b>. Nothing lost; start or join another list anytime.</p>
         </details>
         <details>
           <summary>Who's driving?</summary>
@@ -717,7 +726,7 @@ body.detail-open .detail{display:block}
         <div class="deal">
           <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           You pay $0 today</h4>
-          <p>We hold your card via PayHere. You're charged <b id="m-cost">$24.00</b> <b>only if this list reaches 4 names</b>. If it doesn't, <b>we move you to a private car or the next shared ride at the split price</b> — you travel either way, and the hold disappears if you'd rather not.</p>
+          <p>We hold your card via PayHere. You're charged <b id="m-cost">$24.00</b> <b>only if this list reaches 4 names</b> by the cutoff. If it doesn't, the <b>ride's called off</b>, the hold is released, and you pay nothing. Scratch your name off anytime before then.</p>
         </div>
         <div class="preftime">
           <span class="pref-lbl">Your preferred departure time?</span>

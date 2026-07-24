@@ -43,25 +43,21 @@ export async function sendRideConfirmed(
   });
 }
 
-export async function sendRideExpiredOptions(
+export async function sendRideCancelled(
   email: EmailAdapter,
   args: { to: string; firstName: string; list: RideList },
 ): Promise<void> {
   const { list } = args;
   await email.send({
     to: args.to,
-    subject: `Your ${route(list)} list didn't fill — here's how you still travel`,
+    subject: `Your ${route(list)} ride has been called off — you weren't charged`,
     html: shell(
-      `Not enough names this time — but you still travel`,
-      `<p>Hi ${args.firstName}, your <b>${route(list)}</b> list on ${list.date} didn't reach enough names by the cutoff, so <b>you were not charged</b>.</p>
-       <p>You travel either way — reply to pick one:</p>
-       <ul>
-         <li><b>Private car</b>, split between whoever's in.</li>
-         <li><b>The next scheduled shared ride</b> on this route.</li>
-         <li><b>Nothing</b> — walk away, the card hold is released.</li>
-       </ul>`,
+      `Not enough names this time`,
+      `<p>Hi ${args.firstName}, not enough travellers joined your <b>${route(list)}</b> ride on ${list.date} by the cutoff, so it's been <b>called off</b>.</p>
+       <p><b>You were not charged</b> — the card hold is released, nothing to do.</p>
+       <p>Plenty of other routes are gathering names — start or join another anytime. It's always $0 unless the ride runs.</p>`,
     ),
-    text: `Hi ${args.firstName}, your ${route(list)} list on ${list.date} didn't fill — you weren't charged. Options: private car (split), next scheduled shared ride, or walk away. Reply to choose.`,
+    text: `Hi ${args.firstName}, not enough travellers joined your ${route(list)} ride on ${list.date}, so it's been called off. You were not charged — the hold is released. Start or join another anytime; $0 unless it runs.`,
   });
 }
 

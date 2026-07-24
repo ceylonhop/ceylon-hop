@@ -2,7 +2,7 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { EmailAdapter } from '../adapters/email';
 import { committedSeats, popularTime, type Slot, type RideMember } from '../domain/rideList';
-import { sendRideConfirmed, sendRideExpiredOptions, sendRideAtRisk } from './rideBoardEmails';
+import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from './rideBoardEmails';
 
 // ============================================================================
 // Ride Board cutoff sweep — the pooled equivalent of sweepStaleSharedHolds.
@@ -10,7 +10,7 @@ import { sendRideConfirmed, sendRideExpiredOptions, sendRideAtRisk } from './rid
 // For each gathering list past its cutoff:
 //   • enough names  → pin the popular departure time, charge every held card,
 //     confirm, email everyone (at-risk email to any card that declined);
-//   • not enough    → expire, email the fallback-ladder options; nobody charged.
+//   • not enough    → the ride is called off; nobody charged, everyone emailed.
 // A confirmed/expired list no longer matches dueForCutoff, so it's naturally
 // idempotent (no notification_log needed).
 // ============================================================================
@@ -41,11 +41,11 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
     res.processed++;
     const held = members.filter((m) => m.status === 'held' || m.status === 'charged');
 
-    // Not enough names → expire; nobody is charged, everyone gets the options email.
+    // Not enough names by the cutoff → call the ride off; nobody is charged, everyone emailed.
     if (liveSeats(held) < list.minSeats) {
       await deps.rideLists.setStatus(list.id, 'expired');
       res.expired++;
-      for (const m of held) await sendRideExpiredOptions(deps.email, { to: m.email, firstName: m.firstName, list });
+      for (const m of held) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
       continue;
     }
 
@@ -84,13 +84,12 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
       for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
     } else {
-      // Rare: enough held, but charge failures dropped it below the threshold. Expire and
-      // offer the fallback. NOTE: any card already charged here needs a manual refund — the
-      // real-money path (owner-gated PayHere swap) must add auto-refund. Flagged in the
-      // go-live checklist.
+      // Rare: enough held, but charge failures dropped it below the threshold → call it off.
+      // NOTE: any card already charged here needs a manual refund — the real-money path
+      // (owner-gated PayHere swap) must add auto-refund. Flagged in the go-live checklist.
       await deps.rideLists.setStatus(list.id, 'expired');
       res.expired++;
-      for (const m of held) await sendRideExpiredOptions(deps.email, { to: m.email, firstName: m.firstName, list });
+      for (const m of held) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
     }
   }
 

@@ -34,7 +34,7 @@
     morning: { label: 'morning', range: 'departs 7–9 am', opts: ['07:00', '08:00', '09:00'] },
     afternoon: { label: 'afternoon', range: 'departs 1–3 pm', opts: ['13:00', '14:00', '15:00'] }
   };
-  // Private-car fare + rough bus time per corridor — for the "you travel either way" framing.
+  // Private-car fare + rough bus time per corridor — for the shared/private/bus price compare.
   var ALT = {
     'airport-cultural': { priv: 62, bus: '6h bus' }, 'hill-line': { priv: 68, bus: '7h bus + train' }, 'ella-east': { priv: 74, bus: '6h bus' },
     'south-coast': { priv: 45, bus: '2.5h bus' }, 'yala-south': { priv: 52, bus: '5h bus' }, 'ella-south': { priv: 78, bus: '7h bus' }
@@ -274,6 +274,16 @@
   /* ---------------- countdown helpers (impure wrappers) ---------------- */
   function remaining(cutoffMs) { return (cutoffMs || 0) - Date.now(); }
   function isUrgent(cutoffMs) { return isFinite(cutoffMs) && remaining(cutoffMs) < 3 * 3600000; }
+  // Quiet urgency gradient: 'soon' (closing within 6h) warms the tone; 'urgent' (final hour,
+  // where the clock ticks seconds) adds a gentle live pulse. Not pushy — just a countdown feel.
+  function cdClass(cutoffMs) {
+    if (!isFinite(cutoffMs)) return '';
+    var r = remaining(cutoffMs);
+    if (r <= 0) return '';
+    if (r < 3600000) return 'urgent';
+    if (r < 6 * 3600000) return 'soon';
+    return '';
+  }
   function cdHtml(cutoffMs) { return '<span class="cd">closes in ' + esc(fmtCountdown(remaining(cutoffMs))) + '</span>'; }
 
   /* ---------------- identity helpers ---------------- */
@@ -355,7 +365,7 @@
     }).join('');
     var clock = conf
       ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
-      : '<span class="m countdown ' + (isUrgent(L.cutoffMs) ? 'urgent' : '') + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
+      : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
     var starter = L.members[0];
     return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal">' +
       (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
@@ -394,7 +404,7 @@
     var empty = shown.length === 0
       ? '<div class="board-empty"><div class="plus">🗺️</div>' +
         '<h3>No lists match yet' + (state.filter.mine ? " — you haven't joined any" : '') + '.</h3>' +
-        '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and you travel either way.") + '</p>' +
+        '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
       : '';
     grid.innerHTML = shown.map(card).join('') + empty +
@@ -553,7 +563,7 @@
     var whoRow = L.members.slice(0, 5).map(function (m, i) { return avatar(m, i, 'sm'); }).join('') +
       (conf ? '' : Array.apply(null, { length: need }).map(function () { return '<span class="slotmini">·</span>'; }).join(''));
     var clock = conf ? 'departs ' + esc(L.lockedTime || '—')
-      : '<span class="countdown ' + (isUrgent(L.cutoffMs) ? 'urgent' : '') + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>';
+      : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>';
     var timeChips = conf
       ? '<span class="tset locked">Departure locked: <b>' + esc(L.lockedTime || s.opts[1]) + '</b></span>'
       : '<div class="tset"><span class="tlbl">Likely departure — set when the van locks:</span><div class="topts">' +
@@ -575,7 +585,7 @@
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · 200+ real trips') + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
-      '<div><b>You travel either way.</b> If four names come, you split this van cheap. If not, we move you into a private car or the next shared ride at the split price — <b>you\'re never left without a ride</b>, and never charged for one that doesn\'t happen.</div></div>' +
+      '<div><b>$0 unless it runs.</b> If four names come, you split this van — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
       (L.note ? '<div class="d-note"><b>' + esc(starterName) + ' says:</b> "' + esc(L.note) + '"</div>' : '') + '</div>' +
@@ -588,7 +598,7 @@
       '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
       '<div><h4>Now — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before it closes and the hold disappears.</p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
-      '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' names</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If it never fills, you\'re never charged</b> — go private and split it, or take the next shared ride.</p></div></div>' +
+      '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' names</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If not enough join by the cutoff, the ride\'s called off and you\'re never charged.</b></p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
       '<div><h4>' + esc(L.whenLabel) + ' — the van rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
       '</div></div>' +
@@ -618,7 +628,7 @@
           '<p class="fine">Google sign-in · card held by PayHere, <b>never charged unless it runs</b> · scratch off anytime</p>') +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
       '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-      (conf ? 'van locked ✓' : '<span class="countdown ' + (isUrgent(L.cutoffMs) ? 'urgent' : '') + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
+      (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
       '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
@@ -1057,7 +1067,9 @@
         var ms = +el.getAttribute('data-cut');
         var t = el.querySelector('.cd');
         if (t) t.textContent = 'closes in ' + fmtCountdown(remaining(ms));
-        el.classList.toggle('urgent', isUrgent(ms));
+        var c = cdClass(ms);
+        el.classList.toggle('soon', c === 'soon');
+        el.classList.toggle('urgent', c === 'urgent');
       });
     }, 1000);
   }
