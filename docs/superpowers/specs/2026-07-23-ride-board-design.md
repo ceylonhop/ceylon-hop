@@ -4,7 +4,7 @@
 **Date:** 2026-07-23 · **Updated:** 2026-07-24 (prototype reframe + build greenlight)
 **Prototype:** [`docs/prototypes/ride-board-prototype.html`](../../prototypes/ride-board-prototype.html) — fully interactive static prototype (no API), open directly in a browser. This spec now matches the prototype as built.
 
-> **2026-07-24 reframe (the important change).** Multi-angle critique found the mechanic fought traveller psychology: it reassured *money* anxiety ($0) while the real fear is *"will I have a ride?"*, and it competed with our own certain private-transfer product. The prototype was rebuilt to **lead with a guarantee, not a gamble**, positioned against the bus (net-new demand, not cannibalising private), with the operator doing the match-making. See §2 (Guarantee), §2 (Positioning), and the updated §6.
+> **2026-07-24 reframe (the important change).** Multi-angle critique found the mechanic fought traveller psychology: it reassured *money* anxiety ($0) while the real fear is *"will I have a ride?"*, and it competed with our own certain private-transfer product. The prototype was rebuilt to **lead with a zero-risk promise ("$0 unless it runs")**, positioned against the bus (net-new demand, not cannibalising private), with the operator doing the match-making. NB: a "you travel either way / convert to private" fallback was later REJECTED by the owner — see §2 (The promise). See also §2 (Positioning) and §6.
 
 ---
 
@@ -37,9 +37,11 @@ The Ride Board flips shared rides from **supply-first to demand-first**: travell
 - **Scratch-off:** free self-removal anytime before cutoff (releases the hold), surfaced as a real control on the ride page when you're on a list.
 - **Identity:** customer Google sign-in (first customer-facing auth). Public display is **first name + country flag + Google profile photo** only — never email/phone (initials fallback when no photo / opted out).
 
-### The Guarantee — lead with it (the 2026-07-24 reframe)
+### The promise — zero risk to try (the 2026-07-24 reframe)
 
-**"You travel either way."** This is now the headline promise on the hero, the ride page, and the join step — because it answers the traveller's real anxiety (*will I actually have a ride?*), which the $0 framing alone did not. The **fallback ladder is no longer a footnote**: at cutoff an unfilled list's members are moved to **(a) a private car at the fare split among current members**, or **(b) the next scheduled shared departure**, at the split price — or **(c) walk away, hold released**. So the value prop is *"add your name; if four come you split it cheap, if not we still get you there at the split price, and you're never charged for a ride that doesn't run."* Certainty, not a gamble.
+**"$0 unless it runs."** This is the headline promise on the hero, the ride page, and the join step. Adding your name is a card **hold, never a charge**; you're only charged if enough travellers join by the cutoff. **If not enough join, the ride is simply called off and you're never charged** — the hold is released. So the value prop is *"nothing to lose by adding your name; if four come you split a van, if not it's called off and you pay nothing."*
+
+> **Owner correction (2026-07-24):** an earlier draft promised a **fallback** — "you travel either way; if it doesn't fill we move you to a private car or the next shared ride at the split price." **The owner rejected this**: Ceylon Hop will *not* auto-convert an unfilled pool to a private transfer (bad economics), and it would alarm customers. The honest, simpler model is the one above — **no conversion; the ride is called off if it doesn't fill, and nobody is charged.** All copy, emails, and the cutoff job reflect this.
 
 ### Positioning — against the bus, never our own private transfer
 
@@ -51,7 +53,7 @@ Thin lists carry a **"Ceylon Hop is gathering this one"** signal, and the board 
 
 ### Copy voice (load-bearing)
 
-Helpful hostel-noticeboard, never salesy: "add your name to the list", "4 names = we send a van", "you travel either way", "your name here?", "scratch off anytime". Seat scarcity language: **"N seats to lock it in"** before it runs, **"N seats left"** after it locks. Price framed socially ("≈ $24 each when it runs · $0 if not"), no strikethrough anchor pricing on the board.
+Helpful hostel-noticeboard, never salesy: "add your name to the list", "4 names = we send a van", "$0 unless it runs", "your name here?", "scratch off anytime". Seat scarcity language: **"N seats to lock it in"** before it runs, **"N seats left"** after it locks. Price framed socially ("≈ $24 each when it runs · $0 if not"), no strikethrough anchor pricing on the board.
 
 ## 3. UX / information architecture
 
@@ -59,11 +61,11 @@ Three surfaces, one page + one detail + one modal flow. **The board IS the landi
 
 ### 3.1 Board (landing)
 
-- **Header:** "Share a ride. *Beat the bus.*" + one-line explanation + the **guarantee box** ("You travel either way…") + Tripadvisor 5.0 badge + the red hand-note "$0 to add your name".
+- **Header:** "Share a ride. *Beat the bus.*" + one-line explanation + the **promise box** ("$0 unless it runs — called off if not enough join, never charged") + Tripadvisor 5.0 badge + the red hand-note "$0 to add your name".
 - **Filters — by traveller mental model, not corridor jargon (RESOLVED):** a **"Leaving from" city** dropdown + a **"When"** date window (Any time / This week / Next 2 weeks) + a **"My rides · N"** toggle (appears once signed-in-and-joined) + Clear. A live "N gathering now" count.
 - **List card** (site ticket style, perforation divider): route in Newsreader serif; meta = date · slot · departure window + a **live "closes in Xh Ym" countdown** (turns tomato under 3h); seat-scarcity pill ("2 seats to lock it in" / "1 seat to lock it in — almost there" / "Locked in 🚐 · N seats left"); 4 progress dots; then **exactly 4 numbered sign-up lines** — **Google profile photos** + first names + flags, "started this list" on line 1, next open line rendered as dashed *"your name here?"*. Riders past 4 collapse to a "+N also riding" stacked-avatar row (equal card heights; grid uses stretch). Footer: price + a **shared/private/bus comparison** line + **"See ride & join →"**. Starter's note quoted at the bottom.
 - **Felt urgency / states:** hot lists (one seat from running) **glow tomato**; lists you're on **glow teal** with a "You're on this ✓" tag and a "View your ride" CTA; thin lists show the **"Ceylon Hop is gathering this one"** chip; confirmed cards wear the postage stamp "IT'S ON! van locked".
-- **Empty states (RESOLVED):** filtered-to-nothing and no-lists-yet render a real empty card ("Be the first to start this one — we'll help gather names, and you travel either way"), never a fake-full board.
+- **Empty states (RESOLVED):** filtered-to-nothing and no-lists-yet render a real empty card ("Be the first to start this one — we'll help gather names, and it's $0 unless it runs"), never a fake-full board.
 - **Predictability rule (owner-set):** labels must match destinations. Card body & "See ride & join →" navigate to the ride page. The *"your name here?"* line is the one action shortcut: it opens the ride page **with the join flow auto-opened on top** — the label's promise is kept in one click, trust page visible behind.
 - Last card: dashed **"Your ride's not up here?"** → create flow.
 - **My rides surface (RESOLVED):** signed-in travellers get a "My rides · N" nav entry + board filter to the lists they're on (beyond the email capability-links).
@@ -73,11 +75,11 @@ Three surfaces, one page + one detail + one modal flow. **The board IS the landi
 Every list has a real page (`/board/<id>`; prototype uses `#/<id>`), because a WhatsApp/Facebook share must land somewhere link-able with OG tags ("Ella → Mirissa · Sat · 2 of 4 in · $24/seat"). Content order:
 
 1. Route + meta (date · slot · **live countdown** · van · capacity) + scarcity pill + **Tripadvisor 5.0 badge**.
-2. **Guarantee banner** — "You travel either way…" (the fallback ladder, first-class, right under the title).
+2. **Promise banner** — "$0 unless it runs" (called off if not enough join by the cutoff, never charged), right under the title.
 3. **Who's in so far** — large **Google profile photos**/names/countries + dashed "you?" / "a friend?" join slots; starter's note.
 4. **When it leaves** — the candidate departure times for the slot + "exact time set when the van locks; the group's most popular wins" (or the locked time once confirmed).
 5. **Pickup & drop-off** — **predefined per-city points** (sourced from the live shared-taxi routes; e.g. "Ella — main street, by the station"), with the ~10 km door-to-door upgrade (reuses exact-spot radius rule).
-6. **How the money works** — 3-step timeline reinforcing the guarantee: *Now $0 hold → at lock, 4 names = everyone charged (else you're moved to private/next-shared at the split price, never charged for a no-run) → departure day, driver name & WhatsApp the evening before.*
+6. **How the money works** — 3-step timeline reinforcing the guarantee: *Now $0 hold → at lock, 4 names = everyone charged (else the ride is called off and nobody is charged) → departure day, driver name & WhatsApp the evening before.*
 7. **Who's driving** — real operator, Tripadvisor 5.0, humans on WhatsApp, Google-verified travellers.
 8. Mini-FAQ (cancel/scratch-off, pickup logistics, luggage).
 9. **Sticky join card** (right rail): a big **$0** hero ("only charged ≈$X if the van locks in"), scarcity pill, avatar row, dots, a **shared/private/bus comparison strip**, live countdown, share buttons. **State-aware:** when you're already on the list it flips to "You're on this list" + "Invite someone — fill it faster" + **"Scratch my name off"**. Mobile: full-width below the content (sticky-bottom-bar is a follow-up).
@@ -85,7 +87,7 @@ Every list has a real page (`/board/<id>`; prototype uses `#/<id>`), because a W
 ### 3.3 Join flow (modal over the detail page, 3 steps)
 
 1. **Google sign-in** — "lists only take real names"; privacy whisper: others see "Roshen 🇱🇰", nothing more.
-2. **The deal + preferred time + card** — "$0 today" info box restating the **guarantee** ("if it doesn't fill we move you to a private car or the next shared ride at the split price — you travel either way"); a **"Your preferred departure time?"** chip row (RESOLVED — closes the promise the ride page makes; 07:00/08:00/09:00/Flexible); PayHere preapproval (real handoff is a redirect/hosted step — see §6.3), Visa/MC note.
+2. **The deal + preferred time + card** — "$0 today" info box restating the promise ("if it doesn't reach N names by the cutoff, the ride's called off and the hold is released — you pay nothing"); a **"Your preferred departure time?"** chip row (RESOLVED — closes the promise the ride page makes; 07:00/08:00/09:00/Flexible); PayHere preapproval (real handoff is a redirect/hosted step — see §6.3), Visa/MC note.
 3. **Success** — the member's name handwrites onto their line (Caveat), headline states the new count, then the **share moment**: a **live OG-style preview card** (LIVE badge, rider faces, "always shows the current count even after it locks") + WhatsApp / Facebook / copy-link. "We'll email you the second someone signs under you."
 
 **Group signing** (RESOLVED as decision, still to build): "bring a friend" = a seat count in the join step; charged together or not at all.
@@ -114,7 +116,7 @@ New (sketch, not final):
 - `ride_list_member`: listId, position, googleSub, firstName, countryCode, email, preapprovalTokenRef (encrypted), status (`held|charged|charge_failed|scratched`), joinedAt.
 - Customer auth: GIS → HMAC session cookie (identity-only, same shape as ops), `customer` role — **no capability overlap with ops RBAC**.
 - Endpoints: `GET /board` (public, cached), `GET /board/:id`, `POST /board` (create), `POST /board/:id/join`, `POST /board/:id/scratch`, PayHere preapproval callback on `/webhooks`.
-- Scheduler jobs: cutoff sweep (charge-or-expire + fallback-ladder emails), charge-failure retry/dunning, reminder nudges ("2 more names, 24h left — share again?").
+- Scheduler jobs: cutoff sweep (charge-and-confirm, or call off if under-filled + email), charge-failure retry/dunning, reminder nudges ("2 more names, 24h left — share again?").
 - Analytics: every list + every member event into the founder Analytics funnel (Beeline lesson); share links carry a `ref` token from day one.
 - Migration: new numbered Drizzle migration; **owner-run release step per CLAUDE.md rule 7** (staging-first).
 
@@ -130,10 +132,10 @@ New (sketch, not final):
 - **Per-corridor threshold** — `minSeats` is now data (rate card / departureRepo), all copy renders `N`.
 - **Capacity** — `CAP` is per-corridor data (resolves the 6-vs-12 mismatch).
 - **Slot vs fixed times** — gather on a slot, capture each joiner's preferred time, pin exact time at lock.
-- **List regression framing** — scratch-off is a real control; the guarantee softens the "someone left" case (you still travel).
+- **List regression framing** — scratch-off is a real control; the $0-unless-it-runs promise softens the "someone left" case (no one is charged).
 - **Group signing** — decided (seat count in join step, charged together or not at all); to build.
 - **My-rides surface** — built (nav entry + board filter).
-- **Value-prop / psychology** — reframed to lead with the guarantee, positioned against the bus, operator-matched (the core 2026-07-24 change).
+- **Value-prop / psychology** — reframed to lead with the zero-risk "$0 unless it runs" promise, positioned against the bus, operator-matched (the core 2026-07-24 change).
 
 ### 6.2 Still open — carry into the build
 - **List regression mechanics** — the notification when a name drops the list back below threshold, and anti-gaming limits (re-join cooldown). Framing done; behaviour to build.
@@ -161,7 +163,7 @@ Deadlines computed in Asia/Colombo, shown as a live countdown in the viewer's lo
 **Build slices (each = its own PR set):**
 1. **Backend foundation (fakes, no external services):** `rideList` Zod domain + rules (reuse corridor/date rules), repo interface + InMemory impl, migration file + `schema.ts` entries + Postgres impl, DI wiring in `app.ts`, read endpoints (`GET /board`, `GET /board/:id`) — all Vitest red→green.
 2. **Customer auth + join/scratch (fakes):** customer GIS→HMAC session (reuse `opsAuth` shape, separate `customer` identity, faked verifier in tests), `POST /board/:id/join` (preapproval via PayHere adapter fake → member `held`), `POST /board/:id/scratch`, dedupe check, preferred-time capture, capability-token manage link.
-3. **Create-a-list + lock/expire + emails:** `POST /board`, the cutoff sweep in `scheduler.ts` (charge-or-expire + fallback-ladder), `notifications.ts` senders (name-under-you, confirmed, expired-with-options), reuse `notification_log` dedupe.
+3. **Create-a-list + lock/expire + emails:** `POST /board`, the cutoff sweep (charge-and-confirm, or call off if under-filled), email senders (name-under-you, confirmed, called-off, at-risk), reuse `notification_log` dedupe.
 4. **Front-end:** new root `board.html` + `board.js` following site conventions (reuse `transfers-data.js` corridor helpers, `window.CEYLON_HOP_API`), the ride detail page, join/create flows — ported from the prototype, covered by `web-tests/`.
 5. **Real-swap steps (owner-gated):** real Google OAuth; real PayHere preapproval/charging; ref-tracked share links + Analytics events; server-rendered OG tags.
 
@@ -179,7 +181,7 @@ Deadlines computed in Asia/Colombo, shown as a live countdown in the viewer's lo
 - Pricing display: flat corridor seat price with "$0 if it doesn't run" framing; no dynamic price-drop mechanic in v1 (simplicity; revisit if sharing needs a stronger incentive).
 
 ### Added 2026-07-24 (prototype reframe + build greenlight)
-- **Lead with the guarantee, not the gamble** — "you travel either way" (fallback ladder) is the headline promise everywhere; $0 is secondary. Answers the certainty anxiety, which is the traveller's real fear (owner-aligned via critique).
+- **Lead with zero risk, not a gamble** — "$0 unless it runs; called off if not enough join, never charged" is the headline everywhere. (An earlier "you travel either way / convert to private" fallback was REJECTED by the owner 2026-07-24 — bad economics, alarms customers.)
 - **Position against the bus/train, never our own private transfer** — "Share a ride. Beat the bus." + shared/private/bus comparison. Pull net-new demand, don't cannibalise private margin.
 - **Operator match-making is primary, viral sharing additive** — seed thin lists, "Ceylon Hop is gathering this one"; don't rely on travellers to recruit strangers.
 - **Departure = slot + preferred-time, pinned at lock** (window fills the van; converge once).
