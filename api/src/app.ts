@@ -270,6 +270,8 @@ export function createApp(deps: AppDeps = {}) {
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      rideLists,
+      ridePaygw: paygw,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.

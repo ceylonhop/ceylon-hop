@@ -11,6 +11,9 @@ import {
   sendNoShowNotice,
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { runRideBoardCutoff } from '../services/rideBoardCutoff';
+import type { RideListRepo } from '../db/rideListRepo';
+import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { runWatchdog } from '../services/watchdog';
 import { buildDigest } from '../services/digest';
@@ -40,6 +43,10 @@ export function adminRoutes(deps: {
   // Signs the customer's "manage my booking" link in the scheduled trip reminder email.
   baseUrl: string;
   linkSecret: string;
+  // Ride Board cutoff sweep rides the same cron tick (best-effort). Optional so existing
+  // callers work; when wired, the notifications tick also confirms/expires due lists.
+  rideLists?: RideListRepo;
+  ridePaygw?: TokenizedPaymentAdapter;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -121,6 +128,16 @@ export function adminRoutes(deps: {
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
     }
+    // Ride Board cutoff (confirm/charge or expire due lists) rides the same tick, best-effort.
+    let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
+    if (deps.rideLists && deps.ridePaygw) {
+      try {
+        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email });
+        rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
+      } catch (err) {
+        console.error('ride-board cutoff sweep failed:', err);
+      }
+    }
     // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
     // past the idle TTL. Idempotent (an expired quote no longer matches), and a failure here
     // must never block the customer notifications the caller asked for.
@@ -152,7 +169,7 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest }, 200);
+    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest, rideBoard }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
