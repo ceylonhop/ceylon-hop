@@ -5,6 +5,8 @@ import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
+import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
+import { rideBoardRoutes } from './routes/rideBoard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
@@ -35,6 +37,7 @@ export interface AppDeps {
   payments?: PaymentRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
+  rideLists?: RideListRepo;
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
@@ -74,6 +77,7 @@ export function createApp(deps: AppDeps = {}) {
   const payments = deps.payments ?? new InMemoryPaymentRepo();
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
+  const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
@@ -180,6 +184,8 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  // Ride Board — public read endpoints (join/create/scratch land in later slices).
+  app.route('/board', rideBoardRoutes({ rideLists }));
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
   app.route(
     '/webhooks',

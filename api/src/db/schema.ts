@@ -139,6 +139,60 @@ export const sharedRequests = pgTable('shared_request', {
   seats: integer('seats').notNull(),
 });
 
+// ---- Ride Board (demand-pooling "lists" layered on the corridor catalogue) ----
+// A list is a corridor route + date + slot that travellers add their names to; the
+// van runs once enough names commit by the cutoff. Additive to the shared-taxi
+// tables — the pooled seat counter is a live-member sum, independent of the fixed
+// shared_departure inventory.
+export const rideLists = pgTable(
+  'ride_list',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    code: text('code').notNull().unique(), // short public code, e.g. EM-4821
+    corridorId: text('corridor_id')
+      .notNull()
+      .references(() => corridors.id),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    date: text('date').notNull(), // ISO YYYY-MM-DD
+    slot: text('slot').notNull(), // morning | afternoon
+    lockedTime: text('locked_time'), // pinned when the van locks
+    minSeats: integer('min_seats').notNull(),
+    capacity: integer('capacity').notNull(),
+    seatPrice: integer('seat_price').notNull(), // minor units
+    status: text('status').notNull().default('gathering'), // gathering|confirmed|expired|cancelled
+    note: text('note'),
+    cutoffAt: timestamp('cutoff_at', { withTimezone: true }).notNull(),
+    createdBy: text('created_by'), // customer subject
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('ride_list_status_idx').on(t.status)],
+);
+
+export const rideListMembers = pgTable(
+  'ride_list_member',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listId: uuid('list_id')
+      .notNull()
+      .references(() => rideLists.id),
+    position: integer('position').notNull(), // 1-based order on the list
+    sub: text('sub').notNull(), // customer subject (Google)
+    firstName: text('first_name').notNull(),
+    country: text('country').notNull(),
+    email: text('email').notNull(),
+    photoUrl: text('photo_url'),
+    preferredTime: text('preferred_time'),
+    seats: integer('seats').notNull().default(1),
+    preapprovalRef: text('preapproval_ref'), // card-on-file token id (null while faked)
+    status: text('status').notNull().default('held'), // held|charged|charge_failed|scratched
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  // one membership per traveller per list (also the re-join upsert target)
+  (t) => [unique().on(t.listId, t.sub), index('ride_list_member_list_idx').on(t.listId)],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {
