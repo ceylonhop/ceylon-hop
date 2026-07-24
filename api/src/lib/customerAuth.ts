@@ -78,17 +78,21 @@ export function issueCustomerCookie(
   now: number,
 ): void {
   const token = signCustomerSession({ ...session, exp: now + SESSION_TTL_MS }, secret);
+  // SameSite=None so the cookie rides cross-origin fetches (board.html on the Pages site →
+  // API on Render). Requires Secure (set). CSRF stays covered: the write endpoints only accept
+  // application/json, which forces a CORS preflight, so a non-allowlisted origin's POST is
+  // blocked before it runs.
   setCookie(c, CUSTOMER_COOKIE, token, {
     httpOnly: true,
     secure: true,
-    sameSite: 'Lax',
+    sameSite: 'None',
     path: '/',
     maxAge: SESSION_TTL_MS / 1000,
   });
 }
 
 export function clearCustomerCookie(c: Context): void {
-  setCookie(c, CUSTOMER_COOKIE, '', { httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: 0 });
+  setCookie(c, CUSTOMER_COOKIE, '', { httpOnly: true, secure: true, sameSite: 'None', path: '/', maxAge: 0 });
 }
 
 declare module 'hono' {

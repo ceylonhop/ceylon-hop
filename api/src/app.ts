@@ -124,6 +124,10 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
+      // on Pages → API on Render). Only the allow-listed origins above can read responses;
+      // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
+      credentials: true,
     }),
   );
 

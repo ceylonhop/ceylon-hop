@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- M7: backend. Defaults to the live API. Override with ?api=<url> (e.g. localhost for dev) or ?api=off. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
+<!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
+     OWNER: paste your OAuth 2.0 Web client id here at go-live (…apps.googleusercontent.com). -->
+<script>window.GOOGLE_CLIENT_ID='';</script>
+<title>The Ride Board — Ceylon Hop</title>
+<meta name="description" content="Share an air-con van with travellers heading your way — a fraction of a private car, worlds nicer than the bus. Add your name to a route; $0 unless it runs.">
+<link rel="canonical" href="https://ceylonhop.com/board.html">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Ceylon Hop">
+<meta property="og:url" content="https://ceylonhop.com/board.html">
+<meta property="og:title" content="The Ride Board — share a ride, beat the bus">
+<meta property="og:description" content="Travellers heading the same way split an air-con van. Add your name to a route — $0 unless it fills.">
+<meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<script src="analytics.js"></script>
+<script src="consent.js" defer></script>
+<script>
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
+<!-- transfers-data.js: PLACES + CORRIDORS for the create-a-list dropdowns -->
+<script src="transfers-data.js"></script>
+<!-- Google Identity Services (renders the real sign-in button) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+/* ============================================================
+   CEYLON HOP — THE RIDE BOARD
+   Community shared-ride lists, in the site's own design system.
+   "Postcard from Ceylon": editorial, playful, warm — not salesy.
+   ============================================================ */
+:root{
+  --blue:#63BFD6; --teal:#0AB9B6; --teal-deep:#08938f;
+  --saffron:#F9A429; --tomato:#EC3A24;
+  --ink:#2C2A2B; --ink-soft:#6c6a6b;
+  --cream:#F4F2EA; --cream-deep:#EAE6D8; --paper:#fffdf8; --white:#fff; --line:#e7e3d6;
+  --accent:var(--teal); --accent-deep:var(--teal-deep); --cta:var(--tomato);
+  --pc-teal:#e3f4ef; --pc-sky:#e8f3f6; --pc-green:#edf4e6; --pc-saffron:#fbf0d8; --pc-line:#dfe9dd;
+  --display:'Newsreader', Georgia, 'Times New Roman', serif;
+  --body:'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --hand:'Caveat', 'Segoe Script', cursive;
+  --r-sm:10px; --r:16px; --r-lg:24px;
+  --shadow-s:0 2px 8px rgba(44,42,43,.06);
+  --shadow:0 14px 40px -18px rgba(44,42,43,.30);
+  --shadow-lg:0 30px 70px -28px rgba(44,42,43,.42);
+  --maxw:1200px;
+}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:var(--body);color:var(--ink);background:var(--cream);font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
+  radial-gradient(125% 70% at 88% -2%, var(--pc-teal), transparent 55%),
+  radial-gradient(95% 55% at -4% 102%, var(--pc-saffron), transparent 52%),
+  var(--cream)}
+body::after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.028;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:150px 150px}
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+button{font-family:inherit;cursor:pointer}
+::selection{background:var(--saffron);color:var(--ink)}
+h1,h2,h3,h4{font-family:var(--display);font-weight:700;line-height:1.07;margin:0;letter-spacing:-.005em}
+h2{font-size:clamp(1.9rem,3.6vw,3rem);margin-bottom:.5rem}
+p{margin:0 0 1rem}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+.section{padding:clamp(56px,8vw,110px) 0}
+.center{text-align:center}
+.muted{color:var(--ink-soft)}
+.eyebrow{font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-deep);margin:0 0 .9rem;display:inline-flex;align-items:center;gap:.5rem}
+.eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
+.lead{font-size:1.14rem;color:var(--ink-soft);max-width:54ch;line-height:1.6}
+.hand{font-family:var(--hand);font-weight:600}
+
+/* buttons — straight from site.css */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;font-weight:600;font-size:.97rem;border:none;border-radius:999px;padding:.9rem 1.6rem;transition:transform .15s ease, box-shadow .2s ease, background .2s;white-space:nowrap;line-height:1}
+.btn svg{width:18px;height:18px}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
+.btn-primary:hover{background:var(--accent-deep);transform:translateY(-2px)}
+.btn-ghost{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-s);border:1px solid var(--line)}
+.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.btn-wa{background:#25D366;color:#fff}
+.btn-wa:hover{background:#1ebe5a;transform:translateY(-2px)}
+.btn-fb{background:#1877F2;color:#fff}
+.btn-fb:hover{filter:brightness(1.08);transform:translateY(-2px)}
+.btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
+.btn-block{width:100%}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600;padding:.4rem .8rem;border-radius:999px;background:var(--cream-deep);color:var(--ink);white-space:nowrap}
+.pill-teal{background:rgba(10,185,182,.14);color:var(--teal-deep)}
+.pill-saffron{background:rgba(249,164,41,.18);color:#a96b04}
+.pill-tomato{background:rgba(236,58,36,.12);color:#bb2c1a}
+.pill-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.9}
+.pill-pulse::before{animation:pulse 1.7s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:.4;transform:scale(.72)}}
+
+/* hand notes — used sparingly, exactly like the live site */
+.hand-note{font-family:var(--hand);font-weight:700;color:var(--accent-deep);font-size:1.5rem;line-height:1.1;display:inline-flex;align-items:flex-end;gap:.35rem}
+.hand-note.tomato{color:var(--tomato)}
+.hand-arrow{width:34px;height:auto;flex:none;color:currentColor;transform:translateY(2px)}
+
+/* route rule flourish */
+.route-rule{display:flex;align-items:center;gap:.6rem;color:var(--accent);margin:0}
+.route-rule::before,.route-rule::after{content:"";height:0;border-top:2px dashed currentColor;flex:1;opacity:.5}
+.route-rule svg{width:20px;height:20px;flex:none}
+
+/* ---------- nav ---------- */
+.nav-wrap{position:sticky;top:0;z-index:70}
+.nav{-webkit-backdrop-filter:blur(16px) saturate(1.7);backdrop-filter:blur(16px) saturate(1.7);
+  background:linear-gradient(180deg, rgba(255,253,248,.86), rgba(255,253,248,.72));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.08)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;height:74px}
+.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:800;font-size:1.5rem;letter-spacing:-.02em;white-space:nowrap}
+.cmark{width:34px;height:34px;flex:none}
+.nav-links{display:flex;align-items:center;gap:26px;font-weight:500;font-size:.95rem}
+.nav-links a{position:relative;padding:.3rem 0;opacity:.92}
+.nav-links a:hover{opacity:1}
+.nav-links a.active::after,.nav-links a:hover::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:2px;background:var(--accent);border-radius:2px}
+@media(max-width:880px){.nav-links{display:none}}
+
+/* ---------- compact intro: the board IS the page ---------- */
+.intro{padding:clamp(30px,4vw,48px) 0 18px}
+.intro-row{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.intro h1{font-size:clamp(2.1rem,4vw,3rem);font-weight:800;letter-spacing:-.014em}
+.intro .eyebrow{margin-bottom:.6rem}
+.intro .lead{margin:10px 0 0;font-size:1.05rem}
+.intro .lead b{color:var(--ink)}
+.intro-scribble{transform:rotate(-2deg);margin-bottom:6px}
+@media(max-width:760px){.intro-scribble{display:none}}
+
+/* ---------- filters ---------- */
+.filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 26px}
+.chip{border:1.5px solid var(--line);background:var(--paper);color:var(--ink);font-weight:600;font-size:.85rem;border-radius:999px;padding:.5rem 1rem;transition:.18s;min-height:40px}
+.chip:hover{border-color:var(--accent);color:var(--accent-deep)}
+.chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.filters .count{font-size:.85rem;color:var(--ink-soft);margin-left:auto;font-weight:600}
+.filters .count b{color:var(--teal-deep)}
+
+/* ---------- the board ---------- */
+.board-sec{position:relative;background:
+  radial-gradient(120% 92% at 86% -4%, var(--pc-teal), transparent 60%),
+  radial-gradient(95% 85% at 4% 104%, var(--pc-saffron), transparent 58%),
+  linear-gradient(162deg, #eaf6f2 0%, #e8f1ea 52%, #eef4e6 100%)}
+.board-sec::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:repeating-linear-gradient(90deg,var(--pc-line) 0 9px,transparent 9px 18px)}
+.board-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:30px}
+.board-head .lead{margin:0}
+.board{display:grid;grid-template-columns:repeat(3,1fr);gap:26px}
+@media(max-width:1020px){.board{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.board{grid-template-columns:1fr}}
+
+/* ---------- list card (a ticket with a sign-up list) ---------- */
+.lcard{position:relative;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.6);
+  transition:transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s;display:flex;flex-direction:column;cursor:pointer}
+.lcard:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}
+.lcard-top{padding:22px 24px 16px}
+.lcard-route{display:flex;align-items:baseline;gap:.55rem;font-family:var(--display);font-weight:800;font-size:1.42rem;letter-spacing:-.01em;padding-right:8px}
+.lcard-route .arr{color:var(--accent);flex:none;transform:translateY(-1px)}
+.lcard-meta{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:8px;font-size:.86rem;font-weight:600;color:var(--ink-soft)}
+.lcard-meta .m{display:inline-flex;align-items:center;gap:.4rem}
+.lcard-meta svg{width:15px;height:15px;color:var(--accent-deep);flex:none}
+.lcard-status{margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+/* four little dots = the goal */
+.goal-dots{display:inline-flex;align-items:center;gap:5px}
+.goal-dots i{width:9px;height:9px;border-radius:50%;background:var(--cream-deep);box-shadow:inset 0 0 0 1.5px #d9d3c2;transition:.3s}
+.goal-dots i.f{background:var(--teal);box-shadow:none}
+.goal-dots span{font-size:.74rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-left:4px}
+/* perforation divider */
+.tear{position:relative;height:0;border-top:2px dashed var(--line);margin:0 16px}
+.tear::before,.tear::after{content:"";position:absolute;width:20px;height:20px;border-radius:50%;top:50%;transform:translateY(-50%);
+  background:var(--pc-back,#ecf4ee)}
+.tear::before{left:-26px}
+.tear::after{right:-26px}
+/* the list itself */
+.lcard-list{padding:14px 24px 8px;flex:1}
+.lrow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line)}
+.lrow:last-child{border-bottom:none}
+.lrow .num{width:18px;flex:none;font-size:.78rem;font-weight:700;color:#b6b0a2;font-variant-numeric:tabular-nums}
+.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:800;color:#fff;position:relative;flex:none;box-shadow:var(--shadow-s)}
+.avatar .flag{position:absolute;bottom:-4px;right:-6px;font-size:.78rem;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
+.lrow .who{font-weight:700;font-size:.97rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow .who small{font-weight:600;color:var(--ink-soft);margin-left:.45rem;font-size:.78rem}
+.lrow.you .who{color:var(--teal-deep)}
+.lrow.open{cursor:pointer;border-radius:10px;margin:0 -10px;padding:8px 10px;transition:background .15s}
+.lrow.open:hover{background:rgba(10,185,182,.08)}
+.lrow.open .slot{flex:1;display:flex;align-items:center;gap:10px;color:#b6b0a2}
+.lrow.open .slot .dash{flex:1;border-bottom:2px dashed #ddd6c4;transform:translateY(4px)}
+.lrow.open .slot .hand{font-size:1.15rem;color:#b8b2a2;transition:color .15s;white-space:nowrap}
+.lrow.open:hover .slot .hand{color:var(--teal-deep)}
+.lrow.ghost{opacity:.55}
+.lrow.ghost .slot .hand{visibility:hidden}
+/* card foot */
+.lcard-foot{padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.lprice{font-size:.86rem;color:var(--ink-soft);line-height:1.35;font-weight:600}
+.lprice b{color:var(--ink);font-size:1.05rem;font-weight:800}
+.lcard .started{padding:0 24px 18px;display:flex;align-items:center;gap:.55rem;font-size:.82rem;color:var(--ink-soft)}
+.lcard .started .avatar{width:26px;height:26px;font-size:.6rem}
+.lcard .started b{color:var(--ink);font-weight:700}
+/* confirmed */
+.lcard.confirmed{background:linear-gradient(180deg, rgba(10,185,182,.06), var(--paper) 34%)}
+.lcard .stamp{position:absolute;top:-13px;right:18px;z-index:3;
+  font-family:var(--body);font-weight:700;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
+  color:#fff;background:var(--saffron);padding:.5rem .7rem;line-height:1.1;text-align:center;
+  transform:rotate(4deg);box-shadow:var(--shadow-s);border:2px dashed rgba(255,255,255,.85);border-radius:3px;display:inline-grid;gap:1px}
+.lcard .stamp b{font-family:var(--display);font-size:1rem;font-weight:800;letter-spacing:0}
+@media(prefers-reduced-motion:no-preference){.lcard .stamp.play{animation:stampIn .5s cubic-bezier(.2,1.5,.35,1) both}}
+@keyframes stampIn{from{opacity:0;transform:scale(1.7) rotate(14deg)}to{opacity:1;transform:scale(1) rotate(4deg)}}
+/* start-your-own */
+.lcard-new{border:2px dashed var(--line);border-radius:var(--r-lg);background:rgba(255,253,248,.55);display:grid;place-items:center;text-align:center;
+  padding:36px 26px;min-height:300px;transition:.2s;color:var(--ink)}
+.lcard-new:hover{border-color:var(--accent);background:var(--paper);transform:translateY(-4px);box-shadow:var(--shadow)}
+.lcard-new .plus{width:52px;height:52px;border-radius:50%;background:var(--pc-teal);color:var(--teal-deep);display:grid;place-items:center;margin:0 auto 14px;font-size:1.6rem;font-weight:700}
+.lcard-new h3{font-size:1.3rem;margin-bottom:.35rem}
+.lcard-new p{font-size:.92rem;color:var(--ink-soft);max-width:26ch;margin:0 auto}
+.lcard-new .hand{display:block;margin-top:10px;font-size:1.25rem;color:var(--teal-deep)}
+
+/* ---------- below: honest details + founder note ---------- */
+.below-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(30px,4vw,60px);align-items:start}
+@media(max-width:880px){.below-grid{grid-template-columns:1fr}}
+.faq h2 em{font-family:var(--display);font-style:italic;font-weight:500;color:var(--teal-deep)}
+.faq details{border-bottom:1.5px dashed var(--line);padding:.85rem 0}
+.faq summary{font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:.98rem}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-family:var(--display);font-size:1.4rem;color:var(--teal-deep);transition:transform .2s;line-height:1}
+.faq details[open] summary::after{transform:rotate(45deg)}
+.faq details p{color:var(--ink-soft);margin:.55rem 0 0;line-height:1.6;font-size:.94rem}
+.faq details b{color:var(--ink)}
+.founder{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:30px 32px;position:relative}
+.founder h3{font-size:1.35rem;margin-bottom:.7rem}
+.founder p{font-size:.95rem;color:var(--ink-soft);line-height:1.65}
+.founder p b{color:var(--ink)}
+.founder .sig{font-family:var(--hand);font-weight:700;font-size:1.45rem;color:var(--teal-deep);margin:0}
+.founder .stamp-c{position:absolute;top:-14px;right:24px;font-family:var(--body);font-weight:700;font-size:.66rem;letter-spacing:.04em;text-transform:uppercase;
+  color:#fff;background:var(--teal);padding:.5rem .7rem;line-height:1.1;transform:rotate(-4deg);box-shadow:var(--shadow-s);
+  border:2px dashed rgba(255,255,255,.85);border-radius:3px}
+
+/* footer line */
+.foot{padding:30px 0 40px;text-align:center;font-size:.87rem;color:var(--ink-soft)}
+.foot .hand{font-size:1.15rem}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;z-index:100;background:rgba(9,37,35,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  display:grid;place-items:center;padding:18px;opacity:0;pointer-events:none;transition:opacity .26s}
+.overlay.open{opacity:1;pointer-events:auto}
+.sheet{width:100%;max-width:460px;background:var(--paper);border-radius:26px;box-shadow:var(--shadow-lg);overflow:hidden;
+  transform:translateY(26px) scale(.97);transition:transform .32s cubic-bezier(.2,.9,.3,1.05);max-height:92vh;overflow-y:auto}
+.overlay.open .sheet{transform:none}
+.sheet-head{padding:24px 28px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.sheet-head h3{font-size:1.4rem}
+.sheet-head .sub{font-size:.9rem;color:var(--ink-soft);font-weight:600;margin-top:.2rem}
+.sheet-head .x{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--white);display:grid;place-items:center;font-size:.95rem;color:var(--ink-soft);flex:none;transition:.15s}
+.sheet-head .x:hover{border-color:var(--ink);color:var(--ink)}
+.sheet-body{padding:18px 28px 28px}
+.steps{display:flex;gap:6px;margin:0 0 18px}
+.step-dot{height:4px;border-radius:2px;flex:1;background:var(--cream-deep);transition:.3s}
+.step-dot.on{background:var(--teal)}
+/* create-a-list form */
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.fld label{display:block;font-size:.67rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 .4rem}
+.fld select,.fld input{width:100%;height:48px;padding:0 .8rem;border:1.5px solid var(--line);border-radius:12px;background:var(--white);font-family:inherit;font-size:.93rem;font-weight:500;color:var(--ink);transition:border-color .15s, box-shadow .15s}
+.fld select:focus,.fld input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+.timechips{display:flex;gap:8px}
+.timechips .chip{flex:1;justify-content:center;display:inline-flex;min-height:48px;align-items:center;border-radius:12px}
+.timechips .chip.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+.est{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--pc-teal);border:1px solid rgba(10,185,182,.25);border-radius:12px;padding:.65rem 1rem;margin:2px 0 14px}
+.est b{font-family:var(--display);font-weight:800;font-size:1.45rem;color:var(--teal-deep);line-height:1}
+.est b small{font-family:var(--body);font-size:.72rem;font-weight:700;color:var(--ink-soft)}
+.est span{font-size:.75rem;font-weight:700;color:var(--teal-deep);text-align:right;line-height:1.35}
+.mstep p.talk{font-size:.94rem;color:var(--ink-soft);line-height:1.6;margin:0 0 1rem}
+.mstep p.talk b{color:var(--ink)}
+.gbtn{width:100%;height:52px;border-radius:14px;border:1.5px solid var(--line);background:var(--white);font-weight:600;font-size:.97rem;
+  display:flex;align-items:center;justify-content:center;gap:.7rem;transition:.18s}
+.gbtn:hover{border-color:#c9c4b4;box-shadow:var(--shadow-s);transform:translateY(-1px)}
+.gbtn svg{width:20px;height:20px}
+.whisper{font-size:.8rem;color:var(--ink-soft);text-align:center;margin-top:.9rem;line-height:1.5}
+.whisper b{color:var(--ink)}
+/* info box — site pc-saffron pattern */
+.deal{background:var(--pc-saffron);border:1px solid rgba(249,164,41,.35);border-radius:16px;padding:16px 18px;margin:4px 0 14px}
+.deal h4{font-family:var(--display);font-size:1.05rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem}
+.deal h4 svg{width:17px;height:17px;color:#a96b04}
+.deal p{font-size:.86rem;color:#6b5a35;margin:0;line-height:1.55}
+.deal b{color:#4d3f20}
+.signed-as{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:.9rem}
+.signed-as .muted{font-size:.8rem}
+.cardrow{display:grid;grid-template-columns:1fr 90px 72px;gap:8px}
+.cardrow input{height:48px;border:1.5px solid var(--line);border-radius:12px;padding:0 .8rem;font-family:inherit;font-size:.92rem;background:var(--white)}
+.cardrow input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+.paynote{display:flex;align-items:center;gap:.5rem;justify-content:center;margin-top:.75rem;font-size:.74rem;color:var(--ink-soft);font-weight:600}
+.paynote .pl{border:1px solid var(--line);border-radius:5px;padding:.13rem .42rem;font-weight:800;font-size:.66rem;background:var(--white)}
+/* success */
+.success{text-align:center}
+/* your row, written in */
+.yourrow{display:flex;align-items:center;gap:12px;margin:6px 0 16px;padding:12px 14px;border:1.5px dashed rgba(10,185,182,.5);border-radius:14px;background:rgba(10,185,182,.06);text-align:left}
+.yourrow .num{font-size:.8rem;font-weight:700;color:#9aa39e}
+.yourrow .who{font-weight:800;color:var(--teal-deep)}
+.yourrow .who .handname{font-family:var(--hand);font-weight:700;font-size:1.5rem;line-height:1;letter-spacing:.01em}
+.yourrow .who .caret{display:inline-block;width:2px;height:1.15em;background:var(--teal-deep);vertical-align:-2px;animation:blink .7s steps(1) infinite;margin-left:1px}
+@keyframes blink{50%{opacity:0}}
+.success h3{font-size:1.35rem;margin:.2rem 0 .3rem}
+.success .why-share{font-size:.9rem;color:var(--ink-soft);line-height:1.55;margin:0 0 1rem}
+.success .why-share b{color:var(--ink)}
+/* share preview — a small clean ticket */
+.share-card{border:1px solid var(--line);border-radius:16px;overflow:hidden;text-align:left;margin:0 0 14px;box-shadow:var(--shadow-s);background:var(--white)}
+.share-card .sc-top{background:linear-gradient(120deg, var(--pc-teal), var(--pc-sky));padding:14px 16px 12px}
+.share-card .sc-route{font-family:var(--display);font-weight:800;font-size:1.15rem}
+.share-card .sc-meta{font-size:.8rem;color:var(--ink-soft);font-weight:600;margin-top:2px}
+.share-card .sc-dots{display:flex;gap:5px;margin-top:9px}
+.share-card .sc-dots i{width:9px;height:9px;border-radius:50%;background:rgba(44,42,43,.12)}
+.share-card .sc-dots i.f{background:var(--teal)}
+.share-card .sc-txt{padding:10px 16px;font-size:.8rem;color:var(--ink-soft);line-height:1.5}
+.share-card .sc-txt b{color:var(--ink);display:block;font-size:.85rem}
+.share-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.copy-row{display:flex;gap:8px;margin-top:10px}
+.copy-row input{flex:1;height:46px;border:1.5px solid var(--line);border-radius:12px;padding:0 .8rem;font-size:.83rem;color:var(--ink-soft);background:var(--cream);font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.copy-row .btn{flex:none}
+
+/* toast */
+.toast{position:fixed;left:20px;bottom:20px;z-index:90;display:flex;align-items:center;gap:12px;background:var(--paper);border:1px solid var(--line);
+  border-radius:16px;box-shadow:var(--shadow-lg);padding:12px 18px 12px 12px;font-size:.88rem;font-weight:600;max-width:340px;
+  transform:translateY(120px);opacity:0;transition:transform .45s cubic-bezier(.2,.9,.3,1.1), opacity .35s}
+.toast.show{transform:none;opacity:1}
+.toast small{display:block;font-weight:600;color:var(--ink-soft);font-size:.76rem}
+.toast b{color:var(--ink)}
+
+/* ---------- ride detail page ---------- */
+.detail{display:none}
+body.detail-open .intro,body.detail-open .board-sec,body.detail-open .section,body.detail-open .foot{display:none}
+body.detail-open .detail{display:block}
+.d-head{padding:22px 0 6px}
+.d-back{display:inline-flex;align-items:center;gap:.45rem;font-weight:700;font-size:.88rem;color:var(--ink-soft);transition:color .15s;background:none;border:none;padding:0}
+.d-back:hover{color:var(--teal-deep)}
+.d-back svg{width:16px;height:16px}
+.d-grid{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:clamp(28px,4vw,56px);align-items:start;padding-bottom:clamp(60px,8vw,100px)}
+@media(max-width:960px){.d-grid{grid-template-columns:1fr}}
+.d-title{font-size:clamp(2rem,3.8vw,2.9rem);font-weight:800;letter-spacing:-.014em;margin:14px 0 6px}
+.d-title .arr{color:var(--accent)}
+.d-meta{display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;font-size:.92rem;font-weight:600;color:var(--ink-soft);margin-bottom:6px}
+.d-meta .m{display:inline-flex;align-items:center;gap:.45rem}
+.d-meta svg{width:16px;height:16px;color:var(--accent-deep)}
+.d-block{margin-top:34px}
+.d-block>h2{font-size:1.35rem;margin-bottom:14px;display:flex;align-items:baseline;gap:.6rem}
+.d-block>h2 .hand{color:var(--teal-deep);font-size:1.25rem}
+/* people */
+.d-people{display:flex;gap:18px;flex-wrap:wrap}
+.d-person{display:flex;flex-direction:column;align-items:center;gap:7px;width:76px;text-align:center}
+.d-person .avatar{width:56px;height:56px;font-size:1.05rem;border:3px solid var(--paper);box-shadow:var(--shadow-s)}
+.d-person .avatar .flag{font-size:1.05rem;bottom:-3px;right:-7px}
+.d-person b{font-size:.88rem;line-height:1.2}
+.d-person small{font-size:.72rem;color:var(--ink-soft);font-weight:600;line-height:1.2}
+.d-person.slot .circ{width:56px;height:56px;border-radius:50%;border:2.5px dashed #d5cfbd;display:grid;place-items:center;color:#b6b0a2;font-size:1.3rem;transition:.18s;background:rgba(255,253,248,.6)}
+.d-person.slot{cursor:pointer}
+.d-person.slot:hover .circ{border-color:var(--accent);color:var(--teal-deep);transform:scale(1.06)}
+.d-person.slot .hand{font-size:1.05rem;color:var(--ink-soft)}
+.d-note{margin-top:16px;background:var(--pc-sky);border:1px solid rgba(99,191,214,.35);border-radius:14px;padding:12px 16px;font-size:.92rem;color:#2d6b7e;display:flex;gap:.6rem;align-items:baseline}
+.d-note b{color:#1d5768}
+/* money timeline */
+.tl{position:relative;display:grid;gap:0;margin-left:6px}
+.tl-row{position:relative;display:flex;gap:16px;padding:0 0 22px 0}
+.tl-row::before{content:"";position:absolute;left:16px;top:36px;bottom:-2px;border-left:2px dashed var(--line)}
+.tl-row:last-child::before{display:none}
+.tl-dot{width:34px;height:34px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;box-shadow:var(--shadow-s);z-index:1}
+.tl-dot svg{width:16px;height:16px}
+.tl-row h4{font-family:var(--body);font-weight:800;font-size:.95rem;margin:0 0 .15rem;padding-top:5px}
+.tl-row p{font-size:.89rem;color:var(--ink-soft);margin:0;line-height:1.5;max-width:52ch}
+.tl-row p b{color:var(--ink)}
+/* route rail */
+.d-route{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px 24px;box-shadow:var(--shadow-s)}
+.rr-stop{display:flex;align-items:flex-start;gap:14px;position:relative;padding-bottom:20px}
+.rr-stop::before{content:"";position:absolute;left:8px;top:22px;bottom:-2px;border-left:2px dashed rgba(10,185,182,.5)}
+.rr-stop:last-child{padding-bottom:0}
+.rr-stop:last-child::before{display:none}
+.rr-dot{width:18px;height:18px;border-radius:50%;flex:none;margin-top:2px;z-index:1}
+.rr-dot.a{border:3.5px solid var(--teal);background:#fff}
+.rr-dot.b{background:var(--cta)}
+.rr-stop b{font-size:1rem}
+.rr-stop p{font-size:.84rem;color:var(--ink-soft);margin:.1rem 0 0;line-height:1.45}
+/* trust grid */
+.d-trust{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+@media(max-width:560px){.d-trust{grid-template-columns:1fr}}
+.d-trust .t{display:flex;gap:12px;align-items:flex-start;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.d-trust .t .ico{width:38px;height:38px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff}
+.d-trust .t .ico svg{width:18px;height:18px}
+.d-trust .t b{font-size:.9rem;display:block;line-height:1.3}
+.d-trust .t span{font-size:.8rem;color:var(--ink-soft);line-height:1.4;display:block;margin-top:2px}
+/* sticky join card */
+.d-join{position:sticky;top:94px;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);border:1px solid rgba(255,255,255,.7);padding:24px 26px}
+.d-join .pill{margin-bottom:12px}
+.d-join .price{display:flex;align-items:baseline;gap:.5rem;margin:2px 0 2px}
+.d-join .price b{font-family:var(--display);font-weight:800;font-size:2.1rem;letter-spacing:-.01em}
+.d-join .price span{font-size:.9rem;color:var(--ink-soft);font-weight:600}
+.d-join .sub{font-size:.84rem;color:var(--ink-soft);font-weight:600;margin-bottom:14px}
+.d-join .sub b{color:var(--teal-deep)}
+.d-join .who-row{display:flex;align-items:center;margin:4px 0 16px}
+.d-join .who-row .avatar{width:38px;height:38px;font-size:.75rem;border:2.5px solid var(--paper);margin-left:-8px}
+.d-join .who-row .avatar:first-child{margin-left:0}
+.d-join .who-row .slotmini{width:38px;height:38px;border-radius:50%;border:2px dashed #d5cfbd;margin-left:-8px;background:var(--paper);display:grid;place-items:center;color:#c6c0ae;font-size:1rem}
+.d-join .who-row span.lbl{font-size:.8rem;font-weight:700;color:var(--ink-soft);margin-left:10px}
+.d-join .btn-block{height:54px;font-size:1rem}
+.d-join .fine{font-size:.78rem;color:var(--ink-soft);text-align:center;margin:.8rem 0 0;line-height:1.5}
+.d-join .fine b{color:var(--teal-deep)}
+.d-join .deadline{display:flex;align-items:center;justify-content:center;gap:.4rem;margin-top:12px;padding-top:12px;border-top:2px dashed var(--line);font-size:.8rem;font-weight:700;color:var(--ink-soft)}
+.d-join .deadline svg{width:14px;height:14px;color:var(--saffron)}
+.d-share{margin-top:14px;text-align:center}
+.d-share .lbl{font-size:.78rem;font-weight:700;color:var(--ink-soft);margin-bottom:8px;display:block}
+.d-share .row{display:flex;gap:8px;justify-content:center}
+.d-share .btn{flex:1}
+.d-faq{margin-top:10px}
+/* ---- profile photos ---- */
+.avatar{overflow:visible}
+.avatar .ini{position:absolute;inset:0;display:grid;place-items:center;z-index:0}
+.avatar img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;z-index:1}
+.avatar .flag{z-index:2}
+.avatar.sm{width:38px;height:38px;font-size:.75rem}
+.avatar.xs{width:28px;height:28px;font-size:.6rem}
+.avatar.xs.stack{margin-left:-8px;border:2px solid var(--paper)}
+.d-person .avatar{width:58px;height:58px;font-size:1.05rem}
+/* ---- countdown urgency ---- */
+.countdown.urgent{color:var(--tomato)!important;font-weight:800}
+.countdown.urgent svg{color:var(--tomato)!important}
+/* ---- $0 cues ---- */
+.lprice .free{color:var(--teal-deep);font-weight:800}
+.zero-hero{display:flex;align-items:baseline;gap:.5rem;margin-bottom:3px}
+.zero-hero b{font-family:var(--display);font-weight:800;font-size:2.7rem;color:var(--teal-deep);line-height:.9}
+.zero-hero span{font-size:.9rem;font-weight:700;color:var(--ink-soft)}
+.zero-sub{font-size:.86rem;color:var(--ink-soft);margin-bottom:12px;line-height:1.45}
+.zero-sub b{color:var(--ink)}
+/* ---- departure time set ---- */
+.tset{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.tset.locked{font-size:1.05rem}.tset.locked b{color:var(--teal-deep)}
+.tset .tlbl{font-size:.82rem;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:10px}
+.topts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.topt{border:1.5px solid var(--line);border-radius:10px;padding:.5rem .9rem;font-weight:700;font-size:.95rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.topt.lead{background:var(--pc-teal);border-color:rgba(10,185,182,.4);color:var(--teal-deep)}
+.tnote{font-size:.82rem;color:var(--ink-soft);line-height:1.5}
+/* ---- share: live OG card ---- */
+.share-live{font-size:.78rem;color:var(--ink-soft);margin:.75rem 0 0;line-height:1.45}
+.share-live b{color:var(--teal-deep)}
+.og-caption{font-size:.82rem;color:var(--ink-soft);margin:0 0 10px;line-height:1.5}
+.og-caption b{color:var(--ink)}
+.sc-top{position:relative}
+.sc-live{position:absolute;top:12px;right:13px;display:inline-flex;align-items:center;gap:.32rem;font-size:.58rem;font-weight:800;letter-spacing:.1em;color:var(--teal-deep);background:rgba(255,255,255,.72);border-radius:99px;padding:.18rem .48rem}
+.sc-live .d{width:6px;height:6px;border-radius:50%;background:var(--tomato);animation:pulse 1.4s infinite}
+.sc-faces{display:flex;margin:10px 0 0}
+.sc-faces .avatar{margin-left:-8px;border:2px solid #fff}
+.sc-faces .avatar:first-child{margin-left:0}
+.sc-host{display:flex;align-items:center;gap:.4rem;padding:2px 16px 12px;font-size:.76rem;color:var(--ink-soft);font-weight:600}
+.sc-host svg{width:14px;height:14px}
+/* ---- hero guarantee + em ---- */
+.intro h1 em{font-family:var(--display);font-style:italic;font-weight:500;color:var(--teal-deep)}
+.guarantee{margin-top:18px;background:rgba(10,185,182,.08);border:1px solid rgba(10,185,182,.25);border-radius:14px;padding:12px 16px;max-width:56ch}
+.g-item{display:flex;gap:.6rem;align-items:flex-start;font-size:.92rem;color:var(--ink-soft);line-height:1.5}
+.g-item svg{width:20px;height:20px;color:var(--teal-deep);flex:none;margin-top:2px}
+.g-item b{color:var(--ink)}
+/* ---- filter selects ---- */
+.filters{align-items:flex-end;gap:10px}
+.fsel{display:inline-flex;flex-direction:column;gap:4px;font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+.fsel select{height:42px;border:1.5px solid var(--line);border-radius:12px;background:var(--paper);padding:0 2.2rem 0 .8rem;font-family:inherit;font-size:.9rem;font-weight:600;color:var(--ink);min-width:150px}
+.chip.ghost{border-style:dashed;color:var(--ink-soft)}
+.mr-count{background:var(--tomato);color:#fff;border-radius:99px;font-size:.72rem;font-weight:800;padding:.05rem .42rem;margin-left:.25rem}
+/* ---- hot / mine / gathering cards ---- */
+.lcard.hot{box-shadow:0 0 0 2px rgba(236,58,36,.38), var(--shadow)}
+.lcard.hot:hover{box-shadow:0 0 0 2px rgba(236,58,36,.6), var(--shadow-lg)}
+.lcard.mine{box-shadow:0 0 0 2px rgba(10,185,182,.55), var(--shadow)}
+.mine-tag{position:absolute;top:-11px;left:20px;z-index:3;background:var(--teal);color:#fff;font-size:.68rem;font-weight:800;padding:.3rem .6rem;border-radius:99px;box-shadow:var(--shadow-s)}
+.gather-chip{display:inline-flex;align-items:center;gap:.4rem;margin-top:10px;font-size:.78rem;font-weight:700;color:#a96b04;background:rgba(249,164,41,.14);border-radius:99px;padding:.3rem .7rem}
+.gather-chip svg{width:15px;height:15px;flex:none}
+.lprice .vs{font-size:.74rem;color:var(--ink-soft);font-weight:600}
+/* ---- empty state ---- */
+.board-empty{grid-column:1/-1;text-align:center;padding:44px 24px;border:2px dashed var(--line);border-radius:var(--r-lg);background:rgba(255,253,248,.5)}
+.board-empty .plus{font-size:2.2rem;margin-bottom:6px}
+.board-empty h3{font-size:1.3rem;margin-bottom:.35rem}
+.board-empty p{color:var(--ink-soft);max-width:46ch;margin:0 auto 16px}
+/* ---- guarantee banner (ride page) ---- */
+.guarantee-banner{display:flex;gap:14px;align-items:flex-start;margin-top:20px;background:linear-gradient(120deg,var(--pc-teal),var(--pc-sky));border:1px solid rgba(10,185,182,.3);border-radius:16px;padding:16px 18px}
+.gb-ico{width:40px;height:40px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;flex:none}
+.gb-ico svg{width:22px;height:22px}
+.guarantee-banner>div{font-size:.93rem;color:#2c5b52;line-height:1.55}
+.guarantee-banner b{color:var(--ink)}
+/* ---- on-list hero + scratch (join card) ---- */
+.on-hero{display:flex;gap:12px;align-items:flex-start;background:rgba(10,185,182,.1);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.on-hero>svg{width:24px;height:24px;color:var(--teal-deep);flex:none;margin-top:1px}
+.on-hero b{display:block;font-size:1rem}
+.on-hero span{font-size:.84rem;color:var(--ink-soft);line-height:1.4}
+.btn-scratch{background:var(--paper);color:var(--ink-soft);border:1.5px solid var(--line)}
+.btn-scratch:hover{border-color:var(--tomato);color:var(--tomato);transform:translateY(-1px)}
+.vs-strip{margin:12px 0 0;font-size:.8rem;color:var(--ink-soft);font-weight:600;text-align:center;background:var(--cream);border-radius:10px;padding:.55rem}
+.vs-strip b{color:var(--teal-deep)}
+/* ---- preferred time (join flow) ---- */
+.preftime{margin:2px 0 14px}
+.pref-lbl{display:block;font-size:.82rem;font-weight:700;margin-bottom:8px}
+.pref-opts{display:flex;gap:8px;flex-wrap:wrap}
+.pref-opt{border:1.5px solid var(--line);background:var(--white);border-radius:10px;padding:.5rem .9rem;font-family:inherit;font-weight:700;font-size:.9rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.pref-opt.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+.pref-note{display:block;font-size:.78rem;color:var(--ink-soft);margin-top:8px;line-height:1.4}
+/* ---- dedupe nudge ---- */
+.dupe{background:var(--pc-saffron);border:1.5px solid rgba(249,164,41,.4);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.dupe-in{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
+.dupe-faces{display:flex;flex:none}
+.dupe-txt{font-size:.86rem;color:#6b5a35;line-height:1.45}
+.dupe-txt b{color:#4d3f20}
+/* ---- mobile: join card full-width ---- */
+@media(max-width:960px){.d-join{position:static;margin-top:8px}}
+/* ---- Tripadvisor trust badge ---- */
+.ta{display:inline-flex;align-items:center;gap:.5rem;font-size:.85rem;font-weight:600;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:.42rem .9rem;transition:.15s;white-space:nowrap}
+.ta:hover{box-shadow:var(--shadow-s);transform:translateY(-1px)}
+.ta .owl{display:inline-flex;gap:2px}
+.ta .owl i{width:11px;height:11px;border-radius:50%;background:#00AA6C}
+.ta .owl i.h{background:#fff;box-shadow:inset 0 0 0 2.5px #00AA6C}
+.ta b{font-family:var(--body);font-weight:800;letter-spacing:-.01em}
+.ta .bubbles{display:inline-flex;gap:2.5px}
+.ta .bubbles i{width:13px;height:13px;border-radius:50%;background:#00AA6C}
+.ta .t{color:var(--ink-soft);font-weight:600}
+@media(max-width:520px){.ta .t{display:none}}
+.proto-note{position:fixed;top:84px;right:14px;z-index:80;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:.62rem;letter-spacing:.08em;
+  text-transform:uppercase;color:#9a9488;border:1px dashed currentColor;padding:.35rem .6rem;border-radius:6px;background:rgba(255,255,255,.7)}
+@media(max-width:700px){.proto-note{display:none}}
+
+/* reveal + entrance */
+@media(prefers-reduced-motion:no-preference){
+  .reveal{opacity:0;transform:translateY(20px);transition:opacity .65s ease, transform .65s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+  .intro-grid>*{animation:up .6s cubic-bezier(.2,.7,.2,1) both}
+  .intro-grid>*:nth-child(2){animation-delay:.14s}
+}
+@keyframes up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@media(max-width:600px){
+  .wrap{padding-left:20px;padding-right:20px}
+  .section{padding:clamp(44px,11vw,64px) 0}
+  .btn{padding:1rem 1.5rem;min-height:48px}
+  .btn-sm{padding:.7rem 1.15rem;font-size:.9rem;min-height:42px}
+  .chip{min-height:44px;display:inline-flex;align-items:center}
+  .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:2px 20px 26px}
+  .filters::-webkit-scrollbar{display:none}
+  .filters .chip{flex:none}
+  .filters .count{display:none}
+}
+</style>
+</head>
+<body>
+
+
+<!-- ================= NAV ================= -->
+<div class="nav-wrap"><nav class="nav"><div class="wrap nav-inner">
+  <a class="brand" href="index.html">
+    <svg class="cmark" viewBox="0 0 40 40" fill="none"><path d="M31 12.5C28.6 8.6 24.6 6.2 20 6.2 12.4 6.2 6.2 12.4 6.2 20S12.4 33.8 20 33.8c4.6 0 8.6-2.4 11-6.3" stroke="#F9A429" stroke-width="7" stroke-linecap="round"/></svg>
+    Ceylon Hop
+  </a>
+  <div class="nav-links">
+    <a href="booking.html">Transfers</a><a href="tours.html">Tours</a>
+    <a href="board.html" class="active">Ride board</a>
+    <a href="index.html#routes">Routes</a><a href="why.html">Why us</a>
+  </div>
+  <button class="btn btn-ghost btn-sm" id="my-rides-btn" hidden>My rides <span class="mr-count" id="mr-count">0</span></button>
+</div></nav></div>
+
+<!-- ================= HEADER + BOARD · one view ================= -->
+<header class="intro">
+  <div class="wrap intro-row">
+    <div class="intro-copy">
+      <p class="eyebrow">The ride board</p>
+      <h1>Share a ride. <em>Beat the bus.</em></h1>
+      <p class="lead">Travellers heading the same way split an air-con van — a fraction of a private car, worlds nicer than a 7-hour bus. Add your name to a route below.</p>
+      <div class="guarantee">
+        <span class="g-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><b>You travel either way</b> — if it doesn't fill, we put you in a private car or the next shared ride at the split price.</span>
+      </div>
+      <div id="intro-ta" style="margin-top:16px"></div>
+    </div>
+    <span class="hand-note tomato intro-scribble">
+      <svg class="hand-arrow" viewBox="0 0 40 30" fill="none"><path d="M36 4 C 26 22, 16 24, 4 22 M9 16 L4 22 L11 26" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      $0 to add your name
+    </span>
+  </div>
+</header>
+
+<section class="board-sec" id="board" style="padding:26px 0 clamp(56px,7vw,96px)">
+  <div class="wrap">
+    <div class="filters" id="filters"></div>
+    <div class="board" id="board-grid"></div>
+  </div>
+</section>
+
+<!-- ================= DETAILS + FOUNDER NOTE ================= -->
+<section class="section">
+  <div class="wrap">
+    <p class="route-rule reveal" style="margin-bottom:clamp(40px,6vw,70px)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></p>
+    <div class="below-grid">
+      <div class="faq reveal">
+        <p class="eyebrow">The honest details</p>
+        <h2>Everything you'd <em>want to ask</em></h2>
+        <details open>
+          <summary>How does the board work?</summary>
+          <p><b>1.</b> Add your name to a list going your way — or start a new one. <b>2.</b> Share the list; every name added gets it closer to running. <b>3.</b> Four names in, the van rolls — licensed Ceylon Hop driver, door to door, fare split between everyone.</p>
+        </details>
+        <details>
+          <summary>What happens after I add my name?</summary>
+          <p>Your card gets a hold — <b>$0 charged</b>. If the list reaches 4 names by its deadline, everyone's charged their share and the van is locked in. We email you either way, the moment it happens.</p>
+        </details>
+        <details>
+          <summary>What if the list doesn't fill?</summary>
+          <p>You choose: <b>upgrade to a private car</b> split between whoever signed, <b>move to the next scheduled shared ride</b>, or simply walk away. The hold disappears. You're never charged for a ride that didn't run.</p>
+        </details>
+        <details>
+          <summary>Who's driving?</summary>
+          <p>We are — <b>Ceylon Hop</b>. Licensed drivers and insured air-con vans, the same ones behind our private transfers, rated 5.0 on Tripadvisor. The board finds the people; we do the driving.</p>
+        </details>
+        <details>
+          <summary>Why sign in with Google?</summary>
+          <p>So every name on a list is a <b>real person</b> — no ghosts who never show. Other travellers only ever see your first name and country. Never your email, never your number.</p>
+        </details>
+        <details>
+          <summary>Can I bring a friend?</summary>
+          <p>Yes — take two lines at once. You're charged together, or not at all.</p>
+        </details>
+      </div>
+      <aside class="founder reveal">
+        <span class="stamp-c">est. 2024 🇱🇰</span>
+        <h3>Why we run this board</h3>
+        <p>We started Ceylon Hop wanting strangers to share vans — it's cheaper for you, lighter on the island, and honestly more fun. But our fixed timetable kept missing the days <b>you</b> actually wanted to travel.</p>
+        <p>So the board sets the timetable now. You pick the routes and days; when enough names stack up, <b>we send the van</b>. If a list doesn't fill, nobody pays and no van drives empty.</p>
+        <p class="sig">— the Ceylon Hop crew</p>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<div class="foot">The ride board is run by Ceylon Hop · <span class="hand">questions? shout on WhatsApp anytime ✌️</span></div>
+
+<!-- ================= RIDE DETAIL PAGE ================= -->
+<main class="detail" id="detail"><div class="wrap" id="detail-inner"></div></main>
+
+<!-- ================= MODAL ================= -->
+<div class="overlay" id="overlay" role="dialog" aria-modal="true">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h3 id="m-title">Add your name</h3>
+        <div class="sub" id="m-route">Ella → Mirissa · Sat 8 Aug</div>
+      </div>
+      <button class="x" id="modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="steps" id="steps"><span class="step-dot on"></span><span class="step-dot"></span><span class="step-dot"></span></div>
+
+      <!-- step 0: plan your ride (create mode only) -->
+      <div class="mstep" id="mstep-0" hidden>
+        <div class="frow">
+          <div class="fld"><label>From</label><select id="c-from"></select></div>
+          <div class="fld"><label>To</label><select id="c-to"></select></div>
+        </div>
+        <div class="frow">
+          <div class="fld"><label>Date — any day works</label><input type="date" id="c-date"></div>
+          <div class="fld"><label>Departure</label>
+            <div class="timechips" id="c-time">
+              <button class="chip sel" data-t="morning">Morning</button>
+              <button class="chip" data-t="afternoon">Afternoon</button>
+            </div>
+          </div>
+        </div>
+        <div class="fld" style="margin-bottom:12px"><label>A note for the others <span style="opacity:.6">(optional)</span></label>
+          <input id="c-note" placeholder="surfboards, tea-factory stop, travelling with a baby…" maxlength="70"></div>
+        <div id="dupe-nudge" class="dupe" hidden></div>
+        <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 4 names are up<br>list closes 48h before</span></div>
+        <button class="btn btn-primary btn-block" id="c-continue" style="height:52px">Put it on the board</button>
+        <p class="whisper">it goes up instantly — you're name #1 of 4</p>
+      </div>
+
+            <!-- step 1: real Google sign-in + country capture -->
+      <div class="mstep" id="mstep-1">
+        <div id="auth-signin">
+          <p class="talk">Lists only take <b>real names</b> — it's what makes them worth trusting. Sign in and you'll appear to other travellers as your first name + country, nothing more.</p>
+          <div id="gis-btn-holder" style="display:flex;justify-content:center;min-height:44px"></div>
+          <div id="gis-unavailable" class="deal" hidden style="margin-top:12px">
+            <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> Sign-in unavailable</h4>
+            <p>The owner hasn't set <b>GOOGLE_CLIENT_ID</b> yet, so joining is switched off. You can still browse every list on the board.</p>
+          </div>
+          <p class="whisper">We see your name, photo and email. Other travellers see <b>"your first name + flag"</b> — that's it.</p>
+        </div>
+        <div id="auth-country" hidden>
+          <p class="talk">One more thing, <b id="auth-hello">traveller</b> — <b>where are you from?</b> It shows next to your name as a little flag.</p>
+          <div class="fld" style="margin-bottom:12px"><label>Your country (2-letter code)</label>
+            <input id="auth-country-in" maxlength="4" autocomplete="country" placeholder="e.g. GB, FR, LK" style="text-transform:uppercase"></div>
+          <button class="btn btn-primary btn-block" id="auth-country-go" style="height:52px">Continue</button>
+          <p class="whisper">e.g. <b>GB</b> for the UK, <b>US</b>, <b>AU</b>, <b>LK</b> for Sri Lanka.</p>
+        </div>
+      </div>
+
+      <!-- step 2 -->
+      <div class="mstep" id="mstep-2" hidden>
+        <div class="signed-as" id="m-signed-as">
+          <span class="avatar" id="m-avatar" style="background:var(--teal-deep);width:38px;height:38px"><span class="ini">··</span></span>
+          <div><b id="m-signed-name">Signed in</b><br><span class="muted" id="m-signed-email"></span></div>
+        </div>
+        <div class="deal">
+          <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          You pay $0 today</h4>
+          <p>We hold your card via PayHere. You're charged <b id="m-cost">$24.00</b> <b>only if this list reaches 4 names</b>. If it doesn't, <b>we move you to a private car or the next shared ride at the split price</b> — you travel either way, and the hold disappears if you'd rather not.</p>
+        </div>
+        <div class="preftime">
+          <span class="pref-lbl">Your preferred departure time?</span>
+          <div class="pref-opts" id="pref-opts"></div>
+          <span class="pref-note">The group's most popular time wins — we lock it when the van fills.</span>
+        </div>
+        <div class="paynote"><span class="pl" style="color:#1a1f71">VISA</span><span class="pl" style="color:#eb001b">MC</span> held securely by PayHere · we never see the number</div>
+        <button class="btn btn-primary btn-block" id="sign-btn" style="margin-top:16px;height:54px;font-size:1rem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+          Add my name — $0 now
+        </button>
+      </div>
+
+      <!-- step 3 -->
+      <div class="mstep success" id="mstep-3" hidden>
+        <div class="yourrow">
+          <span class="num" id="yl-num">3.</span>
+          <span class="avatar" style="background:var(--teal-deep)">RW<span class="flag">🇱🇰</span></span>
+          <span class="who"><span class="handname" id="yl-name"><span class="caret"></span></span></span>
+        </div>
+        <h3 id="done-head">Your name's on the list.</h3>
+        <p class="why-share" id="done-sub">1 more name and the van rolls.</p>
+        <p class="why-share"><b>Now — who else is heading that way?</b> Drop the list in your hostel group chat or a travel group. That's how lists fill.</p>
+        <p class="og-caption">This is what your link unfurls to on WhatsApp &amp; Facebook — <b>it always shows the live count</b>, even after it locks:</p>
+        <div class="share-card">
+          <div class="sc-top">
+            <span class="sc-live"><span class="d"></span>LIVE</span>
+            <div class="sc-route" id="sc-route">Ella → Mirissa</div>
+            <div class="sc-meta" id="sc-meta">Sat 8 Aug · morning · 3 of 4 names up · ≈ $24 each</div>
+            <div class="sc-faces" id="sc-faces"></div>
+            <div class="sc-dots" id="sc-dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></div>
+          </div>
+          <div class="sc-txt"><b>Join my Ceylon Hop shared ride 🚐</b><span id="sc-msg">One seat left to make it run — $0 unless it happens.</span></div>
+          <div class="sc-host"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg>ceylonhop.com</div>
+        </div>
+        <div class="share-btns">
+          <a class="btn btn-wa" id="wa-share" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm5.4 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .6l-.4.6-.5.5c-.2.2-.3.4-.1.7.2.3.8 1.4 1.8 2.2 1.2 1.1 2.3 1.4 2.6 1.6.3.1.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.6.4 0 .1 0 .8-.2 1.4z"/></svg>
+            WhatsApp
+          </a>
+          <a class="btn btn-fb" id="fb-share" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>
+            Share to a group
+          </a>
+        </div>
+        <div class="copy-row">
+          <input readonly id="share-url" value="https://ceylonhop.com/board/EM-4821">
+          <button class="btn btn-ghost btn-sm" id="copy-btn">Copy</button>
+        </div>
+        <button class="btn btn-ghost btn-block" id="see-list" hidden style="margin-top:10px">See your list on the board</button>
+        <p class="whisper" style="margin-top:.85rem">We'll email you the second someone signs under you.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ================= TOAST ================= -->
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="board.js" defer></script>
+</body>
+</html>
