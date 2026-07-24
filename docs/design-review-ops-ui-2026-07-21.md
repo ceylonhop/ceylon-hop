@@ -1,11 +1,13 @@
 # Ops dashboard UI/UX design review — 2026-07-21
 
-> **Status update (2026-07-23):** all nine defects D1–D9 below were fixed by PR #103
-> (merged 2026-07-22, in production), with offline e2e regression specs
+> **Status update (2026-07-23): review fully closed.** All nine defects D1–D9 below were
+> fixed by PR #103 (merged 2026-07-22, in production), with offline e2e regression specs
 > `ops-typed-distance.spec.js`, `ops-rail-theme.spec.js`, `ops-back-guard.spec.js`.
-> The "Polish / smaller UX notes" section (mobile pass, accessibility, truncation,
-> autocomplete wrapping) remains open backlog. This file is committed for the record —
-> PR #103 references it but it previously existed only in a local working tree.
+> The "Polish / smaller UX notes" section was then closed by PR #135 (2026-07-23: mobile
+> rail strip + drawer, booking-card keyboard a11y + login hidden/inert, entry-animation
+> tuning, leg-input ellipsis, one-line autocomplete items, whole-dollar list prices;
+> spec `ops-a11y-polish.spec.js`). This file is committed for the record — PR #103
+> references it but it previously existed only in a local working tree.
 
 Reviewed by Claude (Fable 5) by driving the real app: local API serving `/ops` from a clean
 worktree at `origin/main` (76976ba, the same code staging runs), dev sign-in as founder and
