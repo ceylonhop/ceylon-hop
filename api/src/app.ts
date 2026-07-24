@@ -6,6 +6,7 @@ import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
+import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
@@ -38,6 +39,9 @@ export interface AppDeps {
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
+  paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
+  customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
+  customerVerifier?: JwtVerifier; // test seam for the customer Google login
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
@@ -78,6 +82,7 @@ export function createApp(deps: AppDeps = {}) {
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
+  const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
@@ -125,6 +130,8 @@ export function createApp(deps: AppDeps = {}) {
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
   app.use('/quote', rateLimit(rl));
+  // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
+  app.use('/board/*', rateLimit({ ...rl, methods: ['POST'] }));
   // M17: public front-end error beacon — same per-IP write limit as other public endpoints.
   app.use('/errors/*', rateLimit(rl));
   // /admin/quote/* fronts billed Google APIs (GET /places, POST /distance), 2-3 pricing
@@ -184,8 +191,21 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
-  // Ride Board — public read endpoints (join/create/scratch land in later slices).
-  app.route('/board', rideBoardRoutes({ rideLists }));
+  // Ride Board — public reads + customer-authenticated writes (card side via the fake).
+  app.route(
+    '/board',
+    rideBoardRoutes({
+      rideLists,
+      departures,
+      paygw,
+      customer: {
+        sessionSecret: deps.customerSessionSecret ?? config.CUSTOMER_SESSION_SECRET,
+        googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
+        verifier: deps.customerVerifier,
+      },
+      memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+    }),
+  );
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
   app.route(
     '/webhooks',

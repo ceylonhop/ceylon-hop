@@ -60,6 +60,8 @@ export interface RideListRepo {
   listOpen(filter?: ListFilter, now?: Date): Promise<RideListWithMembers[]>;
   // Dedupe support: an open list already covering this exact hop (and date, if given).
   findOpenByRoute(fromPlace: string, toPlace: string, date?: string): Promise<RideList | null>;
+  // "My rides": lists where this traveller is a live member (held/charged), newest first.
+  listForMember(sub: string): Promise<RideListWithMembers[]>;
   // Atomically add (or re-activate) a member. Returns null if the van is full; returns the
   // existing member if they're already live on the list (idempotent join).
   addMember(listId: string, args: AddMemberArgs, now?: Date): Promise<RideMember | null>;
@@ -152,6 +154,13 @@ export class InMemoryRideListRepo implements RideListRepo {
         (date ? l.date === date : true),
     );
     return hit ? { ...hit } : null;
+  }
+
+  async listForMember(sub: string): Promise<RideListWithMembers[]> {
+    return [...this.lists.values()]
+      .filter((l) => (this.members.get(l.id) ?? []).some((m) => m.sub === sub && countsForSeat(m)))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((l) => this.clone(l.id)!);
   }
 
   async addMember(listId: string, args: AddMemberArgs, now: Date = new Date()): Promise<RideMember | null> {

@@ -136,6 +136,15 @@ export class PostgresRideListRepo implements RideListRepo {
     return rows[0] ? toList(rows[0]) : null;
   }
 
+  async listForMember(sub: string): Promise<RideListWithMembers[]> {
+    const rows = await this.sql<ListRow[]>`
+      select l.* from ride_list l
+      join ride_list_member m on m.list_id = l.id
+      where m.sub = ${sub} and m.status in ('held', 'charged')
+      order by l.created_at desc`;
+    return this.withMembers(rows.map(toList));
+  }
+
   async addMember(listId: string, args: AddMemberArgs, now: Date = new Date()): Promise<RideMember | null> {
     // Guarded, oversell-safe insert (pooled analogue of holdSeats): the row is inserted only
     // when live seats + requested ≤ capacity. ON CONFLICT (list_id, sub) reactivates a

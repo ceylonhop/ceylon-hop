@@ -32,9 +32,21 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow(/BOOKING_LINK_SECRET/);
   });
 
-  it('boots in production with real secrets', () => {
+  it('the customer-session secret also fails closed in production', () => {
+    // real ops + booking secrets, but the customer secret left at its dev default → throws
     expect(() =>
       buildConfig({ NODE_ENV: 'production', OPS_SESSION_SECRET: 'a-real-32char-random-secret', BOOKING_LINK_SECRET: 'another-real-32char-secret' }),
+    ).toThrow(/CUSTOMER_SESSION_SECRET/);
+  });
+
+  it('boots in production with real secrets', () => {
+    expect(() =>
+      buildConfig({
+        NODE_ENV: 'production',
+        OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+        BOOKING_LINK_SECRET: 'another-real-32char-secret',
+        CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+      }),
     ).not.toThrow();
   });
 
