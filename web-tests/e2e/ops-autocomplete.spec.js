@@ -84,7 +84,10 @@ test('ops quote autocomplete stays closed after picking a place', async ({ page 
 // events INSIDE the menu too, so the first wheel tick dismissed it.
 test('wheeling inside the autocomplete scrolls the list; outside still dismisses it', async ({ page }) => {
   await stubOps(page);
-  // Enough results to overflow the menu's 264px max-height so it actually scrolls.
+  // Enough results to fill the menu. Since the one-line-per-item polish the rendered menu
+  // (capped at 6 items, no wrapping) never outgrows its 264px max-height on its own, so the
+  // test shrinks the max-height below (style tag) to force the scrollable state the wheel
+  // guard exists for.
   const many = Array.from({ length: 12 }, (_, i) => `Kandy Result ${i + 1}`);
   await page.route('**/admin/quote/places**', (r) => r.fulfill({
     status: 200, contentType: 'application/json',
@@ -92,6 +95,8 @@ test('wheeling inside the autocomplete scrolls the list; outside still dismisses
   }));
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  // Force the scrollable state (see fixture comment above).
+  await page.addStyleTag({ content: '.qv .ch-ac-menu{max-height:120px!important}' });
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
   await page.fill('#f-firstName', 'Test');
   await page.fill('#f-lastName', 'Customer');
