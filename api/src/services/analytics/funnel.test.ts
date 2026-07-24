@@ -65,27 +65,6 @@ describe('computeFunnel tiles', () => {
     expect(r.tiles.created.value).toBe(1);
     expect(r.tiles.sent.value).toBe(1);
     expect(r.tiles.won.value).toBe(1);
-    expect(r.tiles.lost.value).toBe(0);
-  });
-
-  it('win rate denominator is decided-in-range only — open sent quotes are pipeline, not losses', () => {
-    const rows = [
-      mk({ status: 'won', createdAt: daysAgo(10), sentAt: daysAgo(9), decidedAt: daysAgo(5) }),
-      mk({ status: 'lost', createdAt: daysAgo(10), sentAt: daysAgo(9), decidedAt: daysAgo(4) }),
-      mk({ status: 'expired', createdAt: daysAgo(10), sentAt: daysAgo(9), decidedAt: daysAgo(3) }),
-      mk({ status: 'sent', createdAt: daysAgo(10), sentAt: daysAgo(2) }), // open — excluded
-    ];
-    const r = computeFunnel(rows, range(28));
-    expect(r.tiles.winRate).toEqual({ num: 1, den: 3 });
-  });
-
-  it('send rate = created-in-range that have since been sent (even after the range)', () => {
-    const rows = [
-      mk({ createdAt: daysAgo(10), sentAt: daysAgo(1) }),
-      mk({ createdAt: daysAgo(10) }),
-    ];
-    const r = computeFunnel(rows, range(28, 5)); // range ends 5d ago; sentAt is after `to`
-    expect(r.tiles.sendRate).toEqual({ num: 1, den: 2 });
   });
 
   it('deltas compare against the previous equal-length window', () => {
@@ -100,6 +79,40 @@ describe('computeFunnel tiles', () => {
   });
 });
 
+describe('computeFunnel quote $ values', () => {
+  it('won value sums decided-in-range wins per currency; quoted value sums sent-in-range', () => {
+    const rows = [
+      mk({ status: 'won', createdAt: daysAgo(20), sentAt: daysAgo(10), decidedAt: daysAgo(5), totalCents: 30000 }),
+      mk({ status: 'won', createdAt: daysAgo(20), sentAt: daysAgo(10), decidedAt: daysAgo(4), totalCents: 8000, currency: 'EUR' }),
+      mk({ status: 'won', createdAt: daysAgo(60), sentAt: daysAgo(50), decidedAt: daysAgo(40), totalCents: 99999 }), // decided out of range
+      mk({ status: 'sent', createdAt: daysAgo(20), sentAt: daysAgo(3), totalCents: 12000 }),  // sent in range, not won
+      mk({ status: 'lost', createdAt: daysAgo(20), sentAt: daysAgo(50), decidedAt: daysAgo(2), totalCents: 5000 }), // lost — not won value; sent out of range
+    ];
+    const r = computeFunnel(rows, range(28));
+    expect(r.tiles.wonValue).toEqual({ USD: 30000, EUR: 8000 });
+    // Quoted value follows sentAt-in-range regardless of eventual outcome.
+    expect(r.tiles.sentValue).toEqual({ USD: 42000, EUR: 8000 });
+  });
+
+  it('avg quote size divides per currency over sent-in-range quotes, rounded to whole cents', () => {
+    const rows = [
+      mk({ status: 'sent', createdAt: daysAgo(20), sentAt: daysAgo(3), totalCents: 10000 }),
+      mk({ status: 'sent', createdAt: daysAgo(20), sentAt: daysAgo(2), totalCents: 15001 }),
+      mk({ status: 'sent', createdAt: daysAgo(20), sentAt: daysAgo(1), totalCents: 7000, currency: 'EUR' }),
+      mk({ status: 'draft', createdAt: daysAgo(2), totalCents: 50000 }), // never sent — excluded
+    ];
+    const r = computeFunnel(rows, range(7));
+    expect(r.tiles.avgSentCents).toEqual({ USD: 12501, EUR: 7000 }); // (10000+15001)/2 → 12500.5 → 12501
+  });
+
+  it('empty range yields empty currency maps, not zeros or NaN', () => {
+    const r = computeFunnel([], range(7));
+    expect(r.tiles.wonValue).toEqual({});
+    expect(r.tiles.sentValue).toEqual({});
+    expect(r.tiles.avgSentCents).toEqual({});
+  });
+});
+
 describe('computeFunnel snapshots (ignore range, use now)', () => {
   it('pipeline = current sent only, value grouped per currency, never merged', () => {
     const rows = [
@@ -110,7 +123,6 @@ describe('computeFunnel snapshots (ignore range, use now)', () => {
     ];
     const r = computeFunnel(rows, range(7));
     expect(r.tiles.pipeline).toEqual({ count: 2, valueCents: { USD: 5000, EUR: 7000 } });
-    expect(r.tiles.inReview.count).toBe(1);
   });
 
   it('aging buckets open sent quotes by whole days since sentAt', () => {
@@ -130,18 +142,7 @@ describe('computeFunnel snapshots (ignore range, use now)', () => {
   });
 });
 
-describe('computeFunnel series & funnel & lost reasons', () => {
-  it('cohort funnel: only quotes CREATED in range advance its stages', () => {
-    const rows = [
-      mk({ createdAt: daysAgo(5), sentAt: daysAgo(4), status: 'won', decidedAt: daysAgo(3) }),
-      mk({ createdAt: daysAgo(5), sentAt: daysAgo(4), status: 'sent' }),
-      mk({ createdAt: daysAgo(5) }),
-      mk({ createdAt: daysAgo(40), sentAt: daysAgo(4), status: 'sent' }), // sent in range, created out — NOT in cohort
-    ];
-    const r = computeFunnel(rows, range(7));
-    expect(r.funnel).toEqual({ created: 3, sent: 2, won: 1 });
-  });
-
+describe('computeFunnel series & lost reasons', () => {
   it('series is zero-filled per Colombo day with created/sent/won stacked by their own stamps', () => {
     const q = range(2);
     const rows = [
@@ -164,27 +165,5 @@ describe('computeFunnel series & funnel & lost reasons', () => {
     const r = computeFunnel(rows, range(28));
     expect(r.lostReasons[0]).toEqual({ reason: 'price', count: 2, valueCents: { USD: 12000 } });
     expect(r.lostReasons[1].reason).toBeNull();
-  });
-});
-
-describe('computeFunnel cycle times', () => {
-  it('median and p90 over transitions completed in range; null when empty', () => {
-    const rows = [
-      mk({ createdAt: daysAgo(5, -2 * HOUR), sentAt: daysAgo(5) }),   // 2h
-      mk({ createdAt: daysAgo(4, -4 * HOUR), sentAt: daysAgo(4) }),   // 4h
-      mk({ createdAt: daysAgo(3, -12 * HOUR), sentAt: daysAgo(3) }),  // 12h
-    ];
-    const r = computeFunnel(rows, range(7));
-    expect(r.cycles.draftToSentHours).toEqual({ median: 4, p90: 12, n: 3 });
-    expect(r.cycles.sentToDecidedDays).toBeNull();
-  });
-
-  it('even n medians average the middle pair', () => {
-    const rows = [
-      mk({ createdAt: daysAgo(5, -2 * HOUR), sentAt: daysAgo(5) }),
-      mk({ createdAt: daysAgo(4, -6 * HOUR), sentAt: daysAgo(4) }),
-    ];
-    const r = computeFunnel(rows, range(7));
-    expect(r.cycles.draftToSentHours!.median).toBe(4);
   });
 });

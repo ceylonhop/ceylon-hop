@@ -79,6 +79,15 @@ export function serviceDaysForCorridor(id: string): number[] {
   return route ? route.days : SHARED_SERVICE_DAYS;
 }
 
+// A corridor's route endpoints by id, for customer-facing copy (emails). Non-directional —
+// a seat can run either way along the corridor, so callers must not render an arrow.
+// Null (not a fallback name) for ids outside the catalogue, so callers keep their own
+// neutral wording.
+export function corridorRouteEnds(id: string): { from: string; to: string } | null {
+  const route = CORRIDOR_ROUTES.find((c) => c.id === id);
+  return route ? { from: route.stops[0], to: route.stops[route.stops.length - 1] } : null;
+}
+
 // Resolve which corridor carries both endpoints (any direction), first match wins —
 // mirrors the front-end iteration order. Used when no corridorId is supplied.
 export function corridorIdForRoute(from: string, to: string): string | null {
