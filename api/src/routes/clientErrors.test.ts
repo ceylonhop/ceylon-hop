@@ -27,6 +27,16 @@ describe('POST /errors/client', () => {
     expect(inner.sent[0].body).toContain('booking.html');
   });
 
+  it('drops expected control-flow beacons (no catalogue route redirect) without alerting', async () => {
+    // booking.js throws to halt the script after redirecting a no/unknown-route visit to the
+    // planner. That is expected flow, not a fault — it must not raise an alert or reach Sentry,
+    // but the endpoint still acknowledges the beacon.
+    const { inner, app } = mk();
+    const res = await post(app, JSON.stringify({ message: 'Uncaught Error: no catalogue route — redirected to planner', url: 'https://ceylonhop.com/booking.html' }));
+    expect(res.status).toBe(204);
+    expect(inner.sent).toHaveLength(0);
+  });
+
   it('throttles repeats of the same message', async () => {
     const { inner, app } = mk();
     await post(app, JSON.stringify({ message: 'same boom' }));
