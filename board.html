@@ -8,12 +8,15 @@
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      OWNER: paste your OAuth 2.0 Web client id here at go-live (…apps.googleusercontent.com). -->
 <script>window.GOOGLE_CLIENT_ID='';</script>
+<!-- Pre-launch: joining is switched off and the board runs on fakes, so keep it out of the
+     index until it ships. Remove this line (and add the URL to SITEMAP_EXTRA) at go-live. -->
+<meta name="robots" content="noindex, follow">
 <title>The Ride Board — Ceylon Hop</title>
 <meta name="description" content="Share an air-con van with travellers heading your way — a fraction of a private car, worlds nicer than the bus. Add your name to a route; $0 unless it runs.">
 <link rel="canonical" href="https://ceylonhop.com/board.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
-<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/board.html">
@@ -44,85 +47,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <style>
 /* ============================================================
    CEYLON HOP — THE RIDE BOARD
-   Community shared-ride lists, in the site's own design system.
-   "Postcard from Ceylon": editorial, playful, warm — not salesy.
+   Tokens, base styles, buttons and pills come from site.css, which this page
+   already links. They used to be duplicated here verbatim, so any palette or
+   token change in site.css silently diverged the board. Only genuinely
+   board-specific rules live below.
    ============================================================ */
-:root{
-  --blue:#63BFD6; --teal:#0AB9B6; --teal-deep:#08938f;
-  --saffron:#F9A429; --tomato:#EC3A24;
-  --ink:#2C2A2B; --ink-soft:#6c6a6b;
-  --cream:#F4F2EA; --cream-deep:#EAE6D8; --paper:#fffdf8; --white:#fff; --line:#e7e3d6;
-  --accent:var(--teal); --accent-deep:var(--teal-deep); --cta:var(--tomato);
-  --pc-teal:#e3f4ef; --pc-sky:#e8f3f6; --pc-green:#edf4e6; --pc-saffron:#fbf0d8; --pc-line:#dfe9dd;
-  --display:'Newsreader', Georgia, 'Times New Roman', serif;
-  --body:'Hanken Grotesk', system-ui, -apple-system, sans-serif;
-  --hand:'Caveat', 'Segoe Script', cursive;
-  --r-sm:10px; --r:16px; --r-lg:24px;
-  --shadow-s:0 2px 8px rgba(44,42,43,.06);
-  --shadow:0 14px 40px -18px rgba(44,42,43,.30);
-  --shadow-lg:0 30px 70px -28px rgba(44,42,43,.42);
-  --maxw:1200px;
-}
-*{box-sizing:border-box;min-width:0}
-[hidden]{display:none!important}
-html{scroll-behavior:smooth}
-body{margin:0;font-family:var(--body);color:var(--ink);background:var(--cream);font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
-body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:
-  radial-gradient(125% 70% at 88% -2%, var(--pc-teal), transparent 55%),
-  radial-gradient(95% 55% at -4% 102%, var(--pc-saffron), transparent 52%),
-  var(--cream)}
-body::after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.028;mix-blend-mode:multiply;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size:150px 150px}
-img{max-width:100%;display:block}
-a{color:inherit;text-decoration:none}
-button{font-family:inherit;cursor:pointer}
-::selection{background:var(--saffron);color:var(--ink)}
-h1,h2,h3,h4{font-family:var(--display);font-weight:700;line-height:1.07;margin:0;letter-spacing:-.005em}
-h2{font-size:clamp(1.9rem,3.6vw,3rem);margin-bottom:.5rem}
-p{margin:0 0 1rem}
-.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
-.section{padding:clamp(56px,8vw,110px) 0}
-.center{text-align:center}
-.muted{color:var(--ink-soft)}
-.eyebrow{font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-deep);margin:0 0 .9rem;display:inline-flex;align-items:center;gap:.5rem}
-.eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
-.lead{font-size:1.14rem;color:var(--ink-soft);max-width:54ch;line-height:1.6}
-.hand{font-family:var(--hand);font-weight:600}
-
-/* buttons — straight from site.css */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;font-weight:600;font-size:.97rem;border:none;border-radius:999px;padding:.9rem 1.6rem;transition:transform .15s ease, box-shadow .2s ease, background .2s;white-space:nowrap;line-height:1}
-.btn svg{width:18px;height:18px}
-.btn:active{transform:translateY(1px)}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
-.btn-primary:hover{background:var(--accent-deep);transform:translateY(-2px)}
-.btn-ghost{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-s);border:1px solid var(--line)}
-.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-.btn-wa{background:#25D366;color:#fff}
-.btn-wa:hover{background:#1ebe5a;transform:translateY(-2px)}
 .btn-fb{background:#1877F2;color:#fff}
 .btn-fb:hover{filter:brightness(1.08);transform:translateY(-2px)}
-.btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
-.btn-block{width:100%}
-
-/* pills */
-.pill{display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600;padding:.4rem .8rem;border-radius:999px;background:var(--cream-deep);color:var(--ink);white-space:nowrap}
-.pill-teal{background:rgba(10,185,182,.14);color:var(--teal-deep)}
-.pill-saffron{background:rgba(249,164,41,.18);color:#a96b04}
-.pill-tomato{background:rgba(236,58,36,.12);color:#bb2c1a}
-.pill-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.9}
 .pill-pulse::before{animation:pulse 1.7s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:.9;transform:scale(1)}50%{opacity:.4;transform:scale(.72)}}
-
-/* hand notes — used sparingly, exactly like the live site */
-.hand-note{font-family:var(--hand);font-weight:700;color:var(--accent-deep);font-size:1.5rem;line-height:1.1;display:inline-flex;align-items:flex-end;gap:.35rem}
-.hand-note.tomato{color:var(--tomato)}
-.hand-arrow{width:34px;height:auto;flex:none;color:currentColor;transform:translateY(2px)}
-
-/* route rule flourish */
-.route-rule{display:flex;align-items:center;gap:.6rem;color:var(--accent);margin:0}
-.route-rule::before,.route-rule::after{content:"";height:0;border-top:2px dashed currentColor;flex:1;opacity:.5}
-.route-rule svg{width:20px;height:20px;flex:none}
 
 /* ---------- nav ---------- */
 .nav-wrap{position:sticky;top:0;z-index:70}
@@ -725,8 +658,8 @@ body.detail-open .detail{display:block}
           <p class="talk">Lists only take <b>real names</b> — it's what makes them worth trusting. Sign in and you'll appear to other travellers as your first name + country, nothing more.</p>
           <div id="gis-btn-holder" style="display:flex;justify-content:center;min-height:44px"></div>
           <div id="gis-unavailable" class="deal" hidden style="margin-top:12px">
-            <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> Sign-in unavailable</h4>
-            <p>The owner hasn't set <b>GOOGLE_CLIENT_ID</b> yet, so joining is switched off. You can still browse every list on the board.</p>
+            <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> Joining opens soon</h4>
+            <p>Adding your name isn't switched on just yet — but every list below is live, so have a look at where people are heading. Keen to join one? <a href="https://wa.me/94779669662" target="_blank" rel="noopener">Message us on WhatsApp</a> and we'll add you ourselves.</p>
           </div>
           <p class="whisper">We see your name, photo and email. Other travellers see <b>"your first name + flag"</b> — that's it.</p>
         </div>

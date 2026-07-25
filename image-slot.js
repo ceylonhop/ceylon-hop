@@ -197,6 +197,15 @@
     '.empty .sub{font-size:11px}' +
     '.empty .sub u{text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}' +
     '.empty:hover .sub u{color:rgba(0,0,0,.75);text-decoration-color:currentColor}' +
+    // A visitor is not an editor: an unfilled slot must read as a designed panel, not as a
+    // drop target with authoring instructions on it. Editable mode keeps the chrome below.
+    ':host(:not([data-editable])) .empty{cursor:default;gap:0;' +
+    '  background:linear-gradient(135deg,var(--cream-deep,#efe9dc) 0%,var(--paper,#f6f2e9) 55%,' +
+    '  rgba(10,185,182,.10) 100%)}' +
+    ':host(:not([data-editable])) .empty svg,' +
+    ':host(:not([data-editable])) .empty .cap,' +
+    ':host(:not([data-editable])) .empty .sub{display:none}' +
+    ':host(:not([data-editable])) .ring{display:none}' +
     ':host([data-over]) .frame{outline:2px solid #c96442;outline-offset:-2px;' +
     '  background:rgba(201,100,66,.10)}' +
     '.ring{position:absolute;inset:0;pointer-events:none;border:1.5px dashed rgba(0,0,0,.25);' +
@@ -267,7 +276,11 @@
       this._subFn = () => this._render();
       // Shadow-DOM listeners live with the shadow DOM — bound once here so
       // disconnect/reconnect (e.g. React remount) doesn't stack handlers.
-      this._empty.addEventListener('click', () => this._input.click());
+      this._empty.addEventListener('click', () => {
+        // Without this a visitor clicking an unfilled slot gets a file-picker dialog.
+        if (!this.hasAttribute('data-editable')) return;
+        this._input.click();
+      });
       root.addEventListener('click', (e) => {
         const act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
         if (act === 'replace') { this._exitReframe(true); this._input.click(); }
@@ -622,7 +635,9 @@
           y: stored && Number.isFinite(stored.y) ? stored.y : 0,
         };
       }
-      this._cap.textContent = this.getAttribute('placeholder') || 'Drop an image';
+      // Only authors get the placeholder text. Hiding it in CSS would still leave the
+      // authoring note in the DOM for screen readers and view-source.
+      this._cap.textContent = editable ? (this.getAttribute('placeholder') || 'Drop an image') : '';
       // Toggle via style.display — the [hidden] attribute alone loses to
       // the display:flex / display:block rules in the stylesheet above.
       if (url) {

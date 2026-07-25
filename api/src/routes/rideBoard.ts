@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideListRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
@@ -93,6 +94,7 @@ export interface RideBoardDeps {
   customer: { sessionSecret: string; googleClientId: string; verifier?: JwtVerifier };
   memberLinkSecret: string; // "manage my name" capability token
   currency?: string;
+  allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
 }
 
 export function rideBoardRoutes(deps: RideBoardDeps) {
@@ -100,6 +102,26 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
   // Populate c.var.customer from the ch_cust cookie on every request (never throws).
   r.use('*', customerIdentity(deps.customer.sessionSecret));
+
+  // CSRF. The ch_cust cookie is SameSite=None (board.html on Pages calls the API on Render), so
+  // unlike the ops cookie it DOES ride cross-site requests. The comment on setCustomerCookie
+  // reasons that JSON-only bodies force a CORS preflight — but that does not hold for a route
+  // which reads no body at all: a bodyless cross-site POST is a "simple request", sends no
+  // preflight, and carried the cookie. That let any page silently scratch a signed-in traveller
+  // off their ride list. Checked here rather than per-route so a new write can't miss it.
+  // Note the ops guard's same-origin rule is wrong for the board, which is cross-origin BY
+  // DESIGN — the allow-list is what distinguishes our own site from an attacker's.
+  const sameOrigin: MiddlewareHandler = async (c, next) => {
+    if (c.req.method === 'GET' || c.req.method === 'HEAD') return next();
+    const origin = c.req.header('origin');
+    // A browser always sends Origin on a cross-origin POST, so a missing one means a non-browser
+    // caller (curl, a monitor) that has no ambient cookie to abuse.
+    if (origin && !(deps.allowedOrigins ?? []).includes(origin)) {
+      return c.json({ error: 'bad_origin' }, 403);
+    }
+    return next();
+  };
+  r.use('*', sameOrigin);
 
   // ---- auth ----------------------------------------------------------------
 

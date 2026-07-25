@@ -74,7 +74,17 @@ function isWebhookBody(v: unknown): v is WebhookBody {
 export class FakePaymentAdapter implements PaymentAdapter {
   readonly provider = 'fake';
 
-  constructor(private readonly secret: string = DEFAULT_SECRET) {}
+  constructor(private readonly secret: string = DEFAULT_SECRET) {
+    // DEFAULT_SECRET is a constant in this repo, so a fake adapter in production would let
+    // anyone sign their own "succeeded" webhook. config.ts refuses to boot without PayHere
+    // credentials; this is the second lock, in case something constructs one directly.
+    // A non-production deployment that still runs NODE_ENV=production (staging on Render) opts
+    // out explicitly with ALLOW_FAKE_PAYMENTS — never set that where real money moves.
+    const optedOut = ['1', 'true', 'yes'].includes(String(process.env.ALLOW_FAKE_PAYMENTS ?? '').trim().toLowerCase());
+    if (process.env.NODE_ENV === 'production' && !optedOut) {
+      throw new Error('FakePaymentAdapter must never be used in production — configure PayHere credentials');
+    }
+  }
 
   private sign(e: WebhookEvent): string {
     return createHmac('sha256', this.secret).update(canonical(e)).digest('hex');

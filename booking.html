@@ -15,7 +15,7 @@
 <link rel="canonical" href="https://ceylonhop.com/booking.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
-<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/booking.html">
@@ -83,13 +83,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .cal-head button{width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:#fff}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
   .cal-grid .dow{font-size:.7rem;color:var(--ink-soft);font-weight:600;padding:4px 0}
-  .cal-day{aspect-ratio:1;border-radius:8px;display:grid;place-items:center;font-size:.85rem;cursor:pointer;border:1.5px solid transparent}
+  .cal-day{aspect-ratio:1;border-radius:8px;display:grid;place-items:center;font-size:.85rem;cursor:pointer;border:1.5px solid transparent;
+    width:100%;padding:0;background:none;font-family:inherit;color:inherit;
+    width:100%;padding:0;background:none;font-family:inherit;color:inherit}
   .cal-day:hover:not(.off):not(.no-svc):not(.sel){background:var(--cream-deep)}
+  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.3)}
   .cal-day.off{color:#c9c4b6;cursor:default}
   .cal-day.no-svc{color:#c9c4b6;cursor:default;text-decoration:line-through;text-decoration-color:#dcd7c8}
   .cal-day.sel{background:var(--accent);color:#fff;font-weight:600}
   .shared-cal-note{margin:.55rem 0 0;font-size:.8rem;color:#6b6456;line-height:1.45}
   .cal-day{position:relative}
+  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.35)}
+  .cal-day:disabled{cursor:default}
+  .when-blocked{margin:0 0 10px;font-size:.88rem;color:var(--ink-soft)}
+  .rate-lock-note{margin:8px 0 0;font-size:.86rem;color:var(--teal-deep);display:flex;align-items:center;gap:6px}
 
   /* STEP 1 — date stacked above its departures, so time slots get full width */
   #s1grid{display:block}
@@ -602,7 +609,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="pline"></div>
   <div class="pstep" data-s="2"><span class="dot">2</span><span class="lbl" id="lbl-s2">Pick-up &amp; drop-off</span></div>
   <div class="pline"></div>
-  <div class="pstep" data-s="3"><span class="dot">3</span><span class="lbl">Travelers</span></div>
+  <div class="pstep" data-s="3"><span class="dot">3</span><span class="lbl">Travellers</span></div>
   <div class="pline"></div>
   <div class="pstep" data-s="4"><span class="dot">4</span><span class="lbl">Details &amp; payment</span></div>
 </div>
@@ -655,7 +662,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
               </div>
               <div class="loc-input">
                 <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-                <input id="loc-from" autocomplete="off" placeholder="Hotel or address (optional)">
+                <input id="loc-from" autocomplete="off" aria-label="Exact pick-up spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-from"></div>
               </div>
               <button type="button" class="loc-later" id="loc-later-from">I&rsquo;ll decide the exact spot later</button>
@@ -671,7 +678,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
               </div>
               <div class="loc-input">
                 <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
-                <input id="loc-to" autocomplete="off" placeholder="Hotel or address (optional)">
+                <input id="loc-to" autocomplete="off" aria-label="Exact drop-off spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-to"></div>
               </div>
               <button type="button" class="loc-later" id="loc-later-to">I&rsquo;ll decide the exact spot later</button>
@@ -730,7 +737,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <!-- STEP 3 — TRAVELERS -->
     <div class="stepcard panel" data-panel="3">
       <h2>Who&rsquo;s hopping?</h2>
-      <p class="sub">Set your travelers and luggage, and add an extra if you need one.</p>
+      <p class="sub">Set your travellers and luggage, and add an extra if you need one.</p>
       <div class="stepper" id="ad-step"><div><b>Adults</b><div class="muted" style="font-size:.75rem">Age 12+</div></div>
         <div class="ctrls"><button onclick="step('ad',-1)">–</button><b id="ad-n">1</b><button onclick="step('ad',1)">+</button></div></div>
       <div class="stepper" id="ch-step"><div><b>Children</b><div class="muted" style="font-size:.75rem">Age 2–11 · 40% off</div></div>
@@ -768,9 +775,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from 30 travellers on Tripadvisor</p>
       <div class="pay-summary-row" id="pay-due"></div>
       <div class="pay-methods">
-        <div class="pm on" onclick="payMethod(this)"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card</div>
-        <div class="pm" onclick="payMethod(this)">Apple&nbsp;Pay</div>
-        <div class="pm" onclick="payMethod(this)">Google&nbsp;Pay</div>
+        <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card &middot; via PayHere secure checkout</div>
       </div>
       <div class="pay-cards">
         <span class="pc-label">We accept all major cards</span>
@@ -783,7 +788,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </div>
       </div>
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
-      <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the Terms &amp; cancellation policy and confirm my travel details are correct.</span></label>
+      <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a> and confirm my travel details are correct.</span></label>
       <div class="concierge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
         <div><b>A real person will reach out — fast</b><p>As soon as you book, our Ceylon Hop concierge team confirms your pickup details personally on WhatsApp. We&rsquo;re on during Sri&nbsp;Lanka hours (GMT+5:30, ~8am&ndash;9pm) — if you book overnight, you&rsquo;ll hear from us first thing.</p></div>
@@ -816,7 +821,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="s-perks">
           <div id="perk-cancel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
           <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Instant confirmation on WhatsApp</div>
-          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Pro Hopper guide on board</div>
+          <div id="perk-crew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Vetted Pro Hopper driver</div>
         </div>
         <a class="s-wa" id="s-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener">
           <span class="ic"></span>
@@ -831,8 +836,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div class="confirm-wrap" id="confirm" style="display:none">
   <div class="confirm-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 13 4 4L19 7"/></svg></div>
   <span class="eyebrow" style="justify-content:center">You&rsquo;re all set</span>
-  <h1 style="font-size:clamp(2rem,4vw,2.8rem)">Your seat is booked!</h1>
-  <p class="lead" style="margin:8px auto 0">We&rsquo;ve sent your confirmation and pickup details. Our team will reach out on WhatsApp to lock in your exact pickup. See you on board 🌴</p>
+  <h1 id="confirm-title" style="font-size:clamp(2rem,4vw,2.8rem)">Your transfer is booked!</h1>
+  <p class="lead" id="confirm-lead" style="margin:8px auto 0">We&rsquo;ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.</p>
 
   <div class="concierge" style="max-width:560px;margin:22px auto 0;text-align:left">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
@@ -853,7 +858,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="pass-info">
         <div><div class="k">Date</div><div class="v" id="pass-date">—</div></div>
         <div><div class="k">Departs</div><div class="v" id="pass-time">—</div></div>
-        <div><div class="k">Travelers</div><div class="v" id="pass-pax">—</div></div>
+        <div><div class="k">Travellers</div><div class="v" id="pass-pax">—</div></div>
         <div><div class="k">Pickup</div><div class="v" id="pass-pickup">—</div></div>
         <div><div class="k">Lead guest</div><div class="v" id="pass-name">—</div></div>
         <div><div class="k">Paid</div><div class="v" id="pass-paid">—</div></div>

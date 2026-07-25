@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteSingleTransfer, quoteTrip, quoteShared, priceSingle, priceTrip, priceShared } from './pricing';
+import { quoteSingleTransfer, quoteTrip, quoteShared, priceSingle, priceTrip, priceShared, InvalidPricingRequestError } from './pricing';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import type { SingleTransferInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
@@ -103,9 +103,12 @@ describe('priceSingle (engine-backed)', () => {
     if (!p.priced) expect(p.reason).toBeTruthy();
   });
 
-  it('returns priced:false instead of throwing when the engine rejects the input', async () => {
-    const p = await priceSingle({ ...single, adults: 100 }, maps); // too big for any tier
-    expect(p.priced).toBe(false);
+  // An INVALID request must not become an unpriced outcome: unpriced bookings fall through to a
+  // flat placeholder and are immediately chargeable, so `bags: 100` turned a $125 transfer into a
+  // $40 booking. A genuine pricing hiccup (maps down) still degrades gracefully — next test.
+  it('throws InvalidPricingRequestError when the engine rejects the input as invalid', async () => {
+    await expect(priceSingle({ ...single, adults: 100 }, maps)).rejects.toThrow(InvalidPricingRequestError);
+    await expect(priceSingle({ ...single, bags: 100 }, maps)).rejects.toThrow(/TOO_BIG/);
   });
 
   it('returns priced:false when the maps adapter itself throws', async () => {

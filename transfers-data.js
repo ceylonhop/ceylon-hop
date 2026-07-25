@@ -63,25 +63,25 @@
     },
     {
       id: 'ella-east',
-      label: 'Ella → Yala → East',
+      label: 'Ella → Yala → East Coast',
       stops: ['ella', 'yala', 'arugam-bay'],
       seat: CORRIDOR_SEAT['ella-east'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'south-coast',
-      label: 'Galle → Mirissa coast',
+      label: 'Galle → Mirissa Coast',
       stops: ['galle', 'hikkaduwa', 'bentota', 'weligama', 'mirissa'],
       seat: CORRIDOR_SEAT['south-coast'], times: ['09:00', '14:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'yala-south',
-      label: 'Yala → South coast',
+      label: 'Yala → South Coast',
       stops: ['yala', 'mirissa', 'weligama', 'galle'],
       seat: CORRIDOR_SEAT['yala-south'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     },
     {
       id: 'ella-south',
-      label: 'Ella → South coast',
+      label: 'Ella → South Coast',
       stops: ['ella', 'mirissa', 'weligama'],
       seat: CORRIDOR_SEAT['ella-south'], times: ['08:30'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     }

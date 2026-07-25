@@ -6,7 +6,7 @@
    whole trip as an optional upgrade. Airport transfers and door-to-door
    pick-up at every stop. You book your own hotels (we send a hand-picked
    shortlist for each night). Prices shown are the point-to-point "from",
-   per vehicle (up to 4 guests); chauffeur-guide is priced per day.
+   per vehicle (up to 3 guests); chauffeur-guide is priced per day.
    ============================================================ */
 (function(){
   const TOURS = [
@@ -40,7 +40,7 @@
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Tips'],
       itinerary:[
-        {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Your chauffeur-guide meets you at Colombo Airport with a Ceylon Hop sign. A short hop to laid-back Negombo to shake off the flight — lagoon breezes, a fresh seafood dinner and an early night.'},
+        {place:'Negombo', t:'Arrive — welcome to Ceylon', body:'Your driver meets you at Colombo Airport with a Ceylon Hop sign. A short hop to laid-back Negombo to shake off the flight — lagoon breezes, a fresh seafood dinner and an early night.'},
         {place:'Sigiriya', t:'Into the Cultural Triangle', body:'Drive north to the heart of the island. Stop at the golden Dambulla Cave Temple, then arrive in Sigiriya for an evening 4×4 safari in Minneriya — home to the famous “elephant gathering”.'},
         {place:'Kandy', t:'Lion Rock & the sacred city', body:'Beat the heat with a sunrise climb of Sigiriya rock fortress. After breakfast, drive to Kandy via a spice garden, arriving for the evening rituals at the Temple of the Sacred Tooth Relic.'},
         {place:'Nuwara Eliya', t:'Up into tea country', body:'Visit the Peradeniya Royal Botanical Gardens, then climb into the cool highlands past Ramboda Falls. Tour a working tea factory and sip a fresh Ceylon brew in “Little England”.'},
@@ -125,7 +125,7 @@
         {place:'Nuwara Eliya', t:'Into the tea hills', body:'Climb into the highlands past Ramboda Falls. Tour a working Ceylon tea factory, pick a few leaves yourself, and settle into cool, colonial Nuwara Eliya.'},
         {place:'Horton Plains', t:'World’s End at sunrise', body:'An early start for Horton Plains — a misty plateau hike to the sheer cliff of World’s End and Baker’s Falls before the clouds roll in.'},
         {place:'Ella', t:'The famous train', body:'Board the hill-country train to Ella, widely called one of the most beautiful rides on earth. Afternoon at the Nine Arch Bridge.'},
-        {place:'Colombo', t:'Little Adam’s Peak & home', body:'Sunrise hike up Little Adam’s Peak, then the drive back down to Colombo or the airport.'}
+        {place:'Colombo', t:'Ella sunrise & the road home', body:'Sunrise hike up Little Adam’s Peak above Ella, then the drive back down to Colombo or the airport.'}
       ]
     },
     {
@@ -153,7 +153,7 @@
         'Door-to-door pick-up at every hotel along the way',
         'Optional upgrade: a chauffeur-guide who stays with you the whole trip',
         'Airport pick-up & drop-off',
-        '3 shared jeep safaris arranged for you',
+        '3 shared jeep safaris arranged for you — park & jeep fees paid locally',
         'All driving, fuel, tolls & parking'
       ],
       excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Park entrance & jeep fees','Site entrance tickets','Tips'],
@@ -229,7 +229,7 @@
         'Reserved seats on the Ella train',
         'All driving, fuel, tolls & parking'
       ],
-      excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks','Site entrance tickets','Safari jeep & park fees','Whale-watching boat','Tips'],
+      excludes:['Hotels & accommodation — you book your own','International flights','All meals & drinks — except your candlelit beach dinner','Site entrance tickets','Safari jeep & park fees','Whale-watching boat','Tips'],
       itinerary:[
         {place:'Kandy', t:'Arrive & ease into the hills', body:'Airport welcome and a scenic drive to Kandy. A gentle evening at the Temple of the Sacred Tooth and a lakeside stroll.'},
         {place:'Ella', t:'Tea hills & the famous train', body:'A tea-estate visit, then the celebrated hill-country train to Ella. Settle into a view over the valley.'},
@@ -251,11 +251,11 @@
       tag:'Surf & sand',
       mapBg:'ph-saffron',
       pace:'Relaxed',
-      best:'Nov-Apr (south) · Apr-Oct (Arugam)',
+      best:'Nov–Apr (south) · Apr–Oct (Arugam)',
       photo:'PHOTO — surfers at a golden point break, Arugam Bay at sunrise',
       blurb:'Golden beaches, easy surf and slow sunsets down the south coast and round to the point breaks of Arugam Bay — the island’s sunniest, most laid-back stretch.',
       regions:['South Coast','Surf','East Coast'],
-      stops:['Airport','Galle','Ahangama','Weligama','Mirissa','Hiriketiya','Arugam Bay'],
+      stops:['Colombo Airport','Galle','Ahangama','Weligama','Mirissa','Hiriketiya','Arugam Bay'],
       highlights:[
         'Beginner-friendly surf at Weligama & Hiriketiya',
         'Galle Fort at golden hour',

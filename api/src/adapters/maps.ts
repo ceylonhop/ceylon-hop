@@ -5,6 +5,11 @@
 export interface DistanceResult {
   km: number;
   durationMin: number;
+  // True when this came from the crow-flies fallback instead of a real road lookup, i.e. Google
+  // failed. It is not a road distance and is wrong in both directions (Colombo→Ella measured 39%
+  // low, CMB→Galle 22% high), so it must never silently become a price a customer pays. Set by
+  // the REAL adapter only — the fake's estimate is its normal output in dev/test.
+  estimated?: boolean;
 }
 
 export interface RouteVariants {
@@ -170,7 +175,12 @@ export class GoogleMapsAdapter implements MapsAdapter {
   private variantsCache = new Map<string, { expires: number; value: RouteVariants }>();
 
   async distance(from: string, to: string): Promise<DistanceResult | null> {
-    return (await this.googleDistance(from, to)) ?? offlineEstimate(from, to);
+    const live = await this.googleDistance(from, to);
+    if (live) return live;
+    // Google is down, out of quota, denied, or returned nothing. Still return the estimate for
+    // callers that only want a rough figure, but mark it so pricing refuses to charge on it.
+    const off = offlineEstimate(from, to);
+    return off ? { ...off, estimated: true } : null;
   }
 
   async distanceVariants(from: string, to: string): Promise<RouteVariants | null> {
