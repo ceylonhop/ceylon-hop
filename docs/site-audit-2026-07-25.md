@@ -75,10 +75,25 @@ audit found is listed further down — nothing has been silently dropped.
   contradicting its own "Airport welcome" day 1. Corrected to `'Colombo Airport'`, which resolves to
   the same point as the original and leaves the price unchanged.
 
-### Started but NOT finished (no code landed)
-The booking-flow, homepage/search/planner, route-page-generator, brand/CSS/board, blog-port and
-about/why batches were all interrupted before writing anything reviewable. Their scopes remain open
-below, unchanged.
+### Also landed (second run, after the limit reset)
+- [x] **Security: the payment seam failed open.** Production now refuses to boot without PayHere
+      credentials, and `FakePaymentAdapter` (whose signing key is a constant in this repo) throws if
+      constructed in production. Without this, a missing env var meant anyone could forge a webhook
+      and mark a booking paid for nothing. Commit `f1fa8d9`.
+- [x] **Security: `POST /quote/lock` was outside the rate limiter** — unauthenticated, one persisted
+      row per call. Now `'/quote/*'`. Commit `f1fa8d9`.
+- [x] **Authoring placeholders were shown to customers.** With only 4 of ~30 image slots filled, real
+      visitors saw "Photo of Dinesh P." and "Drop a photo — …" — including the footer band on every
+      page — and clicking one opened a file picker. Unfilled slots now render a plain branded panel;
+      the text is kept out of the DOM entirely, not just hidden. Commit `457c22f`.
+- [x] **Ride Board leaked dev copy** ("The owner hasn't set GOOGLE_CLIENT_ID yet") — rewritten for
+      customers with a WhatsApp route in, and the page is `noindex` while pre-launch. Commit `457c22f`.
+- [x] **Ride Board claimed "5.0 · 200+ real trips"** against 30 reviews everywhere else — ~7x apart on
+      a page that asks for card details. Both strings now read one constant. Commit `457c22f`.
+
+### Still not started
+Booking flow, homepage/search/planner, the route-page generator, brand/CSS, and about/why. Their
+scopes are unchanged and listed below.
 
 ---
 
