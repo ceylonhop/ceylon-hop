@@ -104,6 +104,28 @@ describe('InMemoryRideListRepo — membership', () => {
   });
 });
 
+// A confirmed van stays on the board: it proves the mechanism works, it may still have seats,
+// and when it is full it is the prompt to start the next van on that route. Only cancelled and
+// expired lists drop off, because there is nothing left to join or copy.
+describe('InMemoryRideListRepo — what stays on the board', () => {
+  it('keeps confirmed lists, including full ones, and drops cancelled/expired', async () => {
+    const repo = new InMemoryRideListRepo();
+    const gathering = await repo.createList(baseList({ fromPlace: 'Ella', toPlace: 'Mirissa' }));
+    const confirmed = await repo.createList(baseList({ fromPlace: 'Kandy', toPlace: 'Ella', corridorId: 'hill-line' }));
+    const cancelled = await repo.createList(baseList({ fromPlace: 'Yala', toPlace: 'Galle', corridorId: 'yala-south' }));
+    const expired = await repo.createList(baseList({ fromPlace: 'Galle', toPlace: 'Mirissa', corridorId: 'south-coast' }));
+    await repo.setStatus(confirmed.id, 'confirmed');
+    await repo.setStatus(cancelled.id, 'cancelled');
+    await repo.setStatus(expired.id, 'expired');
+
+    const codes = (await repo.listOpen()).map((r) => r.list.code);
+    expect(codes).toContain(gathering.code);
+    expect(codes).toContain(confirmed.code);
+    expect(codes).not.toContain(cancelled.code);
+    expect(codes).not.toContain(expired.code);
+  });
+});
+
 describe('InMemoryRideListRepo — filters & dedupe', () => {
   it('lists only gathering lists, filtered by from-city', async () => {
     const repo = new InMemoryRideListRepo();
@@ -132,11 +154,13 @@ describe('InMemoryRideListRepo — filters & dedupe', () => {
     expect(await repo.findOpenByRoute('kandy', 'ella')).toBeNull();
   });
 
-  it('a confirmed list is no longer open or a dedupe target', async () => {
+  // A confirmed list stays VISIBLE on the board but stops being a dedupe target — that pairing is
+  // what lets a traveller start a second van on a route whose first van is already locked in.
+  it('a confirmed list stays on the board but no longer blocks a new list on the same route', async () => {
     const repo = new InMemoryRideListRepo();
     const list = await repo.createList(baseList());
     await repo.setStatus(list.id, 'confirmed');
-    expect(await repo.listOpen()).toHaveLength(0);
+    expect(await repo.listOpen()).toHaveLength(1);
     expect(await repo.findOpenByRoute('ella', 'mirissa')).toBeNull();
   });
 });

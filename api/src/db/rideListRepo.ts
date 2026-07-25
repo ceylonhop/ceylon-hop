@@ -133,7 +133,10 @@ export class InMemoryRideListRepo implements RideListRepo {
     const from = filter.from ? norm(filter.from) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
     return [...this.lists.values()]
-      .filter((l) => l.status === 'gathering')
+      // A confirmed van stays on the board: it is proof the mechanism works, it may still have
+      // seats, and when it is full it is the prompt to start another van on the same route.
+      // Only cancelled/expired lists drop off — there is nothing left to join or copy.
+      .filter((l) => l.status === 'gathering' || l.status === 'confirmed')
       .filter((l) => (from ? norm(l.fromPlace) === from : true))
       .filter((l) => {
         if (!horizon) return true;

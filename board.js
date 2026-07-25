@@ -127,6 +127,7 @@
     var need = Math.max(0, min - committed);
     var conf = confirmed || need === 0;
     var left = Math.max(0, cap - committed);
+    if (conf && left === 0) return { cls: 'pill-teal pill-dot', txt: 'Full 🚐 · van locked in' };
     if (conf) return { cls: 'pill-teal pill-dot', txt: 'Locked in 🚐 · ' + left + ' seat' + (left === 1 ? '' : 's') + ' left' };
     if (need === 1) return { cls: 'pill-tomato pill-dot pill-pulse', txt: '1 seat to lock it in — almost there' };
     return { cls: 'pill-saffron pill-dot', txt: need + ' seats to lock it in' };
@@ -361,6 +362,7 @@
     var min = L.minSeats;
     var need = Math.max(0, min - L.committed);
     var conf = L.confirmed || need === 0;
+    var full = conf && Math.max(0, L.capacity - L.committed) === 0;
     var hot = !conf && need === 1;
     var mine = iAmOn(L);
     var sc = scarcityText(L);
@@ -391,8 +393,12 @@
       '<div class="lcard-foot">' +
       '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
       (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
-      '<button class="btn ' + (conf ? 'btn-ghost' : (mine ? 'btn-ghost' : 'btn-primary')) + ' btn-sm" data-view="' + esc(L.code) + '">' +
-      (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
+      (full && !mine
+        ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
+        : '') +
+      '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
+      (mine ? 'View your ride' : full ? 'See who\'s on' : conf ? 'See ride · hop on' : 'See ride & join') +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>' +
       '</div>' +
       (L.note
@@ -433,6 +439,8 @@
       c.addEventListener('click', function (e) {
         if (e.target.closest('[data-join],[data-view],a')) return;
         var btn = c.querySelector('[data-view]');
+        var again = e.target.closest ? e.target.closest('[data-again]') : null;
+        if (again) { startAnother(again.getAttribute('data-again')); return; }
         if (btn) openDetail(btn.getAttribute('data-view'));
       });
     });
@@ -853,7 +861,14 @@
     document.getElementById('m-cost').textContent = money(cost) + (Number.isInteger(Number(cost)) ? '.00' : '');
   }
 
-  function openModal(code) {
+  // A full van is not a dead end: it is the strongest signal that this route has demand, so
+  // offer to start the next one on the same route and date rather than leaving the traveller stuck.
+  function startAnother(code) {
+    var L = state.byCode[code];
+    openModal(null, L ? { from: L.from, to: L.to, date: L.date, slot: L.slot } : null);
+  }
+
+  function openModal(code, prefill) {
     current = code ? (state.byCode[code] || null) : null;
     creating = !current && !code;
     if (code && !current) {
@@ -868,7 +883,15 @@
     document.getElementById('m-route').textContent = current
       ? current.from + ' → ' + current.to + ' · ' + current.whenLabel + ' · ' + slotWindow(current.slot).label
       : 'any route · any day · you set it';
-    populatePref(current ? current.slot : 'morning');
+    populatePref(current ? current.slot : (prefill && prefill.slot) || 'morning');
+    if (!current && prefill) {
+      var cf = document.getElementById('c-from'), ct = document.getElementById('c-to'), cd = document.getElementById('c-date');
+      if (cf) cf.value = prefill.from || '';
+      if (ct) ct.value = prefill.to || '';
+      if (cd && prefill.date) cd.value = prefill.date;
+      var mr = document.getElementById('m-route');
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
+    }
     setStep(0);
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
