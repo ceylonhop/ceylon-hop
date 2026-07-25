@@ -20,7 +20,27 @@
       '.ch-map-wrap.ready .ch-map-load{opacity:0;pointer-events:none}' +
       '.ch-map-spin{width:26px;height:26px;border-radius:50%;border:3px solid #bfe0d6;' +
       'border-top-color:#0a7d6f;animation:chSpin .8s linear infinite}' +
-      '@keyframes chSpin{to{transform:rotate(360deg)}}';
+      '@keyframes chSpin{to{transform:rotate(360deg)}}' +
+      '.ch-map-expand{position:absolute;top:10px;right:10px;z-index:3;display:inline-flex;align-items:center;' +
+      'gap:6px;padding:7px 11px;border:0;border-radius:999px;background:rgba(255,255,255,.96);color:#0a7d6f;' +
+      'font-family:var(--body,system-ui,sans-serif);font-weight:700;font-size:.76rem;cursor:pointer;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.18)}' +
+      '.ch-map-expand:hover{background:#fff}' +
+      '.ch-map-expand svg{width:13px;height:13px}' +
+      '.ch-map-modal{position:fixed;inset:0;z-index:400;background:rgba(20,30,28,.55);display:flex;' +
+      'align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}' +
+      '.ch-map-modal-card{background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.3);' +
+      'width:min(1120px,94vw);height:min(760px,88vh);display:flex;flex-direction:column;overflow:hidden}' +
+      '.ch-map-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;' +
+      'padding:14px 18px;border-bottom:1px solid #e6ebe8;font-family:var(--body,system-ui,sans-serif)}' +
+      '.ch-map-modal-body{flex:1;display:flex;min-height:0}' +
+      '.ch-map-modal-map{flex:1;position:relative;min-width:0}' +
+      '.ch-map-modal-map .ch-map-wrap{height:100%}' +
+      '.ch-map-close{border:0;background:#f1f5f3;border-radius:50%;width:32px;height:32px;cursor:pointer;' +
+      'font-size:1.15rem;line-height:1;color:#2b3a35}' +
+      '@media(max-width:760px){.ch-map-modal{padding:0}' +
+      '.ch-map-modal-card{width:100vw;height:100dvh;border-radius:0}' +
+      '.ch-map-modal-body{flex-direction:column}}';
     document.head.appendChild(st);
   }
 
@@ -87,6 +107,51 @@
     return p;
   }
 
+  // View-only expanded map. Creates its OWN map instance rather than re-parenting the inline
+  // one: plan.js re-renders the inline map whenever trip state changes, which would yank the
+  // node out from under an open modal. The route memo makes the second instance cheap.
+  function openExpanded(stops, opts) {
+    opts = opts || {};
+    const prevFocus = document.activeElement;
+    const prevOverflow = document.body.style.overflow;
+
+    const modal = document.createElement('div');
+    modal.className = 'ch-map-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Your route, expanded');
+    modal.innerHTML =
+      '<div class="ch-map-modal-card">' +
+        '<div class="ch-map-modal-head"><strong>Your route</strong>' +
+        '<button type="button" class="ch-map-close" aria-label="Close map">×</button></div>' +
+        '<div class="ch-map-modal-body"><div class="ch-map-modal-map"></div></div>' +
+      '</div>';
+
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+      if (modal.parentNode) modal.remove();
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+    document.addEventListener('keydown', onKey);
+    modal.addEventListener('mousedown', (e) => { if (e.target === modal) close(); });
+    modal.querySelector('.ch-map-close').addEventListener('click', close);
+
+    document.body.style.overflow = 'hidden';
+    document.body.appendChild(modal);
+    modal.querySelector('.ch-map-close').focus();
+
+    // No expandable flag here — never nest a modal inside a modal. A failure closes back to
+    // the inline card rather than stranding an empty box.
+    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close });
+    return close;
+  }
+
   // host: container element. names: ordered place-name strings (>=2). opts.onFail: SVG fallback.
   async function renderRoute(host, names, opts) {
     opts = opts || {};
@@ -122,7 +187,10 @@
         disableDefaultUI: true,
         zoomControl: true,
         clickableIcons: false,
-        gestureHandling: 'cooperative',
+        // The inline card stays 'cooperative' so it never hijacks page scroll. The expand
+        // modal passes greedy:true, which is the whole point of expanding — one-finger drag
+        // and plain wheel zoom.
+        gestureHandling: opts.greedy ? 'greedy' : 'cooperative',
       });
       let route = null;
       try {
@@ -137,6 +205,20 @@
       }
       done = true;
       wrap.classList.add('ready');
+      // Only on a real, successful Google map — never over the loading spinner, and never on
+      // the SVG island fallback (which replaces this whole wrap).
+      if (opts.expandable) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ch-map-expand';
+        btn.setAttribute('aria-label', 'Expand map');
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+          'stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels: opts.stopLabels }));
+        wrap.appendChild(btn);
+      }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh
       // map, so there's no previous line to clear).
       route.createPolylines().forEach((p) => {

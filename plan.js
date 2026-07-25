@@ -747,7 +747,7 @@ function renderMap(){
   // Clean Google map (JS API: route line + waypoints, no panel/markers) with a loading state.
   // A gapped route can't be one continuous Google road route without implying we drive the gap,
   // so show the schematic SVG (line already broken at the gap) instead of the Google route.
-  if(!gapSet.size && window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { onFail(){ host.innerHTML=svg; } }); }
+  if(!gapSet.size && window.CH_MAP && names.length>=2){ window.CH_MAP.renderRoute(host, names, { expandable:true, onFail(){ host.innerHTML=svg; } }); }
   else { host.innerHTML=svg; }
 }
 
