@@ -41,7 +41,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .feature{display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:center;background:var(--paper);border-radius:var(--r-lg);overflow:hidden;box-shadow:var(--shadow)}
   @media(max-width:780px){.feature{grid-template-columns:1fr}}
   .feature .ph{aspect-ratio:16/10;min-height:280px}
-  .feature image-slot{display:block;width:100%;height:100%;min-height:280px}
+  /* aspect-ratio stated explicitly: height:100% resolves to auto here, so without it the
+     slot falls back to the component's default ratio. Matches .feature .ph and the
+     mobile rule below, which both already say 16/10. */
+  .feature image-slot{display:block;width:100%;height:100%;min-height:280px;aspect-ratio:16/10}
   @media(max-width:780px){.feature .ph{min-height:0;width:100%}.feature image-slot{min-height:0;height:auto;aspect-ratio:16/10}}
   .feature .fbody{padding:30px}
   .feature h2{font-size:1.7rem;margin:.4rem 0 .6rem}
