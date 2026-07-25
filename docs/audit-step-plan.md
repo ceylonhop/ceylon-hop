@@ -73,9 +73,12 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
       Files: `index.html`, `search.*`, `plan.*`.
 </details>
 
-- [ ] **S9 — Route pages (SEO, cutover-sensitive).** 8 reverse-direction pages describing the journey
-      backwards, false duration precision ("about 2h 57m"), shared-seat intent missing from all 44
-      titles, zero internal links. Files: `tools/route-content.json`, `tools/generate-route-pages.mjs`.
+- [x] **S9** Route pages — `5ea976a`. Fixed the 8 reverse-direction pages, rounded the false
+      duration precision, put shared-seat intent in the 31 corridor titles, added a derived
+      "Related routes" block, and cleaned the wording (Ravana, shared ride, service days, corridor
+      casing). All 44 regenerate from source; invariants re-verified across every page.
+      **Left open:** the pages still wear the OLD flat-teal hero (Q16 — a design call), and the
+      Colombo-city shared-seat pickup claim (Q5) is still unanswered.
 
 - [ ] **S10 — Brand/CSS hygiene.** ~14px nav logo, base64 logo inlined twice on 44 pages,
       `board.html`'s duplicated token set, sub-44px tap targets.
