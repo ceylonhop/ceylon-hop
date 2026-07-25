@@ -175,6 +175,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qage.tone-urgent{color:#b4231b;background:#fbe7e4;border-color:#f3ccc6}  /* 6h+ — red */
   .qage.tone-muted{color:#9aa2ad;background:transparent;border-color:transparent} /* sent/closed — faint */
   @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}.qrow .qstat{flex-wrap:wrap;justify-content:flex-end}}
+  /* Searching: .qprod carries the route, so it must survive the mobile hide above — as its own
+     full-width line rather than a squeezed column. Only applied when there IS a route. */
+  @media(max-width:640px){.qrow.qrow-searching .qprod{display:block;grid-column:1/-1}}
   /* Mobile: the rail is a 64px icon strip; expanding it opens a drawer OVER the content
      (desktop's side-by-side split left ~38% of a phone to the rail). The existing
      main-click/idle auto-collapse closes the drawer. */
@@ -1762,15 +1765,22 @@ function unassignedChip(){
 // hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
 // says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
 // would pass the array index in as hideAssignee.
-function quoteRowHtml(q,hideAssignee){
-  return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}">
+function quoteRowHtml(q,hideAssignee,query){
+  /* While searching, the product cell carries the route instead — a row that matched on a
+     place has to say which place. Windowed around the match because this cell ellipses. */
+  const route=query?quoteRouteWindow(q.routeText,query):'';
+  const prodHtml=route
+    ? esc(route)
+    : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
-    <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
+    <span class="qprod">${prodHtml}</span>
     <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
+
 // Diff-render the quotes list (mirrors the builder's render() at #quoteRoot): patch #view
 // against the new tree with morphdom instead of swapping innerHTML. viewQuotes() runs 2–3
 // times per entry as async data lands — the initial paint, then /admin/quote/list, then the
