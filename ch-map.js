@@ -109,7 +109,15 @@
       region: 'lk',
       fields: ['path', 'legs', 'viewport'],
     });
-    p.catch(() => routeCache.delete(key));
+    // Evict BOTH a rejection and a routeless resolution. The Routes API reports "no route
+    // found" as a SUCCESSFUL response with an empty routes array, so caching that would pin
+    // the failure for the whole page load — on booking that means onRoute never fires again
+    // and the summary stays stuck on the offline distance estimate, with no self-heal on a
+    // later vehicle or date change.
+    p.then(
+      (res) => { if (!(res && res.routes && res.routes[0])) routeCache.delete(key); },
+      () => routeCache.delete(key),
+    );
     routeCache.set(key, p);
     return p;
   }
@@ -119,6 +127,9 @@
   // node out from under an open modal. The route memo makes the second instance cheap.
   function openExpanded(stops, opts) {
     opts = opts || {};
+    // There is deliberately no focus trap, so the background Expand button stays tabbable —
+    // Enter on it (or a fast double-click) would otherwise stack a second modal.
+    if (document.querySelector('.ch-map-modal')) return;
     const prevFocus = document.activeElement;
     const prevOverflow = document.body.style.overflow;
 
@@ -186,7 +197,12 @@
   async function renderRoute(host, names, opts) {
     opts = opts || {};
     const key = window.CEYLON_MAPS_KEY;
+    // Drop the labels for any falsy stop in lockstep, so the legend can never shift out of
+    // alignment with the stops it is naming. Callers build stopLabels from their pre-filter
+    // list, so filtering the stops alone would leave the two arrays off by one.
+    const keep = (names || []).map((n) => !!n);
     const stops = (names || []).filter(Boolean);
+    const stopLabels = opts.stopLabels ? opts.stopLabels.filter((_, i) => keep[i]) : undefined;
     if (!key || stops.length < 2) {
       if (opts.onFail) opts.onFail();
       return;
@@ -246,7 +262,7 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
           'stroke-linecap="round" stroke-linejoin="round">' +
           '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
-        btn.addEventListener('click', () => openExpanded(stops, { stopLabels: opts.stopLabels }));
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels }));
         wrap.appendChild(btn);
       }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh
