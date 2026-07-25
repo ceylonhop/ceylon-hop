@@ -1410,6 +1410,21 @@ describe('quote intent — submit gate', () => {
     const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review', requestedService: 'both' });
     expect(res.status).toBe(400);
   });
+
+  it('carries routeText on every list row so the queue can search by route', async () => {
+    const app = createApp();
+    await post(app, '/admin/quote/save', {
+      name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [
+        leg({ from: 'Colombo', to: 'Kandy', distanceKm: 120 }),
+        leg({ from: 'Kandy', to: 'Ella', distanceKm: 140 }),
+      ],
+    });
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    // The handoff place (Kandy) appears once, not twice — and this proves the derivation
+    // reaches into request.tool.legs, which is where /save actually puts them.
+    expect(list.quotes[0].routeText).toBe('Colombo · Kandy · Ella');
+  });
 });
 
 describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
