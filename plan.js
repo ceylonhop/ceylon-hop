@@ -804,7 +804,7 @@ function renderDatesStep(){
     if(driveIssue){
       driveHint.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> `+
         (hardDriveBlock
-          ? `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers. It is too much for one day, so we cannot proceed with those dates. Please split the route across another day.`
+          ? `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers \u2014 more than is safe or enjoyable in one go. Move one of them to another date and you\u2019re all set.`
           : `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers. It is a long travel day, so we recommend splitting it if your schedule allows.`);
     }
   }
@@ -844,7 +844,7 @@ function sameDayDrivingIssue(){
   });
   return issue;
 }
-// ---- journey progress bar (Route · Dates here; Service · Travelers · Payment on booking) ----
+// ---- journey progress bar (Route · Dates here; Service · Travellers · Payment on booking) ----
 function setJourney(step){
   document.querySelectorAll('#journey .jstep').forEach(j=>{
     const s=+j.dataset.j;
@@ -865,11 +865,24 @@ function setJourney(step){
   setJourney(1);
 })();
 
+// Surfaces a blocking message in the page's own hint element rather than a browser alert box.
+function showRouteHint(msg){
+  const hint=document.getElementById('route-incomplete-hint');
+  if(!hint){ return; }
+  const svg=hint.querySelector('svg');
+  hint.textContent='';
+  if(svg) hint.appendChild(svg);
+  hint.appendChild(document.createTextNode(' '+msg));
+  hint.hidden=false;
+  hint.setAttribute('role','alert');
+  hint.scrollIntoView({block:'center',behavior:'smooth'});
+}
+
 function showDatesStep(){
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
   const seq=routeSeq();
-  if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
+  if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   document.querySelector('.board-wrap').style.display='none';
   // the “Build your route” hero belongs to step 1 — hide it on the dates step, which has its own header
   const head=document.querySelector('.plan-head'); if(head) head.style.display='none';
@@ -905,7 +918,7 @@ function goToBooking(){
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
   const { seq, dates, kms, gaps } = routeSeqDetailed();
-  if(seq.length<2){ alert('Add a pick-up and drop-off to continue.'); return; }
+  if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
   // kms comes from routeSeqDetailed so it is index-aligned per wire with stops/dates —
@@ -946,6 +959,31 @@ const datesContinue=document.getElementById('dates-continue'); if(datesContinue)
     window.scrollTo({top:0,behavior:'smooth'});
   });
   syncTemplateStrip();
+})();
+
+// ---- funnel: the multi-stop planner had NO tracking at all, so this whole branch of the
+// funnel was invisible in GA4 while search and booking were both instrumented. Event names and
+// shapes mirror search.js so the two are comparable.
+(function(){
+  if(typeof window.chTrack!=='function') return;
+  var seq=routeSeq();
+  window.chTrack('view_item_list', {
+    item_list_id: 'planner',
+    currency: 'USD',
+    items: seq.map(function(id,i){ return { item_id: id, item_name: id, item_category: 'trip', index: i }; })
+  });
+  // Reaching the dates step is the planner's equivalent of picking a result.
+  var req=document.getElementById('request-btn');
+  if(req) req.addEventListener('click', function(){
+    if(document.getElementById('request-btn').classList.contains('cta-disabled')) return;
+    window.chTrack('select_item', { item_list_id: 'planner', mode: 'trip', item_variant: 'multi-stop', stops: routeSeq().length });
+  }, true);
+  // Continuing to booking is the hand-off out of the planner.
+  document.addEventListener('click', function(e){
+    var a=e.target && e.target.closest ? e.target.closest('a[href*="booking.html"]') : null;
+    if(!a) return;
+    window.chTrack('begin_checkout', { item_list_id: 'planner', mode: 'trip', stops: routeSeq().length });
+  }, true);
 })();
 
 // ---- go ----

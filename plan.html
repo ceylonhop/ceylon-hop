@@ -350,8 +350,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .tpl-chip:hover{border-color:var(--accent);background:var(--pc-teal)}
 
   /* request modal */
-  .plan-modal{position:fixed;inset:0;z-index:200;background:rgba(20,30,28,.55);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}
-  .plan-modal-card{background:var(--white);border-radius:var(--r-lg);box-shadow:0 30px 80px rgba(0,0,0,.3);padding:30px;max-width:440px;width:100%;max-height:90vh;overflow:auto}
   .confirm-tick{width:58px;height:58px;border-radius:50%;background:var(--teal-deep);color:#fff;display:grid;place-items:center}
   .confirm-tick svg{width:30px;height:30px}
   #modal-summary{background:var(--cream-deep);border-radius:12px;padding:14px 16px;font-size:.86rem;line-height:1.6}
@@ -376,7 +374,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="plan-head">
   <div class="wrap">
     <span class="eyebrow">Multi-stop trip planner</span>
-    <h1 class="display">Add the different legs of your trip, add dates next</h1>
+    <h1 class="display">Build your route — dates come next</h1>
   </div>
 </section>
 
@@ -394,12 +392,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <div><b>Trip basics</b><span>Set once — applies to every transfer</span></div>
         </div>
         <div class="controls">
-          <div class="field" style="grid-column:1/-1"><label for="pax">Travelers</label>
+          <div class="field" style="grid-column:1/-1"><label for="pax">Travellers</label>
             <select id="pax">
-              <option value="" disabled selected hidden>How many travelers?</option>
-              <option value="1">1 traveler</option><option value="2">2 travelers</option>
-              <option value="3">3 travelers</option><option value="4">4 travelers</option>
-              <option value="5">5 travelers</option><option value="6">6 travelers</option>
+              <option value="" disabled selected hidden>How many travellers?</option>
+              <option value="1">1 traveller</option><option value="2">2 travellers</option>
+              <option value="3">3 travellers</option><option value="4">4 travellers</option>
+              <option value="5">5 travellers</option><option value="6">6 travellers</option>
             </select></div>
           <div class="field" style="grid-column:1/-1"><label>Your vehicle</label>
             <div class="veh-toggle" id="veh">
@@ -437,7 +435,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <p class="sum-dates" id="sum-dates">—</p>
 
         <div class="sum-stat"><span>Places</span><b id="st-stops">—</b></div>
-        <div class="sum-stat"><span>Nights car stays with you</span><b id="st-nights">—</b></div>
+        <div class="sum-stat"><span>Nights along the way</span><b id="st-nights">—</b></div>
         <div class="sum-stat"><span>Transfer legs</span><b id="st-legs">—</b></div>
         <div class="sum-stat"><span>Total driving</span><b id="st-drive">—</b></div>
 
@@ -482,7 +480,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="dates-head">
       <span class="eyebrow">Step 2 · When</span>
       <h2>Add your dates</h2>
-      <p>Pop a date on any transfer — or leave them flexible and we’ll confirm with you on WhatsApp. Nothing here is required.</p>
+      <p>Pop a date on any transfer — or leave them flexible and we’ll confirm with you on WhatsApp. Transfers don’t need dates; a chauffeur-guide trip does, since it’s priced per day.</p>
     </div>
     <div class="dates-list" id="dates-list"></div>
     <div class="dates-actions">
@@ -491,18 +489,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
     <p class="route-incomplete-hint" id="dates-drive-hint" hidden></p>
-  </div>
-</div>
-<div class="plan-modal" id="modal" style="display:none">
-  <div class="plan-modal-card">
-    <div class="confirm-tick" style="margin:0 auto 14px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 13 4 4L19 7"/></svg></div>
-    <h2 style="font-size:1.6rem;margin:0 0 .4rem;text-align:center">Itinerary sent!</h2>
-    <p style="text-align:center;color:var(--ink-soft);margin:0 0 18px">Our Hop planner has your route and dates. We’ll confirm exact pickup times and your final transfer quote on WhatsApp — usually within a few hours.</p>
-    <div id="modal-summary"></div>
-    <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
-      <a class="btn btn-wa btn-lg" id="modal-wa" style="flex:1;justify-content:center">Continue on WhatsApp</a>
-      <button class="btn btn-ghost btn-lg" onclick="document.getElementById('modal').style.display='none'" style="flex:1;justify-content:center">Keep editing</button>
-    </div>
   </div>
 </div>
 

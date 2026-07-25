@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ceylon Hop — Shared rides &amp; private transfers across Sri Lanka</title>
+<title>Sri Lanka private transfers &amp; shared rides — Ceylon Hop</title>
 <meta name="description" content="Book a private AC car or van between any two points in Sri Lanka — your schedule, a fixed price. Share a seat on popular routes and pay a fraction. Rated 5.0 on Tripadvisor.">
 <link rel="canonical" href="https://ceylonhop.com/">
 <meta name="theme-color" content="#0AB9B6">
@@ -358,10 +358,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="hero-scrim"></div>
   <div class="wrap hero-inner">
     <div class="hero-copy">
+    <!-- Review count appears here AND in the reviews section below (and in board.js TA_REVIEWS).
+         Keep all three in step; the figure must match the live Tripadvisor listing. -->
     <a class="hero-badge" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 30 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· 30 reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
-      <p class="hero-note">Fixed prices · Free cancellation · No change fees</p>
+      <p class="hero-note">Fixed prices · Free cancellation up to 24h before · No change fees</p>
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
@@ -406,8 +408,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="wrap trust-row">
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</div>
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Fixed weekly schedules</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Shared seats every Wed &amp; Sat</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24h before</div>
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
   </div>
 </section>
@@ -441,7 +443,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="section bg-green wash-edge">
   <div class="wrap split">
     <div class="rel">
-      <image-slot id="why-photo" style="display:block;width:100%;aspect-ratio:4/3.2" shape="rounded" radius="24" placeholder="Drop a photo — travelers at a viewpoint with backpacks"></image-slot>
+      <image-slot id="why-photo" style="display:block;width:100%;aspect-ratio:4/3.2" shape="rounded" radius="24" placeholder="Drop a photo — travellers at a viewpoint with backpacks"></image-slot>
       <span class="sticker" style="position:absolute;bottom:-14px;left:24px;background:var(--ink)">Not a packaged tour</span>
     </div>
     <div>
@@ -491,7 +493,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="section">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
-      <div><span class="eyebrow">Loved by travelers</span><h2>5.0 on Tripadvisor</h2></div>
+      <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
       <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ 30 reviews on Tripadvisor ↗</a>
     </div>
     <div class="grid cols-3" id="reviews"></div>
@@ -616,7 +618,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     const from=document.getElementById('q-from'), to=document.getElementById('q-to');
     attachLocalPlaceAutocomplete(from,{onInput:update});
     attachLocalPlaceAutocomplete(to,{onInput:update});
-    // leave pick-up and drop-off empty on first paint — the traveler chooses both
+    // leave pick-up and drop-off empty on first paint — the traveller chooses both
 
     // typeahead destinations for in-between stops
     mountPlacesDatalist('lk-places', false);
