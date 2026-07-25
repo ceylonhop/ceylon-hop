@@ -79,7 +79,7 @@ test('mobile primary cards keep a visible edge gutter', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20Airport%20(CMB)%7CKandy&pax=2&vehicle=car');
 
-  const plannerCard = await page.locator('.setup-card').boundingBox();
+  const plannerCard = await page.locator('.setup-bar').boundingBox();
   const legCard = await page.locator('#rail .leg-card').first().boundingBox();
   expect(plannerCard).toBeTruthy();
   expect(legCard).toBeTruthy();
