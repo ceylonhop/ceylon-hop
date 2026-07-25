@@ -72,7 +72,9 @@ Maps failure.
 ### Modal
 
 Visually mirrors the `.plan-modal` pattern already in `plan.html` — fixed overlay, blurred
-backdrop, centred card, toggled by inline `style.display`.
+backdrop, centred card. Unlike `.plan-modal`, it is created and removed as a DOM node
+(`document.body.appendChild(...)` on open, `.remove()` on close), not toggled by an inline
+`style.display`.
 
 **The modal must ship its own styles, not reuse `.plan-modal`.** `ch-map.js` is a shared module
 and already injects its own scoped CSS through `ensureStyle()`; `.plan-modal` exists only on
@@ -83,9 +85,11 @@ existing `.ch-map-wrap` rules, so the component is self-contained on every page 
 Note also that `.ch-map-wrap` is a fixed `height:260px`; the modal needs its own wrapper sizing
 rather than reusing that class.
 
-> Toggling by inline `style.display` is deliberate. Toggling these overlays with the `hidden`
-> property would silently fail, because the overlay classes set an explicit `display` — see the
-> `[hidden]` companion-rule fix from 2026-07-25 (PR #147).
+> Never toggled with the `hidden` property — same constraint as `.plan-modal` and `.ph-overlay`.
+> `hidden` would silently fail here too, because the overlay classes set an explicit `display`
+> — see the `[hidden]` companion-rule fix from 2026-07-25 (PR #147). This modal sidesteps the
+> question a different way: created/appended on open, fully removed on close, so there's no
+> `display`/`hidden` toggle to get wrong in the first place.
 
 - **Desktop:** `min(1120px, 94vw)` × `min(760px, 88vh)`. Large but never edge-to-edge — backdrop
   stays visible on all sides, per the "not full screen" requirement.
@@ -96,7 +100,9 @@ rather than reusing that class.
 
 ### Legend and numbered pins
 
-A numbered stop list beside the map on desktop, collapsing above it on mobile:
+A numbered stop list beside the map on desktop, and below it (not above) on mobile — the map
+stays the primary focus and the legend follows underneath as reference, which reads better than
+stacking the list above the map it's describing:
 
 ```
 ① Colombo Airport    ② Kandy    ③ Ella

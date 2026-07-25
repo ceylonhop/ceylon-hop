@@ -94,8 +94,11 @@
 
   // computeRoutes() is billable and today every renderRoute() re-runs it — on each inline
   // re-render, and again when the expand modal opens. Memoise per page load, keyed on the
-  // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
-  // rejection is evicted so a transient failure isn't cached for the rest of the session.
+  // ordered stop list. The PROMISE is cached so concurrent callers share one request; it is
+  // evicted both on a REJECTION and on a resolution with no route, because the Routes API
+  // expresses "no route found" as a successful response with an empty `routes` array — if we
+  // only evicted on rejection, the first empty response would be sticky for the rest of the
+  // page load, and a later render (e.g. after a vehicle/date change) could never self-heal.
   const routeCache = new Map();
   function computeRouteCached(Route, stops) {
     const key = JSON.stringify(stops.map(toLoc));
@@ -109,7 +112,10 @@
       region: 'lk',
       fields: ['path', 'legs', 'viewport'],
     });
-    p.catch(() => routeCache.delete(key));
+    p.then(
+      (res) => { if (!(res && res.routes && res.routes[0])) routeCache.delete(key); },
+      () => routeCache.delete(key),
+    );
     routeCache.set(key, p);
     return p;
   }
@@ -118,6 +124,10 @@
   // one: plan.js re-renders the inline map whenever trip state changes, which would yank the
   // node out from under an open modal. The route memo makes the second instance cheap.
   function openExpanded(stops, opts) {
+    // Bail if a modal is already open. This modal deliberately has no focus trap, so the
+    // background Expand button stays tabbable — and a fast double-click can also fire this
+    // twice — either way, without this guard a second modal would stack on top of the first.
+    if (document.querySelector('.ch-map-modal')) return;
     opts = opts || {};
     const prevFocus = document.activeElement;
     const prevOverflow = document.body.style.overflow;
@@ -186,7 +196,13 @@
   async function renderRoute(host, names, opts) {
     opts = opts || {};
     const key = window.CEYLON_MAPS_KEY;
-    const stops = (names || []).filter(Boolean);
+    // opts.stopLabels (when a caller supplies it) is built against the PRE-filter `names`
+    // list, one label per position. Drop labels in lockstep with the stops filter below, so a
+    // falsy stop this filter removes can never shift every later label by one — openExpanded
+    // indexes stopLabels against the POST-filter `stops` array it's actually handed.
+    const keep = (names || []).map(Boolean);
+    const stops = (names || []).filter((_, i) => keep[i]);
+    const stopLabels = opts.stopLabels ? opts.stopLabels.filter((_, i) => keep[i]) : opts.stopLabels;
     if (!key || stops.length < 2) {
       if (opts.onFail) opts.onFail();
       return;
@@ -246,7 +262,7 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
           'stroke-linecap="round" stroke-linejoin="round">' +
           '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
-        btn.addEventListener('click', () => openExpanded(stops, { stopLabels: opts.stopLabels }));
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels }));
         wrap.appendChild(btn);
       }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh

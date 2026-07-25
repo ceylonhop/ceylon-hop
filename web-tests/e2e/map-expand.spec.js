@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking } from './_stubs.js';
+import { gotoBooking, pickPlace } from './_stubs.js';
 
 // gotoBooking installs the Google/PayHere stubs and mocks the API; `path` retargets it at
 // any page. With the stubs present, ch-map's loadJs() short-circuits and the REAL Google
@@ -118,15 +118,27 @@ test('the modal lists the stops, numbered and colour-matched to the pins', async
 });
 
 test('the booking transfer map is expandable too', async ({ page }) => {
-  await gotoBooking(page);
-  await page.evaluate(() => window.goStep && window.goStep(2));
+  // stopLabels exists precisely because the booking page can pass {lat,lng} COORDINATES
+  // (a Google-picked drop-off) rather than a place name. Drive that path for real here —
+  // pick the drop-off via the live autocomplete so state.locToGeo is set and ch-map.js is
+  // handed a coordinate object for that stop. Without this, a plain default booking (no
+  // pick) never sets *Geo, both stops stay name strings, and ch-map.js's own
+  // `typeof stop === 'string'` fallback covers the legend — the same assertions below would
+  // then pass even with stopLabels deleted entirely.
+  await gotoBooking(page, { pickGeo: { lat: 6.15, lng: 80.11 } });
+  await pickPlace(page, '#loc-to', 'ac-to', 'Hikkaduwa hotel', 1);
 
   const btn = page.locator('#rm-canvas .ch-map-expand');
   await expect(btn).toBeVisible();
 
   await btn.click();
   await expect(page.locator('.ch-map-modal')).toBeVisible();
-  await expect(page.locator('.ch-map-legend li')).toHaveCount(2);
+  const items = page.locator('.ch-map-legend li');
+  await expect(items).toHaveCount(2);
+  // The drop-off stop is now a {lat,lng} coordinate, not a name — the legend must still show
+  // its real place name via stopLabels, never a generic "Stop 2".
+  await expect(items.nth(1)).toContainText('Hikkaduwa hotel Result 1');
+  await expect(items.nth(1)).not.toContainText('Stop 2');
 
   await page.keyboard.press('Escape');
   await expect(page.locator('.ch-map-modal')).toHaveCount(0);
