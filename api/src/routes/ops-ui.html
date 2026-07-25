@@ -1641,6 +1641,37 @@ function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve')
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 // List surfaces show a glance value — whole dollars; detail views keep exact cents.
 function quoteUsdWhole(cents){return '$'+Math.round((cents||0)/100).toLocaleString('en-US');}
+/* ── Quotes queue search (spec 2026-07-25) ───────────────────────────────────
+   Both helpers are deliberately self-contained — no DOM, no module state — so
+   web-tests/unit can extract and eval them straight out of this file. */
+function quoteMatches(q, row) {
+  const needle=(q||'').trim().toLowerCase();
+  if(!needle)return true;
+  if(!row)return false;
+  /* Nullable fields are FILTERED OUT, never interpolated: `${null}` renders the string
+     "null", which would make the query "null" match every quote lacking a route.
+     customerName falls back to the label the row actually displays, so searching
+     "untitled" finds unnamed drafts instead of silently matching nothing. */
+  const hay=[row.customerName||'Untitled',row.reference,row.routeText]
+    .filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(needle);
+}
+/* Render the route AROUND the match rather than from the start. .qprod is a 1fr grid cell
+   with text-overflow:ellipsis, so a multi-leg route would otherwise ellipse the searched
+   place out of view — the row would match on "Ella" and never say Ella. Windows on whole
+   places, never mid-name. The separator must match quoteRouteText's SEP in
+   api/src/db/quoteRouteText.ts. */
+function quoteRouteWindow(routeText, q) {
+  if(!routeText)return '';
+  const needle=(q||'').trim().toLowerCase();
+  if(!needle)return routeText;
+  const places=routeText.split(' · ');
+  const i=places.findIndex(p=>p.toLowerCase().includes(needle));
+  if(i<=0)return routeText;
+  return '… '+places.slice(i).join(' · ');
+}
+
+
 // Age-since-request chip for the queue: how long a quote has waited, coloured to create urgency
 // to get it sent. Clock = the quote's created_at (from /admin/quote/list). Compact label: now/47m/3h/2d.
 function quoteAgeLabel(iso){
