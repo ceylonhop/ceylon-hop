@@ -5,15 +5,18 @@ access control.
 
 **Completeness:** the **payment-integrity** pass finished and is below. The **pricing/distance** and
 **access-control** passes were cut short by an API session limit before producing findings — treat those
-two areas as **not yet reviewed**. Nothing below has been fixed yet.
+two areas as **not yet reviewed**, which is not the same as clean.
 
-Findings were read from source; `api/node_modules` was absent so the test suite could not be executed.
+**Fixed so far (commit `f1fa8d9`):** H1 and M2 below. The rest are open.
 
 ---
 
-## H1 — Payment adapter can silently fall back to a fake with a public signing key
+## H1 — Payment adapter can silently fall back to a fake with a public signing key — FIXED (`f1fa8d9`)
 
 **Severity: Critical if the env is misconfigured; today it is a go-live blocker.**
+
+**Fixed:** `config.ts` now refuses to boot in production unless both PayHere values are set, and
+`FakePaymentAdapter` throws if constructed in production. Regression tests cover both.
 
 - `api/src/server.ts:35-43` — the real PayHere adapter is used only when both `PAYHERE_MERCHANT_ID`
   and `PAYHERE_MERCHANT_SECRET` are set; otherwise the app constructs `FakePaymentAdapter()`.
@@ -63,7 +66,7 @@ the paid transition and the confirmation all happen before a human sees it.
 **Fix:** make an unpriced booking non-chargeable — either 422 the create, or persist it in a state that
 `POST /:id/checkout` rejects (the status gate at `bookings.ts:417` is already the right shape).
 
-## M2 — `POST /quote/lock` sits outside the rate limiter
+## M2 — `POST /quote/lock` sits outside the rate limiter — FIXED (`f1fa8d9`)
 
 `api/src/app.ts:136` — `app.use('/quote', rateLimit(rl));`
 
@@ -74,7 +77,8 @@ pattern: `app.ts:147-148` uses `'/admin/quote/*'` and `security.test.ts:116-123`
 lock, and `quoteExpiry.ts` only sweeps `sent` ops quotes — so `channel:'web'` rows accumulate. Unbounded
 anonymous row insertion against the database.
 
-**Fix:** `app.use('/quote/*', rateLimit(rl))`.
+**Fixed:** now `app.use('/quote/*', rateLimit(rl))`. A test pins both `/quote/lock` throttling and
+that the bare `/quote` did not lose its limit; it was confirmed to fail against the old registration.
 
 ## M3 — Chauffeur day count is client-declared, with no feasibility check *(plausible)*
 
