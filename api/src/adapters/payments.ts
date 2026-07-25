@@ -78,7 +78,10 @@ export class FakePaymentAdapter implements PaymentAdapter {
     // DEFAULT_SECRET is a constant in this repo, so a fake adapter in production would let
     // anyone sign their own "succeeded" webhook. config.ts refuses to boot without PayHere
     // credentials; this is the second lock, in case something constructs one directly.
-    if (process.env.NODE_ENV === 'production') {
+    // A non-production deployment that still runs NODE_ENV=production (staging on Render) opts
+    // out explicitly with ALLOW_FAKE_PAYMENTS — never set that where real money moves.
+    const optedOut = ['1', 'true', 'yes'].includes(String(process.env.ALLOW_FAKE_PAYMENTS ?? '').trim().toLowerCase());
+    if (process.env.NODE_ENV === 'production' && !optedOut) {
       throw new Error('FakePaymentAdapter must never be used in production — configure PayHere credentials');
     }
   }

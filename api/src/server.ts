@@ -32,6 +32,14 @@ if (!config.ADMIN_API_KEY) {
   );
 }
 
+if (config.NODE_ENV === 'production' && !(config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET)) {
+  console.warn(
+    'WARNING: running with the FAKE payment adapter in a production-mode process ' +
+      '(ALLOW_FAKE_PAYMENTS is set). Bookings can be marked paid without a real charge. ' +
+      'This must never be the environment that takes real money.',
+  );
+}
+
 const adapter =
   config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET
     ? new PayHerePaymentAdapter(config.PAYHERE_MERCHANT_ID, config.PAYHERE_MERCHANT_SECRET, {

@@ -58,6 +58,23 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow(/PAYHERE_/);
   });
 
+  // Staging on Render runs NODE_ENV=production but deliberately uses the fake payment adapter,
+  // so it needs an explicit way out. It must stay explicit: anything falsy leaves the guard armed.
+  it('lets a deployment opt out of the PayHere requirement, but only deliberately', () => {
+    const base = {
+      NODE_ENV: 'production',
+      OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+      BOOKING_LINK_SECRET: 'another-real-32char-secret',
+      CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+    };
+    expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: '1' })).not.toThrow();
+    expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: 'true' })).not.toThrow();
+    // Anything that isn't a deliberate opt-in keeps real production failing closed.
+    for (const v of ['', '0', 'false', 'no', 'maybe', undefined]) {
+      expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: v })).toThrow(/PAYHERE_/);
+    }
+  });
+
   it('boots in production with real secrets', () => {
     expect(() =>
       buildConfig({
