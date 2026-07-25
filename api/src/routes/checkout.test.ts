@@ -8,7 +8,7 @@ const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
 const SOON2 = isoToday('Asia/Colombo', new Date(Date.now() + 32 * 86_400_000));
 
 const valid = {
-  from: 'Colombo Airport',
+  from: 'Colombo Airport (CMB)',
   to: 'Ella',
   vehicleType: 'car',
   adults: 2,

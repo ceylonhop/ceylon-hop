@@ -28,6 +28,7 @@ import { verifyBookingToken } from '../lib/bookingToken';
 // flagged ($1 absorbs rounding differences, never a real disagreement).
 const MISMATCH_TOLERANCE_CENTS = 100;
 const UNPRICED_NOTE = 'unpriced booking — distance unresolved, verify price';
+const UNPRICED_NOTE_PREFIX = 'unpriced booking — set a price before this can be paid';
 
 // One maps lookup per route pair per request: engine pricing and the M8 enrichment share
 // results, so going engine-first doesn't double the billed Google calls.
@@ -56,7 +57,7 @@ function resolveTotals(
   outcome: PriceOutcome,
   quotedTotal: number | undefined,
   placeholderTotal: number,
-): { total: number; amountDueNow: number; mismatch: boolean; unpriced: boolean } {
+): { total: number; amountDueNow: number; mismatch: boolean; unpriced: boolean; reason?: string } {
   if (outcome.priced) {
     const mismatch =
       quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
@@ -66,7 +67,7 @@ function resolveTotals(
   // customer's quotedTotal, but FLOOR it at the server's placeholder quote so a tampered/undercut
   // quotedTotal can never be charged below what the server itself would estimate.
   const total = Math.max(quotedTotal ?? 0, placeholderTotal);
-  return { total, amountDueNow: total, mismatch: false, unpriced: true };
+  return { total, amountDueNow: total, mismatch: false, unpriced: true, reason: outcome.reason };
 }
 
 // Customer-safe view of a booking (allow-list). Only display fields + first name — never the
@@ -186,7 +187,7 @@ export function bookingRoutes(deps: {
 
   async function flagPricing(
     booking: Booking,
-    resolved: { mismatch: boolean; unpriced: boolean; total: number },
+    resolved: { mismatch: boolean; unpriced: boolean; total: number; reason?: string },
     quotedTotal: number | undefined,
   ): Promise<void> {
     if (resolved.mismatch) {
@@ -195,7 +196,9 @@ export function bookingRoutes(deps: {
         `price mismatch ${booking.reference}: site quoted ${quotedTotal}¢, engine priced ${resolved.total}¢`,
       );
     } else if (resolved.unpriced) {
-      await flagForOps(booking, UNPRICED_NOTE);
+      // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
+      // down, and it would send ops hunting for a bad place name that isn't there.
+      await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
     }
   }
 
@@ -241,6 +244,7 @@ export function bookingRoutes(deps: {
         input: parsed.data,
         total: resolved.total,
         amountDueNow: resolved.amountDueNow,
+        needsPricing: resolved.unpriced,
         currency: 'USD',
         distanceKm: distance?.km ?? null,
         durationMin: distance?.durationMin ?? null,
@@ -311,6 +315,7 @@ export function bookingRoutes(deps: {
         input: parsed.data,
         total: resolved.total,
         amountDueNow: resolved.amountDueNow,
+        needsPricing: resolved.unpriced,
         currency: 'USD',
         distanceKm: tripKm === null ? null : Math.round(tripKm),
         durationMin: tripMin === null ? null : Math.round(tripMin),
@@ -445,6 +450,18 @@ export function bookingRoutes(deps: {
     // form — that is how a customer ends up paying for a trip that no longer exists.
     if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
       return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+    }
+    // The engine could not price this, so `total` is a flat placeholder rather than a quote.
+    // Charging it is how a $125 transfer was sold for $40, and how a Google outage would sell a
+    // $123.50 route for $78. A concierge task was raised at create time; ops prices it by hand.
+    if (booking.needsPricing) {
+      return c.json(
+        {
+          error: 'awaiting_price',
+          message: "We're confirming the price for this trip by hand — we'll message you shortly with the final amount.",
+        },
+        409,
+      );
     }
     const dueNow = booking.amountDueNow ?? booking.total;
 

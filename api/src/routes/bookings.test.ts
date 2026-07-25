@@ -4,6 +4,7 @@ import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { isoToday } from '../domain/dateRules';
 import { signBookingToken } from '../lib/bookingToken';
@@ -379,5 +380,48 @@ describe('POST /bookings — pricing and inventory cannot be undercut', () => {
       });
       expect([400, 409]).toContain(res.status); // never a fresh 12-seat van
     }
+  });
+});
+
+// A Google Distance Matrix failure used to fall back to a crow-flies estimate and price against
+// it silently: Colombo City → Ella measured 179 km offline vs 292 km real, i.e. $78.00 charged
+// for a $123.50 route, on any outage, quota exhaustion or key rotation slip. Owner's call is to
+// refuse to price and let ops handle it, so no money moves on a guess.
+describe('a Maps outage must not silently reprice', () => {
+  // Mimics the real adapter's fallback: Google returns nothing, the estimate is marked.
+  const outageMaps: MapsAdapter = {
+    provider: 'outage',
+    places: async () => [],
+    distanceVariants: async () => null,
+    distance: async () => ({ km: 179, durationMin: 255, estimated: true }),
+  };
+
+  it('does not price a booking off an estimated distance, and refuses to charge it', async () => {
+    const app = createApp({ maps: outageMaps });
+    const res = await post(app, { ...valid, from: 'Colombo City', to: 'Ella' });
+    expect(res.status).toBe(201); // the lead is kept, not thrown away
+
+    const b = await res.json();
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(checkout.status).toBe(409);
+    expect((await checkout.json()).error).toBe('awaiting_price');
+  });
+
+  it('tells ops the route was fine and Google was not', async () => {
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ maps: outageMaps, conciergeTasks });
+    const b = await (await post(app, { ...valid, from: 'Colombo City', to: 'Ella' })).json();
+    const tasks = await conciergeTasks.listByBooking(b.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].note).toContain('road distance unavailable');
+  });
+
+  it('still prices normally when Google answers', async () => {
+    const app = createApp(); // fake adapter: its estimate is its normal output, never flagged
+    const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
+    const b = await res.json();
+    expect(b.total).toBe(7850);
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    expect(checkout.status).toBe(200);
   });
 });

@@ -12,6 +12,10 @@ export type PriceOutcome =
   | { currency: 'USD'; totalCents: number; amountDueNowCents: number; priced: true }
   | { priced: false; reason: string };
 
+// Distinguishes "we could not resolve this route at all" from "Google was unavailable and we
+// refused to price off a crow-flies estimate", so ops isn't sent hunting for a bad place name.
+export const ESTIMATED_DISTANCE = 'road distance unavailable';
+
 function unpriced(reason: string): PriceOutcome {
   return { priced: false, reason };
 }
@@ -54,6 +58,9 @@ export async function priceSingle(input: SingleTransferInput, maps: MapsAdapter,
     distance = null;
   }
   if (!distance) return unpriced(`distance unresolved: ${input.from} → ${input.to}`);
+  // A crow-flies fallback is not a road distance; pricing on it silently mis-charges by tens of
+  // percent. Refuse, and let ops price it by hand.
+  if (distance.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${input.from} → ${input.to}`);
   return runEngine(
     {
       product: 'private',
@@ -115,6 +122,7 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: R
       leg = null;
     }
     if (!leg) return unpriced(`distance unresolved: ${from} → ${to}`);
+    if (leg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
     legs.push({ from, to, distanceKm: leg.km });
   }
 

@@ -41,6 +41,9 @@ export type NewBooking =
       amountDueNow: number;
       currency: string;
       channel?: BookingChannel;
+      // The engine could not price this (unresolvable route, or Google down and we refused to
+      // charge off an estimate). `total` is only a placeholder, so it must not be chargeable.
+      needsPricing?: boolean;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
@@ -54,6 +57,8 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel'> &
   // Null/absent on rows created before GL-3 — checkout falls back to charging the total.
   amountDueNow?: number | null;
   channel: BookingChannel;
+  // Null/absent on rows created before this existed — those are priced.
+  needsPricing?: boolean | null;
 };
 
 // The storage seam. The route layer depends only on this interface, so swapping the
