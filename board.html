@@ -129,14 +129,19 @@ p{margin:0 0 1rem}
 .nav{-webkit-backdrop-filter:blur(16px) saturate(1.7);backdrop-filter:blur(16px) saturate(1.7);
   background:linear-gradient(180deg, rgba(255,253,248,.86), rgba(255,253,248,.72));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.08)}
-.nav-inner{display:flex;align-items:center;justify-content:space-between;gap:24px;height:74px}
+/* .nav-inner intentionally NOT redefined here — site.css owns it, including the shorter
+   bar heights on phones (66px ≤760, 62px ≤600) that .mobile-menu's inset is measured from. */
 .brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:800;font-size:1.5rem;letter-spacing:-.02em;white-space:nowrap}
 .cmark{width:34px;height:34px;flex:none}
 .nav-links{display:flex;align-items:center;gap:26px;font-weight:500;font-size:.95rem}
 .nav-links a{position:relative;padding:.3rem 0;opacity:.92}
 .nav-links a:hover{opacity:1}
 .nav-links a.active::after,.nav-links a:hover::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:2px;background:var(--accent);border-radius:2px}
-@media(max-width:880px){.nav-links{display:none}}
+/* This page's local .btn (above) comes after site.css in source order at the same specificity,
+   so it beats site.css's .nav-burger display/padding. Restate them one level higher. */
+.nav-cta .nav-burger{display:none;background:none;padding:6px}
+@media(max-width:880px){.nav-links{display:none}.nav-cta .nav-burger{display:block}}
+@media(max-width:600px){.nav-cta .nav-burger{padding:11px;margin-right:-6px}}
 
 /* ---------- compact intro: the board IS the page ---------- */
 .intro{padding:clamp(30px,4vw,48px) 0 18px}
@@ -570,7 +575,7 @@ body.detail-open .detail{display:block}
 
 
 <!-- ================= NAV ================= -->
-<div class="nav-wrap"><nav class="nav"><div class="wrap nav-inner">
+<div class="nav-wrap"><nav class="nav" data-nav><div class="wrap nav-inner">
   <a class="brand" href="index.html">
     <svg class="cmark" viewBox="0 0 40 40" fill="none"><path d="M31 12.5C28.6 8.6 24.6 6.2 20 6.2 12.4 6.2 6.2 12.4 6.2 20S12.4 33.8 20 33.8c4.6 0 8.6-2.4 11-6.3" stroke="#F9A429" stroke-width="7" stroke-linecap="round"/></svg>
     Ceylon Hop
@@ -583,8 +588,25 @@ body.detail-open .detail{display:block}
     <a href="why.html">Why us</a>
     <a href="about.html">About</a>
   </div>
-  <button class="btn btn-ghost btn-sm" id="my-rides-btn" hidden>My rides <span class="mr-count" id="mr-count">0</span></button>
+  <!-- This slot must stay in the flex flow even when the button is hidden: `hidden` takes the
+       button out of the layout entirely, and space-between then flings the links to the right
+       edge — the nav jumps against every other page. Same shape as site.js's mountHeader. -->
+  <div class="nav-cta">
+    <button class="btn btn-ghost btn-sm" id="my-rides-btn" hidden>My rides <span class="mr-count" id="mr-count">0</span></button>
+    <button class="btn nav-burger" aria-label="Menu" data-burger><span></span><span></span><span></span></button>
+  </div>
 </div></nav></div>
+<!-- site.css hides .nav-cta .btn:not(.nav-burger) below 880px, so "My rides" lives here on
+     phones. board.js keeps this entry in sync with the desktop button. -->
+<div class="mobile-menu" data-mobile>
+  <a href="plan.html">Plan a trip</a>
+  <a href="board.html">Ride board</a>
+  <a href="tours.html">Tours</a>
+  <a href="blog.html">Travel Guide</a>
+  <a href="why.html">Why us</a>
+  <a href="about.html">About</a>
+  <a href="#" class="mm-rides" id="mm-rides" hidden>My rides <span id="mm-rides-count">0</span></a>
+</div>
 
 <!-- ================= HEADER + BOARD · one view ================= -->
 <header class="intro">
