@@ -154,7 +154,11 @@ test('same-day legs over 10 hours block continuing', async ({ page }) => {
   await setLegDate(page, 1, '2026-08-10');
 
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText(/too much for one day/i);
+  // Assert the hint's substance, not its exact marketing phrasing. This was pinned to
+  // "too much for one day" and went stale the moment the copy was reworded to "more than is
+  // safe or enjoyable in one go" — with e2e outside CI, nothing caught it.
+  await expect(hint).toContainText(/driving/i);
+  await expect(hint).toContainText(/another date/i);
   await expect(cont).toHaveClass(/cta-disabled/);
   await expect(cont).toHaveAttribute('aria-disabled', 'true');
   await cont.click({ force: true });
@@ -200,9 +204,10 @@ test('ready-made route starters hide once the itinerary has legs from the custom
   await expect(page.locator('#tpl-strip')).toBeVisible();
   // The traveller count gates the itinerary, so pick it before adding a leg — without it
   // "Add another transfer" is hidden and the customer can't start a route from scratch.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await page.locator('#add-stop').click();
-  await expect(page.locator('#rail .leg-card')).toHaveCount(3);
+  // One card, not three: a fresh planner starts empty, so this is the customer's first leg.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   await expect(page.locator('#tpl-strip')).toBeHidden();
 });
 
@@ -218,7 +223,7 @@ test('the traveller-count gate hides the itinerary until a count is picked', asy
   await expect(page.locator('.add-row')).toBeHidden();
 
   // Picking a count opens the itinerary and retires the prompt.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await expect(page.locator('#itin-gate')).toBeHidden();
   await expect(page.locator('.board-h')).toBeVisible();
   await expect(page.locator('.add-row')).toBeVisible();

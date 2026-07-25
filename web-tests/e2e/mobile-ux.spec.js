@@ -45,7 +45,7 @@ test('mobile progress steps keep descriptive labels visible', async ({ page }) =
   const labels = page.locator('#psteps .lbl');
   await expect(labels.nth(0)).toContainText('When');
   await expect(labels.nth(1)).toContainText('Pick-up');
-  await expect(labels.nth(2)).toContainText('Travelers');
+  await expect(labels.nth(2)).toContainText('Travellers');
   await expect(labels.nth(3)).toContainText('Details');
   for (let i = 0; i < 4; i += 1) {
     await expect(labels.nth(i)).toBeVisible();

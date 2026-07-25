@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { app } from './app';
+import { createApp } from './app';
+
+// Build a default app (fakes injected in NODE_ENV=test) rather than importing a module-level
+// singleton — the eager `export const app = createApp()` was removed because it constructed a
+// payment adapter at import time, which crashed production boot. See app.prod-boot.test.ts.
+const app = createApp();
 
 describe('GET /health', () => {
   it('returns 200 and { status: "ok" }', async () => {

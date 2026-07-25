@@ -109,4 +109,35 @@ describe('renderRoute route memo', () => {
     await CH.renderRoute(host(), ['Kandy', 'Ella'], { onFail() {} });
     expect(calls).toHaveLength(2);
   });
+
+  it('does not cache a routeless response', async () => {
+    // The Routes API expresses "no route found" as a successful response with an EMPTY
+    // `routes` array — that's not a rejection, so it must be evicted on resolution too, or
+    // the first empty response would be sticky for the rest of the page load and a later
+    // render (e.g. after a vehicle/date change) could never recover.
+    let empty = true;
+    const original = window.google.maps.importLibrary;
+    window.google.maps.importLibrary = async (name) => {
+      const lib = await original(name);
+      if (name !== 'routes') return lib;
+      return {
+        Route: {
+          computeRoutes: async (req) => {
+            if (empty) { calls.push(req); return { routes: [] }; }
+            return lib.Route.computeRoutes(req);
+          },
+        },
+      };
+    };
+    // Reload so loadLibs() captures the wrapped routes library.
+    delete window.CH_MAP;
+    const CH = loadChMap();
+
+    await CH.renderRoute(host(), ['Kandy', 'Ella'], { onFail() {} });
+    expect(calls).toHaveLength(1);
+
+    empty = false;
+    await CH.renderRoute(host(), ['Kandy', 'Ella'], { onFail() {} });
+    expect(calls).toHaveLength(2);
+  });
 });

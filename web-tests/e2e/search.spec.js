@@ -24,7 +24,7 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await expect(page.locator('#srch-bar')).toBeHidden();
   await expect(page.locator('#srch-locked')).toBeVisible();
   await expect(page.locator('#sl-route')).not.toBeEmpty();
-  await expect(page.locator('#sl-meta')).toContainText('2 travelers');
+  await expect(page.locator('#sl-meta')).toContainText('2 travellers');
 
   // Click Edit → the form reveals, pre-filled with the current search.
   await page.locator('#sl-edit').click();
@@ -79,7 +79,7 @@ test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quot
   const text = decodeURIComponent(url.searchParams.get('text') || '');
   expect(text).toContain('group transfer quote');
   expect(text).toContain('Route: Colombo Airport (CMB) to Trincomalee');
-  expect(text).toContain('Travelers: 6+');
+  expect(text).toContain('Travellers: 6+');
 });
 
 test('mobile search result avoids repeating the route hero above prices', async ({ page }) => {

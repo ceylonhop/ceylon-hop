@@ -285,5 +285,3 @@ export function createApp(deps: AppDeps = {}) {
   if (opsAuthCfg.nodeEnv !== 'production') app.route('/dev/emails', devEmailRoutes());
   return app;
 }
-
-export const app = createApp();
