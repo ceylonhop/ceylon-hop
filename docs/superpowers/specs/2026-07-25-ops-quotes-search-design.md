@@ -175,11 +175,16 @@ So:
   preserving the query.
 
 **Clearing.** Clearing the box restores the grouped queue exactly as today. `Escape` in a
-non-empty box clears the query and **calls `stopPropagation()`** — `ops-ui.html:2301` binds a
-global Escape that closes the detail sheet, and the kbar binds its own at `2248`; clearing a
-search must not also close something behind it. On an already-empty box, Escape propagates
-normally. The query is module-level state like `queueFilter`: it survives opening a quote and
-coming back, and does not survive a reload.
+non-empty box clears the query and **calls `stopImmediatePropagation()`**, not the plain
+`stopPropagation()` — the search handler, the kbar's own Escape handler, and the detail-sheet
+Escape handler all sit on `document`, and `stopPropagation()` only stops the event from
+reaching *ancestor* listeners; it would not stop a sibling listener bound to that same node.
+Clearing a search must not also close something behind it. On an already-empty box, Escape
+propagates normally. The query is module-level state like `queueFilter`: it survives opening a
+quote and coming back, and does not survive a reload. (Referred to by role rather than line
+number since they shift: the search-clearing `keydown` listener on `#qq`, the detail-sheet's
+`keydown` listener that closes on `state.detail`, and the kbar's own `keydown` listener, which
+calls `kbarClose()` on Escape while the bar is open.)
 
 ## Testing
 
