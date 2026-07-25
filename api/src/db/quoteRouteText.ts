@@ -32,9 +32,16 @@ export function quoteRouteText(legs: unknown): string | null {
   for (const leg of legs) {
     if (!leg || typeof leg !== 'object') continue;
     const l = leg as { from?: unknown; to?: unknown; stops?: unknown };
-    // `stops` is the full ordered chain when present (from/to are its first/last), so
-    // preferring it avoids emitting the endpoints twice.
-    const chain = Array.isArray(l.stops) ? l.stops : [l.from, l.to];
+    // Determine the chain: use stops if it's an array with at least one usable string,
+    // otherwise fall back to from/to. This defends against untrusted, schema-drifted
+    // stops arrays (empty, wrong type, non-strings). When stops yields usable places,
+    // it is the full ordered chain and we prefer it to avoid emitting the endpoints twice.
+    let chain: unknown[];
+    if (Array.isArray(l.stops) && l.stops.some(s => typeof s === 'string' && s.trim())) {
+      chain = l.stops;
+    } else {
+      chain = [l.from, l.to];
+    }
     for (const raw of chain) {
       if (typeof raw !== 'string') continue;
       const place = raw.trim();

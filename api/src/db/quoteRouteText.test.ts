@@ -45,6 +45,11 @@ describe('quoteRouteText', () => {
     expect(() => quoteRouteText([{ from: 5, to: {} }, { stops: 'nope' }])).not.toThrow();
     expect(quoteRouteText([{ from: 5, to: {} }, { stops: 'nope' }])).toBeNull();
   });
+
+  it('falls back to from/to when stops yields nothing usable', () => {
+    expect(quoteRouteText([{ from: 'Colombo', to: 'Galle', stops: [] }])).toBe('Colombo · Galle');
+    expect(quoteRouteText([{ from: 'Colombo', to: 'Galle', stops: [1, 2, 3] }])).toBe('Colombo · Galle');
+  });
 });
 
 describe('requestLegs', () => {
