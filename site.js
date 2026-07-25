@@ -71,7 +71,7 @@
     const host=document.querySelector('[data-footer]'); if(!host) return;
     const cta = showCta ? `
     <section class="foot-cta">
-      <image-slot id="foot-cta-photo" shape="rect" placeholder="Drop a photo — nine-arch bridge train through jungle"></image-slot>
+      <image-slot id="foot-cta-photo" shape="rect" src="img/cta-nine-arch.jpg" placeholder="Drop a photo — nine-arch bridge train through jungle"></image-slot>
       <div class="wrap">
         <div class="sun" style="margin:0 auto 10px">${cmark(64,'#fff')}</div>
         <h2 style="color:#fff;max-width:20ch;margin:0 auto .6rem">Your whole route, planned in minutes</h2>
@@ -104,7 +104,7 @@
       </div>
       <div class="wrap foot-bottom">
         <span>© ${new Date().getFullYear()} Ceylon Hop. All rights reserved.</span>
-        <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a></span>
+        <span><a href="terms.html">Terms</a> · <a href="privacy.html">Privacy</a> · <a href="terms.html#refunds">Cancellation policy</a> · <a href="credits.html">Photo credits</a></span>
       </div>
     </footer>`;
   };
