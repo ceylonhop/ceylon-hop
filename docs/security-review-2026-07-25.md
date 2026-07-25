@@ -11,6 +11,62 @@ two areas as **not yet reviewed**, which is not the same as clean.
 
 ---
 
+# DO NOT RE-AUDIT — settled areas
+
+Everything in this list was traced end to end and, where noted, proven by running code. **Re-auditing
+these wastes budget.** Detail for each sits in the per-pass sections below. If you change the code
+underneath one of these, that specific line is void — otherwise treat it as answered.
+
+## Payments and money movement (pass 1)
+- PayHere webhook signature: correct algorithm and field order, pinned by an independent literal in
+  `payhere.test.ts`. `status_code` is inside the signature; the "signed as failed, flipped to
+  success" tamper is rejected and tested.
+- The no-delimiter re-split attack on the signed string: attempted and **not** exploitable. Load-bearing
+  on the currency check at `webhooks.ts:50` — **do not weaken that line.**
+- Length extension on the checkout hash: cannot yield a valid `md5sig`.
+- Client amount tampering: `/checkout` accepts no request body at all; `order_id`, `amount` and
+  `currency` are server-derived and reconciled at the webhook.
+- Replay, refund-flip, and the booking state machine (forward-only allow-list + compare-and-set).
+- Refunds: all admin money actions require a human session with `payments:act`; no customer-facing
+  refund endpoint; no gateway refund call, so "partial refund > paid" is unreachable.
+- Idempotency of booking creation and `/checkout` (unique constraints + in-memory guard).
+- No merchant secret, signature or API key is reachable client-side.
+
+## Pricing, distance and inventory (pass 2)
+- `quotedTotal` can never undercut a priced booking; the engine wins whenever it prices.
+- Bookings never accept a client-supplied distance; km is always server-resolved.
+- Shared seat price is DB-authoritative; the extra-bag fee is server-side.
+- Wed/Sat service days are enforced server-side, before inventory is touched.
+- Seat holds are race-safe (Postgres guarded `UPDATE`; in-memory check-and-increment with no `await`).
+  The oversell that was found was a key-choice bug, now fixed — not a race.
+- Vehicle capacity is enforced server-side and can only be upgraded, never downgraded.
+- Add-ons are an enum with no client-supplied quantity or price; `customPerKmCents` is not
+  client-reachable.
+- Rate lock binds the rate *card*, not a price, and expiry is enforced at redemption; a customer's
+  web quote can never be converted through the ops path.
+- Numeric hardening: negative/zero/fractional/`-0` pax, negative distance and numeric strings are all
+  rejected; JSON cannot carry `NaN`/`Infinity`.
+- `memoizeDistance` does not double-bill Google.
+
+## Access control and injection (pass 3)
+- **Stored XSS into the authenticated ops UI:** `ops-ui.html` keeps a consistent `esc()` discipline;
+  every customer-controlled field sampled is escaped. The two unescaped interpolations are a
+  clipboard text template and a search-filter comparison — neither is an HTML sink.
+- **Ops capability checks:** every route carries `requireCap` inline or sits behind a router-level
+  `r.use('*', …)` gate. No verb-level asymmetry. The bare `/admin/quote` redirect is deliberately
+  exempt and pinned by a test.
+- **Customer booking lookup (IDOR):** HMAC-SHA256 with a dedicated secret, length-checked,
+  `timingSafeEqual`, UUID ids. No enumeration path.
+- **Ops shell:** serves only the public-by-design Google client id and browser Maps key.
+- **Ops CSRF:** `ch_ops` is `SameSite=Lax`, and `/admin/quote/*` writes additionally carry a
+  `Sec-Fetch-Site` + Origin gate.
+
+## Never audited — these are NOT on the list
+Injection (SQL / path traversal / prototype pollution), the email path as a spam relay, dependency
+hygiene, security headers, and the Ride Board charge path.
+
+---
+
 ## H1 — Payment adapter can silently fall back to a fake with a public signing key — FIXED (`f1fa8d9`)
 
 **Severity: Critical if the env is misconfigured; today it is a go-live blocker.**
