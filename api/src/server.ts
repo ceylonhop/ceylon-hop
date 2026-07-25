@@ -8,6 +8,7 @@ import { PostgresBookingRepo } from './db/postgresBookingRepo';
 import { PostgresPaymentRepo } from './db/postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './db/postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo';
+import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
@@ -28,6 +29,14 @@ if (!config.DATABASE_URL) {
 if (!config.ADMIN_API_KEY) {
   console.warn(
     'WARNING: ADMIN_API_KEY is not set — the machine/cron identity (x-admin-key → `system`, used by the notifications + watchdog jobs) cannot authenticate. Set ADMIN_API_KEY before serving real traffic. Human /ops and /admin/quote access is separately gated by Google sign-in + roles (RBAC), so this does NOT leave the quoting tool open.',
+  );
+}
+
+if (config.NODE_ENV === 'production' && !(config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET)) {
+  console.warn(
+    'WARNING: running with the FAKE payment adapter in a production-mode process ' +
+      '(ALLOW_FAKE_PAYMENTS is set). Bookings can be marked paid without a real charge. ' +
+      'This must never be the environment that takes real money.',
   );
 }
 
@@ -85,6 +94,7 @@ const app = createApp({
   payments: new PostgresPaymentRepo(db),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
+  rideLists: new PostgresRideListRepo(sql),
   rideOps: new PostgresRideOpsRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),

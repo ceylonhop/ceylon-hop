@@ -11,7 +11,7 @@ import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { futureIsoDate } from '../testSupport/dates';
 
 const valid = {
-  from: 'Colombo Airport',
+  from: 'Colombo Airport (CMB)',
   to: 'Ella',
   date: futureIsoDate(30), // anchored to "now" so the past-date rule never expires it
   time: '09:00',

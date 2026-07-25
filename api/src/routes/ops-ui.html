@@ -175,6 +175,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qage.tone-urgent{color:#b4231b;background:#fbe7e4;border-color:#f3ccc6}  /* 6h+ — red */
   .qage.tone-muted{color:#9aa2ad;background:transparent;border-color:transparent} /* sent/closed — faint */
   @media(max-width:640px){.qrow{grid-template-columns:1fr auto;row-gap:6px}.qrow .qref{grid-column:1/-1}.qrow .qprod{display:none}.qrow .qstat{flex-wrap:wrap;justify-content:flex-end}}
+  /* Searching: .qprod carries the route, so it must survive the mobile hide above — as its own
+     full-width line rather than a squeezed column. Only applied when there IS a route. */
+  @media(max-width:640px){.qrow.qrow-searching .qprod{display:block;grid-column:1/-1}}
   /* Mobile: the rail is a 64px icon strip; expanding it opens a drawer OVER the content
      (desktop's side-by-side split left ~38% of a phone to the rail). The existing
      main-click/idle auto-collapse closes the drawer. */
@@ -1637,10 +1640,55 @@ const QUEUE_FILTERS=[
   {id:'sent',label:'Sent to customer',statuses:['sent','won','lost','expired']},
 ];
 let queueFilter='all';
+let quoteQuery='';
+/* The search input is rendered ONCE and never re-rendered. viewTickets rebuilds the whole
+   topbar per keystroke and then re-focuses and restores the caret by hand (see the '#q'
+   handler); that dance exists only because the input gets destroyed. Guarding here means
+   the background refresh and the 2–3 async paints per view entry can't clobber it mid-type. */
+function renderQuotesTopbar(){
+  const tb=$('#topbar');
+  if(tb.querySelector('#qq'))return;
+  tb.innerHTML='<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
+    +'<input id="qq" aria-label="Search quotes" placeholder="Search name, ref, route&hellip;" autocomplete="off" spellcheck="false"></div>';
+  /* Re-entering Quotes from another view rebuilds the topbar from scratch; restore the query
+     that survived in module state so the box and the list agree. */
+  $('#qq').value=quoteQuery;
+}
 function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve'));}
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 // List surfaces show a glance value — whole dollars; detail views keep exact cents.
 function quoteUsdWhole(cents){return '$'+Math.round((cents||0)/100).toLocaleString('en-US');}
+/* ── Quotes queue search (spec 2026-07-25) ───────────────────────────────────
+   Both helpers are deliberately self-contained — no DOM, no module state — so
+   web-tests/unit can extract and eval them straight out of this file. */
+function quoteMatches(q, row) {
+  const needle=(q||'').trim().toLowerCase();
+  if(!needle)return true;
+  if(!row)return false;
+  /* Nullable fields are FILTERED OUT, never interpolated: `${null}` renders the string
+     "null", which would make the query "null" match every quote lacking a route.
+     customerName falls back to the label the row actually displays, so searching
+     "untitled" finds unnamed drafts instead of silently matching nothing. */
+  const hay=[row.customerName||'Untitled',row.reference,row.routeText]
+    .filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(needle);
+}
+/* Render the route AROUND the match rather than from the start. .qprod is a 1fr grid cell
+   with text-overflow:ellipsis, so a multi-leg route would otherwise ellipse the searched
+   place out of view — the row would match on "Ella" and never say Ella. Windows on whole
+   places, never mid-name. The separator must match quoteRouteText's SEP in
+   api/src/db/quoteRouteText.ts. */
+function quoteRouteWindow(routeText, q) {
+  if(!routeText)return '';
+  const needle=(q||'').trim().toLowerCase();
+  if(!needle)return routeText;
+  const places=routeText.split(' · ');
+  const i=places.findIndex(p=>p.toLowerCase().includes(needle));
+  if(i<=0)return routeText;
+  return '… '+places.slice(i).join(' · ');
+}
+
+
 // Age-since-request chip for the queue: how long a quote has waited, coloured to create urgency
 // to get it sent. Clock = the quote's created_at (from /admin/quote/list). Compact label: now/47m/3h/2d.
 function quoteAgeLabel(iso){
@@ -1717,15 +1765,22 @@ function unassignedChip(){
 // hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
 // says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
 // would pass the array index in as hideAssignee.
-function quoteRowHtml(q,hideAssignee){
-  return `<div class="qrow" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}">
+function quoteRowHtml(q,hideAssignee,query){
+  /* While searching, the product cell carries the route instead — a row that matched on a
+     place has to say which place. Windowed around the match because this cell ellipses. */
+  const route=query?quoteRouteWindow(q.routeText,query):'';
+  const prodHtml=route
+    ? esc(route)
+    : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
-    <span class="qprod">${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}</span>
+    <span class="qprod">${prodHtml}</span>
     <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
+
 // Diff-render the quotes list (mirrors the builder's render() at #quoteRoot): patch #view
 // against the new tree with morphdom instead of swapping innerHTML. viewQuotes() runs 2–3
 // times per entry as async data lands — the initial paint, then /admin/quote/list, then the
@@ -1747,7 +1802,8 @@ function paintQuotesView(html){
   });
 }
 function viewQuotes(){
-  $('#topbar').innerHTML='';
+  renderQuotesTopbar();
+  const query=quoteQuery.trim();
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
   // "Assigned to me" is a PARTITION, not an overlay: a quote assigned to me is lifted out of
   // its status section rather than duplicated into two. The status sections already tile the
@@ -1757,11 +1813,23 @@ function viewQuotes(){
   const mineRows=opsQuotes.filter(q=>isMineEmail(q.assignedTo)&&MINE_STATUSES.includes(q.status));
   const mineIds=new Set(mineRows.map(q=>q.id));
   const byStatus={};opsQuotes.forEach(q=>{if(mineIds.has(q.id))return;(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
+  const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
+  const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
+  // Search results come from opsQuotes DIRECTLY — never from mineRows/byStatus, which partition
+  // the queue between them and would duplicate or drop rows once flattened into one list.
+  const hits=query?opsQuotes.filter(q=>quoteMatches(query,q)):[];
+  const results=query&&allowed?hits.filter(q=>allowed.has(q.status)):hits;
+  // Suppress the match count while the fetch is still in flight: opsQuotes is still [] at
+  // that point, so a restored query would otherwise flash "0 of 0 quotes match" above the
+  // "Loading quotes…" line below. Fall back to the plain (non-query) subhead until data lands.
+  const sub=(query&&opsQuotesLoaded)
+    ? `<b>${results.length} of ${opsQuotes.length} quote${opsQuotes.length===1?' matches':'s match'}</b>`
+    : `<b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}`;
   let html=`<div class="qhead pagehead">
       <h1>Quotes</h1>
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
     </div>
-    <p class="pagesub"><b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}</p>`;
+    <p class="pagesub">${sub}</p>`;
   if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';paintQuotesView(html);return;}
   if(!opsQuotes.length){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
@@ -1772,8 +1840,26 @@ function viewQuotes(){
     const n=f.statuses?opsQuotes.filter(q=>f.statuses.includes(q.status)).length:opsQuotes.length;
     return `<button class="qfilter ${queueFilter===f.id?'on':''}" data-qfilter="${f.id}">${f.label}<span class="qfilter-n">${n}</span></button>`;
   }).join('')+'</div>';
-  const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
-  const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
+  // Searching: one flat list. The role-aware sections are a triage device; a match buried in
+  // the right section is still a scan.
+  if(query){
+    if(results.length){
+      html+=`<div class="qsection qsec-results">
+        <div class="qsection-head">
+          <h2 class="qsection-title">Results<span class="qsection-count">${results.length}</span></h2>
+        </div>
+        <div class="qlist">${results.map(q=>quoteRowHtml(q,false,query)).join('')}</div>
+      </div>`;
+    }else if(hits.length){
+      // The active chip is hiding every match. Say so — a filter you forgot was on is the
+      // classic "where did it go" — and offer the one-click way out, reusing the existing
+      // [data-qfilter] delegation so no new handler is needed.
+      html+=`<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No match in ${activeFilter.label}</div><div class="qempty-sub">${hits.length} quote${hits.length===1?' matches':'s match'} under other statuses.</div><button class="qfilter" data-qfilter="all" style="margin-top:14px">Search all quotes</button></div>`;
+    }else{
+      html+=`<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No quotes match</div><div class="qempty-sub">Try a different name, reference, or route.</div></div>`;
+    }
+    paintQuotesView(html);return;
+  }
   let rendered=0;
   const mineVisible=allowed?mineRows.filter(q=>allowed.has(q.status)):mineRows;
   if(mineVisible.length){
@@ -1972,7 +2058,10 @@ document.addEventListener('click',e=>{
   const bucket=e.target.closest('#view [data-anbucket]');
   if(bucket){anState.bucket=bucket.dataset.anbucket;anState.bucketTouched=true;viewAnalytics();return;}
   const age=e.target.closest('#view [data-anage]');
-  if(age){queueFilter='sent';setShellRoute('quotes',{});return;} /* v1: status-filter only */
+  /* Clear any in-flight quotes search too — quoteQuery is module state that survives
+     navigation, and a stale query would silently filter the drill-down cohort down to
+     "0 of N quotes match" instead of the Sent bucket this chip promises. */
+  if(age){queueFilter='sent';quoteQuery='';setShellRoute('quotes',{});return;} /* v1: status-filter only */
 });
 
 function openOpsQuote(id){
@@ -2297,6 +2386,25 @@ document.addEventListener('click',async e=>{
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
   }
+});
+/* Quotes search. Repaints only #view — never the topbar — so the input keeps focus and caret
+   with no restoration hack (contrast the '#q' handler above). */
+document.addEventListener('input',e=>{
+  if(e.target.id!=='qq')return;
+  quoteQuery=e.target.value;
+  viewQuotes();
+});
+/* Escape clears the box. Registered BEFORE the detail-sheet Escape handler below and using
+   stopImmediatePropagation, because both listeners sit on `document`. A plain stopPropagation
+   would not stop a sibling listener on the same node. An already-empty box passes Escape
+   through so it can still close whatever is behind. (The ⌘K bar returns early when hidden,
+   so it is not in play here.) */
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape'||e.target.id!=='qq'||!e.target.value)return;
+  e.stopImmediatePropagation();
+  e.target.value='';
+  quoteQuery='';
+  viewQuotes();
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state.detail=null;state.detailData=null;renderSheet();}});
 

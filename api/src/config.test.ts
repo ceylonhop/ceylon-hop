@@ -32,10 +32,65 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow(/BOOKING_LINK_SECRET/);
   });
 
-  it('boots in production with real secrets', () => {
+  it('the customer-session secret also fails closed in production', () => {
+    // real ops + booking secrets, but the customer secret left at its dev default → throws
     expect(() =>
       buildConfig({ NODE_ENV: 'production', OPS_SESSION_SECRET: 'a-real-32char-random-secret', BOOKING_LINK_SECRET: 'another-real-32char-secret' }),
+    ).toThrow(/CUSTOMER_SESSION_SECRET/);
+  });
+
+  it('the PayHere credentials also fail closed in production', () => {
+    // Without them the payment seam falls back to FakePaymentAdapter, whose signing key is a
+    // constant in this repo — anyone could forge a "succeeded" webhook and pay nothing.
+    const base = {
+      NODE_ENV: 'production',
+      OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+      BOOKING_LINK_SECRET: 'another-real-32char-secret',
+      CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+    };
+    expect(() => buildConfig(base)).toThrow(/PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET/);
+    // one without the other is still a fallback to the fake adapter
+    expect(() => buildConfig({ ...base, PAYHERE_MERCHANT_ID: '1226' })).toThrow(/PAYHERE_/);
+    expect(() => buildConfig({ ...base, PAYHERE_MERCHANT_SECRET: 'live-secret' })).toThrow(/PAYHERE_/);
+    // empty strings are the same failure mode as unset
+    expect(() =>
+      buildConfig({ ...base, PAYHERE_MERCHANT_ID: '', PAYHERE_MERCHANT_SECRET: '' }),
+    ).toThrow(/PAYHERE_/);
+  });
+
+  // Staging on Render runs NODE_ENV=production but deliberately uses the fake payment adapter,
+  // so it needs an explicit way out. It must stay explicit: anything falsy leaves the guard armed.
+  it('lets a deployment opt out of the PayHere requirement, but only deliberately', () => {
+    const base = {
+      NODE_ENV: 'production',
+      OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+      BOOKING_LINK_SECRET: 'another-real-32char-secret',
+      CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+    };
+    expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: '1' })).not.toThrow();
+    expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: 'true' })).not.toThrow();
+    // Anything that isn't a deliberate opt-in keeps real production failing closed.
+    for (const v of ['', '0', 'false', 'no', 'maybe', undefined]) {
+      expect(() => buildConfig({ ...base, ALLOW_FAKE_PAYMENTS: v })).toThrow(/PAYHERE_/);
+    }
+  });
+
+  it('boots in production with real secrets', () => {
+    expect(() =>
+      buildConfig({
+        NODE_ENV: 'production',
+        OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+        BOOKING_LINK_SECRET: 'another-real-32char-secret',
+        CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+        PAYHERE_MERCHANT_ID: '1226',
+        PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+      }),
     ).not.toThrow();
+  });
+
+  it('does not require PayHere credentials outside production', () => {
+    expect(() => buildConfig({ NODE_ENV: 'test' })).not.toThrow();
+    expect(() => buildConfig({ NODE_ENV: 'development' })).not.toThrow();
   });
 
   it('tolerates the default secret outside production (dev/test)', () => {

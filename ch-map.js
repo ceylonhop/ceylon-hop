@@ -20,7 +20,34 @@
       '.ch-map-wrap.ready .ch-map-load{opacity:0;pointer-events:none}' +
       '.ch-map-spin{width:26px;height:26px;border-radius:50%;border:3px solid #bfe0d6;' +
       'border-top-color:#0a7d6f;animation:chSpin .8s linear infinite}' +
-      '@keyframes chSpin{to{transform:rotate(360deg)}}';
+      '@keyframes chSpin{to{transform:rotate(360deg)}}' +
+      '.ch-map-expand{position:absolute;top:10px;right:10px;z-index:3;display:inline-flex;align-items:center;' +
+      'gap:6px;padding:7px 11px;border:0;border-radius:999px;background:rgba(255,255,255,.96);color:#0a7d6f;' +
+      'font-family:var(--body,system-ui,sans-serif);font-weight:700;font-size:.76rem;cursor:pointer;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.18)}' +
+      '.ch-map-expand:hover{background:#fff}' +
+      '.ch-map-expand svg{width:13px;height:13px}' +
+      '.ch-map-modal{position:fixed;inset:0;z-index:400;background:rgba(20,30,28,.55);display:flex;' +
+      'align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px)}' +
+      '.ch-map-modal-card{background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.3);' +
+      'width:min(1120px,94vw);height:min(760px,88vh);display:flex;flex-direction:column;overflow:hidden}' +
+      '.ch-map-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;' +
+      'padding:14px 18px;border-bottom:1px solid #e6ebe8;font-family:var(--body,system-ui,sans-serif)}' +
+      '.ch-map-modal-body{flex:1;display:flex;min-height:0}' +
+      '.ch-map-modal-map{flex:1;position:relative;min-width:0}' +
+      '.ch-map-modal-map .ch-map-wrap{height:100%}' +
+      '.ch-map-close{border:0;background:#f1f5f3;border-radius:50%;width:32px;height:32px;cursor:pointer;' +
+      'font-size:1.15rem;line-height:1;color:#2b3a35}' +
+      '.ch-map-legend{width:248px;flex:none;border-left:1px solid #e6ebe8;overflow:auto;padding:14px 16px;' +
+      'font-family:var(--body,system-ui,sans-serif)}' +
+      '.ch-map-legend ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}' +
+      '.ch-map-legend li{display:flex;align-items:center;gap:10px;font-size:.86rem;color:#2b3a35}' +
+      '.ch-map-legend .ch-lg-n{width:22px;height:22px;border-radius:50%;flex:none;display:grid;' +
+      'place-items:center;color:#fff;font-weight:700;font-size:.72rem}' +
+      '@media(max-width:760px){.ch-map-modal{padding:0}' +
+      '.ch-map-modal-card{width:100vw;height:100dvh;border-radius:0}' +
+      '.ch-map-modal-body{flex-direction:column}' +
+      '.ch-map-legend{width:auto;border-left:0;border-top:1px solid #e6ebe8;max-height:34vh}}';
     document.head.appendChild(st);
   }
 
@@ -65,6 +92,96 @@
   // exact coords route more accurately than re-geocoding the name.
   const toLoc = (s) => (s && typeof s === 'object' && s.lat != null) ? { lat: s.lat, lng: s.lng } : q(s);
 
+  // computeRoutes() is billable and today every renderRoute() re-runs it — on each inline
+  // re-render, and again when the expand modal opens. Memoise per page load, keyed on the
+  // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
+  // rejection is evicted so a transient failure isn't cached for the rest of the session.
+  const routeCache = new Map();
+  function computeRouteCached(Route, stops) {
+    const key = JSON.stringify(stops.map(toLoc));
+    const hit = routeCache.get(key);
+    if (hit) return hit;
+    const p = Route.computeRoutes({
+      origin: toLoc(stops[0]),
+      destination: toLoc(stops[stops.length - 1]),
+      intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
+      travelMode: 'DRIVING',
+      region: 'lk',
+      fields: ['path', 'legs', 'viewport'],
+    });
+    p.catch(() => routeCache.delete(key));
+    routeCache.set(key, p);
+    return p;
+  }
+
+  // View-only expanded map. Creates its OWN map instance rather than re-parenting the inline
+  // one: plan.js re-renders the inline map whenever trip state changes, which would yank the
+  // node out from under an open modal. The route memo makes the second instance cheap.
+  function openExpanded(stops, opts) {
+    opts = opts || {};
+    const prevFocus = document.activeElement;
+    const prevOverflow = document.body.style.overflow;
+
+    // A stop is a name string OR a {lat,lng} picked from Places. Callers that pass coords
+    // (booking.js) supply opts.stopLabels so the legend can still name them.
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const labelFor = (stop, i) => {
+      const given = opts.stopLabels && opts.stopLabels[i];
+      if (given) return String(given).replace(/\s*\(.*?\)/, '');
+      if (typeof stop === 'string') return stop.replace(/\s*\(.*?\)/, '');
+      return 'Stop ' + (i + 1);
+    };
+    const legend = stops.map((s, i) => {
+      const fill = i === 0 ? '#0a7d6f' : i === stops.length - 1 ? '#e8623a' : '#0AB9B6';
+      return '<li><span class="ch-lg-n" style="background:' + fill + '">' + (i + 1) + '</span>' +
+             '<span>' + esc(labelFor(s, i)) + '</span></li>';
+    }).join('');
+
+    const modal = document.createElement('div');
+    modal.className = 'ch-map-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Your route, expanded');
+    modal.innerHTML =
+      '<div class="ch-map-modal-card">' +
+        '<div class="ch-map-modal-head"><strong>Your route</strong>' +
+        '<button type="button" class="ch-map-close" aria-label="Close map">×</button></div>' +
+        '<div class="ch-map-modal-body"><div class="ch-map-modal-map"></div>' +
+        '<aside class="ch-map-legend"><ol>' + legend + '</ol></aside></div>' +
+      '</div>';
+
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+      if (modal.parentNode) modal.remove();
+      // plan.js re-renders the inline map whenever trip state changes (see the comment above
+      // openExpanded), which can destroy prevFocus and build a new expand button while the
+      // modal is open. A detached node's focus() is a silent no-op, so check isConnected and
+      // fall back to whatever expand button currently exists — focus lands somewhere sensible
+      // and adjacent instead of being dropped to <body>.
+      const target = (prevFocus && prevFocus.isConnected) ? prevFocus : document.querySelector('.ch-map-expand');
+      if (target && target.focus) target.focus();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+
+    document.addEventListener('keydown', onKey);
+    modal.addEventListener('mousedown', (e) => { if (e.target === modal) close(); });
+    modal.querySelector('.ch-map-close').addEventListener('click', close);
+
+    document.body.style.overflow = 'hidden';
+    document.body.appendChild(modal);
+    modal.querySelector('.ch-map-close').focus();
+
+    // No expandable flag here — never nest a modal inside a modal. A failure closes back to
+    // the inline card rather than stranding an empty box.
+    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close });
+    return close;
+  }
+
   // host: container element. names: ordered place-name strings (>=2). opts.onFail: SVG fallback.
   async function renderRoute(host, names, opts) {
     opts = opts || {};
@@ -100,18 +217,14 @@
         disableDefaultUI: true,
         zoomControl: true,
         clickableIcons: false,
-        gestureHandling: 'cooperative',
+        // The inline card stays 'cooperative' so it never hijacks page scroll. The expand
+        // modal passes greedy:true, which is the whole point of expanding — one-finger drag
+        // and plain wheel zoom.
+        gestureHandling: opts.greedy ? 'greedy' : 'cooperative',
       });
       let route = null;
       try {
-        const res = await libs.Route.computeRoutes({
-          origin: toLoc(stops[0]),
-          destination: toLoc(stops[stops.length - 1]),
-          intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
-          travelMode: 'DRIVING',
-          region: 'lk',
-          fields: ['path', 'legs', 'viewport'],
-        });
+        const res = await computeRouteCached(libs.Route, stops);
         route = res && res.routes && res.routes[0];
       } catch (e) { /* unroutable → fail() below */ }
       if (done) return;
@@ -122,6 +235,20 @@
       }
       done = true;
       wrap.classList.add('ready');
+      // Only on a real, successful Google map — never over the loading spinner, and never on
+      // the SVG island fallback (which replaces this whole wrap).
+      if (opts.expandable) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ch-map-expand';
+        btn.setAttribute('aria-label', 'Expand map');
+        btn.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+          'stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels: opts.stopLabels }));
+        wrap.appendChild(btn);
+      }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh
       // map, so there's no previous line to clear).
       route.createPolylines().forEach((p) => {
@@ -138,7 +265,7 @@
         const pin = (fill) => ({
           path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
           fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
-          scale: 1.5, anchor: new libs.Point(12, 22),
+          scale: 1.5, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
         const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
@@ -147,6 +274,9 @@
           new libs.Marker({
             map, position: pos, zIndex: 5,
             icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
+            // The number ties each pin to the stops legend — without it the pins are
+            // anonymous and "is stop 3 the right place?" can't be answered.
+            label: { text: String(i + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
             title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
           });
         });

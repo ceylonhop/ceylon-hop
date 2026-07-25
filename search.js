@@ -30,9 +30,11 @@ let pax = Math.max(1, parseInt(params.get('pax')) || 1);
 // pick-up), that's a stale/broken route link — send them to the 404 rather than silently
 // swapping in a different destination and quoting a trip they never asked for.
 if (!T.place(fromId)) fromId = 'cmb-airport';
+let unknownDestination = false;
 if (!T.place(toId) || toId === fromId) {
-  if (params.get('to')) location.replace('404.html');
-  toId = 'ella'; // demo route when `to` is absent (and a safe value for the instant before any redirect)
+  // Was location.replace('404.html') — a hard dead end for a bookmarked or mistyped link.
+  if (params.get('to')) unknownDestination = true;
+  toId = 'ella'; // safe default while the picker is shown
 }
 
 // ---- populate the edit bar ----
@@ -72,7 +74,7 @@ window.updateSearch = function (e) {
       'Hi Ceylon Hop! I need help with a group transfer quote.',
       'Route: ' + f.name + ' to ' + t.name,
       selectedDate ? ('Date: ' + selectedDate) : 'Date: flexible',
-      'Travelers: 6+'
+      'Travellers: 6+'
     ].join('\n');
     location.href = 'https://wa.me/94779669662?text=' + encodeURIComponent(msg);
     return false;
@@ -91,7 +93,7 @@ window.updateSearch = function (e) {
 const fromP = T.place(fromId), toP = T.place(toId);
 const quote = T.privateQuote(fromId, toId);
 const shared = T.sharedOption(fromId, toId);
-const displayPrice = n => Number.isInteger(n) ? String(n) : n.toFixed(2);
+const displayPrice = n => { const c=Math.round(n*100); return c%100===0 ? String(c/100) : (c/100).toFixed(2); };
 document.title = `${fromP.name} → ${toP.name} — Ceylon Hop`;
 
 document.getElementById('route-title').innerHTML =
@@ -101,7 +103,7 @@ document.getElementById('route-meta').innerHTML =
   `<span>${ICONS.pin} ~${quote.km} km</span>` +
   `<span>${ICONS.clock} approx ${quote.duration} drive</span>` +
   `<span>${ICONS.cal} ${dateText}</span>` +
-  `<span>${ICONS.seat} ${pax} traveler${pax > 1 ? 's' : ''}</span>`;
+  `<span>${ICONS.seat} ${pax} traveller${pax > 1 ? 's' : ''}</span>`;
 
 // ---- locked search summary (Kayak/Expedia pattern) ----
 // The chosen search shows read-only; the edit fields stay collapsed until the
@@ -109,7 +111,7 @@ document.getElementById('route-meta').innerHTML =
 document.getElementById('sl-route').innerHTML =
   `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
 document.getElementById('sl-meta').textContent =
-  `~${quote.km} km · approx ${quote.duration} drive · ${dateText} · ${pax} traveler${pax > 1 ? 's' : ''}`;
+  `~${quote.km} km · approx ${quote.duration} drive · ${dateText} · ${pax} traveller${pax > 1 ? 's' : ''}`;
 window.editSearch = function () {
   document.getElementById('srch-locked').hidden = true;
   document.getElementById('srch-bar').hidden = false;
@@ -124,6 +126,24 @@ window.cancelEdit = function () {
   if (err) err.hidden = true;
   document.getElementById('srch-locked').hidden = false;
 };
+
+// An unrecognised destination (stale bookmark, mistyped link) used to hard-redirect to 404.
+// Open the picker with an explanation instead, so warm traffic can recover in place.
+if (unknownDestination) {
+  const locked = document.getElementById('srch-locked');
+  const bar = document.getElementById('srch-bar');
+  const err = document.getElementById('srch-err');
+  if (locked && bar) {
+    locked.hidden = true;
+    bar.hidden = false;
+    const cancel = document.getElementById('sl-cancel');
+    if (cancel) cancel.hidden = true; // nothing valid to cancel back to
+  }
+  if (err) {
+    err.textContent = "We couldn't find that destination — choose your pick-up and drop-off below.";
+    err.hidden = false;
+  }
+}
 
 // grow this transfer into a multi-stop trip without starting over
 (function(){
@@ -152,13 +172,13 @@ const privateCard = `
     <div class="veh">
       <div class="veh-row">
         <div class="v-ico">${ICONS.car}</div>
-        <div class="v-info"><b>AC car</b><small>Up to 3 travelers + bags</small></div>
+        <div class="v-info"><b>AC car</b><small>Up to 3 travellers + bags</small></div>
         <div class="v-price"><div class="amt">$${displayPrice(quote.car)}</div><small>total, fixed</small></div>
         <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'car', price: quote.car, rawPrice: quote.rawCar })}">Select</a>
       </div>
       <div class="veh-row">
         <div class="v-ico">${ICONS.van}</div>
-        <div class="v-info"><b>AC van</b><small>Up to 6 travelers + bags</small></div>
+        <div class="v-info"><b>AC van</b><small>Up to 6 travellers + bags</small></div>
         <div class="v-price"><div class="amt">$${displayPrice(quote.van)}</div><small>total, fixed</small></div>
         <a class="btn btn-primary btn-sm" href="${bookUrl({ mode: 'private', vehicle: 'van', price: quote.van, rawPrice: quote.rawVan })}">Select</a>
       </div>
@@ -189,12 +209,12 @@ if (shared) {
     ${savePct >= 5 ? `<span class="shared-save">${ICONS.ck} Save ~${savePct}% vs a private car</span>` : ''}
     <div class="shared-meta">
       <div class="sm">${ICONS.clock} Departs ${timeStr} · ${shared.freqText}</div>
-      <div class="sm">${ICONS.seat} Seats for ${pax} traveler${pax > 1 ? 's' : ''} — we confirm availability on WhatsApp</div>
+      <div class="sm">${ICONS.seat} Seats for ${pax} traveller${pax > 1 ? 's' : ''} — we confirm availability on WhatsApp</div>
     </div>
     <div class="incl">
       <span class="chip">${ICONS.ck} AC car or van</span>
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
-      <span class="chip">${ICONS.ck} Meet other travelers</span>
+      <span class="chip">${ICONS.ck} Meet other travellers</span>
     </div>
     <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: shared.days.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;

@@ -10,6 +10,7 @@ import { futureIsoDate } from '../testSupport/dates';
 const tripDates = [futureIsoDate(30), futureIsoDate(32)];
 
 const valid = {
+  // Deliberately unresolvable, so the placeholder path is exercised.
   stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
   nights: [1, 2, 0],
   dates: tripDates,
@@ -119,7 +120,9 @@ describe('POST /bookings/trip', () => {
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ adapter, email, bookings });
 
-    const b = await (await postTrip(app, valid)).json();
+    // Resolvable stops: this test is about the checkout→webhook→paid pipeline, and an unpriced
+    // booking is deliberately not chargeable.
+    const b = await (await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'] })).json();
     await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
     const wh = await app.request('/webhooks/payments', { method: 'POST', body });
@@ -128,6 +131,6 @@ describe('POST /bookings/trip', () => {
     const paid = await bookings.get(b.id);
     expect(paid!.status).toBe('paid');
     expect(email.sent).toHaveLength(1);
-    expect(email.sent[0].html).toContain('Sigiriya'); // trip route line
+    expect(email.sent[0].html).toContain('Kandy'); // trip route line
   });
 });

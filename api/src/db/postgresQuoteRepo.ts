@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
+import { quoteRouteText, requestLegs } from './quoteRouteText';
 import type {
   QuoteRepo,
   NewQuote,
@@ -198,6 +199,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
         currency: quotes.currency,
         assignedTo: quotes.assignedTo,
         createdAt: quotes.createdAt,
+        // The whole request_json rides along so routeText can be derived with the same
+        // requestLegs()/quoteRouteText() JS used by the in-memory repo — one derivation, not a
+        // second one written in SQL. That's only acceptable because /list is bounded by row
+        // count, not by the projection: it's unbounded but the queue is ~24 rows today (see the
+        // spec's cost note and D5's revisit trigger). The payoff is that this puts the entire
+        // derivation under the in-memory tests that already run in CI, instead of splitting the
+        // legs-lookup fallback across two implementations that can silently drift.
+        request: quotes.requestJson,
       })
       .from(quotes)
       .where(conds.length ? and(...conds) : undefined)
@@ -214,6 +223,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       currency: r.currency,
       assignedTo: r.assignedTo,
       createdAt: r.createdAt,
+      routeText: quoteRouteText(requestLegs(r.request)),
     }));
   }
 

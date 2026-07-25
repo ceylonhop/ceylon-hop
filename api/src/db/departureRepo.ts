@@ -52,14 +52,15 @@ interface CorridorRoute {
   stops: string[];
   seat: number; // whole USD per seat (front-end value)
   days: number[]; // service weekdays, 0=Sun … 6=Sat (mirrors the front-end `days`)
+  times: string[]; // published departure times (mirrors the front-end `times`)
 }
 const CORRIDOR_ROUTES: CorridorRoute[] = [
-  { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19, days: SHARED_SERVICE_DAYS },
-  { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21, days: SHARED_SERVICE_DAYS },
-  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23, days: SHARED_SERVICE_DAYS },
-  { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14, days: SHARED_SERVICE_DAYS },
-  { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16, days: SHARED_SERVICE_DAYS },
-  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24, days: SHARED_SERVICE_DAYS },
+  { id: 'airport-cultural', stops: ['Colombo Airport (CMB)', 'Colombo city', 'Negombo', 'Sigiriya / Dambulla', 'Kandy'], seat: 19, days: SHARED_SERVICE_DAYS, times: ['07:30'] },
+  { id: 'hill-line', stops: ['Kandy', 'Nuwara Eliya', 'Ella'], seat: 21, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
+  { id: 'ella-east', stops: ['Ella', 'Yala', 'Arugam Bay'], seat: 23, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
+  { id: 'south-coast', stops: ['Galle', 'Hikkaduwa', 'Bentota', 'Weligama', 'Mirissa'], seat: 14, days: SHARED_SERVICE_DAYS, times: ['09:00', '14:00'] },
+  { id: 'yala-south', stops: ['Yala', 'Mirissa', 'Weligama', 'Galle'], seat: 16, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
+  { id: 'ella-south', stops: ['Ella', 'Mirissa', 'Weligama'], seat: 24, days: SHARED_SERVICE_DAYS, times: ['08:30'] },
 ];
 
 export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
@@ -77,6 +78,15 @@ export const DEFAULT_CORRIDORS: Corridor[] = CORRIDOR_ROUTES.map((c) => ({
 export function serviceDaysForCorridor(id: string): number[] {
   const route = CORRIDOR_ROUTES.find((c) => c.id === id);
   return route ? route.days : SHARED_SERVICE_DAYS;
+}
+
+// Seat inventory is keyed on (corridor, date, time), and holdSeats find-or-creates that row
+// with a full 12 seats. A free-text time therefore mints a brand-new 12-seat van per distinct
+// string — '7:30', '07:30 ', '07:31' and 'lunchtime' each opened another one, so one departure
+// could be sold many times over. Departures are a published schedule, so only those count.
+export function departureTimesForCorridor(id: string): string[] {
+  const route = CORRIDOR_ROUTES.find((c) => c.id === id);
+  return route ? route.times : [];
 }
 
 // A corridor's route endpoints by id, for customer-facing copy (emails). Non-directional —

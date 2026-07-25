@@ -82,6 +82,37 @@ describe('rate limiting (booking writes)', () => {
   });
 });
 
+// '/quote' matches that path EXACTLY in Hono, which left POST /quote/lock — unauthenticated,
+// one persisted quote row per call — completely unthrottled. The wildcard has to cover the
+// subpath without dropping the bare parent, so both are pinned here.
+describe('rate limiting (/quote and /quote/lock)', () => {
+  const quoteBody = { product: 'single', from: 'Colombo Airport (CMB)', to: 'Galle', vehicle: 'car', adults: 1 };
+  function postQuote(app: ReturnType<typeof createApp>, path: string, ip = '9.9.9.9') {
+    return app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      body: JSON.stringify(quoteBody),
+    });
+  }
+
+  it('429s POST /quote/lock past the limit', async () => {
+    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 } });
+    await postQuote(app, '/quote/lock');
+    await postQuote(app, '/quote/lock');
+    const blocked = await postQuote(app, '/quote/lock');
+    expect(blocked.status).toBe(429);
+    expect((await blocked.json()).error).toBe('rate_limited');
+  });
+
+  it('still throttles the bare POST /quote (the wildcard must not drop the parent)', async () => {
+    const app = createApp({ rateLimit: { max: 2, windowMs: 60000 } });
+    await postQuote(app, '/quote', '9.9.9.8');
+    await postQuote(app, '/quote', '9.9.9.8');
+    const blocked = await postQuote(app, '/quote', '9.9.9.8');
+    expect(blocked.status).toBe(429);
+  });
+});
+
 describe('rate limiting (/admin/quote/* — billed Google APIs + DB writes)', () => {
   it('GET /admin/quote/places 429s past 4x the configured max (autocomplete bursts GETs)', async () => {
     const app = createApp({ rateLimit: { max: 2, windowMs: 60000 }, auth, adminApiKey: 'k' }); // effective GET/POST cap on /admin/quote/* = 8

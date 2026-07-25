@@ -4,6 +4,8 @@ export interface GoogleIdentity {
   email: string;
   emailVerified: boolean;
   name?: string; // Google profile display name — the UI derives avatar initials from it
+  sub?: string; // stable Google subject id (used by the customer session; ops ignores it)
+  picture?: string; // Google profile photo URL (Ride Board avatars; ops ignores it)
 }
 
 export type JwtVerifier = (
@@ -36,5 +38,13 @@ export async function verifyGoogleIdToken(
   const email = payload.email;
   if (typeof email !== 'string' || !email) throw new Error('token has no email');
   const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name.trim() : undefined;
-  return { email, emailVerified: payload.email_verified === true, ...(name ? { name } : {}) };
+  const sub = typeof payload.sub === 'string' && payload.sub ? payload.sub : undefined;
+  const picture = typeof payload.picture === 'string' && payload.picture ? payload.picture : undefined;
+  return {
+    email,
+    emailVerified: payload.email_verified === true,
+    ...(name ? { name } : {}),
+    ...(sub ? { sub } : {}),
+    ...(picture ? { picture } : {}),
+  };
 }

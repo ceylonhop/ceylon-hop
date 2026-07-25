@@ -9,7 +9,7 @@
 <link rel="canonical" href="https://ceylonhop.com/tours.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
-<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/tours.html">
@@ -172,7 +172,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <aside>
       <div class="book-box">
         <div class="top">
-          <div class="lab">From, point-to-point</div>
+          <div class="lab">From &mdash; point-to-point</div>
           <div class="price-now"><b id="bk-price"></b><span id="bk-veh">· private transfers</span></div>
         </div>
         <div class="pad">
@@ -216,10 +216,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   const ck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>';
   const xk='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   const pin='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 21s7-6.4 7-11a7 7 0 1 0-14 0c0 4.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
-  const themeLabel={classic:'Classic',grand:'Grand tour',hills:'Hill country',wildlife:'Wildlife',culture:'Culture',honeymoon:'Honeymoon'};
+  const themeLabel={classic:'Classic',grand:'Grand tour',hills:'Hill country',wildlife:'Wildlife',culture:'Culture',honeymoon:'Honeymoon',coast:'Surf & coast'};
 
   document.title = t.name + ' — Ceylon Hop';
-  mountBreadcrumbs([['Home','index.html'],['Full Tours','tours.html'],[t.name]]);
+  mountBreadcrumbs([['Home','index.html'],['Tours','tours.html'],[t.name]]);
   document.getElementById('t-name').textContent=t.name;
   document.getElementById('t-theme').innerHTML=themeLabel[t.theme];
   document.getElementById('t-tag').textContent=t.tag;
@@ -272,15 +272,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   let ad=2;
   const T=window.TRANSFERS;
   function vehFor(n){ return n>3 ? 'van' : 'car'; }
+  function money(n){
+    const cents=Math.round(n*100);
+    return '$'+(cents/100).toFixed(cents%100===0?0:2);
+  }
   function transfersEst(){
     if(!T) return t.price;
-    return T.tripQuote(t.stops, vehFor(ad)).total;
+    const veh=vehFor(ad);
+    const q=T.tripQuote(t.stops, veh);
+    // same final-price finishing the planner and the backend apply, so every screen agrees
+    return T.finishPrice(q.total, q.legs.filter(l=>!l.est).length * T.FLOORS[veh]);
   }
   function updateEst(){
     // Headline = point-to-point (private transfers, default); chauffeur-guide is the opt-in.
-    document.getElementById('bk-price').textContent='$'+transfersEst().toLocaleString();
+    document.getElementById('bk-price').textContent=money(transfersEst());
     const v=document.getElementById('bk-veh'); if(v) v.textContent = vehFor(ad)==='van' ? '· private transfers (van)' : '· private transfers';
-    document.getElementById('bk-est').textContent='$'+t.price.toLocaleString();
+    document.getElementById('bk-est').textContent=money(t.price);
   }
   window.step=function(which,d){ ad=Math.max(1,ad+d); document.getElementById('ad-n').textContent=ad; updateEst(); };
   updateEst();

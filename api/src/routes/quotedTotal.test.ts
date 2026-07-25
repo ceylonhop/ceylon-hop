@@ -70,7 +70,9 @@ describe('engine-authoritative totals (quotedTotal no longer trusted)', () => {
     expect(b.amountDueNow).toBe(7000);
     const tasks = await conciergeTasks.listByBooking(b.id);
     expect(tasks).toHaveLength(1);
-    expect(tasks[0].note).toBe('unpriced booking — distance unresolved, verify price');
+    // The note now names the reason, so ops can tell an unroutable place from a Maps outage.
+    expect(tasks[0].note).toContain('set a price before this can be paid');
+    expect(tasks[0].note).toContain('distance unresolved');
   });
 
   it('falls back to the placeholder quote when unpriced and no quotedTotal (API-only callers)', async () => {

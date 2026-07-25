@@ -9,9 +9,9 @@ function installStubs() {
   // importLibrary, and routing is the routes library's Route.computeRoutes — the legacy
   // DirectionsService/DirectionsRenderer are deliberately absent so any lingering use of
   // them throws. Requests are recorded on window.__computeRoutesReqs for assertions.
-  function MapCls() {}
+  function MapCls(el, opts) { (window.__chMaps = window.__chMaps || []).push(opts || {}); }
   MapCls.prototype.fitBounds = function () {};
-  function Marker() {}
+  function Marker(opts) { (window.__chMarkers = window.__chMarkers || []).push(opts || {}); }
   Marker.prototype.setMap = function () {};
   function Point() {}
   function Polyline() {}

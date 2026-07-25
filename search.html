@@ -9,7 +9,7 @@
 <link rel="canonical" href="https://ceylonhop.com/search.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
-<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/search.html">
@@ -92,7 +92,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .add-stops:hover{text-decoration:underline}
   .add-stops svg{width:15px;height:15px}
   .add-stops[hidden]{display:none}
-  .complex-route{margin-top:14px;font-size:.9rem;color:var(--ink-soft);max-width:56ch;line-height:1.5}
+  /* sits under the option cards, not in the hero — a quiet footnote, not a headline */
+  .complex-route{margin-top:26px;font-size:.9rem;color:var(--ink-soft);max-width:56ch;line-height:1.5}
   .complex-route a{color:var(--accent-deep);font-weight:700;text-decoration:none}
   .complex-route a:hover{text-decoration:underline}
   @media(max-width:640px){
@@ -193,7 +194,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <button type="button" class="swap2" id="e-swap" aria-label="Swap pick-up and drop-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button>
       <div class="field place-field"><label for="e-to">Drop-off</label><input id="e-to" required placeholder="Where to?" autocomplete="off"></div>
       <div class="field"><label for="e-date">Date</label><input type="date" id="e-date" data-datepicker data-placeholder="Any date" aria-label="Travel date"></div>
-      <div class="field"><label for="e-pax">Travelers</label><select id="e-pax"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6+</option></select></div>
+      <div class="field"><label for="e-pax">Travellers</label><select id="e-pax"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6+ (group quote on WhatsApp)</option></select></div>
       <div class="srch-actions">
         <button class="btn btn-primary go" type="submit">Update</button>
         <button type="button" class="sl-cancel" id="sl-cancel" hidden onclick="cancelEdit()">Cancel</button>
@@ -209,9 +210,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <h1 id="route-title"></h1>
       <div class="route-meta" id="route-meta"></div>
       <a class="add-stops" id="add-stops" hidden></a>
-      <p class="complex-route">Want a stop along the way, a day trip and back, or a longer route? <a href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20I%27d%20like%20a%20quote%20for%20a%20custom%20route%20with%20a%20few%20stops." target="_blank" rel="noopener">Message us</a> — we'll price it in minutes.</p>
     </div>
     <div id="results"></div>
+    <p class="complex-route">Want a stop along the way, a day trip and back, or a longer route? <a href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20I%27d%20like%20a%20quote%20for%20a%20custom%20route%20with%20a%20few%20stops." target="_blank" rel="noopener">Message us</a> — we'll price it in minutes.</p>
     <div class="srch-help" id="srch-help"></div>
     <div class="reassure">
       <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured, vetted drivers</div>
