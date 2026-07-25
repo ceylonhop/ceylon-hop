@@ -8,6 +8,9 @@
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      OWNER: paste your OAuth 2.0 Web client id here at go-live (…apps.googleusercontent.com). -->
 <script>window.GOOGLE_CLIENT_ID='';</script>
+<!-- Pre-launch: joining is switched off and the board runs on fakes, so keep it out of the
+     index until it ships. Remove this line (and add the URL to SITEMAP_EXTRA) at go-live. -->
+<meta name="robots" content="noindex, follow">
 <title>The Ride Board — Ceylon Hop</title>
 <meta name="description" content="Share an air-con van with travellers heading your way — a fraction of a private car, worlds nicer than the bus. Add your name to a route; $0 unless it runs.">
 <link rel="canonical" href="https://ceylonhop.com/board.html">
@@ -703,8 +706,8 @@ body.detail-open .detail{display:block}
           <p class="talk">Lists only take <b>real names</b> — it's what makes them worth trusting. Sign in and you'll appear to other travellers as your first name + country, nothing more.</p>
           <div id="gis-btn-holder" style="display:flex;justify-content:center;min-height:44px"></div>
           <div id="gis-unavailable" class="deal" hidden style="margin-top:12px">
-            <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> Sign-in unavailable</h4>
-            <p>The owner hasn't set <b>GOOGLE_CLIENT_ID</b> yet, so joining is switched off. You can still browse every list on the board.</p>
+            <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg> Joining opens soon</h4>
+            <p>Adding your name isn't switched on just yet — but every list below is live, so have a look at where people are heading. Keen to join one? <a href="https://wa.me/94779669662" target="_blank" rel="noopener">Message us on WhatsApp</a> and we'll add you ourselves.</p>
           </div>
           <p class="whisper">We see your name, photo and email. Other travellers see <b>"your first name + flag"</b> — that's it.</p>
         </div>

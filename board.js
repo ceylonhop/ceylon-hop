@@ -344,6 +344,11 @@
     return rows.join('');
   }
 
+  // One source for the review claim: the board previously said "200+ real trips" while the rest
+  // of the site said 30 Tripadvisor reviews, ~7x apart, on a page that asks for card details.
+  // Keep this in step with the figure on index.html.
+  var TA_REVIEWS = 30;
+
   function taBadge(caption) {
     return '<a class="ta" href="' + TA_URL + '" target="_blank" rel="noopener" title="Ceylon Hop on Tripadvisor">' +
       '<span class="owl"><i></i><i class="h"></i></span><b>Tripadvisor</b>' +
@@ -583,7 +588,7 @@
       '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ' + cap + ' seats</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
-      '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · 200+ real trips') + '</div>' +
+      '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · ' + TA_REVIEWS + ' reviews') + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
       '<div><b>$0 unless it runs.</b> If four names come, you split this van — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
@@ -1086,7 +1091,7 @@
   /* ---------------- boot ---------------- */
   function boot() {
     var ta = document.getElementById('intro-ta');
-    if (ta) ta.innerHTML = taBadge('Rated 5.0 by 200+ travellers');
+    if (ta) ta.innerHTML = taBadge('Rated 5.0 by ' + TA_REVIEWS + ' travellers');
     apiGet('/board/me').then(function (data) { state.me = (data && data.me) || null; }).catch(function () { state.me = null; })
       .then(function () { return loadBoard(); })
       .then(function () { if (state.me) refreshMineCodes(); })
