@@ -11,6 +11,17 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
 
 ---
 
+## Before you merge this branch
+
+**Set `ALLOW_FAKE_PAYMENTS=1` on the STAGING Render service** (or give staging real PayHere
+*sandbox* credentials, which is better — it exercises the real adapter). Render sets
+`NODE_ENV=production` on staging too, and staging runs the fake payment adapter, so without one
+of these the new fail-closed guard stops staging booting. Production must NEVER have this flag:
+unset is what keeps it failing closed.
+
+Migration `0023` (`bookings.needs_pricing`) applies on boot. Additive and nullable, so existing
+rows read as priced and chargeable exactly as before.
+
 ## Done
 
 - [x] **S1** Payment fail-open + `/quote/lock` rate limiting — `f1fa8d9`
