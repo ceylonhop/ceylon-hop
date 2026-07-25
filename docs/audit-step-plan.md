@@ -80,8 +80,14 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
       **Left open:** the pages still wear the OLD flat-teal hero (Q16 — a design call), and the
       Colombo-city shared-seat pickup claim (Q5) is still unanswered.
 
-- [ ] **S10 — Brand/CSS hygiene.** ~14px nav logo, base64 logo inlined twice on 44 pages,
-      `board.html`'s duplicated token set, sub-44px tap targets.
+- [x] **S10** Brand/CSS hygiene — `5e1880f`. Cropped the nav logo (glyph filled 42% of its
+      canvas), replaced the twice-inlined base64 with a cached file (route pages 31.2KB → 15.3KB),
+      de-duplicated board.html's token set (42 of 45 rules were copies of site.css), fixed sticker
+      and WhatsApp contrast, regenerated the apple-touch-icon on brand teal, 44px datepicker hit
+      areas, semantic state + motion tokens.
+      **Left open:** the primary teal button is still 2.43:1 white-on-teal — Q15, an owner call
+      since it changes the main CTA everywhere. `img/ceylon-hop-logo.jpg` and
+      `img/ceylon-hop-icon.jpg` are now unreferenced but were left in place rather than deleted.
 
 - [ ] **S11 — Remaining security, if wanted.** Injection, email-as-spam-relay, dependency hygiene,
       security headers, Ride Board charge path. None of these has been looked at.
