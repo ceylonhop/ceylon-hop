@@ -42,11 +42,22 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
       Risk: touches the money path — expect a conversion cost during a Maps outage, accepted.
 </details>
 
-- [ ] **S7 — Booking-flow UX.** The shared-ride "Decide later" dead end (the one true dead end in the
+- [x] **S7** Booking-flow UX — `97a00a9`. Shared "Decide later" dead end, terms link + real error,
+      wallet chips, per-mode confirmation/perks, visible rate lock, `?id=custom` redirect, exits for
+      over-capacity / off-service-day / out-of-radius, calendar keyboard access, "2 children".
+      **Not done in S7 (deliberately, needs an owner answer):** the add-on/pay-chip and stepper aria
+      work is partly done — steppers still lack labels; the child-seat add-on ($8, in the rate card)
+      is still not offered; the bag-count and extra-bag-price disagreements across surfaces are Q7/Q8
+      in the decision queue.
+
+<details><summary>S7 original scope (done)</summary>
+
+- **Booking-flow UX.** The shared-ride "Decide later" dead end (the one true dead end in the
       funnel), unlinked terms checkbox that fails silently, decorative Apple/Google Pay chips,
       "Your seat is booked!" on private transfers, the invisible 7-day rate lock, `?id=custom`
       charging $60/adult, and the calendar keyboard blocker (clickable `<div>`s).
       Files: `booking.html`, `booking.js`. Biggest customer-visible win left.
+</details>
 
 - [ ] **S8 — Homepage / search / planner.** Unqualified "Free cancellation", `alert()` boxes,
       money-format drift, search 6+ silently jumping to WhatsApp, planner has zero analytics.
