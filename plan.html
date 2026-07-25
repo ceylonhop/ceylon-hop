@@ -54,22 +54,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   .panel-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:24px}
 
-  /* trip-basics setup panel — a clean white card; the header + controls set it apart from
-     the transfer-leg cards (no heavy tint, which read as muddy) */
-  .setup-card{background:var(--white);border-color:var(--line)}
-  .setup-head{display:flex;align-items:center;gap:12px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line)}
-  .setup-head .sh-ic{width:36px;height:36px;border-radius:10px;background:var(--pc-teal);display:grid;place-items:center;flex:none;color:var(--accent-deep)}
-  .setup-head .sh-ic svg{width:19px;height:19px}
-  .setup-head b{display:block;font-family:var(--display);font-size:1.05rem;color:var(--ink);line-height:1.15}
-  .setup-head span{font-size:.8rem;color:var(--ink-soft)}
-  /* selected vehicle reads clearly: white pill + accent ring + accent label on the cream track */
-  .setup-card .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s);color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
-  .setup-card .veh-btn.on b{color:inherit}
+  /* ── trip-basics ribbon: two aligned label rows in one slim card ──────── */
+  .setup-bar{display:flex;align-items:center;gap:14px;row-gap:12px;flex-wrap:wrap;padding:13px 16px}
+  .sb-group{display:flex;align-items:center;gap:10px;min-width:0}
+  .sb-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--ink-soft);flex:none;width:76px}
+  .pax-pills{display:flex;gap:5px}
+  .pax-pill{width:33px;height:33px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);
+    font-family:inherit;font-weight:700;font-size:.88rem;color:var(--ink);cursor:pointer;padding:0;
+    transition:transform .22s cubic-bezier(.22,.68,.38,1.12), box-shadow .3s ease, background .22s ease, border-color .22s ease, color .22s ease}
+  .pax-pill:hover{transform:translateY(-1.5px);border-color:var(--accent);box-shadow:0 5px 12px -5px rgba(10,125,111,.4)}
+  .pax-pill.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 6px 14px -6px var(--accent)}
+  .setup-bar .veh-toggle{display:flex;gap:4px;border-radius:999px;padding:4px}
+  .setup-bar .veh-btn{display:flex;align-items:center;gap:6px;padding:.4rem .75rem;border-radius:999px;white-space:nowrap}
+  .setup-bar .veh-btn svg{width:17px;height:17px;flex:none}
+  .setup-bar .veh-btn b{display:inline;font-size:.85rem}
+  .setup-bar .veh-btn small{display:inline;font-size:.7rem}
+  /* selected vehicle: white pill + accent ring on the cream track (same read as the old card) */
+  .setup-bar .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s);color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
+  .setup-bar .veh-btn.on b{color:inherit}
+  .setup-bar~.veh-note{margin:10px 4px 0}
+  @media(max-width:760px){
+    .setup-bar{gap:12px}
+    .sb-group{width:100%}
+    .sb-veh .veh-toggle{flex:1}
+    .sb-veh .veh-btn{flex:1;flex-direction:column;gap:2px;padding:.45rem .4rem}
+    .sb-veh .veh-btn svg{display:none}
+    .sb-veh .veh-btn small{font-size:.68rem}
+  }
 
-  /* trip controls */
-  .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px}
-  .controls .field label{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);font-weight:700;display:block;margin-bottom:5px}
-  .controls input,.controls select{width:100%;padding:.7rem .8rem;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
+  /* vehicle toggle (shared by the ribbon) */
   .veh-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--cream-deep);border-radius:12px;padding:5px}
   .veh-btn{border:none;background:none;border-radius:9px;padding:.55rem .4rem;cursor:pointer;text-align:center;font-family:inherit;transition:.15s;color:var(--ink);-webkit-text-fill-color:var(--ink)}
   .veh-btn b{display:block;font-size:.92rem;color:inherit;-webkit-text-fill-color:currentColor}
@@ -113,6 +126,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* shown in place of the transfers until the traveller count is picked */
   .itin-gate{display:flex;align-items:center;gap:12px;margin:8px 0 4px;padding:16px 18px;border:1.5px dashed var(--line);border-radius:var(--r);background:var(--white);color:var(--ink-soft);font-weight:600;font-size:.95rem;line-height:1.4}
   .itin-gate svg{width:22px;height:22px;color:var(--accent);flex:none}
+  /* pre-existing bug fixed with the ribbon: display:flex (author) beats the UA [hidden] rule,
+     so the gate note never actually disappeared once travellers were picked */
+  .itin-gate[hidden]{display:none}
   .add-stop-btn{display:inline-flex;align-items:center;gap:.5rem;margin:14px 0 0 36px;background:var(--white);border:1.5px dashed var(--accent);color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border-radius:999px;cursor:pointer;transition:.15s}
   .add-stop-btn:hover{background:var(--pc-teal)}
   .add-stop-btn svg{width:16px;height:16px}
@@ -336,7 +352,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .plan-head{padding-bottom:104px}
   }
   @media(max-width:600px){
-    .controls{grid-template-columns:1fr}
     .add-stop-btn,.reorder-hint{margin-left:0}
   }
 
@@ -388,28 +403,30 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <span class="tpl-lbl">Start from a ready-made route</span>
         <div class="tpl-chips" id="tpl-chips"></div>
       </div>
-      <div class="panel-card setup-card">
-        <div class="setup-head">
-          <span class="sh-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h2M10 16h10"/><circle cx="16" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="8" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg></span>
-          <div><b>Trip basics</b><span>Set once — applies to every transfer</span></div>
+      <!-- Trip basics as one compact ribbon (two aligned label rows). The traveller pills
+           replace the old full-width select; plan.js binds .pax-pill directly. #veh and
+           .veh-btn[data-veh] keep their contract with plan.js (click delegate + syncVehBtns). -->
+      <div class="panel-card setup-bar">
+        <div class="sb-group">
+          <span class="sb-lbl" id="pax-lbl">Travelers</span>
+          <div class="pax-pills" role="group" aria-labelledby="pax-lbl">
+            <button type="button" class="pax-pill" data-pax="1" aria-pressed="false" aria-label="1 traveler">1</button>
+            <button type="button" class="pax-pill" data-pax="2" aria-pressed="false" aria-label="2 travelers">2</button>
+            <button type="button" class="pax-pill" data-pax="3" aria-pressed="false" aria-label="3 travelers">3</button>
+            <button type="button" class="pax-pill" data-pax="4" aria-pressed="false" aria-label="4 travelers">4</button>
+            <button type="button" class="pax-pill" data-pax="5" aria-pressed="false" aria-label="5 travelers">5</button>
+            <button type="button" class="pax-pill" data-pax="6" aria-pressed="false" aria-label="6 travelers">6</button>
+          </div>
         </div>
-        <div class="controls">
-          <div class="field" style="grid-column:1/-1"><label for="pax">Travelers</label>
-            <select id="pax">
-              <option value="" disabled selected hidden>How many travelers?</option>
-              <option value="1">1 traveler</option><option value="2">2 travelers</option>
-              <option value="3">3 travelers</option><option value="4">4 travelers</option>
-              <option value="5">5 travelers</option><option value="6">6 travelers</option>
-            </select></div>
-          <div class="field" style="grid-column:1/-1"><label>Your vehicle</label>
-            <div class="veh-toggle" id="veh">
-              <button class="veh-btn on" data-veh="car"><b>Private AC car</b><small>Up to 3 · 2 bags</small></button>
-              <button class="veh-btn" data-veh="van"><b>Private AC van</b><small>Up to 6 · 6 bags</small></button>
-            </div>
-            <p class="veh-note" id="veh-note" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span id="veh-note-tx"></span></p>
+        <div class="sb-group sb-veh">
+          <span class="sb-lbl">Vehicle</span>
+          <div class="veh-toggle" id="veh">
+            <button class="veh-btn on" data-veh="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg><b>AC car</b><small>up to 3 · 2 bags</small></button>
+            <button class="veh-btn" data-veh="van"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><b>AC van</b><small>up to 6 · 6 bags</small></button>
           </div>
         </div>
       </div>
+      <p class="veh-note" id="veh-note" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span id="veh-note-tx"></span></p>
 
       <p class="itin-gate" id="itin-gate" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
