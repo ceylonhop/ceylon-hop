@@ -40,7 +40,7 @@ Bookings already has search — a topbar box filtering on customer name, referen
 | D3 | While a query is active, flatten the role-aware sections into one result list | Sections are a triage device; search is retrieval. A match buried in the right section is still a scan. |
 | D4 | Status chips still narrow results, but a zero-here / matches-elsewhere case says so and offers a one-click escape | A chip silently hiding your match is the classic "where did it go" failure. |
 | D5 | Route text is **derived per request**, not stored in a new column | A column would make `/list` cheaper and could grow into indexed server-side search — but it costs a migration, and migrations auto-apply on boot in prod and fail closed. That is a production risk taken on behalf of a search box, at 24 quotes, in maintenance mode. Nothing is lost by waiting: a real server-side search would need its own migration and index regardless. **If the queue reaches the thousands, adding a `route_text` column is the known next move.** |
-| D6 | One shared JS derivation used by both repos — no parallel SQL implementation | A `string_agg` in Postgres plus a JS version for the in-memory repo would be two implementations of one rule, free to drift apart. |
+| D6 | One shared JS derivation used by both repos — no parallel SQL implementation | A `string_agg`/`COALESCE` in Postgres plus a JS version for the in-memory repo would be two implementations of one rule, free to drift apart. **Corrected 2026-07-25: the first implementation violated this.** It shipped a `COALESCE(request_json->'tool'->'legs', request_json->'legs')` projection in `postgresQuoteRepo.ts` alongside `requestLegs()` in `quoteRouteText.ts` — exactly the two-implementation drift risk this decision exists to avoid, and worse: the SQL half is exactly the half the default CI run cannot exercise (the Postgres integration test is gated on `DATABASE_URL_TEST`), so a drift there would surface as "route search silently finds nothing" with every test green. Fixed by deleting the SQL projection: Postgres now selects the whole `request_json` column and runs the same `requestLegs()`/`quoteRouteText()` JS the in-memory repo uses. |
 | D7 | The in-row route is **match-aware**, and visible on mobile | A row that matched on route must show *why*. Rendering from the start of the route defeats that on exactly the multi-leg quotes that motivated it (see §3). |
 | D8 | No `aria-live` region for the result count | The file contains no live region and no `sr-only` class today. Introducing both — plus the announcement debounce a per-keystroke count would require — is a new pattern for a search box. The visible count sits next to the input. |
 
@@ -76,17 +76,22 @@ Repo wiring:
 Both repos locate the legs through one shared helper, `requestLegs(request)`, which reads
 `request.tool.legs` and falls back to a top-level `request.legs` for pre-V19 rows.
 
-- **Postgres** (`postgresQuoteRepo.ts`): the projection additionally selects
-  `COALESCE(request_json->'tool'->'legs', request_json->'legs')` and runs `quoteRouteText` on it.
+- **Postgres** (`postgresQuoteRepo.ts`): the projection additionally selects the whole
+  `request_json` column (`request: quotes.requestJson`) and runs
+  `quoteRouteText(requestLegs(r.request))` on it in JS — the same call the in-memory repo makes,
+  not a SQL re-derivation of the fallback rule.
 - **In-memory** (`quoteRepo.ts`): runs `quoteRouteText(requestLegs(q.request))`.
 
 **Honest cost.** An earlier draft of this spec called that "the legs sub-document only, never the
-whole request blob". That was a fig leaf: `ToolRequestSchema` (`internalQuote.ts:87`) is about ten
-small scalars plus `legs[]`, so legs *are* the request by byte count. This effectively ships the
-whole request for every row. Legs are small in absolute terms (~200 bytes each) and today's queue
-is ~24 rows, so the cost is genuinely noise — but the reason it is acceptable is the small `N`,
-not a narrow projection. `/list` is already unbounded, which is what makes `N` the thing to watch;
-see D5 for the trigger to revisit.
+whole request blob" — and, per D6's correction above, the first implementation tried to keep that
+promise with a SQL `COALESCE` that only pulled `legs`. That was a fig leaf even on its own terms:
+`ToolRequestSchema` (`internalQuote.ts:87`) is about ten small scalars plus `legs[]`, so legs *are*
+the request by byte count. The corrected code now selects the whole `request_json` column
+outright, which also carries the `engine` sub-document (the priced result of the request, stored
+alongside it) — strictly more than "legs only," and still noise at today's row count. Legs plus
+engine together are small in absolute terms and today's queue is ~24 rows, so the cost is genuinely
+noise — but the reason it is acceptable is the small `N`, not a narrow projection. `/list` is
+already unbounded, which is what makes `N` the thing to watch; see D5 for the trigger to revisit.
 
 **Exposure.** `routeText` is place names — no cost, no margin. It needs no `margin:view` gate, and
 `/list` already sits behind `requireCap('quote:manage')`. Stated explicitly because this file
@@ -197,12 +202,16 @@ calls `kbarClose()` on Escape while the bar is open.)
 - `internalQuote` route test: `GET /admin/quote/list` includes `routeText` on each row
   (in-memory repo, runs in CI).
 
-**Known gap, accepted.** The Postgres-side assertion — that `request_json->'legs'` comes back at
-all, and in order — belongs in `api/src/db/postgres.test.ts`, which is
-`describe.skipIf(!TEST_URL)` on `DATABASE_URL_TEST` (`postgres.test.ts:33`) and therefore **does
-not run in default CI**. The test will be written and will pass when a DB is present, but the
-residual risk in D6 is real: the shared derivation is proven, its Postgres plumbing is not.
-Mitigation is deliberate and cheap — the field is additive and a null `routeText` degrades to
+**Known gap, accepted — narrower than it was.** Postgres now selects the whole `request_json`
+column and hands it to the same `requestLegs()`/`quoteRouteText()` JS the in-memory repo uses
+(see D6's correction), so the derivation itself — including the `tool.legs`-vs-top-level fallback
+— is exercised by the in-memory-repo tests that already run in default CI, not just by
+`postgres.test.ts`. What is *not* covered by default CI is narrower: that Drizzle/Postgres actually
+hands back `request_json` as parsed JSON (rather than, say, a string needing an extra parse) when
+read through this code path. That assertion lives in
+`api/src/db/postgres.test.ts` (`describe.skipIf(!TEST_URL)` on `DATABASE_URL_TEST`,
+`postgres.test.ts:33`) and is written and passes when a DB is present, but does not run in default
+CI. Mitigation is deliberate and cheap — the field is additive and a null `routeText` degrades to
 "route not searchable", never a broken queue.
 
 **Front-end**
