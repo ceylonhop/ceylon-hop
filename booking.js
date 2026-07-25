@@ -554,14 +554,14 @@ if(isTrip){
 
   // Dates are chosen per leg in the planner, so the standalone “When” step is dropped here.
   // Show the whole multi-stop journey as one 5-step bar — Route · Dates were done on the
-  // planner, then Service · Travelers · Payment happen here — so travellers always see where
+  // planner, then Service · Travellers · Payment happen here — so travellers always see where
   // they are and what’s left.
   (function buildJourney(){
     // NOTE: in the markup panel 1 is the standalone "When" step and panel 2 is the
     // "Where" step that we repurpose into the trip itinerary + service chooser.
     const tripPanel=document.querySelector('.panel[data-panel="2"]');   // Trip & service (repurposed Where)
     const whenPanel=document.querySelector('.panel[data-panel="1"]');   // When (dropped — dates come from the planner)
-    const tvPanel=document.querySelector('.panel[data-panel="3"]');     // Travelers
+    const tvPanel=document.querySelector('.panel[data-panel="3"]');     // Travellers
     const dtPanel=document.querySelector('.panel[data-panel="4"]');     // Details & payment
     const tvBack=tvPanel && tvPanel.querySelector('.back-link');
     const dtBack=dtPanel && dtPanel.querySelector('.back-link');
@@ -627,8 +627,8 @@ if(isTrip){
       steps.querySelectorAll('.planner-step').forEach(ps=>{ ps.title='Back to the planner'; ps.addEventListener('click',()=>{ location.href=editUrl; }); });
     }
     // rewire navigation to the journey numbering (n1’s click listener is made trip-aware where it’s bound)
-    const n4=document.getElementById('n4'); if(n4) n4.setAttribute('onclick','goStep(4)'); // (parked) Travelers → Payment
-    if(tvBack) tvBack.setAttribute('onclick','goStep(3)');                                  // (parked) Travelers ← Service
+    const n4=document.getElementById('n4'); if(n4) n4.setAttribute('onclick','goStep(4)'); // (parked) Travellers → Payment
+    if(tvBack) tvBack.setAttribute('onclick','goStep(3)');                                  // (parked) Travellers ← Service
     if(dtBack) dtBack.setAttribute('onclick','goStep(3)');                                  // Payment ← Service
     // tidy the summary: no single departure time on a multi-leg trip; label the date as the trip start
     const timeRow=document.getElementById('sum-time'); if(timeRow && timeRow.closest('.s-row')) timeRow.closest('.s-row').style.display='none';
@@ -695,7 +695,7 @@ if(!isTrip && r.type==='shared'){
     var sub3=tvPanel.querySelector('.sub'); if(sub3) sub3.textContent='Reserve a seat for each traveller. Every traveller gets one large bag free \u2014 extra bags are $10 each.';
   }
 
-  // progress labels: this isn't a "pick-up & drop-off" or "travelers" journey
+  // progress labels: this isn't a "pick-up & drop-off" or "travellers" journey
   // no adults/children split on a shared seat — every traveller is just a seat
   var chStepEl=document.getElementById('ch-step'); if(chStepEl) chStepEl.style.display='none';
   var adStepEl=document.getElementById('ad-step');
@@ -1254,7 +1254,7 @@ function render(){
             : `That’s the max for an AC car. Got more bags? Switch to a van, or add a luggage rack below.`);
     } else { note.className='cap-note'; note.textContent=''; }
   }
-  // block progressing past Travelers while over the vehicle's seat OR luggage limit —
+  // block progressing past Travellers while over the vehicle's seat OR luggage limit —
   // we can't accommodate it, so the traveller must upgrade or message us first
   const overCap = perVehicle && (paxOver || bagsOver);
   // over-capacity blocks Continue — dim it so the disabled state is visible (mirrors n2)
@@ -1276,7 +1276,7 @@ function render(){
     const baseAmt = calcTotal() - otherRows;
     document.getElementById('sum-adamt').textContent=money(baseAmt);
     chrow.style.display='flex';
-    document.getElementById('sum-chlabel').textContent='Travelers';
+    document.getElementById('sum-chlabel').textContent='Travellers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
   } else {
     document.getElementById('sum-adlabel').textContent= isShared ? `Seats × ${state.ad}` : `Adults × ${state.ad}`;
@@ -1799,8 +1799,8 @@ if (typeof window.chTrack === 'function') {
     [rowOf('sum-date'),rowOf('sum-time')].forEach(r=>{ if(r){ r.classList.add('editable'); r.title='Edit date & time'; r.addEventListener('click',()=>window.goStep(1)); } });
   }
   const bagRow=rowOf('sum-bags');
-  // travelers/luggage live at step 3 normally, step 4 in the multi-stop journey
-  if(bagRow){ bagRow.classList.add('editable'); bagRow.title='Edit travelers'; bagRow.addEventListener('click',()=>window.goStep(isTrip?4:3)); }
+  // travellers/luggage live at step 3 normally, step 4 in the multi-stop journey
+  if(bagRow){ bagRow.classList.add('editable'); bagRow.title='Edit travellers'; bagRow.addEventListener('click',()=>window.goStep(isTrip?4:3)); }
   paintSteps();
 })();
 

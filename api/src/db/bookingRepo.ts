@@ -11,6 +11,9 @@ export type BookingChannel = 'website' | 'whatsapp';
 // A booking is a single transfer, a multi-stop trip, or a shared seat — discriminated on
 // `mode`. `input.customer` is common to all three shapes. `amountDueNow` is what
 // checkout collects immediately; customer bookings currently pay the full total.
+// `needsPricing`: the engine could not price this booking (unresolvable route, or Google was
+// down and we refused to charge off a crow-flies estimate), so `total` is only a placeholder
+// and checkout must refuse it until ops sets a real price. Present on every mode.
 export type NewBooking =
   | {
       mode: 'single';
@@ -22,6 +25,7 @@ export type NewBooking =
       distanceKm?: number | null;
       durationMin?: number | null;
       channel?: BookingChannel;
+      needsPricing?: boolean;
     }
   | {
       mode: 'trip';
@@ -33,6 +37,7 @@ export type NewBooking =
       distanceKm?: number | null;
       durationMin?: number | null;
       channel?: BookingChannel;
+      needsPricing?: boolean;
     }
   | {
       mode: 'shared';
@@ -41,15 +46,13 @@ export type NewBooking =
       amountDueNow: number;
       currency: string;
       channel?: BookingChannel;
-      // The engine could not price this (unresolvable route, or Google down and we refused to
-      // charge off an estimate). `total` is only a placeholder, so it must not be chargeable.
       needsPricing?: boolean;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing'> & {
   id: string;
   reference: string;
   status: BookingStatus;
