@@ -98,3 +98,21 @@ test('no expand button on the SVG island fallback', async ({ page }) => {
   await expect(page.locator('#trip-map svg')).toBeVisible();
   await expect(page.locator('.ch-map-expand')).toHaveCount(0);
 });
+
+test('the modal lists the stops, numbered and colour-matched to the pins', async ({ page }) => {
+  await gotoBooking(page, { path: '/plan.html', query: 'stops=Kandy%7CElla%7CGalle&pax=2&vehicle=car' });
+  await expect(page.locator('#trip-map .ch-map-wrap.ready')).toBeVisible();
+
+  await page.locator('#trip-map .ch-map-expand').click();
+  const items = page.locator('.ch-map-legend li');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toContainText('Kandy');
+  await expect(items.nth(1)).toContainText('Ella');
+  await expect(items.nth(2)).toContainText('Galle');
+  await expect(items.nth(0).locator('.ch-lg-n')).toHaveText('1');
+  await expect(items.nth(2).locator('.ch-lg-n')).toHaveText('3');
+
+  // Pick-up green, final drop-off orange — matching the pin colours.
+  await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(10, 125, 111)');
+  await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(232, 98, 58)');
+});

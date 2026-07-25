@@ -38,9 +38,16 @@
       '.ch-map-modal-map .ch-map-wrap{height:100%}' +
       '.ch-map-close{border:0;background:#f1f5f3;border-radius:50%;width:32px;height:32px;cursor:pointer;' +
       'font-size:1.15rem;line-height:1;color:#2b3a35}' +
+      '.ch-map-legend{width:248px;flex:none;border-left:1px solid #e6ebe8;overflow:auto;padding:14px 16px;' +
+      'font-family:var(--body,system-ui,sans-serif)}' +
+      '.ch-map-legend ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}' +
+      '.ch-map-legend li{display:flex;align-items:center;gap:10px;font-size:.86rem;color:#2b3a35}' +
+      '.ch-map-legend .ch-lg-n{width:22px;height:22px;border-radius:50%;flex:none;display:grid;' +
+      'place-items:center;color:#fff;font-weight:700;font-size:.72rem}' +
       '@media(max-width:760px){.ch-map-modal{padding:0}' +
       '.ch-map-modal-card{width:100vw;height:100dvh;border-radius:0}' +
-      '.ch-map-modal-body{flex-direction:column}}';
+      '.ch-map-modal-body{flex-direction:column}' +
+      '.ch-map-legend{width:auto;border-left:0;border-top:1px solid #e6ebe8;max-height:34vh}}';
     document.head.appendChild(st);
   }
 
@@ -115,6 +122,22 @@
     const prevFocus = document.activeElement;
     const prevOverflow = document.body.style.overflow;
 
+    // A stop is a name string OR a {lat,lng} picked from Places. Callers that pass coords
+    // (booking.js) supply opts.stopLabels so the legend can still name them.
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const labelFor = (stop, i) => {
+      const given = opts.stopLabels && opts.stopLabels[i];
+      if (given) return String(given).replace(/\s*\(.*?\)/, '');
+      if (typeof stop === 'string') return stop.replace(/\s*\(.*?\)/, '');
+      return 'Stop ' + (i + 1);
+    };
+    const legend = stops.map((s, i) => {
+      const fill = i === 0 ? '#0a7d6f' : i === stops.length - 1 ? '#e8623a' : '#0AB9B6';
+      return '<li><span class="ch-lg-n" style="background:' + fill + '">' + (i + 1) + '</span>' +
+             '<span>' + esc(labelFor(s, i)) + '</span></li>';
+    }).join('');
+
     const modal = document.createElement('div');
     modal.className = 'ch-map-modal';
     modal.setAttribute('role', 'dialog');
@@ -124,7 +147,8 @@
       '<div class="ch-map-modal-card">' +
         '<div class="ch-map-modal-head"><strong>Your route</strong>' +
         '<button type="button" class="ch-map-close" aria-label="Close map">×</button></div>' +
-        '<div class="ch-map-modal-body"><div class="ch-map-modal-map"></div></div>' +
+        '<div class="ch-map-modal-body"><div class="ch-map-modal-map"></div>' +
+        '<aside class="ch-map-legend"><ol>' + legend + '</ol></aside></div>' +
       '</div>';
 
     let closed = false;
