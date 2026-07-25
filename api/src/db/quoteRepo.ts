@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { quoteRouteText, requestLegs } from './quoteRouteText';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -106,6 +107,9 @@ export interface QuoteSummary {
   // The queue's "Assigned to me" section filters on this, so it must survive the narrow
   // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
   assignedTo: string | null;
+  // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
+  // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
+  routeText: string | null;
   createdAt: Date;
 }
 
@@ -234,6 +238,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     totalCents: q.totalCents,
     currency: q.currency,
     assignedTo: q.assignedTo,
+    routeText: quoteRouteText(requestLegs(q.request)),
     createdAt: q.createdAt,
   };
 }

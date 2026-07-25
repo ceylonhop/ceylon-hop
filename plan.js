@@ -298,13 +298,23 @@ window.addEventListener('wheel',()=>closePlaceMenus(),{passive:true});
 window.addEventListener('touchmove',()=>closePlaceMenus(),{passive:true});
 
 // ---- top controls ---- (dates are collected in the separate “When” step)
-const paxSel=document.getElementById('pax');
-paxSel.value = state.pax==null ? '' : String(state.pax);
-paxSel.addEventListener('change',()=>{
-  state.pax=+paxSel.value;
+const paxPills=[...document.querySelectorAll('.pax-pill')];
+function syncPaxPills(){
+  paxPills.forEach(p=>{
+    const on = state.pax!=null && +p.dataset.pax===state.pax;
+    p.classList.toggle('on',on);
+    p.setAttribute('aria-pressed', on?'true':'false');
+  });
+}
+syncPaxPills(); // reflect a template/booking hand-off that pre-set pax
+paxPills.forEach(p=>p.addEventListener('click',()=>{
+  const v=+p.dataset.pax;
+  if(state.pax===v) return;
+  state.pax=v;
   if(state.pax>3) state.vehicle='van';
-  render();
-});
+  syncPaxPills();
+  render(); // ends in syncVehBtns() — handles the car lock + note
+}));
 document.getElementById('veh').addEventListener('click',e=>{
   const b=e.target.closest('.veh-btn'); if(!b || b.disabled) return;
   if(b.dataset.veh===state.vehicle) return;
