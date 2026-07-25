@@ -161,8 +161,15 @@
 
   // ── Custom element ──────────────────────────────────────────────────────
   const stylesheet =
+    // Default box is 240x160, expressed as width + aspect-ratio rather than a fixed
+    // height. A fixed height would WIN over an author's `aspect-ratio` (which only ever
+    // computes a *missing* dimension), so `width:100%;aspect-ratio:4/3` at the call site
+    // used to collapse to a 160px letterbox. `height:auto` lets the author's ratio drive
+    // the height; call sites that set their own height (100%, min-height) still override
+    // this rule outright.
     ':host{display:inline-block;position:relative;vertical-align:top;' +
-    '  font:13px/1.3 system-ui,-apple-system,sans-serif;color:rgba(0,0,0,.55);width:240px;height:160px}' +
+    '  font:13px/1.3 system-ui,-apple-system,sans-serif;color:rgba(0,0,0,.55);' +
+    '  width:240px;aspect-ratio:3/2;height:auto}' +
     '.frame{position:absolute;inset:0;overflow:hidden;background:rgba(0,0,0,.04)}' +
     // .frame img (clipped) and .spill (unclipped ghost + handles) share the
     // same left/top/width/height in frame-%, computed by _applyView(), so the
