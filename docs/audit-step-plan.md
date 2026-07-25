@@ -59,9 +59,19 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
       Files: `booking.html`, `booking.js`. Biggest customer-visible win left.
 </details>
 
-- [ ] **S8 — Homepage / search / planner.** Unqualified "Free cancellation", `alert()` boxes,
+- [x] **S8** Homepage / search / planner — `a989f83`. Qualified "Free cancellation", title order,
+      trust chip, `alert()` boxes → inline hints, dead modal removed, 404 dead end → in-place
+      recovery, "6+" WhatsApp jump labelled, money format, planner analytics (was zero), UK spelling.
+      **Left open:** the review count is still a literal in two places (cross-referenced by comment,
+      not single-sourced — keeping it in the HTML keeps it crawlable); search still says shared
+      availability is "confirmed on WhatsApp" while booking charges instantly (Q6).
+
+<details><summary>S8 original scope (done)</summary>
+
+- **Homepage / search / planner.** Unqualified "Free cancellation", `alert()` boxes,
       money-format drift, search 6+ silently jumping to WhatsApp, planner has zero analytics.
       Files: `index.html`, `search.*`, `plan.*`.
+</details>
 
 - [ ] **S9 — Route pages (SEO, cutover-sensitive).** 8 reverse-direction pages describing the journey
       backwards, false duration precision ("about 2h 57m"), shared-seat intent missing from all 44
