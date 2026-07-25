@@ -457,6 +457,10 @@ function renderRouteMap(){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
     window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+      expandable: true,
+      // pFrom/pTo are {lat,lng} once the customer picks from autocomplete, so the legend
+      // can't read a name off them — hand it the display names explicitly.
+      stopLabels: [fromName, toName],
       onFail: showFallback,
       onRoute: ({km, durationMin}) => {
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));

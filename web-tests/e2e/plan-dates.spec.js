@@ -200,9 +200,10 @@ test('ready-made route starters hide once the itinerary has legs from the custom
   await expect(page.locator('#tpl-strip')).toBeVisible();
   // The traveller count gates the itinerary, so pick it before adding a leg — without it
   // "Add another transfer" is hidden and the customer can't start a route from scratch.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await page.locator('#add-stop').click();
-  await expect(page.locator('#rail .leg-card')).toHaveCount(3);
+  // One card, not three: a fresh planner starts empty, so this is the customer's first leg.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   await expect(page.locator('#tpl-strip')).toBeHidden();
 });
 
@@ -218,7 +219,7 @@ test('the traveller-count gate hides the itinerary until a count is picked', asy
   await expect(page.locator('.add-row')).toBeHidden();
 
   // Picking a count opens the itinerary and retires the prompt.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await expect(page.locator('#itin-gate')).toBeHidden();
   await expect(page.locator('.board-h')).toBeVisible();
   await expect(page.locator('.add-row')).toBeVisible();

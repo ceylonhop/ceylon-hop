@@ -134,7 +134,11 @@ function guidePriceRange(totalPrice, veh, pricedLegCount){
 
 // ---- state: an ordered list of transfer legs ----
 const params=new URLSearchParams(location.search);
-const startStops = (params.get('stops')||'Colombo Airport (CMB)|Sigiriya|Ella').split('|').map(s=>s.trim()).filter(Boolean);
+// No seed route. A fresh planner starts EMPTY and the customer adds their own legs — a
+// pre-filled itinerary reads as transfers they chose (and gets priced as such), especially
+// now that the traveller gate reveals it the moment they pick a count. The ready-made route
+// chips above the board are the deliberate way to start from a suggested itinerary.
+const startStops = (params.get('stops')||'').split('|').map(s=>s.trim()).filter(Boolean);
 // Optional per-stop nights (e.g. from a tour hand-off). Index i = nights at stops[i];
 // the final stop is a departure point and carries no nights.
 const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)||0);
@@ -143,6 +147,7 @@ const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)|
 const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
 function buildLegs(stops, nights, gaps){
   const hasNights = nights && nights.some(n=>n>0);
+  if(!stops.length) return [];  // fresh planner — the empty state invites the first leg
   if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1 }];
   const isGap = new Set(gaps||[]); // wire i (stops[i]→stops[i+1]) the traveller arranges themselves
   const N = i => (nights && nights[i]>0) ? nights[i] : 0;
@@ -494,7 +499,11 @@ function render(){
   // The WHEN step manages its own popovers (renderDatesStep + backToRoute both clear them).
   if(document.getElementById('dates-wrap')?.hidden !== false) clearLegDatePops();
   rail.innerHTML='';
-  if(gated){ const rhh=document.getElementById('reorder-hint'); if(rhh) rhh.hidden=true; return; }
+  if(gated){
+    const rhh=document.getElementById('reorder-hint'); if(rhh) rhh.hidden=true;
+    const reh=document.getElementById('rail-empty'); if(reh) reh.hidden=true; // whole board is hidden while gated
+    return;
+  }
   const n=state.legs.length;
 
   state.legs.forEach((leg,i)=>{
@@ -625,10 +634,19 @@ function render(){
   updateSummary();
   const transfers=state.legs.filter(l=>l.type!=='stay').length;
   const stays=state.legs.filter(l=>l.type==='stay').length;
-  document.getElementById('stop-count').textContent =
-    `${transfers} transfer${transfers!==1?'s':''}${stays?` · ${stays} stay${stays!==1?'s':''}`:''}`;
+  // Blank at zero — the empty state already says "No transfers yet"; "0 transfers" beside
+  // the heading just repeats it.
+  document.getElementById('stop-count').textContent = transfers === 0 && stays === 0 ? ''
+    : `${transfers} transfer${transfers!==1?'s':''}${stays?` · ${stays} stay${stays!==1?'s':''}`:''}`;
   const reorderHint=document.getElementById('reorder-hint');
   if(reorderHint) reorderHint.hidden=state.legs.length<=1;
+  // Empty state: a fresh planner has no seed route, so prompt the first leg rather than
+  // showing a bare board. The add button doubles as the empty state's call to action, so
+  // its copy has to stop saying "another" when there is nothing to add another to.
+  const railEmpty=document.getElementById('rail-empty');
+  if(railEmpty) railEmpty.hidden=state.legs.length>0;
+  const addBtn=document.getElementById('add-stop');
+  if(addBtn) addBtn.lastChild.textContent = state.legs.length ? ' Add another transfer' : ' Add your first transfer';
   syncVehBtns();
   syncTemplateStrip();
   syncPlanUrl();
