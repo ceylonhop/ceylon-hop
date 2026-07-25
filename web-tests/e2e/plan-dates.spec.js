@@ -154,7 +154,11 @@ test('same-day legs over 10 hours block continuing', async ({ page }) => {
   await setLegDate(page, 1, '2026-08-10');
 
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText(/too much for one day/i);
+  // Assert the hint's substance, not its exact marketing phrasing. This was pinned to
+  // "too much for one day" and went stale the moment the copy was reworded to "more than is
+  // safe or enjoyable in one go" — with e2e outside CI, nothing caught it.
+  await expect(hint).toContainText(/driving/i);
+  await expect(hint).toContainText(/another date/i);
   await expect(cont).toHaveClass(/cta-disabled/);
   await expect(cont).toHaveAttribute('aria-disabled', 'true');
   await cont.click({ force: true });
