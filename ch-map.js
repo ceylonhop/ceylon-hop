@@ -134,7 +134,13 @@
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
       if (modal.parentNode) modal.remove();
-      if (prevFocus && prevFocus.focus) prevFocus.focus();
+      // plan.js re-renders the inline map whenever trip state changes (see the comment above
+      // openExpanded), which can destroy prevFocus and build a new expand button while the
+      // modal is open. A detached node's focus() is a silent no-op, so check isConnected and
+      // fall back to whatever expand button currently exists — focus lands somewhere sensible
+      // and adjacent instead of being dropped to <body>.
+      const target = (prevFocus && prevFocus.isConnected) ? prevFocus : document.querySelector('.ch-map-expand');
+      if (target && target.focus) target.focus();
     };
     const onKey = (e) => { if (e.key === 'Escape') close(); };
 

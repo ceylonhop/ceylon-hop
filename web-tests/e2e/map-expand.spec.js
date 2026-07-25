@@ -64,6 +64,32 @@ test('the modal map is freely manipulable and reuses the computed route', async 
   expect(after).toBe(before);
 });
 
+test('closing after the opening button was replaced (inline re-render) does not drop focus to <body>', async ({ page }) => {
+  await gotoPlanner(page);
+
+  const btn = page.locator('#trip-map .ch-map-expand');
+  await btn.click();
+  await expect(page.locator('.ch-map-modal')).toBeVisible();
+
+  // Simulate plan.js re-rendering the inline map while the modal is open (see the comment
+  // above openExpanded in ch-map.js): the button that opened the modal is destroyed and a
+  // fresh one takes its place, so the modal's saved prevFocus reference goes stale/detached.
+  await page.evaluate(() => {
+    const host = document.getElementById('trip-map');
+    const oldBtn = host.querySelector('.ch-map-expand');
+    const freshBtn = oldBtn.cloneNode(true);
+    oldBtn.replaceWith(freshBtn);
+  });
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ch-map-modal')).toHaveCount(0);
+
+  // Focus must land somewhere sensible, not get dropped to <body>.
+  const active = await page.evaluate(() => document.activeElement.tagName);
+  expect(active).not.toBe('BODY');
+  await expect(page.locator('#trip-map .ch-map-expand')).toBeFocused();
+});
+
 test('no expand button on the SVG island fallback', async ({ page }) => {
   // No stubs installed => ch-map's loader fails => renderRoute falls back to the SVG.
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
