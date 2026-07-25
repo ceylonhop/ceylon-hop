@@ -454,6 +454,9 @@ function renderRouteMap(){
     const pFrom = state.locFromGeo && state.locFromGeo.lat!=null ? {lat:state.locFromGeo.lat, lng:state.locFromGeo.lng} : fromName;
     const pTo   = state.locToGeo   && state.locToGeo.lat!=null   ? {lat:state.locToGeo.lat,   lng:state.locToGeo.lng}   : toName;
     window.CH_MAP.renderRoute(canvas, [pFrom, pTo], {
+      expandable: true,
+      // pFrom/pTo may be {lat,lng} picked from Places; give the legend real names.
+      stopLabels: [fromName, toName],
       onFail: showFallback,
       onRoute: ({km, durationMin}) => {
         setBar(km, durationMin!=null ? minsToText(durationMin) : (localKm!=null?T.durationText(localKm):null));

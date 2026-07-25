@@ -116,3 +116,18 @@ test('the modal lists the stops, numbered and colour-matched to the pins', async
   await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(10, 125, 111)');
   await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(232, 98, 58)');
 });
+
+test('the booking transfer map is expandable too', async ({ page }) => {
+  await gotoBooking(page);
+  await page.evaluate(() => window.goStep && window.goStep(2));
+
+  const btn = page.locator('#rm-canvas .ch-map-expand');
+  await expect(btn).toBeVisible();
+
+  await btn.click();
+  await expect(page.locator('.ch-map-modal')).toBeVisible();
+  await expect(page.locator('.ch-map-legend li')).toHaveCount(2);
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.ch-map-modal')).toHaveCount(0);
+});
