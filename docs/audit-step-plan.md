@@ -23,7 +23,16 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
 
 ## Next
 
-- [ ] **S6 — Maps fallback: refuse to price, send to ops.** *(owner decided: refuse)*
+- [x] **S6** Maps fallback now refuses to price instead of guessing — `ad3d728`. Also closes the
+      second half of M1: an unpriceable booking is no longer chargeable at the $40 placeholder.
+      Migration `0023` adds `bookings.needs_pricing` (nullable, additive).
+      **Ops follow-up not yet built:** ops can see the flagged booking via the concierge task, but
+      there is no UI to *set* a price on one and make it payable. Today that is a WhatsApp
+      conversation. Worth a step of its own if outages are common.
+
+<details><summary>S6 original scope (done)</summary>
+
+- **Maps fallback: refuse to price, send to ops.** *(owner decided: refuse)*
       A Google failure silently falls back to crow-flies × 1.35, repricing Colombo→Ella
       $123.50 → $78.00 (−39%) with no flag, on any outage, quota exhaustion or key slip.
       Make an offline-estimated distance non-chargeable: persist the booking, block `/checkout`
@@ -31,6 +40,7 @@ Do not re-audit anything in the "DO NOT RE-AUDIT" registry at the top of
       Files: `api/src/adapters/maps.ts` (surface *how* the distance was resolved),
       `api/src/services/pricing.ts`, `api/src/routes/bookings.ts`.
       Risk: touches the money path — expect a conversion cost during a Maps outage, accepted.
+</details>
 
 - [ ] **S7 — Booking-flow UX.** The shared-ride "Decide later" dead end (the one true dead end in the
       funnel), unlinked terms checkbox that fails silently, decorative Apple/Google Pay chips,
