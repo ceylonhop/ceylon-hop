@@ -220,9 +220,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .flex-pill svg{width:18px;height:18px;color:#c98a1a;flex:none}
   .time-select{width:100%;max-width:340px;padding:.8rem 1rem;border:1.5px solid var(--line);border-radius:12px;
     font-family:inherit;font-size:1rem;background:var(--white);color:var(--ink)}
-  .single-dep-card{width:100%;max-width:340px;padding:.8rem 1rem;border:1.5px solid var(--line);border-radius:12px;
-    font-family:inherit;font-size:1rem;background:var(--white);color:var(--ink);
-    display:flex;align-items:center;gap:.5rem}
+  /* shared ride: the departure is FIXED — read-only fact, not an input/dropdown */
+  .single-dep-card{display:inline-flex;align-items:center;gap:.5rem;max-width:100%;
+    padding:.55rem .8rem .55rem .7rem;border-radius:999px;border:1px solid var(--line);
+    background:var(--cream);color:var(--ink);font-size:1rem;cursor:default}
+  .single-dep-card .sd-ic{display:grid;place-items:center;flex:none}
+  .single-dep-card .sd-ic svg{width:17px;height:17px;color:var(--accent-deep)}
+  .single-dep-card .sd-time{font-weight:700}
+  .single-dep-card .sd-tag{font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--ink-soft);background:rgba(0,0,0,.05);border-radius:999px;padding:2px 8px}
+  .shared-cal-note{display:block;margin:10px 2px 0;font-size:.82rem;line-height:1.45;color:var(--ink-soft)}
+  .shared-cal-note b{color:var(--ink)}
+  .cal-day.no-svc{cursor:not-allowed}
   .time-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
 
   /* service-type chooser (private transfer vs chauffeur-guide) */

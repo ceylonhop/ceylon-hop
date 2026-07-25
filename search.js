@@ -176,7 +176,7 @@ if (shared) {
     <span class="tag-top">Best value · share &amp; save</span>
     <div class="o-head">
       <div class="o-ico">${ICONS.share}</div>
-      <div><h2>Shared ride</h2><div class="o-sub">A seat on our daily service</div></div>
+      <div><h2>Shared ride</h2><div class="o-sub">A seat on our shared service</div></div>
     </div>
     <p class="o-desc">Hop a reserved seat on our <b>${shared.corridorLabel}</b> service. Same AC comfort, a friendly Pro&nbsp;Hopper guide on board — for a fraction of the price.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
@@ -190,7 +190,7 @@ if (shared) {
       <span class="chip">${ICONS.ck} Pro Hopper guide</span>
       <span class="chip">${ICONS.ck} Meet other travelers</span>
     </div>
-    <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
+    <a class="btn btn-primary o-cta" href="${bookUrl({ mode: 'shared', price: shared.seat, times: shared.times.join(','), days: (shared.days||[]).join(','), corridor: shared.corridorId })}">Book a seat ${ICON.arrow}</a>
   </article>`;
 } else {
   noShare = `
@@ -198,7 +198,7 @@ if (shared) {
     <div class="ns-ico">${ICONS.share}</div>
     <div>
       <b>No shared seats on this route — yet</b>
-      <p>We don't run a daily shared service between ${fromP.name} and ${toP.name} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
+      <p>We don't run a shared service between ${fromP.name} and ${toP.name} right now, so your private transfer is the way to go. It still covers you door-to-door at a fixed price.</p>
     </div>
   </div>`;
 }

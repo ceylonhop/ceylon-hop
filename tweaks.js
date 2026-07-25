@@ -29,7 +29,7 @@
       'Door-to-door in your own AC car or van at a <b>fixed price</b>. Travelling a popular route? <b>Share a seat</b> and pay a fraction of a private driver.'],
     'Your call':[
       'Private when you want.<br><span class="hl-swash">Shared</span> when you don’t.',
-      'Book a <b>private</b> transfer between any two points, or hop a seat on our <b>daily shared</b> service and meet fellow travelers — your call.']
+      'Book a <b>private</b> transfer between any two points, or hop a seat on our <b>shared</b> service and meet fellow travelers — your call.']
   };
 
   function loadFont(name){

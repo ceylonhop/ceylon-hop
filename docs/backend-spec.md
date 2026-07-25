@@ -49,7 +49,7 @@ PayHere stubbed, WhatsApp manual, no data mirror.** Real PayHere is a separate l
 
 **Product.** Ceylon Hop sells ground transport across Sri Lanka in three shapes:
 1. **Single private transfer** — door-to-door AC car/van + driver between two points.
-2. **Shared seat** — a reserved seat on a daily fixed-corridor service.
+2. **Shared seat** — a reserved seat on a fixed-corridor service that runs on set days.
 3. **Multi-stop trip** — a multi-day itinerary, either leg-by-leg private transfers
    or a chauffeur-guide who stays with the guest. Packaged **tours** feed into this.
 

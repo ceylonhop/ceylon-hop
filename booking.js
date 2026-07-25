@@ -132,6 +132,16 @@ let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 const ABS_MAX_BAGS = perVehicle ? VEH_CAP.van.bags : 6;
 const isShared = (!isTrip && r.type==='shared');
 const sharedCorridorId = params.get('corridor') || '';
+// Shared rides run a fixed weekly schedule — seats only depart on set weekdays
+// (0=Sun … 6=Sat). Comes through the ?days= param (search builds it from the
+// corridor); default Wed & Sat if a link omits it. null for non-shared bookings.
+const DOW_LABEL=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+function parseServiceDays(s){
+  const d=(s||'').split(',').map(n=>parseInt(n,10)).filter(n=>n>=0&&n<=6);
+  return d.length ? [...new Set(d)].sort((a,b)=>a-b) : [3,6];
+}
+const sharedDays = isShared ? parseServiceDays(params.get('days')) : null;
+const sharedDaysLabel = sharedDays ? sharedDays.map(d=>DOW_LABEL[d]).join(' & ') : '';
 
 // trip start date (chauffeur day count)
 const startParam = params.get('start') || params.get('date');
@@ -541,7 +551,7 @@ if(isTrip){
   })();
 }
 
-// ===== SHARED RIDE: fixed route + fixed daily schedule, sold per seat =====
+// ===== SHARED RIDE: fixed route + fixed weekly schedule, sold per seat =====
 // A shared seat is not a private/custom transfer: the corridor and the departure
 // times are set, so we don't ask for locations or an arbitrary pick-up time. We
 // confirm the ride, then collect a date + a scheduled departure + how many seats.
@@ -557,14 +567,14 @@ if(!isTrip && r.type==='shared'){
   const locWrap=document.getElementById('loc-wrap'); if(locWrap) locWrap.style.display='none';
   const pvtNote=document.getElementById('pvt-note'); if(pvtNote) pvtNote.style.display='none';
   const s1t=document.getElementById('s1-title'); if(s1t) s1t.textContent='Your shared ride';
-  const s1s=document.getElementById('s1-sub'); if(s1s) s1s.textContent='A reserved seat on our daily service along this route. Pick-up and drop-off are at set meeting points.';
+  const s1s=document.getElementById('s1-sub'); if(s1s) s1s.textContent='A reserved seat on our shared service along this route. Pick-up and drop-off are at set meeting points.';
   const card=document.createElement('div'); card.className='shared-route';
   card.innerHTML=
     '<div class="sr-line"><span class="sr-pin from"></span><div><span class="sr-lbl">Board at</span><b>'+r.stops[0]+'</b></div></div>'+
     '<div class="sr-wire"></div>'+
     '<div class="sr-line"><span class="sr-pin to"></span><div><span class="sr-lbl">Drop-off</span><b>'+r.stops[r.stops.length-1]+'</b></div></div>'+
     '<div class="sr-foot">'+
-      '<span class="sr-fact">'+ICO_CLOCK+'<span>Departs <b>'+timesTxt+'</b> \u00b7 daily</span></span>'+
+      '<span class="sr-fact">'+ICO_CLOCK+'<span>Departs <b>'+timesTxt+'</b> \u00b7 '+sharedDaysLabel+'</span></span>'+
       '<span class="sr-fact">'+ICO_SEAT+'<span><b>'+money(r.price)+'</b> per seat</span></span>'+
     '</div>'+
     '<p class="sr-note">'+ICO_INFO+'Exact pick-up &amp; drop-off are set meeting points along the route \u2014 our team confirms them with you after you book.</p>';
@@ -572,9 +582,15 @@ if(!isTrip && r.type==='shared'){
 
   // STEP 2 — pick a date + a SCHEDULED departure (no "any time", no decide-later time)
   const s2t=document.getElementById('s2-title'); if(s2t) s2t.textContent='When are you travelling?';
-  const s2s=document.getElementById('s2-sub'); if(s2s) s2s.textContent='Pick your travel date \u2014 our shared service runs once daily.';
+  const s2s=document.getElementById('s2-sub'); if(s2s) s2s.textContent='Shared seats run on set days only \u2014 pick from the '+sharedDaysLabel+' departures below.';
   const depLabel=document.getElementById('dep-label'); if(depLabel) depLabel.textContent='Departure';
   const dateLabel=document.getElementById('date-label'); if(dateLabel) dateLabel.textContent='Travel date';
+  // a note under the calendar makes the greyed-out days self-explanatory
+  var calEl=document.getElementById('cal');
+  if(calEl){ var cnote=document.getElementById('shared-cal-note');
+    if(!cnote){ cnote=document.createElement('p'); cnote.id='shared-cal-note'; cnote.className='shared-cal-note'; calEl.after(cnote); }
+    cnote.innerHTML='<b>'+sharedDaysLabel+' only.</b> Our shared seats run on these days \u2014 other dates are available as a private transfer.';
+  }
   const ftChk=document.getElementById('flex-time-chk'); if(ftChk){ var ftl=ftChk.closest('.flex-chk'); if(ftl) ftl.style.display='none'; }
   const fb=document.getElementById('flex-banner-tx'); if(fb) fb.innerHTML='<b>Not sure of your date yet?</b> Reserve now and lock in your travel date any time up to <b>12 hours before</b> \u2014 seats are subject to availability.';
 
@@ -629,9 +645,12 @@ function buildCal(){
   for(let i=0;i<first;i++)html+='<div></div>';
   for(let d=1;d<=days;d++){
     const date=new Date(y,m,d);
-    const off = date<minBookDate || date>maxBookDate;
+    const dow=date.getDay();
+    const noSvc = sharedDays && !sharedDays.includes(dow); // shared: not a service weekday
+    const off = date<minBookDate || date>maxBookDate || noSvc;
     const sel = state.date && date.getTime()===state.date.getTime();
-    html+=`<div class="cal-day ${off?'off':''} ${sel?'sel':''}" ${off?'':`onclick="pickDate(${y},${m},${d})"`}>${d}</div>`;
+    const title = noSvc ? ` title="Shared seats run ${sharedDaysLabel} only"` : '';
+    html+=`<div class="cal-day ${off?'off':''} ${noSvc?'no-svc':''} ${sel?'sel':''}" data-dow="${dow}"${title} ${off?'':`onclick="pickDate(${y},${m},${d})"`}>${d}</div>`;
   }
   html+='</div>';
   const cal=document.getElementById('cal');
@@ -644,6 +663,7 @@ window.calMove=function(dir){viewMonth=new Date(viewMonth.getFullYear(),viewMont
 window.pickDate=function(y,m,d){
   const picked=new Date(y,m,d);
   if(picked<minBookDate || picked>maxBookDate) return;
+  if(sharedDays && !sharedDays.includes(picked.getDay())) return; // not a shared service day
   state.date=picked; state.flexDate=false;
   const fd=document.getElementById('flex-date'); if(fd) fd.checked=false;
   document.getElementById('cal').classList.remove('dim');
@@ -668,20 +688,23 @@ function renderDeps(){
   const hint=document.getElementById('dep-hint');
   const deps=departuresFor();
 
-  // Shared ride with a single fixed departure — show a read-only card, no picker needed
+  // Shared ride with a single fixed departure — show a read-only FACT, not a picker.
+  // The traveller doesn't choose a time; the corridor departs once, at this set time.
   if(isShared && deps.length===1){
     const dp=deps[0];
     sel.style.display='none';
     hint.style.display='block';
-    hint.textContent='Reserve a seat on a daily departure.';
+    hint.textContent='One scheduled departure — the same for everyone on this route.';
     let card=document.getElementById('single-dep-card');
     if(!card){
       card=document.createElement('div');
       card.id='single-dep-card';
       card.className='single-dep-card';
+      card.setAttribute('aria-readonly','true');
       sel.parentNode.insertBefore(card,sel);
     }
-    card.textContent=fmtTime(dp.time)+' · '+dp.label;
+    const CLOCK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    card.innerHTML='<span class="sd-ic">'+CLOCK+'</span><span class="sd-time">'+fmtTime(dp.time)+'</span><span class="sd-tag">Fixed departure</span>';
     const ftWrap=document.getElementById('flex-time-chk');
     if(ftWrap){ const lbl=ftWrap.closest('.flex-chk'); if(lbl) lbl.style.display='none'; }
     return;
@@ -695,7 +718,7 @@ function renderDeps(){
   hint.style.display='block';
   hint.textContent = perVehicle
     ? (state.flexTime ? 'No time locked in — we’ll confirm your pick-up time with you later.' : 'Choose any time of day — your private vehicle leaves when you do.')
-    : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a daily departure.');
+    : (state.flexTime ? 'No time locked in — we’ll confirm your departure with you later.' : 'Reserve a seat on a scheduled departure.');
   let opts=`<option value="" ${!state.dep?'selected':''} disabled>Choose a ${perVehicle?'pick-up time':'departure'}…</option>`;
   opts+=deps.map(dp=>`<option value="${dp.time}" ${state.dep===dp.time?'selected':''}>${fmtTime(dp.time)} · ${dp.label}</option>`).join('');
   sel.innerHTML=opts;
