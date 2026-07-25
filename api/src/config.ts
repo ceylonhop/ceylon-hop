@@ -99,6 +99,16 @@ export function buildConfig(env: Record<string, string | undefined>) {
         '(the default would let anyone forge a customer session) — refusing to boot',
     );
   }
+  // Without PayHere credentials the payment seam silently falls back to FakePaymentAdapter,
+  // whose webhook signing key is a constant in this repo — so anyone could forge a "succeeded"
+  // webhook and mark their own booking paid for nothing. Money must never fail open.
+  if (cfg.NODE_ENV === 'production' && !(cfg.PAYHERE_MERCHANT_ID && cfg.PAYHERE_MERCHANT_SECRET)) {
+    throw new Error(
+      'PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET must both be set in production ' +
+        '(without them the fake payment adapter would accept forged webhooks and mark ' +
+        'bookings paid without a real charge) — refusing to boot',
+    );
+  }
   return cfg;
 }
 

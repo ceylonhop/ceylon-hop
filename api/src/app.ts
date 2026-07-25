@@ -133,7 +133,9 @@ export function createApp(deps: AppDeps = {}) {
 
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
-  app.use('/quote', rateLimit(rl));
+  // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
+  // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
+  app.use('/quote/*', rateLimit(rl));
   // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
   app.use('/board/*', rateLimit({ ...rl, methods: ['POST'] }));
   // M17: public front-end error beacon — same per-IP write limit as other public endpoints.

@@ -39,6 +39,25 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     ).toThrow(/CUSTOMER_SESSION_SECRET/);
   });
 
+  it('the PayHere credentials also fail closed in production', () => {
+    // Without them the payment seam falls back to FakePaymentAdapter, whose signing key is a
+    // constant in this repo — anyone could forge a "succeeded" webhook and pay nothing.
+    const base = {
+      NODE_ENV: 'production',
+      OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+      BOOKING_LINK_SECRET: 'another-real-32char-secret',
+      CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+    };
+    expect(() => buildConfig(base)).toThrow(/PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET/);
+    // one without the other is still a fallback to the fake adapter
+    expect(() => buildConfig({ ...base, PAYHERE_MERCHANT_ID: '1226' })).toThrow(/PAYHERE_/);
+    expect(() => buildConfig({ ...base, PAYHERE_MERCHANT_SECRET: 'live-secret' })).toThrow(/PAYHERE_/);
+    // empty strings are the same failure mode as unset
+    expect(() =>
+      buildConfig({ ...base, PAYHERE_MERCHANT_ID: '', PAYHERE_MERCHANT_SECRET: '' }),
+    ).toThrow(/PAYHERE_/);
+  });
+
   it('boots in production with real secrets', () => {
     expect(() =>
       buildConfig({
@@ -46,8 +65,15 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
         OPS_SESSION_SECRET: 'a-real-32char-random-secret',
         BOOKING_LINK_SECRET: 'another-real-32char-secret',
         CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+        PAYHERE_MERCHANT_ID: '1226',
+        PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
       }),
     ).not.toThrow();
+  });
+
+  it('does not require PayHere credentials outside production', () => {
+    expect(() => buildConfig({ NODE_ENV: 'test' })).not.toThrow();
+    expect(() => buildConfig({ NODE_ENV: 'development' })).not.toThrow();
   });
 
   it('tolerates the default secret outside production (dev/test)', () => {
