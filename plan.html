@@ -98,6 +98,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* itinerary rail */
   .rail{position:relative}
+  /* Empty state for a fresh planner — shown instead of a pre-filled seed route.
+     The [hidden] companion is required: this rule's `display` would otherwise beat the
+     browser's [hidden]{display:none} and the block could never hide. */
+  .rail-empty{display:flex;align-items:flex-start;gap:12px;margin:2px 0 0;padding:20px 20px;
+    border:1.5px dashed var(--line);border-radius:var(--r);background:var(--white);
+    color:var(--ink-soft);font-size:.92rem;line-height:1.5}
+  .rail-empty[hidden]{display:none}
+  .rail-empty svg{width:22px;height:22px;color:var(--accent);flex:none;margin-top:1px}
+  .rail-empty b{color:var(--ink)}
   .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
   .drag:active{cursor:grabbing}
   .drag svg{width:16px;height:16px}
@@ -440,6 +449,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       </div>
 
       <div class="rail" id="rail"></div>
+
+      <p class="rail-empty" id="rail-empty" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v4.2a3.4 3.4 0 0 0 3.4 3.4h5.2"/></svg>
+        <span><b>No transfers yet.</b> Add your first one below — tell us where you’re picked up and dropped off, and we’ll work out the distance and price.</span>
+      </p>
 
       <div class="add-row">
         <button class="add-stop-btn" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add another transfer</button>

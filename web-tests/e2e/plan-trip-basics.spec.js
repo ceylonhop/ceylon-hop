@@ -16,7 +16,31 @@ test('fresh planner is gated until a traveller pill is picked', async ({ page })
   await expect(page.locator('.pax-pill[data-pax="2"]')).toHaveClass(/on/);
   await expect(page.locator('.pax-pill[data-pax="2"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#itin-gate')).toBeHidden();
-  await expect(page.locator('#rail')).toBeVisible();
+  // A fresh planner carries no seed route, so the opened board shows the empty state rather
+  // than leg cards — #rail is present but has no size until a leg exists.
+  await expect(page.locator('#rail-empty')).toBeVisible();
+});
+
+test('a fresh planner opens empty — no transfers the customer did not add', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html');
+
+  await page.locator('.pax-pill[data-pax="3"]').click();
+
+  // The bug this guards: plan.html used to fall back to a hardcoded CMB|Sigiriya|Ella route,
+  // so picking a traveller count appeared to conjure two priced transfers from nowhere.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(0);
+  await expect(page.locator('#rail-empty')).toBeVisible();
+  await expect(page.locator('#add-stop')).toContainText('Add your first transfer');
+  await expect(page.locator('#stop-count')).toHaveText('');
+  // ...and nothing fake is written back into the URL.
+  expect(new URL(page.url()).searchParams.get('stops')).toBeNull();
+
+  await page.locator('#add-stop').click();
+
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+  await expect(page.locator('#rail-empty')).toBeHidden();
+  await expect(page.locator('#add-stop')).toContainText('Add another transfer');
 });
 
 test('picking more than 3 travellers locks the car and switches to the van', async ({ page }) => {

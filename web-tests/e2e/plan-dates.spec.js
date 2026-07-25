@@ -202,7 +202,8 @@ test('ready-made route starters hide once the itinerary has legs from the custom
   // "Add another transfer" is hidden and the customer can't start a route from scratch.
   await page.locator('.pax-pill[data-pax="2"]').click();
   await page.locator('#add-stop').click();
-  await expect(page.locator('#rail .leg-card')).toHaveCount(3);
+  // One card, not three: a fresh planner starts empty, so this is the customer's first leg.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   await expect(page.locator('#tpl-strip')).toBeHidden();
 });
 
