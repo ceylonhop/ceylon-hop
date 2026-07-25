@@ -153,7 +153,7 @@
         const pin = (fill) => ({
           path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
           fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
-          scale: 1.5, anchor: new libs.Point(12, 22),
+          scale: 1.5, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
         const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
@@ -162,6 +162,9 @@
           new libs.Marker({
             map, position: pos, zIndex: 5,
             icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
+            // The number ties each pin to the stops legend — without it the pins are
+            // anonymous and "is stop 3 the right place?" can't be answered.
+            label: { text: String(i + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
             title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
           });
         });
