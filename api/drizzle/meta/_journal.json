@@ -162,6 +162,13 @@
       "when": 1784906669698,
       "tag": "0022_ride_board",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784906669699,
+      "tag": "0023_booking_needs_pricing",
+      "breakpoints": true
     }
   ]
 }

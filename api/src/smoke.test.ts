@@ -22,7 +22,7 @@ async function founderCookie() {
 // Standing end-to-end smoke for the whole stubbed pipeline. Re-run at every milestone
 // gate (npm run smoke); it grows as new booking types and the real PayHere land.
 const valid = {
-  from: 'Colombo Airport',
+  from: 'Colombo Airport (CMB)',
   to: 'Ella',
   date: futureIsoDate(30), // anchored to "now" so the past-date rule never expires it
   time: '09:00',
@@ -80,7 +80,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const app = createApp({ adapter, email, conciergeTasks, bookings, adminApiKey, auth: opsAuth });
 
     const trip = {
-      stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
       nights: [1, 2, 0],
       dates: [futureIsoDate(30), futureIsoDate(32)],
       pax: 2,

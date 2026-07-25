@@ -42,7 +42,7 @@ function priceChips(q, shared) {
 function faqItems(from, to, q, shared) {
   const items = [
     [`How long does the ${from} to ${to} transfer take?`,
-      `The drive is about ${q.duration} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
+      `The drive is about ${humanDuration(q.duration)} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
       `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
     shared
@@ -51,7 +51,7 @@ function faqItems(from, to, q, shared) {
     [`Can we stop along the way?`,
       `Of course. A private transfer is door to door and yours for the trip — tell your driver where you'd like to stop for photos, lunch or a quick sight and they'll build it in.`],
     [`How do I book the ${from} to ${to} transfer?`,
-      `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking — the price you see is the price you pay.`],
+      `Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.`],
   ];
   return items;
 }
@@ -81,6 +81,32 @@ function jsonLd(from, to, url, q, faq) {
     .map(o => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n');
 }
 
+// Every generated direction, as {from,to}. Used to derive related links.
+function allDirections() {
+  const out = [];
+  for (const [a, b] of BASE_PAIRS) { out.push({ from: a, to: b }); out.push({ from: b, to: a }); }
+  return out;
+}
+
+// The reverse of this route first (the single most likely next click), then routes that share an
+// endpoint — onward legs from the destination, then other ways into it. Capped so the block stays
+// a helpful shortlist rather than a link dump.
+function relatedRoutes(from, to, limit = 4) {
+  const all = allDirections();
+  const seen = new Set([`${from}|${to}`]);
+  const picked = [];
+  const take = (d) => {
+    const k = `${d.from}|${d.to}`;
+    if (seen.has(k) || picked.length >= limit) return;
+    seen.add(k); picked.push(d);
+  };
+  take({ from: to, to: from });                       // the way back
+  all.filter(d => d.from === to).forEach(take);       // continuing from the destination
+  all.filter(d => d.to === to).forEach(take);         // other ways to reach it
+  all.filter(d => d.from === from).forEach(take);     // other trips from the same start
+  return picked.slice(0, limit);
+}
+
 function routePage(T, content, from, to, forward) {
   const key = forward ? `${from}|${to}` : `${to}|${from}`;
   const c = content.pairs[key];
@@ -89,19 +115,25 @@ function routePage(T, content, from, to, forward) {
   const q = T.privateQuote(from, to);
   const shared = T.sharedOption(from, to);
   const intro = forward ? c.intro : c.back;
-  const highlights = c.highlights;
+  const highlights = (!forward && c.highlightsBack) ? c.highlightsBack : c.highlights;
   const url = `${ORIGIN}/trip/${slug(from, to)}/`;
   const { header, footer, headAssets, bootScript } = renderChrome({ depth: 2 });
   const p = '../../';
 
-  // Title stays private-only (no "& shared ride") so private-only routes never
-  // promise a shared seat in the SERP; also keeps titles shorter. The shared option
-  // lives in the body/description where it can be stated accurately per route.
-  const title = `${fromName} to ${toName} — private transfer | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
+  // Private-only routes must never promise a seat in the SERP, so the shared half is added ONLY
+  // where a shared seat genuinely exists on this corridor — matching the H1 and the price chips.
+  const title = shared
+    ? `${fromName} to ${toName} — transfer & shared seat from $${shared.seat} | Ceylon Hop`
+    : `${fromName} to ${toName} — private transfer | Ceylon Hop`;
+  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${humanDuration(q.duration)}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');
+  const related = relatedRoutes(from, to);
+  const relatedHtml = related.map(d => {
+    const rq = T.privateQuote(d.from, d.to);
+    return `<a class="rt-card" href="${p}trip/${slug(d.from, d.to)}/"><span class="rt-name">${esc(T.byId[d.from].name)} → ${esc(T.byId[d.to].name)}</span><span class="rt-meta">${rq.km} km · from $${price(rq.car)}</span></a>`;
+  }).join('');
   const faqHtml = faq.map(([qq, a]) => `<div class="faq-q"><h3>${esc(qq)}</h3><p>${esc(a)}</p></div>`).join('\n        ');
 
   return `<!DOCTYPE html>
@@ -153,7 +185,7 @@ ${header}
     <div class="wrap">
       <nav class="route-crumbs" aria-label="Breadcrumb" style="color:rgba(255,255,255,.8)"><a href="${p}index.html" style="color:inherit">Home</a> · <a href="${p}trip/" style="color:inherit">Routes</a> · ${esc(fromName)} to ${esc(toName)}</nav>
       <h1>${esc(fromName)} to ${esc(toName)}</h1>
-      <p class="sub">Private transfer${shared ? ' &amp; shared ride' : ''} — ${q.km} km, about ${q.duration} door to door.</p>
+      <p class="sub">Private transfer${shared ? ' &amp; shared ride' : ''} — ${q.km} km, about ${humanDuration(q.duration)} door to door.</p>
       <div class="price-chips">${priceChips(q, shared)}</div>
       <div class="route-cta">
         <a class="btn btn-cta" href="${p}search.html?from=${from}&to=${to}">See prices &amp; book</a>
@@ -177,6 +209,13 @@ ${header}
       <div class="route-cta" style="margin-top:8px">
         <a class="btn btn-primary" href="${p}search.html?from=${from}&to=${to}">Get your fixed price</a>
       </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="wrap">
+      <h2>Related routes</h2>
+      <div class="rt-grid">${relatedHtml}</div>
+      <p style="margin-top:14px"><a href="${p}trip/">See all Sri Lanka transfer routes →</a></p>
     </div>
   </section>
 </main>
@@ -271,7 +310,35 @@ export function generateAll() {
 }
 
 // Static pages that live outside the route generator but belong in the sitemap.
-export const SITEMAP_EXTRA = ['terms.html', 'privacy.html'];
+// The blog posts are the site's only earned rankings, so they must be listed. Trailing
+// slashes are intentional — these are directory URLs and match the live WordPress ones.
+// "about 2h 57m" is false precision: the number is a model, not a measurement, and two routes of
+// different length were quoting the same minute. One rounding scheme for every page.
+export function humanDuration(text) {
+  const m = /^(?:(\d+)h)?\s*(?:(\d+)m)?$/.exec(String(text).trim());
+  let mins;
+  if (m && (m[1] || m[2])) mins = (Number(m[1] || 0) * 60) + Number(m[2] || 0);
+  else {
+    const only = /^(\d+)\s*min$/.exec(String(text).trim());
+    if (!only) return String(text); // unrecognised → leave it alone
+    mins = Number(only[1]);
+  }
+  if (mins < 60) return `${Math.round(mins / 15) * 15} minutes`;
+  const halves = Math.max(2, Math.round(mins / 30));
+  const h = Math.floor(halves / 2);
+  return halves % 2 ? `${h}\u00bd hours` : `${h} hour${h === 1 ? '' : 's'}`;
+}
+
+export const SITEMAP_EXTRA = [
+  'terms.html',
+  'privacy.html',
+  'how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers/',
+  'ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka/',
+  'best-time-to-visit-sri-lanka-a-month-by-month-guide/',
+  '9-must-visit-places-in-sri-lanka/',
+  'discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure/',
+  'why-we-started-ceylon-hop/',
+];
 
 // CLI: write every generated file to disk.
 if (import.meta.url === `file://${process.argv[1]}`) {

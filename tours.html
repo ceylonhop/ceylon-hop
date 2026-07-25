@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Packaged tours — Ceylon Hop</title>
-<meta name="description" content="Complete Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
+<title>Ready-made tours — Ceylon Hop</title>
+<meta name="description" content="Ready-made Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
 <link rel="canonical" href="https://ceylonhop.com/tours.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
-<link rel="apple-touch-icon" href="/img/ceylon-hop-icon.jpg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/tours.html">
 <meta property="og:title" content="Complete Sri Lanka tours — Ceylon Hop">
-<meta property="og:description" content="Complete Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
+<meta property="og:description" content="Ready-made Sri Lanka tours, end-to-end private transport. Priced point-to-point between each stop by default, or add a Pro Hopper chauffeur-guide for the whole trip — you book the hotels you love.">
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
@@ -108,7 +108,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <section class="tours-head" data-screen-label="Tours header">
   <div class="wash"></div>
-  <span class="stamp head-flourish tilt-r"><b>10+</b>Day tours</span>
+  <span class="stamp head-flourish tilt-r"><b>7</b>Ready-made routes</span>
   <div class="wrap">
     <div class="crumb"><a href="index.html">Home</a> · Tours</div>
     <span class="sticker" style="margin-top:14px">Full transport · you choose the hotels</span>
@@ -131,6 +131,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <button class="chip" data-f="wildlife">Wildlife</button>
     <button class="chip" data-f="culture">Culture</button>
     <button class="chip" data-f="honeymoon">Honeymoon</button>
+    <button class="chip" data-f="coast">Surf &amp; coast</button>
     <span class="count" id="tcount"></span>
   </div>
 </div>
@@ -191,8 +192,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   const grid=document.getElementById('tour-grid');
   const count=document.getElementById('tcount');
-  const themeLabel={classic:'Classic',grand:'Grand tour',hills:'Hill country',wildlife:'Wildlife',culture:'Culture',honeymoon:'Honeymoon'};
+  const themeLabel={classic:'Classic',grand:'Grand tour',hills:'Hill country',wildlife:'Wildlife',culture:'Culture',honeymoon:'Honeymoon',coast:'Surf & coast'};
 
+  function money(n){
+    const cents=Math.round(n*100);
+    return '$'+(cents/100).toFixed(cents%100===0?0:2);
+  }
+  // Teaser "from" price: the point-to-point trip total, finished the same way the planner
+  // and the backend finish it, so card, tour page and booking flow quote one figure.
+  function fromPrice(t){
+    const T=window.TRANSFERS;
+    if(!T) return t.price;
+    const q=T.tripQuote(t.stops,'car');
+    return T.finishPrice(q.total, q.legs.filter(l=>!l.est).length * T.FLOORS.car);
+  }
   function route(stops){
     return stops.map((s,i)=>`<span class="s">${s}</span>${i<stops.length-1?'<span class="arr">→</span>':''}`).join('');
   }
@@ -215,7 +228,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <ul class="hl">${hl}</ul>
         <div class="route">${route(t.stops)}</div>
         <div class="foot">
-          <span class="price">from <b>$${(window.TRANSFERS?window.TRANSFERS.tripQuote(t.stops,'car').total:t.price).toLocaleString()}</b><small>point-to-point · or chauffeur-guide from $${t.price}</small></span>
+          <span class="price">from <b>${money(fromPrice(t))}</b><small>point-to-point · or chauffeur-guide from ${money(t.price)}</small></span>
           <span class="btn btn-primary btn-sm">View itinerary ${ICON.arrow}</span>
         </div>
       </div>

@@ -24,4 +24,17 @@ describe('FakePaymentAdapter', () => {
     const body = a.simulateWebhook({ orderId: 'CH-ABC12', amount: 5000, currency: 'USD' });
     expect(a.parseWebhook(body.replace('5000', '9999'))).toBeNull();
   });
+
+  // Its signing key is a constant in this repo, so a fake adapter reaching production would let
+  // anyone sign a "succeeded" webhook and mark a booking paid. config.ts refuses to boot without
+  // PayHere credentials; this is the second lock against direct construction.
+  it('refuses to construct in production', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(() => new FakePaymentAdapter()).toThrow(/never be used in production/);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
 });

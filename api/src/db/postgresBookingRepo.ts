@@ -66,6 +66,7 @@ export class PostgresBookingRepo implements BookingRepo {
       createdAt: row.createdAt.toISOString(),
       total: row.total,
       amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
+      needsPricing: row.needsPricing, // null on rows predating the column
       currency: row.currency,
       channel: row.channel as BookingChannel,
     };
@@ -184,6 +185,7 @@ export class PostgresBookingRepo implements BookingRepo {
           currency: b.currency,
           idempotencyKey: opts?.idempotencyKey ?? null,
           channel: b.channel ?? 'website',
+          needsPricing: b.needsPricing ?? null,
         })
         .returning();
       if (b.mode === 'trip') {

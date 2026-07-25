@@ -18,6 +18,11 @@ const Env = z.object({
   PAYHERE_MERCHANT_SECRET: z.string().optional(),
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
+  // Escape hatch for a NON-PRODUCTION deployment that still runs with NODE_ENV=production —
+  // staging on Render is exactly that, and it deliberately uses the fake payment adapter.
+  // Must be set deliberately: unset (the default) means real production fails closed.
+  // NEVER set this on the environment that takes real money.
+  ALLOW_FAKE_PAYMENTS: z.string().optional(),
   APP_BASE_URL: z.string().default('http://localhost:4173'),
   // Origin serving /ops — used to deep-link internal emails straight to a quote. Distinct
   // from APP_BASE_URL (the customer site): the ops tool is served by the API host.
@@ -74,6 +79,13 @@ const DEV_OPS_SECRET = 'dev-ops-secret-change-me';
 const DEV_BOOKING_SECRET = 'dev-booking-link-secret-change-me';
 const DEV_CUSTOMER_SECRET = 'dev-customer-secret-change-me';
 
+// A deployment opts in to fake payments explicitly; anything else (unset, empty, '0', 'false')
+// leaves the production guard armed.
+export function allowFakePayments(v: string | undefined): boolean {
+  const t = String(v ?? '').trim().toLowerCase();
+  return t === '1' || t === 'true' || t === 'yes';
+}
+
 // Exported for tests: build (and validate) a config from an arbitrary env.
 export function buildConfig(env: Record<string, string | undefined>) {
   const cfg = Env.parse(env);
@@ -97,6 +109,21 @@ export function buildConfig(env: Record<string, string | undefined>) {
     throw new Error(
       'CUSTOMER_SESSION_SECRET must be set to a strong unique value in production ' +
         '(the default would let anyone forge a customer session) — refusing to boot',
+    );
+  }
+  // Without PayHere credentials the payment seam silently falls back to FakePaymentAdapter,
+  // whose webhook signing key is a constant in this repo — so anyone could forge a "succeeded"
+  // webhook and mark their own booking paid for nothing. Money must never fail open.
+  if (
+    cfg.NODE_ENV === 'production' &&
+    !(cfg.PAYHERE_MERCHANT_ID && cfg.PAYHERE_MERCHANT_SECRET) &&
+    !allowFakePayments(cfg.ALLOW_FAKE_PAYMENTS)
+  ) {
+    throw new Error(
+      'PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET must both be set in production ' +
+        '(without them the fake payment adapter would accept forged webhooks and mark ' +
+        'bookings paid without a real charge) — refusing to boot. If this is a staging ' +
+        'deployment that runs on fake payments, set ALLOW_FAKE_PAYMENTS=1 there.',
     );
   }
   return cfg;

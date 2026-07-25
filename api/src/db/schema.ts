@@ -31,6 +31,9 @@ export const bookings = pgTable('bookings', {
   // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
   // payment-link tool will write 'whatsapp'.
   channel: text('channel').notNull().default('website'),
+  // The engine could not price this booking, so `total` is a placeholder and checkout must
+  // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
+  needsPricing: boolean('needs_pricing'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
