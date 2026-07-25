@@ -486,7 +486,13 @@ function render(){
   const boardH=document.querySelector('.board-h'); if(boardH) boardH.hidden=gated;
   const addRow=document.querySelector('.add-row'); if(addRow) addRow.hidden=gated;
   rail.hidden=gated;
-  clearLegDatePops();
+  // Only sweep the leg date popovers when the board is the active view. render() also fires
+  // from async live-km callbacks while the WHEN step is showing (notably the ?step=dates
+  // deep-link back from booking, where a Google-only leg's distance resolves AFTER
+  // showDatesStep() has built the pickers). Those popovers are portaled to <body> and are
+  // NOT rebuilt by a board render, so clearing them here left dead calendar buttons.
+  // The WHEN step manages its own popovers (renderDatesStep + backToRoute both clear them).
+  if(document.getElementById('dates-wrap')?.hidden !== false) clearLegDatePops();
   rail.innerHTML='';
   if(gated){ const rhh=document.getElementById('reorder-hint'); if(rhh) rhh.hidden=true; return; }
   const n=state.legs.length;
