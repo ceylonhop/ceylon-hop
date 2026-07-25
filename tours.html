@@ -209,11 +209,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function route(stops){
     return stops.map((s,i)=>`<span class="s">${s}</span>${i<stops.length-1?'<span class="arr">→</span>':''}`).join('');
   }
+  // Tour-card photography. A tour with no entry here keeps its empty slot.
+  const TOUR_PHOTO = {
+    'classic-hop':'img/tour-classic-hop.jpg',
+    'grand-island-loop':'img/tour-grand-island-loop.jpg',
+    'tea-and-trains':'img/tour-tea-and-trains.jpg',
+    'wild-ceylon':'img/tour-wild-ceylon.jpg',
+    'cultural-triangle-express':'img/tour-cultural-triangle.jpg',
+    'coast-honeymoon':'img/tour-coast-honeymoon.jpg',
+    'southern-surf':'img/tour-southern-surf.jpg'
+  };
   function card(t){
     const hl = t.highlights.map(h=>`<li><span class="ck">${ICON.check}</span><span>${h}</span></li>`).join('');
+    const photo = TOUR_PHOTO[t.id] ? ` src="${TOUR_PHOTO[t.id]}"` : '';
     return `<a class="card tcard" href="tour.html?id=${t.id}" data-theme="${t.theme}" data-days="${t.days}">
       <div class="top">
-        <image-slot id="tour-photo-${t.id}" shape="rect" placeholder="${String(t.photo).replace(/^PHOTO\s*—\s*/,'Drop a photo — ').replace(/"/g,'&quot;')}"></image-slot>
+        <image-slot id="tour-photo-${t.id}" shape="rect"${photo} placeholder="${String(t.photo).replace(/^PHOTO\s*—\s*/,'Drop a photo — ').replace(/"/g,'&quot;')}"></image-slot>
         <span class="sticker">${t.tag}</span>
         <div class="daybadge"><b>${t.days}</b><span>days</span></div>
       </div>
