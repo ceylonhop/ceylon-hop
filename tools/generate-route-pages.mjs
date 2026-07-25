@@ -271,7 +271,18 @@ export function generateAll() {
 }
 
 // Static pages that live outside the route generator but belong in the sitemap.
-export const SITEMAP_EXTRA = ['terms.html', 'privacy.html'];
+// The blog posts are the site's only earned rankings, so they must be listed. Trailing
+// slashes are intentional — these are directory URLs and match the live WordPress ones.
+export const SITEMAP_EXTRA = [
+  'terms.html',
+  'privacy.html',
+  'how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers/',
+  'ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka/',
+  'best-time-to-visit-sri-lanka-a-month-by-month-guide/',
+  '9-must-visit-places-in-sri-lanka/',
+  'discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure/',
+  'why-we-started-ceylon-hop/',
+];
 
 // CLI: write every generated file to disk.
 if (import.meta.url === `file://${process.argv[1]}`) {

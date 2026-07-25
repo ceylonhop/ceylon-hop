@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { renderStandalone } from './render-page.mjs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { renderStandalone, ORIGIN } from './render-page.mjs';
 import { ROOT } from './generate-route-pages.mjs';
 
 const legalStyle = `
@@ -79,6 +79,249 @@ const notFoundPage = () => renderStandalone({
   </div></section>`,
 });
 
+// ---------------------------------------------------------------------------
+// Travel-guide posts (M16). These five articles were published on the old
+// WordPress site and are indexed at their apex slugs; they are ported here so
+// the URLs keep resolving to the real article after the domain cutover.
+//
+// The prose in tools/blog/<slug>.body.html is the AUTHOR'S, recovered verbatim
+// from the live pages — only WordPress/Elementor markup was stripped. Nothing
+// in this file rewrites it. Body images are deliberately dropped: every source
+// src lived under the WordPress /wp-content/ tree, which dies at cutover.
+// ---------------------------------------------------------------------------
+
+const WPM = 220; // reading speed used for the honest "N min read" figure
+
+const BLOG_POSTS = [
+  {
+    slug: 'how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers',
+    // Emoji-free headline for <title>/JSON-LD (matches the old indexed title);
+    // `heading` is the <h1> exactly as it was published.
+    title: 'How to Use Buses in Sri Lanka: The Ultimate Guide for the Adventurous Travelers',
+    heading: 'How to Use Buses in Sri Lanka: The Ultimate Guide for the Adventurous Travelers 🚌🌴',
+    crumb: 'How to use buses in Sri Lanka',
+    kicker: 'Guide',
+    published: '2025-03-03',
+    modified: '2025-05-06',
+    related: [
+      ['ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka/', 'Ultimate tuk-tuk guide to getting around in Sri Lanka'],
+      ['trip/colombo-to-kandy/', 'Colombo to Kandy — the same trip by private transfer'],
+      ['search.html', 'Get a fixed price for any route'],
+    ],
+  },
+  {
+    slug: 'ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka',
+    title: 'Ultimate Tuk Tuk Guide to Getting Around in Sri Lanka',
+    heading: 'Ultimate Tuk Tuk Guide to Getting Around in Sri Lanka',
+    crumb: 'Ultimate tuk-tuk guide',
+    kicker: 'Guide',
+    published: '2025-05-06',
+    modified: '2025-05-06',
+    related: [
+      ['how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers/', 'How to use buses in Sri Lanka'],
+      ['search.html', 'Fixed prices for the longer hops between towns'],
+    ],
+  },
+  {
+    slug: 'best-time-to-visit-sri-lanka-a-month-by-month-guide',
+    title: 'Best Time to Visit Sri Lanka: A Month-by-Month Guide',
+    heading: 'Best Time to Visit Sri Lanka: A Month-by-Month Guide 🌴✨',
+    crumb: 'Best time to visit Sri Lanka',
+    kicker: 'Planning',
+    published: '2025-03-03',
+    modified: '2025-05-06',
+    related: [
+      ['plan.html', 'Plan a multi-stop trip around the island'],
+      ['trip/', 'All Sri Lanka transfer routes'],
+    ],
+  },
+  {
+    slug: '9-must-visit-places-in-sri-lanka',
+    title: '9 Must-Visit Places in Sri Lanka',
+    heading: '9 Must-Visit Places in Sri Lanka',
+    crumb: '9 must-visit places',
+    kicker: 'List',
+    published: '2025-03-03',
+    modified: '2025-05-06',
+    related: [
+      ['trip/cmb-airport-to-sigiriya/', 'Colombo Airport to Sigiriya — start at stop one'],
+      ['trip/ella-to-mirissa/', 'Ella to Mirissa — hill country down to the whales'],
+      ['tours.html', 'Ready-made tours that string these stops together'],
+    ],
+  },
+  {
+    slug: 'discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure',
+    title: 'Discover Sri Lanka with Ceylon Hop: Your Ultimate Travel Adventure!',
+    heading: 'Discover Sri Lanka with Ceylon Hop: Your Ultimate Travel Adventure!',
+    crumb: 'Discover Sri Lanka with Ceylon Hop',
+    kicker: 'Story',
+    published: '2025-02-24',
+    modified: '2025-05-07',
+    related: [
+      ['tours.html', 'Ready-made tours'],
+      ['plan.html', 'Build your own multi-stop trip'],
+    ],
+  },
+  {
+    slug: 'why-we-started-ceylon-hop',
+    title: 'Why We Started Ceylon Hop',
+    heading: 'Why We Started Ceylon Hop 🚌',
+    crumb: 'Why we started Ceylon Hop',
+    kicker: 'Story',
+    published: '2025-05-06',
+    modified: '2025-05-12',
+    related: [
+      ['about.html', 'About Ceylon Hop'],
+      ['why.html', 'Why hop with us'],
+    ],
+  },
+];
+
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const stripTags = s => s.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '');
+const decode = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+  .replace(/&nbsp;/g, ' ');
+// Emoji/pictographs are lovely in the body copy but noise in a SERP snippet.
+const deEmoji = s => s.replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{2BFF}\u{FE0F}\u{200D}\u{2600}-\u{27BF}]/gu, '');
+const squash = s => s.replace(/\s+/g, ' ').trim();
+
+const bodyText = body => squash(decode(stripTags(body)));
+
+const readMinutes = body => Math.max(1, Math.round(bodyText(body).split(' ').length / WPM));
+
+// The meta description is lifted from the article's own opening prose — never
+// written fresh — so it can never promise something the page does not say.
+function deriveDescription(body) {
+  const paras = [...body.matchAll(/<p>([\s\S]*?)<\/p>/g)].map(m => squash(deEmoji(decode(stripTags(m[1])))));
+  let out = '';
+  for (const p of paras) {
+    out = out ? `${out} ${p}` : p;
+    if (out.length >= 130) break;
+  }
+  out = squash(out);
+  if (out.length <= 158) return out;
+  const cut = out.slice(0, 158);
+  return `${cut.slice(0, cut.lastIndexOf(' '))}…`;
+}
+
+const longDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', {
+  day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+});
+
+const blogStyle = `
+  .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
+  .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(8,120,118,.6),transparent 70%)}
+  .post-hero .wrap{position:relative;max-width:900px}
+  .post-crumbs{font-size:.85rem;color:rgba(255,255,255,.82);margin-bottom:18px}
+  .post-crumbs a{color:inherit;text-decoration:none}
+  .post-crumbs a:hover{text-decoration:underline}
+  .post-kicker{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:.32rem .7rem;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3)}
+  .post-hero h1{color:#fff;font-weight:800;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
+  .post-meta{color:rgba(255,255,255,.88);font-size:.9rem;margin:0}
+  .post-body{padding:clamp(40px,5vw,68px) 0 clamp(32px,4vw,52px)}
+  .post-body .wrap{max-width:900px}
+  .article{max-width:68ch;font-size:1.06rem;line-height:1.78}
+  .article > p:first-child{font-size:1.14rem;color:var(--ink,#2C2A2B)}
+  .article p{margin:0 0 1.15rem;color:var(--ink-soft,#4a5a57)}
+  .article h2{font-family:var(--display,Georgia,serif);font-size:clamp(1.35rem,2.6vw,1.72rem);line-height:1.2;margin:2.4rem 0 .7rem;color:var(--ink,#2C2A2B)}
+  .article h3{font-size:1.08rem;margin:1.7rem 0 .45rem;color:var(--ink,#2C2A2B)}
+  .article ul,.article ol{margin:0 0 1.2rem;padding-left:1.25rem}
+  .article li{margin:.42rem 0;color:var(--ink-soft,#4a5a57)}
+  .article a{color:var(--accent-deep,#08938f);text-underline-offset:2px}
+  .article blockquote{margin:1.3rem 0;padding:.85rem 1.15rem;border-left:3px solid var(--accent,#0AB9B6);background:var(--pc-teal,#e3f4ef);border-radius:0 var(--r-sm,10px) var(--r-sm,10px) 0}
+  .article blockquote p{margin:0;color:var(--ink,#2C2A2B)}
+  .article strong{color:var(--ink,#2C2A2B)}
+  .post-next{margin:44px 0 0;padding:24px 26px;background:var(--paper,#fffdf8);border:1px solid var(--line,#e7e3d6);border-radius:var(--r,16px);max-width:68ch}
+  .post-next h2{font-size:1.05rem;margin:.35rem 0 .7rem}
+  .post-next ul{margin:0;padding-left:1.1rem}
+  .post-next li{margin:.35rem 0}
+  .post-next a{color:var(--accent-deep,#08938f);font-weight:600}
+  .post-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}`;
+
+function blogPost(post) {
+  const body = readFileSync(join(ROOT, 'tools/blog', `${post.slug}.body.html`), 'utf8').trimEnd();
+  const url = `${ORIGIN}/${post.slug}/`;
+  const description = deriveDescription(body);
+  const minutes = readMinutes(body);
+  const p = '../';
+
+  const jsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BlogPosting',
+      headline: post.title,
+      description,
+      datePublished: post.published,
+      dateModified: post.modified,
+      // The WordPress export credits the admin login ("k1ato"), not a person —
+      // the blog is written by the company, so the byline is the company.
+      author: { '@type': 'Organization', name: 'Ceylon Hop', url: `${ORIGIN}/` },
+      publisher: { '@type': 'Organization', name: 'Ceylon Hop', url: `${ORIGIN}/` },
+      mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+      image: `${ORIGIN}/og-cover.jpg`,
+      inLanguage: 'en',
+      wordCount: bodyText(body).split(' ').length,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: `${ORIGIN}/` },
+        { '@type': 'ListItem', position: 2, name: 'Travel Guide', item: `${ORIGIN}/blog.html` },
+        { '@type': 'ListItem', position: 3, name: post.title, item: url },
+      ],
+    },
+  ].map(o => `<script type="application/ld+json">${JSON.stringify(o)}</script>`).join('\n');
+
+  const related = post.related
+    .map(([href, label]) => `<li><a href="${p}${href}">${esc(label)}</a></li>`).join('\n        ');
+
+  return renderStandalone({
+    title: `${post.title} — Ceylon Hop`,
+    description,
+    canonicalPath: `/${post.slug}/`,
+    depth: 1,
+    active: 'blog.html',
+    style: blogStyle,
+    bodyHtml: `${jsonLd}
+  <section class="post-hero">
+    <div class="wrap">
+      <nav class="post-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> &middot; <a href="${p}blog.html">Travel Guide</a> &middot; ${esc(post.crumb)}</nav>
+      <span class="post-kicker">${esc(post.kicker)}</span>
+      <h1>${post.heading}</h1>
+      <p class="post-meta"><time datetime="${post.published}">${longDate(post.published)}</time> &middot; ${minutes} min read &middot; Ceylon Hop</p>
+    </div>
+  </section>
+  <section class="section post-body">
+    <div class="wrap">
+      <article class="article">
+${body}
+      </article>
+      <aside class="post-next">
+        <span class="eyebrow">Keep reading</span>
+        <h2>Where to next</h2>
+        <ul>
+        ${related}
+        </ul>
+      </aside>
+      <div class="post-cta">
+        <a class="btn btn-cta" href="${p}search.html">Get a fixed price</a>
+        <a class="btn btn-ghost" href="${p}blog.html">All travel guides</a>
+      </div>
+    </div>
+  </section>`,
+  });
+}
+
+// Slugs + read times the blog hub links to (kept honest against the real prose).
+export function blogIndex() {
+  return BLOG_POSTS.map(post => {
+    const body = readFileSync(join(ROOT, 'tools/blog', `${post.slug}.body.html`), 'utf8');
+    return { slug: post.slug, title: post.title, kicker: post.kicker, published: post.published, minutes: readMinutes(body) };
+  });
+}
+
 export function generateStaticPages() {
   const out = new Map();
   out.set('terms.html', legalPage('terms', 'Terms &amp; Conditions', 'The agreement between you and Ceylon Hop when you book with us.',
@@ -86,13 +329,16 @@ export function generateStaticPages() {
   out.set('privacy.html', legalPage('privacy', 'Privacy Policy', 'How Ceylon Hop handles your personal information.',
     'Ceylon Hop privacy policy — how we collect, use and protect your personal information when you book transfers and shared rides in Sri Lanka.', 'privacy.body.html'));
   out.set('404.html', notFoundPage());
+  for (const post of BLOG_POSTS) out.set(`${post.slug}/index.html`, blogPost(post));
   return out;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   let n = 0;
   for (const [rel, content] of generateStaticPages()) {
-    writeFileSync(join(ROOT, rel), content);
+    const abs = join(ROOT, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content);
     n++;
   }
   console.log(`generated ${n} static pages`);

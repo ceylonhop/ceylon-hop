@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Travel Blog — Ceylon Hop</title>
-<meta name="description" content="Your guide to everywhere in Sri Lanka — month-by-month planning, tuk-tuk and bus tips, must-visit places and packing lists from the Ceylon Hop team.">
+<meta name="description" content="Your guide to everywhere in Sri Lanka — month-by-month planning, tuk-tuk and bus tips, must-visit places and the story behind Ceylon Hop.">
 <link rel="canonical" href="https://ceylonhop.com/blog.html">
 <meta name="theme-color" content="#0AB9B6">
 <link rel="icon" href="favicon.svg">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Ceylon Hop">
 <meta property="og:url" content="https://ceylonhop.com/blog.html">
 <meta property="og:title" content="Ceylon Hop Travel Blog">
-<meta property="og:description" content="Your guide to everywhere in Sri Lanka — month-by-month planning, tuk-tuk and bus tips, must-visit places and packing lists from the Ceylon Hop team.">
+<meta property="og:description" content="Your guide to everywhere in Sri Lanka — month-by-month planning, tuk-tuk and bus tips, must-visit places and the story behind Ceylon Hop.">
 <meta property="og:image" content="https://ceylonhop.com/og-cover.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://ceylonhop.com/og-cover.jpg">
@@ -77,7 +77,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <span class="pill pill-saffron">Featured</span>
         <h2>How to use buses in Sri Lanka: the ultimate guide for adventurous travelers</h2>
         <p class="muted">From decoding routes to grabbing the best seat, here&rsquo;s how to get around like a local &mdash; and when to just hop with us instead.</p>
-        <a href="#" class="btn btn-primary mt" style="margin-top:16px">Read the guide →</a>
+        <a href="how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers/" class="btn btn-primary mt" style="margin-top:16px">Read the guide →</a>
       </div>
     </div>
 
@@ -91,18 +91,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="image-slot.js"></script>
 <script>
   initChrome({active:'blog.html', onDark:true});
+  // [title, slug, kicker, minutes, published, dek]. Read times are the real
+  // word count of each article at ~220 wpm; dates are the original publish
+  // dates carried over from WordPress. Both are generated alongside the post
+  // pages by tools/generate-static-pages.mjs (see blogIndex()).
   const posts=[
-    ['Why we started Ceylon Hop','Story · 4 min','The friendship, the road trips, and the messy bus rides that turned into a travel company.'],
-    ['The ultimate tuk-tuk guide to Sri Lanka','Guide · 6 min','How to flag one, what to pay, and the apps that make haggling a thing of the past.'],
-    ['Best time to visit Sri Lanka: a month-by-month guide','Planning · 8 min','Two monsoons, two coasts — here&rsquo;s how to always be on the sunny side of the island.'],
-    ['9 must-visit places in Sri Lanka','List · 5 min','From Sigiriya at sunrise to the surf at Arugam Bay, the stops worth building a trip around.'],
-    ['Discover Sri Lanka with Ceylon Hop','Story · 3 min','A first-timer&rsquo;s loop through culture, hills and beaches — exactly how we&rsquo;d do it.'],
-    ['What to pack for a hop around the island','Tips · 4 min','Light, breezy and surf-ready — the only packing list you need for Sri Lanka.']
+    ['Why we started Ceylon Hop','why-we-started-ceylon-hop','Story',3,'2025-05-06','The friendship, the road trips, and the messy bus rides that turned into a travel company.'],
+    ['The ultimate tuk-tuk guide to Sri Lanka','ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka','Guide',3,'2025-05-06','How to flag one, what to pay, and why a fixed price beats haggling on the long hops.'],
+    ['Best time to visit Sri Lanka: a month-by-month guide','best-time-to-visit-sri-lanka-a-month-by-month-guide','Planning',8,'2025-03-03','Two monsoons, two coasts — here&rsquo;s how to always be on the sunny side of the island.'],
+    ['9 must-visit places in Sri Lanka','9-must-visit-places-in-sri-lanka','List',3,'2025-03-03','From Sigiriya&rsquo;s Lion Rock to whale season in Mirissa, the stops worth building a trip around.'],
+    ['Discover Sri Lanka with Ceylon Hop','discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure','Story',2,'2025-02-24','Why exploring the island at your own pace beats a fixed itinerary — one stop at a time.']
   ];
-  document.getElementById('posts').innerHTML=posts.map(([t,m,d],i)=>`
-    <a class="bcard" href="#">
+  const DATE_FMT=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+  document.getElementById('posts').innerHTML=posts.map(([t,slug,kicker,mins,date,d],i)=>`
+    <a class="bcard" href="${slug}/">
       <image-slot id="blog-post-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
-      <div class="meta" style="margin-top:14px">${m}</div>
+      <div class="meta" style="margin-top:14px">${kicker} · ${mins} min · <time datetime="${date}">${DATE_FMT.format(new Date(date+'T00:00:00Z'))}</time></div>
       <h3>${t}</h3>
       <p>${d}</p>
       <span class="more">Read more ${ICON.arrow}</span>
