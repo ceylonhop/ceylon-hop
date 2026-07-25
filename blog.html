@@ -108,7 +108,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   const DATE_FMT=new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
   document.getElementById('posts').innerHTML=posts.map(([t,slug,kicker,mins,date,d],i)=>`
     <a class="bcard" href="${slug}/">
-      <image-slot id="blog-post-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
+      <image-slot id="blog-post-${i}" shape="rounded" radius="16" src="img/blog-post-${i}.jpg" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
       <div class="meta" style="margin-top:14px">${kicker} · ${mins} min · <time datetime="${date}">${DATE_FMT.format(new Date(date+'T00:00:00Z'))}</time></div>
       <h3>${t}</h3>
       <p>${d}</p>
