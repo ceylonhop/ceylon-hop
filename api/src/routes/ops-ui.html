@@ -1772,7 +1772,7 @@ function quoteRowHtml(q,hideAssignee,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}">
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
@@ -1819,8 +1819,11 @@ function viewQuotes(){
   // the queue between them and would duplicate or drop rows once flattened into one list.
   const hits=query?opsQuotes.filter(q=>quoteMatches(query,q)):[];
   const results=query&&allowed?hits.filter(q=>allowed.has(q.status)):hits;
-  const sub=query
-    ? `<b>${results.length} of ${opsQuotes.length} quote${opsQuotes.length===1?'':'s'} match</b>`
+  // Suppress the match count while the fetch is still in flight: opsQuotes is still [] at
+  // that point, so a restored query would otherwise flash "0 of 0 quotes match" above the
+  // "Loading quotes…" line below. Fall back to the plain (non-query) subhead until data lands.
+  const sub=(query&&opsQuotesLoaded)
+    ? `<b>${results.length} of ${opsQuotes.length} quote${opsQuotes.length===1?' matches':'s match'}</b>`
     : `<b>${opsQuotes.length} quote${opsQuotes.length===1?'':'s'}</b> · ${isApprover()?'review, approve, and track every quote':'submit new quotes and send approved ones to customers'}`;
   let html=`<div class="qhead pagehead">
       <h1>Quotes</h1>
@@ -1851,7 +1854,7 @@ function viewQuotes(){
       // The active chip is hiding every match. Say so — a filter you forgot was on is the
       // classic "where did it go" — and offer the one-click way out, reusing the existing
       // [data-qfilter] delegation so no new handler is needed.
-      html+=`<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No match in ${activeFilter.label}</div><div class="qempty-sub">${hits.length} quote${hits.length===1?'':'s'} match under other statuses.</div><button class="qfilter" data-qfilter="all" style="margin-top:14px">Search all quotes</button></div>`;
+      html+=`<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No match in ${activeFilter.label}</div><div class="qempty-sub">${hits.length} quote${hits.length===1?' matches':'s match'} under other statuses.</div><button class="qfilter" data-qfilter="all" style="margin-top:14px">Search all quotes</button></div>`;
     }else{
       html+=`<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No quotes match</div><div class="qempty-sub">Try a different name, reference, or route.</div></div>`;
     }
@@ -2055,7 +2058,10 @@ document.addEventListener('click',e=>{
   const bucket=e.target.closest('#view [data-anbucket]');
   if(bucket){anState.bucket=bucket.dataset.anbucket;anState.bucketTouched=true;viewAnalytics();return;}
   const age=e.target.closest('#view [data-anage]');
-  if(age){queueFilter='sent';setShellRoute('quotes',{});return;} /* v1: status-filter only */
+  /* Clear any in-flight quotes search too — quoteQuery is module state that survives
+     navigation, and a stale query would silently filter the drill-down cohort down to
+     "0 of N quotes match" instead of the Sent bucket this chip promises. */
+  if(age){queueFilter='sent';quoteQuery='';setShellRoute('quotes',{});return;} /* v1: status-filter only */
 });
 
 function openOpsQuote(id){
