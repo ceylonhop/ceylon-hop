@@ -65,6 +65,28 @@
   // exact coords route more accurately than re-geocoding the name.
   const toLoc = (s) => (s && typeof s === 'object' && s.lat != null) ? { lat: s.lat, lng: s.lng } : q(s);
 
+  // computeRoutes() is billable and today every renderRoute() re-runs it — on each inline
+  // re-render, and again when the expand modal opens. Memoise per page load, keyed on the
+  // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
+  // rejection is evicted so a transient failure isn't cached for the rest of the session.
+  const routeCache = new Map();
+  function computeRouteCached(Route, stops) {
+    const key = JSON.stringify(stops.map(toLoc));
+    const hit = routeCache.get(key);
+    if (hit) return hit;
+    const p = Route.computeRoutes({
+      origin: toLoc(stops[0]),
+      destination: toLoc(stops[stops.length - 1]),
+      intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
+      travelMode: 'DRIVING',
+      region: 'lk',
+      fields: ['path', 'legs', 'viewport'],
+    });
+    p.catch(() => routeCache.delete(key));
+    routeCache.set(key, p);
+    return p;
+  }
+
   // host: container element. names: ordered place-name strings (>=2). opts.onFail: SVG fallback.
   async function renderRoute(host, names, opts) {
     opts = opts || {};
@@ -104,14 +126,7 @@
       });
       let route = null;
       try {
-        const res = await libs.Route.computeRoutes({
-          origin: toLoc(stops[0]),
-          destination: toLoc(stops[stops.length - 1]),
-          intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
-          travelMode: 'DRIVING',
-          region: 'lk',
-          fields: ['path', 'legs', 'viewport'],
-        });
+        const res = await computeRouteCached(libs.Route, stops);
         route = res && res.routes && res.routes[0];
       } catch (e) { /* unroutable → fail() below */ }
       if (done) return;
