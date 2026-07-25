@@ -110,6 +110,17 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(b.id).toBe(a.id);
   });
 
+  it('is concurrency-safe on the idempotency key: two simultaneous creates yield one booking', async () => {
+    // Both inserts race the unique idempotency_key constraint; the loser must catch the
+    // violation and return the winner's booking, not 500 (see PostgresBookingRepo.create).
+    const key = `it-conc-${Date.now()}`;
+    const [a, b] = await Promise.all([
+      bookings.create(sample, { idempotencyKey: key }),
+      bookings.create(sample, { idempotencyKey: key }),
+    ]);
+    expect(b.id).toBe(a.id);
+  });
+
   it('defaults channel to website and persists an explicit whatsapp channel', async () => {
     const a = await bookings.create(sample);
     expect(a.channel).toBe('website');
@@ -303,5 +314,16 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(flagged.opsNotes).toBe('gate 4421');
 
     expect((await rideOps.listByBookingIds([b.id])).map((r) => r.bookingId)).toEqual([b.id]);
+  });
+
+  it('derives routeText from request_json legs in the list projection', async () => {
+    const saved = await quotes.save({
+      product: 'private', vehicle: 'car', totalCents: 12100, currency: 'USD',
+      rateCardVersion: 'test',
+      request: { tool: { legs: [{ from: 'Colombo', to: 'Kandy' }, { from: 'Kandy', to: 'Ella' }] } },
+      result: {},
+    });
+    const listed = await quotes.list({});
+    expect(listed.find((r) => r.id === saved.id)?.routeText).toBe('Colombo · Kandy · Ella');
   });
 });

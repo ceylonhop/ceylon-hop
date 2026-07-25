@@ -4,8 +4,10 @@ import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
+import { FakeEmailAdapter } from '../adapters/email';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -131,7 +133,7 @@ describe('internal quoting tool route', () => {
 
   it('POST /save persists a priced quote and returns a Q- reference; total matches /estimate', async () => {
     const app = createApp();
-    const bodyReq = { name: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
+    const bodyReq = { firstName: 'Maya', lastName: 'Silva', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] };
     const est = await (await post(app, '/admin/quote/estimate', bodyReq)).json();
     const res = await post(app, '/admin/quote/save', bodyReq);
     expect(res.status).toBe(201);
@@ -145,22 +147,26 @@ describe('internal quoting tool route', () => {
     expect(got.result.subtotalCents).toBe(baseItems.reduce((sum: number, item: { amountCents: number }) => sum + item.amountCents, 0));
     expect(got.result.priceAdjustmentCents).toBe(adjustmentItem?.amountCents ?? 0);
     expect(got.result.totalCents).toBe(est.total.cents);
-    expect(got.customerName).toBe('Maya');
+    // This request posts firstName/lastName, so the stored customer_name is the joined pair.
+    expect(got.customerName).toBe('Maya Silva');
+    expect(got.request.tool.firstName).toBe('Maya');
+    expect(got.request.tool.lastName).toBe('Silva');
     expect(got.rateCardVersion).toBe('2026-07-14');
   });
 
   it('POST /save with an existing id updates that quote in place, keeping its id/reference/status', async () => {
     const app = createApp();
-    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
-    // Move it into review, then re-save with edited content carrying the same id.
-    await patch(app, `/admin/quote/${saved.id}`, { status: 'pending_review' });
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+    // Re-save with edited content carrying the same id. (Stays in draft: since the review lock
+    // — owner, 2026-07-17 — a pending_review quote refuses content saves; see the review-lock
+    // describe block for that behaviour.)
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
     expect(res.status).toBe(200); // updated, not created
     const back = await res.json();
     expect(back.id).toBe(saved.id);              // same row
     expect(back.reference).toBe(saved.reference); // stable reference
     const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
-    expect(got.status).toBe('pending_review');   // a content edit doesn't reset the lifecycle
+    expect(got.status).toBe('draft');            // a content edit doesn't move the lifecycle
     expect(got.customerName).toBe('Maya R.');
     expect(got.vehicle).toBe('van'); // engine stores the tier as 'van' (van_6 → van)
     // Exactly one quote exists — the edit did not orphan a duplicate.
@@ -170,8 +176,8 @@ describe('internal quoting tool route', () => {
 
   it('POST /save on a READY (approved) quote is rejected (409) — maker-checker lock', async () => {
     const app = createApp();
-    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
-    await patch(app, `/admin/quote/${saved.id}`, { status: 'ready' }); // founder-approved, content now locked
+    const saved = await (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+    await approve(app, saved.id); // founder-approved (via review), content now locked
     const res = await post(app, '/admin/quote/save', { id: saved.id, name: 'Cheaper', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 5 })] });
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('not_editable');
@@ -209,13 +215,13 @@ describe('internal quoting tool route', () => {
 
   it('GET /list returns saved quotes newest-first and filters by status/product', async () => {
     const app = createApp();
-    const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const a = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     await new Promise((r) => setTimeout(r, 5)); // distinct createdAt — same-ms ties order by reference, not insertion
-    const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const b = await (await post(app, '/admin/quote/save', { vehicle: 'van_6', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     const list = await (await authedGet(app, '/admin/quote/list')).json();
     expect(list.quotes[0].id).toBe(b.id); // newest first
-    // reach 'won' the legal way: draft → ready (founder self-approve) → won
-    await patch(app, `/admin/quote/${a.id}`, { status: 'ready' });
+    // reach 'won' the legal way: draft → review → ready → won
+    await approve(app, a.id);
     await patch(app, `/admin/quote/${a.id}`, { status: 'won' });
     const won = await (await authedGet(app, '/admin/quote/list?status=won')).json();
     expect(won.quotes.map((q: { id: string }) => q.id)).toEqual([a.id]);
@@ -223,8 +229,8 @@ describe('internal quoting tool route', () => {
 
   it('PATCH /:id moves status, stamps timestamps, records lost_reason; 404 unknown; 400 bad status', async () => {
     const app = createApp();
-    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
-    await patch(app, `/admin/quote/${q.id}`, { status: 'ready' }); // draft → ready (self-approve)
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+    await approve(app, q.id); // draft → review → ready
     const sent = await (await patch(app, `/admin/quote/${q.id}`, { status: 'sent' })).json();
     expect(sent.status).toBe('sent');
     expect(sent.sentAt).not.toBeNull();
@@ -237,7 +243,7 @@ describe('internal quoting tool route', () => {
 
   it('PATCH /:id rejects a non-string lostReason/notes with 400 (validated, not cast to the DB)', async () => {
     const app = createApp();
-    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+    const q = await (await post(app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
     expect((await patch(app, `/admin/quote/${q.id}`, { lostReason: { evil: true } })).status).toBe(400);
     expect((await patch(app, `/admin/quote/${q.id}`, { notes: 123 })).status).toBe(400);
   });
@@ -248,8 +254,15 @@ describe('internal quoting tool route', () => {
   const postAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
   const draft = async (app: App, email = 'f@x.com') => {
-    const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
+    const r = await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] });
     return r.json();
+  };
+  // Approve a draft the lifecycle-legal way: Submit for review, then Approve. The founder-only
+  // "self-approve straight from a draft" shortcut was removed (2026-07-19), so any setup that
+  // needs a ready/sent quote now walks it through review first.
+  const approve = async (app: App, id: string, email = 'f@x.com') => {
+    await patchAs(email, app, `/admin/quote/${id}`, { status: 'pending_review' });
+    return patchAs(email, app, `/admin/quote/${id}`, { status: 'ready' });
   };
 
   it('ops can submit a draft for review but cannot approve or self-approve', async () => {
@@ -257,19 +270,61 @@ describe('internal quoting tool route', () => {
     const id = (await draft(app, 'op@x.com')).id;
     expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
     const forbid = await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
-    expect(forbid.status).toBe(403);
+    expect(forbid.status).toBe(403); // pending_review → ready is a legal move, but ops lacks quote:approve
     expect((await forbid.json()).error).toBe('approve_forbidden');
-    const id2 = (await draft(app, 'op@x.com')).id; // self-approve draft → ready also blocked
-    expect((await patchAs('op@x.com', app, `/admin/quote/${id2}`, { status: 'ready' })).status).toBe(403);
+    const id2 = (await draft(app, 'op@x.com')).id; // and a self-approve draft → ready is now illegal for anyone
+    const selfApprove = await patchAs('op@x.com', app, `/admin/quote/${id2}`, { status: 'ready' });
+    expect(selfApprove.status).toBe(409);
+    expect((await selfApprove.json()).error).toBe('illegal_transition');
   });
 
-  it('founder approves a pending_review quote and can self-approve a draft', async () => {
+  it('founder approves a pending_review quote but cannot self-approve a draft', async () => {
     const app = createApp();
     const a = (await draft(app)).id;
     await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'pending_review' });
     expect((await patchAs('f@x.com', app, `/admin/quote/${a}`, { status: 'ready' })).status).toBe(200);
+    // Even a founder can't jump a fresh draft straight to ready — review is mandatory now.
     const b = (await draft(app)).id;
-    expect((await patchAs('f@x.com', app, `/admin/quote/${b}`, { status: 'ready' })).status).toBe(200); // self-approve
+    const selfApprove = await patchAs('f@x.com', app, `/admin/quote/${b}`, { status: 'ready' });
+    expect(selfApprove.status).toBe(409);
+    expect((await selfApprove.json()).error).toBe('illegal_transition');
+  });
+
+  // Role-gated soft delete (spec 2026-07-22).
+  const del = (email: string, app: App, path: string) =>
+    app.request(path, { method: 'DELETE', headers: { cookie: cookie(email) } });
+
+  it('DELETE /:id soft-deletes a draft (ops) — hidden from get + list, row retained', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    const res = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(res.status).toBe(200);
+    expect((await res.json()).deleted).toBe(true);
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(404); // gone from the tool
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    expect(list.quotes.map((q: { id: string }) => q.id)).not.toContain(id); // gone from the queue
+  });
+
+  it('DELETE /:id: ops cannot delete a locked (pending_review) quote — founder only', async () => {
+    const app = createApp();
+    const id = (await draft(app, 'op@x.com')).id;
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    const forbid = await del('op@x.com', app, `/admin/quote/${id}`);
+    expect(forbid.status).toBe(403);
+    expect((await forbid.json()).reason).toBe('founder_only');
+    const ok = await del('f@x.com', app, `/admin/quote/${id}`); // founder can delete the locked quote
+    expect(ok.status).toBe(200);
+  });
+
+  it('DELETE /:id: a sent quote can never be deleted (409), founder included', async () => {
+    const app = createApp();
+    const id = (await draft(app)).id;
+    await approve(app, id); // → ready (founder, via review)
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
+    const founderTry = await del('f@x.com', app, `/admin/quote/${id}`);
+    expect(founderTry.status).toBe(409);
+    expect((await founderTry.json()).reason).toBe('sent_or_decided');
+    expect((await authedGet(app, `/admin/quote/${id}`)).status).toBe(200); // still there
   });
 
   it('rejects an illegal transition (draft → sent) with 409', async () => {
@@ -283,7 +338,7 @@ describe('internal quoting tool route', () => {
   it('reopens a SENT quote to draft (founder-only), unlocking it for edits + re-save', async () => {
     const app = createApp();
     const id = (await draft(app)).id;
-    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+    await approve(app, id);
     await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' });
 
     // while sent, a content re-save is refused (the bug the operator hit)
@@ -310,6 +365,25 @@ describe('internal quoting tool route', () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     const res = await authedGet(app, '/admin/quote/places?q=kand');
     expect((await res.json()).places).toEqual(['Kandy']);
+  });
+
+  it('a ready quote ships a locked estimate with per-leg breakdown AND both service rates', async () => {
+    const app = createApp();
+    // multi-leg on two distinct dates → chauffeur is offered alongside point-to-point
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Brett', vehicle: 'van_9', passengerCount: 4, luggageCount: 4, requestedService: 'private',
+      legs: [leg({ distanceKm: 130, date: '2026-08-27' }), leg({ distanceKm: 290, date: '2026-08-31' })],
+    })).json();
+    await approve(app, saved.id);
+
+    const q = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(q.status).toBe('ready');
+    // per-leg breakdown → the itinerary rows can show each leg's price (were "—")
+    expect(q.estimate.breakdown.legs).toHaveLength(2);
+    expect(q.estimate.breakdown.legs[0].priceCents).toBeGreaterThan(0);
+    // both service rates → the Point-to-point / Chauffeur-guide comparison boxes (were "—")
+    expect(q.estimate.services.pointToPoint.total).toBeTruthy();
+    expect(q.estimate.services.chauffeur.total).toBeTruthy();
   });
 
   it('chauffeur: stay days become idle days; amountDueNow is the full total', async () => {
@@ -621,7 +695,10 @@ describe('quote tool authorization (D-A: all 3 roles get quote:manage)', () => {
 });
 
 describe('quote tool — margin stripped for non-margin:view roles (server-side, per response)', () => {
-  const estimateBody = { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [leg({ distanceKm: 100 })] };
+  // requestedService is set because quotes built from this body get submitted/approved below:
+  // since spec 2026-07-17 a quote can't reach pending_review/ready without it. Harmless to
+  // /estimate, which ignores it.
+  const estimateBody = { vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private', legs: [leg({ distanceKm: 100 })] };
 
   it('omits margin from /estimate for finance and ops sessions, includes it for founder', async () => {
     const app = createApp({ auth: AUTH, adminApiKey: 'k' });
@@ -713,7 +790,7 @@ describe('quote tool — margin stripped for non-margin:view roles (server-side,
 describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
   const openApp = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
   const estimate = async (body: unknown) =>
@@ -750,7 +827,7 @@ describe('quoting tool — custom per-km rate for Van 14 / Custom', () => {
 describe('quoting tool — fail-closed with no auth', () => {
   const locked = () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     return a;
   };
 
@@ -770,7 +847,7 @@ describe('quoting tool — fail-closed with no auth', () => {
 
   it('a valid session (any of the 3 roles) unlocks the data routes via quote:manage', async () => {
     const a = new Hono();
-    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    a.route('/admin/quote', internalQuoteRoutes({ maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=kand', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
   });
@@ -779,8 +856,8 @@ describe('quoting tool — fail-closed with no auth', () => {
 describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns local known places before adapter-backed Google suggestions', async () => {
     const a = new Hono();
-    const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null, distanceVariants: async () => null };
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=colombo', { headers: { cookie: await cookie('op@x.com') } });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -792,8 +869,8 @@ describe('quoting tool — /places delegates to the maps adapter', () => {
   it('returns [] for a too-short query without touching the adapter', async () => {
     const a = new Hono();
     let called = false;
-    const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null };
-    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), auth: OPS_AUTH_CFG }));
+    const stubMaps = { provider: 'stub', places: async (q: string) => { called = q.length >= 0; return ['Nope']; }, distance: async () => null, distanceVariants: async () => null };
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
     const res = await a.request('/admin/quote/places?q=c', { headers: { cookie: await cookie('op@x.com') } });
     expect((await res.json()).places).toEqual([]);
     expect(called).toBe(false);
@@ -821,7 +898,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   const build = () => {
     const a = new Hono();
     a.route('/admin/quote', internalQuoteRoutes({
-      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(),
       auth: OPS_AUTH_CFG, allowedOrigins: [OWN_ORIGIN],
     }));
     return a;
@@ -902,8 +979,16 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
   const getAs = (email: string, app: App, path: string) =>
     app.request(path, { headers: { cookie: cookie(email) } });
+  // requestedService is set because these drafts get submitted/approved: since spec 2026-07-17
+  // a quote can't reach pending_review/ready without it recorded.
   const saveDraft = async (app: App) =>
-    (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })] })).json();
+    (await post(app, '/admin/quote/save', { name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+  // Approve the lifecycle-legal way (submit → approve). Founders can no longer self-approve a
+  // draft straight to ready (2026-07-19), so freeze-on-approval is reached via review here.
+  const approveRL = async (app: App, id: string) => {
+    await patchAsRL('f@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    return patchAsRL('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+  };
 
   it('a fresh draft carries no rate lock', async () => {
     const app = createApp();
@@ -916,7 +1001,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('approving a quote (→ ready) freezes the current rate card with no expiry', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('ready');
     expect(got.rateCardJson.version).toBe(RATE_CARD.version); // the whole card is snapshotted
@@ -927,7 +1012,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('reopening a ready quote to edit (→ draft) clears the lock', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'draft' });
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('draft');
@@ -938,7 +1023,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('sending a ready quote (→ sent) keeps the frozen snapshot', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'sent' });
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.status).toBe('sent');
@@ -948,7 +1033,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('the locked snapshot (cost-bearing) is stripped for non-margin roles', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const asFounder = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(asFounder.rateCardJson).not.toBeNull(); // margin:view keeps it
@@ -961,7 +1046,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     const app = createApp();
     const q = await saveDraft(app);
     const beforeApproval = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const got = await (await getAs('f@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(got.estimate).toBeTruthy();
     // The shipped estimate matches the quote's own stored total — no live drift.
@@ -974,7 +1059,7 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
   it('the locked estimate omits margin for non-margin roles', async () => {
     const app = createApp();
     const q = await saveDraft(app);
-    await patchAsRL('f@x.com', app, `/admin/quote/${q.id}`, { status: 'ready' });
+    await approveRL(app, q.id);
     const asFinance = await (await getAs('fin@x.com', app, `/admin/quote/${q.id}`)).json();
     expect(asFinance.estimate).toBeTruthy();
     expect(asFinance.estimate.margin).toBeUndefined(); // shape() drops margin for non-margin:view
@@ -1011,5 +1096,708 @@ describe('quoting tool — CSRF (Sec-Fetch-Site/Origin) on mutations', () => {
     const res = await getAs('f@x.com', createApp({ quotes: repo }), `/admin/quote/${saved.id}`);
     expect(res.status).toBe(200);
     expect((await res.json()).estimate).toBeNull();
+  });
+});
+
+// ── Assignment + audit trail (spec 2026-07-16) ───────────────────────────────
+// Notifications follow an explicit assignment, not a state transition, so `assignedTo` is the
+// notification target and must never be inferable from who happened to move the quote last.
+describe('quote assignment + audit trail', () => {
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const getAs = (email: string, app: App, path: string) => app.request(path, { headers: { cookie: cookie(email) } });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('stamps createdBy/updatedBy on save and auto-assigns the new quote to its creator (2026-07-22)', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('op@x.com');
+    // A new quote lands in its creator's "Assigned to me" — no longer unassigned on save.
+    expect(q.assignedTo).toBe('op@x.com');
+    expect(q.assignedAt).not.toBeNull();
+  });
+
+  it('assigns to an OPS_USERS member, stamping assignedAt + updatedBy but never createdBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    const q = await res.json();
+    expect(q.assignedTo).toBe('f@x.com');
+    expect(q.assignedAt).not.toBeNull();
+    expect(q.updatedBy).toBe('op@x.com');
+    expect(q.createdBy).toBe('op@x.com');
+  });
+
+  // The hard requirement from the spec (§5): assignment drives an email, so an unvalidated
+  // assignee would mail a stranger a link to a customer's quote.
+  it('rejects an assignee outside OPS_USERS', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'stranger@evil.com' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('unknown_assignee');
+  });
+
+  it('accepts an assignee in any case (OPS_USERS lookup is lowercased) and stores it normalised', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'F@X.CoM' })).json();
+    expect(q.assignedTo).toBe('f@x.com');
+  });
+
+  it('unassigns with null, clearing assignedAt', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null })).json();
+    expect(q.assignedTo).toBeNull();
+    expect(q.assignedAt).toBeNull();
+  });
+
+  it('leaves assignment untouched by a status-only patch', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).json();
+    expect(q.assignedTo).toBe('f@x.com'); // manual-only: transitions never re-assign
+    expect(q.updatedBy).toBe('op@x.com');
+  });
+
+  // The queue's "Assigned to me" section filters on this, so the list projection must carry it.
+  // (The projection is deliberately narrow — see postgresQuoteRepo.list — so it needs adding.)
+  it('exposes assignedTo on the queue list', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    const list = await (await getAs('f@x.com', app, '/admin/quote/list')).json();
+    expect(list.quotes.find((q: { id: string }) => q.id === id).assignedTo).toBe('f@x.com');
+  });
+
+  it('keeps createdBy immutable across a content re-save by someone else, moving updatedBy', async () => {
+    const app = createApp();
+    const { id } = await draftAs(app, 'op@x.com');
+    await postAs('f@x.com', app, '/admin/quote/save', { id, vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 90 })] });
+    const q = await (await getAs('f@x.com', app, `/admin/quote/${id}`)).json();
+    expect(q.createdBy).toBe('op@x.com');
+    expect(q.updatedBy).toBe('f@x.com');
+  });
+});
+
+// ── Assignment notification (spec 2026-07-16 §6) ─────────────────────────────
+// The point of the whole feature: assigning a quote is what tells someone it's theirs. Everything
+// here guards a way that can go wrong — silence, spam, or a failed send taking the assign with it.
+describe('quote assignment notification', () => {
+  const OPS_BASE = 'https://ops.example.com';
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const draftAs = async (app: App, email: string) =>
+    (await postAs(email, app, '/admin/quote/save', { name: 'Ana Silva', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] })).json();
+
+  it('emails the assignee a deep link to that quote, naming who assigned it', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id, reference } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1);
+    const msg = mail.sent[0];
+    expect(msg.to).toBe('f@x.com');
+    expect(msg.subject).toContain(reference);
+    // The deep link is the entire value of the email — it must land on THIS quote, not the queue.
+    expect(msg.html).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.text).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    expect(msg.html).toContain('op@x.com');
+    expect(msg.html).toContain('Ana Silva');
+  });
+
+  it('does not email when you assign a quote to yourself', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'op@x.com' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('does not email on unassign', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null });
+    expect(mail.sent).toHaveLength(1); // the assign only — nobody is told they've been un-told
+  });
+
+  it('does not re-email when re-assigning to the same person', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(mail.sent).toHaveLength(1); // an unchanged assignment is not news
+  });
+
+  it('does not email on a status transition — assignment is the only trigger', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: OPS_BASE });
+    const { id } = await draftAs(app, 'op@x.com');
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    expect(mail.sent).toHaveLength(0);
+  });
+
+  it('still assigns when the mail provider is down (best-effort)', async () => {
+    const app = createApp({
+      email: { send: async () => { throw new Error('resend is down'); } },
+      opsBaseUrl: OPS_BASE,
+    });
+    const { id } = await draftAs(app, 'op@x.com');
+    const res = await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).assignedTo).toBe('f@x.com'); // the assign is the durable bit
+  });
+
+  it('still assigns (and sends) when OPS_BASE_URL is unset — no link rather than no email', async () => {
+    const mail = new FakeEmailAdapter();
+    const app = createApp({ email: mail, opsBaseUrl: '' });
+    const { id } = await draftAs(app, 'op@x.com');
+    expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' })).status).toBe(200);
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0].html).not.toContain('href="/ops');
+  });
+});
+
+// ── Review notifications: awaiting-approval + sent-back (spec 2026-07-18) ───
+// Mirrors the assignment-notification describe's harness (own scoped OPS_BASE/patchAs/postAs)
+// so this block stays self-contained, same pattern as the other describes in this file.
+describe('quote review notifications (awaiting-approval + sent-back)', () => {
+  const OPS_BASE = 'https://ops.example.com';
+  const patchAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+  const postAs = (email: string, app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
+
+  async function seedReviewableQuote(mail: FakeEmailAdapter) {
+    const app = createApp({ quotes: new InMemoryQuoteRepo(), email: mail, opsBaseUrl: OPS_BASE });
+    const save = await postAs('op@x.com', app, '/admin/quote/save', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
+      legs: [leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 })],
+    });
+    const id = (await save.json()).id as string;
+    return { app, id };
+  }
+
+  it('emails approvers (not the actor) when a quote enters review', async () => {
+    const mail = new FakeEmailAdapter();
+    const { app, id } = await seedReviewableQuote(mail); // draft quote w/ requestedService, created by op@x.com
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    const to = mail.sent.map((m) => m.to);
+    expect(to).toContain('f@x.com');   // founder holds quote:approve
+    expect(to).not.toContain('op@x.com'); // the actor isn't notified
+    const msg = mail.sent.find((m) => m.to === 'f@x.com')!;
+    expect(msg.subject).toContain('needs your approval');
+    expect(msg.html).toContain(`${OPS_BASE}/ops?quote=${id}`);
+    // Strip tags (and their inline `style="margin:..."` attributes) before matching — the
+    // shared ops-email shell legitimately uses CSS `margin:` on every element, so checking the
+    // raw HTML/JSON would false-positive on layout, not a real cost/margin content leak.
+    const rendered = `${msg.subject}\n${msg.html.replace(/<[^>]+>/g, ' ')}\n${msg.text ?? ''}`;
+    expect(rendered).not.toMatch(/margin/i);
+  });
+
+  it('emails the maker with the note when a quote is sent back', async () => {
+    const mail = new FakeEmailAdapter();
+    const { app, id } = await seedReviewableQuote(mail);
+    await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' });
+    mail.sent.length = 0;
+    await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'changes_requested', notes: 'Fix the van rate' });
+    const msg = mail.sent.find((m) => m.to === 'op@x.com'); // op@x.com is createdBy
+    expect(msg).toBeTruthy();
+    expect(msg!.subject).toContain('Changes requested');
+    expect(msg!.html).toContain('Fix the van rate');
+  });
+});
+
+// Quote intent (spec 2026-07-17): what the CUSTOMER asked for, recorded by the submitter and
+// distinct from `product` (what we priced). Assertions go through GET /:id, like the other
+// /save persistence tests, rather than reaching for a repo handle.
+describe('quote intent — requestedService persistence', () => {
+  const TRIP = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] };
+
+  it('persists the recorded customer request from the tool payload', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', { ...TRIP, requestedService: 'both' });
+    expect(res.status).toBe(201);
+    const got = await (await authedGet(app, `/admin/quote/${(await res.json()).id}`)).json();
+    expect(got.requestedService).toBe('both');
+  });
+
+  it('leaves it null when the payload omits it (I7: no backfill, no sentinel)', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', TRIP);
+    const got = await (await authedGet(app, `/admin/quote/${(await res.json()).id}`)).json();
+    expect(got.requestedService).toBeNull();
+  });
+
+  it("rejects a value outside the enum — 'legacy' is not a member (I7)", async () => {
+    const res = await post(createApp(), '/admin/quote/save', { ...TRIP, requestedService: 'legacy' });
+    expect(res.status).toBe(400);
+  });
+
+  it('survives a re-save, so reopening and correcting it sticks', async () => {
+    const app = createApp();
+    const first = await (await post(app, '/admin/quote/save', { ...TRIP, requestedService: 'private' })).json();
+    await post(app, '/admin/quote/save', { ...TRIP, id: first.id, requestedService: 'chauffeur' });
+    const got = await (await authedGet(app, `/admin/quote/${first.id}`)).json();
+    expect(got.requestedService).toBe('chauffeur');
+  });
+});
+
+// Quote intent (spec 2026-07-17, I3/I7): a quote may not reach review until the submitter has
+// recorded what the customer asked for. No exemption for pre-existing quotes.
+describe('quote intent — submit gate', () => {
+  const TRIP = { vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] };
+  // The file's `patch` helper is scoped inside another describe, so it isn't visible here.
+  // FOUNDER_COOKIE and App are module-scope, so this stays self-contained.
+  const patchReq = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE }, body: JSON.stringify(body) });
+  const draft = async (app: App, extra: Record<string, unknown> = {}) =>
+    (await (await post(app, '/admin/quote/save', { ...TRIP, ...extra })).json()) as { id: string };
+
+  it('400s draft → pending_review when nothing is recorded', async () => {
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('requested_service_required');
+  });
+
+  it('allows draft → pending_review once it is recorded', async () => {
+    const app = createApp();
+    const q = await draft(app, { requestedService: 'private' });
+    expect((await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review' })).status).toBe(200);
+  });
+
+  it('no longer offers a draft → ready self-approve — it 409s before the intent gate', async () => {
+    // The founder-only self-approve was removed (2026-07-19): draft → ready is now an illegal
+    // transition for everyone, rejected before the requested-service gate is ever consulted.
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'ready' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('illegal_transition');
+  });
+
+  it('gates ONLY pending_review/ready — other legal moves pass with nothing recorded', async () => {
+    // Seed the state through the repo, not the route: reaching pending_review via the route
+    // would require passing the very gate under test. (draft → lost is no use here — it's an
+    // illegal transition, so it 409s before the gate is ever consulted.)
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+    const q = await draft(app); // requestedService is null
+    await quotes.patch(q.id, { status: 'pending_review' });
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'draft' }); // reopen-to-edit
+    expect(res.status).toBe(200);
+  });
+
+  it('reads the STORED row, not the body — a client cannot smuggle the value past the gate', async () => {
+    const app = createApp();
+    const q = await draft(app);
+    const res = await patchReq(app, `/admin/quote/${q.id}`, { status: 'pending_review', requestedService: 'both' });
+    expect(res.status).toBe(400);
+  });
+
+  it('carries routeText on every list row so the queue can search by route', async () => {
+    const app = createApp();
+    await post(app, '/admin/quote/save', {
+      name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [
+        leg({ from: 'Colombo', to: 'Kandy', distanceKm: 120 }),
+        leg({ from: 'Kandy', to: 'Ella', distanceKm: 140 }),
+      ],
+    });
+    const list = await (await authedGet(app, '/admin/quote/list')).json();
+    // The handoff place (Kandy) appears once, not twice — and this proves the derivation
+    // reaches into request.tool.legs, which is where /save actually puts them.
+    expect(list.quotes[0].routeText).toBe('Colombo · Kandy · Ella');
+  });
+});
+
+describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
+  const BODY = {
+    customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+    vehicleType: 'car', pax: 2, bags: 1, date: '2026-08-01', time: '09:00',
+  };
+
+  async function sentQuote(quotes: InMemoryQuoteRepo) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1,
+        legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+    return q.id;
+  }
+
+  function book(app: App, id: string, body: unknown, cookieStr = FOUNDER_COOKIE) {
+    return app.request(`/admin/quote/${id}/book`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookieStr },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('books a sent quote: draft booking at the quote price, quote stamped won+linked', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const res = await book(createApp({ quotes, bookings }), id, BODY);
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.status).toBe('payment_pending'); // surfaces in the ops Bookings queue
+    expect(b.channel).toBe('whatsapp'); // ops-booked, not a website booking
+    expect(b.mode).toBe('single');
+    expect(b.total).toBe(21900);
+    expect(b.amountDueNow).toBe(21900);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBe(b.id);
+    expect(await bookings.get(b.id)).not.toBeNull();
+  });
+
+  it('books an already-won quote (backfill) and leaves it won', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    await quotes.patch(id, { status: 'won' });
+    const res = await book(createApp({ quotes, bookings }), id, BODY);
+    expect(res.status).toBe(201);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBeTruthy();
+  });
+
+  it('is idempotent: a second book returns the same booking, no duplicate', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const first = await (await book(app, id, BODY)).json();
+    const res2 = await book(app, id, BODY);
+    expect(res2.status).toBe(200);
+    expect((await res2.json()).id).toBe(first.id);
+    expect((await bookings.list()).length).toBe(1);
+  });
+
+  it('requires bookings:operate — finance is 403', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), id, BODY, cookie('fin@x.com'));
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects a non-sent/won quote with 409', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 1000, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 1, bags: 0,
+        legs: [{ from: 'A', to: 'B', distanceKm: 10 }] } },
+    }); // stays 'draft'
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), q.id, BODY);
+    expect(res.status).toBe(409);
+  });
+
+  it('rejects missing required contact fields with 400', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    const bad = { ...BODY, customer: { firstName: 'A', lastName: 'B' } };
+    const res = await book(createApp({ quotes, bookings: new InMemoryBookingRepo() }), id, bad);
+    expect(res.status).toBe(400);
+  });
+
+  it('404s an unknown quote', async () => {
+    const res = await book(createApp({ quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo() }), 'nope', BODY);
+    expect(res.status).toBe(404);
+  });
+
+  it('a concurrent double-submit never 500s and creates exactly one booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const [r1, r2] = await Promise.all([book(app, id, BODY), book(app, id, BODY)]);
+    expect([200, 201]).toContain(r1.status);
+    expect([200, 201]).toContain(r2.status);
+    expect((await bookings.list()).length).toBe(1);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('won');
+    expect(q?.convertedBookingId).toBeTruthy();
+  });
+});
+
+// Review lock (owner decision 2026-07-17): SUBMISSION freezes content. The founder reviews an
+// immutable quote and approves exactly what they saw; the one door back in is reopen-to-draft.
+// EDITABLE for /save therefore shrinks to draft + changes_requested — pending_review joins
+// ready/sent behind the 409.
+describe('review lock — /save refuses content edits while in review', () => {
+  const TRIP2 = { vehicle: 'car', passengerCount: 1, luggageCount: 0, requestedService: 'private', legs: [leg({ distanceKm: 80 })] };
+  const patchReq2 = (app: App, path: string, body: unknown) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE }, body: JSON.stringify(body) });
+
+  it('409s a re-save on a pending_review quote (submission is the lock)', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_editable');
+    // and the content did not move
+    const got = await (await authedGet(app, `/admin/quote/${q.id}`)).json();
+    expect(got.request.tool.legs[0].distanceKm).toBe(80);
+  });
+
+  it('still allows re-save after reopening to draft (the explicit door)', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'draft' }); // reopen
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(200);
+  });
+
+  it('changes_requested stays editable — that state exists to be edited', async () => {
+    const app = createApp();
+    const q = (await (await post(app, '/admin/quote/save', TRIP2)).json()) as { id: string };
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'pending_review' });
+    await patchReq2(app, `/admin/quote/${q.id}`, { status: 'changes_requested' });
+    const res = await post(app, '/admin/quote/save', { ...TRIP2, id: q.id, legs: [leg({ distanceKm: 200 })] });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ── Route-choice compare mode (2026-07-20 plan, Task 2) ──────────────────────
+describe('route-choice compare mode', () => {
+  const ROUTE_OPTIONS = { fastest: { km: 292, durationMin: 330 }, noTolls: { km: 205, durationMin: 390 } };
+
+  it('POST /distance with compare:true returns both variants for a choice pair', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Colombo City', to: 'Ella', compare: true });
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b.km).toBe(292); // top level stays = fastest (back-compat)
+    expect(b.durationMin).toBe(330);
+    expect(b.hasChoice).toBe(true);
+    expect(b.variants).toEqual(ROUTE_OPTIONS);
+  });
+
+  it('POST /distance with compare:true omits variants when there is no real choice', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Kandy', to: 'Trincomalee', compare: true });
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b.km).toBeGreaterThan(0);
+    expect(b.hasChoice).toBe(false);
+    expect(b).not.toHaveProperty('variants');
+  });
+
+  it('POST /distance with compare:true is 404 for an unknown route', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Nowhereville', to: 'Elsewhereton', compare: true });
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /distance WITHOUT compare keeps today’s exact response shape', async () => {
+    const res = await post(createApp(), '/admin/quote/distance', { from: 'Colombo City', to: 'Ella' });
+    expect(res.status).toBe(200);
+    expect(Object.keys(await res.json()).sort()).toEqual(['durationMin', 'km']);
+  });
+
+  it('/estimate output is identical with and without the passthrough route fields', async () => {
+    const base = { vehicle: 'car', passengerCount: 2, luggageCount: 2 };
+    const withFields = await (await post(createApp(), '/admin/quote/estimate', {
+      ...base, legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'no_tolls', routeOptions: ROUTE_OPTIONS })],
+    })).json();
+    const without = await (await post(createApp(), '/admin/quote/estimate', {
+      ...base, legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205 })],
+    })).json();
+    expect(withFields).toEqual(without); // routeVariant/routeOptions must never touch pricing
+  });
+
+  it('/estimate rejects an unknown routeVariant value', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'scenic' })],
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('/save round-trips routeVariant + routeOptions verbatim in the stored tool request', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [leg({ from: 'Colombo City', to: 'Ella', distanceKm: 205, routeVariant: 'no_tolls', routeOptions: ROUTE_OPTIONS })],
+    })).json();
+    const got = await (await authedGet(app, '/admin/quote/' + saved.id)).json();
+    expect(got.request.tool.legs[0].routeVariant).toBe('no_tolls');
+    expect(got.request.tool.legs[0].routeOptions).toEqual(ROUTE_OPTIONS);
+  });
+});
+
+// Multi-stop rides (phase 2, 2026-07-20). The ops wire gains OPTIONAL per-leg `stops`/`segmentKms`;
+// the engine already speaks the Ride shape (phase 1). A leg WITHOUT stops takes the old path,
+// byte-for-byte — the no-stops assertions below pin that. `from`/`to` are still required by the
+// schema (Task 7 UI keeps sending them = first/last stop), so a stops leg carries both.
+describe('multi-stop rides — ops wire (stops + segmentKms)', () => {
+  // A 3-stop leg over known places so the null segment resolves against the offline adapter.
+  const ride3 = (o: Record<string, unknown> = {}) => ({
+    category: 'transfer', from: 'Colombo City', to: 'Ella',
+    stops: ['Colombo City', 'Kandy', 'Ella'], ...o,
+  });
+
+  it('Zod accepts a 3-stop leg with segmentKms [12, null]', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [12, null] })],
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a 9-stop ride (over the 8-stop cap) with a human-readable 400', async () => {
+    const nine = ['Colombo City', 'Negombo', 'Bentota', 'Galle', 'Weligama', 'Mirissa', 'Kandy', 'Ella', 'Yala'];
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [{ category: 'transfer', from: 'Colombo City', to: 'Yala', stops: nine }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/at most 8 stops/i);
+  });
+
+  it('rejects a segmentKms length mismatch (3 stops need 2 segments) with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [12, 34, 56] })],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/one entry per segment/i);
+  });
+
+  it('rejects consecutive duplicate stops (A,A,B) with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'Kandy', to: 'Kandy', stops: ['Kandy', 'Kandy', 'Ella'] }],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/same as the (one|stop) before/i);
+  });
+
+  it('rejects stops on a stay_day leg with a human-readable 400', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [
+        { category: 'transfer', from: 'Colombo City', to: 'Kandy', distanceKm: 100, date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', date: '2026-02-15', stops: ['Kandy', 'Ella'] },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 60, date: '2026-02-16' },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/stay day/i);
+  });
+
+  it('/estimate resolves a null segment via the offline adapter → ONE line item labeled with all stops', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [ride3({ segmentKms: [100, null] })],
+    });
+    expect(res.status).toBe(200);
+    const d = await res.json();
+    // ONE travel line item, labeled by the full stop chain (engine's `stops.join(' → ') (car)`).
+    expect(d.lineItems[0].label).toBe('Colombo City → Kandy → Ella (car)');
+    // The null second segment was resolved to a positive km; the manual first stays 100.
+    expect(d.lineItems[0].meta.segmentKms[0]).toBe(100);
+    expect(d.lineItems[0].meta.segmentKms[1]).toBeGreaterThan(0);
+    expect(d.lineItems[0].meta.stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+  });
+
+  it('a mixed manual/auto ride [40, null] keeps the manual 40 and resolves only the null', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Mix', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [40, null] })],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    const eng = got.request.engine.legs[0];
+    expect(eng.segmentKms[0]).toBe(40); // manual segment preserved
+    expect(eng.segmentKms[1]).toBeGreaterThan(0); // null segment resolved
+    // Legacy mirror: distanceKm on the tool leg == segment sum.
+    expect(got.request.tool.legs[0].distanceKm).toBe(40 + eng.segmentKms[1]);
+  });
+
+  it('an all-manual ride still updates the distanceKm legacy mirror to the segment sum', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'AllManual', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [55, 66] })],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.engine.legs[0].segmentKms).toEqual([55, 66]);
+    expect(got.request.tool.legs[0].distanceKm).toBe(121); // 55 + 66, mirror updated even with no resolve
+  });
+
+  it('/save persists request.tool with stops and request.engine with the ride; GET /:id echoes them', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Reo', vehicle: 'car', passengerCount: 2, luggageCount: 2, requestedService: 'private',
+      legs: [ride3({ segmentKms: [100, null] })],
+    })).json();
+    expect(saved.status).toBe('draft');
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.tool.legs[0].stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+    expect(got.request.engine.product).toBe('private');
+    expect(got.request.engine.legs[0].stops).toEqual(['Colombo City', 'Kandy', 'Ella']);
+    expect(got.request.engine.legs[0].segmentKms).toHaveLength(2);
+    expect(got.request.engine.legs[0].segmentKms.every((k: number) => typeof k === 'number' && k > 0)).toBe(true);
+  });
+
+  it('a chauffeur ride day carries { date, stops, segmentKms } into the engine request', async () => {
+    const app = createApp();
+    const saved = await (await post(app, '/admin/quote/save', {
+      name: 'Chauf', vehicle: 'car', passengerCount: 2, luggageCount: 1, service: 'chauffeur', requestedService: 'chauffeur',
+      legs: [
+        { category: 'transfer', from: 'Colombo City', to: 'Kandy', stops: ['Colombo City', 'Sigiriya / Dambulla', 'Kandy'], segmentKms: [90, null], date: '2026-02-14' },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', date: '2026-02-15' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2026-02-16' },
+      ],
+    })).json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+    expect(got.request.engine.product).toBe('chauffeur');
+    const day0 = got.request.engine.travelDays[0];
+    expect(day0.date).toBe('2026-02-14');
+    expect(day0.stops).toEqual(['Colombo City', 'Sigiriya / Dambulla', 'Kandy']);
+    expect(day0.segmentKms[0]).toBe(90);
+    expect(day0.segmentKms[1]).toBeGreaterThan(0);
+    // The old-shape day (no stops) keeps its flat { from, to, distanceKm } shape.
+    expect(got.request.engine.travelDays[1]).toMatchObject({ from: 'Kandy', to: 'Ella', distanceKm: 140 });
+    expect(got.request.engine.travelDays[1].stops).toBeUndefined();
+  });
+
+  it('a stops ride with an unresolvable segment 400s naming the failing PAIR', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'Colombo City', to: 'Ella', stops: ['Colombo City', 'Nowhereville', 'Ella'], segmentKms: [null, null] }],
+    });
+    expect(res.status).toBe(400);
+    // Names the FAILING pair (Colombo City → Nowhereville), not the leg's from/to.
+    expect((await res.json()).error).toBe("couldn't find the distance for Colombo City → Nowhereville — enter the km manually");
+  });
+
+  // The no-stops path must be byte-for-byte unchanged. Pin a plain leg's full /estimate response.
+  it('a no-stops leg round-trips identically (old path untouched)', async () => {
+    const d = await (await post(createApp(), '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ from: 'A', to: 'B', distanceKm: 80 })],
+    })).json();
+    expect(d.total.cents).toBe(3550);
+    expect(d.amountDueNow.cents).toBe(3550);
+    expect(d.lineItems[0].label).toBe('A → B (car)');
+    expect(d.lineItems[0].meta.billableKm).toBe(88);
+    expect(d.lineItems[0].meta.stops).toBeUndefined(); // 2-stop leg never carries a stops array
+    expect(d.lineItems[0].meta.segmentKms).toBeUndefined();
   });
 });

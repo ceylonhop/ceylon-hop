@@ -49,19 +49,28 @@ refine the Hard rules above for day-to-day changes:
    for pure copy/CSS/visual tweaks — verify those in the browser preview instead.
 6. **Keep changes reversible.** One logical change per commit, clear message. Multiple chats
    share one working tree on `main` — stage only your own files by path, never `git add -A`.
-7. **No surprises to production.** `main` deploys to the live services (API on Render, site on
-   Pages). Don't ship anything to prod — **especially schema/migrations, pricing, or config** —
-   without the owner's explicit ok. Migrations are **NOT auto-applied** (this already caused a
-   prod incident); if a change needs one, FLAG it and treat the prod migrate as a required,
-   owner-run release step.
+7. **No surprises to production.** The API/ops app runs a **Dev → Staging → Prod pipeline**
+   (set up 2026-07-18): `main` auto-deploys to **staging** (`ceylon-hop-staging`,
+   `ops.staging.ceylonhop.com`); **prod** (`ceylon-hop-api`) deploys from the **`production`**
+   branch — you promote via a reviewed, CI-green PR `main → production`. The static site on
+   GitHub **Pages still deploys from `main`.** Don't ship anything to prod — **especially
+   schema/migrations, pricing, or config** — without the owner's explicit ok. **Merging a
+   migration IS its release** (PR #50, 2026-07-16): pending migrations **auto-apply on Render
+   boot**, fail-closed — so a migration hits **staging** the moment it merges to `main`, and
+   **prod** only on the `main → production` promotion (staging-first, automatically). Flag the
+   migration when you propose the change — do **not** tell the owner to run a prod migrate as a
+   release step. Local dev stays manual (`cd api && npm run migrate`); nothing migrates on
+   `npm run dev` unless `RUN_MIGRATIONS=1`.
 
 **Drift rules (always):** prices change ONLY via `rateCard.ts` (+ corridors in
 `departureRepo.ts`) then `npm run generate` — never hand-edit a `@generated:` block (the parity +
 codegen tests will, and should, fail). Generated pages change via their source + regenerate,
 never by editing the output.
 
-**Deferred (not now):** branch protection on `main`, a PR per change, CI-required-to-merge —
-right-sized to add at the apex cutover or when human collaborators join, not before.
+**Branch protection (active 2026-07-18):** `main` and `production` both require a PR + green CI
+to merge (the 3 `ci.yml` checks). `production` allows **no admin bypass** (real prod gate); `main`
+keeps an admin escape hatch for hotfixes and the shared-tree sessions. Flow: feature branch → PR →
+`main` (→ staging) → promote PR `main → production` (→ prod).
 
 ## Stack (do not substitute)
 Node 20 · TypeScript (strict) · Hono · Zod · Vitest · Drizzle + Postgres (Supabase) · npm.

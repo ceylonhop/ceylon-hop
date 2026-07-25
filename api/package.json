@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "check": "npm run typecheck && npm run lint && npm test",
     "db:generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate"
+    "migrate": "drizzle-kit migrate",
+    "migrate:test": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.8.0",

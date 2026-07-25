@@ -53,7 +53,10 @@ test('selected booking date is displayed and submitted as the same local date', 
 
 test('reusable datepicker defaults to tomorrow as the earliest selectable date', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
-  await page.goto('/search.html?from=Colombo%20Airport%20(CMB)&to=Kandy');
+  // Use canonical place IDs, not display names: search.js resolves ?from/?to against
+  // T.place(id) and now redirects an unresolvable `to` to 404.html (feat commit 10a84f8),
+  // which would remove #e-date before we can read it. 'cmb-airport'/'kandy' are real IDs.
+  await page.goto('/search.html?from=cmb-airport&to=kandy');
 
   const dates = await page.evaluate(() => {
     const today = new Date(); today.setHours(0, 0, 0, 0);

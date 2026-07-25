@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test';
 // a support agent (ops/finance) does not. These specs assert the three journeys the merge
 // is built around:
 //   1. Support submits a quote → it lands in the queue; support cannot approve or copy.
-//   2. Founder reviews from the queue → approves (or sends back); can self-approve a draft.
+//   2. Founder reviews from the queue → approves (or sends back). No self-approve: a founder
+//      must Submit a draft for review before Approve appears (lifecycle enforced, 2026-07-19).
 //   3. Support opens an approved (ready) quote → the customer message + Copy unlock.
 //
 // Same offline harness as ops-vehicle-chips.spec.js: serve the file, stub /admin/**,
@@ -15,6 +16,7 @@ import { test, expect } from '@playwright/test';
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 
 const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
+const customerNameFromBody = (body) => [body.firstName, body.lastName].filter(Boolean).join(' ') || body.name || '';
 
 // A saved-quote summary row as GET /admin/quote/list returns them.
 function summary(over) {
@@ -27,6 +29,9 @@ function summary(over) {
     totalCents: over.totalCents || 12100,
     currency: 'USD',
     status: over.status,
+    // Carried so the GET /:id stub can reflect it into the reopened quote's request.tool
+    // (quote intent, spec 2026-07-17). Not part of the real summary shape — test plumbing only.
+    ...('requestedService' in over ? { requestedService: over.requestedService } : {}),
     ...(over.estimate ? { estimate: over.estimate } : {}),
   };
 }
@@ -55,6 +60,10 @@ function fullQuote(over) {
         contact: over.customerContact || '+44 7700 900000',
         vehicle: over.vehicle || 'car',
         service: 'private',
+        // Quote intent (spec 2026-07-17): reopened quotes carry the recorded request. Default it
+        // so the submit/approve buttons aren't gated (the gate itself is covered by its own test);
+        // pass requestedService: null explicitly to exercise the un-recorded, disabled case.
+        requestedService: 'requestedService' in over ? over.requestedService : 'private',
         passengerCount: 2,
         luggageCount: 2,
         legs: [{ category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 }],
@@ -125,12 +134,14 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
           if (!['draft', 'pending_review', 'changes_requested'].includes(existing.status)) {
             return r.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'not_editable', status: existing.status }) });
           }
-          if (body.name) existing.customerName = body.name;
+          const bodyName = customerNameFromBody(body);
+          if (bodyName) existing.customerName = bodyName;
           return r.fulfill(json(fullQuote({ id: body.id, status: existing.status, customerName: existing.customerName })));
         }
       }
-      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: body.name });
-      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: body.name }));
+      const bodyName = customerNameFromBody(body);
+      const saved = fullQuote({ id: 'new1', status: 'draft', customerName: bodyName });
+      store.list.unshift(summary({ id: 'new1', status: 'draft', customerName: bodyName }));
       return r.fulfill(json(saved));
     }
     const m = url.match(/\/admin\/quote\/([^/?]+)$/);
@@ -145,7 +156,7 @@ async function harness(page, { role = 'founder', quotes = [] } = {}) {
     if (m && method === 'GET') {
       const id = m[1];
       const existing = store.list.find((q) => q.id === id) || {};
-      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate })));
+      return r.fulfill(json(fullQuote({ id, status: existing.status || 'draft', customerName: existing.customerName, totalCents: existing.totalCents, estimate: existing.estimate, ...('requestedService' in existing ? { requestedService: existing.requestedService } : {}) })));
     }
     return r.fulfill(json({}));
   });
@@ -259,17 +270,31 @@ test('support on a draft can Submit for review but has no Approve action', async
   await expect(actions(page).locator('[data-action="sendBack"]')).toHaveCount(0);
 });
 
-test('founder on a pending_review quote gets Approve + Send back', async ({ page }) => {
+test('founder on a pending_review quote gets Approve + Send back + the reopen door', async ({ page }) => {
   await openDetail(page, 'founder', { id: 'q1', status: 'pending_review' });
   await expect(page.locator('.ch-status-pill')).toContainText('In review');
   await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
   await expect(actions(page).locator('[data-action="sendBack"]')).toBeVisible();
-  await expect(page.locator('.ch-review-banner')).toContainText(/pricing and margin/i);
+  // Review lock (owner, 2026-07-17): submission freezes content — the banner names the lock,
+  // the action bar offers the one door back in, and the editor renders inert.
+  await expect(actions(page).locator('[data-action="reopenToDraft"]')).toBeVisible();
+  await expect(page.locator('.ch-review-banner')).toContainText(/locked/i);
+  await expect(page.locator('#quoteRoot .ch-app')).toHaveClass(/ch-locked/);
+  await expect(page.locator('#f-firstName')).toBeDisabled();
 });
 
-test('founder can self-approve a draft in one hop (Approve — ready to send)', async ({ page }) => {
+test('founder on a draft must Submit for review first — no self-approve (lifecycle enforced)', async ({ page }) => {
+  // The founder-only "self-approve straight from a draft" was removed (2026-07-19): everyone,
+  // founders included, submits for review before Approve appears (in the pending_review state).
   await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
-  await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="submitForReview"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
+});
+
+test('founder on a changes-requested quote must Resubmit — still no self-approve', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'changes_requested' });
+  await expect(actions(page).locator('[data-action="submitForReview"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
 });
 
 test('clicking Approve PATCHes the quote to ready and returns to the queue', async ({ page }) => {
@@ -284,6 +309,16 @@ test('clicking Submit for review PATCHes the quote to pending_review', async ({ 
   await actions(page).locator('[data-action="submitForReview"]').click();
   await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'pending_review')).toBe(true);
+});
+
+// Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit is unavailable
+// until the customer request is recorded, then enables once the chip is chosen.
+test('Submit for review is disabled until the customer request is recorded', async ({ page }) => {
+  await openDetail(page, 'ops', { id: 'q1', status: 'draft', requestedService: null });
+  const submit = actions(page).locator('[data-action="submitForReview"]');
+  await expect(submit).toBeDisabled();
+  await page.locator('[data-action="setRequestedService"][data-req="private"]').click();
+  await expect(submit).toBeEnabled();
 });
 
 // Regression: transition() used to save-first unconditionally, but the /save maker-checker lock
@@ -383,18 +418,18 @@ test('the customer message stays hidden until approved — even for the founder'
   await expect(page.locator('.ch-copy-lock')).toHaveCount(0);
 });
 
-// ── Side-nav collapse toggle ─────────────────────────────────────────────────────
-test('the rail collapses to an icon strip and the choice persists', async ({ page }) => {
+// ── Side-nav collapsed rail ──────────────────────────────────────────────────────
+test('the collapsed rail opens when any part of it is clicked', async ({ page }) => {
   await openQueue(page, 'founder', []);
+  await expect(page.locator('#railToggle')).toHaveCount(0);
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
-  await page.locator('#railToggle').click();
-  await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Persisted, so a fresh load of the same surface stays collapsed.
+
+  await page.evaluate(() => localStorage.setItem('ch_ops_rail', '1'));
   await page.goto(OPS_FILE + '#quotes');
   await page.waitForSelector('#view .qhead');
   await expect(page.locator('#approot')).toHaveClass(/rail-collapsed/);
-  // Toggling back expands it.
-  await page.locator('#railToggle').click();
+
+  await page.locator('.rail').click();
   await expect(page.locator('#approot')).not.toHaveClass(/rail-collapsed/);
 });
 

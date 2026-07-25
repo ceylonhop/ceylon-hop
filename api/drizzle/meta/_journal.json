@@ -106,6 +106,62 @@
       "when": 1783807372128,
       "tag": "0014_lame_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784248583673,
+      "tag": "0015_quote_assignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784255587804,
+      "tag": "0016_ops_user_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784296118802,
+      "tag": "0017_oval_carnage",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784722360690,
+      "tag": "0018_quote_internal_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784723780160,
+      "tag": "0019_quote_soft_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784764241479,
+      "tag": "0020_pricing_zones",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784807384515,
+      "tag": "0021_analytics_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784906669698,
+      "tag": "0022_ride_board",
+      "breakpoints": true
     }
   ]
 }

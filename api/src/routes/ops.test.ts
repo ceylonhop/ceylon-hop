@@ -17,6 +17,21 @@ describe('ops Google login route', () => {
     expect(res.headers.get('set-cookie')).toContain('ch_ops=');
   });
 
+  it('carries the Google profile name through the session to whoami (avatar initials)', async () => {
+    const googleVerifier = async () => ({ payload: {
+      iss: 'https://accounts.google.com', aud: 'cid', email: 'f@x.com', email_verified: true, name: 'Sandra Wolker',
+    } });
+    const app = createApp({ auth, adminApiKey: 'k', googleVerifier });
+    const login = await app.request('/admin/ops/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ credential: 'tok' }),
+    });
+    expect(login.status).toBe(200);
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const who = await app.request('/admin/ops/whoami', { headers: { cookie } });
+    expect(who.status).toBe(200);
+    expect((await who.json()).name).toBe('Sandra Wolker');
+  });
+
   it('403s a verified email that is not in OPS_USERS', async () => {
     const googleVerifier = async () => ({ payload: {
       iss: 'https://accounts.google.com', aud: 'cid', email: 'stranger@x.com', email_verified: true,

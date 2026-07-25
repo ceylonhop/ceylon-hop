@@ -32,8 +32,10 @@ npm run test:e2e      # e2e only
 npm run test:all      # unit + e2e
 ```
 
-The e2e runner starts the static server (`../serve-booking.js`) automatically and
-reuses one if it's already on :4173.
+The e2e runner starts the static server (`../serve-booking.js`) automatically on a
+port derived from the worktree path (see `static-port.js`), so concurrent checkouts
+never reuse — and silently test — each other's server. Set `CH_STATIC_PORT` to pin
+the port instead (e.g. `CH_STATIC_PORT=4173` to reuse the preview server).
 
 ## Adding coverage
 When you change front-end pricing or a booking flow, add/adjust a test here so the

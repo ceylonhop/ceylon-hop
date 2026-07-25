@@ -1,3 +1,5 @@
+import type { HotZone } from './hotZones';
+
 export type Vehicle = 'car' | 'van' | 'van9' | 'van14' | 'custom';
 export const EXTRA_CODES = ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] as const;
 export type ExtraCode = typeof EXTRA_CODES[number];
@@ -40,11 +42,11 @@ export const RATE_CARD = {
   // the floor as-is (the floor already covers the fixed cost of a short trip).
   floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50
   // Chauffeur: SELL day rate = cost × 1.15 (dayRateCostCents kept for margin). Idle days bill a
-  // flat 100 km/day min at the sell per-km, on top of the day charge.
+  // per-vehicle min km/day at the sell per-km, on top of the day charge (car 50, vans 100).
   chauffeur: {
     dayRateCents: Math.round(sell(DAY_RATE_COST_CENTS)), // customer SELL day rate (whole-cent per-day charge)
     dayRateCostCents: DAY_RATE_COST_CENTS,   // real cost — margin only
-    idleMinKm: { car: 100, van: 100, van9: 100, van14: 100, custom: 100 },
+    idleMinKm: { car: 50, van: 100, van9: 100, van14: 100, custom: 100 },
   },
   deposit: { pct: 10, capCents: 5000 },
   vehicle: {
@@ -84,4 +86,9 @@ export type RateCard = {
   fxUsdToLkr: number;
   extras: Record<string, number>;
   shared: { colomboPickupCents: number; extraBagCents: number };
+  // Active hot zones, composed onto the live card per request (zonesRepo.activeZones()) and frozen
+  // into a locked quote's snapshot. Optional for back-compat: a snapshot created before hot zones
+  // (or with none active) has no field ⇒ no boost = pre-hot-zones behaviour. The compiled RATE_CARD
+  // literal deliberately carries none — zones are DB-only.
+  hotZones?: HotZone[];
 };

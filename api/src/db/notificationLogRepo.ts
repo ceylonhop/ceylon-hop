@@ -6,7 +6,9 @@ export type NotificationKind =
   | 'trip_reminder'
   | 'review_request'
   | 'confirmation'
+  | 'payment_failed'
   | 'payment_recovery'
+  | 'deposit_received'
   | 'booking_confirmed'
   | 'no_show_notice';
 

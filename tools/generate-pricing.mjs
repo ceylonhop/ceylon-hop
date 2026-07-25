@@ -27,6 +27,7 @@ export function renderPricingBlock(p) {
     `const BUFFER_PCT = ${p.bufferPct};`,
     `const PRICE_FINISHING = ${j(p.priceFinishing)};`,
     `const CHAUFFEUR_DAY_FEE = ${p.chauffeurDayFee};`,
+    `const CHAUFFEUR_IDLE_MIN_KM = ${j(p.chauffeurIdleMinKm)};`,
     `const DEPOSIT_PCT = ${p.depositPct};`,
     `const DEPOSIT_CAP = ${p.depositCap};`,
     `const EXTRAS = ${j(p.extras)};`,

@@ -4,10 +4,17 @@ import { FakePaymentAdapter } from '../adapters/payments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
+import { nextIsoWeekday } from '../testSupport/dates';
+
+// Anchored to "now" and weekday-preserving so neither the past-date rule nor the service-day
+// schedule (corridors run Wed & Sat) ever expires these (see testSupport/dates).
+const wednesday = nextIsoWeekday(3); // a shared service day
+const saturday = nextIsoWeekday(6); // the corridor's other service day
+const monday = nextIsoWeekday(1); // off-schedule (not a service day)
 
 const valid = {
   corridorId: 'hill-line', // Kandy → Nuwara Eliya → Ella, $21/seat
-  date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
+  date: wednesday, // Wednesday — a shared service day (corridors run Wed & Sat)
   time: '08:00',
   seats: 2,
   customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
@@ -79,7 +86,7 @@ describe('POST /bookings/shared', () => {
   });
 
   it('400 not_a_service_day for a date off the corridor schedule (a Monday)', async () => {
-    const res = await postShared(createApp(), { ...valid, date: '2026-07-20' }); // Monday
+    const res = await postShared(createApp(), { ...valid, date: monday }); // Monday
     expect(res.status).toBe(400);
     const b = await res.json();
     expect(b.error).toBe('not_a_service_day');
@@ -87,16 +94,16 @@ describe('POST /bookings/shared', () => {
   });
 
   it('accepts a Saturday departure (the corridor’s other service day)', async () => {
-    const res = await postShared(createApp(), { ...valid, date: '2026-07-25' }); // Saturday
+    const res = await postShared(createApp(), { ...valid, date: saturday }); // Saturday
     expect(res.status).toBe(201);
   });
 
   it('rejects an off-schedule date before holding a seat (no phantom hold)', async () => {
     const departures = new InMemoryDepartureRepo();
     const app = createApp({ departures });
-    await postShared(app, { ...valid, date: '2026-07-20', seats: 12 }); // Monday, rejected
+    await postShared(app, { ...valid, date: monday, seats: 12 }); // Monday, rejected
     // the Monday departure must be untouched — a full bus can still be held there directly
-    const held = await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    const held = await departures.holdSeats({ corridorId: 'hill-line', date: monday, time: '08:00', seats: 12 });
     expect(held?.seatsBooked).toBe(12);
   });
 

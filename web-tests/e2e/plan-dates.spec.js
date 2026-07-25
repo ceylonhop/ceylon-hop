@@ -28,14 +28,9 @@ async function pickPlannerPlace(page, field, query, label) {
 async function installGooglePlacesStub(page) {
   await page.addInitScript(() => {
     const latlng = (lat, lng) => ({ lat: () => lat, lng: () => lng });
-    function DirectionsService() {}
-    DirectionsService.prototype.route = function (req, cb) {
-      cb({ routes: [{ legs: [{ distance: { value: 100000 }, duration: { value: 7200 } }] }] }, 'OK');
+    const Route = {
+      computeRoutes: async () => ({ routes: [{ legs: [{ distanceMeters: 100000, durationMillis: 7200000 }] }] }),
     };
-    function DirectionsRenderer() {}
-    DirectionsRenderer.prototype.setMap = function () {};
-    DirectionsRenderer.prototype.setDirections = function () {};
-    function MapCls() {}
     const places = {
       AutocompleteSessionToken: function () {},
       AutocompleteSuggestion: {
@@ -59,15 +54,9 @@ async function installGooglePlacesStub(page) {
         }),
       },
     };
+    const libs = { routes: { Route }, places };
     window.google = {
-      maps: {
-        Map: MapCls,
-        DirectionsService,
-        DirectionsRenderer,
-        TravelMode: { DRIVING: 'DRIVING' },
-        places,
-        importLibrary: async (name) => (name === 'places' ? places : {}),
-      },
+      maps: { importLibrary: async (name) => libs[name] || {} },
     };
   });
 }
@@ -209,9 +198,30 @@ test('ready-made route starters hide once the itinerary has legs from the custom
 
   await page.goto('/plan.html');
   await expect(page.locator('#tpl-strip')).toBeVisible();
+  // The traveller count gates the itinerary, so pick it before adding a leg — without it
+  // "Add another transfer" is hidden and the customer can't start a route from scratch.
+  await page.selectOption('#pax', '2');
   await page.locator('#add-stop').click();
   await expect(page.locator('#rail .leg-card')).toHaveCount(3);
   await expect(page.locator('#tpl-strip')).toBeHidden();
+});
+
+test('the traveller-count gate hides the itinerary until a count is picked', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+
+  // A fresh planner shows ONLY the prompt — the transfers board stays closed. These assert
+  // real visibility, not the `hidden` attribute: `.itin-gate`/`.board-h`/`.add-row` each set
+  // an explicit `display`, which silently beat `[hidden]` until the companion rules landed.
+  await page.goto('/plan.html');
+  await expect(page.locator('#itin-gate')).toBeVisible();
+  await expect(page.locator('.board-h')).toBeHidden();
+  await expect(page.locator('.add-row')).toBeHidden();
+
+  // Picking a count opens the itinerary and retires the prompt.
+  await page.selectOption('#pax', '2');
+  await expect(page.locator('#itin-gate')).toBeHidden();
+  await expect(page.locator('.board-h')).toBeVisible();
+  await expect(page.locator('.add-row')).toBeVisible();
 });
 
 test('reorder hint only appears when there is more than one itinerary card', async ({ page }) => {

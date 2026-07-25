@@ -14,5 +14,7 @@ test('old marketing URL redirects to its new page', async ({ page }) => {
 test('unknown URL serves the branded 404', async ({ page }) => {
   const res = await page.goto('/no-such-page-xyz/');
   expect(res.status()).toBe(404);
-  await expect(page.locator('h1')).toContainText('Page not found');
+  // The branded 404 headline is "You've wandered off the map" (the page <title> still
+  // reads "Page not found — Ceylon Hop"); match the visible h1 copy.
+  await expect(page.locator('h1')).toContainText('wandered off the map');
 });

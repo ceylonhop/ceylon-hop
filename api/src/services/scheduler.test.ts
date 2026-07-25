@@ -132,6 +132,18 @@ describe('runScheduledNotifications — review request', () => {
     expect((await runScheduledNotifications(NOW, d)).reviews).toBe(0);
   });
 
+  // Wait a full day after the trip before asking — a few hours on, we can't be sure the
+  // customer has actually finished travelling. NOW is 2026-07-01T08:00.
+  it('waits a full day (24h) after the trip ends before asking for a review', async () => {
+    const soon = deps();
+    await paidSingle(soon.bookings, '2026-06-30', '12:00'); // ended 20h ago — too soon
+    expect((await runScheduledNotifications(NOW, soon)).reviews).toBe(0);
+
+    const dayOn = deps();
+    await paidSingle(dayOn.bookings, '2026-06-30', '06:00'); // ended 26h ago — a full day on
+    expect((await runScheduledNotifications(NOW, dayOn)).reviews).toBe(1);
+  });
+
   // BI6 — a multi-day trip anchors its review to the LAST leg, not the first, so the
   // customer isn't asked "how was your trip?" while still on day one.
   it('does NOT ask for a review while a multi-day trip is still ongoing', async () => {

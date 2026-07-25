@@ -61,6 +61,12 @@ async function fillFirstLegDate(page, iso) {
   await page.locator('input[type="date"][data-field="date"]').first().fill(iso);
 }
 
+async function fillCustomerName(page, fullName) {
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  await page.fill('#f-firstName', parts.shift() || 'Test');
+  await page.fill('#f-lastName', parts.join(' ') || 'Customer');
+}
+
 // Fix 1: there is no default vehicle anymore — ops must choose one before any
 // estimate is priced. Every spec that expects a priced summary must call this
 // right after opening the quote view.
@@ -74,13 +80,49 @@ async function chooseVehicle(page, value) {
   await page.waitForTimeout(600);
 }
 
+// Record what the customer asked for — required before a quote can be submitted for review
+// (spec 2026-07-17). 'private' = the Point-to-point chip.
+async function recordRequest(page, req = 'private') {
+  await page.locator(`[data-action="setRequestedService"][data-req="${req}"]`).click();
+  await page.waitForTimeout(200);
+}
+
+// Approve a draft the lifecycle-legal way. The founder-only "self-approve straight from a draft"
+// was removed (2026-07-19): record the request, Submit for review (bounces to the queue), reopen
+// the quote's row (now pending_review), then Approve. Leaves the page on the Quotes queue, with
+// the quote in `ready` — same end state the old one-hop approveReady() produced.
+async function submitReopenApprove(page, custName) {
+  await recordRequest(page);
+  await page.locator('[data-action="submitForReview"]').click();
+  const row = page.locator('#view .qrow', { hasText: custName });
+  await expect(row).toBeVisible({ timeout: 8000 });
+  await row.click();
+  await expect(page.locator('[data-action="approveReady"]')).toBeVisible({ timeout: 8000 });
+  await page.locator('[data-action="approveReady"]').click();
+}
+
+// Go to the Quotes queue from inside the builder. The ops rail auto-hides while you work in the
+// main area (ops-ui.html: 4s idle timer + collapse-on-content-click), and BY DESIGN the first
+// click on a collapsed rail only re-opens it — it doesn't fire the nav button (commit a2f7943,
+// "open collapsed rail from the rail itself"). So click, and if the queue didn't come up, click
+// once more now that the rail is open. A real operator does the same two-step. Ends on the queue
+// with "+ New quote" visible. (The login helper's nav click is exempt: the rail is still expanded
+// right after sign-in, before any content click has collapsed it.)
+async function gotoQueue(page) {
+  const nav = page.locator('#nav button[data-route="quotes"]');
+  const qnew = page.locator('#view [data-qnew]');
+  await nav.click();
+  if (!(await qnew.isVisible().catch(() => false))) await nav.click();
+  await expect(qnew).toBeVisible({ timeout: 8000 });
+}
+
 test.beforeEach(async ({ page }) => {
   await loginFounderAndOpenQuote(page);
   // The itinerary is gated until the trip basics are filled — vehicle + name + a valid contact —
   // so every spec's leg interactions have rows to work with. Specs that need another tier call
   // chooseVehicle again.
   await chooseVehicle(page, 'car');
-  await page.fill('#f-customerName', 'Test Customer');
+  await fillCustomerName(page, 'Test Customer');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 });
@@ -89,12 +131,12 @@ test.beforeEach(async ({ page }) => {
 test('timeline autocomplete → priced LKR summary → save reference toast', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  // Fill first leg: "From" field (first .ch-tl-title with data-field="pickupLocation")
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  // Fill first leg: "From" field (first stop input, data-field="stop" data-stop="0")
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
 
-  // Fill second leg: "Destination" field (first .ch-tl-title with data-field="dropoffLocation")
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  // Fill second leg: "Destination" field (last stop input, data-field="stop" data-stop="1")
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   // A date is required — the API rejects an empty-string date on any leg.
   await fillFirstLegDate(page, '2026-08-01');
@@ -110,8 +152,7 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
 
   // Fill customer name — text fields only update state on 'input' (no
   // change→render race with the Save action), so no Tab/blur workaround is needed.
-  const nameInput = page.locator('#f-customerName');
-  await nameInput.fill('E2E Port');
+  await fillCustomerName(page, 'E2E Port');
 
   // Save via the action-bar button. The old standalone-builder #btnSave header button was
   // retired when the builder merged into the ops shell; Save is now a `.ch-btn` in the
@@ -141,7 +182,7 @@ test('ops autocomplete shows pending search and stays closed after scroll', asyn
     });
   });
 
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await toInput.click();
   await toInput.fill('Kitulgala');
 
@@ -162,7 +203,7 @@ test('autocomplete stays closed after picking a place (does not reopen on re-ren
   // ("autocomplete pops out multiple times even after choosing an item").
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
 
   // The menu closes on pick…
@@ -202,9 +243,9 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
 
   // Leg 1 (transfer): Kandy → Ella, Aug 1. (Settle waits: render() replaces #app
   // wholesale ~350ms after each mutation; see the app's debounce.)
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -215,7 +256,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
@@ -224,7 +265,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-tl-item')).toHaveCount(3);
   await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-04');
   await page.waitForTimeout(600);
-  const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
   await page.waitForTimeout(600);
 
@@ -241,12 +282,12 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   // The customer message is gated behind approval now (commit c268d13): while the quote is a
   // draft the WhatsApp/Email body is replaced by a `.ch-copy-lock` card, so `.ch-pre` is
-  // hidden (copyUnlocked() → status==='ready'||'sent'). Approve it first — approveReady()
-  // saves, PATCHes status→ready, and bounces to the Quotes queue — then reopen the quote from
-  // the queue (which re-prices it) and read the now-unlocked message.
+  // hidden (copyUnlocked() → status==='ready'||'sent'). Approve it first — the lifecycle-legal
+  // way (submit for review → reopen → approve; self-approve was removed 2026-07-19) — which
+  // ends on the Quotes queue, then reopen the quote (which re-prices it) and read the message.
   const custName = 'E2E Stay ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
-  await page.locator('[data-action="approveReady"]').click();
+  await fillCustomerName(page, custName);
+  await submitReopenApprove(page, custName);
 
   // Landed back on the Quotes queue — clicking a row reopens that quote in the builder.
   const qrow = page.locator('#view .qrow', { hasText: custName });
@@ -297,9 +338,9 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await chooseVehicle(page, 'van_6');
 
   // Undated single leg → chauffeur disabled.
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
   await expect(chBtn).toBeDisabled();
@@ -320,7 +361,7 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await expect(chBtn).toBeEnabled({ timeout: 10000 });
   await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
@@ -343,9 +384,9 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
 test('point-to-point customer output can append the chauffeur option', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -353,13 +394,13 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 
   const custName = 'E2E Both Modes ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
-  await page.locator('[data-action="approveReady"]').click();
+  await fillCustomerName(page, custName);
+  await submitReopenApprove(page, custName);
 
   const qrow = page.locator('#view .qrow', { hasText: custName });
   await expect(qrow).toBeVisible({ timeout: 8000 });
@@ -388,20 +429,20 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
 test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   // Unique customer name so we can find the row unambiguously
   const custName = 'E2E Status ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
 
-  // Founder self-approves the draft in one hop: approveReady() saves, PATCHes status→ready,
-  // and navigates back to the queue.
-  await page.locator('[data-action="approveReady"]').click();
+  // Approve via the review lifecycle (submit → reopen → approve; self-approve was removed
+  // 2026-07-19): the final Approve PATCHes status→ready and bounces back to the queue.
+  await submitReopenApprove(page, custName);
 
   // On the queue, this quote's row shows the Ready pill (QSTATUS.ready.label = 'Ready to send').
   const row = page.locator('#view .qrow', { hasText: custName });
@@ -413,35 +454,42 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
 // was retired when the builder merged into the ops shell; the Quotes queue IS the list now.
 // Clicking a queue row (.qrow) reopens the saved quote and repopulates the customer name.
 test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
+  // "+ New quote" guards against losing work with a confirm() when the builder still holds
+  // pending edits (startNew() in ops-ui.html). Re-entering the builder to start fresh can leave
+  // the form marked dirty, so the guard fires here — accept it, since we deliberately want to
+  // discard and start blank. Without a handler Playwright auto-dismisses it and the reset aborts.
+  page.on('dialog', (d) => d.accept());
   await chooseVehicle(page, 'van_6');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   const custName = 'E2E Reopen ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Start a fresh quote so we can prove the reopen repopulates the name. "+ New quote" lives
-  // in the queue now (data-qnew), so go there and start a blank quote — no unsaved-changes
-  // confirm fires because the save above cleared the dirty flag.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // in the queue now (data-qnew), so go there and start a blank quote (the dialog handler above
+  // accepts the "unsaved changes" guard).
+  await gotoQueue(page);
   await page.locator('#view [data-qnew]').click();
-  await expect(page.locator('#f-customerName')).toHaveValue('');
+  await expect(page.locator('#f-firstName')).toHaveValue('');
+  await expect(page.locator('#f-lastName')).toHaveValue('');
 
   // Back to the queue and click this quote's row to reopen it.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
 
   await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
-  await expect(page.locator('#f-customerName')).toHaveValue(custName);
+  await expect(page.locator('#f-firstName')).toHaveValue('E2E');
+  await expect(page.locator('#f-lastName')).toHaveValue(custName.replace(/^E2E\s+/, ''));
 });
 
 // Spec 6 (Fix 4 + Fix 5): reordering legs, and the out-of-order-dates flag.
@@ -472,22 +520,57 @@ test('legs can be reordered and out-of-order dates raise a flag', async ({ page 
   await expect(outOfOrderFlag).toHaveCount(0);
 });
 
+// Feature (2026-07-19): a leg that doesn't start where the previous one ended raises an advisory
+// "Legs don't connect" flag. Mirrors the customer site's gap detection, but surfaced as an agent
+// warning — in the builder a gap almost always means a missed or mis-typed leg. No save needed:
+// the flag is computed live from the itinerary, like the out-of-order flag above.
+test('a non-sequential leg raises the "Legs don’t connect" flag', async ({ page }) => {
+  const gapFlag = page.locator('.ch-flag', { hasText: /Legs don.t connect/i });
+
+  // Build a connected route: each new leg auto-fills its pick-up from the previous drop-off.
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first(), 'Kand', 'Kandy');
+  await pickPlace(page, page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first(), 'Ella', 'Ella');
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(2);
+  await pickPlace(page, page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]'), 'Galle', 'Galle');
+
+  await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
+  await expect(page.locator('.ch-tl-item')).toHaveCount(3);
+  await pickPlace(page, page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="stop"][data-stop="1"]'), 'Colombo', 'Colombo');
+  await page.waitForTimeout(400);
+
+  // Fully connected Kandy → Ella → Galle → Colombo — no gap.
+  await expect(gapFlag).toHaveCount(0);
+
+  // Reorder leg 3 (Galle → Colombo) above leg 2 (Ella → Galle): now leg 2 departs Galle while
+  // leg 1 ends in Ella, so the Ella → Galle stretch is unaccounted for → the gap flag fires.
+  await page.locator('.ch-tl-item').nth(2).locator('[data-action="moveLegUp"]').click();
+  await page.waitForTimeout(400);
+  await expect(gapFlag.first()).toBeVisible({ timeout: 5000 });
+
+  // Put it back → connected again → the flag clears.
+  await page.locator('.ch-tl-item').nth(1).locator('[data-action="moveLegDown"]').click();
+  await page.waitForTimeout(400);
+  await expect(gapFlag).toHaveCount(0);
+});
+
 // Spec 7: the queue shows an age-since-request chip on each row, coloured for urgency. A
 // freshly-saved quote is <1h old, so its chip renders with the calm "fresh" tone (not amber/red).
 test('queue row shows a fresh age chip for a just-saved quote', async ({ page }) => {
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
 
   const custName = 'E2E Age ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Back to the queue; the row for this quote carries a `.qage` chip, calm tone (just created).
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   const age = row.locator('.qage');
@@ -502,19 +585,19 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
 test('changing a reopened quote destination re-prices it', async ({ page }) => {
   // Build + save a Kandy → Ella car quote (distance auto-resolves; price is set).
   await chooseVehicle(page, 'car');
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await fillFirstLegDate(page, '2026-08-01');
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
   const custName = 'E2E Reprice ' + Date.now();
-  await page.locator('#f-customerName').fill(custName);
+  await fillCustomerName(page, custName);
   await page.locator('[data-action="saveDraft"]').click();
   await expect(page.locator('.ch-toast-msg')).toContainText('Saved as', { timeout: 8000 });
 
   // Reopen it from the queue — reopened legs come back in manual-distance mode.
-  await page.locator('#nav button[data-route="quotes"]').click();
+  await gotoQueue(page);
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
@@ -524,7 +607,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
 
   // Change the destination to a much farther place (clear it, then pick Mirissa). The price
   // MUST recompute — previously the reopened leg's frozen manual distance kept it unchanged.
-  const toReopened = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toReopened = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await toReopened.fill('');
   await pickPlace(page, toReopened, 'Miri', 'Mirissa');
   await expect
@@ -539,9 +622,9 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
 // transfer.
 test('reducing a chauffeur trip to one day reverts to point-to-point (drops the day rate)', async ({ page }) => {
   await chooseVehicle(page, 'van_6');
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
-  const toInput = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
   await page.waitForTimeout(600);
@@ -551,7 +634,7 @@ test('reducing a chauffeur trip to one day reverts to point-to-point (drops the 
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
   await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
   await page.waitForTimeout(600);
-  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="dropoffLocation"]');
+  const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
   await page.waitForTimeout(600);
 

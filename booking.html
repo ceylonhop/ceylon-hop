@@ -288,6 +288,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .tr-chip{display:inline-flex;align-items:center;gap:.38rem;font-size:.78rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px}
   .trip-route .tr-chip svg{width:13px;height:13px;flex:none}
   .trip-route .tr-chip.muted{color:var(--ink-soft);background:var(--cream-deep)}
+  /* a self-arranged gap: shown for context, but not a booked/priced leg */
+  .trip-route .tr-leg.tr-gap .tr-leg-title{font-weight:600;color:var(--ink-soft)}
+  .trip-route .tr-leg.tr-gap .tr-leg-meta{margin-left:0}
+  .trip-route .tr-leg.tr-gap .tr-chip{color:#9a5b12;background:transparent;border:1px dashed #e6b980}
   @media(max-width:560px){.trip-route .tr-leg-main{align-items:flex-start}.trip-route .tr-leg-meta{margin-left:0}.trip-route .tr-leg-title{font-size:.95rem}}
   .trip-route .tr-stop{display:flex;align-items:center;gap:11px;font-size:.95rem;padding:2px 0}
   .trip-route .tr-stop .dot{width:11px;height:11px;border-radius:50%;border:2px solid var(--accent-deep);background:#fff;flex:none}

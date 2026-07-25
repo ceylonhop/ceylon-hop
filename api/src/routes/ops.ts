@@ -4,7 +4,8 @@ import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
-import { can, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
+import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
+import { assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
@@ -13,12 +14,13 @@ import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
-import { sendBookingConfirmed, sendNoShowNotice, manageUrl } from '../services/notifications';
+import { sendNoShowNotice } from '../services/notifications';
 
 export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
+  opsUserProfiles: OpsUserProfileRepo;
   auth: OpsAuthConfig;
   googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
   // Optional so tests that only exercise fulfilment can omit them; when present, the
@@ -32,27 +34,24 @@ export interface OpsDeps {
 // Every action the capability matrix knows about — used only to compute whoami's `caps`
 // list from the resolved role, never to grant anything (can() remains the sole gate).
 const ALL_ACTIONS: OpsAction[] = [
-  'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs',
+  'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view',
 ];
 
 const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
 
-// A fulfilment milestone that has a customer email attached. 'vehicle_confirmed' means
-// the driver's arranged → "you're confirmed"; 'no_show' → the forfeited-fare notice.
+// A fulfilment milestone that has a customer email attached. 'no_show' → the
+// forfeited-fare notice. The 'vehicle_confirmed' (driver-arranged) milestone
+// deliberately sends NO customer email (owner decision 2026-07-18): the paid
+// confirmation already went out, so confirming the driver is an internal step.
 async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string): Promise<void> {
-  const kind = to === 'vehicle_confirmed' ? 'booking_confirmed' : to === 'no_show' ? 'no_show_notice' : null;
+  const kind = to === 'no_show' ? 'no_show_notice' : null;
   if (!kind || !deps.email) return;
   const log = deps.notificationLog;
   try {
     if (log && (await log.wasSent(bookingId, kind))) return; // already emailed for this milestone
     const booking = await deps.bookings.get(bookingId);
     if (!booking) return;
-    if (kind === 'booking_confirmed') {
-      const manage = deps.baseUrl && deps.linkSecret ? manageUrl(booking, deps.baseUrl, deps.linkSecret) : undefined;
-      await sendBookingConfirmed(booking, deps.email, { manage });
-    } else {
-      await sendNoShowNotice(booking, deps.email);
-    }
+    await sendNoShowNotice(booking, deps.email);
     await log?.markSent(bookingId, kind);
   } catch (err) {
     console.error(`ops ${kind} email failed for ${bookingId}:`, err);
@@ -63,6 +62,19 @@ export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
+
+  // Remember who someone is, by the name Google already knows them by. Deliberately swallows
+  // its errors: this is a nicety on the login path, and the prod migration lands by hand AFTER
+  // the code deploys — for that window the table is missing and every write throws. Nobody
+  // should be locked out of the ops tool because we couldn't store a label.
+  async function rememberName(email: string, name: string | undefined): Promise<void> {
+    if (!name) return;
+    try {
+      await deps.opsUserProfiles.upsert(email, name);
+    } catch (err) {
+      console.error('ops profile name upsert failed for', email, err);
+    }
+  }
 
   // Google sign-in: the browser POSTs the Google ID token; we verify, allowlist-check, set cookie.
   r.post('/login', async (c) => {
@@ -78,7 +90,8 @@ export function opsRoutes(deps: OpsDeps) {
     if (!id.emailVerified) return c.json({ error: 'email_unverified' }, 403);
     const role = roleForEmail(id.email, users);
     if (!role) return c.json({ error: 'not_authorised', email: id.email }, 403);
-    issueSessionCookie(c, id.email, auth.sessionSecret, Date.now());
+    issueSessionCookie(c, id.email, auth.sessionSecret, Date.now(), id.name);
+    await rememberName(id.email, id.name);
     return c.json({ email: id.email, role }, 200);
   });
 
@@ -101,10 +114,36 @@ export function opsRoutes(deps: OpsDeps) {
   // Identity + guards for everything below.
   r.use('*', opsIdentity(auth));
 
-  r.get('/whoami', requireCap('bookings:read'), (c) => {
+  // Backfill seam: sessions live for 7 days, so login alone would leave the picker showing
+  // email local parts for up to a week after this ships — for people who are signed in and
+  // working the whole time. whoami runs once per app boot and the cookie already carries the
+  // name, so the roster heals on the next page load instead. A write on a read path, which is
+  // a smell worth the honesty of the picker naming actual humans on day one.
+  r.get('/whoami', requireCap('bookings:read'), async (c) => {
     const identity = c.get('identity');
     const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
-    return c.json({ email: identity.email, role: identity.role, caps });
+    await rememberName(identity.email, identity.name);
+    return c.json({ email: identity.email, role: identity.role, caps, ...(identity.name ? { name: identity.name } : {}) });
+  });
+
+  // The assign picker's roster (spec 2026-07-16 §7). Staff emails, so it needs a session — but
+  // no special capability: anyone who can work a quote can hand it to a colleague. The list is
+  // filtered to users who can actually OPEN a quote, so we never offer an assignee whose
+  // notification link would dead-end (see assignableOpsUsers).
+  // displayName is computed here, not in the browser, so the picker and the queue's assignee
+  // chip cannot drift apart — they consume the same label. Role stays env-owned; the name is
+  // joined on from whatever we've captured at sign-in. A failed lookup costs the names, never
+  // the roster: staff must still be able to hand a quote over.
+  r.get('/users', requireCap('bookings:read'), async (c) => {
+    let names = new Map<string, string>();
+    try {
+      names = await deps.opsUserProfiles.namesByEmail();
+    } catch (err) {
+      console.error('ops profile name lookup failed; falling back to email local parts', err);
+    }
+    const users = assignableOpsUsers(auth.opsUsers)
+      .map((u) => ({ ...u, displayName: displayNameFor(names.get(u.email), u.email) }));
+    return c.json({ users });
   });
 
   r.get('/finance/summary', requireCap('margin:view'), (c) => c.json({ ok: true }));

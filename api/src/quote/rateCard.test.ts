@@ -8,7 +8,7 @@ describe('RATE_CARD', () => {
     expect(RATE_CARD.markupPct).toBe(15);
     expect(RATE_CARD.perKmCents).toMatchObject({ car: 40.25, van: 54.05, van9: 54.05, van14: 55.2, custom: 201.25 });
     expect(RATE_CARD.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
-    expect(RATE_CARD.chauffeur).toMatchObject({ dayRateCents: 3105, idleMinKm: { car: 100, van: 100, van9: 100, van14: 100, custom: 100 } });
+    expect(RATE_CARD.chauffeur).toMatchObject({ dayRateCents: 3105, idleMinKm: { car: 50, van: 100, van9: 100, van14: 100, custom: 100 } });
     expect(RATE_CARD.deposit).toEqual({ pct: 10, capCents: 5000 });
     expect(RATE_CARD.vehicle).toMatchObject({
       car: { maxPax: 3, maxBags: 3 },

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { quoteRouteText, requestLegs } from './quoteRouteText';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -6,12 +7,14 @@ export const QUOTE_STATUSES: readonly QuoteStatus[] =
   ['draft', 'pending_review', 'changes_requested', 'ready', 'sent', 'won', 'lost', 'expired'];
 const DECIDED: readonly QuoteStatus[] = ['won', 'lost', 'expired'];
 
-// Legal status moves in the maker-checker review lifecycle (structural legality only — the
-// route separately requires quote:approve for → ready / → changes_requested, so draft → ready
-// is a legal SELF-APPROVE that a non-approver still can't perform).
+// Legal status moves in the maker-checker review lifecycle. Approval (→ ready) is reachable
+// ONLY from pending_review: a quote must be Submitted for review before it can be approved, for
+// everyone — the founder-only "self-approve straight from a draft" shortcut was removed
+// (2026-07-19) so the lifecycle is respected end to end. The route additionally requires
+// quote:approve for → ready / → changes_requested (a non-approver still can't approve).
 const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
-  draft:             ['pending_review', 'ready'],
-  changes_requested: ['pending_review', 'ready', 'draft'],
+  draft:             ['pending_review'],
+  changes_requested: ['pending_review', 'draft'],
   pending_review:    ['ready', 'changes_requested', 'draft'],
   ready:             ['sent', 'draft'],
   sent:              ['draft'], // reopen-to-edit a sent quote (founder-gated in the route)
@@ -41,6 +44,20 @@ export interface NewQuote {
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
   notes?: string | null;
+  // Internal ops notes (spec 2026-07-22) — free-text, distinct from the send-back `notes`.
+  internalNotes?: string | null;
+  // Quote intent (spec 2026-07-17). What the customer ASKED for ('private'|'chauffeur'|'both'),
+  // vs `product` = what was priced. Optional here; the submit gate lives in the route.
+  requestedService?: string | null;
+  // Audit (spec 2026-07-16). The acting staff email. On save() both are stamped; on update()
+  // only updatedBy moves — createdBy is write-once, so a founder editing an ops person's quote
+  // never becomes its author.
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
+  // lands in their "Assigned to me". Reassignment still happens only via the patch/picker, and
+  // update() leaves assignment untouched — so this only takes effect on insert.
+  assignedTo?: string | null;
 }
 
 export interface SavedQuote {
@@ -63,6 +80,14 @@ export interface SavedQuote {
   rateLockedUntil: Date | null;
   convertedBookingId: string | null;
   notes: string | null;
+  internalNotes: string | null;
+  requestedService: string | null;
+  assignedTo: string | null;
+  assignedAt: Date | null;
+  createdBy: string | null;
+  updatedBy: string | null;
+  deletedAt: Date | null;
+  deletedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   sentAt: Date | null;
@@ -79,6 +104,12 @@ export interface QuoteSummary {
   customerContact: string | null;
   totalCents: number;
   currency: string;
+  // The queue's "Assigned to me" section filters on this, so it must survive the narrow
+  // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
+  assignedTo: string | null;
+  // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
+  // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
+  routeText: string | null;
   createdAt: Date;
 }
 
@@ -94,22 +125,78 @@ export interface QuotePatch {
   status?: QuoteStatus;
   lostReason?: string | null;
   notes?: string | null;
+  internalNotes?: string | null;
   // Rate-lock (spec 2026-07-11). The snapshot + expiry always move together, so they patch as a
   // unit: `undefined` = leave the lock untouched; an object = stamp it (ops freeze at approval);
   // `null` = clear it (reopen-to-edit → back to the live card). See api/src/quote/rateLock.ts.
   rateLock?: { rateCardJson: unknown; rateLockedUntil: Date | null } | null;
+  // Assignment (spec 2026-07-16). Tri-state, like rateLock: `undefined` = leave the assignment
+  // alone (so a status/notes patch never disturbs it — assignment is manual-only, never a
+  // side effect of a transition); a string = assign (route-validated against OPS_USERS first);
+  // `null` = unassign. assignedAt follows automatically.
+  assignedTo?: string | null;
+  updatedBy?: string | null;
+  // Back-link to the booking a won quote became. System-set only — POST /admin/quote/:id/book
+  // writes it; the ops PATCH route's zod schema deliberately does not accept it.
+  convertedBookingId?: string;
 }
+
+// Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
+// cost scales with the viewed window, not table age (owner perf requirement):
+//   - Funnel rows are scalars only — request_json/result_json are never pulled for the funnel.
+//   - Demand rows are the ONLY projection carrying request_json, bounded to created-in-range.
+// `channel` defaults to 'ops' (the internal quoting funnel); 'web'/'all' exist so later
+// customer-website analytics is a parameter, not a rework.
+export type AnalyticsChannel = 'ops' | 'web' | 'all';
+
+export interface FunnelQuoteRow {
+  id: string;
+  status: QuoteStatus;
+  product: string;
+  totalCents: number;
+  currency: string;
+  marginCents: number | null;
+  lostReason: string | null;
+  createdAt: Date;
+  sentAt: Date | null;
+  decidedAt: Date | null;
+}
+
+export interface DemandQuoteRow {
+  id: string;
+  status: QuoteStatus;
+  product: string;
+  vehicle: string | null;
+  requestedService: string | null;
+  totalCents: number;
+  currency: string;
+  createdAt: Date;
+  request: unknown;
+}
+
+// Statuses that are "live" right now — the pipeline/aging/in-review snapshots need this whole
+// set regardless of age, so listFunnelRows includes them outside the time window too.
+export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 'changes_requested', 'ready'];
 
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
+  // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
+  // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
+  listFunnelRows(since: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }>;
+  // Rows created in [from, to]. Ordered createdAt desc so a truncation keeps the most recent.
+  listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
   // Rewrite an existing quote's priced CONTENT in place (re-priced server-side on save).
   // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
   // duplicate. Returns null for an unknown id.
   update(id: string, q: NewQuote): Promise<SavedQuote | null>;
+  // Soft-delete: stamp deletedAt/deletedBy and hide the row from get()/list() while keeping it in
+  // the table. Idempotent-ish: returns null for an unknown or already-deleted id. Role/status
+  // gating lives in the route, not here — the repo only records the intent.
+  softDelete(id: string, deletedBy: string): Promise<SavedQuote | null>;
 }
 
 // Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
@@ -150,6 +237,8 @@ function toSummary(q: SavedQuote): QuoteSummary {
     customerContact: q.customerContact,
     totalCents: q.totalCents,
     currency: q.currency,
+    assignedTo: q.assignedTo,
+    routeText: quoteRouteText(requestLegs(q.request)),
     createdAt: q.createdAt,
   };
 }
@@ -187,6 +276,14 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       rateLockedUntil: q.rateLockedUntil ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
+      internalNotes: q.internalNotes ?? null,
+      requestedService: q.requestedService ?? null,
+      assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on save (spec 2026-07-22)
+      assignedAt: q.assignedTo ? now : null,
+      createdBy: q.createdBy ?? null,
+      updatedBy: q.updatedBy ?? null,
+      deletedAt: null,
+      deletedBy: null,
       createdAt: now,
       updatedAt: now,
       sentAt: null,
@@ -198,11 +295,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async get(id: string): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    return row ? { ...row } : null;
+    return row && !row.deletedAt ? { ...row } : null;
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
-    let rows = [...this.rows.values()];
+    let rows = [...this.rows.values()].filter((r) => !r.deletedAt);
     if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
     if (filter.status) rows = rows.filter((r) => r.status === filter.status);
     if (filter.product) rows = rows.filter((r) => r.product === filter.product);
@@ -216,6 +313,40 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return rows.map(toSummary);
   }
 
+  private analyticsBase(channel: AnalyticsChannel): SavedQuote[] {
+    return [...this.rows.values()].filter(
+      (r) => !r.deletedAt && (channel === 'all' || r.channel === channel),
+    );
+  }
+
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel)
+      .filter((r) =>
+        r.createdAt >= since ||
+        (r.sentAt && r.sentAt >= since) ||
+        (r.decidedAt && r.decidedAt >= since) ||
+        LIVE_STATUSES.includes(r.status))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
+      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
+      currency: r.currency, marginCents: r.marginCents, lostReason: r.lostReason,
+      createdAt: r.createdAt, sentAt: r.sentAt, decidedAt: r.decidedAt,
+    }));
+    return { rows, truncated: all.length > limit };
+  }
+
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+    const all = this.analyticsBase(channel)
+      .filter((r) => r.createdAt >= from && r.createdAt <= to)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
+      id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
+      requestedService: r.requestedService, totalCents: r.totalCents,
+      currency: r.currency, createdAt: r.createdAt, request: r.request,
+    }));
+    return { rows, truncated: all.length > limit };
+  }
+
   async patch(id: string, patch: QuotePatch): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
     if (!row) return null;
@@ -227,10 +358,17 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
+    if (patch.internalNotes !== undefined) row.internalNotes = patch.internalNotes;
     if (patch.rateLock !== undefined) {
       row.rateCardJson = patch.rateLock?.rateCardJson ?? null;
       row.rateLockedUntil = patch.rateLock?.rateLockedUntil ?? null;
     }
+    if (patch.assignedTo !== undefined) {
+      row.assignedTo = patch.assignedTo;
+      row.assignedAt = patch.assignedTo ? now : null;
+    }
+    if (patch.updatedBy !== undefined) row.updatedBy = patch.updatedBy;
+    if (patch.convertedBookingId !== undefined) row.convertedBookingId = patch.convertedBookingId;
     row.updatedAt = now;
     return { ...row };
   }
@@ -252,7 +390,22 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;
     row.notes = q.notes ?? null;
+    row.internalNotes = q.internalNotes ?? null;
+    row.requestedService = q.requestedService ?? null;
+    // createdBy is deliberately NOT touched here — a re-save by another staff member must not
+    // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
+    if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
     row.updatedAt = new Date();
+    return { ...row };
+  }
+
+  async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
+    const row = this.rows.get(id);
+    if (!row || row.deletedAt) return null; // unknown or already deleted
+    const now = new Date();
+    row.deletedAt = now;
+    row.deletedBy = deletedBy;
+    row.updatedAt = now;
     return { ...row };
   }
 }

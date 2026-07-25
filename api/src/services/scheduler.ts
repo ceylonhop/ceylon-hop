@@ -8,7 +8,9 @@ import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications'
 // review request once travel is this far in the past. The cron tick is idempotent via
 // the notification log, so cadence (hourly/daily) only affects timeliness, never dupes.
 const REMINDER_LEAD_MS = 48 * 3600 * 1000;
-const REVIEW_DELAY_MS = 3 * 3600 * 1000;
+// A full day after the trip ends — a few hours on we can't be sure the customer has
+// actually finished travelling, so we wait a day before asking "how was your trip?".
+const REVIEW_DELAY_MS = 24 * 3600 * 1000;
 
 // When the booking's trip STARTS and ENDS, as Dates. A single/shared booking is one leg
 // (start === end). A multi-stop trip starts at its first dated leg and ends at its last —

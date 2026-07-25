@@ -39,7 +39,7 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditUrl='';
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 function parsedKmList(v){
   return (v||'').split(',').map(s=>{
@@ -50,10 +50,15 @@ function parsedKmList(v){
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
-  if(!tripKms.some(km=>km!=null)) return baked;
+  // With gaps present we must walk the per-wire loop (which skips them) rather than trust
+  // baked.total, which prices every consecutive stop-pair including the gap.
+  if(!tripGaps.size && !tripKms.some(km=>km!=null)) return baked;
   const legs=[];
   let total=0, totalKm=0, hasEst=false;
   for(let i=0;i<Math.max(0,tripStops.length-1);i++){
+    // A gap wire is a stretch the traveller arranges themselves — carried through for display,
+    // but NEVER a priced leg (it must not enter the quote, the booking, or the total).
+    if(tripGaps.has(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], gap:true, km:null, price:0 }); continue; }
     const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:'',price:55,est:true};
     const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
     // A leg with no resolvable distance must still charge the baked estimate (never $0),
@@ -82,6 +87,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripNights=(params.get('nights')||'').split(',').map(n=>parseInt(n)||0);
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
+  tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
   vehicleLabel = vehicleKey==='van' ? 'AC van (up to 6)' : 'AC car (up to 3)';
@@ -491,18 +497,24 @@ if(isTrip){
   tr.style.display='block';
   const fmtLeg=(iso)=>{ if(!iso) return ''; const d=new Date(iso+'T00:00:00'); return isNaN(d)?'':d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}); };
   let html='<div class="tr-leg-list">';
+  let _legNo=0;
   tripLegs.forEach((leg,i)=>{
+    if(leg.gap){
+      html+=`<div class="tr-leg tr-gap"><div class="tr-leg-main"><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+        `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
+      return;
+    }
     const dt=fmtLeg(tripDates[i]);
     const drive=leg.km!=null ? `${leg.km} km · ${leg.duration}` : 'Distance on request';
     html+=`<div class="tr-leg">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${i+1}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted">${drive}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  const editUrl='plan.html?'+new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   const datesUrl=editUrl+'&step=dates';
@@ -1037,7 +1049,7 @@ function chauffeurDistanceCharge(){
   const T = window.TRANSFERS;
   const days = Math.max(1, tripDays);
   const idleDays = Math.max(0, days - Math.max(0, tripStops.length-1));
-  const idleKm = idleDays * 100; // flat 100 km/day idle minimum, all vehicles (mirrors rateCard.ts)
+  const idleKm = idleDays * (T.CHAUFFEUR_IDLE_MIN_KM[vehicleKey] ?? T.CHAUFFEUR_IDLE_MIN_KM.car); // per-vehicle idle-day min km (generated from rateCard.ts)
   const q = tripQuoteWithKms(vehicleKey);
   const bufferedTravelKm = (q.legs || []).reduce((sum, leg) => sum + (leg.km!=null ? T.billableKm(leg.km) : 0), 0);
   if(bufferedTravelKm<=0 && idleKm<=0) return Math.max(0, tripBase || unit || 0);
@@ -1078,7 +1090,7 @@ function calcTotal(){
   state.addons.forEach(a=>t+=addonPrices[a]);
   if(isShared) return t;
   const privateFloor = (isTrip && state.svc!=='chauffeur')
-    ? tripLegs.length * window.TRANSFERS.FLOORS[vehicleKey]
+    ? tripLegs.filter(l=>!l.gap).length * window.TRANSFERS.FLOORS[vehicleKey]
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
@@ -1233,9 +1245,14 @@ function render(){
   if(perVehicle){
     document.getElementById('sum-adlabel').textContent = (isTrip && state.svc==='chauffeur')
       ? `Chauffeur distance · ${vehicleKey==='van'?'AC van':'AC car'}`
-      : (isTrip ? (vehicleKey==='van'?'Private AC van · per leg':'Private AC car · per leg') : vehicleLabel);
-    // a priced chauffeur trip shows the bulk distance charge here (the day rate is its own row)
-    document.getElementById('sum-adamt').textContent=money((isTrip && state.svc==='chauffeur') ? chauffeurDistanceCharge() : unit);
+      : (isTrip ? (vehicleKey==='van'?'Private AC van · whole trip':'Private AC car · whole trip') : vehicleLabel);
+    // The base line absorbs the one finishing adjustment: it equals the finished Total minus every
+    // OTHER visible row — the extras, plus (on a chauffeur-guide trip) the day-rate row. So the rows
+    // on screen always sum exactly to Total, and no raw pre-finishing number is ever shown here.
+    let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
+    if (isTrip && state.svc==='chauffeur') otherRows += chauffeurFee();
+    const baseAmt = calcTotal() - otherRows;
+    document.getElementById('sum-adamt').textContent=money(baseAmt);
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travelers';
     document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
@@ -1505,6 +1522,7 @@ async function createApiBooking(){
     // don't need to reconstruct the chauffeur day-model here just to freeze the rates.
     const tripLegs = [];
     for(let i=0; i<tripStops.length-1; i++){
+      if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
       const tf = tripStops[i], tt = tripStops[i+1];
       const tkm = (window.TRANSFERS && window.TRANSFERS.kmBetween) ? (window.TRANSFERS.kmBetween(tf, tt) || 0) : 0;
       tripLegs.push({ from: tf, to: tt, distanceKm: tkm });

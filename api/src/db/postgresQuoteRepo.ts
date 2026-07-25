@@ -1,7 +1,8 @@
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
-import { genReference, parseDateFilter } from './quoteRepo';
+import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
+import { quoteRouteText } from './quoteRouteText';
 import type {
   QuoteRepo,
   NewQuote,
@@ -10,6 +11,9 @@ import type {
   QuoteListFilter,
   QuotePatch,
   QuoteStatus,
+  AnalyticsChannel,
+  FunnelQuoteRow,
+  DemandQuoteRow,
 } from './quoteRepo';
 
 type Row = typeof quotes.$inferSelect;
@@ -49,6 +53,14 @@ function toSaved(r: Row): SavedQuote {
     rateLockedUntil: r.rateLockedUntil,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
+    internalNotes: r.internalNotes,
+    requestedService: r.requestedService,
+    assignedTo: r.assignedTo,
+    assignedAt: r.assignedAt,
+    createdBy: r.createdBy,
+    updatedBy: r.updatedBy,
+    deletedAt: r.deletedAt,
+    deletedBy: r.deletedBy,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     sentAt: r.sentAt,
@@ -81,6 +93,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
             notes: q.notes ?? null,
+            internalNotes: q.internalNotes ?? null,
+            requestedService: q.requestedService ?? null,
+            createdBy: q.createdBy ?? null,
+            updatedBy: q.updatedBy ?? null,
+            assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on insert (2026-07-22)
+            assignedAt: q.assignedTo ? new Date() : null,
           })
           .returning();
         return toSaved(row);
@@ -93,12 +111,76 @@ export class PostgresQuoteRepo implements QuoteRepo {
   }
 
   async get(id: string): Promise<SavedQuote | null> {
-    const rows = await this.db.select().from(quotes).where(eq(quotes.id, id));
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
     return rows[0] ? toSaved(rows[0]) : null;
   }
 
+  // Shared channel arm for the analytics projections ('all' = no channel condition).
+  private channelCond(channel: AnalyticsChannel) {
+    return channel === 'all' ? [] : [eq(quotes.channel, channel)];
+  }
+
+  async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
+    // Window arm (any lifecycle stamp after `since`) OR live arm (open statuses, any age) —
+    // the live set is what the pipeline/aging snapshots aggregate and is inherently small.
+    // Scalars only: request_json/result_json are deliberately never selected here (perf).
+    const rows = await this.db
+      .select({
+        id: quotes.id, status: quotes.status, product: quotes.product,
+        totalCents: quotes.totalCents, currency: quotes.currency,
+        marginCents: quotes.marginCents, lostReason: quotes.lostReason,
+        createdAt: quotes.createdAt, sentAt: quotes.sentAt, decidedAt: quotes.decidedAt,
+      })
+      .from(quotes)
+      .where(and(
+        isNull(quotes.deletedAt),
+        ...this.channelCond(channel),
+        or(
+          gte(quotes.createdAt, since),
+          gte(quotes.sentAt, since),
+          gte(quotes.decidedAt, since),
+          inArray(quotes.status, [...LIVE_STATUSES]),
+        ),
+      ))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit + 1); // one extra row = cheap truncation probe
+    const truncated = rows.length > limit;
+    return {
+      rows: rows.slice(0, limit).map((r) => ({ ...r, status: r.status as QuoteStatus })),
+      truncated,
+    };
+  }
+
+  async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
+    // The ONLY analytics query that touches request_json — bounded to created-in-range.
+    const rows = await this.db
+      .select({
+        id: quotes.id, status: quotes.status, product: quotes.product,
+        vehicle: quotes.vehicle, requestedService: quotes.requestedService,
+        totalCents: quotes.totalCents, currency: quotes.currency,
+        createdAt: quotes.createdAt, request: quotes.requestJson,
+      })
+      .from(quotes)
+      .where(and(
+        isNull(quotes.deletedAt),
+        ...this.channelCond(channel),
+        gte(quotes.createdAt, from),
+        lte(quotes.createdAt, to),
+      ))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit + 1);
+    const truncated = rows.length > limit;
+    return {
+      rows: rows.slice(0, limit).map((r) => ({ ...r, status: r.status as QuoteStatus })),
+      truncated,
+    };
+  }
+
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
-    const conds = [];
+    const conds = [isNull(quotes.deletedAt)]; // soft-deleted quotes never appear in the queue
     if (filter.channel) conds.push(eq(quotes.channel, filter.channel));
     if (filter.status) conds.push(eq(quotes.status, filter.status));
     if (filter.product) conds.push(eq(quotes.product, filter.product));
@@ -115,7 +197,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
         customerContact: quotes.customerContact,
         totalCents: quotes.totalCents,
         currency: quotes.currency,
+        assignedTo: quotes.assignedTo,
         createdAt: quotes.createdAt,
+        // The legs sub-document only: enough to derive routeText without shipping request_json's
+        // other fields. Legs are most of that blob by size, so this is bounded by the row count,
+        // not by the projection — see the spec's cost note and D5's revisit trigger.
+        // COALESCE because /save writes `{ tool, engine }` while older rows (and repo-level
+        // callers) put legs at the top level. Mirrors requestLegs() — change one, change both.
+        legs: sql<unknown>`COALESCE(${quotes.requestJson}->'tool'->'legs', ${quotes.requestJson}->'legs')`,
       })
       .from(quotes)
       .where(conds.length ? and(...conds) : undefined)
@@ -130,7 +219,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
       customerContact: r.customerContact,
       totalCents: r.totalCents,
       currency: r.currency,
+      assignedTo: r.assignedTo,
       createdAt: r.createdAt,
+      routeText: quoteRouteText(r.legs),
     }));
   }
 
@@ -141,12 +232,20 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(patch.status ? { status: patch.status } : {}),
         ...(patch.lostReason !== undefined ? { lostReason: patch.lostReason } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        ...(patch.internalNotes !== undefined ? { internalNotes: patch.internalNotes } : {}),
         ...(patch.rateLock !== undefined
           ? {
               rateCardJson: (patch.rateLock?.rateCardJson ?? null) as object | null,
               rateLockedUntil: patch.rateLock?.rateLockedUntil ?? null,
             }
           : {}),
+        // Assignment moves as a unit with its stamp, so assignedAt can never disagree with
+        // assignedTo (an assignee with no date, or a date with nobody holding it).
+        ...(patch.assignedTo !== undefined
+          ? { assignedTo: patch.assignedTo, assignedAt: patch.assignedTo ? new Date() : null }
+          : {}),
+        ...(patch.updatedBy !== undefined ? { updatedBy: patch.updatedBy } : {}),
+        ...(patch.convertedBookingId !== undefined ? { convertedBookingId: patch.convertedBookingId } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
@@ -166,7 +265,8 @@ export class PostgresQuoteRepo implements QuoteRepo {
   }
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
-    // Content only — status/reference/createdAt and the sent/decided stamps are left as-is.
+    // Content only — status/reference/createdAt, the sent/decided stamps, createdBy and the
+    // assignment are all left as-is. (createdBy is write-once; assignment moves only via patch.)
     const [row] = await this.db
       .update(quotes)
       .set({
@@ -183,9 +283,24 @@ export class PostgresQuoteRepo implements QuoteRepo {
         rateCardJson: (q.rateCardJson ?? null) as object | null,
         rateLockedUntil: q.rateLockedUntil ?? null,
         notes: q.notes ?? null,
+        internalNotes: q.internalNotes ?? null,
+        requestedService: q.requestedService ?? null,
+        ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })
       .where(eq(quotes.id, id))
+      .returning();
+    return row ? toSaved(row) : null;
+  }
+
+  async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
+    // Only stamp a row that isn't already deleted, so a double-delete returns null rather than
+    // silently re-stamping (and moving deletedBy/updatedAt).
+    const now = new Date();
+    const [row] = await this.db
+      .update(quotes)
+      .set({ deletedAt: now, deletedBy, updatedAt: now })
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
     return row ? toSaved(row) : null;
   }

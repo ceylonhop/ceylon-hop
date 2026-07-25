@@ -64,7 +64,7 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(4550);
   });
 
-  it('chauffeur → amountDueNow is the full total for now (Emma $789.42)', () => {
+  it('chauffeur → amountDueNow is the full total for now (Emma $708.92)', () => {
     const r = quote({
       product: 'chauffeur', vehicle: 'car', firstDate: '2026-02-14', lastDate: '2026-02-22',
       travelDays: [
@@ -75,12 +75,12 @@ describe('quote()', () => {
         { date: '2026-02-22', from: 'Bentota', to: 'Airport', distanceKm: 110 },
       ],
     });
-    expect(r.subtotalCents).toBe(78942);
-    expect(r.totalCents).toBe(78900);
-    expect(r.amountDueNowCents).toBe(78900);
-    // day 9×$31.05=27945 + distance: per-leg buffered travel is 132+215+154+245+121=867, plus 4 idle × 100 min = 1267 → 1267×40.25¢=50997
-    // costCents: 9×2700 day-cost + Math.round(1267 × 35¢/km) = 24300 + 44345 = 68645 → margin = 78942 − 68645 = 10297
-    expect(r.marginEstimateCents).toBe(10255);
+    expect(r.subtotalCents).toBe(70892);
+    expect(r.totalCents).toBe(69900);
+    expect(r.amountDueNowCents).toBe(69900);
+    // day 9×$31.05=27945 + distance: per-leg buffered travel is 132+215+154+245+121=867, plus 4 idle × 50 min (car) = 1067 → 1067×40.25¢=42947
+    // costCents: 9×2700 day-cost + Math.round(1067 × 35¢/km) = 24300 + 37345 = 61645 → margin = 69900 − 61645 = 8255
+    expect(r.marginEstimateCents).toBe(8255);
   });
 
   it('chauffeur: sightseeing + waiting are included in day rate → total unchanged, warnings note both', () => {
@@ -275,6 +275,60 @@ describe('quote()', () => {
       expect(r.subtotalCents).toBe(154 * 90);
       expect(r.totalCents).toBe(13850);
       expect(r.warnings.some((w) => w.includes('vehicle set to van14'))).toBe(true);
+    });
+  });
+
+  // ── Multi-stop rides (phase 1): the engine accepts Ride-shaped legs/days alongside the
+  // old point-to-point shape, normalizing once at entry. Floors + protected minimum are
+  // counted PER RIDE (a 3-stop ride is ONE ride, not two legs). ──────────────────────────
+  describe('multi-stop rides', () => {
+    it('private: a 3-stop ride is buffered ONCE as a single ride (not per segment)', () => {
+      const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ stops: ['Kandy', 'Dambulla', 'Habarana'], segmentKms: [72, 23] }] });
+      // raw 95km buffered once → +10 → billable 105; round(105 × 40.25¢) = 4226 (one leg line, above floor).
+      // (The old 2-leg spelling of the same day buffers each leg → 79+28 = 107 billable, 6080¢ — see goldens.)
+      expect(r.subtotalCents).toBe(4226);
+      expect(r.lineItems[0].label).toBe('Kandy → Dambulla → Habarana (car)');
+      expect(r.marginEstimateCents).toBe(r.totalCents - Math.round(105 * 35)); // cost per RIDE, single buffer
+    });
+
+    it('private: mixing an old-shape leg and a 3-stop ride — floors + protected minimum counted per ride (2)', () => {
+      // Two rides that both price to the van floor. subtotal = 2 × 5000. The charm candidate
+      // (9900, a 1% cut within the 2.5% cap) is blocked ONLY by protectedMinimum = 2 rides × 5000.
+      // If the engine miscounted rides (e.g. 1), the finish would slip to 9900.
+      const r = quote({ product: 'private', vehicle: 'van', pax: 4, bags: 4, legs: [
+        { from: 'A', to: 'B', distanceKm: 10 },                        // old-shape ride → floor 5000
+        { stops: ['C', 'D', 'E'], segmentKms: [5, 5] },               // 3-stop ride, raw 10 → floor 5000
+      ] });
+      expect(r.subtotalCents).toBe(10000);
+      expect(r.totalCents).toBe(10000); // protected minimum (2 × 5000) forbids the downward finish
+    });
+
+    it('private: an invalid ride (segment count mismatch) surfaces INVALID_RIDE from quote()', () => {
+      expect(() => quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ stops: ['A', 'B', 'C'], segmentKms: [10] }] })).toThrow('INVALID_RIDE');
+    });
+
+    it('chauffeur: an invalid MULTI-STOP ride day (repeated consecutive stop) surfaces INVALID_RIDE', () => {
+      expect(() => quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-08-01', lastDate: '2026-08-01',
+        travelDays: [{ date: '2026-08-01', stops: ['A', 'A', 'B'], segmentKms: [10, 10] }] })).toThrow('INVALID_RIDE');
+    });
+
+    it('back-compat (GC-5): a 2-stop leg whose from == to still PRICES, never INVALID_RIDE', () => {
+      // The pre-ride-model engine never compared from/to; a same-place leg with a manual
+      // round-trip km priced fine. A stored quote like this must reopen + reprice, not 422.
+      const r = quote({ product: 'private', vehicle: 'car', pax: 2, bags: 2,
+        legs: [{ from: 'Ella', to: 'Ella', distanceKm: 80 }] });
+      // raw 80 + 8 buffer = 88 billable × 40.25¢ = 3542, above the car floor.
+      expect(r.subtotalCents).toBe(3542);
+      expect(r.lineItems[0].label).toBe('Ella → Ella (car)');
+    });
+
+    it('chauffeur: a multi-stop ride day prices off its summed segments (single travel buffer)', () => {
+      const r = quote({ product: 'chauffeur', vehicle: 'car', firstDate: '2026-08-01', lastDate: '2026-08-01',
+        travelDays: [{ date: '2026-08-01', stops: ['A', 'B', 'C'], segmentKms: [100, 50] }] });
+      // 1 day × $31.05 + billable 165km (raw 150 + 15 max buffer) × 40.25¢ = 3105 + 6641
+      expect(r.subtotalCents).toBe(3105 + 6641);
     });
   });
 

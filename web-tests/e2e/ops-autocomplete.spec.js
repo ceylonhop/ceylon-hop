@@ -55,11 +55,12 @@ test('ops quote autocomplete stays closed after picking a place', async ({ page 
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   // The itinerary is gated until the trip basics are filled — set vehicle + name + contact.
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Test');
+  await page.fill('#f-firstName', 'Test');
+  await page.fill('#f-lastName', 'Customer');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 
-  const fromInput = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await expect(fromInput).toBeVisible({ timeout: 10000 });
 
   await fromInput.click();
@@ -75,4 +76,55 @@ test('ops quote autocomplete stays closed after picking a place', async ({ page 
   // which refocuses this field). Before the fix it reopened once per re-render.
   await page.waitForTimeout(900);
   await expect(page.locator('.ch-ac-menu')).toHaveCount(0);
+});
+
+// Regression for: "when I attempt to scroll the autocomplete results the whole site
+// scrolls and the autocomplete results go away." The menu is its own scroll box
+// (max-height + overflow-y), but the global close-on-wheel listener fired for wheel
+// events INSIDE the menu too, so the first wheel tick dismissed it.
+test('wheeling inside the autocomplete scrolls the list; outside still dismisses it', async ({ page }) => {
+  await stubOps(page);
+  // Enough results to fill the menu. Since the one-line-per-item polish the rendered menu
+  // (capped at 6 items, no wrapping) never outgrows its 264px max-height on its own, so the
+  // test shrinks the max-height below (style tag) to force the scrollable state the wheel
+  // guard exists for.
+  const many = Array.from({ length: 12 }, (_, i) => `Kandy Result ${i + 1}`);
+  await page.route('**/admin/quote/places**', (r) => r.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ places: many, suggestions: many.map((label) => ({ label, source: 'known' })) }),
+  }));
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  // Force the scrollable state (see fixture comment above).
+  await page.addStyleTag({ content: '.qv .ch-ac-menu{max-height:120px!important}' });
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-firstName', 'Test');
+  await page.fill('#f-lastName', 'Customer');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+
+  const fromInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  await expect(fromInput).toBeVisible({ timeout: 10000 });
+  await fromInput.click();
+  await page.keyboard.type('Kand', { delay: 40 });
+  const menu = page.locator('.ch-ac-menu').first();
+  await expect(menu).toBeVisible({ timeout: 5000 });
+  // Let the menu settle: the async Google merge re-renders it (fresh element, scrollTop 0),
+  // so wheel only after the loading row is gone or the wheel hits a soon-replaced element.
+  await expect(page.locator('.ch-ac-item.loading')).toHaveCount(0, { timeout: 5000 });
+  await page.waitForTimeout(300);
+
+  // Wheel over the menu: the list scrolls, the menu stays open, the page does not move.
+  await menu.hover();
+  const pageScrollBefore = await page.evaluate(() => document.getElementById('quoteRoot').scrollTop);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(200);
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.getElementById('quoteRoot').scrollTop)).toBe(pageScrollBefore);
+
+  // Wheel away from the menu: the existing dismiss-on-scroll behaviour is preserved.
+  await page.locator('#f-firstName').hover();
+  await page.mouse.wheel(0, 120);
+  await expect(page.locator('.ch-ac-menu')).toHaveCount(0, { timeout: 2000 });
 });

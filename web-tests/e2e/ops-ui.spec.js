@@ -43,8 +43,27 @@ async function login(page, email) {
   await expect(page.locator('#approot')).toBeVisible({ timeout: 10000 });
 }
 
-test('founder login renders the Bookings queue', async ({ page }) => {
+// Logout helper: the rail auto-hides (34c52ea) — after ~4s idle, or immediately once you
+// click into the main content — and a collapsed rail display:none's the logout button
+// (`.rail-collapsed .rail-foot .logout`). Clicking anywhere on a COLLAPSED rail expands it
+// (the shell intercepts that click in the capture phase and swallows it), so do that first,
+// exactly as a user does, instead of racing the idle timer against a hidden control.
+async function logout(page) {
+  const logoutBtn = page.locator('#logoutbtn');
+  if (!(await logoutBtn.isVisible())) {
+    await page.locator('.rail').click();
+    await expect(logoutBtn).toBeVisible();
+  }
+  await logoutBtn.click();
+  await expect(page.locator('#login')).toHaveClass(/show/);
+}
+
+// Landing changed 2026-07-23 (owner request): anyone with quote:manage starts on the
+// Quotes queue — that's the working home — and Bookings is one nav click away.
+test('founder login lands on the Quotes queue; Bookings renders on nav click', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await expect(page.locator('#view .qhead h1')).toHaveText('Quotes', { timeout: 10000 });
+  await page.locator('#nav button[data-route="tickets"]').click();
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 });
 
@@ -54,14 +73,12 @@ test('Quotes queue nav is visible to founder, finance, and ops (D-A: quote:manag
   // Merged surface: the separate "Generate Quote" (data-route="quote") nav tab is gone.
   await expect(page.locator('#nav button[data-route="quote"]')).toHaveCount(0);
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await login(page, FINANCE_EMAIL);
   await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await login(page, OPS_EMAIL);
   await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
@@ -74,15 +91,10 @@ test('quote builder lazy-mounts: /admin/quote/rate-card is not requested until t
   });
 
   await login(page, FOUNDER_EMAIL);
-  await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
-  // Give any errant eager fetch a moment to fire before we assert its absence.
-  await page.waitForTimeout(500);
-  expect(rateCardRequests).toHaveLength(0);
-
-  // Opening the queue must NOT mount the builder (no rate-card fetch yet).
-  await page.locator('#nav button[data-route="quotes"]').click();
+  // Login now lands straight on the Quotes queue — which must NOT mount the builder
+  // (no rate-card fetch yet). Give any errant eager fetch a moment to fire first.
   await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
   expect(rateCardRequests).toHaveLength(0);
 
   // Starting a new quote mounts the builder → rate-card is fetched.
@@ -108,6 +120,7 @@ test('finance session reaches /admin/quote/rate-card (quote:manage, not founder-
 
 test('ops ink colour does not leak from the quote view CSS on the Bookings screen', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await page.locator('#nav button[data-route="tickets"]').click();
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
   // Wait for at least one ticket row (.tk) to render, or fall back to the pagehead if the
   // dev DB has no bookings — either way something in #view carries the ops --ink color.
@@ -129,8 +142,7 @@ test('deep-link /ops#quote lands founder and finance on Quote', async ({ page })
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('#quoteRoot')).not.toHaveAttribute('hidden', '');
 
-  await page.locator('#logoutbtn').click();
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await page.goto(`${OPS}#quote`);
   await page.waitForLoadState('networkidle');
@@ -152,8 +164,7 @@ test('logout returns the login overlay and empties/hides #quoteRoot with no befo
   let dialogFired = false;
   page.on('dialog', (d) => { dialogFired = true; d.dismiss(); });
 
-  await page.locator('#logoutbtn').click();
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
   // QuoteView.teardown() empties .ch-app's innerHTML but leaves the wrapper div itself in
   // #quoteRoot (showQuoteView() only (re)creates it when absent) — so assert it's emptied,
   // not removed, and that #approot (which contains #quoteRoot) is hidden behind the login.
@@ -162,8 +173,11 @@ test('logout returns the login overlay and empties/hides #quoteRoot with no befo
   expect(dialogFired).toBe(false);
 });
 
-test('Bookings → Quotes → Bookings round-trip shows a single toast, no duplicates', async ({ page }) => {
+test('Quotes → Bookings → Quotes round-trip shows a single toast, no duplicates', async ({ page }) => {
   await login(page, FOUNDER_EMAIL);
+  await expect(page.locator('#view .qhead')).toBeVisible({ timeout: 10000 });
+
+  await page.locator('#nav button[data-route="tickets"]').click();
   await expect(page.locator('#view h1')).toHaveText('Bookings', { timeout: BOOKINGS_TIMEOUT });
 
   await page.locator('#nav button[data-route="quotes"]').click();
@@ -189,8 +203,7 @@ test('the Quotes queue is gated on quote:manage — visible to founder, finance,
   for (const email of [FOUNDER_EMAIL, FINANCE_EMAIL, OPS_EMAIL]) {
     await login(page, email);
     await expect(page.locator('#nav button[data-route="quotes"]')).toBeVisible();
-    await page.locator('#logoutbtn').click();
-    await expect(page.locator('#login')).toHaveClass(/show/);
+    await logout(page);
   }
 });
 
@@ -244,8 +257,7 @@ test('a shareable quote URL opens that quote for another authenticated quote man
   await expect(page.locator('#quoteRoot .ch-app')).toBeVisible({ timeout: 10000 });
   const sharedUrl = page.url();
 
-  await page.evaluate(() => document.getElementById('logoutbtn').click());
-  await expect(page.locator('#login')).toHaveClass(/show/);
+  await logout(page);
 
   await page.goto(sharedUrl);
   await page.waitForLoadState('networkidle');

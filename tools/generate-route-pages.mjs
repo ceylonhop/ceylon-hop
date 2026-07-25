@@ -44,7 +44,7 @@ function faqItems(from, to, q, shared) {
     [`How long does the ${from} to ${to} transfer take?`,
       `The drive is about ${q.duration} on ${q.km} km of road. Your driver takes the fastest safe route and can add stops along the way.`],
     [`How much is a taxi from ${from} to ${to}?`,
-      `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from ${shared.seat} per person.` : ''}`],
+      `A private car is from $${price(q.car)} and an air-conditioned van (up to 6 people) from $${price(q.van)}, fixed and door to door — the price you see is the price you pay.${shared ? ` A shared seat is from $${shared.seat} per person.` : ''}`],
     shared
       ? [`Is there a cheaper shared option?`, `Yes — this route runs on our ${shared.corridorLabel.replace(/\s*→\s*/g, '–')} shared service (${shared.freqText}). A single seat is from $${shared.seat}, ideal for solo travellers and couples happy to share.`]
       : [`Is there a shared option on this route?`, `This corridor is private-only, so you get the whole vehicle to yourself. If you'd like a shared seat, message us and we'll suggest the nearest shared service.`],
@@ -98,7 +98,7 @@ function routePage(T, content, from, to, forward) {
   // promise a shared seat in the SERP; also keeps titles shorter. The shared option
   // lives in the body/description where it can be stated accurately per route.
   const title = `${fromName} to ${toName} — private transfer | Ceylon Hop`;
-  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a seat from ${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
+  const desc = `Private car or AC van from ${fromName} to ${toName} at a fixed price — ${q.km} km, about ${q.duration}, door to door.${shared ? ` Or share a seat from $${shared.seat}.` : ' Rated 5.0 on Tripadvisor.'}`;
   const faq = faqItems(fromName, toName, q, shared);
 
   const highlightLis = highlights.map(h => `<li>${esc(h)}</li>`).join('');

@@ -5,14 +5,21 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
-import type { QuoteRequest, QuoteResult } from '../quote/types';
+import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types';
 import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { can } from '../lib/opsAuth';
+import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
+import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import type { EmailAdapter } from '../adapters/email';
+import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
+import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
+import { TripInput } from '../domain/trip';
+import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -37,17 +44,67 @@ const ToolLegSchema = z.object({
   from: z.string(),
   to: z.string(),
   distanceKm: z.number().min(0).optional(),
+  // Multi-stop rides (phase 2): a leg may carry an ordered stop chain (2–8) instead of a single
+  // from→to. `from`/`to` stay required (= first/last stop; the UI keeps sending them). segmentKms,
+  // when present, is one entry per segment (stops.length−1); a null/≤0 entry is auto-resolved by
+  // resolveAndPrice. Absent stops = the old point-to-point path, byte-for-byte unchanged.
+  stops: z.array(z.string()).min(2, 'a ride needs at least 2 stops').max(8, 'a ride can have at most 8 stops').optional(),
+  segmentKms: z.array(z.number().min(0).nullable()).optional(),
   addSightseeingFee: z.boolean().optional(),
   addWaitingFee: z.boolean().optional(),
   addSafariWait: z.boolean().optional(),
+  // Route-choice (2026-07-20): which road the operator picked + what was offered when they
+  // compared. Passthrough only — distanceKm stays the sole pricing input; both fields ride
+  // into the saved quote's request_json verbatim (Phase-2 conversion data).
+  routeVariant: z.enum(['fastest', 'no_tolls']).optional(),
+  routeOptions: z
+    .object({
+      fastest: z.object({ km: z.number(), durationMin: z.number() }),
+      noTolls: z.object({ km: z.number(), durationMin: z.number() }),
+    })
+    .optional(),
+}).superRefine((leg, ctx) => {
+  // Cross-field rules for a multi-stop leg (GC-9). Human-readable messages: this route 400s
+  // with the FIRST issue's message. Only fire when `stops` is present (the old path has none).
+  if (!leg.stops) return;
+  if ((leg.category || 'transfer') === 'stay_day') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stay day can\'t have stops', path: ['stops'] });
+  }
+  if (leg.segmentKms && leg.segmentKms.length !== leg.stops.length - 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `segmentKms needs one entry per segment (${leg.stops.length - 1})`,
+      path: ['segmentKms'],
+    });
+  }
+  for (let i = 0; i < leg.stops.length - 1; i++) {
+    if (leg.stops[i].trim() === leg.stops[i + 1].trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'a stop can\'t be the same as the one before it', path: ['stops', i] });
+      break;
+    }
+  }
 });
 const ToolRequestSchema = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  // Legacy ops-tool payloads used a single name. Keep accepting it so old clients/tests
+  // and saved request.tool snapshots remain reopenable.
   name: z.string().optional(),
   contact: z.string().optional(),
   notes: z.string().optional(),
+  // Internal ops notes (spec 2026-07-22) — free-text scratchpad, persisted to quotes.internal_notes.
+  internalNotes: z.string().optional(),
   // Explicit service chooser (reflow). When present it overrides leg-derived product;
   // when absent, toEngineRequest keeps the derive-from-legs back-compat fallback.
   service: z.enum(['private', 'chauffeur']).optional(),
+  // Quote intent (spec 2026-07-17). What the customer ASKED for, vs `service` = what we price.
+  // Deliberately NOT defaulted from `service` (I4): a pre-filled value gets accepted unread,
+  // which is the exact failure this field exists to prevent. No 'legacy' member — there is no
+  // exemption (I7), so a client cannot mint one.
+  // .nullable(): the builder always SENDS this key and it is null for a fresh draft; .optional()
+  // alone rejects an explicit null → /save 400s. A null request is intended here (the status-change
+  // gate below requires it, /save does not); the repo folds null/undefined alike via `?? null`.
+  requestedService: z.enum(['private', 'chauffeur', 'both']).nullable().optional(),
   vehicle: z.enum(['car', 'van_6', 'van_9', 'van_14', 'custom']),
   passengerCount: z.number().int().min(1),
   luggageCount: z.number().int().min(0),
@@ -58,6 +115,25 @@ const ToolRequestSchema = z.object({
 });
 type ToolLeg = z.infer<typeof ToolLegSchema>;
 type ToolRequest = z.infer<typeof ToolRequestSchema>;
+
+// The fields the "Mark booked" modal supplies that the quote itself doesn't carry.
+// CustomerInput enforces the full contactable set (email/whatsapp/country required).
+const BookingDetailsSchema = z.object({
+  customer: CustomerInput,
+  vehicleType: z.enum(['car', 'van']),
+  pax: z.number().int().min(1),
+  bags: z.number().int().min(0),
+  date: z.string().optional(),
+  time: z.string().optional(),
+});
+
+function customerNameFor(body: ToolRequest): string | null {
+  const splitName = [body.firstName, body.lastName]
+    .map((s) => (s || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  return splitName || (body.name || '').trim() || null;
+}
 
 // Thrown by resolveAndPrice so the route can map it to the right HTTP status.
 class PriceError extends Error {
@@ -82,19 +158,24 @@ async function resolveAndPrice(
   body: ToolRequest,
   maps: MapsAdapter,
   serviceOverride?: 'private' | 'chauffeur',
+  rateCard: RateCard = RATE_CARD,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
     throw new PriceError('add at least one travel leg (a stay day alone has no transfer)', 400);
   }
   for (const l of driving) {
-    if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+    if (l.stops) {
+      // Multi-stop leg: resolve each null/≤0 segment; mirror distanceKm = segment sum.
+      await resolveRideSegments(l, maps);
+    } else if (!l.distanceKm || Number(l.distanceKm) <= 0) {
+      // Old point-to-point path — untouched.
       l.distanceKm = await resolveLegKm(l, maps);
     }
   }
   try {
     const req = toEngineRequest(body, serviceOverride);
-    return { req, result: quote(req) };
+    return { req, result: quote(req, rateCard) };
   } catch (e) {
     if (e instanceof PriceError) throw e;
     throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
@@ -111,6 +192,29 @@ async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
   return Math.round(d.km);
 }
 
+// Resolve a multi-stop leg's segment distances in place (one maps.distance per null/≤0 segment,
+// sequential — mirrors resolveLegKm's per-PAIR error message, naming the failing stop pair).
+// A missing segmentKms array is treated as all-null. Mutates the leg: segmentKms → resolved
+// numbers, and distanceKm → the segment sum (legacy mirror, updated even when all were manual).
+async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void> {
+  const stops = l.stops as string[];
+  const segs: (number | null)[] = l.segmentKms ? [...l.segmentKms] : new Array<null>(stops.length - 1).fill(null);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const km = segs[i];
+    if (km == null || km <= 0) {
+      const from = stops[i];
+      const to = stops[i + 1];
+      const d = await maps.distance(from, to);
+      if (!d) {
+        throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
+      }
+      segs[i] = Math.round(d.km);
+    }
+  }
+  l.segmentKms = segs as number[];
+  l.distanceKm = (segs as number[]).reduce((sum, k) => sum + k, 0);
+}
+
 const fxRate = RATE_CARD.fxUsdToLkr;
 const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
@@ -122,6 +226,21 @@ function drives(l: ToolLeg): boolean {
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
+// Map one driving tool leg to its engine shape. A leg WITH stops → a Ride (segmentKms are
+// guaranteed all-numbers post-resolve — narrowed here with a runtime guard, never a blind cast);
+// WITHOUT stops → the old { from, to, distanceKm } exactly as before.
+function toEngineLeg(l: ToolLeg): PrivateLeg | Ride {
+  if (l.stops) {
+    const segmentKms = (l.segmentKms ?? []).map((k) => {
+      // resolveRideSegments runs first and fills every entry; a null here means it was skipped.
+      if (typeof k !== 'number') throw new PriceError('a ride segment distance is missing — enter the km manually', 422);
+      return k;
+    });
+    return { stops: l.stops, segmentKms };
+  }
+  return { from: l.from, to: l.to, distanceKm: Number(l.distanceKm) };
+}
+
 function collectExtras(legs: ToolLeg[]): ExtraCode[] {
   const out: ExtraCode[] = [];
   for (const l of legs) {
@@ -166,13 +285,14 @@ function toEngineRequest(req: ToolRequest, serviceOverride?: 'private' | 'chauff
     return {
       product: 'chauffeur', vehicle, firstDate: sorted[0], lastDate: sorted[sorted.length - 1],
       pax: req.passengerCount, bags: req.luggageCount, // let the engine upgrade an undersized vehicle
-      travelDays: driving.map((l) => ({ date: l.date as string, from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })),
+      // With stops → { date, stops, segmentKms }; without → the old flat { date, from, to, distanceKm }.
+      travelDays: driving.map((l) => ({ date: l.date as string, ...toEngineLeg(l) })),
       extras, customPerKmCents,
     };
   }
   return {
     product: 'private', vehicle, pax: req.passengerCount, bags: req.luggageCount,
-    legs: driving.map((l) => ({ from: l.from, to: l.to, distanceKm: Number(l.distanceKm) })), extras, customPerKmCents,
+    legs: driving.map(toEngineLeg), extras, customPerKmCents,
   };
 }
 
@@ -190,6 +310,17 @@ function summary(result: QuoteResult): ServiceSummary {
 
 // D-A / spec §3.1: margin is stripped from the wire response unless the caller has
 // margin:view (founder only) — finance/ops price customers without ever seeing cost.
+// Hot zones (D9): the founder-only "Ella premium +15%" annotation rides in a line item's
+// meta.hotZone. It's a margin-class disclosure — WHY a price is elevated — so it must be stripped
+// for any role without margin:view, exactly like marginCents. Returns meta with hotZone removed
+// (undefined when there was no other meta), leaving every other meta field intact.
+function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!meta || !('hotZone' in meta)) return meta;
+  const rest = { ...meta };
+  delete rest.hotZone;
+  return Object.keys(rest).length ? rest : undefined;
+}
+
 function shape(result: QuoteResult, canMargin: boolean) {
   const base = {
     product: result.product,
@@ -198,7 +329,8 @@ function shape(result: QuoteResult, canMargin: boolean) {
     amountDueNow: money(result.amountDueNowCents),
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: li.meta })),
+    // The founder-only zone annotation is stripped for non-margin:view roles (D9).
+    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   if (!canMargin) return base;
   return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
@@ -220,6 +352,13 @@ function stripQuoteMargin<T extends { marginCents: unknown; result?: unknown }>(
   if (rest.result && typeof rest.result === 'object') {
     const safeResult: Record<string, unknown> = { ...(rest.result as Record<string, unknown>) };
     delete safeResult.marginEstimateCents;
+    // The founder-only hot-zone annotation (D9) is persisted inside result.lineItems[].meta.hotZone.
+    // Strip it per line item for non-margin roles — same margin-class disclosure as marginEstimateCents.
+    if (Array.isArray(safeResult.lineItems)) {
+      safeResult.lineItems = (safeResult.lineItems as { meta?: Record<string, unknown> }[]).map((li) =>
+        li && li.meta && 'hotZone' in li.meta ? { ...li, meta: stripZoneMeta(li.meta) } : li,
+      );
+    }
     rest.result = safeResult;
   }
   return rest as Omit<T, 'marginCents' | 'rateCardJson'>;
@@ -252,7 +391,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { services?: ServiceChooserData }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -266,16 +405,22 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
     );
     const result = quote(engineReq, rateCard);
     const base = shape(result, canMargin);
+    // Legacy/minimal row without a usable tool payload → base total only (no per-leg / services).
     if (!toolReq || !toolReq.vehicle || !Array.isArray(toolReq.legs) || typeof toolReq.passengerCount !== 'number' || typeof toolReq.luggageCount !== 'number') {
       return base;
     }
+    // Match the live /estimate shape so a ready/sent quote renders its per-leg prices AND the
+    // point-to-point vs chauffeur comparison — all priced against the LOCKED card (frozen numbers).
     const selected: 'private' | 'chauffeur' = engineReq.product === 'chauffeur' ? 'chauffeur' : 'private';
-    return { ...base, services: serviceChooserData(toolReq, rateCard, selected, result) };
+    return {
+      ...base,
+      breakdown: quoteBreakdown(engineReq, rateCard),
+      services: serviceChooserData(toolReq, rateCard, selected, result),
+    };
   } catch {
     return null;
   }
 }
-
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
 
 function normPlace(s: string): string {
@@ -303,10 +448,24 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
+  // Optional: with no repo injected the router uses an empty in-memory one ⇒ zero active zones ⇒
+  // pricing identical to pre-hot-zones. Prod injects the Postgres repo (server.ts → app.ts).
+  zones?: ZonesRepo;
+  bookings: BookingRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
+  // Assignment notification (spec 2026-07-16 §6). Optional: with no adapter, assignment still
+  // works — it just goes unannounced, exactly as it did before this feature existed.
+  email?: EmailAdapter;
+  opsBaseUrl?: string; // origin serving /ops, for the email's deep link (config.OPS_BASE_URL)
 }) {
   const r = new Hono();
+
+  // The live rate card composed with the currently-active hot zones (spec D5). Built per request so
+  // a zone edit is reflected on the next quote; frozen into the snapshot at approval (C2). Zero
+  // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
@@ -350,9 +509,21 @@ export function internalQuoteRoutes(deps: {
   });
 
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
+  // With compare:true (the ops "Compare routes" button) the response also carries the
+  // expressway-vs-local-road variants when a materially different toll-free route exists;
+  // top-level km/durationMin stay = fastest so the auto-resolve path's shape is unchanged.
   r.post('/distance', csrf, async (c) => {
-    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string } | null;
+    const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string; compare?: boolean } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
+    if (b.compare) {
+      const v = await deps.maps.distanceVariants(b.from, b.to);
+      if (!v) return c.json({ error: 'unknown route' }, 404);
+      return c.json({
+        ...v.fastest,
+        hasChoice: v.hasChoice,
+        ...(v.hasChoice && v.noTolls ? { variants: { fastest: v.fastest, noTolls: v.noTolls } } : {}),
+      });
+    }
     const d = await deps.maps.distance(b.from, b.to);
     return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
   });
@@ -362,18 +533,22 @@ export function internalQuoteRoutes(deps: {
     try {
       const body = parseToolRequest(raw);
       const canMargin = can(c.get('identity').role, 'margin:view');
+      // Compose the live rate card with the active hot zones once, and price every pass against it
+      // so the total, per-leg breakdown, and the service chooser all agree (a zone boost reaches
+      // ops quotes here; the website is a separate release — see the hot-zones spec §8).
+      const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
       // reuse the selected result for its side; price only the OTHER service additionally.
-      const services = serviceChooserData(body, RATE_CARD, selected, result);
+      const services = serviceChooserData(body, card, selected, result);
 
       return c.json({
         ...shape(result, canMargin),
         fxUsdToLkr: fxRate,
-        breakdown: quoteBreakdown(req),
+        breakdown: quoteBreakdown(req, card),
         services,
       });
     } catch (e) {
@@ -389,22 +564,26 @@ export function internalQuoteRoutes(deps: {
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
-    // Maker-checker: a content re-save is only allowed while the quote is still editable. A
-    // ready/sent/decided quote must be reopened first (PATCH → draft, founder-gated) — otherwise
-    // any quote:manage role could rewrite an already-approved quote's price and send it unreviewed.
+    // Maker-checker: a content re-save is only allowed while the quote is still editable.
+    // Review lock (owner, 2026-07-17): SUBMISSION freezes content — pending_review is no longer
+    // editable, so the founder approves exactly what they reviewed; the one door back in is the
+    // explicit reopen-to-draft. ready/sent stay locked as before. changes_requested stays
+    // editable — that state exists to be edited.
     if (existingId) {
       const current = await deps.quotes.get(existingId);
-      if (current && !(['draft', 'pending_review', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
+      if (current && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
         return c.json({ error: 'not_editable', status: current.status }, 409);
       }
     }
     try {
       const body = parseToolRequest(raw);
-      const { req, result } = await resolveAndPrice(body, deps.maps);
+      // Price against the live card + active zones, so a saved quote's stored total/margin already
+      // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard());
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
-        customerName: body.name ?? null,
+        customerName: customerNameFor(body),
         customerContact: body.contact ?? null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
@@ -415,15 +594,91 @@ export function internalQuoteRoutes(deps: {
         request: { tool: body, engine: req },
         result,
         notes: body.notes ?? null,
+        internalNotes: body.internalNotes ?? null,
+        // Quote intent (spec 2026-07-17). Stored flat so the submit gate is a plain column
+        // check; it also rides inside request.tool above, which is what the builder reopens from.
+        requestedService: body.requestedService ?? null,
+        // Audit (spec 2026-07-16). Both stamped on create; on a re-save the repo applies only
+        // updatedBy, so authorship stays with whoever built the quote.
+        createdBy: c.get('identity').email,
+        updatedBy: c.get('identity').email,
       };
       const updated = existingId ? await deps.quotes.update(existingId, content) : null;
       if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
-      const saved = await deps.quotes.save(content);
-      return c.json({ id: saved.id, reference: saved.reference, status: saved.status }, 201);
+      // Auto-assign a NEW quote to its creator (spec 2026-07-22) so it lands in their "Assigned to
+      // me". Insert-only: update() above leaves assignment to the picker.
+      const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });
+      // Return assignedTo so the builder reflects the auto-assignment immediately (the update path
+      // above omits it — a re-save must not move the assignee client-side either).
+      return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
       throw e;
     }
+  });
+
+  // Create a real booking from a booked quote (spec 2026-07-18). The ops "Mark booked" modal
+  // POSTs the contact/date/vehicle the quote lacks; the booking is priced at the quote's frozen
+  // total (never re-priced) and the quote is stamped with the back-link + 'won'. Idempotent on
+  // the quote id — a double-submit or a mid-failure retry returns the same booking.
+  r.post('/:id/book', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    if (quote.channel !== 'ops' || (quote.status !== 'sent' && quote.status !== 'won')) {
+      return c.json({ error: 'not_bookable', status: quote.status }, 409);
+    }
+
+    const idempotencyKey = `book:quote:${id}`;
+    // Already booked → return the existing booking; never create a second.
+    const prior = quote.convertedBookingId
+      ? await deps.bookings.get(quote.convertedBookingId)
+      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
+    if (prior) {
+      if (!quote.convertedBookingId) await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      return c.json(prior, 200);
+    }
+
+    const parsed = BookingDetailsSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', details: parsed.error.flatten() }, 400);
+
+    let mapped;
+    try {
+      mapped = quoteToBooking(quote, parsed.data);
+    } catch (e) {
+      if (e instanceof QuoteNotBookableError) return c.json({ error: 'not_bookable' }, 409);
+      throw e;
+    }
+
+    // Validate the built input against the same schema the public booking routes use —
+    // a bad mapping fails loudly instead of persisting a malformed booking.
+    const schema = mapped.mode === 'single' ? SingleTransferInput : TripInput;
+    if (!schema.safeParse(mapped.input).success) return c.json({ error: 'invalid_booking' }, 400);
+
+    const newBooking: NewBooking =
+      mapped.mode === 'single'
+        ? { mode: 'single', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' }
+        : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' };
+
+    const created = await deps.bookings.create(newBooking, { idempotencyKey });
+    // Land it in payment_pending so it surfaces in the ops Bookings queue ("Awaiting
+    // payment") — a draft is hidden there. No payment row is recorded; payment is collected
+    // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
+    // returns the existing payment_pending booking) never attempts an illegal self-transition.
+    let booking = created;
+    if (created.status === 'draft') {
+      try {
+        booking = await deps.bookings.setStatus(created.id, 'payment_pending');
+      } catch {
+        // A concurrent double-submit already moved this booking out of draft — re-read it
+        // rather than surface a 500 on a booking that was, in fact, created.
+        booking = (await deps.bookings.get(created.id)) ?? created;
+      }
+    }
+    await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
+    return c.json(booking, 201);
   });
 
   // Read-only view of the locked rate card for the tool's Settings card.
@@ -441,6 +696,51 @@ export function internalQuoteRoutes(deps: {
       vehicle: RATE_CARD.vehicle, // V12: per-tier maxPax/maxBags caps for client-side vehicle labelling
     }),
   );
+
+  // ── Hot zones admin (spec §7) — the founder's pricing lever. Reads are visible under margin:view;
+  // every WRITE is gated by quote:approve ON TOP OF the router's quote:manage guard (both = founder
+  // today, D4). CSRF applies to writes. Audit: created_by/updated_by are stamped from the session
+  // identity — a % change is never anonymous. Registered BEFORE /:id so /zones never matches the
+  // param route.
+  const zoneShape = z.object({
+    placeName: z.string().trim().min(1).max(120),
+    boostPct: z.number().int().min(0).max(100),
+    active: z.boolean().optional(),
+    lat: z.number().nullable().optional(),
+    lng: z.number().nullable().optional(),
+    radiusKm: z.number().nullable().optional(),
+  });
+  // The geo trio is all-or-nothing (spec §4): either none set, or all three with radiusKm > 0.
+  const geoTrioOk = (v: { lat?: number | null; lng?: number | null; radiusKm?: number | null }): boolean => {
+    const present = [v.lat, v.lng, v.radiusKm].filter((x) => x != null).length;
+    return present === 0 || (present === 3 && Number(v.radiusKm) > 0);
+  };
+  const createZone = zoneShape.refine(geoTrioOk, { message: 'lat/lng/radiusKm must be all set (radiusKm > 0) or all empty' });
+  const patchZone = zoneShape.partial().refine(geoTrioOk, { message: 'lat/lng/radiusKm must be all set (radiusKm > 0) or all empty' });
+
+  r.get('/zones', requireCap('margin:view'), async (c) => c.json({ zones: await zonesRepo.list(), disabled: hotZonesDisabled() }));
+
+  r.post('/zones', csrf, requireCap('quote:approve'), async (c) => {
+    const parsed = createZone.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues[0]?.message }, 400);
+    const email = c.get('identity').email;
+    const created = await zonesRepo.create({ ...parsed.data, createdBy: email, updatedBy: email });
+    return c.json(created, 201);
+  });
+
+  r.patch('/zones/:id', csrf, requireCap('quote:approve'), async (c) => {
+    const parsed = patchZone.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', detail: parsed.error.issues[0]?.message }, 400);
+    const updated = await zonesRepo.patch(c.req.param('id'), { ...parsed.data, updatedBy: c.get('identity').email });
+    if (!updated) return c.json({ error: 'not_found' }, 404);
+    return c.json(updated);
+  });
+
+  r.delete('/zones/:id', csrf, requireCap('quote:approve'), async (c) => {
+    const ok = await zonesRepo.remove(c.req.param('id'));
+    if (!ok) return c.json({ error: 'not_found' }, 404);
+    return c.json({ ok: true });
+  });
 
   // List quotes (newest first), optionally filtered by status/product/from/to.
   // MUST be registered before /:id so that /list doesn't match the param route.
@@ -485,21 +785,50 @@ export function internalQuoteRoutes(deps: {
         status: z.string().optional(),
         lostReason: z.string().nullable().optional(),
         notes: z.string().nullable().optional(),
+        internalNotes: z.string().nullable().optional(),
+        assignedTo: z.string().nullable().optional(),
       })
       .safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'bad_request' }, 400);
     const body = parsed.data;
     if (body.status && !QUOTE_STATUSES.includes(body.status as QuoteStatus)) return c.json({ error: 'bad_status' }, 400);
+    // Assignment (spec 2026-07-16 §5). Resolve the assignee against OPS_USERS BEFORE it reaches
+    // the DB: assignment sends that person a link to the quote, so an unvalidated value would
+    // mail a customer's quote to whatever address was typed. `null` = unassign, and is exempt.
+    let assignedTo: string | null | undefined = undefined;
+    if (body.assignedTo !== undefined) {
+      if (body.assignedTo === null) assignedTo = null;
+      else {
+        assignedTo = resolveAssignee(body.assignedTo, deps.auth.opsUsers);
+        if (assignedTo === null) return c.json({ error: 'unknown_assignee' }, 400);
+      }
+    }
     // Maker-checker gate: only legal status moves, and only the founder (quote:approve) can
     // mark a quote ready-to-send or send it back for changes (incl. the draft→ready self-approve).
     // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
     // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
     let rateLock: QuotePatch['rateLock'] = undefined;
-    if (body.status) {
-      const current = await deps.quotes.get(c.req.param('id'));
+    // Read the pre-patch row once when either path needs it: the status gate below, and the
+    // notification's "did the assignee actually change?" test (re-assigning to the same person
+    // is not news, so it must not re-mail them).
+    let current: SavedQuote | null = null;
+    if (body.status || assignedTo !== undefined) {
+      current = await deps.quotes.get(c.req.param('id'));
       if (!current) return c.json({ error: 'not_found' }, 404);
+    }
+    if (body.status && current) {
       const to = body.status as QuoteStatus;
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
+      // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
+      // straight to ready — until the submitter has recorded what the customer asked for.
+      // Checked against the STORED row, never the body: only POST /save writes this field, so
+      // trusting a body value here would be a hole, not a shortcut. Deliberately NOT applied to
+      // /save (work-in-progress must stay savable) nor to any other transition. No exemption for
+      // rows predating the field (I7) — there are few in flight, and an exemption would leave a
+      // permanent hole in the rule.
+      if ((to === 'pending_review' || to === 'ready') && !current.requestedService) {
+        return c.json({ error: 'requested_service_required' }, 400);
+      }
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
       // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
       // customer for changes, so it needs the same approval authority as sending it did.
@@ -508,11 +837,11 @@ export function internalQuoteRoutes(deps: {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
       if (to === 'ready') {
-        // Freeze the current card (no expiry — ops locks are held until reopened, not time-boxed).
-        // The stored total was priced against RATE_CARD at /save; today RATE_CARD only changes on
-        // deploy, so the current card is the one that produced this price. When the deferred founder
-        // rate-card API lands (design doc §9), approval should re-price from this snapshot.
-        rateLock = { rateCardJson: RATE_CARD, rateLockedUntil: null };
+        // Freeze the current card + its active HOT ZONES (no expiry — ops locks are held until
+        // reopened, not time-boxed). Composing the zones INTO the snapshot is what satisfies C2: a
+        // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
+        // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
+        rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
       } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
         rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
       }
@@ -521,13 +850,75 @@ export function internalQuoteRoutes(deps: {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
       notes: body.notes,
+      internalNotes: body.internalNotes,
       rateLock,
+      assignedTo,
+      updatedBy: c.get('identity').email,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
+    // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not
+    // an unassign (nobody to tell), and not a no-op re-assign. Best-effort — the assignment is the
+    // durable fact, so a provider outage must not 500 the patch and lose it.
+    const actor = c.get('identity').email;
+    const handoverTo =
+      assignedTo && assignedTo !== (current?.assignedTo ?? null) && assignedTo !== actor.toLowerCase()
+        ? assignedTo
+        : null;
+    if (handoverTo && deps.email) {
+      try {
+        await sendQuoteAssigned(updated, handoverTo, actor, deps.email, deps.opsBaseUrl ?? '');
+      } catch (err) {
+        console.error('quote assignment email failed', { quote: updated.reference, err });
+      }
+    }
+    // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
+    if (body.status === 'pending_review' && deps.email) {
+      for (const u of approverOpsUsers(deps.auth.opsUsers)) {
+        if (u.email === actor.toLowerCase()) continue;
+        try {
+          await sendQuoteAwaitingApproval(updated, u.email, actor, deps.email, deps.opsBaseUrl ?? '');
+        } catch (err) {
+          console.error('quote awaiting-approval email failed', { quote: updated.reference, to: u.email, err });
+        }
+      }
+    }
+    // Sent-back → the maker (createdBy), except the actor, carrying the note (spec 2026-07-18).
+    if (body.status === 'changes_requested' && deps.email && updated.createdBy && updated.createdBy.toLowerCase() !== actor.toLowerCase()) {
+      try {
+        await sendQuoteSentBack(updated, updated.createdBy, actor, body.notes ?? null, deps.email, deps.opsBaseUrl ?? '');
+      } catch (err) {
+        console.error('quote sent-back email failed', { quote: updated.reference, err });
+      }
+    }
     // Same strip as GET /:id — the updated SavedQuote carries marginCents; a routine
     // status/notes edit by finance/ops must not echo cost/margin back to them.
     const canMargin = can(c.get('identity').role, 'margin:view');
     return c.json(canMargin ? updated : stripQuoteMargin(updated));
+  });
+
+  // Delete a quote (spec 2026-07-22). SOFT delete — the row is hidden from the queue/tool but
+  // retained in the table (recoverable, audit-preserving), never a hard wipe. Gated by lifecycle
+  // state, layered on top of the route-wide quote:manage requirement:
+  //   draft | changes_requested → any quote:manage holder (ops) — unlocked, never sent
+  //   pending_review | ready     → founder only (quote:approve)  — locked, not yet sent
+  //   sent | won | lost | expired → NOBODY                        — customer-facing / decided
+  const DELETABLE_BY_OPS: readonly QuoteStatus[] = ['draft', 'changes_requested'];
+  const DELETABLE_BY_FOUNDER: readonly QuoteStatus[] = ['pending_review', 'ready'];
+  r.delete('/:id', csrf, async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const st = quote.status;
+    if (!DELETABLE_BY_OPS.includes(st) && !DELETABLE_BY_FOUNDER.includes(st)) {
+      // sent / won / lost / expired — a quote the customer has seen is never deletable.
+      return c.json({ error: 'not_deletable', reason: 'sent_or_decided' }, 409);
+    }
+    if (DELETABLE_BY_FOUNDER.includes(st) && !can(c.get('identity').role, 'quote:approve')) {
+      return c.json({ error: 'forbidden', reason: 'founder_only' }, 403);
+    }
+    const deleted = await deps.quotes.softDelete(id, c.get('identity').email);
+    if (!deleted) return c.json({ error: 'not_found' }, 404); // raced with another delete
+    return c.json({ id: deleted.id, deleted: true }, 200);
   });
 
   return r;

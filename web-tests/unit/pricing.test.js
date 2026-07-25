@@ -164,6 +164,11 @@ describe('chauffeur + deposit constants (engine parity)', () => {
     expect(T.PER_KM.car).toBe(0.4025);
     expect(T.PER_KM.van).toBe(0.5405);
   });
+
+  it('idle-day minimum km per vehicle match the backend rate card (car 50 · van 100)', () => {
+    // engine: RATE_CARD.chauffeur.idleMinKm = { car: 50, van: 100, ... } (api/src/quote/rateCard.ts)
+    expect(T.CHAUFFEUR_IDLE_MIN_KM).toEqual({ car: 50, van: 100 });
+  });
 });
 
 // Regression guard for the 2026-07-09 chauffeur-distance drift: booking.js:885 once held its
@@ -175,6 +180,11 @@ describe('booking.js chauffeur distance rate (no silent drift)', () => {
 
   it('reads chauffeur distance pricing from the shared TRANSFERS source of truth', () => {
     expect(src).toMatch(/T\.distancePrice/);
+  });
+
+  it('reads the idle-day minimum km from the shared TRANSFERS source of truth', () => {
+    expect(src).toMatch(/T\.CHAUFFEUR_IDLE_MIN_KM/);
+    expect(src).not.toMatch(/idleDays\s*\*\s*\d/); // no re-hardcoded idle-min km copy
   });
 
   it('does not contain the superseded pre-2026-07-09 per-km rates', () => {

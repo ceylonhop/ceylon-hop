@@ -16,20 +16,40 @@ const RATE_CARD = {
 
 // Install a minimal google.maps stub that records that a Map + route were created, and
 // (optionally) a forced browser key so the ops map code treats the key as configured.
+// Mirrors the async-loaded API: classes come ONLY from importLibrary (no google.maps.Map
+// namespace access), and routing is the new routes library's Route.computeRoutes — the
+// legacy DirectionsService/DirectionsRenderer are deliberately absent so any lingering
+// use of them throws and fails the no-pageerror assertion. Each computeRoutes request is
+// recorded on window.__computeRoutesReqs so tests can assert the known-places-by-coords rule.
 async function stub(page, { key } = {}) {
   await page.addInitScript((k) => {
     if (k) window.OPS_MAPS_KEY = k;
     function Map(el) { this.__el = el; if (el) el.setAttribute('data-map', 'ready'); }
     Map.prototype.fitBounds = function () {};
-    function DS() {}
-    DS.prototype.route = function (req, cb) { cb({ routes: [{ legs: [{ start_location: {}, end_location: {} }], bounds: {} }] }, 'OK'); };
-    function DR() {}
-    DR.prototype.setDirections = function () {};
     function Marker() {}
+    Marker.prototype.setMap = function () {};
     function Point() {}
+    function Polyline() {}
+    Polyline.prototype.setOptions = function () {};
+    Polyline.prototype.setMap = function () {};
+    const Route = {
+      computeRoutes: async (req) => {
+        (window.__computeRoutesReqs = window.__computeRoutesReqs || []).push(req);
+        if (window.__failRoutes) return { routes: [] }; // test knob: unroutable itinerary
+        return {
+          routes: [{
+            path: [],
+            viewport: {},
+            legs: [{ startLocation: { lat: 6.93, lng: 79.85 }, endLocation: { lat: 7.29, lng: 80.63 } }],
+            createPolylines: () => [new Polyline()],
+          }],
+        };
+      },
+    };
+    const libs = { maps: { Map, Polyline }, routes: { Route }, marker: { Marker }, core: { Point } };
     window.google = {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
-      maps: { Map, DirectionsService: DS, DirectionsRenderer: DR, Marker, Point, TravelMode: { DRIVING: 'DRIVING' }, event: { trigger() {} }, importLibrary: async () => ({}) },
+      maps: { importLibrary: async (name) => libs[name] || {}, event: { trigger() {} } },
     };
   }, key || '');
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
@@ -45,35 +65,134 @@ async function buildRoute(page) {
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
-  await page.fill('#f-customerName', 'Karen');
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change');
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }
 
-test('the route map is collapsed behind a toggle and opens on click', async ({ page }) => {
+test('the route map is open by default and folds behind the toggle', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — give it headroom so it doesn't time out under parallel load
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await stub(page, { key: 'test-browser-key' });
   await buildRoute(page);
-  // Two stops → the toggle appears, but the map does NOT auto-open (no jarring pop-in).
+  // Two stops → the toggle appears and the map is open by default (owner request, commit 215e027:
+  // _mapOpen defaults to true). The toggle folds it away and reopens it.
   await expect(page.locator('.ch-map-toggle')).toBeVisible({ timeout: 10000 });
+  await expect(page.locator('#itin-map-slot')).toBeVisible();
+  await expect(page.locator('.ch-itin-map[data-map="ready"]')).toBeVisible({ timeout: 10000 });
+  // Clicking the toggle collapses the map.
+  await page.locator('.ch-map-toggle').click();
   await expect(page.locator('#itin-map-slot')).toHaveCount(0);
-  // Clicking the toggle reveals the map.
+  // Clicking it again reopens the map.
   await page.locator('.ch-map-toggle').click();
   await expect(page.locator('#itin-map-slot')).toBeVisible();
   await expect(page.locator('.ch-itin-map[data-map="ready"]')).toBeVisible({ timeout: 10000 });
-  // And it collapses again.
-  await page.locator('.ch-map-toggle').click();
-  await expect(page.locator('#itin-map-slot')).toHaveCount(0);
+  // The route was computed via the new routes library, resolving stops per the repo rule:
+  // a known place ("Kandy") goes to Google as its exact coords — bare names can geocode
+  // outside Sri Lanka — while a free-typed name ("Colombo" isn't in the known-place table)
+  // stays a string anchored to ", Sri Lanka".
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  expect(reqs.length).toBeGreaterThan(0);
+  expect(reqs[reqs.length - 1].origin).toBe('Colombo, Sri Lanka');
+  expect(reqs[reqs.length - 1].destination).toEqual({ lat: 7.29, lng: 80.63 });
+  expect(errors).toEqual([]);
+});
+
+test('a failed route does not re-query on unrelated edits — only a stop change retries', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  await stub(page, { key: 'test-browser-key' });
+  // Every computeRoutes returns no routes → the map lands in its failed state
+  // ("Couldn't map this route"). In that state _mapMap stays null, and syncItinMap
+  // used to re-fire a full billable route query on EVERY render — every date change,
+  // price keystroke, or checkbox — retrying an itinerary that can't succeed until a
+  // stop actually changes.
+  await page.addInitScript(() => { window.__failRoutes = true; });
+  await buildRoute(page);
+  await expect(page.locator('.ch-itin-map-note')).toContainText(/map this route/, { timeout: 10000 });
+  await page.waitForTimeout(1000); // let boot-time renders + the estimate debounce settle
+  const before = await page.evaluate(() => (window.__computeRoutesReqs || []).length);
+
+  // A date-only change re-renders (twice: immediately + after the estimate) but must
+  // NOT re-query — the stops didn't change, so the route would just fail again.
+  await page.$eval('input[type="date"][data-field="date"]', (el) => {
+    el.value = '2026-08-10';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(1000);
+  const afterDate = await page.evaluate(() => (window.__computeRoutesReqs || []).length);
+  expect(afterDate).toBe(before);
+
+  // Changing an actual stop is the only thing that can fix a failed route → exactly
+  // that triggers a retry.
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
+  await to.fill('Ella');
+  await to.dispatchEvent('change');
+  await expect
+    .poll(() => page.evaluate(() => (window.__computeRoutesReqs || []).length), { timeout: 5000 })
+    .toBeGreaterThan(afterDate);
+});
+
+test('disconnected legs draw as separate routes — no line bridging the gap', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await stub(page, { key: 'test-browser-key' });
+
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+
+  const setField = async (legIndex, field, value) => {
+    // Ride model: pickup/dropoff are stop 0/last of the leg's stop chain (data-field="stop").
+    const stopSel = field === 'pickupLocation' ? '[data-field="stop"][data-stop="0"]'
+      : field === 'dropoffLocation' ? '[data-field="stop"][data-stop="1"]'
+      : `[data-field="${field}"]`;
+    const input = page.locator('.ch-leg').nth(legIndex).locator('.ch-tl-title' + stopSel);
+    await input.fill(value);
+    await input.dispatchEvent('change');
+    await page.waitForTimeout(120);
+  };
+  // Leg 1: Colombo Airport → Kandy (both known places → sent to Google as exact coords).
+  await setField(0, 'pickupLocation', 'Colombo Airport (CMB)');
+  await setField(0, 'dropoffLocation', 'Kandy');
+  // Leg 2, DISCONNECTED: Galle → Ella. Galle ≠ Kandy, so leg 2 does not continue leg 1.
+  // (Add leg auto-chains the pickup to Kandy; we overwrite it to Galle to break the chain.)
+  await page.getByText('Add leg').click();
+  await page.waitForTimeout(150);
+  await setField(1, 'pickupLocation', 'Galle');
+  await setField(1, 'dropoffLocation', 'Ella');
+  await page.waitForTimeout(400);
+
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const CMB = { lat: 7.18, lng: 79.88 };
+  const GALLE = { lat: 6.03, lng: 80.22 };
+  const ELLA = { lat: 6.87, lng: 81.05 };
+
+  // The second, disconnected leg must be routed on its own — Galle appears as a route
+  // ORIGIN, not merely stitched in as an intermediate of one cross-gap route.
+  expect(reqs.some((r) => eq(r.origin, GALLE))).toBe(true);
+  // Nothing may route ACROSS the gap: no single Colombo→Ella route, and Galle is never
+  // an intermediate waypoint (that would be the bug — a line drawn Kandy→Galle→Ella).
+  expect(reqs.some((r) => eq(r.origin, CMB) && eq(r.destination, ELLA))).toBe(false);
+  expect(reqs.some((r) => (r.intermediates || []).some((i) => eq(i.location, GALLE)))).toBe(false);
   expect(errors).toEqual([]);
 });
 
 test('without a maps key the itinerary shows no route map toggle', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
   await stub(page); // no key → OPS_MAPS_KEY stays the untemplated placeholder → treated as none
   await buildRoute(page);
   await expect(page.locator('.ch-leg').first()).toBeVisible();
