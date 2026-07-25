@@ -56,7 +56,7 @@ test('a chip that hides every match says so and offers a way out', async ({ page
   await page.fill('#qq', 'ella');                                // q1 is 'ready'
 
   await expect(page.locator('#view .qempty-title')).toHaveText('No match in In progress');
-  await expect(page.locator('#view .qempty-sub')).toContainText('1 quote match');
+  await expect(page.locator('#view .qempty-sub')).toContainText('1 quote matches');
 
   await page.locator('#view .qempty [data-qfilter="all"]').click();
   await expect(page.locator('#view .qrow')).toHaveCount(1);
