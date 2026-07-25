@@ -133,8 +133,11 @@ if(mode==='trip' && window.TRANSFERS){
   r=getRoute(params.get('id'));
   // No/unknown catalogue id → send them to the planner rather than defaulting to a route.
   if(!r){ location.replace('plan.html'); throw new Error('no catalogue route — redirected to planner'); }
-  isCustom = r.price==null;
-  unit = isCustom ? 60 : r.price;
+  // price==null is the "You decide" placeholder route: there is nothing real to charge for,
+  // and it used to bill $60/adult. Treat it like an unknown id.
+  if(r.price==null){ location.replace('plan.html'); throw new Error('placeholder route — redirected to planner'); }
+  isCustom = false;
+  unit = r.price;
 }
 
 const VEH_CAP = { car:{pax:3,bags:3}, van:{pax:6,bags:6} };
@@ -672,13 +675,18 @@ if(!isTrip && r.type==='shared'){
   const calEl=document.getElementById('cal');
   if(calEl && !document.getElementById('shared-cal-note')){
     const cnote=document.createElement('p'); cnote.id='shared-cal-note'; cnote.className='shared-cal-note';
-    cnote.innerHTML='<b>'+sharedDaysLabel+' only.</b> Our shared seats run on these days \u2014 other dates are available as a private transfer.';
+    // Naming the alternative without linking it left the customer to re-navigate by hand.
+    cnote.innerHTML='<b>'+sharedDaysLabel+' only.</b> Our shared seats run on these days \u2014 <a href="'+backToSearchUrl()+'">book a private transfer</a> for any other day.';
     calEl.after(cnote);
   }
   const depLabel=document.getElementById('dep-label'); if(depLabel) depLabel.textContent='Departure';
   const dateLabel=document.getElementById('date-label'); if(dateLabel) dateLabel.textContent='Travel date';
   const ftChk=document.getElementById('flex-time-chk'); if(ftChk){ var ftl=ftChk.closest('.flex-chk'); if(ftl) ftl.style.display='none'; }
-  const fb=document.getElementById('flex-banner-tx'); if(fb) fb.innerHTML='<b>Not sure of your date yet?</b> Reserve now and lock in your travel date any time up to <b>12 hours before</b> \u2014 seats are subject to availability.';
+  // A shared seat is a specific departure, so "Decide later" can't work here. It used to stay
+  // visible next to a banner inviting it, then silently disabled Continue with no explanation.
+  const fdChk=document.getElementById('flex-date'); if(fdChk){ fdChk.checked=false; var fdl=fdChk.closest('.flex-chk'); if(fdl) fdl.style.display='none'; }
+  state.flexDate=false;
+  const fb=document.getElementById('flex-banner-tx'); if(fb) fb.innerHTML='<b>Shared seats run to a fixed timetable.</b> Pick the day you want and we\u2019ll reserve your seat on that van \u2014 if your dates are still open, a private transfer runs any day you like.';
 
   // STEP 3 — seats, not vehicle/luggage upgrades
   const tvPanel=document.querySelector('.panel[data-panel="3"]');
@@ -737,7 +745,11 @@ function buildCal(){
     const dis = off || noSvc;
     const sel = state.date && date.getTime()===state.date.getTime();
     const title = noSvc && !off ? ` title="Shared seats run ${sharedDaysLabel} only"` : '';
-    html+=`<div class="cal-day ${off?'off':''} ${noSvc?'no-svc':''} ${sel?'sel':''}" data-dow="${dow}"${title} ${dis?'':`onclick="pickDate(${y},${m},${d})"`}>${d}</div>`;
+    // Real buttons, not divs: a calendar of clickable <div>s cannot be reached by keyboard at
+    // all, and picking a date is the hard gate on the shared-ride flow.
+    const label = date.toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    const aria = noSvc && !off ? `${label} — no shared service` : label;
+    html+=`<button type="button" class="cal-day ${off?'off':''} ${noSvc?'no-svc':''} ${sel?'sel':''}" data-dow="${dow}"${title} aria-label="${aria}"${sel?' aria-current="date"':''} ${dis?'disabled':`onclick="pickDate(${y},${m},${d})"`}>${d}</button>`;
   }
   html+='</div>';
   const cal=document.getElementById('cal');
@@ -866,7 +878,7 @@ function renderRepriceNote(){
       ' needs to be within '+far.limit+' km. To travel a different route, change your search on the home page.'+
       '<div class="rn-actions">'+
         '<button type="button" class="btn btn-primary btn-sm" onclick="clearExactSpot(\''+far.which+'\')">Clear this spot</button>'+
-        '<a class="rn-change" href="index.html">Change your search</a>'+
+        `<a class="rn-change" href="${backToSearchUrl()}">Change your search</a>`+
       '</div>';
     return;
   }
@@ -930,6 +942,14 @@ function checkWhen(){
     n2.disabled = !ok;
     n2.style.opacity = ok ? '' : '.45';
     n2.style.cursor = ok ? '' : 'not-allowed';
+    // Never leave a greyed-out button with no reason next to it.
+    var why=document.getElementById('when-blocked');
+    if(!why){
+      why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
+      n2.parentNode.insertBefore(why, n2);
+    }
+    why.textContent = ok ? '' : (!state.date ? 'Pick a travel date above \u2014 shared seats need a set departure day.' : 'Choose a departure time to continue.');
+    why.style.display = ok ? 'none' : '';
   } else {
     n2.disabled = false;
     n2.style.opacity = '';
@@ -960,7 +980,8 @@ window.toggleAddon=function(el){
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
 const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
 
-window.payMethod=function(el){document.querySelectorAll('.pm').forEach(x=>x.classList.remove('on'));el.classList.add('on');};
+// The wallet chips were decorative - selecting Apple/Google Pay changed nothing and the customer
+// still landed in a card form. The row is now a plain statement of what actually happens.
 window.setPayPlan=function(plan){ state.payPlan=plan; document.querySelectorAll('.pc-opt').forEach(o=>o.classList.toggle('on',o.dataset.plan===plan)); render();
   if(typeof window.chTrack==='function') window.chTrack('add_payment_info',{payment_type:plan,currency:'USD',value:calcTotal()}); };
 
@@ -1208,7 +1229,8 @@ function render(){
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
           `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${money(vanP)}`:''}</button>`;
       } else {
-        note.textContent=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — message us and we’ll arrange a larger vehicle.`;
+        const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
+        note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;
       }
     } else if(perVehicle && vehicleKey==='van' && pax<=VEH_CAP.car.pax && state.bags<=VEH_CAP.car.bags){
       // party now fits an AC car again — recommend the cheaper vehicle to save money
@@ -1322,6 +1344,47 @@ window.goStep=function(n){
   window.scrollTo({top:0,behavior:'smooth'});
 };
 
+// Clear the consent warning as soon as they tick it, so the red border can't stick around.
+(function(){
+  const agree=document.getElementById('agree');
+  if(!agree) return;
+  agree.addEventListener('change',()=>{
+    if(!agree.checked) return;
+    const box=agree.closest('.addon'); if(box) box.style.borderColor='';
+    const derr=document.getElementById('details-error');
+    if(derr && /Terms & cancellation/.test(derr.textContent||'')) derr.hidden=true;
+  });
+})();
+
+// The 7-day rate lock was completely invisible to the customer, which is a reassurance we had
+// already built and paid for. Only ever shown once a lock actually exists.
+function showRateLock(){
+  const due=document.getElementById('pay-due');
+  if(!due || document.getElementById('rate-lock-note')) return;
+  const p=document.createElement('p');
+  p.id='rate-lock-note'; p.className='rate-lock-note';
+  p.textContent='This price is locked for 7 days.';
+  due.after(p);
+}
+
+// The summary perks are static markup, so a private transfer was promised a guide "on board".
+(function(){
+  const crew=document.getElementById('perk-crew');
+  if(crew && isShared) crew.lastChild.textContent=' Pro Hopper guide on board';
+})();
+
+// Back to search WITH the route intact - dropping them on the homepage threw away everything
+// they had already chosen.
+function backToSearchUrl(){
+  try{
+    const p=new URLSearchParams();
+    const from=params.get('from'), to=params.get('to');
+    if(from) p.set('from',from);
+    if(to) p.set('to',to);
+    return p.toString() ? 'search.html?'+p.toString() : 'index.html';
+  }catch(e){ return 'index.html'; }
+}
+
 // ---- payment ----
 document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // validate the lead traveller's contact details before payment
@@ -1336,8 +1399,12 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
   if(!emailRe.test(email.value.trim())) return fail(email,'Enter a valid email so we can send your confirmation.');
   if(phoneParts().number.length<7) return fail(phone,'Enter a valid WhatsApp number.');
-  if(!document.getElementById('agree').checked){
-    document.getElementById('agree').closest('.addon').style.borderColor='var(--tomato)';
+  const agree=document.getElementById('agree');
+  if(!agree.checked){
+    // Was a red border and nothing else: colour-only, no message, and it never reset.
+    agree.closest('.addon').style.borderColor='var(--tomato)';
+    if(derr){ derr.textContent='Please tick the box to agree to the Terms & cancellation policy.'; derr.hidden=false; }
+    agree.focus();
     return;
   }
 
@@ -1486,6 +1553,7 @@ async function ensureLockedQuoteId(apiBase, lockReq){
     if(!q || !q.quoteId) return undefined;
     const exp = q.rateLockedUntil ? Date.parse(q.rateLockedUntil) : (Date.now() + 7*24*3600*1000);
     try { localStorage.setItem('chQuoteLock', JSON.stringify({ sig: sig, quoteId: q.quoteId, exp: exp })); } catch(e){}
+    showRateLock();
     return q.quoteId;
   } catch(e){ return undefined; }
   finally { clearTimeout(timer); }
@@ -1617,7 +1685,7 @@ function finalizeBooking(apiBooking){
   document.getElementById('pass-to').innerHTML=`${r.stops[r.stops.length-1]}<small>${isTrip?'Trip end':'To'}</small>`;
   document.getElementById('pass-date').textContent=dateText;
   document.getElementById('pass-time').textContent=timeText;
-  document.getElementById('pass-pax').textContent=`${state.ad} adult${state.ad>1?'s':''}${state.ch?', '+state.ch+' child':''}`;
+  document.getElementById('pass-pax').textContent=`${state.ad} adult${state.ad>1?'s':''}${state.ch?', '+state.ch+' '+(state.ch>1?'children':'child'):''}`;
   document.getElementById('pass-pickup').textContent=isTrip ? ((state.svc==='chauffeur')?'Chauffeur-guide':'Private transfer') : (state.locFrom||r.stops[0]);
   document.getElementById('pass-name').textContent=(first+' '+last).trim();
   document.getElementById('pass-paid').textContent=money(calcTotal());
@@ -1628,6 +1696,17 @@ function finalizeBooking(apiBooking){
     let extra='';
     if(state.flexDate||state.flexTime) extra=' Just let us know your exact date & time any time up to 12 hours before — a quick WhatsApp is all it takes.';
     cc.innerHTML=`A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You’ll hear from us first thing in the morning.${extra}`;
+  }
+  // "Your seat is booked! ... See you on board" was shown for every product, including a
+  // multi-day private trip where there is no seat and no "board".
+  const ct=document.getElementById('confirm-title');
+  const cl=document.getElementById('confirm-lead');
+  if(ct) ct.textContent = isShared ? 'Your seat is booked!' : (isTrip ? 'Your trip is booked!' : 'Your transfer is booked!');
+  if(cl){
+    const base = isShared
+      ? 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up. See you on board \ud83c\udf34'
+      : 'We\u2019ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.';
+    cl.textContent = base;
   }
   document.getElementById('main-layout').style.display='none';
   document.getElementById('psteps').style.display='none';
