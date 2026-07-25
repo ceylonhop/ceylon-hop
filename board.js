@@ -443,6 +443,12 @@
     btn.hidden = n === 0;
     var c = document.getElementById('mr-count');
     if (c) c.textContent = n;
+    // site.css hides .nav-cta .btn:not(.nav-burger) below 880px, so the phone route to your
+    // rides is the mobile-menu entry — keep it on the same state as the desktop button.
+    var mm = document.getElementById('mm-rides');
+    if (mm) mm.hidden = n === 0;
+    var mc = document.getElementById('mm-rides-count');
+    if (mc) mc.textContent = n;
   }
 
   function rememberFromOptions(lists) {
@@ -1041,6 +1047,19 @@
   /* ---------------- my-rides nav ---------------- */
   var mrBtn = document.getElementById('my-rides-btn');
   if (mrBtn) mrBtn.addEventListener('click', showMine);
+
+  /* ---------------- mobile menu ---------------- */
+  // Mirrors the shared header's burger (site.js mountHeader) — board.html hand-rolls its nav,
+  // so it needs its own toggle. Same pattern as 404/privacy/terms.
+  var burger = document.querySelector('[data-burger]');
+  var mobile = document.querySelector('[data-mobile]');
+  if (burger && mobile) burger.addEventListener('click', function () { mobile.classList.toggle('open'); });
+  var mmRides = document.getElementById('mm-rides');
+  if (mmRides) mmRides.addEventListener('click', function (e) {
+    e.preventDefault();
+    if (mobile) mobile.classList.remove('open');
+    showMine();
+  });
 
   /* ---------------- misc ---------------- */
   function copy(text) {
