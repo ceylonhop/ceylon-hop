@@ -167,3 +167,42 @@ describe('GET /board/mine & /board/dupe', () => {
     expect((await none.json()).list).toBeNull();
   });
 });
+
+// The ch_cust cookie is SameSite=None so it rides cross-site requests. /scratch reads no body,
+// so a bodyless cross-site POST is a "simple request" with no CORS preflight — it used to remove
+// a signed-in traveller from their list. Demonstrated before the fix; pinned here.
+describe('ride board CSRF', () => {
+  const listOn = async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { preferredTime: '09:00', seats: 1 }));
+    return { app, code: l.code, cookie };
+  };
+  const names = async (app: ReturnType<typeof makeApp>['app'], code: string) => {
+    const body = await (await app.request(`/board/${code}`)).json();
+    return (body.members ?? []).map((m: { firstName?: string }) => m.firstName);
+  };
+
+  it('refuses a cross-site scratch and leaves the traveller on the list', async () => {
+    const { app, code, cookie } = await listOn();
+    expect(await names(app, code)).toHaveLength(1);
+    const res = await app.request(`/board/${code}/scratch`, {
+      method: 'POST',
+      headers: { cookie, origin: 'https://evil.example' },
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
+    expect(await names(app, code)).toHaveLength(1); // still there
+  });
+
+  it('still lets our own site scratch', async () => {
+    const { app, code, cookie } = await listOn();
+    const res = await app.request(`/board/${code}/scratch`, {
+      method: 'POST',
+      headers: { cookie, origin: 'http://localhost:4173' },
+    });
+    expect(res.status).toBe(200);
+    expect(await names(app, code)).toHaveLength(0);
+  });
+});

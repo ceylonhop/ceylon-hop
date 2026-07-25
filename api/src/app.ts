@@ -210,6 +210,7 @@ export function createApp(deps: AppDeps = {}) {
         verifier: deps.customerVerifier,
       },
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      allowedOrigins,
     }),
   );
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
