@@ -98,6 +98,16 @@ const SPECS: Spec[] = [
     note: 'Boards welcome, we have roof space.',
   },
   {
+    // capacity is 6, so six joiners is genuinely full — this is the card that should offer
+    // "Start another van" rather than a join button. Without it the full-van state, which is
+    // the whole point of showing confirmed vans, is never actually exercised.
+    label: 'FULL van — the prompt to start another on the same route',
+    corridorId: 'airport-cultural', fromPlace: 'Colombo Airport (CMB)', toPlace: 'Sigiriya / Dambulla',
+    weekday: 6, weeksOut: 2, slot: 'morning', joiners: 6,
+    status: 'confirmed', lockedTime: '07:30',
+    note: 'Full van — six of us, leaving sharp.',
+  },
+  {
     label: 'quiet new list — the "be the first" path',
     corridorId: 'ella-east', fromPlace: 'Ella', toPlace: 'Arugam Bay',
     weekday: 3, weeksOut: 3, slot: 'morning', joiners: 1,
