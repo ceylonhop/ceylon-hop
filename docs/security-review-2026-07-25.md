@@ -160,3 +160,74 @@ whose declared span cannot absorb its driving hours.
 - **Access control and injection** — IDOR on customer booking lookup, per-endpoint ops capability checks,
   stored XSS from customer-supplied fields into an authenticated founder's ops screen, CORS, and rate
   limiting on the unauthenticated write paths.
+
+---
+
+# Price & distance manipulation pass (run 2026-07-25, after the limit reset)
+
+Every CONFIRMED finding below was demonstrated against the running app, not inferred.
+
+## Fixed (`ebf1e54`)
+
+- **An invalid request became a cheap chargeable booking.** `runEngine` turned *every* engine
+  rejection into an "unpriced" outcome, and unpriced bookings fall through to a flat placeholder
+  that `/checkout` will charge. `bags: 100` (or `adults: 100`) turned a **$125.00 transfer into a
+  $40.00 booking** plus a confirmation email — no bad place names, one integer field. The booking
+  path now returns 422 for the same error set `/quote` already rejected. Genuine pricing hiccups
+  still degrade to the placeholder; that distinction is the fix.
+- **`nights: []` collapsed the chauffeur floor.** The placeholder was `(sum(nights)+1) × $55` and
+  `nights` is a client array unrelated to `stops`, so a 6-stop trip pricing at **$789.00 floored at
+  $55.00**. The floor can no longer be fewer days than the trip has legs.
+- **Shared seats could be oversold ~7×.** Inventory is keyed on `(corridor, date, time)` and
+  `holdSeats` find-or-creates that row with a *full* van, so an unrecognised time minted another 12
+  seats: `'07:30'`, then `'7:30'`, `'07:30 '`, `'07:31'`, `'lunchtime'`, `'99:99'` — **84 seats sold
+  on a 12-seat van**, each at the correct price. Departure times now live in the corridor catalogue
+  (mirroring `transfers-data.js`, as service days and seat price already do) and an unpublished time
+  is refused. The atomic hold was never the weakness — the key was.
+- **`stops` was unbounded.** Each leg is a billed Distance Matrix element resolved sequentially; a
+  60-stop request was accepted and 5000 stops fired 4999 lookups from a single call — a Maps-spend
+  and latency amplifier. Capped at 12, matching the ops tool's existing 8-stop cap in spirit.
+
+## Open — needs an owner decision
+
+- **H2: a Google failure silently reprices known routes ~39% low.** `maps.distance()` falls back to
+  `haversine × 1.35` whenever Google errors, times out, hits `OVER_QUERY_LIMIT`, is denied, or
+  returns `ZERO_RESULTS`. Colombo City → Ella: **Google 292 km → $123.50; offline 179 km → $78.00**,
+  with no warning, no line item and no ops flag. (CMB → Galle goes the other way, +22%.) This is a
+  straight revenue leak on any Maps outage, key rotation slip or billing lapse. The fix is a
+  business call: either refuse to price and route to the ops queue when Google fails, or replace the
+  crow-flies estimate with stored real road km for the known pairs — and in both cases flag the
+  booking. **Recommended before go-live.**
+- **M3: chauffeur day count is client-declared.** `days` is honoured whenever `dates` is incomplete
+  (fewer entries than legs, or any non-ISO), and it drives both the day rate and the idle-day
+  minimum km: the same itinerary priced **$789.00 at `days: 9` and $329.00 at `days: 1`**. The ops
+  path already requires a date on every leg. Enforcing that publicly would change what the customer
+  planner allows (flexible dates are deliberate), so it needs your call.
+- **M4: `Idempotency-Key` is a global unauthenticated namespace.** A key is looked up and the stored
+  booking returned in full *before* any ownership check, so a victim reusing an attacker's key
+  receives the **attacker's booking, including their customer details**. The site derives the key
+  from a 32-bit hash of the request body, so collisions are reachable accidentally too. Fix: scope
+  the key to the customer email or session, and 409 when a stored key's body doesn't match.
+- **L1** client-supplied `distanceKm` on `/quote/lock` persists into founder analytics (`channel=web`
+  rows feed the Quoted/Avg-$ tiles). **L2** public chauffeur quotes carry no `pax`, so a car quoted
+  for 10 people shows car pricing (booking-time recompute corrects it — a shown-vs-charged
+  mismatch, not an undercharge). **L3** `distanceKm: 1e15` yields a total beyond `MAX_SAFE_INTEGER`;
+  bound it by `MAX_SL_ROAD_KM`. **L4** rate-lock replays a stored rate card with no integrity check
+  — no client path writes that field today, so this is defence-in-depth. **L5** no Sri Lanka
+  bounding-box check on `from`/`to`.
+
+## Verified safe in this pass — do not re-audit
+
+`quotedTotal` can never undercut a priced booking; bookings never accept a client distance; shared
+seat price is DB-authoritative; Wed/Sat service days are enforced server-side before inventory is
+touched; seat holds are genuinely race-safe (Postgres guarded UPDATE / no-await check-and-increment);
+vehicle capacity is enforced and can only be upgraded; add-ons are an enum with no client quantity or
+price; `customPerKmCents` is not client-reachable; the rate lock binds the *card* not the price and
+expiry is enforced at redemption; negative/zero/fractional/string pax and negative distances are all
+rejected; `memoizeDistance` does not double-bill Google.
+
+## Not covered
+
+The **access-control pass** (IDOR on booking lookup, per-endpoint ops capability checks, stored XSS
+from customer fields into an authenticated ops session, CORS, rate limiting) has still never run.
+Unreviewed is not the same as clean. The Ride Board charge path was also only skimmed.
