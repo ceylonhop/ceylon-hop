@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test';
 // a support agent (ops/finance) does not. These specs assert the three journeys the merge
 // is built around:
 //   1. Support submits a quote → it lands in the queue; support cannot approve or copy.
-//   2. Founder reviews from the queue → approves (or sends back); can self-approve a draft.
+//   2. Founder reviews from the queue → approves (or sends back). No self-approve: a founder
+//      must Submit a draft for review before Approve appears (lifecycle enforced, 2026-07-19).
 //   3. Support opens an approved (ready) quote → the customer message + Copy unlock.
 //
 // Same offline harness as ops-vehicle-chips.spec.js: serve the file, stub /admin/**,
@@ -282,9 +283,18 @@ test('founder on a pending_review quote gets Approve + Send back + the reopen do
   await expect(page.locator('#f-firstName')).toBeDisabled();
 });
 
-test('founder can self-approve a draft in one hop (Approve — ready to send)', async ({ page }) => {
+test('founder on a draft must Submit for review first — no self-approve (lifecycle enforced)', async ({ page }) => {
+  // The founder-only "self-approve straight from a draft" was removed (2026-07-19): everyone,
+  // founders included, submits for review before Approve appears (in the pending_review state).
   await openDetail(page, 'founder', { id: 'q1', status: 'draft' });
-  await expect(actions(page).locator('[data-action="approveReady"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="submitForReview"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
+});
+
+test('founder on a changes-requested quote must Resubmit — still no self-approve', async ({ page }) => {
+  await openDetail(page, 'founder', { id: 'q1', status: 'changes_requested' });
+  await expect(actions(page).locator('[data-action="submitForReview"]')).toBeVisible();
+  await expect(actions(page).locator('[data-action="approveReady"]')).toHaveCount(0);
 });
 
 test('clicking Approve PATCHes the quote to ready and returns to the queue', async ({ page }) => {

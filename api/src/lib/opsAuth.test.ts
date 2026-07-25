@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor,
+  can, parseOpsUsers, roleForEmail, signSession, verifySession, displayNameFor, approverOpsUsers,
   type OpsRole, type OpsAction,
 } from './opsAuth';
 
@@ -21,6 +21,11 @@ describe('can() capability matrix', () => {
   ];
   it.each(rows)('%s can %s === %s', (role, action, expected) => {
     expect(can(role, action)).toBe(expected);
+  });
+
+  it('analytics:view is founder-only (spec 2026-07-23 founder analytics)', () => {
+    expect(can('founder', 'analytics:view')).toBe(true);
+    for (const r of ['finance', 'ops', 'system'] as const) expect(can(r, 'analytics:view')).toBe(false);
   });
 });
 
@@ -58,6 +63,11 @@ describe('displayNameFor', () => {
   it('never returns an empty label, even with nothing to work from', () => {
     expect(displayNameFor(null, '')).toBe('unknown');
   });
+});
+
+it('approverOpsUsers returns only quote:approve holders (founders)', () => {
+  const raw = 'f@x.com:founder,fin@x.com:finance,op@x.com:ops';
+  expect(approverOpsUsers(raw).map((u) => u.email)).toEqual(['f@x.com']);
 });
 
 describe('parseOpsUsers / roleForEmail', () => {

@@ -1,6 +1,7 @@
 // api/src/quote/engine.ts
 import { RATE_CARD, type RateCard, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
+import { normalizeRide, normalizeChauffeurDay, rideRawKm, validateRide } from './types';
 import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
@@ -36,6 +37,10 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     warnings.push('margin not modelled for shared');
   } else if (req.product === 'private') {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
+    // Normalize old-shape legs + Ride legs once at entry; validate each (invalid → INVALID_RIDE,
+    // surfaced as a 422 by the routes). Everything below prices/counts per RIDE.
+    const rides = req.legs.map(normalizeRide);
+    rides.forEach(validateRide);
     const minVehicle = selectVehicle(req.pax, req.bags, rateCard);
     if (minVehicle === 'too_big') throw new Error('TOO_BIG');
     // Price with the LARGER of (requested, required) — never below what the party needs; an upgrade is allowed.
@@ -46,13 +51,16 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     // against the PRICED vehicle (an upgrade INTO van14/custom keeps the operator's rate —
     // the rate is set for the trip; the tier is capacity).
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle);
-    const p = quotePrivateLegs(req.legs, vehicle, perKmOverride, rateCard);
+    const p = quotePrivateLegs(rides, vehicle, perKmOverride, rateCard);
     lineItems.push(...p.lineItems);
     warnings.push(...p.warnings);
     subtotalCents += p.subtotalCents;
-    protectedMinimumCents = req.legs.length * rateCard.floorCents[vehicle];
+    protectedMinimumCents = rides.length * rateCard.floorCents[vehicle];
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
-    costCents += req.legs.reduce((s, l) => s + Math.round(billableKm(l.distanceKm, rateCard) * costPerKm), 0);
+    // Cost scales by the SAME per-ride hot-zone boost as the sell rate (D6 — the premium is a real
+    // servicing cost, not pure margin), so reported margin keeps the standard markup on a zone trip.
+    // p.perRideBoost is 1 for every ride at zero zones ⇒ byte-identical to the pre-hot-zones cost.
+    costCents += rides.reduce((s, r, i) => s + Math.round(billableKm(rideRawKm(r), rateCard) * costPerKm * p.perRideBoost[i]), 0);
     if (req.extras?.length) {
       const e = priceExtras(req.extras, rateCard);
       lineItems.push(...e.lineItems);
@@ -60,6 +68,9 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     }
   } else {
     if (req.travelDays.length === 0) throw new Error('NO_LEGS');
+    // Normalize old-shape + Ride travel days once at entry; validate each (INVALID_RIDE → 422).
+    const travelDays = req.travelDays.map(normalizeChauffeurDay);
+    travelDays.forEach(validateRide);
     // Upgrade an undersized vehicle to one that fits the group (mirrors private) — only when the
     // caller supplied pax/bags. A chauffeur car quoted for 6 pax must not price as a car.
     let vehicle = req.vehicle;
@@ -70,13 +81,15 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
       if (vehicle !== req.vehicle) warnings.push(`vehicle set to ${vehicle} for ${req.pax} pax / ${req.bags} bags`);
     }
     const perKmOverride = validateCustomRate(req.customPerKmCents, vehicle); // GL-1d (validate against the priced tier)
-    const c = quoteChauffeur({ ...req, vehicle }, rateCard);
+    const c = quoteChauffeur({ ...req, vehicle, travelDays }, rateCard);
     lineItems.push(...c.lineItems);
     subtotalCents += c.subtotalCents;
     const costPerKm = perKmOverride != null ? Math.round(perKmOverride / (1 + rateCard.markupPct / 100)) : rateCard.costPerKmCents[vehicle];
     // Cost = day-rate cost (per day) + distance cost, so chauffeur margin reflects the real
-    // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too).
-    costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.billableKm * costPerKm);
+    // markup on BOTH the day charge and the km (day rate is sold at cost × 1.15 too). The distance
+    // cost uses the boost-weighted km (D6/D10), so a zone day's cost rises with its sell charge;
+    // boostedBillableKm == billableKm at zero zones ⇒ byte-identical. Day-rate cost is NOT boosted.
+    costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.boostedBillableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
       // already covered by the day rate and must never be charged again.

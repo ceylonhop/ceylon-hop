@@ -12,6 +12,11 @@ import { track } from '../observability/track';
 
 const MAX_BODY_BYTES = 2048;
 
+// Some front-end "errors" are expected control flow, not faults, and only add Sentry + alert
+// noise. booking.js throws to halt the script after redirecting a no/unknown-route visit to the
+// planner (mostly crawlers and stale links) — acknowledge those beacons but don't track/alert.
+const BENIGN_MESSAGE = /no catalogue route/i;
+
 const ClientErrorSchema = z.object({
   message: z.string().min(1).max(500),
   stack: z.string().max(1500).optional(),
@@ -35,6 +40,9 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
       const result = ClientErrorSchema.safeParse(parsed);
       if (!result.success) return c.body(null, 400);
       const e = result.data;
+
+      // Expected control-flow beacons are acknowledged but never tracked or alerted.
+      if (BENIGN_MESSAGE.test(e.message)) return c.body(null, 204);
 
       track(new Error(e.message), { tag: 'frontend', extra: { stack: e.stack, url: e.url, ua: e.ua } });
       // Coarsen the dedupe key so a beacon can't defeat the alert throttle by varying the

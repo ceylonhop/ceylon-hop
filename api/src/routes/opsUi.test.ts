@@ -159,6 +159,50 @@ describe('ops UI shell', () => {
   });
 });
 
+// Bare-root alias (2026-07-19): ops.ceylonhop.com/ should serve the tool, not only /ops.
+// The shell is served at BOTH "/" and "/ops" (same-origin, same cookie); the client builds
+// URLs from location.pathname (ops-ui.html), so at the bare root the URL stays at "/".
+describe('ops UI — bare-root alias (ops.ceylonhop.com/)', () => {
+  it('serves the same shell at "/" as at "/ops"', async () => {
+    const app = createApp();
+    const root = await app.request('/');
+    expect(root.status).toBe(200);
+    expect(root.headers.get('content-type')).toContain('text/html');
+    const rootBody = await root.text();
+    expect(rootBody).toContain('Ceylon Hop');
+    expect(rootBody).toContain('/admin/ops'); // wired to the real API, not mock data
+    // Byte-identical to the /ops shell — one tool, two paths.
+    const opsBody = await (await app.request('/ops')).text();
+    expect(rootBody).toBe(opsBody);
+  });
+
+  it('gzip-compresses the "/" shell for clients that accept it', async () => {
+    const app = createApp();
+    const res = await app.request('/', { headers: { 'accept-encoding': 'gzip' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    const gz = Buffer.from(await res.arrayBuffer());
+    const body = gunzipSync(gz).toString('utf8');
+    expect(body).toContain('Ceylon Hop');
+    expect(gz.length).toBeLessThan(body.length / 2);
+  });
+
+  it('keeps the /ops path working, still gzipped (regression)', async () => {
+    const app = createApp();
+    const res = await app.request('/ops', { headers: { 'accept-encoding': 'gzip' } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+  });
+
+  it('does not shadow other routes — /health is still its JSON, not the shell', async () => {
+    const app = createApp();
+    const res = await app.request('/health');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({ status: 'ok' });
+  });
+});
+
 // Quote intent (spec 2026-07-17): the submitter records what the CUSTOMER asked for, which the
 // reviewer reads to know which options to focus on.
 describe('ops UI — quote intent', () => {
@@ -247,6 +291,58 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
     const body = await (await createApp().request('/ops')).text();
     expect(body).toContain('requestMismatch(state.requestedService, state.service)');
     expect(body).toContain('ch-req-mismatch');
+  });
+});
+
+// itineraryGapDetail is pure and DOM-free (it takes the legs array), so — like requestMismatch —
+// we lift it out of the inlined shell script and table-test the continuity cases directly.
+// It warns when a leg doesn't start where the previous one ended (an agent's missed/mis-typed
+// leg), and stays silent when the route connects, when a segment is half-built, or when the
+// place names differ only by Google's ", Sri Lanka" suffix / "(CMB)" tag.
+describe('itineraryGapDetail (ops builder — non-sequential legs)', () => {
+  type Leg = { category?: string; pickupLocation?: string; dropoffLocation?: string };
+  let gap: (legs: Leg[]) => string | null;
+  beforeAll(async () => {
+    const body = await (await createApp().request('/ops')).text();
+    const start = body.indexOf('function itineraryGapDetail(');
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    const src = body.slice(start, i + 1);
+    gap = new Function(`${src}; return itineraryGapDetail;`)() as typeof gap;
+  });
+  const t = (pickupLocation: string, dropoffLocation: string, category = 'transfer'): Leg => ({ category, pickupLocation, dropoffLocation });
+  const stay = (loc: string): Leg => ({ category: 'stay_day', pickupLocation: loc, dropoffLocation: loc });
+
+  it('is silent for a single leg (nothing to connect to)', () => {
+    expect(gap([t('Colombo', 'Kandy')])).toBeNull();
+  });
+  it('is silent when every leg starts where the previous ended', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('Kandy', 'Ella'), t('Ella', 'Galle')])).toBeNull();
+  });
+  it('flags a leg that starts somewhere the previous leg did not end', () => {
+    // The reported case: A→B then C→C leaves the B→C stretch unaccounted for.
+    const d = gap([t('A', 'B'), t('C', 'C')]);
+    expect(d).toMatch(/Leg 2 starts at C, but leg 1 ends at B/);
+  });
+  it('names the first gap when there are several legs', () => {
+    const d = gap([t('Colombo', 'Kandy'), t('Kandy', 'Ella'), t('Colombo', 'Trincomalee')]);
+    expect(d).toMatch(/Leg 3 starts at Colombo, but leg 2 ends at Ella/);
+  });
+  it('does not gap on Google name variants (", Sri Lanka" suffix / "(CMB)" tag)', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('Kandy, Sri Lanka', 'Ella')])).toBeNull();
+    expect(gap([t('Colombo City', 'Colombo Airport (CMB)'), t('Colombo Airport', 'Kandy')])).toBeNull();
+  });
+  it('stays quiet while a leg is still half-built (no phantom gap mid-entry)', () => {
+    expect(gap([t('Colombo', 'Kandy'), t('', '')])).toBeNull();
+    expect(gap([t('Colombo', 'Kandy'), t('', 'Ella')])).toBeNull();
+  });
+  it('treats a stay day as staying put — connected before and after', () => {
+    expect(gap([t('Colombo', 'Kandy'), stay('Kandy'), t('Kandy', 'Ella')])).toBeNull();
+    expect(gap([t('Colombo', 'Kandy'), stay('Ella')])).toMatch(/Leg 2 starts at Ella, but leg 1 ends at Kandy/);
   });
 });
 

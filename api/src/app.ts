@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { compress } from 'hono/compress';
 import { secureHeaders } from 'hono/secure-headers';
 import { InMemoryBookingRepo, type BookingRepo } from './db/bookingRepo';
 import { InMemoryPaymentRepo, type PaymentRepo } from './db/paymentRepo';
 import { InMemoryConciergeTaskRepo, type ConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
+import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
+import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
+import { rideBoardRoutes } from './routes/rideBoard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
@@ -13,14 +15,17 @@ import { bookingRoutes } from './routes/bookings';
 import { webhookRoutes } from './routes/webhooks';
 import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
+import { opsAnalyticsRoutes } from './routes/opsAnalytics';
 import { opsUiRoutes } from './routes/opsUi';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
+import { devEmailRoutes } from './routes/devEmails';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
+import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
@@ -33,6 +38,10 @@ export interface AppDeps {
   payments?: PaymentRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
+  rideLists?: RideListRepo;
+  paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
+  customerSessionSecret?: string; // signs the ch_cust cookie (defaults to config)
+  customerVerifier?: JwtVerifier; // test seam for the customer Google login
   email?: EmailAdapter;
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
@@ -40,6 +49,7 @@ export interface AppDeps {
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
+  zones?: ZonesRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
   bookingLinkSecret?: string;
@@ -71,6 +81,8 @@ export function createApp(deps: AppDeps = {}) {
   const payments = deps.payments ?? new InMemoryPaymentRepo();
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
+  const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
+  const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
   const email = deps.email ?? new FakeEmailAdapter();
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
@@ -78,6 +90,7 @@ export function createApp(deps: AppDeps = {}) {
   const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
+  const zones = deps.zones ?? new InMemoryZonesRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -111,12 +124,18 @@ export function createApp(deps: AppDeps = {}) {
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
       allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
+      // on Pages → API on Render). Only the allow-listed origins above can read responses;
+      // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
+      credentials: true,
     }),
   );
 
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
   app.use('/quote', rateLimit(rl));
+  // Ride Board: throttle writes (login/join/scratch/create) only — reads are browse traffic.
+  app.use('/board/*', rateLimit({ ...rl, methods: ['POST'] }));
   // M17: public front-end error beacon — same per-IP write limit as other public endpoints.
   app.use('/errors/*', rateLimit(rl));
   // /admin/quote/* fronts billed Google APIs (GET /places, POST /distance), 2-3 pricing
@@ -176,6 +195,21 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  // Ride Board — public reads + customer-authenticated writes (card side via the fake).
+  app.route(
+    '/board',
+    rideBoardRoutes({
+      rideLists,
+      departures,
+      paygw,
+      customer: {
+        sessionSecret: deps.customerSessionSecret ?? config.CUSTOMER_SESSION_SECRET,
+        googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
+        verifier: deps.customerVerifier,
+      },
+      memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+    }),
+  );
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
   app.route(
     '/webhooks',
@@ -193,23 +227,30 @@ export function createApp(deps: AppDeps = {}) {
     }),
   );
   app.route('/errors/client', clientErrorRoutes({ alerts }));
+  // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
+  // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
+  app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
     email, notificationLog,
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
-  // The /ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view).
-  // gzip it (~40KB on the wire) for every founder page load. Transparent to non-gzip clients
-  // (Hono's compress only fires when the request sends Accept-Encoding: gzip/deflate).
-  app.use('/ops', compress());
-  app.route('/ops', opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? ''));
+  // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
+  // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
+  // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
+  // builds its URLs from location.pathname, so at the bare root the URL stays at "/". Only
+  // "/" is added (the router defines just GET /), so other root routes are unaffected.
+  // Compression lives inside opsUiRoutes (route-level) so it applies to both mounts.
+  const opsUi = opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? '');
+  app.route('/ops', opsUi);
+  app.route('/', opsUi);
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes,
+    maps, quotes, zones, bookings,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
@@ -230,10 +271,15 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       alertLog: deps.alertLog,
       digestTo: deps.digestTo ?? config.ALERT_EMAIL,
+      opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      rideLists,
+      ridePaygw: paygw,
     }),
   );
+  // Dev-only email preview harness (renders real sender output). Never mounted in prod.
+  if (opsAuthCfg.nodeEnv !== 'production') app.route('/dev/emails', devEmailRoutes());
   return app;
 }
 

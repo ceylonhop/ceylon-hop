@@ -68,4 +68,14 @@ describe('InMemoryBookingRepo', () => {
     const b = await repo.create({ ...sample, channel: 'whatsapp' });
     expect(b.channel).toBe('whatsapp');
   });
+
+  it('is concurrency-safe on the idempotency key: two simultaneous creates yield one booking', async () => {
+    const repo = new InMemoryBookingRepo();
+    const [a, b] = await Promise.all([
+      repo.create(sample, { idempotencyKey: 'k1' }),
+      repo.create(sample, { idempotencyKey: 'k1' }),
+    ]);
+    expect(a.id).toBe(b.id);
+    expect((await repo.list()).length).toBe(1);
+  });
 });

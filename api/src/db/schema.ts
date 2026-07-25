@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -138,6 +139,60 @@ export const sharedRequests = pgTable('shared_request', {
   seats: integer('seats').notNull(),
 });
 
+// ---- Ride Board (demand-pooling "lists" layered on the corridor catalogue) ----
+// A list is a corridor route + date + slot that travellers add their names to; the
+// van runs once enough names commit by the cutoff. Additive to the shared-taxi
+// tables — the pooled seat counter is a live-member sum, independent of the fixed
+// shared_departure inventory.
+export const rideLists = pgTable(
+  'ride_list',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    code: text('code').notNull().unique(), // short public code, e.g. EM-4821
+    corridorId: text('corridor_id')
+      .notNull()
+      .references(() => corridors.id),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    date: text('date').notNull(), // ISO YYYY-MM-DD
+    slot: text('slot').notNull(), // morning | afternoon
+    lockedTime: text('locked_time'), // pinned when the van locks
+    minSeats: integer('min_seats').notNull(),
+    capacity: integer('capacity').notNull(),
+    seatPrice: integer('seat_price').notNull(), // minor units
+    status: text('status').notNull().default('gathering'), // gathering|confirmed|expired|cancelled
+    note: text('note'),
+    cutoffAt: timestamp('cutoff_at', { withTimezone: true }).notNull(),
+    createdBy: text('created_by'), // customer subject
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('ride_list_status_idx').on(t.status)],
+);
+
+export const rideListMembers = pgTable(
+  'ride_list_member',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    listId: uuid('list_id')
+      .notNull()
+      .references(() => rideLists.id),
+    position: integer('position').notNull(), // 1-based order on the list
+    sub: text('sub').notNull(), // customer subject (Google)
+    firstName: text('first_name').notNull(),
+    country: text('country').notNull(),
+    email: text('email').notNull(),
+    photoUrl: text('photo_url'),
+    preferredTime: text('preferred_time'),
+    seats: integer('seats').notNull().default(1),
+    preapprovalRef: text('preapproval_ref'), // card-on-file token id (null while faked)
+    status: text('status').notNull().default('held'), // held|charged|charge_failed|scratched
+    joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  // one membership per traveller per list (also the re-join upsert target)
+  (t) => [unique().on(t.listId, t.sub), index('ride_list_member_list_idx').on(t.listId)],
+);
+
 // ---- Ops layer (M12 Slice 1). References read-only website bookings; never mutated by
 // the booking flow. The ops dashboard owns these tables.
 export const rideOps = pgTable('ride_ops', {
@@ -219,6 +274,11 @@ export const quotes = pgTable('quotes', {
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
+  // Internal ops notes (spec 2026-07-22): a free-text scratchpad on the quote, distinct from
+  // `notes` (which carries the founder's send-back reason surfaced in the review banner). Kept
+  // separate so an ops person jotting trip context can never clobber a send-back reason and
+  // vice-versa. Nullable; never shown to the customer.
+  internalNotes: text('internal_notes'),
   // Quote intent (spec 2026-07-17): which service the CUSTOMER asked for — 'private' |
   // 'chauffeur' | 'both' — as distinct from `product`, which is what was actually priced.
   // Nullable: rows predating this have none, and the requirement is a workflow gate at submit
@@ -233,8 +293,42 @@ export const quotes = pgTable('quotes', {
   assignedAt: timestamp('assigned_at', { withTimezone: true }),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),
+  // Soft delete (spec 2026-07-22): a deleted quote is hidden from get()/list() but retained in the
+  // table (never a hard wipe — keeps the audit trail and lets a mistaken delete be recovered).
+  // Role-gated in the route: ops delete drafts, founders delete locked-but-unsent; sent quotes
+  // can never be deleted.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: text('deleted_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true }),
   decidedAt: timestamp('decided_at', { withTimezone: true }),
+},
+// Founder-analytics indexes (spec 2026-07-23): the analytics projections filter on the three
+// lifecycle stamps and on the live-status set. Created while the table is tiny so they already
+// exist when it isn't — the owner's "never let analytics slow the dashboard/site later" rule.
+(t) => [
+  index('idx_quotes_created_at').on(t.createdAt),
+  index('idx_quotes_sent_at').on(t.sentAt),
+  index('idx_quotes_decided_at').on(t.decidedAt),
+  index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
+]);
+
+// Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced
+// trip touches one (by name, per the D3 matching rules), its per-km rate is boosted by boost_pct.
+// place_name is a KNOWN_PLACES town (the match key). The optional lat/lng/radius_km trio is a geo
+// fallback for GPS pickups the names miss. created_by/updated_by are staff emails (pricing changes
+// are never anonymous), matching the audit pattern quotes gained in migration 0015.
+export const pricingZones = pgTable('pricing_zones', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  placeName: text('place_name').notNull(),
+  boostPct: integer('boost_pct').notNull(),
+  active: boolean('active').notNull().default(true),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  radiusKm: doublePrecision('radius_km'),
+  createdBy: text('created_by'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

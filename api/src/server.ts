@@ -8,6 +8,7 @@ import { PostgresBookingRepo } from './db/postgresBookingRepo';
 import { PostgresPaymentRepo } from './db/postgresPaymentRepo';
 import { PostgresConciergeTaskRepo } from './db/postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './db/postgresDepartureRepo';
+import { PostgresRideListRepo } from './db/postgresRideListRepo';
 import { PayHerePaymentAdapter } from './adapters/payhere';
 import { FakePaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, GoogleMapsAdapter } from './adapters/maps';
@@ -16,6 +17,7 @@ import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
+import { PostgresZonesRepo } from './db/postgresZonesRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
 import { initTracking } from './observability/track';
@@ -84,10 +86,12 @@ const app = createApp({
   payments: new PostgresPaymentRepo(db),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
+  rideLists: new PostgresRideListRepo(sql),
   rideOps: new PostgresRideOpsRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes: new PostgresQuoteRepo(db),
+  zones: new PostgresZonesRepo(db),
   adapter,
   maps,
   email,

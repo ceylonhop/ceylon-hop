@@ -6,6 +6,7 @@ import { FakeEmailAdapter } from './adapters/email';
 import { InMemoryConciergeTaskRepo } from './db/conciergeTaskRepo';
 import { InMemoryBookingRepo } from './db/bookingRepo';
 import { issueSessionCookie } from './lib/opsMiddleware';
+import { futureIsoDate, nextIsoWeekday } from './testSupport/dates';
 
 // /admin/bookings now requires a session with bookings:read — x-admin-key resolves to
 // `system`, which per the capability matrix lacks bookings:read. Mint a founder cookie
@@ -23,7 +24,7 @@ async function founderCookie() {
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
-  date: '2026-08-01',
+  date: futureIsoDate(30), // anchored to "now" so the past-date rule never expires it
   time: '09:00',
   vehicleType: 'van',
   adults: 3,
@@ -81,7 +82,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     const trip = {
       stops: ['Colombo Airport', 'Sigiriya', 'Ella'],
       nights: [1, 2, 0],
-      dates: ['2026-07-20', '2026-07-22'],
+      dates: [futureIsoDate(30), futureIsoDate(32)],
       pax: 2,
       vehicleType: 'van',
       serviceType: 'private',
@@ -122,7 +123,7 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
 
     const shared = {
       corridorId: 'hill-line',
-      date: '2026-07-22', // Wednesday — a shared service day (corridors run Wed & Sat)
+      date: nextIsoWeekday(3), // Wednesday — a shared service day (corridors run Wed & Sat)
       time: '08:00',
       seats: 2,
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },

@@ -67,7 +67,7 @@ test('a built itinerary is never hidden when the contact is later made invalid',
   await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', 'karen@example.com');
   await page.dispatchEvent('#f-contact', 'change');
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change'); // real leg content
   await expect(page.locator('.ch-leg').first()).toBeVisible();
   // Break the contact — the already-built itinerary must stay visible (only NEW quotes gate).

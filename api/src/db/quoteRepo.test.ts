@@ -2,15 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
 
 describe('canTransition (quote review lifecycle)', () => {
-  it('allows the maker-checker path and founder self-approve', () => {
+  it('allows the maker-checker path but requires review before approval', () => {
     expect(canTransition('draft', 'pending_review')).toBe(true);
-    expect(canTransition('draft', 'ready')).toBe(true); // self-approve (capability-gated at the route)
-    expect(canTransition('pending_review', 'ready')).toBe(true);
+    expect(canTransition('pending_review', 'ready')).toBe(true); // approval happens only from review
     expect(canTransition('pending_review', 'changes_requested')).toBe(true);
     expect(canTransition('changes_requested', 'pending_review')).toBe(true);
     expect(canTransition('ready', 'sent')).toBe(true);
     expect(canTransition('ready', 'draft')).toBe(true); // reopen to edit
     expect(canTransition('sent', 'draft')).toBe(true);  // reopen a sent quote to edit (founder-gated at the route)
+  });
+  it('rejects approving without going through review (no self-approve from a draft)', () => {
+    // A quote must be Submitted for review before it can be approved — for everyone, founders
+    // included. The founder-only self-approve shortcut was removed (2026-07-19).
+    expect(canTransition('draft', 'ready')).toBe(false);
+    expect(canTransition('changes_requested', 'ready')).toBe(false);
   });
   it('rejects skipping the review gate', () => {
     expect(canTransition('draft', 'sent')).toBe(false);
@@ -166,6 +171,18 @@ describe('InMemoryQuoteRepo', () => {
   it('update returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
   });
+
+  it('patch stamps convertedBookingId (the booking a won quote became)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      product: 'private', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    const updated = await repo.patch(q.id, { convertedBookingId: 'booking-123', status: 'won' });
+    expect(updated?.convertedBookingId).toBe('booking-123');
+    expect(updated?.status).toBe('won');
+    expect((await repo.get(q.id))?.convertedBookingId).toBe('booking-123');
+  });
 });
 
 // Quote intent (spec 2026-07-17): what the CUSTOMER asked for, as distinct from `product`
@@ -188,5 +205,156 @@ describe('requestedService', () => {
     const saved = await repo.save(sample({ requestedService: 'private' }));
     const updated = await repo.update(saved.id, sample({ requestedService: 'chauffeur' }));
     expect(updated!.requestedService).toBe('chauffeur');
+  });
+});
+
+// Internal ops notes (spec 2026-07-22): a free-text scratchpad, kept separate from `notes`
+// (the send-back reason) so neither can clobber the other.
+describe('internalNotes', () => {
+  it('round-trips through save and get, defaulting to null', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const blank = await repo.save(sample());
+    expect(blank.internalNotes).toBeNull();
+    const withNote = await repo.save(sample({ internalNotes: 'Prefers an AC van; call before 9am.' }));
+    expect(withNote.internalNotes).toBe('Prefers an AC van; call before 9am.');
+    expect((await repo.get(withNote.id))!.internalNotes).toBe('Prefers an AC van; call before 9am.');
+  });
+
+  it('patch edits internalNotes without touching the send-back notes, and vice versa', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ notes: 'send-back reason', internalNotes: 'ops context' }));
+    const a = await repo.patch(saved.id, { internalNotes: 'updated ops context' });
+    expect(a!.internalNotes).toBe('updated ops context');
+    expect(a!.notes).toBe('send-back reason'); // untouched
+    const b = await repo.patch(saved.id, { notes: 'new reason' });
+    expect(b!.notes).toBe('new reason');
+    expect(b!.internalNotes).toBe('updated ops context'); // untouched
+  });
+
+  it('update() rewrites internalNotes on a content re-save', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample({ internalNotes: 'first' }));
+    const updated = await repo.update(saved.id, sample({ internalNotes: 'second' }));
+    expect(updated!.internalNotes).toBe('second');
+  });
+});
+
+// Soft delete (spec 2026-07-22): a deleted quote is hidden but retained; role/status gating is
+// the route's job, not the repo's.
+describe('softDelete', () => {
+  it('hides the quote from get() and list() but keeps the row (recoverable)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    const b = await repo.save(sample());
+    const deleted = await repo.softDelete(a.id, 'op@x.com');
+    expect(deleted!.deletedBy).toBe('op@x.com');
+    expect(deleted!.deletedAt).toBeInstanceOf(Date);
+    expect(await repo.get(a.id)).toBeNull();                       // gone from the tool
+    expect((await repo.list()).map((q) => q.id)).toEqual([b.id]);  // gone from the queue, b remains
+  });
+
+  it('is null for an unknown id and for a double delete', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const a = await repo.save(sample());
+    expect(await repo.softDelete('no-such-id', 'op@x.com')).toBeNull();
+    await repo.softDelete(a.id, 'op@x.com');
+    expect(await repo.softDelete(a.id, 'op@x.com')).toBeNull(); // already deleted
+  });
+});
+
+// Analytics projections (spec 2026-07-23 founder analytics): bounded fetches — funnel rows are
+// scalars-only (never the JSON blobs); demand rows are the ONLY projection carrying request_json
+// and are bounded to created-in-range. Both exclude soft-deleted rows and default to the ops
+// channel. `channel` is a parameter so later customer-website analytics is not a rework.
+describe('analytics projections', () => {
+  const DAY = 24 * 3600 * 1000;
+
+  // Build a repo with a controlled history using fake timers:
+  //   oldSent     — created 100d ago, sent 95d ago, STILL open in 'sent'  (live-set arm)
+  //   oldDecided  — created 100d ago, won 90d ago                         (dead history)
+  //   recentDraft — created 10d ago
+  //   recentWon   — created 8d ago, sent 7d ago, won 5d ago
+  //   webRecent   — created 6d ago on the 'web' channel
+  //   deletedRecent — created 4d ago then soft-deleted
+  async function seeded() {
+    const repo = new InMemoryQuoteRepo();
+    const now = Date.now();
+    const at = async <T>(daysAgo: number, fn: () => Promise<T>): Promise<T> => {
+      vi.setSystemTime(new Date(now - daysAgo * DAY));
+      return fn();
+    };
+    vi.useFakeTimers();
+    try {
+      const oldSent = await at(100, () => repo.save(sample()));
+      await at(95, () => repo.patch(oldSent.id, { status: 'sent' }));
+      const oldDecided = await at(100, () => repo.save(sample()));
+      await at(90, () => repo.patch(oldDecided.id, { status: 'won' }));
+      const recentDraft = await at(10, () => repo.save(sample()));
+      const recentWon = await at(8, () => repo.save(sample()));
+      await at(7, () => repo.patch(recentWon.id, { status: 'sent' }));
+      await at(5, () => repo.patch(recentWon.id, { status: 'won' }));
+      const webRecent = await at(6, () => repo.save(sample({ channel: 'web' })));
+      const deletedRecent = await at(4, () => repo.save(sample()));
+      await at(4, () => repo.softDelete(deletedRecent.id, 'op@x.com'));
+      return { repo, now, oldSent, oldDecided, recentDraft, recentWon, webRecent, deletedRecent };
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it('listFunnelRows: window rows + the live set, ops channel, no soft-deleted, no blobs', async () => {
+    const { repo, now, oldSent, oldDecided, recentDraft, recentWon, webRecent, deletedRecent } = await seeded();
+    const since = new Date(now - 30 * DAY);
+    const { rows, truncated } = await repo.listFunnelRows(since, 100);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(recentDraft.id);
+    expect(ids).toContain(recentWon.id);
+    expect(ids).toContain(oldSent.id);        // old but still open in 'sent' → live-set arm
+    expect(ids).not.toContain(oldDecided.id); // old and decided → outside the window
+    expect(ids).not.toContain(webRecent.id);  // web channel excluded by default
+    expect(ids).not.toContain(deletedRecent.id);
+    expect(truncated).toBe(false);
+    for (const r of rows) {
+      expect(r).not.toHaveProperty('request');
+      expect(r).not.toHaveProperty('result');
+      expect(r.sentAt === null || r.sentAt instanceof Date).toBe(true);
+    }
+  });
+
+  it('listDemandRows: created-in-range only, carries request/requestedService/vehicle', async () => {
+    const { repo, now, oldSent, recentDraft, recentWon, webRecent, deletedRecent } = await seeded();
+    const { rows, truncated } = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 100);
+    const ids = rows.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([recentDraft.id, recentWon.id]));
+    expect(ids).not.toContain(oldSent.id);    // open, but created outside range — demand is about creation
+    expect(ids).not.toContain(webRecent.id);
+    expect(ids).not.toContain(deletedRecent.id);
+    expect(truncated).toBe(false);
+    for (const r of rows) {
+      expect(r).toHaveProperty('request');
+      expect(r).toHaveProperty('requestedService');
+      expect(r).toHaveProperty('vehicle');
+    }
+  });
+
+  it('honors limit keeping the most recent rows and flags truncation', async () => {
+    const { repo, now, recentDraft } = await seeded();
+    const funnel = await repo.listFunnelRows(new Date(now - 30 * DAY), 2);
+    expect(funnel.truncated).toBe(true);
+    expect(funnel.rows.length).toBe(2);
+    // createdAt desc → the two most recently created qualifying rows
+    expect(funnel.rows[0].createdAt.getTime()).toBeGreaterThanOrEqual(funnel.rows[1].createdAt.getTime());
+    const demand = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 1);
+    expect(demand.truncated).toBe(true);
+    expect(demand.rows.map((r) => r.id)).not.toContain(recentDraft.id === demand.rows[0].id ? 'x' : recentDraft.id); // most recent kept
+  });
+
+  it("channel 'web' and 'all' widen the filter (future customer-website analytics)", async () => {
+    const { repo, now, webRecent, recentDraft } = await seeded();
+    const web = await repo.listDemandRows(new Date(now - 30 * DAY), new Date(now), 100, 'web');
+    expect(web.rows.map((r) => r.id)).toEqual([webRecent.id]);
+    const all = await repo.listFunnelRows(new Date(now - 30 * DAY), 100, 'all');
+    const ids = all.rows.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
   });
 });

@@ -31,8 +31,16 @@ async function stubOps(page) {
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 373, durationMin: 436 })));
 }
 
+// Multi-stop rides (Task 8): pickup/dropoff are now stop 0 / the last stop of a 2-stop leg,
+// addressed via data-field="stop" + data-stop. Translate the legacy field names so call sites
+// read unchanged.
+function stopSelector(field) {
+  if (field === 'pickupLocation') return '[data-field="stop"][data-stop="0"]';
+  if (field === 'dropoffLocation') return '[data-field="stop"][data-stop="1"]';
+  return `[data-field="${field}"]`;
+}
 async function setLegField(page, legIndex, field, value) {
-  const input = page.locator('.ch-leg').nth(legIndex).locator(`[data-field="${field}"]`);
+  const input = page.locator('.ch-leg').nth(legIndex).locator(stopSelector(field));
   await input.fill(value);
   await input.dispatchEvent('change');
   await page.waitForTimeout(80);
@@ -52,15 +60,22 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await page.dispatchEvent('#f-contact', 'change');
   await expect(page.locator('.ch-leg-date input[type="date"]').first()).toBeVisible({ timeout: 10000 });
 
+  // Two distinct FUTURE dates (past dates are rejected + cleared by the tool). Computed
+  // dynamically so the test never rots — the old literals 2026-07-09/23 expired.
+  const [legDate1, legDate2] = await page.evaluate(() => {
+    const iso = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    return [iso(30), iso(44)];
+  });
+
   // Faithful repro of the reported screenshot: long place names + set dates + 2 legs.
   await setLegField(page, 0, 'pickupLocation', 'Colombo Airport (CMB)');
   await setLegField(page, 0, 'dropoffLocation', 'Jaffna, Sri Lanka');
-  await setLegField(page, 0, 'date', '2026-07-09');
+  await setLegField(page, 0, 'date', legDate1);
   await page.getByText('Add leg').click();
   await page.waitForTimeout(120);
   await setLegField(page, 1, 'pickupLocation', 'Jaffna, Sri Lanka');
   await setLegField(page, 1, 'dropoffLocation', 'Colombo Airport (CMB)');
-  await setLegField(page, 1, 'date', '2026-07-23');
+  await setLegField(page, 1, 'date', legDate2);
 
   // Force chauffeur mode.
   await page.evaluate(() => {
@@ -81,7 +96,7 @@ test('chauffeur mode does not collapse the leg date input', async ({ page }) => 
   await expect(page.locator('.ch-dist-pill.auto').first()).toBeVisible({ timeout: 5000 });
 
   const dateInput = page.locator('.ch-leg-date input[type="date"]').first();
-  const toInput = page.locator('.ch-leg').first().locator('[data-field="dropoffLocation"]');
+  const toInput = page.locator('.ch-leg').first().locator('[data-field="stop"][data-stop="1"]');
   // The date input must never be overlapped/clipped by the "to" field (the reported bug: the
   // date shows only "/09/"). If space is tight the route drops to its own line instead.
   for (const width of [1280, 1100, 1000, 960, 900, 820]) {

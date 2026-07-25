@@ -34,7 +34,7 @@ export interface OpsDeps {
 // Every action the capability matrix knows about — used only to compute whoami's `caps`
 // list from the resolved role, never to grant anything (can() remains the sole gate).
 const ALL_ACTIONS: OpsAction[] = [
-  'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs',
+  'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view',
 ];
 
 const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;

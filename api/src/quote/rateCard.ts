@@ -1,3 +1,5 @@
+import type { HotZone } from './hotZones';
+
 export type Vehicle = 'car' | 'van' | 'van9' | 'van14' | 'custom';
 export const EXTRA_CODES = ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] as const;
 export type ExtraCode = typeof EXTRA_CODES[number];
@@ -84,4 +86,9 @@ export type RateCard = {
   fxUsdToLkr: number;
   extras: Record<string, number>;
   shared: { colomboPickupCents: number; extraBagCents: number };
+  // Active hot zones, composed onto the live card per request (zonesRepo.activeZones()) and frozen
+  // into a locked quote's snapshot. Optional for back-compat: a snapshot created before hot zones
+  // (or with none active) has no field ⇒ no boost = pre-hot-zones behaviour. The compiled RATE_CARD
+  // literal deliberately carries none — zones are DB-only.
+  hotZones?: HotZone[];
 };

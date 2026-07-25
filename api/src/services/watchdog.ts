@@ -36,6 +36,10 @@ export async function runWatchdog(
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck = pending.filter((b) => {
+    // Ops-booked bookings (channel 'whatsapp') are paid out-of-band / settled via the
+    // payment-link flow, not web checkout — the abandoned-cart sweep (ops alert + customer
+    // "finish paying" email) must never fire for them.
+    if (b.channel === 'whatsapp') return false;
     const age = now.getTime() - Date.parse(b.createdAt);
     return age >= STUCK_PENDING_MS && age < STUCK_PENDING_MAX_MS;
   });

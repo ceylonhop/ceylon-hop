@@ -69,9 +69,9 @@ async function buildRoute(page) {
   await page.fill('#f-lastName', 'Silva');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
-  await page.waitForSelector('.ch-tl-title[data-field="pickupLocation"]', { timeout: 10000 });
-  const from = page.locator('.ch-tl-title[data-field="pickupLocation"]').first();
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+  const from = page.locator('.ch-tl-title[data-field="stop"][data-stop="0"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await from.fill('Colombo'); await from.dispatchEvent('change');
   await to.fill('Kandy'); await to.dispatchEvent('change');
 }
@@ -131,12 +131,64 @@ test('a failed route does not re-query on unrelated edits — only a stop change
 
   // Changing an actual stop is the only thing that can fix a failed route → exactly
   // that triggers a retry.
-  const to = page.locator('.ch-tl-title[data-field="dropoffLocation"]').first();
+  const to = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await to.fill('Ella');
   await to.dispatchEvent('change');
   await expect
     .poll(() => page.evaluate(() => (window.__computeRoutesReqs || []).length), { timeout: 5000 })
     .toBeGreaterThan(afterDate);
+});
+
+test('disconnected legs draw as separate routes — no line bridging the gap', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await stub(page, { key: 'test-browser-key' });
+
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+  await page.waitForSelector('.ch-tl-title[data-field="stop"][data-stop="0"]', { timeout: 10000 });
+
+  const setField = async (legIndex, field, value) => {
+    // Ride model: pickup/dropoff are stop 0/last of the leg's stop chain (data-field="stop").
+    const stopSel = field === 'pickupLocation' ? '[data-field="stop"][data-stop="0"]'
+      : field === 'dropoffLocation' ? '[data-field="stop"][data-stop="1"]'
+      : `[data-field="${field}"]`;
+    const input = page.locator('.ch-leg').nth(legIndex).locator('.ch-tl-title' + stopSel);
+    await input.fill(value);
+    await input.dispatchEvent('change');
+    await page.waitForTimeout(120);
+  };
+  // Leg 1: Colombo Airport → Kandy (both known places → sent to Google as exact coords).
+  await setField(0, 'pickupLocation', 'Colombo Airport (CMB)');
+  await setField(0, 'dropoffLocation', 'Kandy');
+  // Leg 2, DISCONNECTED: Galle → Ella. Galle ≠ Kandy, so leg 2 does not continue leg 1.
+  // (Add leg auto-chains the pickup to Kandy; we overwrite it to Galle to break the chain.)
+  await page.getByText('Add leg').click();
+  await page.waitForTimeout(150);
+  await setField(1, 'pickupLocation', 'Galle');
+  await setField(1, 'dropoffLocation', 'Ella');
+  await page.waitForTimeout(400);
+
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const CMB = { lat: 7.18, lng: 79.88 };
+  const GALLE = { lat: 6.03, lng: 80.22 };
+  const ELLA = { lat: 6.87, lng: 81.05 };
+
+  // The second, disconnected leg must be routed on its own — Galle appears as a route
+  // ORIGIN, not merely stitched in as an intermediate of one cross-gap route.
+  expect(reqs.some((r) => eq(r.origin, GALLE))).toBe(true);
+  // Nothing may route ACROSS the gap: no single Colombo→Ella route, and Galle is never
+  // an intermediate waypoint (that would be the bug — a line drawn Kandy→Galle→Ella).
+  expect(reqs.some((r) => eq(r.origin, CMB) && eq(r.destination, ELLA))).toBe(false);
+  expect(reqs.some((r) => (r.intermediates || []).some((i) => eq(i.location, GALLE)))).toBe(false);
+  expect(errors).toEqual([]);
 });
 
 test('without a maps key the itinerary shows no route map toggle', async ({ page }) => {

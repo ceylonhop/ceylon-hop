@@ -8,11 +8,12 @@ import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { futureIsoDate } from '../testSupport/dates';
 
 const valid = {
   from: 'Colombo Airport',
   to: 'Ella',
-  date: '2026-08-01',
+  date: futureIsoDate(30), // anchored to "now" so the past-date rule never expires it
   time: '09:00',
   vehicleType: 'car',
   adults: 2,
@@ -122,7 +123,7 @@ describe('POST /webhooks/payments', () => {
         body: JSON.stringify({
           stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'],
           nights: [1, 2, 0],
-          dates: ['2026-07-20', '2026-07-22'],
+          dates: [futureIsoDate(30), futureIsoDate(32)],
           pax: 2,
           vehicleType: 'car',
           serviceType: 'chauffeur',
@@ -177,7 +178,7 @@ describe('POST /webhooks/payments', () => {
     expect(after!.status).not.toBe('paid');
   });
 
-  it('does NOT mark the booking paid when the payment failed (acknowledge, no email)', async () => {
+  it('does NOT mark the booking paid when the payment failed, but sends one retry nudge', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
     const bookings = new InMemoryBookingRepo();
@@ -188,7 +189,21 @@ describe('POST /webhooks/payments', () => {
     expect(res.status).toBe(200); // acknowledged so PayHere won't retry…
     const after = await bookings.get(b.id);
     expect(after!.status).toBe('payment_pending'); // …but the booking must NOT be paid
-    expect(email.sent).toHaveLength(0);
+    // The customer gets an immediate "payment didn't go through" nudge to retry.
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].subject.toLowerCase()).toContain("didn’t go through");
+  });
+
+  it('does not re-send the payment-failed email on a duplicate failure notification', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, email, bookings });
+    const b = await bookAndCheckout(app);
+    const failed = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency, status: 'failed' });
+    await app.request('/webhooks/payments', { method: 'POST', body: failed });
+    await app.request('/webhooks/payments', { method: 'POST', body: failed });
+    expect(email.sent).toHaveLength(1); // idempotent — only one nudge
   });
 });
 

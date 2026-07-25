@@ -1,12 +1,22 @@
 import { z } from 'zod';
 
+// A display-only phone part (country code / number) that may arrive as "" from the web booker
+// and must be read as "not provided" rather than rejected. The booker emits "" for these when a
+// "+"-prefixed number matches no known dial code (e.g. "+0771…"); without this coalesce the whole
+// booking 400s at the pay button. Contact/checkout always uses `whatsapp`, so these two are
+// informational only — safe to treat empty as absent.
+const optionalPhonePart = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.string().min(1).optional(),
+);
+
 // The lead traveller — we send confirmation here and contact them about the booking.
 export const CustomerInput = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
-  phoneCountryCode: z.string().min(1).optional(),
-  phoneNumber: z.string().min(1).optional(),
+  phoneCountryCode: optionalPhonePart,
+  phoneNumber: optionalPhonePart,
   whatsapp: z.string().min(1),
   country: z.string().min(1),
   marketingOptIn: z.boolean().optional(),
