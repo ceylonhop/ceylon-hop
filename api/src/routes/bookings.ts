@@ -9,12 +9,14 @@ import {
   priceShared,
   quoteSingleTransfer,
   quoteTrip,
+  InvalidPricingRequestError,
   type PriceOutcome,
 } from '../services/pricing';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
+import { departureTimesForCorridor } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -218,7 +220,13 @@ export function bookingRoutes(deps: {
     // The engine is the pricing truth; the client's quotedTotal is only a fallback.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
-    const outcome = await priceSingle(parsed.data, legMaps, rateCard);
+    let outcome;
+    try {
+      outcome = await priceSingle(parsed.data, legMaps, rateCard);
+    } catch (err) {
+      if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
+      throw err;
+    }
     const resolved = resolveTotals(outcome, parsed.data.quotedTotal, quoteSingleTransfer(parsed.data).total);
     // M8 — enrich with road distance/duration (best-effort; never blocks the booking).
     let distance = null;
@@ -265,7 +273,13 @@ export function bookingRoutes(deps: {
     // Engine-first; customer bookings currently collect the full amount now.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
-    const outcome = await priceTrip(parsed.data, legMaps, rateCard);
+    let outcome;
+    try {
+      outcome = await priceTrip(parsed.data, legMaps, rateCard);
+    } catch (err) {
+      if (err instanceof InvalidPricingRequestError) return c.json({ error: err.code }, 422);
+      throw err;
+    }
     const resolved = resolveTotals(
       outcome,
       parsed.data.quotedTotal,
@@ -349,10 +363,25 @@ export function bookingRoutes(deps: {
       );
     }
 
+    // Seat inventory is keyed on the departure time, and an unrecognised time creates a fresh
+    // full-capacity departure — so an arbitrary string sells the same van again. Only the
+    // corridor's published times are real departures.
+    const times = departureTimesForCorridor(corridor.id);
+    const time = req.time.trim();
+    if (times.length && !times.includes(time)) {
+      return c.json(
+        {
+          error: 'unknown_departure_time',
+          message: `This shared route departs at ${times.join(' and ')}. Pick one of those times, or book it as a private transfer.`,
+        },
+        400,
+      );
+    }
+
     const held = await departures.holdSeats({
       corridorId: corridor.id,
       date: req.date,
-      time: req.time,
+      time,
       seats: req.seats,
     });
     if (!held) return c.json({ error: 'sold_out' }, 409);

@@ -16,8 +16,20 @@ function unpriced(reason: string): PriceOutcome {
   return { priced: false, reason };
 }
 
-// Run the engine, translating any engine rejection (TOO_BIG, NO_LEGS, …) into an
-// unpriced outcome — a pricing hiccup must never take the booking flow down.
+// The engine rejects an INVALID REQUEST with one of these. They are not pricing hiccups, so
+// they must not fall through to the placeholder: `bags: 100` used to make a $125 transfer a
+// chargeable $40 booking. /quote already 422s on exactly this set.
+const INVALID_REQUEST_ERRORS = new Set(['TOO_BIG', 'UNKNOWN_EXTRA', 'NO_LEGS']);
+
+export class InvalidPricingRequestError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = 'InvalidPricingRequestError';
+  }
+}
+
+// Run the engine, translating a genuine pricing hiccup into an unpriced outcome — that must
+// never take the booking flow down. A malformed request, by contrast, is rejected outright.
 function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PriceOutcome {
   try {
     const result = quote(req, rateCard);
@@ -28,7 +40,9 @@ function runEngine(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PriceOutc
       priced: true,
     };
   } catch (err) {
-    return unpriced(`engine rejected the request: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (INVALID_REQUEST_ERRORS.has(msg)) throw new InvalidPricingRequestError(msg);
+    return unpriced(`engine rejected the request: ${msg}`);
   }
 }
 
@@ -149,7 +163,12 @@ export function quoteTrip(input: TripInput): { currency: string; total: number }
   // Chauffeur is billed per day (nights + 1); private is billed per inter-city leg.
   if (input.serviceType === 'chauffeur') {
     const nights = input.nights.reduce((a, b) => a + b, 0);
-    return { currency: 'USD', total: (nights + 1) * CHAUFFEUR_DAY_CENTS };
+    // This is a FLOOR under an unpriced booking, so it must not collapse when the client
+    // sends a short/empty `nights`: `nights: []` pinned a 9-day trip's floor at one day.
+    // A chauffeur trip cannot run in fewer days than it has legs.
+    const legs = Math.max(1, input.stops.length - 1);
+    const days = Math.max(nights + 1, legs);
+    return { currency: 'USD', total: days * CHAUFFEUR_DAY_CENTS };
   }
   const legs = Math.max(0, input.stops.length - 1);
   const perLeg = LEG_BASE_CENTS + (input.vehicleType === 'van' ? LEG_VAN_SURCHARGE_CENTS : 0);

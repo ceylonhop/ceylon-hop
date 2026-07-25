@@ -309,3 +309,75 @@ describe('POST /bookings/shared — seat-hold compensation', () => {
     expect((await res.json()).total).toBe(6200);
   });
 });
+
+// These three were demonstrated undercharges/oversells against the running app, not theory.
+// Each one reached a chargeable booking, so keep them pinned.
+describe('POST /bookings — pricing and inventory cannot be undercut', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  // An engine rejection used to fall through to a flat $40 placeholder that was immediately
+  // payable — one integer field turned a $125 transfer into a $40 booking.
+  it('rejects an oversized request instead of pricing it at the placeholder', async () => {
+    const app = createApp();
+    // Names the maps adapter can actually resolve, so the engine really prices this and we're
+    // testing the engine-rejection path rather than the distance-unresolved one.
+    const routed = { ...valid, from: 'Colombo Airport (CMB)', to: 'Arugam Bay', adults: 1, bags: 1 };
+    const honest = await post(app, routed);
+    expect(honest.status).toBe(201);
+    const honestTotal = (await honest.json()).total;
+    expect(honestTotal).toBeGreaterThan(4000); // engine-priced, well above the $40 placeholder
+
+    const res = await post(app, { ...routed, bags: 100 });
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe('TOO_BIG');
+  });
+
+  // `nights: []` pinned the chauffeur floor at one day ($55) for a trip of any length.
+  it('does not let an empty nights array collapse the chauffeur floor', async () => {
+    const app = createApp({ maps: { provider: 'none', places: async () => [], distanceVariants: async () => null, distance: async () => null } as MapsAdapter });
+    const res = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport', 'Kandy', 'Ella', 'Yala', 'Mirissa', 'Galle'],
+      nights: [], pax: 2, vehicleType: 'van', serviceType: 'chauffeur', customer: valid.customer,
+    });
+    expect(res.status).toBe(201);
+    // 5 legs → at least 5 days, never 1.
+    expect((await res.json()).total).toBeGreaterThanOrEqual(5 * 5500);
+  });
+
+  it('caps the number of stops so one request cannot fan out unbounded maps calls', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', {
+      stops: Array.from({ length: 60 }, (_, i) => `Place${i}`),
+      nights: [0], pax: 2, vehicleType: 'van', serviceType: 'private', customer: valid.customer,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // Inventory is keyed on the departure time and holdSeats find-or-creates a FULL van, so an
+  // unrecognised time minted another 12 seats: 12 at '07:30', 12 more at '7:30', and so on.
+  it('refuses a departure time the corridor does not publish', async () => {
+    const app = createApp();
+    const date = futureServiceDay();
+    const sold = await jpost(app, '/bookings/shared', {
+      corridorId: 'airport-cultural', date, time: '07:30', seats: 12, customer: valid.customer,
+    });
+    expect(sold.status).toBe(201); // the one real departure is now full
+
+    for (const time of ['7:30', '07:30 ', '07:31', 'lunchtime', '99:99']) {
+      const res = await jpost(app, '/bookings/shared', {
+        corridorId: 'airport-cultural', date, time, seats: 12, customer: valid.customer,
+      });
+      expect([400, 409]).toContain(res.status); // never a fresh 12-seat van
+    }
+  });
+});
