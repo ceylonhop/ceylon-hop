@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
+import { quoteRouteText } from './quoteRouteText';
 import type {
   QuoteRepo,
   NewQuote,
@@ -198,6 +199,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
         currency: quotes.currency,
         assignedTo: quotes.assignedTo,
         createdAt: quotes.createdAt,
+        // The legs sub-document only: enough to derive routeText without shipping request_json's
+        // other fields. Legs are most of that blob by size, so this is bounded by the row count,
+        // not by the projection — see the spec's cost note and D5's revisit trigger.
+        // COALESCE because /save writes `{ tool, engine }` while older rows (and repo-level
+        // callers) put legs at the top level. Mirrors requestLegs() — change one, change both.
+        legs: sql<unknown>`COALESCE(${quotes.requestJson}->'tool'->'legs', ${quotes.requestJson}->'legs')`,
       })
       .from(quotes)
       .where(conds.length ? and(...conds) : undefined)
@@ -214,6 +221,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       currency: r.currency,
       assignedTo: r.assignedTo,
       createdAt: r.createdAt,
+      routeText: quoteRouteText(r.legs),
     }));
   }
 
