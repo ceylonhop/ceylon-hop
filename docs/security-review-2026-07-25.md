@@ -231,3 +231,50 @@ rejected; `memoizeDistance` does not double-bill Google.
 The **access-control pass** (IDOR on booking lookup, per-endpoint ops capability checks, stored XSS
 from customer fields into an authenticated ops session, CORS, rate limiting) has still never run.
 Unreviewed is not the same as clean. The Ride Board charge path was also only skimmed.
+
+---
+
+# Access-control & injection pass (run 2026-07-25, by hand)
+
+Run in the main session rather than by agent, to keep the cost down. Three threads, each stopped
+once answered.
+
+## Fixed (`fa7de9b`) — CSRF on the Ride Board, demonstrated
+
+`api/src/routes/rideBoard.ts` — a bodyless cross-site POST to `/board/:code/scratch` removed a
+signed-in traveller from their ride list. Before: `["Victim"]`. After: `[]`. Status 200.
+
+The `ch_cust` cookie is deliberately `SameSite=None` (board.html on Pages calls the API on Render),
+so unlike the ops cookie it *does* ride cross-site requests. `setCustomerCookie` reasons that CSRF is
+covered because the write endpoints only accept `application/json`, which forces a CORS preflight.
+That holds for routes which parse a body — but `/scratch` reads no body at all, so a cross-site POST
+with no content-type is a **simple request**: no preflight, cookie attached, side effect done. The
+attacker cannot read the response, which does not matter: the traveller is already off the list.
+
+Fixed with an Origin allow-list guard as router middleware. The ops CSRF guard could not be reused —
+it requires `Sec-Fetch-Site: same-origin`, which is exactly wrong for a board that is cross-origin by
+design. Verified `evil.example` → 403 with the traveller still listed, own origin → 200.
+
+## Verified safe in this pass — do not re-audit
+
+- **Stored XSS into the authenticated ops UI.** `ops-ui.html` has a consistent `esc()` discipline;
+  every customer-controlled field sampled (name, email, whatsapp, notes) is escaped, and the
+  analytics bar labels escape too. The only unescaped interpolations are a plain-text WhatsApp
+  reminder copied to the clipboard and a search-filter string comparison — neither is an HTML sink.
+- **Ops capability checks.** Every route in `ops.ts` carries a `requireCap` except `/login`,
+  `/dev-login`, `/logout`. `opsAnalytics.ts` and `internalQuote.ts` gate at the router level with
+  `r.use('*', …)` (`analytics:view` / `quote:manage`), with the bare `/admin/quote` redirect
+  deliberately exempt. `admin.ts` guards every route inline. No verb-level gap found.
+- **Customer booking lookup (IDOR).** `lib/bookingToken.ts` is HMAC-SHA256 over the booking id with
+  a dedicated secret (never cross-replayable with the ops session), length-checked and compared with
+  `timingSafeEqual`. Booking ids are UUIDs. No enumeration path.
+- **Ops shell.** `opsUi.ts` serves the HTML with only `GOOGLE_CLIENT_ID` and the browser Maps key
+  templated in — both public-by-design browser values. Data comes from the guarded APIs.
+- **Ops CSRF.** The `ch_ops` cookie is `SameSite=Lax`, which by itself blocks cross-site POST, and
+  `/admin/quote/*` mutations additionally carry a `Sec-Fetch-Site` + Origin gate.
+
+## Still not covered
+
+Injection (SQL/path traversal/prototype pollution), the email path as a spam relay, dependency
+hygiene, and security headers were not reached in this pass. The Ride Board charge path remains
+un-audited (it runs behind fakes with $0 preapprovals).
