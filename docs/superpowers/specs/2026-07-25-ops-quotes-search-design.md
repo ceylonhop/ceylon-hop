@@ -21,7 +21,11 @@ Bookings already has search — a topbar box filtering on customer name, referen
 - The whole list therefore already sits in the browser as `opsQuotes`. A client-side filter is
   free — no new fetch, no round-trip per keystroke.
 - Route is **not** in that projection and there are no `from`/`to` columns on the `quotes`
-  table. Route data lives only inside `request_json.legs[]` as `{from, to, stops?}`.
+  table. Route data lives only inside `request_json` as `{from, to, stops?}` per leg — and it is
+  nested: `POST /save` persists `{ tool, engine }` ("V19: persist the reopenable tool payload
+  alongside the engine request"), so the operator-entered place names are at
+  **`request_json.tool.legs[]`**, not the top level. Rows written before that change, and
+  repo-level callers, still carry `legs` at the top; both shapes are live in the fixtures today.
 - The router applies a blanket `requireCap('quote:manage')` (`internalQuote.ts:503`), so
   everyone who can load the queue can already see every field on it.
 - Bookings' equivalent search (`?q=`) exists server-side in `ops.ts` but the UI filters
@@ -69,9 +73,12 @@ Rules:
 
 Repo wiring:
 
+Both repos locate the legs through one shared helper, `requestLegs(request)`, which reads
+`request.tool.legs` and falls back to a top-level `request.legs` for pre-V19 rows.
+
 - **Postgres** (`postgresQuoteRepo.ts`): the projection additionally selects
-  `request_json->'legs'` and runs `quoteRouteText` on it.
-- **In-memory** (`quoteRepo.ts`): runs `quoteRouteText` on the stored request's `legs`.
+  `COALESCE(request_json->'tool'->'legs', request_json->'legs')` and runs `quoteRouteText` on it.
+- **In-memory** (`quoteRepo.ts`): runs `quoteRouteText(requestLegs(q.request))`.
 
 **Honest cost.** An earlier draft of this spec called that "the legs sub-document only, never the
 whole request blob". That was a fig leaf: `ToolRequestSchema` (`internalQuote.ts:87`) is about ten
