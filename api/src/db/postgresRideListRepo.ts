@@ -110,8 +110,9 @@ export class PostgresRideListRepo implements RideListRepo {
   async listOpen(filter: ListFilter = {}, now: Date = new Date()): Promise<RideListWithMembers[]> {
     // Board scale is dozens of lists — read the open set and filter/sort in JS (keeps the
     // query simple; no dynamic SQL). Matches InMemoryRideListRepo semantics exactly.
+    // Confirmed lists stay on the board (see the in-memory repo for why); cancelled/expired drop.
     const rows = await this.sql<ListRow[]>`
-      select * from ride_list where status = 'gathering' order by created_at desc`;
+      select * from ride_list where status in ('gathering','confirmed') order by created_at desc`;
     const from = filter.from ? norm(filter.from) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
     const lists = rows
