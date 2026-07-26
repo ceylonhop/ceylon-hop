@@ -76,6 +76,32 @@ describe('board row helpers', () => {
   });
 });
 
+describe('stageLabel keeps grouping and wording separate', () => {
+  function labeller() {
+    const src = `${liftConst(body, 'isBoard')}\n${/const STAGE=\{[\s\S]*?\n\};/.exec(body)![0]}\n${liftConst(body, 'stageLabel')}`;
+    return new Function(`${src}; return stageLabel;`)() as (t: unknown) => string;
+  }
+
+  it('never calls a van "Paid" — that would contradict a held or failed card', () => {
+    // The row groups under the 'paid' stage so it sits with real bookings that
+    // need a vehicle, but a confirmed van's money may still be merely held.
+    const f = labeller();
+    expect(f({ source: 'ride_board', stage: 'paid', board: { listStatus: 'confirmed' } }))
+      .toBe('Van confirmed');
+  });
+
+  it('labels a still-gathering van plainly', () => {
+    expect(labeller()({ source: 'ride_board', stage: 'gathering', board: { listStatus: 'gathering' } }))
+      .toBe('Gathering names');
+  });
+
+  it('leaves real bookings on their normal stage wording', () => {
+    const f = labeller();
+    expect(f({ source: 'booking', stage: 'paid' })).toBe('Paid');
+    expect(f({ source: 'booking', stage: 'awaiting_payment' })).toBe('Awaiting payment');
+  });
+});
+
 describe('reason() never nags about a van', () => {
   it('returns nothing for a ride-board row whatever its stage', () => {
     const src = liftConst(body, 'reason');

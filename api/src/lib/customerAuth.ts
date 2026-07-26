@@ -135,8 +135,15 @@ export function verifyRideMemberToken(
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
   const expected = mac(body, secret);
-  if (sig.length !== expected.length) return null;
-  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  // Compare BYTE lengths, not character counts: timingSafeEqual throws on a
+  // byte-length mismatch, and a signature containing any multi-byte character
+  // can match on `.length` while differing in bytes. `?t=` is attacker-supplied
+  // (rideBoard scratch), so the string-length guard turned a bad token into a
+  // 500 instead of a quiet reject. Mirrors verifyCustomerSession above.
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length) return null;
+  if (!timingSafeEqual(sigBuf, expBuf)) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));

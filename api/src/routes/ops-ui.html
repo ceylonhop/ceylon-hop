@@ -1447,6 +1447,14 @@ function rowToTicket(row){
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
+/* A confirmed van is mapped onto the 'paid' STAGE so it groups under "Needs
+   vehicle" with real bookings — but it must not inherit the word "Paid", which
+   would contradict the money block whenever a card is merely held or has failed.
+   Grouping and labelling are decoupled here on purpose. */
+const stageLabel=t=>{
+  if(!isBoard(t))return STAGE[t.stage]?STAGE[t.stage].label:t.stage;
+  return (t.board&&t.board.listStatus==='confirmed')?'Van confirmed':'Gathering names';
+};
 /* "3 of 3 seats · van runs" — the one number that says whether this van goes. */
 const boardSeats=t=>{
   const b=t.board;if(!b)return '';
@@ -1583,7 +1591,7 @@ function ticketRow(t,i){
       <div class="tk-meta">${meta}</div>
     </div>
     <div class="tk-side">
-      <span class="pill"><span class="pd"></span>${st.label}</span>
+      <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
       <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
     </div>
   </div>`;
@@ -2157,7 +2165,7 @@ function boardSheetHtml(t,st){
   return `
     <div class="sheet-h"><button class="x" data-act="close">✕</button>
       <div class="ey"><span class="chan board" style="width:22px;height:22px;border-radius:6px">${ICON.van}</span> Ride board van</div>
-      <h2>${esc(t.route)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${st.label}</span>
+      <h2>${esc(t.route)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${esc(stageLabel(t))}</span>
     </div>
     <div class="sheet-b">
       <div class="block"><h4>Will it run?</h4>
