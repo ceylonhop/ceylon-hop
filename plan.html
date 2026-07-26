@@ -351,6 +351,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sum-wa b{display:block;font-size:.85rem}
   .sum-wa span{font-size:.76rem;color:var(--ink-soft)}
 
+  /* The summary is sticky, so it must stay shorter than the viewport — a top-anchored
+     sticky box taller than the screen can never show its own bottom (the CTA). Hence the
+     capped map, the 2-up stats and the split-off .summary-more card. */
+  .sum-stats{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+  .sum-stats .sum-stat{padding:8px 0}
+  .summary .trip-map{max-height:190px;margin-bottom:14px}
+  .summary .trip-map>*{height:190px!important;width:100%}
+  .summary-more{margin-top:14px}
+  .summary-more .sum-fine{margin:0}
+  .summary-more .hotels-note{margin:14px 0 0}
+  @media(max-width:980px){
+    .summary .trip-map{max-height:none}
+    .summary .trip-map>*{height:auto!important}
+  }
   .incl{margin-top:18px}
   .incl h4{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:0 0 9px}
   .incl .row{display:flex;align-items:flex-start;gap:.55rem;font-size:.84rem;margin-bottom:7px}
@@ -468,10 +482,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="sum-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0M9 12l11 0M9 18l11 0M5 6h.01M5 12h.01M5 18h.01"/></svg> Trip summary</div>
         <p class="sum-dates" id="sum-dates">—</p>
 
-        <div class="sum-stat"><span>Places</span><b id="st-stops">—</b></div>
-        <div class="sum-stat"><span>Nights along the way</span><b id="st-nights">—</b></div>
-        <div class="sum-stat"><span>Transfer legs</span><b id="st-legs">—</b></div>
-        <div class="sum-stat"><span>Total driving</span><b id="st-drive">—</b></div>
+        <div class="sum-stats">
+          <div class="sum-stat"><span>Places</span><b id="st-stops">—</b></div>
+          <div class="sum-stat"><span>Nights</span><b id="st-nights">—</b></div>
+          <div class="sum-stat"><span>Transfer legs</span><b id="st-legs">—</b></div>
+          <div class="sum-stat"><span>Driving</span><b id="st-drive">—</b></div>
+        </div>
 
         <div class="sum-route" id="sum-route">—</div>
 
@@ -479,15 +495,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <span class="se-lbl">Indicative transfers <span class="se-sub">per vehicle, whole trip</span></span>
           <span class="se-amt" id="sum-amt">~$—</span>
         </div>
+
+        <button class="btn btn-primary btn-lg sum-cta" id="request-btn">Next: add your dates</button>
+        <p class="route-incomplete-hint" id="route-incomplete-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Add a pick-up and drop-off to every leg to continue.</p>
+      </div>
+
+      <!-- the reassurance rail: scrolls normally, so the sticky summary above stays short
+           enough that its CTA is always on screen -->
+      <div class="panel-card summary-more">
         <p class="sum-fine" id="sum-fine">A guide only — we tailor and confirm your exact quote when you book. One private vehicle &amp; driver for every leg; fuel, tolls &amp; taxes included. You book your own hotels.</p>
 
         <div class="hotels-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-5h6v5"/></svg>
           <div><b>Hotels are your own</b><p>We’re a transfer service — you book the stays you love. We’ll have you at each hotel’s door, on your dates.</p></div>
         </div>
-
-        <button class="btn btn-cta btn-lg sum-cta" id="request-btn">Next: add your dates</button>
-        <p class="route-incomplete-hint" id="route-incomplete-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Add a pick-up and drop-off to every leg to continue.</p>
 
         <a class="sum-wa" id="sum-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener">
           <span class="ic"></span>
@@ -519,7 +540,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="dates-list" id="dates-list"></div>
     <div class="dates-actions">
       <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
-      <button class="btn btn-cta btn-lg" id="dates-continue">Continue to select service →</button>
+      <button class="btn btn-primary btn-lg" id="dates-continue">Continue to select service →</button>
     </div>
     <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
     <p class="route-incomplete-hint" id="dates-drive-hint" hidden></p>

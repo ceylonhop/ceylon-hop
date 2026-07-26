@@ -245,11 +245,24 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20city%7CSigiriya%20%2F%20Dambulla&pax=2&vehicle=car');
 
+  // Let the rail finish its first pricing pass before typing. Until it settles the cards
+  // above are still growing, which slides the suggestion menu down the page — Playwright
+  // then refuses to click a target that will not hold still. (The separate bug where a
+  // background render destroyed the open menu is covered by plan-place-menu-stability.spec.js.)
+  await expect(page.locator('#rail [data-dist]').first()).toContainText('km');
+
   const from = page.locator('#rail .leg-card').first().locator('.leg-from');
   await from.click();
   await from.fill('CMB');
   await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
-  await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
+  // Commit with Enter rather than a pointer click. The rail keeps reflowing while its
+  // legs price, which slides the menu down the page and periodically rebuilds it — a
+  // mouse click has to hit a target that is both moving and liable to be replaced, and
+  // times out. Enter is a first-class path in the app (the keydown handler activates the
+  // highlighted option, asserted to be CMB just above) and does not depend on hit-testing.
+  // Pointer selection stays covered by the sibling "layers popular route then Google
+  // results" test, which runs against a settled rail.
+  await from.press('Enter');
 
   await expect(from).toHaveValue('Colombo Airport (CMB)');
   await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
