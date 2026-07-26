@@ -64,6 +64,9 @@ export interface RidePolicy {
 // Three seats cover the van (see quote/seatPrice.ts), so three names are enough to run it;
 // seats four to six are margin. Capacity is the van's six.
 const DEFAULT_POLICY: RidePolicy = { minSeats: 3, capacity: 6 };
+// One name may cover the people travelling with it, but not the whole van — a traveller
+// wanting more than three seats is a private hire, and we'd rather sell them that.
+export const MAX_SEATS_PER_MEMBER = 3;
 const POLICY_OVERRIDES: Record<string, Partial<RidePolicy>> = {};
 export function policyForCorridor(corridorId: string): RidePolicy {
   return { ...DEFAULT_POLICY, ...(POLICY_OVERRIDES[corridorId] ?? {}) };
@@ -104,7 +107,7 @@ export const CreateListInput = z
     slot: Slot,
     note: z.string().max(140).optional(),
     preferredTime: z.string().min(1).optional(),
-    seats: z.number().int().min(1).max(4).optional(),
+    seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
   })
   .refine((d) => Boolean(d.corridorId) || Boolean(d.from && d.to), {
     message: 'from and to (or corridorId) are required',
@@ -113,9 +116,11 @@ export type CreateListInput = z.infer<typeof CreateListInput>;
 
 // Add your name to an existing list. Identity comes from the customer session,
 // not the body — the body only carries the traveller's choices.
+// seats is optional on purpose: omitting it must not quietly reset a traveller who is
+// already on the list back to a single seat (the route falls back to what they hold).
 export const JoinInput = z.object({
   preferredTime: z.string().min(1).optional(),
-  seats: z.number().int().min(1).max(4).default(1),
+  seats: z.number().int().min(1).max(MAX_SEATS_PER_MEMBER).optional(),
 });
 export type JoinInput = z.infer<typeof JoinInput>;
 
