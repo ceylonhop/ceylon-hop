@@ -95,6 +95,8 @@ const WPM = 220; // reading speed used for the honest "N min read" figure
 const BLOG_POSTS = [
   {
     slug: 'how-to-use-buses-in-sri-lanka-the-ultimate-guide-for-the-adventurous-travelers',
+    photo: 'blog-bus.jpg',
+    photoAlt: 'A red intercity bus rounding a bend on a Sri Lankan road',
     // Emoji-free headline for <title>/JSON-LD (matches the old indexed title);
     // `heading` is the <h1> exactly as it was published.
     title: 'How to Use Buses in Sri Lanka: The Ultimate Guide for the Adventurous Travelers',
@@ -111,6 +113,8 @@ const BLOG_POSTS = [
   },
   {
     slug: 'ultimate-tuk-tuk-guide-to-getting-around-in-sri-lanka',
+    photo: 'blog-post-1.jpg',
+    photoAlt: 'A tuk-tuk coming down a street in Mirissa, Sri Lanka',
     title: 'Ultimate Tuk Tuk Guide to Getting Around in Sri Lanka',
     heading: 'Ultimate Tuk Tuk Guide to Getting Around in Sri Lanka',
     crumb: 'Ultimate tuk-tuk guide',
@@ -124,6 +128,8 @@ const BLOG_POSTS = [
   },
   {
     slug: 'best-time-to-visit-sri-lanka-a-month-by-month-guide',
+    photo: 'blog-post-2.jpg',
+    photoAlt: 'Mist drifting through palms over Sri Lankan hill country',
     title: 'Best Time to Visit Sri Lanka: A Month-by-Month Guide',
     heading: 'Best Time to Visit Sri Lanka: A Month-by-Month Guide 🌴✨',
     crumb: 'Best time to visit Sri Lanka',
@@ -137,6 +143,8 @@ const BLOG_POSTS = [
   },
   {
     slug: '9-must-visit-places-in-sri-lanka',
+    photo: 'blog-post-3.jpg',
+    photoAlt: 'Palms above the sea at Coconut Tree Hill, Mirissa',
     title: '9 Must-Visit Places in Sri Lanka',
     heading: '9 Must-Visit Places in Sri Lanka',
     crumb: '9 must-visit places',
@@ -151,6 +159,8 @@ const BLOG_POSTS = [
   },
   {
     slug: 'discover-sri-lanka-with-ceylon-hop-your-ultimate-travel-adventure',
+    photo: 'blog-post-4.jpg',
+    photoAlt: 'A road winding through green mountains in Sri Lanka',
     title: 'Discover Sri Lanka with Ceylon Hop: Your Ultimate Travel Adventure!',
     heading: 'Discover Sri Lanka with Ceylon Hop: Your Ultimate Travel Adventure!',
     crumb: 'Discover Sri Lanka with Ceylon Hop',
@@ -164,6 +174,10 @@ const BLOG_POSTS = [
   },
   {
     slug: 'why-we-started-ceylon-hop',
+    video: 'Oo2d8CfGOgI',
+    videoTitle: "Ceylon Hop — Sri Lanka's first hop-on hop-off service",
+    photo: 'blog-post-0.jpg',
+    photoAlt: 'A busy Sri Lankan market street',
     title: 'Why We Started Ceylon Hop',
     heading: 'Why We Started Ceylon Hop 🚌',
     crumb: 'Why we started Ceylon Hop',
@@ -212,10 +226,16 @@ const longDate = iso => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB',
 const blogStyle = `
   .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
   .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(8,120,118,.6),transparent 70%)}
-  .post-hero .wrap{position:relative;max-width:900px}
-  .post-crumbs{font-size:.85rem;color:rgba(255,255,255,.82);margin-bottom:18px}
-  .post-crumbs a{color:inherit;text-decoration:none}
-  .post-crumbs a:hover{text-decoration:underline}
+  .post-hero .wrap{position:relative;z-index:2;max-width:900px}
+  /* With a photo the decorative radial gradients are replaced by a real scrim,
+     so white hero text keeps its contrast over an arbitrary image. */
+  .post-hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(12,58,56,.60),rgba(12,58,56,.82));z-index:1}
+  .post-embed{margin:2rem 0;max-width:360px}
+  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0c3a38}
+  .post-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
+  .post-hero .breadcrumbs{padding-top:0;margin-bottom:18px}
   .post-kicker{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:.32rem .7rem;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3)}
   .post-hero h1{color:#fff;font-weight:800;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
   .post-meta{color:rgba(255,255,255,.88);font-size:.9rem;margin:0}
@@ -285,9 +305,9 @@ function blogPost(post) {
     active: 'blog.html',
     style: blogStyle,
     bodyHtml: `${jsonLd}
-  <section class="post-hero">
+  <section class="post-hero${post.photo ? ' has-photo' : ''}">${post.photo ? `\n    <img class="post-hero-img" src="${p}img/${post.photo}" alt="${esc(post.photoAlt || '')}">` : ''}
     <div class="wrap">
-      <nav class="post-crumbs" aria-label="Breadcrumb"><a href="${p}index.html">Home</a> &middot; <a href="${p}blog.html">Travel Guide</a> &middot; ${esc(post.crumb)}</nav>
+      <nav class="breadcrumbs on-dark" aria-label="Breadcrumb"><a href="${p}index.html">Home</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><a href="${p}blog.html">Travel Guide</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><span class="bc-cur" aria-current="page">${esc(post.crumb)}</span></nav>
       <span class="post-kicker">${esc(post.kicker)}</span>
       <h1>${post.heading}</h1>
       <p class="post-meta"><time datetime="${post.published}">${longDate(post.published)}</time> &middot; ${minutes} min read &middot; Ceylon Hop</p>
@@ -296,7 +316,7 @@ function blogPost(post) {
   <section class="section post-body">
     <div class="wrap">
       <article class="article">
-${body}
+${body}${post.video ? `\n<figure class="post-embed">\n  <div class="frame"><iframe src="https://www.youtube-nocookie.com/embed/${post.video}" title="${esc(post.videoTitle || '')}" loading="lazy" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>\n  <figcaption>${esc(post.videoTitle || '')}</figcaption>\n</figure>` : ''}
       </article>
       <aside class="post-next">
         <span class="eyebrow">Keep reading</span>

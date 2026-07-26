@@ -44,7 +44,7 @@
     'south-coast': '~1.5h door to door', 'yala-south': '~2.5h door to door', 'ella-south': '~3.5h door to door'
   };
   var AV = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c', '#e0745f'];
-  var MIN_DEFAULT = 4;   // names needed to lock the van (per-list minSeats overrides)
+  var MIN_DEFAULT = 3;   // names needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
@@ -127,6 +127,7 @@
     var need = Math.max(0, min - committed);
     var conf = confirmed || need === 0;
     var left = Math.max(0, cap - committed);
+    if (conf && left === 0) return { cls: 'pill-teal pill-dot', txt: 'Full 🚐 · van locked in' };
     if (conf) return { cls: 'pill-teal pill-dot', txt: 'Locked in 🚐 · ' + left + ' seat' + (left === 1 ? '' : 's') + ' left' };
     if (need === 1) return { cls: 'pill-tomato pill-dot pill-pulse', txt: '1 seat to lock it in — almost there' };
     return { cls: 'pill-saffron pill-dot', txt: need + ' seats to lock it in' };
@@ -361,6 +362,7 @@
     var min = L.minSeats;
     var need = Math.max(0, min - L.committed);
     var conf = L.confirmed || need === 0;
+    var full = conf && Math.max(0, L.capacity - L.committed) === 0;
     var hot = !conf && need === 1;
     var mine = iAmOn(L);
     var sc = scarcityText(L);
@@ -391,8 +393,12 @@
       '<div class="lcard-foot">' +
       '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
       (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
-      '<button class="btn ' + (conf ? 'btn-ghost' : (mine ? 'btn-ghost' : 'btn-primary')) + ' btn-sm" data-view="' + esc(L.code) + '">' +
-      (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
+      (full && !mine
+        ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
+        : '') +
+      '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
+      (mine ? 'View your ride' : full ? 'See who\'s on' : conf ? 'See ride · hop on' : 'See ride & join') +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>' +
       '</div>' +
       (L.note
@@ -412,6 +418,7 @@
         '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
       : '';
+    grid.removeAttribute('aria-busy');
     grid.innerHTML = shown.map(card).join('') + empty +
       '<button class="lcard-new reveal" id="new-list"><div>' +
       '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
@@ -433,6 +440,8 @@
       c.addEventListener('click', function (e) {
         if (e.target.closest('[data-join],[data-view],a')) return;
         var btn = c.querySelector('[data-view]');
+        var again = e.target.closest ? e.target.closest('[data-again]') : null;
+        if (again) { startAnother(again.getAttribute('data-again')); return; }
         if (btn) openDetail(btn.getAttribute('data-view'));
       });
     });
@@ -488,6 +497,23 @@
   }
 
   /* ---------------- board loads ---------------- */
+  // Placeholder cards for the gap before /board answers. Worth having even though the
+  // warm response is ~450ms: the API sleeps on Render's free tier, and a cold wake is
+  // tens of seconds staring at an empty grid with no sign anything is happening.
+  // Cleared by the first render() / error state, both of which overwrite grid.innerHTML.
+  function showSkeleton(n) {
+    if (!grid) return;
+    var card =
+      '<div class="bskel" aria-hidden="true">' +
+        '<div class="bskel-line w60"></div>' +
+        '<div class="bskel-line w40"></div>' +
+        '<div class="bskel-dots"><i></i><i></i><i></i><i></i></div>' +
+        '<div class="bskel-line w80"></div>' +
+      '</div>';
+    grid.innerHTML = new Array((n || 3) + 1).join(card);
+    grid.setAttribute('aria-busy', 'true');
+  }
+
   function loadBoard() {
     state.filter.mine = false;
     var qs = [];
@@ -504,6 +530,7 @@
     }).catch(function (e) {
       state.lists = [];
       renderFilters();
+      grid.removeAttribute('aria-busy');
       grid.innerHTML =
         '<div class="board-empty"><div class="plus">📡</div><h3>Couldn\'t reach the board.</h3>' +
         '<p>Check your connection and try again — nothing on your side is lost.</p>' +
@@ -596,7 +623,7 @@
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · ' + TA_REVIEWS + ' reviews') + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
-      '<div><b>$0 unless it runs.</b> If four names come, you split this van — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
+      '<div><b>$0 unless it runs.</b> If three names come, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
       (L.note ? '<div class="d-note"><b>' + esc(starterName) + ' says:</b> "' + esc(L.note) + '"</div>' : '') + '</div>' +
@@ -853,7 +880,14 @@
     document.getElementById('m-cost').textContent = money(cost) + (Number.isInteger(Number(cost)) ? '.00' : '');
   }
 
-  function openModal(code) {
+  // A full van is not a dead end: it is the strongest signal that this route has demand, so
+  // offer to start the next one on the same route and date rather than leaving the traveller stuck.
+  function startAnother(code) {
+    var L = state.byCode[code];
+    openModal(null, L ? { from: L.from, to: L.to, date: L.date, slot: L.slot } : null);
+  }
+
+  function openModal(code, prefill) {
     current = code ? (state.byCode[code] || null) : null;
     creating = !current && !code;
     if (code && !current) {
@@ -868,7 +902,15 @@
     document.getElementById('m-route').textContent = current
       ? current.from + ' → ' + current.to + ' · ' + current.whenLabel + ' · ' + slotWindow(current.slot).label
       : 'any route · any day · you set it';
-    populatePref(current ? current.slot : 'morning');
+    populatePref(current ? current.slot : (prefill && prefill.slot) || 'morning');
+    if (!current && prefill) {
+      var cf = document.getElementById('c-from'), ct = document.getElementById('c-to'), cd = document.getElementById('c-date');
+      if (cf) cf.value = prefill.from || '';
+      if (ct) ct.value = prefill.to || '';
+      if (cd && prefill.date) cd.value = prefill.date;
+      var mr = document.getElementById('m-route');
+      if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
+    }
     setStep(0);
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -1111,14 +1153,30 @@
   function boot() {
     var ta = document.getElementById('intro-ta');
     if (ta) ta.innerHTML = taBadge('Rated 5.0 by ' + TA_REVIEWS + ' travellers');
-    apiGet('/board/me').then(function (data) { state.me = (data && data.me) || null; }).catch(function () { state.me = null; })
-      .then(function () { return loadBoard(); })
-      .then(function () { if (state.me) refreshMineCodes(); })
-      .then(function () {
-        openFromHash();
-        window.addEventListener('hashchange', openFromHash);
-        startTicker();
-      });
+
+    // The rides are what people came for, so /board must not queue behind anything.
+    // These two used to be chained, which meant /board didn't even start until
+    // /board/me had come back — two full round trips before the first card, and on a
+    // cold Render instance the second one waits out the whole wake-up as well.
+    // They are independent: render() reads state.me only to mark "(you)" on a member,
+    // and /board/mine re-renders once it lands anyway.
+    showSkeleton();
+    var me = apiGet('/board/me')
+      .then(function (data) { state.me = (data && data.me) || null; })
+      .catch(function () { state.me = null; });
+    var board = loadBoard();
+
+    // /board/mine needs the identity, and its render() reads state.lists — so it waits
+    // for both rather than racing the first paint and flashing the empty state.
+    var mine = Promise.all([me, board]).then(function () {
+      if (state.me) return refreshMineCodes();
+    });
+
+    Promise.all([me, board, mine]).then(function () {
+      openFromHash();
+      window.addEventListener('hashchange', openFromHash);
+      startTicker();
+    });
   }
   boot();
 })();

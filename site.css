@@ -7,7 +7,8 @@
 
 :root{
   /* Brand palette (from brand book) */
-  --blue:#63BFD6;        /* Bachelor Button — primary */
+  --blue:#63BFD6;        /* Bachelor Button — accent only (ride-board icons). NOT the
+                            primary; --accent is teal. Used once, in board.js. */
   --teal:#0AB9B6;        /* Tiffany — brand/CTA */
   --teal-deep:#08938f;
   --saffron:#F9A429;     /* Saffron — warmth */
@@ -24,6 +25,18 @@
   --accent:var(--teal);
   --accent-deep:var(--teal-deep);
   --cta:var(--tomato);
+
+  /* Button fills — DELIBERATELY darker than the accent/cta they come from.
+     A solid button carries white body text, so it needs 4.5:1; the brand teal
+     is only 2.43:1 and the tomato 4.04:1 against white. These are the smallest
+     darkenings that clear 4.5:1, so the hues still read as the brand.
+     Do NOT swap these back to var(--accent)/var(--cta) — the accent tokens are
+     correct for hairlines, focus rings and icons, which carry no text on them.
+     Guarded by web-tests/unit/button-contrast.test.js. */
+  --btn-accent:#07817F;        /* teal   4.71:1 on white */
+  --btn-accent-hover:#066F6D;  /*        6.00:1 */
+  --btn-cta:#D52812;           /* tomato 5.07:1 */
+  --btn-cta-hover:#C82511;     /*        5.63:1 */
 
   /* Postcard palette — the hero wash, softened into site-wide background tones.
      These are the basis for section + page backgrounds, not just placeholders. */
@@ -123,18 +136,18 @@ p{margin:0 0 1rem}
 }
 .btn svg{width:18px;height:18px}
 .btn:active{transform:translateY(1px)}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
-.btn-primary:hover{background:var(--accent-deep);transform:translateY(-2px)}
-.btn-cta{background:var(--cta);color:#fff;box-shadow:0 12px 26px -10px var(--cta)}
-.btn-cta:hover{filter:brightness(1.05);transform:translateY(-2px)}
-.btn-ink{background:var(--ink);color:#fff}
-.btn-ink:hover{background:#000;transform:translateY(-2px)}
+.btn-primary{background:var(--btn-accent);color:#fff;box-shadow:0 10px 24px -10px var(--accent)}
+.btn-primary:hover{background:var(--btn-accent-hover);transform:translateY(-2px)}
+.btn-cta{background:var(--btn-cta);color:#fff;box-shadow:0 12px 26px -10px var(--cta)}
+.btn-cta:hover{background:var(--btn-cta-hover);transform:translateY(-2px)}
 .btn-ghost{background:var(--paper);color:var(--ink);box-shadow:var(--shadow-s);border:1px solid var(--line)}
 .btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
 .btn-light{background:#fff;color:var(--ink);box-shadow:var(--shadow)}
 .btn-light:hover{transform:translateY(-2px)}
 .btn-wa{background:#0B7A44;color:#fff} /* was #25D366 — white on it was 1.98:1 */
-.btn-wa:hover{background:#1ebe5a;transform:translateY(-2px)}
+/* hover lifts the green a little without undoing the fix above: #1ebe5a was
+   2.45:1, so hovering used to drop it straight back below the bar. */
+.btn-wa:hover{background:#15853F;transform:translateY(-2px)} /* 4.71:1 */
 .btn-lg{padding:1.05rem 2rem;font-size:1.02rem}
 .btn-sm{padding:.62rem 1.1rem;font-size:.85rem}
 .btn-block{width:100%}
@@ -502,6 +515,29 @@ body::after{
 .bg-sky{background:var(--pc-sky)}
 .bg-green{background:var(--pc-green)}
 .bg-saffron{background:var(--pc-saffron)}
+
+/* a deepened postcard band, for sections where a grid of warm-paper cards
+   sits on the wash. The stock .bg-postcard is only a few shades off --paper,
+   so the cards flatten into the ground; this pushes the ground back and
+   layers in the postcard ephemera (dotted route line + ghosted postmark).
+   Add alongside .bg-postcard; remove the class to revert. */
+.wash-deep{
+  background:
+    radial-gradient(120% 92% at 86% -4%, #cfe9e0, transparent 62%),
+    radial-gradient(95% 85% at 4% 104%, #f7e6c2, transparent 60%),
+    linear-gradient(162deg, #dfeee7 0%, #dce9dd 52%, #e7efd8 100%);
+}
+.wash-deep::after{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 340' fill='none' stroke='%232f7d6b' stroke-opacity='.3' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M-10 250 C 200 160 360 280 580 190 S 960 70 1210 130' stroke-dasharray='2 16'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 132 70' fill='none' stroke='%232f7d6b' stroke-opacity='.22'%3E%3Ccircle cx='33' cy='35' r='26' stroke-width='2' stroke-dasharray='3 4'/%3E%3Ccircle cx='33' cy='35' r='19' stroke-width='1.4' stroke-dasharray='2 5'/%3E%3Cpath d='M66 22c10 3 18-3 28 0s18-3 28 0M66 35c10 3 18-3 28 0s18-3 28 0M66 48c10 3 18-3 28 0s18-3 28 0' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat,no-repeat;
+  background-position:center 58%, right 5% bottom 7%;
+  background-size:min(1400px,118%) auto, clamp(110px,13vw,200px) auto;
+}
+/* keep the content above the ephemera layer */
+.wash-deep > .wrap{position:relative;z-index:1}
 
 /* a thin dashed travel rule used to separate washed sections */
 .wash-edge{position:relative}

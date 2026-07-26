@@ -4,6 +4,8 @@ import type { RideListRepo, RideListWithMembers, ListFilter } from '../db/rideLi
 import type { DepartureRepo } from '../db/departureRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
+import type { MapsAdapter } from '../adapters/maps';
+import { seatPriceForDistance } from '../quote/seatPrice';
 import { verifyGoogleIdToken } from '../lib/googleAuth';
 import {
   customerIdentity,
@@ -92,6 +94,7 @@ export interface RideBoardDeps {
   departures: DepartureRepo; // corridor resolution + seat price
   paygw: TokenizedPaymentAdapter; // card-on-file preapproval (fake until owner swaps in PayHere)
   customer: { sessionSecret: string; googleClientId: string; verifier?: JwtVerifier };
+  maps: MapsAdapter; // road distance for the seat price
   memberLinkSecret: string; // "manage my name" capability token
   currency?: string;
   allowedOrigins?: string[]; // CSRF allow-list for state-changing routes
@@ -213,6 +216,26 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const policy = policyForCorridor(corridor.id);
     const fromPlace = input.from ?? corridor.fromPlace;
     const toPlace = input.to ?? corridor.toPlace;
+
+    // Seat price comes from the engine, off the real road distance — same basis as a transfer
+    // leg, split three ways. A crow-flies estimate is NOT good enough to charge against (it runs
+    // tens of percent out), so if Google can't answer we decline rather than guess.
+    let distance = null;
+    try {
+      distance = await deps.maps.distance(fromPlace, toPlace);
+    } catch {
+      distance = null;
+    }
+    if (!distance || distance.estimated) {
+      return c.json(
+        {
+          error: 'cannot_price_route',
+          message: "We couldn't work out the distance for that route just now — please try again in a moment.",
+        },
+        503,
+      );
+    }
+    const seatPrice = seatPriceForDistance(distance.km);
     const list = await deps.rideLists.createList({
       corridorId: corridor.id,
       fromPlace,
@@ -221,7 +244,7 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       slot: input.slot,
       minSeats: policy.minSeats,
       capacity: policy.capacity,
-      seatPrice: corridor.seatPrice,
+      seatPrice,
       note: input.note ?? null,
       cutoffAt: cutoffAt(input.date, input.slot),
       createdBy: cust.sub,

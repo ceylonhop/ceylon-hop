@@ -1,16 +1,46 @@
 name: keep-alive
 
 # Pings the Render free instance so it doesn't spin down (which causes ~50s cold starts
-# and, on the first request after idle, can make a booking fail). Best-effort: GitHub's
-# scheduler is not exact and pauses after 60 days of repo inactivity.
+# and, on the first request after idle, can make a booking fail).
+#
+# WHY THIS LOOPS INSTEAD OF JUST USING cron
+# The schedule below asks for every 13 min. GitHub does not honour that on a free runner —
+# measured over 62 h on 2026-07-25, the actual gap between runs was a median of 84 min
+# (min 52, max 208). Every single gap exceeded the ~15 min sleep threshold, so the API was
+# asleep ~84% of the time and roughly five in six visitors hit a cold start.
+#
+# So a triggered run can't be a single ping — it has to keep pinging until the next trigger
+# shows up. Each run pings every 5 min for up to 3.5 h, which covers the worst observed gap
+# (208 min). concurrency cancels any older run so the newest trigger takes over rather than
+# stacking runs on top of each other.
+#
+# THIS IS A MITIGATION, NOT THE FIX. It still depends on GitHub triggering the workflow at
+# all, and the schedule pauses entirely after 60 days of repo inactivity. The real fixes are
+# an external pinger (cron-job.org -> /health every ~10 min) or moving off the Render free
+# tier — both need account access, see docs/go-live-checklist.md.
 on:
   schedule:
-    - cron: '*/13 * * * *' # every 13 min (free instance sleeps after ~15 min idle)
+    - cron: '*/13 * * * *' # asks for 13 min; GitHub delivers ~84 min, hence the loop below
   workflow_dispatch: {}
+
+# Newest run wins; an in-flight loop from the previous trigger is cancelled.
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 215 # just over the 3.5 h loop, so a wedged run can't hold the slot
     steps:
-      - name: Ping API health
-        run: curl -fsS --max-time 90 https://ceylon-hop-api.onrender.com/health || true
+      - name: Ping API health every 5 minutes
+        run: |
+          END=$(( $(date +%s) + 3*3600 + 1800 ))   # 3.5 h from now
+          n=0
+          while [ "$(date +%s)" -lt "$END" ]; do
+            n=$((n+1))
+            code=$(curl -fsS --max-time 90 -o /dev/null -w '%{http_code}' \
+              https://ceylon-hop-api.onrender.com/health || echo "ERR")
+            echo "$(date -u +%H:%M:%S)  ping #$n -> $code"
+            sleep 300
+          done

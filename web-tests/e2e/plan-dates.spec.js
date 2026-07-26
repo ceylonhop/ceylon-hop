@@ -154,7 +154,11 @@ test('same-day legs over 10 hours block continuing', async ({ page }) => {
   await setLegDate(page, 1, '2026-08-10');
 
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText(/too much for one day/i);
+  // Assert the hint's substance, not its exact marketing phrasing. This was pinned to
+  // "too much for one day" and went stale the moment the copy was reworded to "more than is
+  // safe or enjoyable in one go" — with e2e outside CI, nothing caught it.
+  await expect(hint).toContainText(/driving/i);
+  await expect(hint).toContainText(/another date/i);
   await expect(cont).toHaveClass(/cta-disabled/);
   await expect(cont).toHaveAttribute('aria-disabled', 'true');
   await cont.click({ force: true });
@@ -200,9 +204,10 @@ test('ready-made route starters hide once the itinerary has legs from the custom
   await expect(page.locator('#tpl-strip')).toBeVisible();
   // The traveller count gates the itinerary, so pick it before adding a leg — without it
   // "Add another transfer" is hidden and the customer can't start a route from scratch.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await page.locator('#add-stop').click();
-  await expect(page.locator('#rail .leg-card')).toHaveCount(3);
+  // One card, not three: a fresh planner starts empty, so this is the customer's first leg.
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
   await expect(page.locator('#tpl-strip')).toBeHidden();
 });
 
@@ -218,7 +223,7 @@ test('the traveller-count gate hides the itinerary until a count is picked', asy
   await expect(page.locator('.add-row')).toBeHidden();
 
   // Picking a count opens the itinerary and retires the prompt.
-  await page.selectOption('#pax', '2');
+  await page.locator('.pax-pill[data-pax="2"]').click();
   await expect(page.locator('#itin-gate')).toBeHidden();
   await expect(page.locator('.board-h')).toBeVisible();
   await expect(page.locator('.add-row')).toBeVisible();
@@ -240,11 +245,24 @@ test('planner place search ranks CMB as airport and prices the baked CMB to Sigi
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Colombo%20city%7CSigiriya%20%2F%20Dambulla&pax=2&vehicle=car');
 
+  // Let the rail finish its first pricing pass before typing. Until it settles the cards
+  // above are still growing, which slides the suggestion menu down the page — Playwright
+  // then refuses to click a target that will not hold still. (The separate bug where a
+  // background render destroyed the open menu is covered by plan-place-menu-stability.spec.js.)
+  await expect(page.locator('#rail [data-dist]').first()).toContainText('km');
+
   const from = page.locator('#rail .leg-card').first().locator('.leg-from');
   await from.click();
   await from.fill('CMB');
   await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
-  await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
+  // Commit with Enter rather than a pointer click. The rail keeps reflowing while its
+  // legs price, which slides the menu down the page and periodically rebuilds it — a
+  // mouse click has to hit a target that is both moving and liable to be replaced, and
+  // times out. Enter is a first-class path in the app (the keydown handler activates the
+  // highlighted option, asserted to be CMB just above) and does not depend on hit-testing.
+  // Pointer selection stays covered by the sibling "layers popular route then Google
+  // results" test, which runs against a settled rail.
+  await from.press('Enter');
 
   await expect(from).toHaveValue('Colombo Airport (CMB)');
   await expect(page.locator('#rail [data-dist]')).toContainText('152 km');
