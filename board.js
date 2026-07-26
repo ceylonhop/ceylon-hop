@@ -402,7 +402,7 @@
       ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
       : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
     var starter = L.members[0];
-    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal">' +
+    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal" data-code="' + esc(L.code) + '">' +
       (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
       (mine ? '<span class="mine-tag">You\'re on this ✓</span>' : '') +
       '<div class="lcard-top">' +
@@ -421,13 +421,15 @@
       '<div class="lcard-foot">' +
       '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
       (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
+      // A full van you are not on has exactly one action worth offering — start another.
+      // The roster is already on the card, and the whole card opens the detail sheet, so a
+      // second "See who's on" button only competed with the real primary.
       (full && !mine
         ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
-        : '') +
-      '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
-      (mine ? 'View your ride' : full ? 'See who\'s on' : conf ? 'See ride · hop on' : 'See ride & join') +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>' +
+        : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
+          (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
       '</div>' +
       (L.note
         ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
@@ -467,10 +469,12 @@
     grid.querySelectorAll('.lcard').forEach(function (c) {
       c.addEventListener('click', function (e) {
         if (e.target.closest('[data-join],[data-view],a')) return;
-        var btn = c.querySelector('[data-view]');
         var again = e.target.closest ? e.target.closest('[data-again]') : null;
         if (again) { startAnother(again.getAttribute('data-again')); return; }
-        if (btn) openDetail(btn.getAttribute('data-view'));
+        // read the code off the card, not off a [data-view] button — a full van has no
+        // view button, and looking one up there left the whole card dead to a click
+        var code = c.getAttribute('data-code');
+        if (code) openDetail(code);
       });
     });
     var nl = document.getElementById('new-list');
