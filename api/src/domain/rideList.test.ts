@@ -55,8 +55,9 @@ describe('cutoffAt', () => {
 });
 
 describe('policyForCorridor', () => {
-  it('defaults to 4 names / 6 seats', () => {
-    expect(policyForCorridor('hill-line')).toEqual({ minSeats: 4, capacity: 6 });
+  // Three seats cover the van (quote/seatPrice.ts), so three names run it; four to six are margin.
+  it('defaults to 3 names / 6 seats', () => {
+    expect(policyForCorridor('hill-line')).toEqual({ minSeats: 3, capacity: 6 });
   });
 });
 

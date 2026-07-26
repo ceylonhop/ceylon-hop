@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
 import { FakeTokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
+import { seatPriceForDistance } from '../quote/seatPrice';
 import type { JwtVerifier } from '../lib/googleAuth';
 
 const listArgs = (over: Partial<CreateListArgs> = {}): CreateListArgs => ({
@@ -125,6 +126,41 @@ describe('POST /board/:code/scratch', () => {
   });
 });
 
+describe('POST /board (create) — pricing', () => {
+  // A crow-flies estimate runs tens of percent out, so it must never become a seat price. When
+  // Google can't answer we decline the list rather than charge against a guess.
+  const outage = { provider: 'outage', places: async () => [], distanceVariants: async () => null };
+
+  it('declines to create a list when the road distance is unavailable', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    const app = createApp({
+      rideLists, paygw: new FakeTokenizedPaymentAdapter(), customerVerifier: verifier,
+      maps: { ...outage, distance: async () => null } as never,
+    });
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toBe('cannot_price_route');
+  });
+
+  it('declines when the distance is only an offline estimate', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const verifier: JwtVerifier = async () => ({
+      payload: { iss: 'accounts.google.com', email: 'r@x.com', email_verified: true, name: 'Roshen W', sub: 's', picture: 'p' },
+    });
+    const app = createApp({
+      rideLists, paygw: new FakeTokenizedPaymentAdapter(), customerVerifier: verifier,
+      maps: { ...outage, distance: async () => ({ km: 164, durationMin: 240, estimated: true }) } as never,
+    });
+    const cookie = await loginCookie(app);
+    const res = await app.request('/board', json(cookie, { from: 'Ella', to: 'Mirissa', date: '2999-08-08', slot: 'morning' }));
+    expect(res.status).toBe(503);
+  });
+});
+
 describe('POST /board (create)', () => {
   it('creates a list and auto-joins the creator as name #1', async () => {
     const { app } = makeApp();
@@ -134,7 +170,10 @@ describe('POST /board (create)', () => {
     const body = await res.json();
     expect(body.list.from).toBe('Ella');
     expect(body.list.to).toBe('Mirissa');
-    expect(body.list.seatPrice).toBe(2400); // ella-south corridor seat price (cents)
+    // Priced off the road distance via the engine (van fare / 3, to the nearest 50c) rather than
+    // the corridor's old hand-set rate — Ella → Mirissa is 164 km, so $88.64 van → $29.50 a seat.
+    expect(body.list.seatPrice).toBe(seatPriceForDistance(164));
+    expect(body.list.seatPrice).toBe(2950);
     expect(body.list.members[0].firstName).toBe('Roshen');
     expect(body.list.committed).toBe(1);
   });
