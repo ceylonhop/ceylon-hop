@@ -186,3 +186,56 @@ describe('resolvePlaceId(name)', () => {
     expect(RB.resolvePlaceId('')).toBe(null);
   });
 });
+
+/* One traveller can bring people with them — up to three seats on the one name. These
+   three helpers decide what the picker offers and what the "you pay" line promises. */
+
+describe('mySeatsOn(list) — the seats on your own name', () => {
+  const L = (members) => RB.normalizeList({ code: 'X', capacity: 6, committed: 4, members });
+
+  it('is zero when you are not on the list', () => {
+    expect(RB.mySeatsOn(L([{ firstName: 'Ada', seats: 2 }]))).toBe(0);
+    expect(RB.mySeatsOn(null)).toBe(0);
+  });
+  it('reads the seats off the member the API marked as you', () => {
+    expect(RB.mySeatsOn(L([{ firstName: 'Ada', seats: 2 }, { firstName: 'Bo', seats: 3, isYou: true }]))).toBe(3);
+  });
+  it('treats a seatless legacy row as one seat', () => {
+    expect(RB.mySeatsOn(L([{ firstName: 'Bo', isYou: true }]))).toBe(1);
+  });
+});
+
+describe('seatsOnOffer(list) — how many seats the picker may show', () => {
+  const L = (over) => RB.normalizeList({ code: 'X', capacity: 6, committed: 0, members: [], ...over });
+
+  it('offers the per-traveller maximum on an empty van', () => {
+    expect(RB.seatsOnOffer(L())).toBe(3);
+  });
+  it('offers only what is free when the van is nearly full', () => {
+    expect(RB.seatsOnOffer(L({ committed: 4 }))).toBe(2);
+    expect(RB.seatsOnOffer(L({ committed: 5 }))).toBe(1);
+  });
+  // Your own seats are yours to give back, so they count as available to you.
+  it('counts the seats you already hold as room you can still use', () => {
+    const full = L({ committed: 6, members: [{ firstName: 'Bo', seats: 2, isYou: true }] });
+    expect(RB.seatsOnOffer(full)).toBe(2);
+  });
+  it('never offers zero — a full van is refused by the API, not hidden by the picker', () => {
+    expect(RB.seatsOnOffer(L({ committed: 6 }))).toBe(1);
+  });
+});
+
+describe('seatTotal(each, seats) — what you are told you will be charged', () => {
+  it('multiplies the seat price by the seats taken', () => {
+    expect(RB.seatTotal(24, 1)).toBe(24);
+    expect(RB.seatTotal(24, 2)).toBe(48);
+    expect(RB.seatTotal(24, 3)).toBe(72);
+  });
+  it('rounds to the cent so a fractional fare never shows a long float', () => {
+    expect(RB.seatTotal(20.55, 3)).toBe(61.65);
+  });
+  it('falls back to a single seat on junk input', () => {
+    expect(RB.seatTotal(24, 0)).toBe(24);
+    expect(RB.seatTotal(24, undefined)).toBe(24);
+  });
+});

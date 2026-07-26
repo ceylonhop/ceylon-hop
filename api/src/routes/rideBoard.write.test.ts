@@ -102,6 +102,87 @@ describe('POST /board/:code/join', () => {
   });
 });
 
+// One traveller can bring people with them — up to three seats on the one name. The seats
+// are what the van counts, so a pair of friends move the list twice as far as a solo name.
+describe('POST /board/:code/join — more than one seat', () => {
+  it('takes three seats on one name and counts every one of them', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 3 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.list.committed).toBe(3);
+    expect(body.list.members).toHaveLength(1); // one name, three seats
+    expect(body.list.members[0].seats).toBe(3);
+  });
+
+  it('refuses a fourth seat — three is the most one traveller may take', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { seats: 4 }))).status).toBe(400);
+  });
+
+  // Changing your seat count is a scratch-and-re-add underneath, but the traveller should
+  // neither lose their place in the line nor have their card held a second time.
+  it('changes a seat count in place, keeping the position and the single card hold', async () => {
+    const { app, rideLists, paygw } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 1 });
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.list.committed).toBe(3); // Ada's 1 + my 2
+    expect(body.list.members).toHaveLength(2);
+    const me = body.list.members.find((m: { firstName: string }) => m.firstName === 'Roshen');
+    expect(me.seats).toBe(2);
+    expect(me.position).toBe(2); // still second in line, not sent to the back
+    expect(paygw.preapprovals).toHaveLength(1); // card held once, not twice
+  });
+
+  // The naive check (live seats + requested) double-counts the seats you already hold and
+  // would refuse a 1→2 change on a van that plainly has room for it.
+  it('counts a seat change net of the seats you already hold', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs({ capacity: 6 }));
+    await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 3 });
+    await rideLists.addMember(l.id, { sub: 'b', firstName: 'Bo', country: 'GB', email: 'b@x.com', seats: 1 });
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 1 })); // van now 5 of 6
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).list.committed).toBe(6);
+    // ...and one seat past the van is still a full van
+    expect((await app.request(`/board/${l.code}/join`, json(cookie, { seats: 3 }))).status).toBe(409);
+  });
+
+  it('leaves your seats and your preferred time alone when a later join omits them', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2, preferredTime: '09:00' }));
+    const res = await app.request(`/board/${l.code}/join`, json(cookie, {}));
+    expect(res.status).toBe(200);
+    expect((await res.json()).list.committed).toBe(2); // not silently reset to one seat
+    const fresh = await rideLists.getByCode(l.code);
+    expect(fresh!.members[0].preferredTime).toBe('09:00'); // their vote survives
+  });
+
+  it('tells you which member is you, so the page can offer to change your seats', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 1 });
+    const cookie = await loginCookie(app);
+    const body = await (await app.request(`/board/${l.code}/join`, json(cookie, { seats: 2 }))).json();
+    const mine = body.list.members.filter((m: { isYou: boolean }) => m.isYou);
+    expect(mine).toHaveLength(1);
+    expect(mine[0].firstName).toBe('Roshen');
+  });
+});
+
 describe('POST /board/:code/scratch', () => {
   it('removes your name when signed in', async () => {
     const { app, rideLists } = makeApp();
