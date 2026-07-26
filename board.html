@@ -3,8 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- M7: backend. Defaults to the live API. Override with ?api=<url> (e.g. localhost for dev) or ?api=off. -->
-<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
+<!-- M7: backend. Override with ?api=<url> (e.g. localhost for dev) or ?api=off.
+     NOTE: unlike the other pages this defaults to the ceylonhop.com-subdomain host, NOT
+     ceylon-hop-api.onrender.com. The board is the only page that relies on a session cookie
+     (ch_cust, SameSite=None), and onrender.com is a different site from prod.ceylonhop.com —
+     so the cookie is third-party there and browsers blocking third-party cookies drop it,
+     leaving sign-in looking fine but every write 401ing. Same registrable domain = same site. -->
+<script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ops.ceylonhop.com');})();</script>
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
      Set 2026-07-25 to open joining for testers — same OAuth client as ops sign-in, with
      https://prod.ceylonhop.com added to its Authorized JavaScript origins. NOTE: the card
