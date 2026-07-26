@@ -878,6 +878,9 @@
     }
     var cost = current ? current.cost : (pairCorridor(cFrom.value, cTo.value) || { seat: 21 }).seat;
     document.getElementById('m-cost').textContent = money(cost) + (Number.isInteger(Number(cost)) ? '.00' : '');
+    // Threshold is per-list (corridors override the default), so never hard-code it here —
+    // when creating, the list doesn't exist yet, so fall back to the policy default.
+    document.getElementById('m-min').textContent = current ? current.minSeats : MIN_DEFAULT;
   }
 
   // A full van is not a dead end: it is the strongest signal that this route has demand, so
