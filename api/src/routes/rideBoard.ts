@@ -6,6 +6,7 @@ import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
 import type { MapsAdapter } from '../adapters/maps';
 import { seatPriceForDistance } from '../quote/seatPrice';
+import { logEvent } from '../observability/events';
 import { verifyGoogleIdToken } from '../lib/googleAuth';
 import {
   customerIdentity,
@@ -264,6 +265,10 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       preapprovalRef: ref,
     });
     const fresh = await deps.rideLists.getByCode(list.code);
+    logEvent('ride_board.list_created', {
+      code: list.code, corridorId: list.corridorId, date: list.date, slot: list.slot,
+      seatPrice: list.seatPrice, minSeats: list.minSeats, capacity: list.capacity,
+    });
     return c.json(
       { list: projectList(fresh!), manageToken: signRideMemberToken(list.id, cust.sub, deps.memberLinkSecret) },
       201,
@@ -311,6 +316,13 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     });
     if (!member) return c.json({ error: 'full' }, 409);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
+    const committed = committedSeats(fresh?.members ?? []);
+    logEvent('ride_board.join', {
+      code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
+      seats, committed, minSeats: found.list.minSeats, capacity: found.list.capacity,
+      // the moment a van becomes viable — the number the funnel is really about
+      reachedThreshold: committed >= found.list.minSeats,
+    });
     return c.json({
       list: projectList(fresh!),
       manageToken: signRideMemberToken(found.list.id, cust.sub, deps.memberLinkSecret),
@@ -334,6 +346,15 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
     const removed = await deps.rideLists.removeMember(found.list.id, sub);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
+    const left = committedSeats(fresh?.members ?? []);
+    if (removed) {
+      logEvent('ride_board.scratch', {
+        code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
+        committed: left, minSeats: found.list.minSeats,
+        // the expensive churn: a scratch that took a viable van back below the line
+        brokeThreshold: left < found.list.minSeats,
+      });
+    }
     return c.json({ removed, list: projectList(fresh!) });
   });
 

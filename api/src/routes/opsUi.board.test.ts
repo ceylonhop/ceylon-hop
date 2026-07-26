@@ -49,7 +49,6 @@ beforeAll(async () => {
 describe('board row helpers', () => {
   it('isBoard distinguishes a van row from a booking row', () => {
     const src = liftConst(body, 'isBoard');
-    // eslint-disable-next-line no-new-func
     const isBoard = new Function(`${src}; return isBoard;`)() as (t: unknown) => boolean;
     expect(isBoard({ source: 'ride_board' })).toBe(true);
     expect(isBoard({ source: 'booking' })).toBe(false);
@@ -60,7 +59,6 @@ describe('board row helpers', () => {
 
   it('boardSeats says whether the van actually runs', () => {
     const src = liftConst(body, 'boardSeats');
-    // eslint-disable-next-line no-new-func
     const f = new Function(`${src}; return boardSeats;`)() as (t: unknown) => string;
 
     expect(f({ board: { seatsCommitted: 2, minSeats: 3, capacity: 6 } }))
@@ -73,7 +71,6 @@ describe('board row helpers', () => {
 
   it('boardSeats is silent on a row with no board payload', () => {
     const src = liftConst(body, 'boardSeats');
-    // eslint-disable-next-line no-new-func
     const f = new Function(`${src}; return boardSeats;`)() as (t: unknown) => string;
     expect(f({ board: null })).toBe('');
   });
@@ -82,7 +79,6 @@ describe('board row helpers', () => {
 describe('reason() never nags about a van', () => {
   it('returns nothing for a ride-board row whatever its stage', () => {
     const src = liftConst(body, 'reason');
-    // eslint-disable-next-line no-new-func
     const reason = new Function(`${src}; return reason;`)() as (t: unknown) => string;
     expect(reason({ source: 'ride_board', stage: 'gathering' })).toBe('');
     expect(reason({ source: 'ride_board', stage: 'paid' })).toBe('');
