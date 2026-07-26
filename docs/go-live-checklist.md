@@ -48,6 +48,15 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] **Google Cloud console:** add `ceylonhop.com` (+ `www`) to the **front-end Maps/Places key** *Website restrictions* (today: `ceylonhop.github.io` + localhost). Key powers Maps JS + Places Autocomplete + Directions on `booking.html` / `plan.html`.
 - [ ] **PayHere dashboard:** approved/live domain = the `ceylonhop.com` apex (PayHere is **apex-only** — no subdomains, no `github.io`).
 - [ ] **Keep the API warm:** `keepalive.yml` (GHA, 13-min `/health` ping) exists but GitHub Actions cron is throttled and not reliable enough alone — still set up an external pinger (e.g. cron-job.org → `https://ceylon-hop-api.onrender.com/health` every ~10 min) **or** upgrade Render off the free tier.
+  - **Measured 2026-07-25 — this is live, not theoretical.** Over a 62 h window the workflow's
+    actual gap between runs was a **median of 84 min** (min 52, max 208) against the 13 min it
+    asks for. **All 39 gaps** exceeded the ~15 min sleep threshold, so the API was asleep
+    **~84% of the time** and roughly five in six visitors hit a ~50 s cold start. The cold path
+    is expensive here because `server.ts` runs `migrate()` + `seedCorridors()` before it listens.
+  - `keepalive.yml` now loops (pings every 5 min for up to 3.5 h per trigger) to cover those
+    gaps. **That is a mitigation, not the fix** — it still depends on GitHub triggering the
+    workflow at all, and the schedule pauses after 60 days of repo inactivity. The external
+    pinger or a paid tier is still the real answer, and both need account access.
 - [ ] **Revisit the Render tier under real payment traffic.** Owner decision 2026-07-16: staying on the **free tier** for now — ~400–500 ms per debounced reprice judged acceptable for a travel site (see `docs/superpowers/specs/2026-07-16-server-authoritative-pricing-design.md` §10). At go-live, re-measure quote latency from a Sri Lankan connection and reconsider paid tier (+ Singapore region) if the warm jitter band (250 ms–1.3 s) hurts conversion or webhook reliability.
 
 ## 3. Hosting / code / data
