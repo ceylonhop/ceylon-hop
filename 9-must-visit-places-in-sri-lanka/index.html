@@ -32,7 +32,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <style>
   .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
   .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(8,120,118,.6),transparent 70%)}
-  .post-hero .wrap{position:relative;max-width:900px}
+  .post-hero .wrap{position:relative;z-index:2;max-width:900px}
+  /* With a photo the decorative radial gradients are replaced by a real scrim,
+     so white hero text keeps its contrast over an arbitrary image. */
+  .post-hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(12,58,56,.60),rgba(12,58,56,.82));z-index:1}
+  .post-embed{margin:2rem 0;max-width:360px}
+  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0c3a38}
+  .post-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
   .post-crumbs{font-size:.85rem;color:rgba(255,255,255,.82);margin-bottom:18px}
   .post-crumbs a{color:inherit;text-decoration:none}
   .post-crumbs a:hover{text-decoration:underline}
@@ -73,7 +81,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <main>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"9 Must-Visit Places in Sri Lanka","description":"Hey, travel enthusiast! Ready to dive into the beauty of Sri Lanka without breaking the bank or losing your way? At Ceylon Hop, we’re all about making your…","datePublished":"2025-03-03","dateModified":"2025-05-06","author":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"publisher":{"@type":"Organization","name":"Ceylon Hop","url":"https://ceylonhop.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://ceylonhop.com/9-must-visit-places-in-sri-lanka/"},"image":"https://ceylonhop.com/og-cover.jpg","inLanguage":"en","wordCount":565}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Travel Guide","item":"https://ceylonhop.com/blog.html"},{"@type":"ListItem","position":3,"name":"9 Must-Visit Places in Sri Lanka","item":"https://ceylonhop.com/9-must-visit-places-in-sri-lanka/"}]}</script>
-  <section class="post-hero">
+  <section class="post-hero has-photo">
+    <img class="post-hero-img" src="../img/blog-post-3.jpg" alt="Palms above the sea at Coconut Tree Hill, Mirissa">
     <div class="wrap">
       <nav class="post-crumbs" aria-label="Breadcrumb"><a href="../index.html">Home</a> &middot; <a href="../blog.html">Travel Guide</a> &middot; 9 must-visit places</nav>
       <span class="post-kicker">List</span>
