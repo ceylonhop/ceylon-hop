@@ -46,6 +46,7 @@
   var AV = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c', '#e0745f'];
   var MIN_DEFAULT = 3;   // names needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
+  var MOBILE_CAP = 4;    // cards shown on a phone before "Show N more rides" (CSS-enforced)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
   // name → id index (best-effort): prototype short names + transfers-data full names.
@@ -373,6 +374,30 @@
     return rows.join('');
   }
 
+  // The phone version of listRows(): the same roster in one 44px strip instead of `minSeats`
+  // full rows (~190px). Both are always rendered — CSS swaps them at 640px — so there is no
+  // viewport branch in JS and nothing to re-render on rotate.
+  function rosterStrip(L) {
+    var min = L.minSeats;
+    var need = Math.max(0, min - L.committed);
+    var conf = L.confirmed || need === 0;
+    var faces = L.members.slice(0, 4).map(function (m, i) {
+      return avatar(m, i, 'xs' + (i ? ' stack' : ''));
+    }).join('');
+    // two empty circles max: at 375px the faces, the count and the "your name here?" hand
+    // all have to share one 44px line, and a third circle pushes the count onto two.
+    var slots = '';
+    for (var i = 0; i < Math.min(need, 2); i++) slots += '<span class="rslot"></span>';
+    var txt = conf
+      ? '<b>Van\'s locked</b> · ' + L.committed + ' riding'
+      : '<b>' + L.committed + ' of ' + min + '</b> · ' + need + ' to go';
+    return '<div class="lcard-roster"' + (conf ? '' : ' data-join="' + esc(L.code) + '"') + '>' +
+      '<span class="rfaces">' + faces + slots + '</span>' +
+      '<span class="rtxt">' + txt + '</span>' +
+      (conf ? '' : '<span class="rhand">your name here?</span>') +
+      '</div>';
+  }
+
   // One source for the review claim: the board previously said "200+ real trips" while the rest
   // of the site said 30 Tripadvisor reviews, ~7x apart, on a page that asks for card details.
   // Keep this in step with the figure on index.html.
@@ -418,6 +443,7 @@
       '</div>' +
       '<div class="tear"></div>' +
       '<div class="lcard-list">' + listRows(L) + '</div>' +
+      rosterStrip(L) +
       '<div class="lcard-foot">' +
       '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
       (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
@@ -449,7 +475,14 @@
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
       : '';
     grid.removeAttribute('aria-busy');
-    grid.innerHTML = shown.map(card).join('') + empty +
+    // Phones only: every card is in the DOM, CSS hides the ones past MOBILE_CAP until the
+    // grid is .expanded. Keeps one render path (and the count honest) on every screen.
+    var more = shown.length > MOBILE_CAP
+      ? '<button class="board-more" id="board-more">Show ' + (shown.length - MOBILE_CAP) +
+        ' more ' + (shown.length - MOBILE_CAP === 1 ? 'ride' : 'rides') + '</button>'
+      : '';
+    grid.classList.remove('expanded');
+    grid.innerHTML = shown.map(card).join('') + empty + more +
       '<button class="lcard-new reveal" id="new-list"><div>' +
       '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
       '<p>Start your own list on any route, any day — we help gather names.</p>' +
@@ -476,6 +509,12 @@
         var code = c.getAttribute('data-code');
         if (code) openDetail(code);
       });
+    });
+    var bm = document.getElementById('board-more');
+    if (bm) bm.addEventListener('click', function () {
+      grid.classList.add('expanded');
+      bm.remove();
+      observe();
     });
     var nl = document.getElementById('new-list');
     if (nl) nl.addEventListener('click', function () { openModal(null); });
