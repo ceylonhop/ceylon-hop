@@ -44,7 +44,7 @@
     'south-coast': '~1.5h door to door', 'yala-south': '~2.5h door to door', 'ella-south': '~3.5h door to door'
   };
   var AV = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c', '#e0745f'];
-  var MIN_DEFAULT = 4;   // names needed to lock the van (per-list minSeats overrides)
+  var MIN_DEFAULT = 3;   // names needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
@@ -604,7 +604,7 @@
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · ' + TA_REVIEWS + ' reviews') + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
-      '<div><b>$0 unless it runs.</b> If four names come, you split this van — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
+      '<div><b>$0 unless it runs.</b> If three names come, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
       (L.note ? '<div class="d-note"><b>' + esc(starterName) + ' says:</b> "' + esc(L.note) + '"</div>' : '') + '</div>' +
