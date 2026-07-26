@@ -320,7 +320,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   @media(max-width:560px){.date-row{align-items:stretch}.dr-date,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
 
   /* ---- summary ---- */
-  .summary{position:sticky;top:90px}
+  /* The whole sidebar is the sticky unit, not the summary card alone: a sticky card with a
+     sibling card directly below it in the same column has nowhere to stick TO — .summary-more
+     slides straight under the opaque card and its copy gets clipped mid-sentence. Pinning the
+     column and capping it at the viewport keeps the CTA on screen and leaves the fine print
+     reachable by scrolling the column. */
+  .plan-side{position:sticky;top:90px;max-height:calc(100vh - 106px);overflow-y:auto;scrollbar-width:thin}
   .sum-head{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:800;font-size:1.2rem;margin:0 0 4px}
   .sum-head svg{width:20px;height:20px;color:var(--accent-deep)}
   .sum-dates{font-size:.86rem;color:var(--ink-soft);margin:0 0 16px}
@@ -329,6 +334,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sum-stat b{font-weight:700;flex:none;text-align:right;white-space:nowrap}
   .sum-route{margin:14px 0;padding:13px 14px;background:var(--cream-deep);border-radius:12px;font-size:.85rem;line-height:1.5;color:var(--ink)}
   .sum-route .hop{color:var(--ink-soft)}
+  .sum-route[hidden]{display:none} /* author rules beat the UA [hidden] rule — keep the companion */
   .sum-total{display:flex;align-items:flex-end;justify-content:space-between;margin:16px 0 4px}
   .sum-total .lbl{font-size:.82rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
   .sum-total .amt{font-family:var(--display);font-weight:800;font-size:2rem;color:var(--ink);line-height:1}
@@ -374,7 +380,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .incl .no span{color:var(--ink-soft)}
 
   @media(max-width:980px){
-    .summary{position:static;margin-top:24px}
+    .plan-side{position:static;max-height:none;overflow:visible}
+    .summary{margin-top:24px}
     .plan-head{padding-bottom:104px}
   }
   @media(max-width:600px){
@@ -476,7 +483,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
 
     <!-- RIGHT: summary -->
-    <aside>
+    <aside class="plan-side">
       <div class="panel-card summary">
         <div class="trip-map" id="trip-map"></div>
         <div class="sum-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0M9 12l11 0M9 18l11 0M5 6h.01M5 12h.01M5 18h.01"/></svg> Trip summary</div>
@@ -489,7 +496,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           <div class="sum-stat"><span>Driving</span><b id="st-drive">—</b></div>
         </div>
 
-        <div class="sum-route" id="sum-route">—</div>
+        <!-- starts hidden: updateSummary() only runs past the traveller gate, so a default
+             here would sit on screen as an empty grey slab for the whole gated state -->
+        <div class="sum-route" id="sum-route" hidden></div>
 
         <div class="sum-estimate" id="sum-estimate">
           <span class="se-lbl">Indicative transfers <span class="se-sub">per vehicle, whole trip</span></span>
