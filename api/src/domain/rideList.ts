@@ -61,7 +61,9 @@ export interface RidePolicy {
   minSeats: number;
   capacity: number;
 }
-const DEFAULT_POLICY: RidePolicy = { minSeats: 4, capacity: 6 };
+// Three seats cover the van (see quote/seatPrice.ts), so three names are enough to run it;
+// seats four to six are margin. Capacity is the van's six.
+const DEFAULT_POLICY: RidePolicy = { minSeats: 3, capacity: 6 };
 const POLICY_OVERRIDES: Record<string, Partial<RidePolicy>> = {};
 export function policyForCorridor(corridorId: string): RidePolicy {
   return { ...DEFAULT_POLICY, ...(POLICY_OVERRIDES[corridorId] ?? {}) };
