@@ -710,17 +710,22 @@ function updateSummary(opts={}){
   });
 
   const dated=state.legs.filter(l=>l.date).map(l=>l.date).sort((a,b)=>a-b);
+  // pax stays null until the traveller gate is answered — omit the clause rather than
+  // printing "null traveller" in the summary.
+  const paxText = state.pax==null ? '' : ` · ${state.pax} traveller${state.pax>1?'s':''}`;
   document.getElementById('sum-dates').textContent = dated.length
-    ? `${dated[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}${dated.length>1?' – '+dated[dated.length-1].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):', '+dated[0].getFullYear()} · ${state.pax} traveller${state.pax>1?'s':''}`
-    : `Dates flexible · ${state.pax} traveller${state.pax>1?'s':''}`;
+    ? `${dated[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}${dated.length>1?' – '+dated[dated.length-1].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):', '+dated[0].getFullYear()}${paxText}`
+    : `Dates flexible${paxText}`;
 
   const seq=routeSeq();
   document.getElementById('st-stops').textContent=seq.length;
   document.getElementById('st-nights').textContent = stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None';
   document.getElementById('st-legs').textContent=transferLegs;
   document.getElementById('st-drive').textContent=totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request';
-  document.getElementById('sum-route').innerHTML =
+  const routeEl=document.getElementById('sum-route');
+  routeEl.innerHTML =
     seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
+  routeEl.hidden = !seq.length; // an empty route rendered as a bare grey bar
 
   if(refreshMap) renderMap();
 

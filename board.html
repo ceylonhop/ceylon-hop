@@ -172,8 +172,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .lrow.ghost{opacity:.55}
 .lrow.ghost .slot .hand{visibility:hidden}
 /* card foot */
-.lcard-foot{padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-.lprice{font-size:.86rem;color:var(--ink-soft);line-height:1.35;font-weight:600}
+/* wrap, don't collide: the price block is multi-line and cannot shrink past its longest
+   word, so on a narrow card a no-wrap row drove the buttons straight over the text */
+.lcard-foot{padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lcard-foot .btn{flex:0 0 auto}
+.lprice{font-size:.86rem;color:var(--ink-soft);line-height:1.35;font-weight:600;flex:1 1 auto;min-width:0}
 .lprice b{color:var(--ink);font-size:1.05rem;font-weight:800}
 .lcard .started{padding:0 24px 18px;display:flex;align-items:center;gap:.55rem;font-size:.82rem;color:var(--ink-soft)}
 .lcard .started .avatar{width:26px;height:26px;font-size:.6rem}
@@ -442,6 +445,13 @@ body.detail-open .detail{display:block}
 .g-item{display:flex;gap:.6rem;align-items:flex-start;font-size:.92rem;color:var(--ink-soft);line-height:1.5}
 .g-item svg{width:20px;height:20px;color:var(--teal-deep);flex:none;margin-top:2px}
 .g-item b{color:var(--ink)}
+/* ---- compact roster (phones) ----
+   Desktop keeps the full sign-up list; ≤640px swaps in this one-line strip (see the phone
+   block at the end of this sheet). Both are rendered every time — no viewport branch in JS. */
+.lcard-roster{display:none}
+/* ---- "show N more rides" (phones) ---- */
+.board-more{display:none}
+
 /* ---- filter selects ---- */
 .filters{align-items:flex-end;gap:10px}
 .fsel{display:inline-flex;flex-direction:column;gap:4px;font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
@@ -530,10 +540,45 @@ body.detail-open .detail{display:block}
   .btn{padding:1rem 1.5rem;min-height:48px}
   .btn-sm{padding:.7rem 1.15rem;font-size:.9rem;min-height:42px}
   .chip{min-height:44px;display:inline-flex;align-items:center}
-  .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:2px 20px 26px}
+  /* `body ` prefix on purpose: site.css's phone rule `body .filters{top:62px;padding:11px 0}`
+     (written for tours.html's sticky bar) otherwise outranks this and strips the 20px
+     side padding, leaving the -20px margin to bleed the strip off both screen edges. */
+  body .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -20px 14px;padding:10px 20px 12px;
+    /* rides are the point: keep re-filtering one tap away instead of a scroll back to the top.
+       62px = the phone nav height in site.css; the fill has to be opaque enough to hide the
+       board's gradient sliding under it. */
+    position:sticky;top:62px;z-index:40;
+    background:linear-gradient(180deg,rgba(235,245,239,.97),rgba(235,245,239,.88));
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    box-shadow:0 1px 0 rgba(44,42,43,.07)}
   .filters::-webkit-scrollbar{display:none}
   .filters .chip{flex:none}
   .filters .count{display:none}
+}
+
+/* ---------- phones: compact card + capped board ---------- */
+@media(max-width:640px){
+  /* the sign-up list is most of the card's height — swap it for the one-line roster */
+  .lcard-list{display:none}
+  .lcard-roster{display:flex;align-items:center;gap:10px;padding:13px 20px;min-height:44px}
+  .rfaces{display:flex;align-items:center;flex:none}
+  .rslot{width:28px;height:28px;border-radius:50%;flex:none;border:2px dashed #d5cfbd;
+    background:var(--paper);margin-left:-8px}
+  .rfaces .avatar:first-child{margin-left:0}
+  .rtxt{font-size:.86rem;font-weight:600;color:var(--ink-soft);line-height:1.25;white-space:nowrap}
+  .rtxt b{color:var(--ink);font-weight:800}
+  .rhand{margin-left:auto;font-family:var(--hand);font-weight:700;font-size:1.1rem;
+    color:var(--teal-deep);white-space:nowrap}
+  .lcard-top{padding:18px 20px 14px}
+  .lcard-foot{padding:10px 20px 16px}
+  .lcard .started{padding:0 20px 14px}
+  .lcard-new{min-height:auto;padding:28px 22px}
+  /* n+5 mirrors MOBILE_CAP in board.js — keep the two in step */
+  .board:not(.expanded)>.lcard:nth-child(n+5){display:none}
+  .board-more{display:block;grid-column:1/-1;width:100%;min-height:50px;padding:.9rem 1rem;
+    border:1.5px dashed var(--line);border-radius:16px;background:rgba(255,253,248,.72);
+    font-family:inherit;font-weight:700;font-size:.95rem;color:var(--teal-deep)}
+  .board-more:active{background:var(--paper)}
 }
 </style>
 </head>
@@ -582,7 +627,7 @@ body.detail-open .detail{display:block}
       <h1>Share a ride. <em>Beat the bus.</em></h1>
       <p class="lead">Travellers heading the same way split an air-con van — a fraction of a private car, worlds nicer than a 7-hour bus. Add your name to a route below.</p>
       <div class="guarantee">
-        <span class="g-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><b>$0 unless it runs</b> — if not enough travellers join by the cutoff, the ride's called off and your card is never charged. No risk to starting one.</span>
+        <span class="g-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span><b>$0 unless it runs</b> — if not enough travellers join by the cutoff, the ride's called off and your card is never charged. No risk to starting one.</span></span>
       </div>
       <div id="intro-ta" style="margin-top:16px"></div>
     </div>
