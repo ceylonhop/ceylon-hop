@@ -148,9 +148,10 @@ export class PostgresRideListRepo implements RideListRepo {
 
   async addMember(listId: string, args: AddMemberArgs, now: Date = new Date()): Promise<RideMember | null> {
     // Guarded, oversell-safe insert (pooled analogue of holdSeats): the row is inserted only
-    // when live seats + requested ≤ capacity. ON CONFLICT (list_id, sub) reactivates a
-    // scratched member (idempotent for a live one). Callers that want the friendly
-    // "already-on-this-list" short-circuit check getByCode first (route does).
+    // when *other* travellers' live seats + requested ≤ capacity — excluding this traveller's
+    // own seats is what lets them change 1→2 on a van that has room. ON CONFLICT (list_id, sub)
+    // both reactivates a scratched member and applies a live member's seat change, keeping
+    // their position; an omitted preferred time leaves their existing vote standing.
     const rows = await this.sql<MemberRow[]>`
       insert into ride_list_member
         (list_id, position, sub, first_name, country, email, photo_url, preferred_time, seats, preapproval_ref, status, joined_at)
@@ -161,12 +162,12 @@ export class PostgresRideListRepo implements RideListRepo {
         ${args.preferredTime ?? null}, ${args.seats}, ${args.preapprovalRef ?? null}, 'held', ${now}
       where (
         select coalesce(sum(seats), 0) from ride_list_member
-        where list_id = ${listId} and status in ('held', 'charged')
+        where list_id = ${listId} and status in ('held', 'charged') and sub <> ${args.sub}
       ) + ${args.seats} <= (select capacity from ride_list where id = ${listId})
       on conflict (list_id, sub) do update set
         status = 'held',
         seats = excluded.seats,
-        preferred_time = excluded.preferred_time,
+        preferred_time = coalesce(excluded.preferred_time, ride_list_member.preferred_time),
         preapproval_ref = coalesce(excluded.preapproval_ref, ride_list_member.preapproval_ref),
         joined_at = excluded.joined_at
       returning *`;

@@ -483,6 +483,15 @@ body.detail-open .detail{display:block}
 .pref-opt{border:1.5px solid var(--line);background:var(--white);border-radius:10px;padding:.5rem .9rem;font-family:inherit;font-weight:700;font-size:.9rem;color:var(--ink);font-variant-numeric:tabular-nums}
 .pref-opt.sel{background:var(--ink);border-color:var(--ink);color:#fff}
 .pref-note{display:block;font-size:.78rem;color:var(--ink-soft);margin-top:8px;line-height:1.4}
+/* ---- seat picker (one name can cover the people travelling with it) ---- */
+.seatpick{margin:2px 0 14px}
+.seat-opts{display:flex;gap:8px}
+.seat-opt{flex:1;border:1.5px solid var(--line);background:var(--white);border-radius:12px;padding:.5rem .4rem;font-family:inherit;font-weight:800;font-size:1.1rem;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:1px;font-variant-numeric:tabular-nums;transition:background .15s,border-color .15s,color .15s}
+.seat-opt small{font-weight:600;font-size:.68rem;color:var(--ink-soft);letter-spacing:.01em}
+.seat-opt.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+.seat-opt.sel small{color:rgba(255,255,255,.72)}
+.seat-opt[disabled]{opacity:.38;cursor:not-allowed}
+.seat-opt[disabled].sel{opacity:1}
 /* ---- dedupe nudge ---- */
 .dupe{background:var(--pc-saffron);border:1.5px solid rgba(249,164,41,.4);border-radius:14px;padding:14px 16px;margin-bottom:12px}
 .dupe-in{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
@@ -601,11 +610,11 @@ body.detail-open .detail{display:block}
         <h2>Everything you'd <em>want to ask</em></h2>
         <details open>
           <summary>How does the board work?</summary>
-          <p><b>1.</b> Add your name to a list going your way — or start a new one. <b>2.</b> Share the list; every name added gets it closer to running. <b>3.</b> Three names in, the van rolls — licensed Ceylon Hop driver, door to door, fare split between everyone.</p>
+          <p><b>1.</b> Add your name to a list going your way — or start a new one. <b>2.</b> Share the list; every name added gets it closer to running. <b>3.</b> Three seats in, the van rolls — licensed Ceylon Hop driver, door to door, fare split between everyone.</p>
         </details>
         <details>
           <summary>What happens after I add my name?</summary>
-          <p>Your card gets a hold — <b>$0 charged</b>. If the list reaches 3 names by its deadline, everyone's charged their share and the van is locked in. We email you either way, the moment it happens.</p>
+          <p>Your card gets a hold — <b>$0 charged</b>. If the list reaches 3 seats by its deadline, everyone's charged their share and the van is locked in. We email you either way, the moment it happens.</p>
         </details>
         <details>
           <summary>What if the list doesn't fill?</summary>
@@ -621,7 +630,7 @@ body.detail-open .detail{display:block}
         </details>
         <details>
           <summary>Can I bring a friend?</summary>
-          <p>Yes — take two lines at once. You're charged together, or not at all.</p>
+          <p>Yes — take up to <b>3 seats</b> on your own name when you add it, and change the number any time before the list closes. You're charged together, or not at all.</p>
         </details>
       </div>
       <aside class="founder reveal">
@@ -671,9 +680,9 @@ body.detail-open .detail{display:block}
         <div class="fld" style="margin-bottom:12px"><label>A note for the others <span style="opacity:.6">(optional)</span></label>
           <input id="c-note" placeholder="surfboards, tea-factory stop, travelling with a baby…" maxlength="70"></div>
         <div id="dupe-nudge" class="dupe" hidden></div>
-        <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 names are up<br>list closes 48h before</span></div>
+        <div class="est"><b id="c-est">$21 <small>/ each</small></b><span>once 3 seats are up<br>list closes 48h before</span></div>
         <button class="btn btn-primary btn-block" id="c-continue" style="height:52px">Put it on the board</button>
-        <p class="whisper">it goes up instantly — you're name #1 of 4</p>
+        <p class="whisper">it goes up instantly — you're name #1 on the list</p>
       </div>
 
             <!-- step 1: real Google sign-in + country capture -->
@@ -702,10 +711,19 @@ body.detail-open .detail{display:block}
           <span class="avatar" id="m-avatar" style="background:var(--teal-deep);width:38px;height:38px"><span class="ini">··</span></span>
           <div><b id="m-signed-name">Signed in</b><br><span class="muted" id="m-signed-email"></span></div>
         </div>
+        <div class="seatpick">
+          <span class="pref-lbl">How many seats?</span>
+          <div class="seat-opts" id="seat-opts">
+            <button class="seat-opt sel" data-seats="1">1<small>just me</small></button>
+            <button class="seat-opt" data-seats="2">2<small>+1 with me</small></button>
+            <button class="seat-opt" data-seats="3">3<small>+2 with me</small></button>
+          </div>
+          <span class="pref-note" id="seat-note">Travelling with someone? Take their seat now — you're charged together, or not at all.</span>
+        </div>
         <div class="deal">
           <h4><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           You pay $0 today</h4>
-          <p>We hold your card via PayHere. You're charged <b id="m-cost">$24.00</b> <b>only if this list reaches <span id="m-min">3</span> names</b> by the cutoff. If it doesn't, the <b>ride's called off</b>, the hold is released, and you pay nothing. Scratch your name off anytime before then.</p>
+          <p>We hold your card via PayHere. You're charged <b id="m-cost">$24.00</b><span id="m-cost-break"></span> <b>only if this list reaches <span id="m-min">3</span> seats</b> by the cutoff. If it doesn't, the <b>ride's called off</b>, the hold is released, and you pay nothing. Scratch your name off anytime before then.</p>
         </div>
         <div class="preftime">
           <span class="pref-lbl">Your preferred departure time?</span>
@@ -715,7 +733,7 @@ body.detail-open .detail{display:block}
         <div class="paynote"><span class="pl" style="color:#1a1f71">VISA</span><span class="pl" style="color:#eb001b">MC</span> held securely by PayHere · we never see the number</div>
         <button class="btn btn-primary btn-block" id="sign-btn" style="margin-top:16px;height:54px;font-size:1rem">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
-          Add my name — $0 now
+          <span id="sign-btn-label">Add my name — $0 now</span>
         </button>
       </div>
 
@@ -734,7 +752,7 @@ body.detail-open .detail{display:block}
           <div class="sc-top">
             <span class="sc-live"><span class="d"></span>LIVE</span>
             <div class="sc-route" id="sc-route">Ella → Mirissa</div>
-            <div class="sc-meta" id="sc-meta">Sat 8 Aug · morning · 2 of 3 names up · ≈ $24 each</div>
+            <div class="sc-meta" id="sc-meta">Sat 8 Aug · morning · 2 of 3 seats up · ≈ $24 each</div>
             <div class="sc-faces" id="sc-faces"></div>
             <div class="sc-dots" id="sc-dots"><i class="f"></i><i class="f"></i><i class="f"></i><i></i></div>
           </div>

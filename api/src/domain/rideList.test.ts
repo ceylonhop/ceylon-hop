@@ -38,12 +38,15 @@ describe('CreateListInput', () => {
 });
 
 describe('JoinInput', () => {
-  it('defaults seats to 1', () => {
+  // Deliberately undefined rather than 1: the route reads it as "leave my seats alone",
+  // so a re-join that omits seats can't silently shrink a two-seat traveller.
+  it('leaves seats unset when the body omits it', () => {
     const r = JoinInput.parse({});
-    expect(r.seats).toBe(1);
+    expect(r.seats).toBeUndefined();
   });
-  it('caps a group at 4 seats', () => {
-    expect(JoinInput.safeParse({ seats: 5 }).success).toBe(false);
+  it('caps one traveller at 3 seats', () => {
+    expect(JoinInput.safeParse({ seats: 3 }).success).toBe(true);
+    expect(JoinInput.safeParse({ seats: 4 }).success).toBe(false);
   });
 });
 
