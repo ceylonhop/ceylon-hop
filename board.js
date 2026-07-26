@@ -47,6 +47,7 @@
   var MIN_DEFAULT = 3;   // seats needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
   var MAX_SEATS = 3;     // most one traveller may take (mirrors MAX_SEATS_PER_MEMBER on the API)
+  var MOBILE_CAP = 4;    // cards shown on a phone before "Show N more rides" (CSS-enforced)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
   // name → id index (best-effort): prototype short names + transfers-data full names.
@@ -411,6 +412,30 @@
     return rows.join('');
   }
 
+  // The phone version of listRows(): the same roster in one 44px strip instead of `minSeats`
+  // full rows (~190px). Both are always rendered — CSS swaps them at 640px — so there is no
+  // viewport branch in JS and nothing to re-render on rotate.
+  function rosterStrip(L) {
+    var min = L.minSeats;
+    var need = Math.max(0, min - L.committed);
+    var conf = L.confirmed || need === 0;
+    var faces = L.members.slice(0, 4).map(function (m, i) {
+      return avatar(m, i, 'xs' + (i ? ' stack' : ''));
+    }).join('');
+    // two empty circles max: at 375px the faces, the count and the "your name here?" hand
+    // all have to share one 44px line, and a third circle pushes the count onto two.
+    var slots = '';
+    for (var i = 0; i < Math.min(need, 2); i++) slots += '<span class="rslot"></span>';
+    var txt = conf
+      ? '<b>Van\'s locked</b> · ' + L.committed + ' riding'
+      : '<b>' + L.committed + ' of ' + min + '</b> · ' + need + ' to go';
+    return '<div class="lcard-roster"' + (conf ? '' : ' data-join="' + esc(L.code) + '"') + '>' +
+      '<span class="rfaces">' + faces + slots + '</span>' +
+      '<span class="rtxt">' + txt + '</span>' +
+      (conf ? '' : '<span class="rhand">your name here?</span>') +
+      '</div>';
+  }
+
   // One source for the review claim: the board previously said "200+ real trips" while the rest
   // of the site said 30 Tripadvisor reviews, ~7x apart, on a page that asks for card details.
   // Keep this in step with the figure on index.html.
@@ -440,7 +465,7 @@
       ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
       : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
     var starter = L.members[0];
-    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal">' +
+    return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal" data-code="' + esc(L.code) + '">' +
       (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
       (mine ? '<span class="mine-tag">You\'re on this ✓</span>' : '') +
       '<div class="lcard-top">' +
@@ -456,16 +481,19 @@
       '</div>' +
       '<div class="tear"></div>' +
       '<div class="lcard-list">' + listRows(L) + '</div>' +
+      rosterStrip(L) +
       '<div class="lcard-foot">' +
       '<div class="lprice">≈ <b>' + money(L.cost) + '</b> each · <span class="free">$0 to join</span>' +
       (alt.priv ? '<br><span class="vs">vs $' + alt.priv + ' private · ' + esc(alt.bus) + '</span>' : '') + '</div>' +
+      // A full van you are not on has exactly one action worth offering — start another.
+      // The roster is already on the card, and the whole card opens the detail sheet, so a
+      // second "See who's on" button only competed with the real primary.
       (full && !mine
         ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
-        : '') +
-      '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
-      (mine ? 'View your ride' : full ? 'See who\'s on' : conf ? 'See ride · hop on' : 'See ride & join') +
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>' +
+        : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
+          (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
       '</div>' +
       (L.note
         ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
@@ -485,7 +513,14 @@
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
       : '';
     grid.removeAttribute('aria-busy');
-    grid.innerHTML = shown.map(card).join('') + empty +
+    // Phones only: every card is in the DOM, CSS hides the ones past MOBILE_CAP until the
+    // grid is .expanded. Keeps one render path (and the count honest) on every screen.
+    var more = shown.length > MOBILE_CAP
+      ? '<button class="board-more" id="board-more">Show ' + (shown.length - MOBILE_CAP) +
+        ' more ' + (shown.length - MOBILE_CAP === 1 ? 'ride' : 'rides') + '</button>'
+      : '';
+    grid.classList.remove('expanded');
+    grid.innerHTML = shown.map(card).join('') + empty + more +
       '<button class="lcard-new reveal" id="new-list"><div>' +
       '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
       '<p>Start your own list on any route, any day — we help gather names.</p>' +
@@ -505,11 +540,19 @@
     grid.querySelectorAll('.lcard').forEach(function (c) {
       c.addEventListener('click', function (e) {
         if (e.target.closest('[data-join],[data-view],a')) return;
-        var btn = c.querySelector('[data-view]');
         var again = e.target.closest ? e.target.closest('[data-again]') : null;
         if (again) { startAnother(again.getAttribute('data-again')); return; }
-        if (btn) openDetail(btn.getAttribute('data-view'));
+        // read the code off the card, not off a [data-view] button — a full van has no
+        // view button, and looking one up there left the whole card dead to a click
+        var code = c.getAttribute('data-code');
+        if (code) openDetail(code);
       });
+    });
+    var bm = document.getElementById('board-more');
+    if (bm) bm.addEventListener('click', function () {
+      grid.classList.add('expanded');
+      bm.remove();
+      observe();
     });
     var nl = document.getElementById('new-list');
     if (nl) nl.addEventListener('click', function () { openModal(null); });

@@ -60,6 +60,32 @@ test('picking more than 3 travellers locks the car and switches to the van', asy
   await expect(page.locator('#veh-note')).toBeHidden();
 });
 
+test('the gated summary never prints a null traveller count or an empty route bar', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html');
+
+  // pax is null until a pill is picked, and the summary used to interpolate it raw
+  // ("Dates flexible · null traveller"). The route bar is a filled pill, so an empty
+  // route rendered as a bare grey slab.
+  await expect(page.locator('#sum-dates')).not.toContainText('null');
+  await expect(page.locator('#sum-route')).toBeHidden();
+
+  await page.locator('.pax-pill[data-pax="2"]').click();
+
+  await expect(page.locator('#sum-dates')).toHaveText('Dates flexible · 2 travellers');
+  await expect(page.locator('#sum-route')).toBeHidden(); // still no stops
+});
+
+test('the route bar appears once the itinerary has stops', async ({ page }) => {
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+  await page.goto('/plan.html?stops=Kandy%7CElla&pax=2');
+
+  // the other side of hiding an empty bar — it must come back with a real route
+  await expect(page.locator('#sum-route')).toBeVisible();
+  await expect(page.locator('#sum-route')).toContainText('Kandy');
+  await expect(page.locator('#sum-route')).toContainText('Ella');
+});
+
 test('a booking/template hand-off pre-lights the matching pill', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=4&vehicle=van');
