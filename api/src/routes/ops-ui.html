@@ -130,6 +130,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .chan{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;flex:none;border:1px solid}
   .chan svg{width:16px;height:16px}
   .chan.wa{background:var(--wa-bg);color:var(--wa);border-color:#cdeedd}.chan.web{background:var(--web-bg);color:var(--web);border-color:#cce8e2}
+  /* Ride-board van — a cool slate that reads as "not a normal booking" without shouting. */
+  .chan.board{background:#eef2f6;color:#4a5a68;border-color:#d5dfe7}
+  .tk-board .tk-cust .id{background:#eef2f6;color:#4a5a68}
   .tk-main{min-width:0}
   .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:600;font-size:1.2rem;letter-spacing:-.015em;line-height:1.1;color:var(--ink)}
   .tk-cust .id{font-family:var(--mono);font-size:.67rem;color:var(--ink-faint);font-weight:600;letter-spacing:0}
@@ -1355,6 +1358,10 @@ const STAGE={
   on_trip:{label:'On trip',short:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
   completed:{label:'Completed',short:'Done',c:'#7c7a73',cbg:'#eeece4'},
   no_show:{label:'No-show',short:'No-show',c:'#b23214',cbg:'#fbe7e2'},
+  /* Ride board only — a van still collecting names. No payment to chase and no
+     vehicle to assign until it locks at cutoff, so it sits outside the booking
+     pipeline entirely (deliberately absent from STAGES and NEXT). */
+  gathering:{label:'Gathering names',short:'Gathering',c:'#5b6b7a',cbg:'#e9eef2'},
 };
 const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
 /* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
@@ -1366,7 +1373,7 @@ const NEXT={
   on_trip:{to:'completed',label:'Mark completed',act:'advance'},
   completed:null,
 };
-const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop',chauffeur:'Chauffeur'};
+const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop',chauffeur:'Chauffeur',board:'Ride board'};
 
 /* The only surviving template: the payment-reminder copy an ops agent sends to nudge
    an awaiting-payment customer. Interpolates the first name and the amount. */
@@ -1374,6 +1381,10 @@ const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop �
 
 /* attention logic — what an ops agent must act on */
 const reason=t=>{
+  /* Ride-board vans carry no ops overlay — there are no flags to tick and no
+     status to advance, so they must never sit in the attention badge nagging
+     for an action that does not exist. The seat count on the row is the signal. */
+  if(t.source==='ride_board')return '';
   if(t.stage==='awaiting_payment')return 'Payment link sent — follow up';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
@@ -1405,6 +1416,8 @@ const ICON={
   arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  /* Ride-board rows are a vehicle, not a channel — a van reads instantly in the list. */
+  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V8a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v5"/><path d="M3 17h2m14 0h2M9 17h6"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
 };
 const chanClass=c=>c==='whatsapp'?'wa':'web';
 const chanIcon=c=>c==='whatsapp'?ICON.wa:ICON.web;
@@ -1428,8 +1441,18 @@ function rowToTicket(row){
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     photo:!!row.vehiclePhotoReceived, updated:!!row.customerUpdated,
     notes:(row.opsNotes||'').split('\n').map(s=>s.trim()).filter(Boolean), opsNotesRaw:row.opsNotes||'',
+    /* Ride-board vans ride in the same queue as bookings but are read-only
+       projections — `source` is what every branch below keys off. */
+    source:row.source||'booking', board:row.board||null,
   };
 }
+const isBoard=t=>t&&t.source==='ride_board';
+/* "3 of 3 seats · van runs" — the one number that says whether this van goes. */
+const boardSeats=t=>{
+  const b=t.board;if(!b)return '';
+  const runs=b.seatsCommitted>=b.minSeats;
+  return `${b.seatsCommitted} of ${b.minSeats} seats`+(runs?` · van runs · ${b.capacity-b.seatsCommitted} spare`:' · needs more');
+};
 
 let tickets=[];
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
@@ -1543,12 +1566,21 @@ function setNav(){
 
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
-  return `<div class="tk ${attn?'attn':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="Booking ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
-    <div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>
+  const board=isBoard(t);
+  /* A board row is one VAN, not one customer — say so on the row itself, and use
+     the van glyph instead of the booking-channel icon. */
+  const lead=board
+    ?`<div class="chan board" title="Ride board van">${ICON.van}</div>`
+    :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
+  const meta=board
+    ?`${esc(boardSeats(t))}`
+    :`${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
+    ${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
-      <div class="tk-meta">${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}</div>
+      <div class="tk-meta">${meta}</div>
     </div>
     <div class="tk-side">
       <span class="pill"><span class="pd"></span>${st.label}</span>
@@ -2104,12 +2136,66 @@ function legsHtmlFor(d){
 }
 
 /* detail */
+/* ── ride-board van sheet — read-only by design ──────────────────────────────
+   A list is not a booking: there is no ride_ops overlay to flag, no fulfilment
+   status to advance, and no internal-notes field. Rendering the booking sheet
+   here would offer buttons that POST to endpoints which do not exist for a van.
+   So this shows only what ops actually needs: who is on it, whether it runs,
+   and when the names stop being collected. Actions land when the board gets an
+   ops-side confirm/cancel API. ── */
+const MEMBER_STATE={held:'Held',charged:'Paid',charge_failed:'Card failed',scratched:'Scratched'};
+function boardSheetHtml(t,st){
+  const b=t.board||{seatsCommitted:0,minSeats:0,capacity:0,members:[],seatPrice:0};
+  const runs=b.seatsCommitted>=b.minSeats;
+  const spare=Math.max(0,(b.capacity||0)-(b.seatsCommitted||0));
+  const rows=(b.members||[]).map(m=>{
+    const bad=m.status==='charge_failed';
+    return `<div class="kv"><span class="k">${m.position}. ${esc(m.firstName)}${m.country?' · '+esc(m.country):''}</span>`
+      +`<span class="v">${m.seats} seat${m.seats===1?'':'s'} · <b style="color:${bad?'var(--alert)':'inherit'}">${esc(MEMBER_STATE[m.status]||m.status)}</b></span></div>`;
+  }).join('')||'<p class="muted" style="padding:0">Nobody on this van yet.</p>';
+  const cutoff=b.cutoffAt?fmtDateTime(b.cutoffAt):'—';
+  return `
+    <div class="sheet-h"><button class="x" data-act="close">✕</button>
+      <div class="ey"><span class="chan board" style="width:22px;height:22px;border-radius:6px">${ICON.van}</span> Ride board van</div>
+      <h2>${esc(t.route)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${st.label}</span>
+    </div>
+    <div class="sheet-b">
+      <div class="block"><h4>Will it run?</h4>
+        <div class="kv"><span class="k">Seats</span><span class="v"><b>${b.seatsCommitted} of ${b.minSeats}</b> needed${runs?` · ${spare} spare of ${b.capacity}`:''}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${runs
+          ?'<span style="color:var(--ok);font-weight:700">Threshold met — the van runs</span>'
+          :'<span style="color:var(--wait);font-weight:700">Still gathering names</span>'}</span></div>
+        <div class="kv"><span class="k">Names close</span><span class="v">${esc(cutoff)}</span></div>
+      </div>
+      <div class="block"><h4>Trip</h4>
+        <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'—'}${t.time?' · '+esc(t.time):''}</span></div>
+        <div class="kv"><span class="k">Departure</span><span class="v">${t.time?esc(t.time)+(b.listStatus==='confirmed'?' (locked)':' (window start)'):'—'}</span></div>
+      </div>
+      <div class="block"><h4>Manifest</h4>${rows}</div>
+      <div class="block"><h4>Money</h4>
+        <div class="kv"><span class="k">Per seat</span><span class="v">${money({amount:b.seatPrice,currency:t.currency})}</span></div>
+        <div class="kv"><span class="k">Total held</span><span class="v">${money(t)}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid
+          ?'<span style="color:var(--ok);font-weight:700">All seats charged</span>'
+          :'<span style="color:var(--wait);font-weight:700">Held, not charged</span>'}</span></div>
+      </div>
+      <div class="block"><h4>Notes</h4>
+        <p class="muted" style="padding:0">${t.opsNotesRaw?esc(t.opsNotesRaw):'No note on this list.'}</p>
+        <p class="muted" style="padding:8px 0 0;font-size:.82rem">Ride-board vans are read-only here — they confirm or call off automatically at the cutoff.</p>
+      </div>
+    </div>`;
+}
+
 function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
   const d=state.detailData;
   const st=STAGE[t.stage],idx=STAGES.indexOf(t.stage),nx=NEXT[t.stage];
   sh.style.setProperty('--c',st.c);sh.style.setProperty('--cbg',st.cbg);
+  /* Ride-board vans get their own read-only sheet: no pipeline, no flags, no
+     notes — none of those exist for a list. Just the manifest ops needs to run it. */
+  if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   const pipe=STAGES.map((s,i)=>`<span class="pstep ${i<idx?'done':i===idx?'cur':''}" style="${stVars(s)}">${STAGE[s].short}</span>`).join('');
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
   const cust=d?.booking?.input?.customer;
@@ -2162,6 +2248,9 @@ function renderSheet(){
 
 async function openDetail(id){
   state.detail=id;state.detailData=null;renderSheet();
+  /* A ride-board van has no booking row — GET /bookings/board:XX-1234 would 404.
+     Everything its sheet shows already arrived on the queue row. */
+  if(String(id).indexOf('board:')===0)return;
   try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
 }
@@ -2377,6 +2466,9 @@ document.addEventListener('click',async e=>{
   const g=e.target.closest('[data-g]');if(g){state.group=g.dataset.g;viewTickets();return;}
   const el=e.target.closest('[data-act]');if(!el)return;
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
+  /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
+     must never reach a /bookings/:id mutation — there is no booking behind it. */
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder'].includes(act))return;
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;

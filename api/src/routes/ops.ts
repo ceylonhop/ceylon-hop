@@ -12,6 +12,8 @@ import {
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
+import { boardRowsForOps } from '../services/opsBoardView';
+import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice } from '../services/notifications';
@@ -29,6 +31,11 @@ export interface OpsDeps {
   notificationLog?: NotificationLogRepo;
   baseUrl?: string;
   linkSecret?: string;
+  // Ride-board vans are folded into the bookings queue read-only (2026-07-26).
+  // Optional so every existing ops test keeps working untouched; when absent the
+  // queue is exactly the booking rows it always was.
+  rideLists?: RideListRepo;
+  currency?: string;
 }
 
 // Every action the capability matrix knows about — used only to compute whoami's `caps`
@@ -162,6 +169,22 @@ export function opsRoutes(deps: OpsDeps) {
       if (date && row.travelDate !== date) continue;
       if (q && !`${row.reference} ${row.customerName} ${b.input.customer.email}`.toLowerCase().includes(q)) continue;
       rows.push(row);
+    }
+    // Ride-board vans, folded in read-only. These are a different product with its
+    // own tables — nothing here writes back, and a board failure must never take
+    // the bookings queue down with it, so it degrades to "no vans" instead.
+    if (deps.rideLists) {
+      try {
+        const lists = await deps.rideLists.listOpen();
+        for (const row of boardRowsForOps(lists, { currency: deps.currency ?? 'USD' })) {
+          if (stage && row.stage !== stage) continue;
+          if (date && row.travelDate !== date) continue;
+          if (q && !`${row.reference} ${row.customerName} ${row.route}`.toLowerCase().includes(q)) continue;
+          rows.push(row);
+        }
+      } catch (err) {
+        console.error('[ops] ride-board rows unavailable for the bookings queue:', err);
+      }
     }
     // travelDate ascending, nulls last
     rows.sort((a, b) => {
