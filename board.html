@@ -107,6 +107,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 @media(max-width:1020px){.board{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:640px){.board{grid-template-columns:1fr}}
 
+/* ---------- loading skeleton ----------
+   Mirrors .lcard's shape so the grid doesn't reflow when the real cards land.
+   The API sleeps on Render's free tier, so the wait here can be tens of seconds. */
+.bskel{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  border:1px solid rgba(255,255,255,.6);padding:22px 24px;display:flex;flex-direction:column;gap:14px;
+  min-height:196px}
+.bskel-line,.bskel-dots i{background:linear-gradient(90deg,#e9e5da 25%,#f4f1e8 37%,#e9e5da 63%);
+  background-size:400% 100%;animation:bskel 1.4s ease-in-out infinite;border-radius:8px}
+.bskel-line{height:14px}
+.bskel-line.w80{width:80%}
+.bskel-line.w60{width:60%;height:20px}
+.bskel-line.w40{width:40%}
+.bskel-dots{display:flex;gap:8px;margin-top:auto}
+.bskel-dots i{width:34px;height:34px;border-radius:50%}
+@keyframes bskel{0%{background-position:100% 50%}100%{background-position:0 50%}}
+@media(prefers-reduced-motion:reduce){.bskel-line,.bskel-dots i{animation:none}}
+
 /* ---------- list card (a ticket with a sign-up list) ---------- */
 .lcard{position:relative;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.6);
   transition:transform .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s;display:flex;flex-direction:column;cursor:pointer}

@@ -418,6 +418,7 @@
         '<p>' + (state.filter.mine ? 'Add your name to a ride and it shows up here.' : "Be the first to start this one — we'll help gather names, and it's $0 unless it runs.") + '</p>' +
         '<button class="btn btn-primary" id="empty-start">' + (state.filter.mine ? 'Browse the board' : 'Start this list') + '</button></div>'
       : '';
+    grid.removeAttribute('aria-busy');
     grid.innerHTML = shown.map(card).join('') + empty +
       '<button class="lcard-new reveal" id="new-list"><div>' +
       '<div class="plus">+</div><h3>Your ride\'s not up here?</h3>' +
@@ -496,6 +497,23 @@
   }
 
   /* ---------------- board loads ---------------- */
+  // Placeholder cards for the gap before /board answers. Worth having even though the
+  // warm response is ~450ms: the API sleeps on Render's free tier, and a cold wake is
+  // tens of seconds staring at an empty grid with no sign anything is happening.
+  // Cleared by the first render() / error state, both of which overwrite grid.innerHTML.
+  function showSkeleton(n) {
+    if (!grid) return;
+    var card =
+      '<div class="bskel" aria-hidden="true">' +
+        '<div class="bskel-line w60"></div>' +
+        '<div class="bskel-line w40"></div>' +
+        '<div class="bskel-dots"><i></i><i></i><i></i><i></i></div>' +
+        '<div class="bskel-line w80"></div>' +
+      '</div>';
+    grid.innerHTML = new Array((n || 3) + 1).join(card);
+    grid.setAttribute('aria-busy', 'true');
+  }
+
   function loadBoard() {
     state.filter.mine = false;
     var qs = [];
@@ -512,6 +530,7 @@
     }).catch(function (e) {
       state.lists = [];
       renderFilters();
+      grid.removeAttribute('aria-busy');
       grid.innerHTML =
         '<div class="board-empty"><div class="plus">📡</div><h3>Couldn\'t reach the board.</h3>' +
         '<p>Check your connection and try again — nothing on your side is lost.</p>' +
@@ -1134,14 +1153,30 @@
   function boot() {
     var ta = document.getElementById('intro-ta');
     if (ta) ta.innerHTML = taBadge('Rated 5.0 by ' + TA_REVIEWS + ' travellers');
-    apiGet('/board/me').then(function (data) { state.me = (data && data.me) || null; }).catch(function () { state.me = null; })
-      .then(function () { return loadBoard(); })
-      .then(function () { if (state.me) refreshMineCodes(); })
-      .then(function () {
-        openFromHash();
-        window.addEventListener('hashchange', openFromHash);
-        startTicker();
-      });
+
+    // The rides are what people came for, so /board must not queue behind anything.
+    // These two used to be chained, which meant /board didn't even start until
+    // /board/me had come back — two full round trips before the first card, and on a
+    // cold Render instance the second one waits out the whole wake-up as well.
+    // They are independent: render() reads state.me only to mark "(you)" on a member,
+    // and /board/mine re-renders once it lands anyway.
+    showSkeleton();
+    var me = apiGet('/board/me')
+      .then(function (data) { state.me = (data && data.me) || null; })
+      .catch(function () { state.me = null; });
+    var board = loadBoard();
+
+    // /board/mine needs the identity, and its render() reads state.lists — so it waits
+    // for both rather than racing the first paint and flashing the empty state.
+    var mine = Promise.all([me, board]).then(function () {
+      if (state.me) return refreshMineCodes();
+    });
+
+    Promise.all([me, board, mine]).then(function () {
+      openFromHash();
+      window.addEventListener('hashchange', openFromHash);
+      startTicker();
+    });
   }
   boot();
 })();
