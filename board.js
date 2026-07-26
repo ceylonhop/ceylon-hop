@@ -242,9 +242,25 @@
     return Math.round(each * n * 100) / 100;
   }
 
+  /* ---------------- repaint decisions ----------------
+     /board/mine resolves after /board has already painted, and the only thing it can
+     change on a card is the "you're on this" marking (the .mine ring and tag, both from
+     mineCodes). Re-rendering regardless rebuilt every node, so the whole board re-ran its
+     fade-in a beat after it appeared — it read as the board loading a second time.
+     listCodes = what's on screen, mineCodes = rides you're on, markedCodes = what's
+     already rendered as yours. */
+  function mineMarkChanged(listCodes, mineCodes, markedCodes) {
+    var marked = {};
+    (markedCodes || []).forEach(function (c) { marked[c] = true; });
+    var wanted = (listCodes || []).filter(function (c) { return mineCodes && mineCodes.has(c); });
+    if (wanted.length !== (markedCodes || []).length) return true;
+    return wanted.some(function (c) { return !marked[c]; });
+  }
+
   var RideBoard = {
     shouldReport: shouldReport,
     errorPayload: errorPayload,
+    mineMarkChanged: mineMarkChanged,
     mySeatsOn: mySeatsOn,
     seatsOnOffer: seatsOnOffer,
     seatTotal: seatTotal,
@@ -686,7 +702,16 @@
       state.mineCodes = new Set(lists.map(function (L) { return L.code; }));
       lists.forEach(function (L) { state.byCode[L.code] = L; });
       updateMyRidesButton();
-      if (!state.filter.mine) render();
+      // Only repaint if that actually marks (or unmarks) a card that's on screen. This
+      // used to render() unconditionally, one round trip after the board had painted,
+      // which rebuilt every node and re-ran the entrance animation for nothing.
+      var marked = [];
+      grid.querySelectorAll('.lcard.mine').forEach(function (c) {
+        var code = c.getAttribute('data-code');
+        if (code) marked.push(code);
+      });
+      var onScreen = state.lists.map(function (L) { return L.code; });
+      if (!state.filter.mine && mineMarkChanged(onScreen, state.mineCodes, marked)) render();
     }).catch(function () { /* signed-out or transient — ignore */ });
   }
 
