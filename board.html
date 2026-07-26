@@ -6,8 +6,10 @@
 <!-- M7: backend. Defaults to the live API. Override with ?api=<url> (e.g. localhost for dev) or ?api=off. -->
 <script>(function(){var p=new URLSearchParams(location.search).get('api');window.CEYLON_HOP_API=(p==='off')?'':(p||window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');})();</script>
 <!-- Google Identity Services client id. Empty = sign-in disabled (board still browses).
-     OWNER: paste your OAuth 2.0 Web client id here at go-live (…apps.googleusercontent.com). -->
-<script>window.GOOGLE_CLIENT_ID='';</script>
+     Set 2026-07-25 to open joining for testers — same OAuth client as ops sign-in, with
+     https://prod.ceylonhop.com added to its Authorized JavaScript origins. NOTE: the card
+     side is still FakeTokenizedPaymentAdapter, so holds/charges are not real money yet. -->
+<script>window.GOOGLE_CLIENT_ID='369028158972-46hqkblk86qfk1rqemi7k681acm0gip2.apps.googleusercontent.com';</script>
 <!-- Pre-launch: joining is switched off and the board runs on fakes, so keep it out of the
      index until it ships. Remove this line (and add the URL to SITEMAP_EXTRA) at go-live. -->
 <meta name="robots" content="noindex, follow">
