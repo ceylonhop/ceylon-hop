@@ -604,7 +604,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   ];
   document.getElementById('blog').innerHTML = posts.map(([t,m],i)=>`
     <a class="bcard reveal" href="blog.html">
-      <image-slot id="blog-post-${i}" shape="rounded" radius="16" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
+      <image-slot id="blog-post-${i}" shape="rounded" radius="16" src="img/blog-post-${i}.jpg" style="display:block;width:100%;aspect-ratio:16/10" placeholder="Drop a photo — ${t}"></image-slot>
       <div class="meta" style="margin-top:14px">${m}</div>
       <h3>${t}</h3>
       <span class="more">Read more ${ICON.arrow}</span>
