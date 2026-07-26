@@ -7,7 +7,7 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 // M17 (O3/O4): every customer-facing page carries the error beacon so front-end JS
 // errors reach /errors/client (and from there Sentry + the founder's alert email).
-const FROZEN_PAGES = ['index.html', 'about.html', 'blog.html', 'booking.html', 'plan.html', 'search.html', 'tour.html', 'tours.html', 'why.html'];
+const FROZEN_PAGES = ['index.html', 'about.html', 'blog.html', 'board.html', 'booking.html', 'plan.html', 'search.html', 'tour.html', 'tours.html', 'why.html'];
 
 const hasBeacon = (html) =>
   html.includes("'/errors/client'") &&

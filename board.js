@@ -183,7 +183,35 @@
     };
   }
 
+  /* ---------------- error reporting ----------------
+     Handled failures on this page used to stop at console.error, so a broken
+     join looked like silence. These two decide what reaches Sentry (via the
+     /errors/client beacon) and in what shape. Kept pure and up here — above the
+     DOM-app early return — so they are unit-testable without a page.
+
+     Statuses that are NORMAL states rather than faults are deliberately quiet:
+       401 — not signed in yet          404 — stale share link
+       409 — van full / list closed
+     Everything else, including a thrown null, is worth knowing about. */
+  var QUIET_STATUSES = [401, 404, 409];
+  function shouldReport(e) {
+    try { return !(e && QUIET_STATUSES.indexOf(e.status) !== -1); }
+    catch (x) { return true; }
+  }
+  /* Limits mirror the ClientErrorSchema the API enforces (message 500, stack 1500). */
+  function errorPayload(ctx, e) {
+    var msg = 'board_error', stack = '';
+    try { if (e && e.message) msg = String(e.message); } catch (x) {}
+    try { if (e && e.stack) stack = String(e.stack); } catch (x) {}
+    return {
+      message: ('[ride-board] ' + (ctx || 'unknown') + ': ' + msg).slice(0, 500),
+      stack: stack.slice(0, 1500)
+    };
+  }
+
   var RideBoard = {
+    shouldReport: shouldReport,
+    errorPayload: errorPayload,
     fmtCountdown: fmtCountdown,
     slotWindow: slotWindow,
     scarcityText: scarcityText,
@@ -527,6 +555,13 @@
       state.lists = lists;
       renderFilters();
       render();
+      // Top of the funnel: how many vans a traveller was actually offered, and
+      // under which filter — an empty board is the single most useful signal here.
+      ev('view_item_list', {
+        item_list_id: LIST_ID, item_list_name: 'Ride board',
+        board_count: lists.length,
+        filter_from: state.filter.from, filter_when: state.filter.when
+      });
     }).catch(function (e) {
       state.lists = [];
       renderFilters();
@@ -537,7 +572,7 @@
         '<button class="btn btn-primary" id="retry-board">Try again</button></div>';
       var r = document.getElementById('retry-board');
       if (r) r.addEventListener('click', loadBoard);
-      report(e);
+      report(e, 'loadBoard');
     });
   }
 
@@ -557,7 +592,7 @@
       if (b) b.scrollIntoView({ behavior: 'smooth' });
     }).catch(function (e) {
       if (e.status === 401) { state.me = null; toast('Please sign in again'); }
-      else { toast("Couldn't load your rides"); report(e); }
+      else { toast("Couldn't load your rides"); report(e, 'myRides'); }
     });
   }
 
@@ -695,6 +730,12 @@
       state.byCode[code] = L;
       if (state.detailId !== code) return;
       showDetailShell(L);
+      // Someone opened a specific van — the step between browsing and joining.
+      ev('select_item', {
+        item_list_id: LIST_ID, item_id: L.code,
+        item_name: (L.from || '') + ' → ' + (L.to || ''),
+        seats_committed: L.committed, seats_needed: L.minSeats
+      });
       if (autoJoin) setTimeout(function () { if (state.detailId === code) openModal(code); }, 380);
     }).catch(function (e) {
       if (state.detailId !== code) return;
@@ -704,7 +745,7 @@
           '<div class="board-empty" style="margin:20px 0"><div class="plus">📡</div><h3>Couldn\'t load this ride.</h3><p>Try again in a moment.</p></div>';
         var b = document.getElementById('d-back2'); if (b) b.addEventListener('click', closeDetail);
         document.body.classList.add('detail-open'); window.scrollTo({ top: 0, behavior: 'instant' });
-        report(e);
+        report(e, 'openDetail');
       }
     });
   }
@@ -739,13 +780,19 @@
       state.mineCodes.delete(code);
       if (data && data.list) { var L = normalizeList(data.list); state.byCode[code] = L; }
       updateMyRidesButton();
+      // Churn out of the funnel. `broke_threshold` flags the expensive case: a
+      // scratch that dropped a van back below the count that makes it run.
+      ev('scratch_ride', {
+        item_list_id: LIST_ID, item_id: code,
+        broke_threshold: !!(data && data.list && data.list.committed < data.list.minSeats)
+      });
       toast('Name scratched off', 'No hold, no charge. You can hop back on anytime.');
       if (state.detailId === code && state.byCode[code]) renderDetail(state.byCode[code]);
       if (state.filter.mine) showMine(); else loadBoard();
     }).catch(function (e) {
       if (e.status === 401) toast('Please sign in again');
       else toast("Couldn't scratch that off", 'Try again in a moment.');
-      report(e);
+      report(e, 'scratch');
     });
   }
 
@@ -915,6 +962,15 @@
       if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
     }
     setStep(0);
+    // Intent to join (or to start a van). GA4's begin_checkout is the closest
+    // recommended name — a board seat really is the start of a purchase.
+    ev('begin_checkout', {
+      item_list_id: LIST_ID,
+      flow: creating ? 'create_list' : 'join_list',
+      item_id: current ? current.code : null,
+      currency: 'USD',
+      value: current ? centsToDollars(current.seatPrice) : null
+    });
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
@@ -936,7 +992,7 @@
     if (window.google && google.accounts && google.accounts.id) {
       if (!state.gisReady) {
         try { google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: false }); state.gisReady = true; }
-        catch (e) { report(e); cb(false); return; }
+        catch (e) { report(e, 'googleInit'); cb(false); return; }
       }
       cb(true); return;
     }
@@ -955,7 +1011,7 @@
       if (!ok) { unavailable.hidden = false; return; }
       try {
         google.accounts.id.renderButton(holder, { theme: 'outline', size: 'large', type: 'standard', text: 'continue_with', shape: 'pill', width: 300 });
-      } catch (e) { unavailable.hidden = false; report(e); }
+      } catch (e) { unavailable.hidden = false; report(e, 'googleButton'); }
     });
   }
   function onCredential(response) {
@@ -982,6 +1038,9 @@
       state.me = (data && data.me) || null;
       state.pendingCredential = null;
       btn.disabled = false; btn.textContent = 'Continue';
+      // Sign-in is the biggest drop-off risk in this flow — it sits between
+      // wanting a seat and having one, so it gets its own funnel step.
+      ev('login', { method: 'google', item_list_id: LIST_ID });
       refreshMineCodes();
       // re-plan the step sequence now that we're signed in, and jump to confirm
       var seq = panels();
@@ -990,7 +1049,7 @@
       btn.disabled = false; btn.textContent = 'Continue';
       if (e.status === 400) toast('Sign-in failed', 'Please try again.');
       else toast("Couldn't sign you in", 'Try again in a moment.');
-      report(e);
+      report(e, 'signIn');
     });
   }
 
@@ -1018,6 +1077,7 @@
         preferredTime: pref || undefined, seats: 1
       });
     }
+    var wasCreating = creating;
     req.then(function (data) {
       delete btn.dataset.busy;
       var L = normalizeList(data.list);
@@ -1026,6 +1086,16 @@
       state.mineCodes.add(L.code);
       current = L;
       updateMyRidesButton();
+      // The conversion. NOT 'purchase' — no money moves until the van locks at
+      // cutoff; this is a card held against a seat. `van_runs` is the thing the
+      // funnel actually turns on: a name that tipped a van over its threshold.
+      ev(wasCreating ? 'create_ride_list' : 'join_ride', {
+        item_list_id: LIST_ID, item_id: L.code,
+        item_name: (L.from || '') + ' → ' + (L.to || ''),
+        currency: 'USD', value: centsToDollars(L.seatPrice),
+        seats_committed: L.committed, seats_needed: L.minSeats,
+        van_runs: L.committed >= L.minSeats
+      });
       // refresh whatever's on screen
       if (state.detailId === L.code) renderDetail(L);
       if (state.filter.mine) showMine(); else loadBoard();
@@ -1036,7 +1106,7 @@
       else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { toast('That route isn\'t served yet'); setStep(0); }
-      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e); }
+      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
 
@@ -1117,9 +1187,44 @@
     try { var t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); } catch (e) {}
     return Promise.resolve();
   }
-  function report(e) {
+  /* Handled-failure reporting. The head beacon only catches UNHANDLED errors, so
+     everything this page catches and turns into a toast used to vanish. Now it
+     also reaches Sentry through the same /errors/client endpoint, capped per page
+     the same way (5) so a failing loop can't flood the ingest.
+
+     `ctx` names the call site so Sentry groups by operation, not by message.
+     Callers pass it; a bare report(e) still works and reports as 'unknown'. */
+  /* ---------------- analytics ----------------
+     The board was fully wired to GTM but fired exactly one event ('exception'),
+     so its conversion funnel was invisible. `ev` is the same never-throw shape
+     the rest of the site uses; GA4 recommended names where one fits, snake_case
+     custom names where none does. Consent Mode gates delivery, not this call. */
+  var LIST_ID = 'ride_board';
+  function ev(name, params) {
+    try { if (window.chTrack) window.chTrack(name, params || {}); } catch (x) {}
+  }
+
+  var _reported = 0, REPORT_CAP = 5;
+  function report(e, ctx) {
     try { if (window.chTrack) window.chTrack('exception', { description: (e && e.message) || 'board_error' }); } catch (x) {}
-    if (e && e.status !== 404 && e.status !== 401) { try { console.error('[ride-board]', e); } catch (x) {} }
+    if (!RideBoard.shouldReport(e)) return;
+    try { console.error('[ride-board]', ctx || '', e); } catch (x) {}
+    if (_reported >= REPORT_CAP) return;
+    _reported++;
+    try {
+      var p = RideBoard.errorPayload(ctx, e);
+      var body = JSON.stringify({
+        message: p.message, stack: p.stack,
+        url: location.href.slice(0, 300), ua: navigator.userAgent.slice(0, 300)
+      });
+      var sent = navigator.sendBeacon &&
+        navigator.sendBeacon(API_BASE + '/errors/client', new Blob([body], { type: 'application/json' }));
+      if (!sent) {
+        fetch(API_BASE + '/errors/client', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true
+        }).catch(function () {});
+      }
+    } catch (x) {}
   }
 
   /* deep link: landing on a shared list URL (#/CODE) opens its page directly */

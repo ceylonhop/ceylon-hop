@@ -236,7 +236,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog,
+    email, notificationLog, rideLists,
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
