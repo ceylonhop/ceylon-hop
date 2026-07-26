@@ -172,14 +172,16 @@ export class InMemoryRideListRepo implements RideListRepo {
     const members = this.members.get(listId) ?? [];
 
     const existing = members.find((m) => m.sub === args.sub);
-    if (existing && countsForSeat(existing)) return { ...existing }; // already live → idempotent
 
-    // Capacity guard — the pooled equivalent of holdSeats' oversell check.
-    const committed = committedSeats(members);
-    if (committed + args.seats > list.capacity) return null;
+    // Capacity guard — the pooled equivalent of holdSeats' oversell check. Seats this
+    // traveller already holds don't count against them, or a 1→2 change on a van with
+    // room would be refused. Mirrors the guarded insert in the Postgres repo.
+    const others = committedSeats(members.filter((m) => m.sub !== args.sub));
+    if (others + args.seats > list.capacity) return null;
 
     if (existing) {
-      // re-activate a scratched member, keeping their original position
+      // Re-adding a live member is a seat change, and re-adding a scratched one puts them
+      // back — either way they keep their original position in the line.
       existing.status = 'held';
       existing.seats = args.seats;
       existing.preferredTime = args.preferredTime ?? existing.preferredTime;

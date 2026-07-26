@@ -23,6 +23,11 @@ const LISTS = {
 
 const isMe = (u) => new URL(u).pathname === '/board/me';
 const isBoard = (u) => new URL(u).pathname === '/board';
+// The API host, wherever it lives — ops.ceylonhop.com today, *.onrender.com historically.
+// Deliberately NOT "anything non-local": fonts, GTM and the GIS script must keep loading
+// as they did before. Kept broad across both hosts so moving the API can never silently
+// un-stub these tests onto the live backend.
+const isApiHost = (u) => /(^|\.)ceylonhop\.com$/.test(u.hostname) || /\.onrender\.com$/.test(u.hostname);
 
 /** Stub the board API, holding /board/me open for ME_DELAY_MS. Returns a timing log. */
 async function stubApi(page) {
@@ -42,8 +47,10 @@ async function stubApi(page) {
   });
 
   // Anything else on the API host — /board/dupe, /board/mine, analytics — is not the
-  // subject here and must not slow the page down.
-  await page.route('**/*.onrender.com/**', (route) => {
+  // subject here and must not slow the page down. Matched by predicate, not a hostname
+  // glob: board.html points at ops.ceylonhop.com (same-site, for the ch_cust cookie), and
+  // a glob that misses the real host would let these tests hit the live API.
+  await page.route((u) => isApiHost(u), (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === '/board' || p === '/board/me') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -82,7 +89,7 @@ test('the grid shows a skeleton while the board is loading', async ({ page }) =>
     await held;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LISTS) });
   });
-  await page.route('**/*.onrender.com/**', (route) => {
+  await page.route((u) => isApiHost(u), (route) => {
     if (new URL(route.request().url()).pathname === '/board') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ me: null }) });
   });

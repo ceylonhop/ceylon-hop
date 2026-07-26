@@ -9,7 +9,7 @@ const ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 // The 10 HAND-AUTHORED pages. Generated pages (terms/privacy/404/trip/*) get the
 // snippet via headAssets + `npm run generate` (Task 9b), covered by seo-codegen.
-const PAGES = ['index.html','booking.html','search.html','plan.html','about.html','blog.html','why.html','tours.html','tour.html','manage.html'];
+const PAGES = ['index.html','booking.html','search.html','plan.html','about.html','blog.html','why.html','tours.html','tour.html','manage.html','board.html'];
 
 describe('analytics snippet (Phase 0)', () => {
   it('sets Consent Mode v2 defaults to denied before GTM loads', () => {

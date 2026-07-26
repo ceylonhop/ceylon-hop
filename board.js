@@ -44,8 +44,9 @@
     'south-coast': '~1.5h door to door', 'yala-south': '~2.5h door to door', 'ella-south': '~3.5h door to door'
   };
   var AV = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c', '#e0745f'];
-  var MIN_DEFAULT = 3;   // names needed to lock the van (per-list minSeats overrides)
+  var MIN_DEFAULT = 3;   // seats needed to lock the van (per-list minSeats overrides)
   var CAP_DEFAULT = 6;   // seats in the van (per-list capacity overrides)
+  var MAX_SEATS = 3;     // most one traveller may take (mirrors MAX_SEATS_PER_MEMBER on the API)
   var TA_URL = 'https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html';
 
   // name → id index (best-effort): prototype short names + transfers-data full names.
@@ -153,7 +154,9 @@
         country: m.country || '',
         flag: flagOf(m.country),
         photoUrl: m.photoUrl || null,
-        isStarter: !!m.isStarter
+        seats: m.seats != null ? m.seats : 1,
+        isStarter: !!m.isStarter,
+        isYou: !!m.isYou
       };
     });
     var committed = pl.committed != null ? pl.committed : members.length;
@@ -183,7 +186,67 @@
     };
   }
 
+  /* ---------------- error reporting ----------------
+     Handled failures on this page used to stop at console.error, so a broken
+     join looked like silence. These two decide what reaches Sentry (via the
+     /errors/client beacon) and in what shape. Kept pure and up here — above the
+     DOM-app early return — so they are unit-testable without a page.
+
+     Statuses that are NORMAL states rather than faults are deliberately quiet:
+       401 — not signed in yet          404 — stale share link
+       409 — van full / list closed
+     Everything else, including a thrown null, is worth knowing about. */
+  var QUIET_STATUSES = [401, 404, 409];
+  function shouldReport(e) {
+    try { return !(e && QUIET_STATUSES.indexOf(e.status) !== -1); }
+    catch (x) { return true; }
+  }
+  /* Limits mirror the ClientErrorSchema the API enforces (message 500, stack 1500). */
+  function errorPayload(ctx, e) {
+    var msg = 'board_error', stack = '';
+    try { if (e && e.message) msg = String(e.message); } catch (x) {}
+    try { if (e && e.stack) stack = String(e.stack); } catch (x) {}
+    return {
+      message: ('[ride-board] ' + (ctx || 'unknown') + ': ' + msg).slice(0, 500),
+      stack: stack.slice(0, 1500)
+    };
+  }
+
+  /* ---------------- seats ----------------
+     One name may cover the people travelling with it, up to MAX_SEATS. The van counts
+     seats, not names, so these three decide what a traveller is offered and charged. */
+
+  // Seats you already hold on this list; 0 when you're not on it. The API marks your own
+  // member row (isYou), so this needs no name matching.
+  function mySeatsOn(L) {
+    if (!L || !L.members) return 0;
+    var me = L.members.filter(function (m) { return m.isYou; })[0];
+    return me ? (me.seats || 1) : 0;
+  }
+
+  // The most seats we may offer: what's free on the van plus the ones you already hold
+  // (handing yours back is always allowed), capped at MAX_SEATS. Never below 1, so the
+  // picker always renders — a genuinely full van is refused by the API, not hidden here.
+  function seatsOnOffer(L) {
+    if (!L) return MAX_SEATS;
+    var room = Math.max(0, (L.capacity || CAP_DEFAULT) - (L.committed || 0)) + mySeatsOn(L);
+    return Math.max(1, Math.min(MAX_SEATS, room));
+  }
+
+  // What the traveller is agreeing to be charged if the van runs. Rounded to the cent so
+  // a fractional seat price can't show a long float in the "you pay" line.
+  function seatTotal(eachDollars, seats) {
+    var each = Number(eachDollars) || 0;
+    var n = Math.max(1, Number(seats) || 1);
+    return Math.round(each * n * 100) / 100;
+  }
+
   var RideBoard = {
+    shouldReport: shouldReport,
+    errorPayload: errorPayload,
+    mySeatsOn: mySeatsOn,
+    seatsOnOffer: seatsOnOffer,
+    seatTotal: seatTotal,
     fmtCountdown: fmtCountdown,
     slotWindow: slotWindow,
     scarcityText: scarcityText,
@@ -290,6 +353,9 @@
   /* ---------------- identity helpers ---------------- */
   var iAmOn = function (L) { return state.mineCodes.has(L.code); };
   function isYouMember(L, m) {
+    // The API marks your own row when you're signed in; the name match is only a fallback
+    // for lists cached before that flag existed.
+    if (m.isYou) return true;
     return iAmOn(L) && state.me &&
       m.name === state.me.firstName &&
       (!state.me.country || !m.country || m.country === state.me.country);
@@ -527,6 +593,13 @@
       state.lists = lists;
       renderFilters();
       render();
+      // Top of the funnel: how many vans a traveller was actually offered, and
+      // under which filter — an empty board is the single most useful signal here.
+      ev('view_item_list', {
+        item_list_id: LIST_ID, item_list_name: 'Ride board',
+        board_count: lists.length,
+        filter_from: state.filter.from, filter_when: state.filter.when
+      });
     }).catch(function (e) {
       state.lists = [];
       renderFilters();
@@ -537,7 +610,7 @@
         '<button class="btn btn-primary" id="retry-board">Try again</button></div>';
       var r = document.getElementById('retry-board');
       if (r) r.addEventListener('click', loadBoard);
-      report(e);
+      report(e, 'loadBoard');
     });
   }
 
@@ -557,7 +630,7 @@
       if (b) b.scrollIntoView({ behavior: 'smooth' });
     }).catch(function (e) {
       if (e.status === 401) { state.me = null; toast('Please sign in again'); }
-      else { toast("Couldn't load your rides"); report(e); }
+      else { toast("Couldn't load your rides"); report(e, 'myRides'); }
     });
   }
 
@@ -578,9 +651,10 @@
   var detailInner = document.getElementById('detail-inner');
 
   function personEl(m, i) {
+    var extra = (m.seats || 1) - 1; // people travelling on this name besides the traveller
     return '<div class="d-person">' + avatar(m, i) +
       '<b>' + esc(m.name) + (isYouMember(currentDetail(), m) ? ' (you)' : '') + '</b>' +
-      '<small>' + (m.isStarter ? 'started this list' : 'on the list') + '</small></div>';
+      '<small>' + (extra > 0 ? '+' + extra + ' with them' : m.isStarter ? 'started this list' : 'on the list') + '</small></div>';
   }
   function currentDetail() { return state.byCode[state.detailId] || {}; }
 
@@ -590,6 +664,9 @@
     var conf = L.confirmed || need === 0;
     var slots = conf ? 0 : need;
     var youIn = iAmOn(L);
+    // Seats you could still add to your own name: what's free on the van, capped at the
+    // three one traveller may hold in total.
+    var myRoom = Math.min(cap - L.committed, MAX_SEATS - mySeatsOn(L));
     var sc = scarcityText(L);
     var s = slotWindow(L.slot);
     var alt = ALT[L.corridorId] || { priv: 0, bus: '' };
@@ -623,7 +700,7 @@
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · ' + TA_REVIEWS + ' reviews') + '</div>' +
       '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
-      '<div><b>$0 unless it runs.</b> If three names come, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
+      '<div><b>$0 unless it runs.</b> If three seats are taken, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
       (L.note ? '<div class="d-note"><b>' + esc(starterName) + ' says:</b> "' + esc(L.note) + '"</div>' : '') + '</div>' +
@@ -636,7 +713,7 @@
       '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
       '<div><h4>Now — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before it closes and the hold disappears.</p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
-      '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' names</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If not enough join by the cutoff, the ride\'s called off and you\'re never charged.</b></p></div></div>' +
+      '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' seats</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If not enough join by the cutoff, the ride\'s called off and you\'re never charged.</b></p></div></div>' +
       '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
       '<div><h4>' + esc(L.whenLabel) + ' — the van rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
       '</div></div>' +
@@ -654,13 +731,14 @@
       // ---- sticky join card ----
       '<aside class="d-join">' +
       (youIn
-        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'We\'ll charge ≈' + money(L.cost) + ' only if it fills. $0 held for now.') + '</span></div></div>'
+        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if it fills. $0 held for now.') + '</span></div></div>'
         : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the van locks in. Never a cent before.</div>') +
       '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>' +
       '<div class="who-row">' + whoRow + '<span class="lbl">' + L.committed + ' of ' + min + ' in</span></div>' +
       '<span class="goal-dots" style="margin-bottom:12px;display:inline-flex">' + dots + '<span>' + (conf ? 'locked' : 'locks at ' + min) + '</span></span>' +
       (youIn
-        ? '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
+        ? (conf || myRoom <= 0 ? '' : '<button class="btn btn-primary btn-block" data-detail-join style="margin-bottom:8px">Add someone with me</button>') +
+          '<button class="btn btn-wa btn-block" data-detail-share>Invite someone — fill it faster</button>' +
           (conf ? '' : '<button class="btn btn-scratch btn-block" data-scratch style="margin-top:8px">Scratch my name off</button>')
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card held by PayHere, <b>never charged unless it runs</b> · scratch off anytime</p>') +
@@ -695,6 +773,12 @@
       state.byCode[code] = L;
       if (state.detailId !== code) return;
       showDetailShell(L);
+      // Someone opened a specific van — the step between browsing and joining.
+      ev('select_item', {
+        item_list_id: LIST_ID, item_id: L.code,
+        item_name: (L.from || '') + ' → ' + (L.to || ''),
+        seats_committed: L.committed, seats_needed: L.minSeats
+      });
       if (autoJoin) setTimeout(function () { if (state.detailId === code) openModal(code); }, 380);
     }).catch(function (e) {
       if (state.detailId !== code) return;
@@ -704,7 +788,7 @@
           '<div class="board-empty" style="margin:20px 0"><div class="plus">📡</div><h3>Couldn\'t load this ride.</h3><p>Try again in a moment.</p></div>';
         var b = document.getElementById('d-back2'); if (b) b.addEventListener('click', closeDetail);
         document.body.classList.add('detail-open'); window.scrollTo({ top: 0, behavior: 'instant' });
-        report(e);
+        report(e, 'openDetail');
       }
     });
   }
@@ -739,13 +823,19 @@
       state.mineCodes.delete(code);
       if (data && data.list) { var L = normalizeList(data.list); state.byCode[code] = L; }
       updateMyRidesButton();
+      // Churn out of the funnel. `broke_threshold` flags the expensive case: a
+      // scratch that dropped a van back below the count that makes it run.
+      ev('scratch_ride', {
+        item_list_id: LIST_ID, item_id: code,
+        broke_threshold: !!(data && data.list && data.list.committed < data.list.minSeats)
+      });
       toast('Name scratched off', 'No hold, no charge. You can hop back on anytime.');
       if (state.detailId === code && state.byCode[code]) renderDetail(state.byCode[code]);
       if (state.filter.mine) showMine(); else loadBoard();
     }).catch(function (e) {
       if (e.status === 401) toast('Please sign in again');
       else toast("Couldn't scratch that off", 'Try again in a moment.');
-      report(e);
+      report(e, 'scratch');
     });
   }
 
@@ -785,6 +875,41 @@
     return b ? b.getAttribute('data-pt') : null;
   }
 
+  /* ----- seat picker: one name may cover the people travelling with it ----- */
+  function selectedSeats() {
+    var b = document.querySelector('#seat-opts .seat-opt.sel');
+    return b ? Number(b.getAttribute('data-seats')) : 1;
+  }
+  // Offer only seats the van can actually take: what's free, plus the ones you already
+  // hold (giving them back up is always allowed).
+  function populateSeats(L) {
+    var held = mySeatsOn(L);
+    var most = seatsOnOffer(L);
+    var want = Math.min(Math.max(held, 1), most);
+    document.querySelectorAll('#seat-opts .seat-opt').forEach(function (b) {
+      var n = Number(b.getAttribute('data-seats'));
+      b.disabled = n > most;
+      b.classList.toggle('sel', n === want);
+    });
+    var note = document.getElementById('seat-note');
+    if (held) note.textContent = 'You have ' + held + (held === 1 ? ' seat' : ' seats') + ' on this ride. Change it here — we only ever charge for what you keep.';
+    else if (most < MAX_SEATS) note.textContent = 'Only ' + most + (most === 1 ? ' seat' : ' seats') + ' left on this van.';
+    else note.textContent = 'Travelling with someone? Take their seat now — you\'re charged together, or not at all.';
+  }
+  document.getElementById('seat-opts').addEventListener('click', function (e) {
+    var b = e.target.closest('.seat-opt'); if (!b || b.disabled) return;
+    document.getElementById('seat-opts').querySelectorAll('.seat-opt').forEach(function (x) { x.classList.toggle('sel', x === b); });
+    updateCost();
+  });
+  // The number the traveller is actually agreeing to — seat price times seats.
+  function updateCost() {
+    var each = current ? current.cost : (pairCorridor(cFrom.value, cTo.value) || { seat: 21 }).seat;
+    var n = selectedSeats();
+    var total = seatTotal(each, n);
+    document.getElementById('m-cost').textContent = money(total) + (Number.isInteger(Number(total)) ? '.00' : '');
+    document.getElementById('m-cost-break').textContent = n > 1 ? ' (' + n + ' seats × ' + money(each) + ')' : '';
+  }
+
   /* ----- create-a-list form (uses transfers-data) ----- */
   var T = window.TRANSFERS || { CORRIDORS: [], byId: {}, sharedOption: function () { return null; } };
   var cFrom = document.getElementById('c-from'), cTo = document.getElementById('c-to'),
@@ -818,7 +943,7 @@
     var c = pairCorridor(cFrom.value, cTo.value);
     if (c) {
       cEst.innerHTML = '$' + c.seat + ' <small>/ each</small>';
-      document.getElementById('m-cost').textContent = '$' + c.seat + '.00';
+      updateCost();
     }
     if (dupeTimer) clearTimeout(dupeTimer);
     dupeTimer = setTimeout(checkDupe, 350);
@@ -876,8 +1001,14 @@
       document.getElementById('m-signed-name').textContent = 'Signed in as ' + (state.me.firstName || 'you');
       document.getElementById('m-signed-email').textContent = state.me.country ? flagOf(state.me.country) + ' ' + state.me.country : '';
     }
-    var cost = current ? current.cost : (pairCorridor(cFrom.value, cTo.value) || { seat: 21 }).seat;
-    document.getElementById('m-cost').textContent = money(cost) + (Number.isInteger(Number(cost)) ? '.00' : '');
+    populateSeats(current);
+    updateCost();
+    // A traveller already on the list is changing their seats, not adding their name again.
+    document.getElementById('sign-btn-label').textContent = mySeatsOn(current)
+      ? 'Update my seats' : 'Add my name — $0 now';
+    // Threshold is per-list (corridors override the default), so never hard-code it here —
+    // when creating, the list doesn't exist yet, so fall back to the policy default.
+    document.getElementById('m-min').textContent = current ? current.minSeats : MIN_DEFAULT;
   }
 
   // A full van is not a dead end: it is the strongest signal that this route has demand, so
@@ -912,6 +1043,15 @@
       if (mr) mr.textContent = prefill.from + ' → ' + prefill.to + ' · another van, your date';
     }
     setStep(0);
+    // Intent to join (or to start a van). GA4's begin_checkout is the closest
+    // recommended name — a board seat really is the start of a purchase.
+    ev('begin_checkout', {
+      item_list_id: LIST_ID,
+      flow: creating ? 'create_list' : 'join_list',
+      item_id: current ? current.code : null,
+      currency: 'USD',
+      value: current ? centsToDollars(current.seatPrice) : null
+    });
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
   }
@@ -933,7 +1073,7 @@
     if (window.google && google.accounts && google.accounts.id) {
       if (!state.gisReady) {
         try { google.accounts.id.initialize({ client_id: CLIENT_ID, callback: onCredential, auto_select: false }); state.gisReady = true; }
-        catch (e) { report(e); cb(false); return; }
+        catch (e) { report(e, 'googleInit'); cb(false); return; }
       }
       cb(true); return;
     }
@@ -952,7 +1092,7 @@
       if (!ok) { unavailable.hidden = false; return; }
       try {
         google.accounts.id.renderButton(holder, { theme: 'outline', size: 'large', type: 'standard', text: 'continue_with', shape: 'pill', width: 300 });
-      } catch (e) { unavailable.hidden = false; report(e); }
+      } catch (e) { unavailable.hidden = false; report(e, 'googleButton'); }
     });
   }
   function onCredential(response) {
@@ -979,6 +1119,9 @@
       state.me = (data && data.me) || null;
       state.pendingCredential = null;
       btn.disabled = false; btn.textContent = 'Continue';
+      // Sign-in is the biggest drop-off risk in this flow — it sits between
+      // wanting a seat and having one, so it gets its own funnel step.
+      ev('login', { method: 'google', item_list_id: LIST_ID });
       refreshMineCodes();
       // re-plan the step sequence now that we're signed in, and jump to confirm
       var seq = panels();
@@ -987,7 +1130,7 @@
       btn.disabled = false; btn.textContent = 'Continue';
       if (e.status === 400) toast('Sign-in failed', 'Please try again.');
       else toast("Couldn't sign you in", 'Try again in a moment.');
-      report(e);
+      report(e, 'signIn');
     });
   }
 
@@ -998,6 +1141,7 @@
     if (btn.dataset.busy) return;
     btn.dataset.busy = '1';
     var pref = selectedPref();
+    var seats = selectedSeats();
     var req;
     if (creating) {
       var c = pairCorridor(cFrom.value, cTo.value);
@@ -1008,13 +1152,14 @@
         slot: (cTime.querySelector('.sel') || { dataset: { t: 'morning' } }).dataset.t,
         note: (cNote.value || '').trim() || undefined,
         preferredTime: pref || undefined,
-        seats: 1
+        seats: seats
       });
     } else {
       req = apiPost('/board/' + encodeURIComponent(current.code) + '/join', {
-        preferredTime: pref || undefined, seats: 1
+        preferredTime: pref || undefined, seats: seats
       });
     }
+    var wasCreating = creating;
     req.then(function (data) {
       delete btn.dataset.busy;
       var L = normalizeList(data.list);
@@ -1023,6 +1168,17 @@
       state.mineCodes.add(L.code);
       current = L;
       updateMyRidesButton();
+      // The conversion. NOT 'purchase' — no money moves until the van locks at
+      // cutoff; this is a card held against a seat. `van_runs` is the thing the
+      // funnel actually turns on: a name that tipped a van over its threshold.
+      ev(wasCreating ? 'create_ride_list' : 'join_ride', {
+        item_list_id: LIST_ID, item_id: L.code,
+        item_name: (L.from || '') + ' → ' + (L.to || ''),
+        currency: 'USD', value: Math.round(centsToDollars(L.seatPrice) * seats * 100) / 100,
+        quantity: seats,
+        seats_committed: L.committed, seats_needed: L.minSeats,
+        van_runs: L.committed >= L.minSeats
+      });
       // refresh whatever's on screen
       if (state.detailId === L.code) renderDetail(L);
       if (state.filter.mine) showMine(); else loadBoard();
@@ -1033,7 +1189,7 @@
       else if (e.status === 409) { toast(e.body && e.body.error === 'full' ? 'That ride just filled up' : 'That list just closed', 'Refreshing the board.'); closeModal(); loadBoard(); }
       else if (e.status === 400 && e.body && e.body.error === 'date_in_past') { toast('Pick a future date'); setStep(0); }
       else if (e.status === 400 && e.body && e.body.error === 'unknown_corridor') { toast('That route isn\'t served yet'); setStep(0); }
-      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e); }
+      else { toast("Couldn't add your name", 'Try again in a moment.'); report(e, 'join'); }
     });
   }
 
@@ -1114,9 +1270,44 @@
     try { var t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); } catch (e) {}
     return Promise.resolve();
   }
-  function report(e) {
+  /* Handled-failure reporting. The head beacon only catches UNHANDLED errors, so
+     everything this page catches and turns into a toast used to vanish. Now it
+     also reaches Sentry through the same /errors/client endpoint, capped per page
+     the same way (5) so a failing loop can't flood the ingest.
+
+     `ctx` names the call site so Sentry groups by operation, not by message.
+     Callers pass it; a bare report(e) still works and reports as 'unknown'. */
+  /* ---------------- analytics ----------------
+     The board was fully wired to GTM but fired exactly one event ('exception'),
+     so its conversion funnel was invisible. `ev` is the same never-throw shape
+     the rest of the site uses; GA4 recommended names where one fits, snake_case
+     custom names where none does. Consent Mode gates delivery, not this call. */
+  var LIST_ID = 'ride_board';
+  function ev(name, params) {
+    try { if (window.chTrack) window.chTrack(name, params || {}); } catch (x) {}
+  }
+
+  var _reported = 0, REPORT_CAP = 5;
+  function report(e, ctx) {
     try { if (window.chTrack) window.chTrack('exception', { description: (e && e.message) || 'board_error' }); } catch (x) {}
-    if (e && e.status !== 404 && e.status !== 401) { try { console.error('[ride-board]', e); } catch (x) {} }
+    if (!RideBoard.shouldReport(e)) return;
+    try { console.error('[ride-board]', ctx || '', e); } catch (x) {}
+    if (_reported >= REPORT_CAP) return;
+    _reported++;
+    try {
+      var p = RideBoard.errorPayload(ctx, e);
+      var body = JSON.stringify({
+        message: p.message, stack: p.stack,
+        url: location.href.slice(0, 300), ua: navigator.userAgent.slice(0, 300)
+      });
+      var sent = navigator.sendBeacon &&
+        navigator.sendBeacon(API_BASE + '/errors/client', new Blob([body], { type: 'application/json' }));
+      if (!sent) {
+        fetch(API_BASE + '/errors/client', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: body, keepalive: true
+        }).catch(function () {});
+      }
+    } catch (x) {}
   }
 
   /* deep link: landing on a shared list URL (#/CODE) opens its page directly */

@@ -2,7 +2,26 @@ import type { Booking } from '../db/bookingRepo';
 import type { RideOps } from '../db/rideOpsRepo';
 import type { RideStatus } from '../domain/rideStatus';
 
-export type OpsStage = 'awaiting_payment' | RideStatus;
+// 'gathering' belongs to the ride board, not the booking machine: a van that is
+// still collecting names has no booking, no payment and nothing for ops to
+// advance. It rides in this union so one queue can show both kinds of row.
+export type OpsStage = 'awaiting_payment' | 'gathering' | RideStatus;
+
+/** Where a queue row came from. Ride-board rows are read-only projections. */
+export type OpsRowSource = 'booking' | 'ride_board';
+
+/** The ride-board-only half of a queue row (absent on real bookings). */
+export interface OpsBoardDetail {
+  code: string;
+  listStatus: string;
+  seatsCommitted: number;
+  minSeats: number;
+  capacity: number;
+  seatPrice: number; // minor units, per seat
+  cutoffAt: string; // ISO
+  /** Live manifest — first name + country only, never email or subject. */
+  members: Array<{ position: number; firstName: string; country: string; seats: number; status: string }>;
+}
 
 export interface OpsBookingRow {
   id: string;
@@ -23,6 +42,8 @@ export interface OpsBookingRow {
   vehiclePhotoReceived: boolean;
   customerUpdated: boolean;
   opsNotes: string | null;
+  source: OpsRowSource;
+  board?: OpsBoardDetail;
 }
 
 function route(b: Booking): string {
@@ -58,5 +79,6 @@ export function toOpsRow(b: Booking, opts: { rideOps?: RideOps | null; paid: boo
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,
+    source: 'booking',
   };
 }

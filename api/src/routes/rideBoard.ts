@@ -6,6 +6,7 @@ import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { JwtVerifier } from '../lib/googleAuth';
 import type { MapsAdapter } from '../adapters/maps';
 import { seatPriceForDistance } from '../quote/seatPrice';
+import { logEvent } from '../observability/events';
 import { verifyGoogleIdToken } from '../lib/googleAuth';
 import {
   customerIdentity,
@@ -36,7 +37,9 @@ interface PublicMember {
   firstName: string;
   country: string;
   photoUrl: string | null;
+  seats: number;
   isStarter: boolean;
+  isYou: boolean;
 }
 
 interface PublicList {
@@ -58,7 +61,9 @@ interface PublicList {
 }
 
 // The single place a list becomes public data — nothing sensitive leaves here.
-export function projectList({ list, members }: RideListWithMembers): PublicList {
+// viewerSub, when given, marks the viewer's own row so the page can offer to change
+// their seats; it never leaks anyone else's identity.
+export function projectList({ list, members }: RideListWithMembers, viewerSub?: string): PublicList {
   const live = members.filter((m) => m.status === 'held' || m.status === 'charged');
   return {
     code: list.code,
@@ -82,7 +87,9 @@ export function projectList({ list, members }: RideListWithMembers): PublicList 
         firstName: m.firstName,
         country: m.country,
         photoUrl: m.photoUrl,
+        seats: m.seats,
         isStarter: m.position === 1,
+        isYou: viewerSub != null && m.sub === viewerSub,
       })),
   };
 }
@@ -176,14 +183,15 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const whenRaw = c.req.query('when');
     const when: ListFilter['when'] = whenRaw === 'week' || whenRaw === 'fortnight' ? whenRaw : 'all';
     const lists = await deps.rideLists.listOpen({ from, when });
-    return c.json({ lists: lists.map(projectList) });
+    const viewer = c.get('customer')?.sub;
+    return c.json({ lists: lists.map((l) => projectList(l, viewer)) });
   });
 
   // GET /board/mine — the signed-in traveller's lists. Registered before /:code.
   r.get('/mine', requireCustomer(), async (c) => {
     const cust = c.get('customer')!;
     const lists = await deps.rideLists.listForMember(cust.sub);
-    return c.json({ lists: lists.map(projectList) });
+    return c.json({ lists: lists.map((l) => projectList(l, cust.sub)) });
   });
 
   // GET /board/dupe?from=&to=&date= — the dedupe nudge for the create flow.
@@ -264,8 +272,12 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
       preapprovalRef: ref,
     });
     const fresh = await deps.rideLists.getByCode(list.code);
+    logEvent('ride_board.list_created', {
+      code: list.code, corridorId: list.corridorId, date: list.date, slot: list.slot,
+      seatPrice: list.seatPrice, minSeats: list.minSeats, capacity: list.capacity,
+    });
     return c.json(
-      { list: projectList(fresh!), manageToken: signRideMemberToken(list.id, cust.sub, deps.memberLinkSecret) },
+      { list: projectList(fresh!, cust.sub), manageToken: signRideMemberToken(list.id, cust.sub, deps.memberLinkSecret) },
       201,
     );
   });
@@ -275,18 +287,24 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const cust = c.get('customer')!;
     const parsed = JoinInput.safeParse(await c.req.json().catch(() => ({})));
     if (!parsed.success) return c.json({ error: 'invalid_request' }, 400);
-    const { preferredTime, seats } = parsed.data;
+    const { preferredTime } = parsed.data;
 
     const found = await deps.rideLists.getByCode(c.req.param('code'));
     if (!found) return c.json({ error: 'not_found' }, 404);
     if (found.list.status !== 'gathering' && found.list.status !== 'confirmed') {
       return c.json({ error: 'closed' }, 409);
     }
-    // Already a live member? Idempotent — return the current list, no extra preapproval.
-    const alreadyOn = found.members.some(
+    // Already a live member? Then this is a seat change, not a second join: the card stays
+    // held once, and an omitted seat count means "leave mine as they are".
+    const mine = found.members.find(
       (m) => m.sub === cust.sub && (m.status === 'held' || m.status === 'charged'),
     );
-    if (!alreadyOn && committedSeats(found.members) + seats > found.list.capacity) {
+    const alreadyOn = Boolean(mine);
+    const seats = parsed.data.seats ?? mine?.seats ?? 1;
+    // Capacity is checked net of the seats this traveller already holds — counting their own
+    // seats twice would refuse a 1→2 change on a van that plainly has room for it.
+    const othersSeats = committedSeats(found.members.filter((m) => m.sub !== cust.sub));
+    if (othersSeats + seats > found.list.capacity) {
       return c.json({ error: 'full' }, 409);
     }
 
@@ -311,8 +329,15 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     });
     if (!member) return c.json({ error: 'full' }, 409);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
+    const committed = committedSeats(fresh?.members ?? []);
+    logEvent('ride_board.join', {
+      code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
+      seats, committed, minSeats: found.list.minSeats, capacity: found.list.capacity,
+      // the moment a van becomes viable — the number the funnel is really about
+      reachedThreshold: committed >= found.list.minSeats,
+    });
     return c.json({
-      list: projectList(fresh!),
+      list: projectList(fresh!, cust.sub),
       manageToken: signRideMemberToken(found.list.id, cust.sub, deps.memberLinkSecret),
     });
   });
@@ -334,14 +359,23 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
 
     const removed = await deps.rideLists.removeMember(found.list.id, sub);
     const fresh = await deps.rideLists.getByCode(c.req.param('code'));
-    return c.json({ removed, list: projectList(fresh!) });
+    const left = committedSeats(fresh?.members ?? []);
+    if (removed) {
+      logEvent('ride_board.scratch', {
+        code: found.list.code, corridorId: found.list.corridorId, date: found.list.date,
+        committed: left, minSeats: found.list.minSeats,
+        // the expensive churn: a scratch that took a viable van back below the line
+        brokeThreshold: left < found.list.minSeats,
+      });
+    }
+    return c.json({ removed, list: projectList(fresh!, cust?.sub) });
   });
 
   // GET /board/:code — one list's public detail (share-link destination). Last (catch-all).
   r.get('/:code', async (c) => {
     const found = await deps.rideLists.getByCode(c.req.param('code'));
     if (!found) return c.json({ error: 'not_found' }, 404);
-    return c.json(projectList(found));
+    return c.json(projectList(found, c.get('customer')?.sub));
   });
 
   return r;

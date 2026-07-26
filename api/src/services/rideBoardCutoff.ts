@@ -3,6 +3,7 @@ import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import type { EmailAdapter } from '../adapters/email';
 import { committedSeats, popularTime, type Slot, type RideMember } from '../domain/rideList';
 import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from './rideBoardEmails';
+import { logEvent } from '../observability/events';
 
 // ============================================================================
 // Ride Board cutoff sweep — the pooled equivalent of sweepStaleSharedHolds.
@@ -45,6 +46,11 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
     if (liveSeats(held) < list.minSeats) {
       await deps.rideLists.setStatus(list.id, 'expired');
       res.expired++;
+      logEvent('ride_board.called_off', {
+        code: list.code, corridorId: list.corridorId, date: list.date,
+        reason: 'below_threshold', committed: liveSeats(held), minSeats: list.minSeats,
+        travellers: held.length,
+      });
       for (const m of held) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
       continue;
     }
@@ -81,6 +87,12 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       // Confirmed with the successfully-charged travellers.
       await deps.rideLists.setStatus(list.id, 'confirmed');
       res.confirmed++;
+      logEvent('ride_board.confirmed', {
+        code: list.code, corridorId: list.corridorId, date: list.date, lockedTime: time,
+        seats: chargedOk.reduce((n, m) => n + m.seats, 0), minSeats: list.minSeats,
+        capacity: list.capacity, chargeFailures: failed.length,
+        revenueCents: chargedOk.reduce((n, m) => n + m.seats, 0) * list.seatPrice,
+      });
       for (const m of chargedOk) await sendRideConfirmed(deps.email, { to: m.email, firstName: m.firstName, list, lockedTime: time });
       for (const m of failed) await sendRideAtRisk(deps.email, { to: m.email, firstName: m.firstName, list });
     } else {
@@ -89,6 +101,13 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
       // (owner-gated PayHere swap) must add auto-refund. Flagged in the go-live checklist.
       await deps.rideLists.setStatus(list.id, 'expired');
       res.expired++;
+      logEvent('ride_board.called_off', {
+        code: list.code, corridorId: list.corridorId, date: list.date,
+        reason: 'charge_failures', chargeFailures: failed.length,
+        chargedSeats: chargedOk.reduce((n, m) => n + m.seats, 0), minSeats: list.minSeats,
+        // these cards are charged with the van cancelled — the manual-refund case
+        needsRefund: chargedOk.length,
+      });
       for (const m of held) await sendRideCancelled(deps.email, { to: m.email, firstName: m.firstName, list });
     }
   }
