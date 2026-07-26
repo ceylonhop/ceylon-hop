@@ -209,6 +209,7 @@ export function createApp(deps: AppDeps = {}) {
         googleClientId: deps.auth?.googleClientId ?? config.GOOGLE_OAUTH_CLIENT_ID,
         verifier: deps.customerVerifier,
       },
+      maps,
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
     }),
