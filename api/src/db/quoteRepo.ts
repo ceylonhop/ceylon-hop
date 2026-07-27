@@ -55,8 +55,9 @@ export interface NewQuote {
   createdBy?: string | null;
   updatedBy?: string | null;
   // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
-  // lands in their "Assigned to me". Reassignment still happens only via the patch/picker, and
-  // update() leaves assignment untouched — so this only takes effect on insert.
+  // opens already showing a holder. Reassignment happens via the patch/picker (and, from
+  // 2026-07-26, automatically on the ready/sent transitions), and update() leaves assignment
+  // untouched — so this only takes effect on insert.
   assignedTo?: string | null;
 }
 
@@ -104,8 +105,9 @@ export interface QuoteSummary {
   customerContact: string | null;
   totalCents: number;
   currency: string;
-  // The queue's "Assigned to me" section filters on this, so it must survive the narrow
-  // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
+  // The queue renders an assignee chip on every row (and floats your rows to the top of each
+  // status section) off this, so it must survive the narrow projection. Sell-side only — this
+  // stays free of cost/margin (see the list route's note).
   assignedTo: string | null;
   // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
   // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
