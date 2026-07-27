@@ -287,7 +287,11 @@
 
   var API_BASE = (window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com').replace(/\/$/, '');
   var CLIENT_ID = String(window.GOOGLE_CLIENT_ID || '').trim();
-  var SHARE_ORIGIN = 'https://ceylonhop.com';
+  // Share links resolve against the API, which is what serves the unfurl page (/r/:code)
+  // with this ride's own preview tags. It used to be a hardcoded 'https://ceylonhop.com',
+  // which is the old WordPress apex and 404s — every shared link was dead. Deriving it
+  // from API_BASE keeps staging links pointing at staging.
+  var SHARE_ORIGIN = API_BASE;
 
   var state = {
     me: null,
@@ -752,7 +756,7 @@
       : '<div class="tset"><span class="tlbl">Likely departure — set when the van locks:</span><div class="topts">' +
         s.opts.map(function (t, i) { return '<span class="topt ' + (i === 1 ? 'lead' : '') + '">' + t + '</span>'; }).join('') +
         '</div><span class="tnote">Everyone\'s asked their preferred time when they join; the group\'s most popular wins.</span></div>';
-    var shareUrl = SHARE_ORIGIN + '/board/' + L.code;
+    var shareUrl = SHARE_ORIGIN + '/r/' + L.code;
     var waText = 'shared van ' + L.from + ' → ' + L.to + ', ' + L.whenLabel + ' — ≈' + money(L.cost) + ' each, $0 unless it runs: ' + shareUrl;
     var starterName = L.members[0] ? L.members[0].name : 'Someone';
 
@@ -816,7 +820,7 @@
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
       '<button class="btn btn-ghost btn-sm" data-copy="' + esc(shareUrl) + '">Copy link</button>' +
-      '</div><p class="share-live">The link unfurls a live card — <b>always shows the current count</b>, even after it locks.</p></div>' +
+      '</div><p class="share-live">The link unfurls a card with the route, the seat price and <b>how many seats are left</b>.</p></div>' +
       '</aside></div>';
 
     detailInner.querySelector('#d-back').addEventListener('click', closeDetail);
@@ -1296,7 +1300,7 @@
   }
 
   function prepShare(L, need) {
-    var url = SHARE_ORIGIN + '/board/' + L.code;
+    var url = SHARE_ORIGIN + '/r/' + L.code;
     var s = slotWindow(L.slot).label;
     document.getElementById('sc-route').textContent = L.from + ' → ' + L.to;
     document.getElementById('sc-meta').textContent = L.whenLabel + ' · ' + s + ' · ' + L.committed + ' of ' + L.minSeats + ' in · ≈ ' + money(L.cost) + ' each';

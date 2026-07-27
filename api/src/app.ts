@@ -8,6 +8,7 @@ import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
+import { shareCardRoutes } from './routes/shareCard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
@@ -213,6 +214,12 @@ export function createApp(deps: AppDeps = {}) {
       memberLinkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       allowedOrigins,
     }),
+  );
+  // Share links for the Ride Board (/r/:code). Its own mount, not /board/:code — that one
+  // answers JSON to board.js, and a crawler's Accept header is too weak a thing to branch on.
+  app.route(
+    '/r',
+    shareCardRoutes({ rideLists, siteBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL }),
   );
   app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
   app.route(
