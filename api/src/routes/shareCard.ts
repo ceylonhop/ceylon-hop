@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
+import { Resvg } from '@resvg/resvg-js';
+import { fileURLToPath } from 'node:url';
 import type { RideListRepo, RideListWithMembers } from '../db/rideListRepo';
 import { committedSeats } from '../domain/rideList';
+import { cardModel, cardSvg } from './shareCardImage';
 
 /* ---------------------------------------------------------------------------
    GET /r/:code — what a chat app fetches when someone pastes a ride link.
@@ -16,6 +19,10 @@ import { committedSeats } from '../domain/rideList';
 --------------------------------------------------------------------------- */
 
 export type ShareCopy = { title: string; description: string };
+export type RideCopy = ShareCopy & {
+  lead: string; leadSub: string; hot: boolean; price: string; deadline: string;
+  when: string; locked: boolean;
+};
 
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -50,26 +57,60 @@ function deadlineText(cutoff: Date): string {
  * many more names make the van roll; above it, how many seats are still for sale.
  */
 export function shareCopy(found: RideListWithMembers): ShareCopy {
+  const { title, description } = rideCopy(found);
+  return { title, description };
+}
+
+/**
+ * Every phrase the share link uses, in one place: the chat preview and the card image
+ * must never disagree about how many seats are left.
+ *
+ * The lead is whichever number is the actual ask — below the threshold it is how many
+ * more names make the van roll; above it, how many seats are still for sale.
+ */
+export function rideCopy(found: RideListWithMembers): RideCopy {
   const { list } = found;
   const taken = committedSeats(found.members);
   const left = Math.max(0, list.capacity - taken);
   const need = Math.max(0, list.minSeats - taken);
   const locked = list.status === 'confirmed' || need === 0;
+  const full = locked && left === 0;
   const route = `${list.fromPlace} → ${list.toPlace}`;
   const when = shortDate(list.date);
+  const price = `≈${money(list.seatPrice)}`;
 
   let lead: string;
-  if (locked && left === 0) lead = 'Van locked in';
-  else if (locked) lead = `${left} seat${left === 1 ? '' : 's'} left`;
-  else if (need === 1) lead = '1 more and it rolls';
-  else lead = `${need} more and it rolls`;
+  let leadSub: string;
+  let hot = false;
+  if (full) {
+    lead = 'Van locked in';
+    leadSub = 'This one is full — start the next van on the same route.';
+  } else if (locked) {
+    lead = `${left} seat${left === 1 ? '' : 's'} left`;
+    hot = left === 1;
+    leadSub = left === 1
+      ? 'Take it and the van is full — everyone rolls.'
+      : 'The van is locked in. These seats are still going.';
+  } else if (need === 1) {
+    lead = '1 more and it rolls';
+    leadSub = `${taken} on board. One more name locks the van in.`;
+  } else {
+    lead = `${need} more and it rolls`;
+    leadSub = `${taken} on board so far. ${need} more names and it is on.`;
+  }
 
-  const price = money(list.seatPrice);
-  const description = locked && left === 0
-    ? `${taken} of ${list.capacity} seats taken at ${price} each. This van is full — start the next one on the same route.`
-    : `≈${price} for your seat. $0 to join — you're only charged if the van fills. Closes ${deadlineText(list.cutoffAt)}.`;
+  const deadline = full
+    ? `Departs ${when}`
+    : `Closes ${deadlineText(list.cutoffAt)}`;
 
-  return { title: `${lead} · ${route}, ${when}`, description };
+  const description = full
+    ? `${taken} of ${list.capacity} seats taken at ${money(list.seatPrice)} each. This van is full — start the next one on the same route.`
+    : `${price} for your seat. $0 to join — you're only charged if the van fills. Closes ${deadlineText(list.cutoffAt)}.`;
+
+  return {
+    title: `${lead} · ${route}, ${when}`,
+    description, lead, leadSub, hot, price, deadline, when, locked: full,
+  };
 }
 
 function page(opts: {
@@ -104,6 +145,24 @@ function page(opts: {
 </html>`;
 }
 
+/**
+ * Brand fonts are vendored (OFL) and loaded explicitly: the rasterizer reads only
+ * TTF/OTF, and a Render container has no system fonts to fall back on — without
+ * these the card renders as a blank rectangle.
+ */
+const FONT_FILES = [
+  'Newsreader-ExtraBold.ttf',
+  'HankenGrotesk-Bold.ttf',
+  'HankenGrotesk-SemiBold.ttf',
+].map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
+
+export function renderCard(model: Parameters<typeof cardSvg>[0]): Buffer {
+  return new Resvg(cardSvg(model), {
+    font: { fontFiles: FONT_FILES, loadSystemFonts: false },
+    fitTo: { mode: 'width', value: 1200 },
+  }).render().asPng();
+}
+
 export function shareCardRoutes(deps: {
   rideLists: RideListRepo;
   /** Customer site origin — where board.html lives. */
@@ -116,6 +175,22 @@ export function shareCardRoutes(deps: {
 
   const origin = (reqUrl: string): string =>
     (deps.shareBaseUrl ?? new URL(reqUrl).origin).replace(/\/$/, '');
+
+  // GET /r/:code/card.png — the og:image itself. Declared before the catch-all.
+  r.get('/:code/card.png', async (c) => {
+    const found = await deps.rideLists.getByCode(c.req.param('code'));
+    if (!found) return c.json({ error: 'not_found' }, 404);
+
+    const copy = rideCopy(found);
+    const png = renderCard(cardModel(found, copy));
+
+    // Chat apps re-fetch rarely; the ?s= seat count in the URL is what actually busts
+    // their cache, so the image itself can be cached hard.
+    return c.body(new Uint8Array(png), 200, {
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=300, s-maxage=300',
+    });
+  });
 
   r.get('/:code', async (c) => {
     const code = c.req.param('code');
@@ -142,13 +217,10 @@ export function shareCardRoutes(deps: {
       page({
         title,
         description,
-        // The brand cover until the per-ride card renderer lands (it needs a rasterizer
-        // dependency — see docs). When it does, this becomes
-        //   `${base}/r/${code}/card.png?s=${taken}`
-        // cache-busted on the seat count, because chat apps key their cached preview off
-        // the image URL: a filling van has to change it or the card freezes at whatever
+        // Cache-busted on the seat count: chat apps key their cached preview off the
+        // image URL, so a filling van has to change it or the card freezes at whatever
         // count it had the first time anyone pasted the link.
-        image: `${site}/og-cover.jpg`,
+        image: `${base}/r/${encodeURIComponent(found.list.code)}/card.png?s=${committedSeats(found.members)}`,
         canonical: `${base}/r/${encodeURIComponent(found.list.code)}`,
         landing: `${site}/board.html#/${encodeURIComponent(found.list.code)}`,
       }),

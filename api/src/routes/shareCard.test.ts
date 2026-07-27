@@ -46,7 +46,7 @@ describe('GET /r/:code — share unfurl', () => {
     expect(meta(html, 'og:title')).toContain('1 seat left');
     expect(meta(html, 'og:description')).toContain('$19');
     expect(meta(html, 'twitter:card')).toBe('summary_large_image');
-    expect(meta(html, 'og:image')).toBe('https://prod.ceylonhop.com/og-cover.jpg');
+    expect(meta(html, 'og:image')).toMatch(/^https?:\/\/.+\/card\.png\?s=5$/);
   });
 
   it('states the deadline as a fixed date, never a countdown', async () => {
@@ -103,5 +103,35 @@ describe('GET /r/:code — share unfurl', () => {
     expect(html).not.toContain('the gap" <script>');
     expect(html).toContain('&lt;script&gt;');
     expect(meta(html, 'og:title')).toContain('&quot;the gap&quot;');
+  });
+});
+
+describe('GET /r/:code/card.png — the share image', () => {
+  it('renders a real PNG', async () => {
+    const { app, code } = await seeded(5);
+    const res = await app.request(`/r/${code}/card.png`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes.slice(1, 4)).map((b) => String.fromCharCode(b)).join('')).toBe('PNG');
+    // a blank canvas rasterises tiny; a card with text and avatars does not
+    expect(bytes.length).toBeGreaterThan(20_000);
+  });
+
+  it('is the og:image the unfurl page points at, cache-busted on the seat count', async () => {
+    const { app, code } = await seeded(5);
+    const html = await (await app.request(`/r/${code}`)).text();
+    const img = meta(html, 'og:image')!;
+    expect(img).toContain(`/r/${code}/card.png?s=5`);
+
+    const res = await app.request(new URL(img).pathname);
+    expect(res.status).toBe(200);
+  });
+
+  it('404s for a code that does not exist', async () => {
+    const { app } = await seeded(2);
+    expect((await app.request('/r/ZZ-9999/card.png')).status).toBe(404);
   });
 });

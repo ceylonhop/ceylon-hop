@@ -21,7 +21,10 @@
     "migrate:test": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@fontsource/hanken-grotesk": "^5.3.0",
+    "@fontsource/newsreader": "^5.3.0",
     "@hono/node-server": "^1.8.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@sentry/node": "^10.63.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
