@@ -16,17 +16,29 @@ function unchanged(rawCents: number): FinishedPrice {
   return { rawCents, finalCents: rawCents, adjustmentCents: 0, strategy: 'unchanged' };
 }
 
+// A downward finish must clear BOTH limits: the proportional one (maxReductionBps, which does the
+// protecting on small totals) and the absolute one (MAX_REDUCTION_CENTS, which does it on large
+// ones, where a percentage stops being a meaningful bound).
 function reductionWithinLimit(rawCents: number, candidateCents: number, maxReductionBps: number): boolean {
   if (candidateCents >= rawCents) return true;
-  return (rawCents - candidateCents) * 10_000 <= rawCents * maxReductionBps;
+  const off = rawCents - candidateCents;
+  if (off > MAX_REDUCTION_CENTS) return false;
+  return off * 10_000 <= rawCents * maxReductionBps;
 }
 
+// Finishing is a cosmetic tidy-up of the last digits, so it may never hand back real money.
+// Owner rule (2026-07-26): round to the nearest $10 and never give away more than $10.
+const CHARM_INTERVAL_CENTS = 1000; // $10 — the charm target is the "…9.00" below this grid
+const MAX_REDUCTION_CENTS = 1000; // $10 — an absolute floor under any downward finish
+
+// The "…9.00" price at or below rawCents on a $10 grid: $184.27 → $179.00, $1,842.77 → $1,839.00.
+//
+// The interval used to WIDEN with the number's magnitude ($100 at four digits, $1,000 at five),
+// which is how a $1,842.77 chauffeur quote finished at $1,799.00 — a $43.77 giveaway that the
+// 2.5% bps cap waved through, because 2.5% of a big number is a lot of money. A fixed $10 grid
+// bounds the reduction by construction, and MAX_REDUCTION_CENTS below enforces it regardless.
 function charmCandidate(rawCents: number): number {
-  const wholeDollars = Math.floor(rawCents / 100);
-  const digits = Math.max(1, String(wholeDollars).length);
-  const intervalDollars = digits <= 3 ? 10 : 10 ** (digits - 2);
-  const intervalCents = intervalDollars * 100;
-  return Math.floor((rawCents + 100) / intervalCents) * intervalCents - 100;
+  return Math.floor((rawCents + 100) / CHARM_INTERVAL_CENTS) * CHARM_INTERVAL_CENTS - 100;
 }
 
 function nearestIncrement(rawCents: number, incrementCents: number): number {

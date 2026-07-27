@@ -3957,6 +3957,24 @@ function fmtDur(hours) {
   return h > 0 ? (h + 'h' + (m ? ' ' + m + 'm' : '')) : (m + 'm');
 }
 
+/* The earliest date leg `idx` may take: the nearest DATED leg above it, else today (a trip can't
+   start in the past). Two jobs at once —
+     • the native calendar opens on this month when the field is empty, so a leg added to a trip
+       three months out no longer opens on today's month (owner, 2026-07-26); and
+     • a later leg can no longer be dated before an earlier one, which until now was only a
+       warning in the flags card ("Dates out of order").
+   Scans UPWARD for the nearest dated leg rather than using idx-1, so one undated leg in the
+   middle doesn't drop the whole chain back to today. Never returns a past date: an old dated
+   leg on a reopened quote must not re-open the calendar to last month. */
+function legDateFloor(idx) {
+  var today = fmtISODateLocal(new Date());
+  for (var i = idx - 1; i >= 0; i--) {
+    var d = state.legs[i] && state.legs[i].date;
+    if (d) return d > today ? d : today;
+  }
+  return today;
+}
+
 function renderLegCard(leg, idx, total) {
   var tone = legTone(idx, total, leg.category);
   var isStay = leg.category === 'stay_day';
@@ -4062,12 +4080,15 @@ function renderLegCard(leg, idx, total) {
     ].join('');
   }
 
-  // Date pill (KEEP input[type=date][data-field=date]). min = today so a past date can't be
-  // picked from the native calendar (the change handler also rejects a typed past value).
+  // Date pill (KEEP input[type=date][data-field=date]). min is the earliest date this leg could
+  // sensibly take — see legDateFloor: today, or the leg above's date once one is set. The native
+  // calendar opens on min's month when the field is empty, so adding leg 5 to a trip that starts
+  // in September no longer opens on today and make the operator page forward every time (owner,
+  // 2026-07-26). It also stops a later leg being dated before an earlier one.
   var dateNeeded = state.service === 'chauffeur' && distinctLegDateCount() >= 2 && !leg.date;
   var dateHtml = [
     '<div class="ch-leg-date' + (dateNeeded ? ' invalid' : '') + '">',
-    '  <input type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    '  <input type="date" min="' + esc(legDateFloor(idx)) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
     (dateNeeded ? '  <span class="ch-leg-date-hint">date required</span>' : ''),
     '</div>',
   ].join('');
@@ -6437,13 +6458,21 @@ function attachEventListeners() {
     } else {
       val = el.value;
     }
-    // No past dates: reject a typed/pasted leg date before today (native min guards the
-    // calendar; this guards direct entry). Clear the field and tell the operator why.
-    if (field === 'date' && val && val < fmtISODateLocal(new Date())) {
-      el.value = '';
-      showToast("Trip dates can't be in the past.");
-      updateLeg(legId, { date: '' });
-      return;
+    // Leg dates run forward: reject a typed/pasted date before this leg's floor — today, or the
+    // dated leg above it (native min guards the calendar; this guards direct entry). Clear the
+    // field and say which rule was broken, since "can't be in the past" would be baffling on a
+    // date that is merely earlier than the previous leg.
+    if (field === 'date' && val) {
+      var legIdx = state.legs.findIndex(function(l) { return l.id === legId; });
+      var floor = legIdx >= 0 ? legDateFloor(legIdx) : fmtISODateLocal(new Date());
+      if (val < floor) {
+        el.value = '';
+        showToast(floor === fmtISODateLocal(new Date())
+          ? "Trip dates can't be in the past."
+          : 'This leg can’t start before the leg above it (' + floor + ').');
+        updateLeg(legId, { date: '' });
+        return;
+      }
     }
     var patch = {};
     // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
