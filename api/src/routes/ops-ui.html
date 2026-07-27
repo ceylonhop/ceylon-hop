@@ -255,7 +255,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      edge, faint ink — present enough to scan for, quiet enough not to compete with the
      rows that DO name someone. Wider than a name chip; "Unassigned" must not ellipsis. */
   .qassignee.nobody{color:var(--ink-faint);background:transparent;border-style:dashed;border-color:var(--cream-deep);font-weight:600;max-width:none}
-  .qsec-mine .qsection-title{color:#0a7d78}
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
@@ -1080,6 +1079,28 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* Mismatch stays in the price panel under the service chooser (no longer under the chips), so a
    small positive top margin sits it cleanly below the price boxes. */
 .qv .ch-req-mismatch { margin: 4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
+/* "Not ready to submit" panel. Amber like the other review-state banners (this is a hold, not
+   an error), sitting where the send-back composer sits so the whole maker-checker conversation
+   happens in one place at the top of the editor. */
+.qv .ch-blockers { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.3); color: #8a5a12; }
+.qv .ch-blockers-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.qv .ch-blockers-close { margin-left: auto; border: 0; background: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; opacity: .6; padding: 0 2px; }
+.qv .ch-blockers-close:hover { opacity: 1; }
+.qv .ch-blockers-sub { margin: 3px 0 9px; font-size: 11.5px; opacity: .85; }
+.qv .ch-blockers-locked { margin: 9px 0 0; }
+.qv .ch-blockers-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+/* Rows are buttons, so they must LOOK clickable without shouting — full-width, left-aligned,
+   with the arrow appearing on hover rather than sitting there on every row. */
+.qv .ch-blocker-row { display: block; width: 100%; text-align: left; padding: 6px 9px; border-radius: 7px; border: 1px solid rgba(214,138,42,.28); background: rgba(255,255,255,.35); color: inherit; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.qv .ch-blocker-row:hover { background: rgba(255,255,255,.7); border-color: rgba(214,138,42,.5); }
+.qv .ch-blocker-row:hover::after { content: ' \\2192'; }
+/* The submit button while something is missing: still fully live, just visibly not-yet-ready. */
+.qv .ch-btn-needs { opacity: .78; }
+.qv .ch-btn-needs:hover { opacity: 1; }
+/* The one-click remedy inside the 'both' mismatch note. Sits on its own line under the sentence
+   so the note still reads as prose, not as a button with a caption. */
+.qv .ch-mismatch-fix { display: block; margin-top: 7px; padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(214,138,42,.45); background: rgba(214,138,42,.14); color: #8a5a12; font: inherit; font-weight: 700; cursor: pointer; }
+.qv .ch-mismatch-fix:hover { background: rgba(214,138,42,.24); }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -1230,6 +1251,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* amber-tinted one-offs that hardcode light values */
   :root[data-theme="dark"] .qv .ch-sendback{border-color:#5b4a22}
   :root[data-theme="dark"] .qv .ch-req-mismatch{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-mismatch-fix{background:rgba(224,163,62,.18);border-color:rgba(224,163,62,.45);color:#f0c880}
+  :root[data-theme="dark"] .qv .ch-mismatch-fix:hover{background:rgba(224,163,62,.3)}
+  :root[data-theme="dark"] .qv .ch-blockers{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-blocker-row{background:rgba(255,255,255,.05);border-color:rgba(224,163,62,.3)}
+  :root[data-theme="dark"] .qv .ch-blocker-row:hover{background:rgba(255,255,255,.1);border-color:rgba(224,163,62,.5)}
   :root[data-theme="dark"] .kbar{background:rgba(0,0,0,.55)}
   :root[data-theme="dark"] .topbar{background:rgba(20,19,19,.78)}
   /* stage tones arrive as inline light pastels (STAGE map) — remix them against dark paper */
@@ -1656,9 +1682,11 @@ const QSTATUS={
 };
 // Section order encodes "what's on your plate first". Approvers (founder) triage the
 // review queue; support acts on approved + sent-back quotes. Closed always sinks last.
-// Statuses that still need work from whoever holds the quote (drives the "Assigned to me"
-// section). Excludes sent/won/lost/expired — those are closed, not someone's to-do.
-const MINE_STATUSES=['draft','pending_review','changes_requested','ready'];
+// STATUS IS THE ONLY AXIS (owner, 2026-07-26). There used to be an "Assigned to me" section
+// that PARTITIONED the queue — a quote assigned to you was lifted OUT of its status section —
+// so a quote that was both yours and approved never appeared under "Ready to send", and the two
+// headings read as competing categories. Now every quote sits in its status section, always;
+// "mine" is an attribute of the row (the `you` chip + sort priority), not a place.
 const QUEUE_SECTIONS_APPROVER=[
   {id:'review',label:'Needs your review',statuses:['pending_review'],hint:'Check pricing &amp; margin, then approve or send back'},
   {id:'ready',label:'Ready to send',statuses:['ready'],hint:'Approved — hand back to support to send'},
@@ -1802,10 +1830,11 @@ function assigneeChip(email){
 function unassignedChip(){
   return '<span class="qassignee nobody" title="Nobody is assigned to this quote yet">Unassigned</span>';
 }
-// hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
-// says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
-// would pass the array index in as hideAssignee.
-function quoteRowHtml(q,hideAssignee,query){
+// The assignee chip now rides on EVERY row: with the "Assigned to me" section gone, the chip is
+// the only thing that says a quote is yours, so it can never be suppressed.
+// NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml) would pass the
+// array index in as `query`.
+function quoteRowHtml(q,query){
   /* While searching, the product cell carries the route instead — a row that matched on a
      place has to say which place. Windowed around the match because this cell ellipses. */
   const route=query?quoteRouteWindow(q.routeText,query):'';
@@ -1817,7 +1846,7 @@ function quoteRowHtml(q,hideAssignee,query){
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
     <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
-    <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
+    <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
 
@@ -1845,14 +1874,8 @@ function viewQuotes(){
   renderQuotesTopbar();
   const query=quoteQuery.trim();
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
-  // "Assigned to me" is a PARTITION, not an overlay: a quote assigned to me is lifted out of
-  // its status section rather than duplicated into two. The status sections already tile the
-  // queue exactly once each (their status lists don't overlap), and a row appearing twice in
-  // one list reads as a bug. The status pill on the row still says where it is in the flow.
-  // Open states only — a sent/won/lost quote assigned to me is history, not work.
-  const mineRows=opsQuotes.filter(q=>isMineEmail(q.assignedTo)&&MINE_STATUSES.includes(q.status));
-  const mineIds=new Set(mineRows.map(q=>q.id));
-  const byStatus={};opsQuotes.forEach(q=>{if(mineIds.has(q.id))return;(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
+  // Every quote lands in exactly one status section — no rows are held back for a "mine" section.
+  const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
   const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
   const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
   // Search results come from opsQuotes DIRECTLY — never from mineRows/byStatus, which partition
@@ -1888,7 +1911,7 @@ function viewQuotes(){
         <div class="qsection-head">
           <h2 class="qsection-title">Results<span class="qsection-count">${results.length}</span></h2>
         </div>
-        <div class="qlist">${results.map(q=>quoteRowHtml(q,false,query)).join('')}</div>
+        <div class="qlist">${results.map(q=>quoteRowHtml(q,query)).join('')}</div>
       </div>`;
     }else if(hits.length){
       // The active chip is hiding every match. Say so — a filter you forgot was on is the
@@ -1901,21 +1924,15 @@ function viewQuotes(){
     paintQuotesView(html);return;
   }
   let rendered=0;
-  const mineVisible=allowed?mineRows.filter(q=>allowed.has(q.status)):mineRows;
-  if(mineVisible.length){
-    rendered++;
-    html+=`<div class="qsection qsec-mine">
-      <div class="qsection-head">
-        <h2 class="qsection-title">Assigned to me<span class="qsection-count">${mineVisible.length}</span></h2>
-        <span class="qsection-hint">Handed to you — yours to move</span>
-      </div>
-      <div class="qlist">${mineVisible.map(q=>quoteRowHtml(q,true)).join('')}</div>
-    </div>`;
-  }
   sections.forEach(sec=>{
     const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
     const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
     if(!rows.length)return;
+    // Yours first within the section. A stable partition (not .sort, which would also reorder
+    // the rest) so the server's ordering survives inside each half.
+    const mine=rows.filter(q=>isMineEmail(q.assignedTo));
+    const rest=rows.filter(q=>!isMineEmail(q.assignedTo));
+    rows.length=0;rows.push(...mine,...rest);
     rendered++;
     html+=`<div class="qsection qsec-${sec.id}">
       <div class="qsection-head">
@@ -2753,6 +2770,10 @@ var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loade
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
+// "Not ready to submit" panel: opened by pressing Submit/Approve with blockers outstanding,
+// closed when the operator dismisses it or the submission actually goes through. Not derived
+// from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
+var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
@@ -3210,7 +3231,7 @@ function requestMismatch(requested, priced) {
   if (!requested) return null;
   if (requested === 'both') {
     return priced === 'private' ? null
-      : "Customer asked for both — a chauffeur-priced quote can't carry the point-to-point price. Price it point-to-point and add the chauffeur option.";
+      : 'Customer asked for both prices. Both are showing here, but the message to the customer can only carry both when the quote is priced Point-to-point — switch, and the chauffeur price rides along as an option.';
   }
   if (requested === priced) return null;
   return requested === 'private'
@@ -3525,11 +3546,14 @@ function resetToNew() {
   };
   lastEstimate = null;
   lastEstimateError = null;
+  _pricedLegMap = [];      // per-quote — never inherit the previous quote's map (see reopenQuote)
+  lastEstimatePartial = 0;
   outputTab = 'whatsapp';
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
+  submitBlockersOpen = false;
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
@@ -3630,8 +3654,23 @@ async function transition(toStatus, opts) {
   }
 }
 
-function submitForReview() { transition('pending_review', { toast: 'Submitted for review', goQueue: true }); }
-function approveReady()    { transition('ready', { toast: 'Approved — ready to send', goQueue: true }); }
+/* Submit readiness (owner, 2026-07-26). The button is deliberately NEVER disabled: pressing it
+   is how the operator LEARNS what's missing. A disabled control with a hover title reads as a
+   broken button, and on the states that used to gate it that is exactly what was reported. */
+function submitForReview() {
+  var blockers = submitBlockers();
+  if (blockers.length) { submitBlockersOpen = true; render(); return; } // the panel names them
+  submitBlockersOpen = false;
+  transition('pending_review', { toast: 'Submitted for review', goQueue: true });
+}
+/* Self-approval runs the same gate: 'ready' is a customer-facing state, so it can't be reached
+   with less than a submission needs. (The server independently enforces requestedService.) */
+function approveReady() {
+  var blockers = submitBlockers();
+  if (blockers.length) { submitBlockersOpen = true; render(); return; }
+  submitBlockersOpen = false;
+  transition('ready', { toast: 'Approved — ready to send', goQueue: true });
+}
 function markSent()        { transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 function markOutcome(s)    { transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
 function reopenToDraft()   { transition('draft', { toast: 'Reopened for editing' }); }
@@ -3819,9 +3858,15 @@ async function reopenQuote(id) {
 
   lastEstimate = null;
   lastEstimateError = null;
+  // The leg map is per-quote state and MUST be reset with the estimate it belongs to. Leaving the
+  // previous quote's map in place made a rate-locked quote render '—' on every leg past the old
+  // map's length — and read the wrong slot for the ones inside it (owner report 2026-07-26).
+  _pricedLegMap = [];
+  lastEstimatePartial = 0;
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
+  submitBlockersOpen = false;
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
@@ -3830,6 +3875,9 @@ async function reopenQuote(id) {
   // since approval. Editable states still price live as the operator builds.
   if ((q.status === 'ready' || q.status === 'sent') && q.estimate) {
     lastEstimate = q.estimate;
+    // The server priced the WHOLE stored itinerary (lockedEstimate), so the map is the plain
+    // driving-position one. Without this the per-leg prices have no map to read and vanish.
+    _pricedLegMap = fullPricedLegMap(state.legs);
     render();
   } else {
     render();
@@ -3871,6 +3919,18 @@ function drivingIndex(stateIdx) {
     if (legDrives(state.legs[i])) d++;
   }
   return legDrives(state.legs[stateIdx]) ? d : -1;
+}
+
+// The FULL-itinerary leg map: every driving leg in order, stay days at -1. This is the map for
+// any estimate that priced the whole itinerary — a server-side locked estimate on a ready/sent
+// quote, where there is no partial-pricing subset to account for. _runEstimate builds its own
+// map instead, because it may deliberately price only a READY subset (Defect A).
+function fullPricedLegMap(legs) {
+  var map = [], d = -1;
+  for (var i = 0; i < (legs || []).length; i++) {
+    if (legDrives(legs[i])) { d++; map[i] = d; } else map[i] = -1;
+  }
+  return map;
 }
 
 function getLegBreakdownPrice(legIdx) {
@@ -4492,7 +4552,16 @@ function renderServiceChooser() {
   // the trip is priced, and this is where the priced service (state.service) is chosen and shown.
   // I8: signal, not a gate.
   var _mm = requestMismatch(state.requestedService, state.service);
-  if (_mm) parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
+  if (_mm) {
+    // The 'both' case names exactly one remedy — switching the priced service to point-to-point —
+    // so put it one click away instead of asking the operator to go find the chooser box above.
+    // Every other mismatch is a judgement call (the reviewer may well want the priced service it
+    // has), so those stay a plain sentence with no button.
+    var _mmFix = (state.requestedService === 'both' && state.service === 'chauffeur')
+      ? '<button class="ch-mismatch-fix" data-action="setService" data-service="private" type="button">Switch to Point-to-point</button>'
+      : '';
+    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + _mmFix + '</div>');
+  }
 
   if (chaufActive && !chaufDisabled) {
     parts.push('<div class="ch-svc-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
@@ -4523,6 +4592,47 @@ function priceNeeds() {
   var undated = chauffeurUndatedLegs().length;
   if (undated > 0) needs.push(undated === 1 ? 'a date on the undated leg (chauffeur)' : 'a date on ' + undated + ' legs (chauffeur)');
   return needs;
+}
+
+/* ── Submit readiness (owner, 2026-07-26) ────────────────────────────────────
+   What must be present before a quote can go to review. Until now the ONLY submit gate was
+   requestedService, expressed as a disabled button with a hover title — so a quote with no
+   contact, no price or half-resolved distances sailed into review, and the one thing that WAS
+   gated looked broken rather than unfinished ("the button doesn't work").
+
+   Blockers are ABSENCES — things simply not filled in, which can't be a deliberate choice.
+   Judgement calls (legs that don't connect, capacity warnings, a long drive, dates out of
+   order) stay in the flags card for the reviewer to weigh; blocking those would trap an
+   operator whose gap is intentional.
+
+   Each entry carries a `focus` selector so the panel can put the cursor on the actual field.
+   Returns [] when the quote is ready. */
+function submitBlockers() {
+  var out = [];
+  var add = function(label, focus) { out.push({ label: label, focus: focus }); };
+  if (!(state.firstName || '').trim()) add('The customer’s first name', '#f-firstName');
+  if (!(state.contact || '').trim()) add('A way to contact the customer (WhatsApp or email)', '#f-contact');
+  if (!state.requestedService) add('What the customer asked for', '[data-action="setRequestedService"]');
+  if (!state.vehicleType) add('A vehicle', '[data-action="setVehicle"]');
+  if ((state.legs || []).some(legChainDuplicate)) {
+    add('Two consecutive stops are the same — remove or edit one', '.ch-leg');
+  }
+  var undist = 0;
+  (state.legs || []).forEach(function(l) { if (l.category !== 'stay_day' && !(legKm(l) > 0)) undist++; });
+  // Both point at the marker the leg card already renders for the missing value — the "No
+  // distance" pill and the date pill's invalid state — so the panel lands the operator on the
+  // exact control rather than the top of a leg.
+  if (undist > 0) add(undist === 1 ? 'A distance on one leg' : 'Distances on ' + undist + ' legs', '.ch-dist-pill.warn');
+  var undated = chauffeurUndatedLegs().length;
+  if (undated > 0) {
+    add(undated === 1 ? 'A date on the undated leg (chauffeur trips need one per leg)'
+      : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
+  }
+  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the
+     cause. Only surfaced when nothing else explains it — otherwise the panel says the same
+     thing twice. */
+  if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  return out;
 }
 
 function renderSummaryCardBody() {
@@ -5332,15 +5442,21 @@ var DELETABLE_LOCKED_STATES = ['pending_review', 'ready'];
 // a draft in one hop), sends back, or edits in place. Buttons are data-action delegated.
 function renderActionBar() {
   var s = state.status, approver = isApprover(), out = [];
-  // Quote intent (spec 2026-07-17): a quote can't be submitted for review — or self-approved —
-  // until the customer request is recorded. Mirror the server gate on the client so the buttons
-  // that would 400 are disabled with a reason. Save is NEVER gated (work-in-progress must save).
-  var needReq = !state.requestedService, reqHint = 'Record what the customer asked for first';
   var B = function(action, label, cls, disabled, title) {
     return '<button class="ch-btn ' + cls + '" data-action="' + action + '"'
       + (disabled ? ' disabled' : '') + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
   };
-  var GB = function(action, label, cls) { return B(action, label, cls, needReq, needReq ? reqHint : null); }; // gated button
+  /* Submit readiness (owner, 2026-07-26). These used to be DISABLED whenever the customer
+     request was unrecorded, which reads as a broken button — the operator can't tell "not
+     allowed" from "not working", and the reason was hidden in a hover title. They are now
+     always live: submitForReview()/approveReady() run submitBlockers() and open a panel naming
+     everything that's missing. The visual cue moves onto the button (a quiet "needs" tint) so
+     the state is still legible before you press. The server keeps its own gate regardless. */
+  var needCount = submitBlockers().length;
+  var GB = function(action, label, cls) {
+    return B(action, label, cls + (needCount ? ' ch-btn-needs' : ''), false,
+      needCount ? (needCount === 1 ? '1 thing is still missing — press to see it' : needCount + ' things are still missing — press to see them') : null);
+  };
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
@@ -5437,6 +5553,36 @@ async function assignQuote(email) {
   showToast(state.assignedTo ? ('Assigned to ' + userLabel(state.assignedTo)) : 'Unassigned');
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   render();
+}
+
+/* The "Not ready to submit" panel (owner, 2026-07-26). Opened by pressing Submit for review /
+   Approve while submitBlockers() is non-empty. Each row is a button that scrolls its field into
+   view and focuses it, so the list is a route to the fix rather than a scolding. */
+function renderSubmitBlockers() {
+  if (!submitBlockersOpen) return '';
+  var blockers = submitBlockers();
+  if (!blockers.length) return ''; // everything got filled in while the panel was open
+  var rows = blockers.map(function(b) {
+    return '<li><button type="button" class="ch-blocker-row" data-action="focusBlocker"'
+      + ' data-focus="' + esc(b.focus) + '">' + esc(b.label) + '</button></li>';
+  }).join('');
+  return [
+    '<div class="ch-blockers" role="alert">',
+    '  <div class="ch-blockers-head">',
+    '    <b>Not ready to submit</b>',
+    '    <button type="button" class="ch-blockers-close" data-action="dismissBlockers" aria-label="Dismiss">&times;</button>',
+    '  </div>',
+    '  <p class="ch-blockers-sub">' + (blockers.length === 1 ? 'One thing is' : blockers.length + ' things are')
+      + ' still missing. Click one to jump to it.</p>',
+    '  <ul class="ch-blockers-list">' + rows + '</ul>',
+    /* A quote already in review is content-LOCKED (isEditableNow), so every field the rows point
+       at is disabled — which reads as a dead list unless we name the one door back in. Reachable
+       for a quote submitted before this gate existed, or one whose price later fell out. */
+    (isEditableNow() ? '' :
+      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked while in review — '
+      + '<b>Reopen to edit</b> to fix these, then resubmit.</p>'),
+    '</div>',
+  ].join('');
 }
 
 function renderReviewBanner() {
@@ -5606,6 +5752,7 @@ function render() {
       '        </div>',
       '      </div>',
     ].join('') : ''),
+    renderSubmitBlockers(),
     renderReviewBanner(),
 
     // Customer strip (one compact row)
@@ -5620,7 +5767,10 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-lastName" type="text" placeholder="e.g. Silva" value="' + esc(st.lastName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">WhatsApp / email <span style="color:var(--ink-faint);font-weight:400">(optional)</span></label>',
+    // Required from 2026-07-26: a quote nobody can be reached with isn't reviewable, so it's a
+    // submit blocker — and the label has to agree with the gate. Still free-form while drafting;
+    // only SUBMISSION needs it, so a half-taken enquiry saves exactly as before.
+    '            <label class="ch-field-label">WhatsApp / email <em class="req">*</em></label>',
     '            <div class="ch-input-wrap"><input class="ch-input' + (contactBad ? ' invalid' : '') + '" id="f-contact" type="text" placeholder="+94 77 123 4567 or name@email.com" value="' + esc(st.contact) + '" /></div>',
     '            <span class="ch-field-err">Enter an email or a phone number with country code (e.g. +94…)</span>',
     '          </div>',
@@ -6113,6 +6263,17 @@ function attachEventListeners() {
       submitForReview();
     } else if (action === 'approveReady') {
       approveReady();
+    } else if (action === 'dismissBlockers') {
+      submitBlockersOpen = false;
+      render();
+    } else if (action === 'focusBlocker') {
+      // Jump to the field the row names. The panel stays open: fixing one blocker rarely fixes
+      // them all, and closing it would hide the rest of the list mid-repair.
+      var target = document.querySelector(el.getAttribute('data-focus') || '');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+      }
     } else if (action === 'sendBack') {
       sendBackOpen = true;
       render();

@@ -311,14 +311,24 @@ test('clicking Submit for review PATCHes the quote to pending_review', async ({ 
   expect(store.patches.some((p) => p.id === 'q1' && p.status === 'pending_review')).toBe(true);
 });
 
-// Quote intent (spec 2026-07-17): the client mirrors the server gate — Submit is unavailable
-// until the customer request is recorded, then enables once the chip is chosen.
-test('Submit for review is disabled until the customer request is recorded', async ({ page }) => {
-  await openDetail(page, 'ops', { id: 'q1', status: 'draft', requestedService: null });
+// Quote intent (spec 2026-07-17) still gates submission, but from 2026-07-26 the gate is no
+// longer a DISABLED button (owner: a greyed-out button reads as broken, and the reason was
+// buried in a hover title). Submit stays pressable and opens the blockers panel naming what's
+// missing; recording the request clears that row. See ops-submit-blockers.spec.js for the
+// full panel behaviour.
+test('Submit for review reports the unrecorded customer request instead of disabling', async ({ page }) => {
+  const store = await openDetail(page, 'ops', { id: 'q1', status: 'draft', requestedService: null });
   const submit = actions(page).locator('[data-action="submitForReview"]');
-  await expect(submit).toBeDisabled();
-  await page.locator('[data-action="setRequestedService"][data-req="private"]').click();
   await expect(submit).toBeEnabled();
+
+  await submit.click();
+  await expect(page.locator('.ch-blockers')).toBeVisible();
+  await expect(page.locator('.ch-blocker-row', { hasText: 'What the customer asked for' })).toHaveCount(1);
+  expect(store.patches.some((p) => p.status === 'pending_review')).toBe(false); // nothing submitted
+
+  // Recording it clears that blocker; with the fixture otherwise complete, submission proceeds.
+  await page.locator('[data-action="setRequestedService"][data-req="private"]').click();
+  await expect(page.locator('.ch-blocker-row', { hasText: 'What the customer asked for' })).toHaveCount(0);
 });
 
 // Regression: transition() used to save-first unconditionally, but the /save maker-checker lock

@@ -818,6 +818,8 @@ export function internalQuoteRoutes(deps: {
     }
     if (body.status && current) {
       const to = body.status as QuoteStatus;
+      // Lowercased to compare against stored assignees, which resolveAssignee normalises.
+      const actorEmail = c.get('identity').email.toLowerCase();
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
       // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
       // straight to ready — until the submitter has recorded what the customer asked for.
@@ -844,6 +846,28 @@ export function internalQuoteRoutes(deps: {
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
       } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
         rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
+      }
+      // Auto-assign on hand-off (owner, 2026-07-26). These are the two moments a quote changes
+      // hands, and leaving them manual meant approved quotes sat in "Ready to send" still held by
+      // the founder who approved them, and nothing owned a quote once it went out. An explicit
+      // assignedTo on the SAME patch always wins — this only fills a gap, never overrides intent.
+      if (assignedTo === undefined) {
+        if (to === 'ready') {
+          // Approval hands the quote back to the agent who built it, so it lands on the plate of
+          // whoever has to send it. Only when nobody holds it or the approver does: a deliberate
+          // assignment to a third person is somebody's decision and must survive. resolveAssignee
+          // re-validates against OPS_USERS because createdBy is stored history — the person may
+          // have left, and we must never assign (and mail) a quote to a stranger.
+          const heldByApprover = (current.assignedTo ?? null) === actorEmail;
+          if ((current.assignedTo == null || heldByApprover) && current.createdBy) {
+            const back = resolveAssignee(current.createdBy, deps.auth.opsUsers);
+            if (back) assignedTo = back;
+          }
+        } else if (to === 'sent') {
+          // Whoever sent it owns the follow-up. Unconditional — this is a statement about who
+          // acted, not a gap-fill, so it takes the quote off its previous holder.
+          assignedTo = actorEmail;
+        }
       }
     }
     const updated = await deps.quotes.patch(c.req.param('id'), {

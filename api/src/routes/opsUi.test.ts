@@ -292,6 +292,24 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
     expect(body).toContain('requestMismatch(state.requestedService, state.service)');
     expect(body).toContain('ch-req-mismatch');
   });
+
+  // Owner report 2026-07-26: the old 'both' line explained an internal constraint (the upsell is
+  // one-directional) instead of naming the fix, and read as gibberish next to a chooser that was
+  // visibly showing both prices. It must lead with the action and never mention "can't carry".
+  it("the 'both' note names the fix rather than the internal constraint", () => {
+    const msg = f('both', 'chauffeur') as string;
+    expect(msg).toMatch(/switch/i);
+    expect(msg).toMatch(/message to the customer/i);
+    expect(msg).not.toMatch(/can't carry/i);
+  });
+
+  it("offers a one-click switch on the 'both' mismatch, and only there", async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // The button is gated on exactly the 'both' + chauffeur pair — every other mismatch is a
+    // judgement call, so it must not sprout a remedy button.
+    expect(body).toContain("state.requestedService === 'both' && state.service === 'chauffeur'");
+    expect(body).toMatch(/ch-mismatch-fix[\s\S]{0,200}data-action="setService" data-service="private"/);
+  });
 });
 
 // itineraryGapDetail is pure and DOM-free (it takes the legs array), so — like requestMismatch —
