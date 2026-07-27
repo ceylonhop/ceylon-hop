@@ -170,13 +170,13 @@
     const rawCents = Math.round(amount * 100);
     const minimumAllowedCents = Math.round((minimumAllowed || 0) * 100);
     if(rawCents === 0) return 0;
-    const wholeDollars = Math.floor(rawCents / 100);
-    const digits = Math.max(1, String(wholeDollars).length);
-    const intervalDollars = digits <= 3 ? 10 : Math.pow(10, digits - 2);
-    const intervalCents = intervalDollars * 100;
-    const charm = Math.floor((rawCents + 100) / intervalCents) * intervalCents - 100;
+    // $10 charm grid at EVERY size, and a hard $10 floor under any reduction (owner 2026-07-26).
+    // The interval used to widen with the magnitude, which cost a $1,842.77 quote $43.77.
+    const CHARM_INTERVAL_CENTS = 1000, MAX_REDUCTION_CENTS = 1000;
+    const charm = Math.floor((rawCents + 100) / CHARM_INTERVAL_CENTS) * CHARM_INTERVAL_CENTS - 100;
     const withinLimit = candidate => candidate >= rawCents ||
-      (rawCents - candidate) * 10000 <= rawCents * PRICE_FINISHING.maxReductionBps;
+      ((rawCents - candidate) <= MAX_REDUCTION_CENTS &&
+       (rawCents - candidate) * 10000 <= rawCents * PRICE_FINISHING.maxReductionBps);
     if(charm === rawCents) return rawCents / 100;
     if(charm > 0 && charm < rawCents && charm >= minimumAllowedCents && withinLimit(charm)) return charm / 100;
 

@@ -83,13 +83,22 @@ describe('finishPrice (psychological final-price parity)', () => {
   it.each([
     [80.99, 79],
     [401.48, 399],
-    [1020, 999],
-    [1125, 1099],
-    [1129.36, 1129.5],
+    // Four-figure totals used to fall to the nearest $100 charm target ($1020 → $999), giving
+    // away tens of dollars. The grid is $10 at every size now (owner, 2026-07-26).
+    [1020, 1019],
+    [1125, 1119],
+    [1129.36, 1129],
+    [1842.77, 1839], // the reported quote: −$3.77, where it used to lose $43.77
     [81.1, 81],
     [399.88, 399],
   ])('finishes $%s as $%s', (raw, expected) => {
     expect(T.finishPrice(raw)).toBe(expected);
+  });
+
+  it('never cuts more than $10 off a customer-facing price', () => {
+    for (const raw of [1020, 1125, 1842.77, 4999.99, 12345.67, 19999.99]) {
+      expect(raw - T.finishPrice(raw)).toBeLessThanOrEqual(10);
+    }
   });
 
   it('uses generated backend configuration rather than hand-copied limits', () => {
