@@ -24,12 +24,25 @@ const norm = (s: string): string => s.trim().toLowerCase();
 // each compound part (split on "/") with any parenthetical stripped. So a zone "Sigiriya / Dambulla"
 // yields ["sigiriya / dambulla", "sigiriya", "dambulla"], and "Colombo Airport (CMB)" yields
 // ["colombo airport (cmb)", "colombo airport"].
+//
+// Each of those also contributes its LOCALITY — the part before the first comma. A zone saved by
+// picking a Google suggestion is stored as "Ella, Sri Lanka", and without this it would only ever
+// match endpoints that also carried the country: picking the same town as "Popular Route" writes
+// the bare "Ella" and the premium silently never fired (owner report 2026-07-26).
+//
+// FIRST component only, never all of them. Every Google prediction ends in ", Sri Lanka", so
+// admitting every component would make "sri lanka" an alias and boost the entire country.
 function zoneAliases(placeName: string): string[] {
-  const full = norm(placeName);
-  const aliases = new Set<string>([full]);
+  const aliases = new Set<string>([norm(placeName)]);
+  const addWithLocality = (s: string): void => {
+    if (!s) return;
+    aliases.add(s);
+    const locality = norm(s.split(',')[0]);
+    if (locality) aliases.add(locality);
+  };
+  addWithLocality(norm(placeName));
   for (const part of placeName.split('/')) {
-    const stripped = norm(part.replace(/\([^)]*\)/g, ''));
-    if (stripped) aliases.add(stripped);
+    addWithLocality(norm(part.replace(/\([^)]*\)/g, '')));
   }
   return [...aliases];
 }

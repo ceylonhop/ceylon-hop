@@ -37,6 +37,43 @@ describe('zoneBoostFor — D3 matching algorithm', () => {
     const z: HotZone = { placeName: 'Colombo City', boostPct: 12 };
     expect(zoneBoostFor('Colombo Airport (CMB)', undefined, [z])).toBe(1);
   });
+
+  // Owner report 2026-07-26: "the hot rate doesn't show up when I pick the Popular Route option."
+  // Matching was ONE-DIRECTIONAL — endpointTokens split on commas but zoneAliases did not — so a
+  // zone saved from a GOOGLE suggestion ("Ella, Sri Lanka") only ever fired for endpoints that
+  // also carried the country. Picking the same town as "Popular Route" gives the bare "Ella",
+  // which matched nothing. Both pickers must produce the same price.
+  describe('a Google-named zone still matches a Popular-Route endpoint (locality alias)', () => {
+    const googleNamed: HotZone = { placeName: 'Ella, Sri Lanka', boostPct: 15 };
+    it('fires for the bare town a Popular Route pick writes', () => {
+      expect(zoneBoostFor('Ella', undefined, [googleNamed])).toBeCloseTo(1.15);
+    });
+    it('still fires for the full string a Google pick writes', () => {
+      expect(zoneBoostFor('Ella, Sri Lanka', undefined, [googleNamed])).toBeCloseTo(1.15);
+    });
+    it('and for a landmark address whose locality component is the town', () => {
+      expect(zoneBoostFor('Nine Arch Bridge, Ella, Sri Lanka', undefined, [googleNamed])).toBeCloseTo(1.15);
+    });
+    it('both pickers agree on the same ride', () => {
+      expect(zoneBoostForStops(['Colombo City', 'Ella'], [googleNamed]))
+        .toBe(zoneBoostForStops(['Colombo City', 'Ella, Sri Lanka'], [googleNamed]));
+    });
+    // The alias is the FIRST component only. Taking every component would add "sri lanka",
+    // and since every Google pick ends in ", Sri Lanka" that would silently boost the whole
+    // country — a far worse bug than the one being fixed.
+    it('does NOT boost an unrelated town just because it is also in Sri Lanka', () => {
+      expect(zoneBoostFor('Kandy, Sri Lanka', undefined, [googleNamed])).toBe(1);
+      expect(zoneBoostFor('Sri Lanka', undefined, [googleNamed])).toBe(1);
+    });
+    it('does not weaken the no-false-substring rule', () => {
+      expect(zoneBoostFor('Bella Vista Hotel, Colombo', undefined, [googleNamed])).toBe(1);
+    });
+    it('works for a compound zone name carrying a country too', () => {
+      const z: HotZone = { placeName: 'Sigiriya / Dambulla, Sri Lanka', boostPct: 20 };
+      expect(zoneBoostFor('Dambulla', undefined, [z])).toBeCloseTo(1.2);
+      expect(zoneBoostFor('Sigiriya', undefined, [z])).toBeCloseTo(1.2);
+    });
+  });
 });
 
 describe('zoneBoostFor — active flag, stacking, radius', () => {

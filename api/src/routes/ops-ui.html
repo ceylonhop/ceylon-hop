@@ -479,6 +479,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-head-assign { max-width: 148px; font-size: 12.5px; font-weight: 600; padding: 7px 9px; color: var(--ink-soft); }
 .qv .ch-head-assign.mine { color: #0a7d78; background: #dff5f3; border-color: #bfe9e5; }
 .qv .ch-head-assign.none { color: var(--ink-faint); border-style: dashed; border-color: var(--cream-deep); }
+/* Disabled (pre-save) must stay READABLE. Chrome dims a disabled select's text on top of whatever
+   colour we set, and .none is already faint — the two together rendered an apparently empty box. */
+.qv .ch-head-assign:disabled { color: var(--ink-soft); opacity: 1; -webkit-text-fill-color: var(--ink-soft); cursor: not-allowed; max-width: 190px; }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
 /* Provenance footer — quiet created/updated-by line at the bottom-right of the builder. */
 .qv .ch-provenance { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line-soft); text-align: right; }
@@ -5504,13 +5507,25 @@ async function loadOpsUsers() {
 
 // Assignee picker — lives in the header next to the action buttons (spec 2026-07-22). No label:
 // the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
-// someone, so it stays a first-class control; hidden until the quote is saved (no id to assign).
-// A new quote is auto-assigned to its creator server-side, so this opens already on the maker.
+// someone, so it stays a first-class control.
+// It used to be HIDDEN until the quote was saved, which read as the control appearing and
+// disappearing at random (owner, 2026-07-26). It is now always present and simply DISABLED until
+// there is a row to assign — assignment is a PATCH against an id, so there is genuinely nothing
+// to send before the first save. A new quote is auto-assigned to its creator server-side, so it
+// resolves to the maker the moment it saves.
 function renderHeaderAssign() {
-  if (!state.savedId) return '';
+  var unsaved = !state.savedId;
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
-  var opts = ['<option value="">Unassigned</option>'];
+  // On an unsaved quote the placeholder states what WILL happen rather than "Unassigned" — the
+  // server auto-assigns a new quote to its creator on save, so "Unassigned" would be a small lie
+  // about a control the operator can't act on yet.
+  // The placeholder MUST carry `selected` when nobody holds the quote. A freshly parsed <select>
+  // defaults to option 0, but morphdom patches this element's children in place on re-render — and
+  // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
+  // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
+  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>'
+    + (unsaved ? 'Assigned to you on save' : 'Unassigned') + '</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5520,8 +5535,12 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
+  var title = unsaved
+    ? 'Save the quote first — it is assigned to you on save, and you can hand it over from here'
+    : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
-    + ' aria-label="Assign this quote" title="Assign this quote — click to reassign">' + opts.join('') + '</select>';
+    + (unsaved ? ' disabled' : '')
+    + ' aria-label="Assign this quote" title="' + esc(title) + '">' + opts.join('') + '</select>';
 }
 
 // Provenance — a quiet created/updated-by footer pinned to the bottom-right of the builder.
@@ -6972,7 +6991,9 @@ async function drawItinRoute(hostEl, chains) {
   try {
     _mapMarkers.forEach(function (m) { m.setMap(null); });
     _mapMarkers = [];
-    var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22) }; };
+    // labelOrigin is what puts the stop number inside the teardrop's HEAD. Without it the label
+    // centres on `anchor` — the pin's tip, i.e. the map point — and the digit floats off the pin.
+    var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10) }; };
     var at = function (loc) { return { lat: loc.lat, lng: loc.lng }; }; // DirectionalLocation → LatLngLiteral
     var pts = []; // every stop, in itinerary order, across all chains
     routes.forEach(function (route) {
@@ -6981,10 +7002,18 @@ async function drawItinRoute(hostEl, chains) {
       pts.push(rlegs[0].startLocation);
       for (var li = 0; li < rlegs.length; li++) pts.push(rlegs[li].endLocation);
     });
+    // Number every pin with its place in the journey (owner, 2026-07-26 — a 12-stop itinerary of
+    // identical teardrops is unreadable). These are STOP numbers, which is what the pins are, and
+    // they line up with the itinerary's numbered legs: leg N runs from pin N to pin N+1.
     pts.forEach(function (loc, i) {
       var isFirst = i === 0, isLast = i === pts.length - 1;
       var fill = isFirst ? '#0a7d6f' : (isLast ? '#e8623a' : '#0AB9B6');
-      _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(loc), icon: pin(fill), zIndex: (isFirst || isLast) ? 6 : 5 }));
+      _mapMarkers.push(new libs.Marker({
+        map: _mapMap, position: at(loc), icon: pin(fill), zIndex: (isFirst || isLast) ? 6 : 5,
+        // White on all three fills; the pin head is small, so bold and tight.
+        label: { text: String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' },
+        title: 'Stop ' + (i + 1) + ' of ' + pts.length,
+      }));
     });
   } catch (e) { /* markers are non-essential */ }
   // Fit to every chain: union the per-route viewports (LatLngBounds.union), so a
@@ -7437,10 +7466,12 @@ async function init() {
   }
   await loadOpsUsers(); // roster for the assign picker; failure just leaves it empty
   var rc = await apiRateCard();
-  if (rc) {
-    rateCard = rc;
-    render(); // repaint with rate card data
-  }
+  if (rc) rateCard = rc;
+  // Repaint UNCONDITIONALLY. This used to sit inside `if (rc)`, so whenever the rate-card fetch
+  // failed (apiRateCard returns null on any non-ok/throw) the roster that just landed above was
+  // never painted — leaving the assign picker stuck on the empty option list from the first
+  // paint, with no people to hand the quote to (owner, 2026-07-26).
+  render();
 }
 
 // Unmount: drop the unsaved-changes flag, stop every pending timer, close the

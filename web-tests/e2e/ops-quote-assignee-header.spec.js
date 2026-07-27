@@ -37,8 +37,10 @@ test('the assignee picker sits in the header before the actions, label-less, and
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 
-  // Before saving there is no id → no picker in the header.
-  await expect(page.locator('.ch-header #assignSel')).toHaveCount(0);
+  // Before saving there is no id to PATCH, so the picker is present but inert. (It used to be
+  // absent entirely, which read as a control that came and went — owner 2026-07-26; see
+  // ops-assign-picker-consistency.spec.js.)
+  await expect(page.locator('.ch-header #assignSel')).toBeDisabled();
 
   // Save → the quote gets an id and is auto-assigned to its creator.
   await page.locator('.ch-header [data-action="saveDraft"]').click();
