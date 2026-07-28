@@ -32,10 +32,16 @@ import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 import type { JwtVerifier } from './lib/googleAuth';
+import { InMemoryPaymentEventRepo } from './db/paymentEventRepo';
+import {
+  InMemoryPaymentSettlementRepo,
+  type PaymentSettlementRepo,
+} from './db/paymentSettlementRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
+  settlements?: PaymentSettlementRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
@@ -79,6 +85,13 @@ export interface AppDeps {
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  const settlements =
+    deps.settlements ??
+    new InMemoryPaymentSettlementRepo({
+      bookings: bookings as InMemoryBookingRepo,
+      payments: payments as InMemoryPaymentRepo,
+      events: new InMemoryPaymentEventRepo(),
+    });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
@@ -218,8 +231,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route(
     '/webhooks',
     webhookRoutes({
-      bookings,
-      payments,
+      settlements,
       adapter,
       email,
       conciergeTasks,

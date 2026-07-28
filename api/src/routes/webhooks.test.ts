@@ -118,6 +118,30 @@ describe('POST /webhooks/payments', () => {
     expect(email.sent).toHaveLength(1);
   });
 
+  it('handles concurrent success notifications with one email and one concierge task', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ adapter, email, conciergeTasks });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+    });
+
+    const responses = await Promise.all([
+      app.request('/webhooks/payments', { method: 'POST', body }),
+      app.request('/webhooks/payments', { method: 'POST', body }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(email.sent).toHaveLength(1);
+    expect(
+      (await conciergeTasks.listByBooking(b.id)).filter((task) => task.type === 'confirm_pickup'),
+    ).toHaveLength(1);
+  });
+
   it('files a confirm_pickup concierge task on paid', async () => {
     const adapter = new FakePaymentAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
