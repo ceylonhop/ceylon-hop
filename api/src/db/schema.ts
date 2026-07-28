@@ -328,6 +328,10 @@ export const quotes = pgTable('quotes', {
   // lock expires. Nullable — existing/legacy rows have no lock and re-price on the current card.
   rateCardJson: jsonb('rate_card_json'),
   rateLockedUntil: timestamp('rate_locked_until', { withTimezone: true }),
+  intentJson: jsonb('intent_json'),
+  intentFingerprint: text('intent_fingerprint'),
+  revision: integer('revision').notNull().default(1),
+  accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
   // Internal ops notes (spec 2026-07-22): a free-text scratchpad on the quote, distinct from
@@ -368,6 +372,7 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_sent_at').on(t.sentAt),
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
+  unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
 ]);
 
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced

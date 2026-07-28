@@ -59,6 +59,10 @@ const Env = z.object({
   BOOKING_LINK_SECRET: z.string().default('dev-booking-link-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
+  QUOTE_V2_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   // Ride Board customer session (first customer-facing auth) — signs the ch_cust cookie.
   // A DEDICATED secret (not OPS_SESSION_SECRET) so a customer session can never be
   // cross-replayed as a staff session. Set to a strong unique value at launch.

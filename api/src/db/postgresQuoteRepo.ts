@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
@@ -51,6 +51,10 @@ function toSaved(r: Row): SavedQuote {
     result: r.resultJson,
     rateCardJson: r.rateCardJson,
     rateLockedUntil: r.rateLockedUntil,
+    intent: r.intentJson,
+    intentFingerprint: r.intentFingerprint,
+    revision: r.revision,
+    accessTokenDigest: r.accessTokenDigest,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
     internalNotes: r.internalNotes,
@@ -92,6 +96,10 @@ export class PostgresQuoteRepo implements QuoteRepo {
             resultJson: q.result,
             rateCardJson: (q.rateCardJson ?? null) as object | null,
             rateLockedUntil: q.rateLockedUntil ?? null,
+            intentJson: (q.intent ?? null) as object | null,
+            intentFingerprint: q.intentFingerprint ?? null,
+            revision: q.revision ?? 1,
+            accessTokenDigest: q.accessTokenDigest ?? null,
             notes: q.notes ?? null,
             internalNotes: q.internalNotes ?? null,
             requestedService: q.requestedService ?? null,
@@ -116,6 +124,59 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .from(quotes)
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
     return rows[0] ? toSaved(rows[0]) : null;
+  }
+
+  async updateWebV2(args: {
+    id: string;
+    accessTokenDigest: string;
+    expectedRevision: number;
+    now: Date;
+    quote: NewQuote;
+  }): Promise<
+    | { kind: 'updated'; quote: SavedQuote }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' }
+  > {
+    const [updated] = await this.db
+      .update(quotes)
+      .set({
+        product: args.quote.product,
+        vehicle: args.quote.vehicle ?? null,
+        totalCents: args.quote.totalCents,
+        currency: args.quote.currency,
+        rateCardVersion: args.quote.rateCardVersion,
+        marginCents: args.quote.marginCents ?? null,
+        requestJson: args.quote.request,
+        resultJson: args.quote.result,
+        intentJson: (args.quote.intent ?? null) as object | null,
+        intentFingerprint: args.quote.intentFingerprint ?? null,
+        revision: sql`${quotes.revision} + 1`,
+        updatedAt: args.now,
+      })
+      .where(
+        and(
+          eq(quotes.id, args.id),
+          eq(quotes.channel, 'web'),
+          eq(quotes.accessTokenDigest, args.accessTokenDigest),
+          eq(quotes.revision, args.expectedRevision),
+          gt(quotes.rateLockedUntil, args.now),
+          isNull(quotes.deletedAt),
+        ),
+      )
+      .returning();
+    if (updated) return { kind: 'updated', quote: toSaved(updated) };
+
+    const [current] = await this.db.select().from(quotes).where(eq(quotes.id, args.id));
+    if (
+      !current ||
+      current.deletedAt ||
+      current.channel !== 'web' ||
+      !current.accessTokenDigest ||
+      current.accessTokenDigest !== args.accessTokenDigest
+    ) {
+      return { kind: 'access_denied' };
+    }
+    if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' };
+    return { kind: 'stale_revision' };
   }
 
   // Shared channel arm for the analytics projections ('all' = no channel condition).
