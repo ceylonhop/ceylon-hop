@@ -3,6 +3,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDb, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
+import { PostgresPaymentEventRepo } from './postgresPaymentEventRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
@@ -33,6 +34,7 @@ const sample: NewBooking = {
 describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
+  let paymentEvents: PostgresPaymentEventRepo;
   let tasks: PostgresConciergeTaskRepo;
   let departures: PostgresDepartureRepo;
   let rideOps: PostgresRideOpsRepo;
@@ -47,6 +49,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await seedCorridors(sql);
     bookings = new PostgresBookingRepo(conn.db);
     payments = new PostgresPaymentRepo(conn.db);
+    paymentEvents = new PostgresPaymentEventRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
     departures = new PostgresDepartureRepo(sql);
     rideOps = new PostgresRideOpsRepo(conn.db);
@@ -247,6 +250,103 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 
     await tasks.create({ bookingId: b.id, type: 'confirm_pickup' });
     expect(await tasks.listByBooking(b.id)).toHaveLength(1);
+  });
+
+  it('stores payment evidence idempotently and permits a later reversal', async () => {
+    const b = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `evidence-${b.id}`,
+    });
+    const providerTxnId = `PAY-${payment.id}`;
+    const event = {
+      paymentId: payment.id,
+      provider: 'payhere',
+      providerTxnId,
+      providerStatusCode: '2',
+      normalizedStatus: 'succeeded' as const,
+      amount: payment.amount,
+      currency: payment.currency,
+      payloadSha256: 'a'.repeat(64),
+      sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      receivedAt: new Date('2026-07-28T12:00:00.000Z'),
+    };
+
+    const first = await paymentEvents.record(event);
+    const retry = await paymentEvents.record(event);
+    const reversal = await paymentEvents.record({
+      ...event,
+      providerStatusCode: '-3',
+      normalizedStatus: 'charged_back',
+      payloadSha256: 'b'.repeat(64),
+      sanitizedPayload: { ...event.sanitizedPayload, status_code: '-3' },
+      receivedAt: new Date('2026-07-29T12:00:00.000Z'),
+    });
+
+    expect(first.inserted).toBe(true);
+    expect(retry).toMatchObject({ inserted: false, event: { id: first.event.id } });
+    expect(reversal.inserted).toBe(true);
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
+  });
+
+  it('enforces payment-event money and status constraints in Postgres', async () => {
+    const b = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `constraints-${b.id}`,
+    });
+    const base = {
+      paymentId: payment.id,
+      provider: 'payhere',
+      providerTxnId: `PAY-${payment.id}`,
+      providerStatusCode: '2',
+      normalizedStatus: 'succeeded' as const,
+      amount: payment.amount,
+      currency: payment.currency,
+      payloadSha256: 'c'.repeat(64),
+      sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      receivedAt: new Date(),
+    };
+
+    await expect(
+      paymentEvents.record({ ...base, providerTxnId: `${base.providerTxnId}-zero`, amount: 0 }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-missing-amount`,
+        amount: undefined as never,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-currency`,
+        currency: 'EUR',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-status`,
+        normalizedStatus: 'unknown' as never,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-missing-status`,
+        normalizedStatus: undefined as never,
+      }),
+    ).rejects.toThrow();
   });
 
   it('persists a quote with JSONB request/result and patches its status', async () => {

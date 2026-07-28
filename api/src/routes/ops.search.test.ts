@@ -54,6 +54,8 @@ describe('ops bookings search / filter / detail', () => {
     const rows = await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json();
     expect(rows).toHaveLength(2);
     expect(rows.map((r: { mode: string }) => r.mode).sort()).toEqual(['shared', 'single']);
+    expect(JSON.stringify(rows)).not.toContain('sanitizedPayload');
+    expect(JSON.stringify(rows)).not.toContain('payloadSha256');
   });
 
   it('reflects payment status (paid vs unpaid)', async () => {
@@ -89,6 +91,8 @@ describe('ops bookings search / filter / detail', () => {
     expect(body.ops.fulfilmentStatus).toBe('paid');
     expect(body.payments).toHaveLength(1);
     expect(body.payments[0].status).toBe('succeeded');
+    expect(body.payments[0]).not.toHaveProperty('sanitizedPayload');
+    expect(body.payments[0]).not.toHaveProperty('payloadSha256');
   });
 
   it('404s for an unknown booking', async () => {
