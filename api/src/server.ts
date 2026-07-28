@@ -21,6 +21,7 @@ import { PostgresZonesRepo } from './db/postgresZonesRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
 import { initTracking } from './observability/track';
+import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -88,10 +89,13 @@ const alerts = new ThrottledAlerts(
   config.ALERT_EMAIL ? new EmailAlertAdapter(email, config.ALERT_EMAIL) : new LogAlertAdapter(),
   alertLog,
 );
+const bookings = new PostgresBookingRepo(db);
+const payments = new PostgresPaymentRepo(db);
 
 const app = createApp({
-  bookings: new PostgresBookingRepo(db),
-  payments: new PostgresPaymentRepo(db),
+  bookings,
+  payments,
+  settlements: new PostgresPaymentSettlementRepo(db, bookings),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),
   rideLists: new PostgresRideListRepo(sql),

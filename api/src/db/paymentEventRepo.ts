@@ -41,8 +41,8 @@ function cloneEvent(event: PaymentEvent): PaymentEvent {
 }
 
 export class InMemoryPaymentEventRepo implements PaymentEventRepo {
-  private readonly byId = new Map<string, PaymentEvent>();
-  private readonly idByIdentity = new Map<string, string>();
+  private byId = new Map<string, PaymentEvent>();
+  private idByIdentity = new Map<string, string>();
 
   async record(event: NewPaymentEvent): Promise<RecordedPaymentEvent> {
     const identity = eventIdentity(event);
@@ -64,5 +64,23 @@ export class InMemoryPaymentEventRepo implements PaymentEventRepo {
       .filter((event) => event.paymentId === paymentId)
       .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())
       .map(cloneEvent);
+  }
+
+  snapshotForSettlement(): {
+    byId: Map<string, PaymentEvent>;
+    idByIdentity: Map<string, string>;
+  } {
+    return {
+      byId: new Map([...this.byId].map(([id, event]) => [id, cloneEvent(event)])),
+      idByIdentity: new Map(this.idByIdentity),
+    };
+  }
+
+  restoreForSettlement(snapshot: {
+    byId: Map<string, PaymentEvent>;
+    idByIdentity: Map<string, string>;
+  }): void {
+    this.byId = new Map([...snapshot.byId].map(([id, event]) => [id, cloneEvent(event)]));
+    this.idByIdentity = new Map(snapshot.idByIdentity);
   }
 }

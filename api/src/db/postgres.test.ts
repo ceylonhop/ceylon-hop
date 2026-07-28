@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createDb, type Sql } from './client';
+import { createDb, type Db, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresPaymentEventRepo } from './postgresPaymentEventRepo';
+import { PostgresPaymentSettlementRepo } from './postgresPaymentSettlementRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
@@ -40,10 +41,12 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let rideOps: PostgresRideOpsRepo;
   let notifLog: PostgresNotificationLogRepo;
   let quotes: PostgresQuoteRepo;
+  let db: Db;
   let sql: Sql;
 
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
+    db = conn.db;
     sql = conn.sql;
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     await seedCorridors(sql);
@@ -347,6 +350,88 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         normalizedStatus: undefined as never,
       }),
     ).rejects.toThrow();
+  });
+
+  it.each([
+    'after_event_insert',
+    'after_payment_update',
+    'after_booking_update',
+  ] as const)('atomically rolls back a settlement failure at %s and permits retry', async (point) => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `atomic-${point}-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: 'd'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const broken = new PostgresPaymentSettlementRepo(db, bookings, async (at) => {
+      if (at === point) throw new Error(`injected_${point}`);
+    });
+
+    await expect(broken.acceptVerifiedEvent(event)).rejects.toThrow(`injected_${point}`);
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('pending');
+    expect((await bookings.get(booking.id))?.status).toBe('payment_pending');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(0);
+
+    const retried = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent(event);
+    expect(retried).toMatchObject({
+      kind: 'settled',
+      payment: { status: 'succeeded' },
+      booking: { status: 'paid' },
+    });
+  });
+
+  it('settles concurrent verified successes once without split state', async () => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `concurrent-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: 'e'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+
+    const outcomes = await Promise.all([
+      settlement.acceptVerifiedEvent(event),
+      settlement.acceptVerifiedEvent(event),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['duplicate', 'settled']);
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(1);
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('succeeded');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
   it('persists a quote with JSONB request/result and patches its status', async () => {

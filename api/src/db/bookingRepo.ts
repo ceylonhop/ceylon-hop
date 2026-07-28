@@ -148,4 +148,12 @@ export class InMemoryBookingRepo implements BookingRepo {
     const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
     return all.filter((b) => statuses.includes(b.status));
   }
+
+  snapshotForSettlement(): Map<string, Booking> {
+    return new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)]));
+  }
+
+  restoreForSettlement(snapshot: Map<string, Booking>): void {
+    this.byId = new Map([...snapshot].map(([id, booking]) => [id, structuredClone(booking)]));
+  }
 }
