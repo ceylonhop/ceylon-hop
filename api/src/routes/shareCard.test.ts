@@ -135,3 +135,63 @@ describe('GET /r/:code/card.png — the share image', () => {
     expect((await app.request('/r/ZZ-9999/card.png')).status).toBe(404);
   });
 });
+
+// The share host (ride.ceylonhop.com) is a second custom domain on this same service, so
+// links can be as short as possible: https://ride.ceylonhop.com/EA-7797. Serving codes at
+// the root means the route must never swallow a real API path, hence the code shape guard.
+describe('ride-domain share links at the root', () => {
+  const shareApp = async (seats: number) => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs());
+    for (let i = 0; i < seats; i++) {
+      await rideLists.addMember(l.id, {
+        sub: `sub-${i}`, firstName: 'Anna', country: 'PL', email: `${i}@secret.com`, seats: 1,
+      });
+    }
+    return {
+      app: createApp({
+        rideLists,
+        bookingBaseUrl: 'https://prod.ceylonhop.com',
+        shareBaseUrl: 'https://ride.ceylonhop.com',
+      }),
+      code: l.code,
+    };
+  };
+
+  it('serves a bare code at the root', async () => {
+    const { app, code } = await shareApp(5);
+    const res = await app.request(`/${code}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(meta(html, 'og:title')).toContain('1 seat left');
+  });
+
+  it('serves the card image at the root too', async () => {
+    const { app, code } = await shareApp(5);
+    const res = await app.request(`/${code}/card.png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+  });
+
+  it('builds its absolute URLs from the share host, not the request host', async () => {
+    const { app, code } = await shareApp(5);
+    const html = await (await app.request(`/${code}`)).text();
+    expect(meta(html, 'og:url')).toBe(`https://ride.ceylonhop.com/${code}`);
+    expect(meta(html, 'og:image')).toBe(`https://ride.ceylonhop.com/${code}/card.png?s=5`);
+  });
+
+  it('does not swallow real API paths at the root', async () => {
+    const { app } = await shareApp(2);
+    expect((await app.request('/health')).status).toBe(200);
+    const board = await app.request('/board');
+    expect(board.status).toBe(200);
+    expect(await board.json()).toHaveProperty('lists');
+  });
+
+  it('leaves a root path that is not code-shaped alone', async () => {
+    const { app } = await shareApp(2);
+    // the ops shell answers "/" — the share router must not have claimed it
+    expect((await app.request('/')).headers.get('content-type')).toMatch(/text\/html/);
+    expect((await app.request('/not-a-code')).status).toBe(404);
+  });
+});

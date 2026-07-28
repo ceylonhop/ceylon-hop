@@ -163,22 +163,38 @@ export function renderCard(model: Parameters<typeof cardSvg>[0]): Buffer {
   }).render().asPng();
 }
 
-export function shareCardRoutes(deps: {
+/**
+ * A ride code: two route initials and four digits (see makeCode). Mounting the share
+ * routes at the root of the share domain means this pattern is the only thing standing
+ * between them and every real API path, so it is deliberately tight.
+ */
+const CODE = /^[A-Za-z]{2}-\d{4}$/;
+
+export interface ShareDeps {
   rideLists: RideListRepo;
   /** Customer site origin — where board.html lives. */
   siteBaseUrl: string;
-  /** This API's own origin, for absolute image/canonical URLs. */
+  /**
+   * Public origin the links are built from — the share domain (ride.ceylonhop.com) when
+   * set. Unset falls back to whatever host the request arrived on, which is what keeps
+   * local dev and staging self-consistent.
+   */
   shareBaseUrl?: string;
-}) {
+}
+
+export function shareCardRoutes(deps: ShareDeps, opts: { prefix?: string; guardCode?: boolean } = {}) {
   const r = new Hono();
   const site = deps.siteBaseUrl.replace(/\/$/, '');
+  const prefix = opts.prefix ?? '/r';
 
   const origin = (reqUrl: string): string =>
     (deps.shareBaseUrl ?? new URL(reqUrl).origin).replace(/\/$/, '');
 
-  // GET /r/:code/card.png — the og:image itself. Declared before the catch-all.
+  // GET <prefix>/:code/card.png — the og:image itself. Declared before the catch-all.
   r.get('/:code/card.png', async (c) => {
-    const found = await deps.rideLists.getByCode(c.req.param('code'));
+    const code = c.req.param('code');
+    if (opts.guardCode && !CODE.test(code)) return c.notFound();
+    const found = await deps.rideLists.getByCode(code);
     if (!found) return c.json({ error: 'not_found' }, 404);
 
     const copy = rideCopy(found);
@@ -194,6 +210,9 @@ export function shareCardRoutes(deps: {
 
   r.get('/:code', async (c) => {
     const code = c.req.param('code');
+    // At the root of the share domain this is the only thing keeping /health, /board and
+    // friends out of the share handler — fall through rather than answering for them.
+    if (opts.guardCode && !CODE.test(code)) return c.notFound();
     const found = await deps.rideLists.getByCode(code);
     const base = origin(c.req.url);
 
@@ -205,7 +224,7 @@ export function shareCardRoutes(deps: {
           title: 'This shared ride has closed',
           description: 'It may have already run, or the link expired. Browse the board for a ride going your way.',
           image: `${site}/og-cover.jpg`,
-          canonical: `${base}/r/${encodeURIComponent(code)}`,
+          canonical: `${base}${prefix}/${encodeURIComponent(code)}`,
           landing: `${site}/board.html`,
         }),
         404,
@@ -220,8 +239,8 @@ export function shareCardRoutes(deps: {
         // Cache-busted on the seat count: chat apps key their cached preview off the
         // image URL, so a filling van has to change it or the card freezes at whatever
         // count it had the first time anyone pasted the link.
-        image: `${base}/r/${encodeURIComponent(found.list.code)}/card.png?s=${committedSeats(found.members)}`,
-        canonical: `${base}/r/${encodeURIComponent(found.list.code)}`,
+        image: `${base}${prefix}/${encodeURIComponent(found.list.code)}/card.png?s=${committedSeats(found.members)}`,
+        canonical: `${base}${prefix}/${encodeURIComponent(found.list.code)}`,
         landing: `${site}/board.html#/${encodeURIComponent(found.list.code)}`,
       }),
     );

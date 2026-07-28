@@ -55,3 +55,16 @@ test('the share link points at the API unfurl path, not the dead apex', async ({
   const wa = await page.locator('.d-share a.btn-wa').first().getAttribute('href');
   expect(decodeURIComponent(wa)).toContain('/r/EA-7797');
 });
+
+test('the ride domain, once configured, shortens links to a bare code', async ({ page }) => {
+  await page.addInitScript(() => { window.CEYLON_HOP_SHARE_ORIGIN = 'https://ride.ceylonhop.com'; });
+  await stubApi(page);
+  await page.goto('/board.html');
+
+  await page.locator('.lcard').first().waitFor({ timeout: 15000 });
+  await page.locator('.lcard [data-view]').first().click();
+  await expect(page.locator('body')).toHaveClass(/detail-open/);
+
+  const copyTarget = await page.locator('[data-copy]').first().getAttribute('data-copy');
+  expect(copyTarget).toBe('https://ride.ceylonhop.com/EA-7797');
+});

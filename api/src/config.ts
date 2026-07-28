@@ -27,6 +27,10 @@ const Env = z.object({
   // Origin serving /ops — used to deep-link internal emails straight to a quote. Distinct
   // from APP_BASE_URL (the customer site): the ops tool is served by the API host.
   OPS_BASE_URL: z.string().default(''),
+  // Public origin the Ride Board's share links are built from — the ride domain
+  // (e.g. https://ride.ceylonhop.com), a second custom domain on this same service.
+  // Unset: links are built from whichever host the request arrived on.
+  SHARE_BASE_URL: z.string().default(''),
   // Browser origins allowed to call the API (comma-separated). The live site + local dev.
   ALLOWED_ORIGINS: z
     .string()
