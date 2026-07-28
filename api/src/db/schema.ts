@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -56,19 +56,72 @@ export const transferRequests = pgTable('transfer_request', {
   durationMin: integer('duration_min'),
 });
 
-export const payments = pgTable('payments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  bookingId: uuid('booking_id')
-    .notNull()
-    .references(() => bookings.id),
-  provider: text('provider').notNull(),
-  orderId: text('order_id').notNull().unique(),
-  amount: integer('amount').notNull(),
-  currency: text('currency').notNull(),
-  status: text('status').notNull(),
-  idempotencyKey: text('idempotency_key').notNull().unique(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    provider: text('provider').notNull(),
+    orderId: text('order_id').notNull().unique(),
+    amount: integer('amount').notNull(),
+    currency: text('currency').notNull(),
+    status: text('status').notNull(),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    gatewayPaymentId: text('gateway_payment_id'),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    settlementSource: text('settlement_source'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('payments_provider_gateway_payment_id_unique').on(t.provider, t.gatewayPaymentId),
+  ],
+);
+
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id),
+    provider: text('provider').notNull(),
+    providerTxnId: text('provider_txn_id').notNull(),
+    providerStatusCode: text('provider_status_code').notNull(),
+    normalizedStatus: text('normalized_status').notNull(),
+    amount: integer('amount').notNull(),
+    currency: text('currency').notNull(),
+    payloadSha256: text('payload_sha256').notNull(),
+    sanitizedPayload: jsonb('sanitized_payload').$type<Record<string, string>>().notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('payment_events_provider_txn_status_unique').on(
+      t.provider,
+      t.providerTxnId,
+      t.providerStatusCode,
+    ),
+    index('payment_events_payment_id_idx').on(t.paymentId),
+    index('payment_events_payload_sha256_idx').on(t.payloadSha256),
+    check('payment_events_amount_positive', sql`${t.amount} > 0`),
+    check('payment_events_currency_supported', sql`${t.currency} in ('USD')`),
+    check('payment_events_provider_supported', sql`${t.provider} in ('payhere', 'fake')`),
+    check(
+      'payment_events_normalized_status_valid',
+      sql`${t.normalizedStatus} in ('succeeded', 'pending', 'cancelled', 'failed', 'charged_back')`,
+    ),
+    check(
+      'payment_events_payload_sha256_valid',
+      sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      'payment_events_sanitized_payload_object',
+      sql`jsonb_typeof(${t.sanitizedPayload}) = 'object'`,
+    ),
+  ],
+);
 
 export const conciergeTasks = pgTable('concierge_tasks', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -46,7 +46,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
   async markSucceeded(id: string): Promise<Payment> {
     const [row] = await this.db
       .update(payments)
-      .set({ status: 'succeeded' })
+      .set({ status: 'succeeded', updatedAt: new Date() })
       .where(eq(payments.id, id))
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);
@@ -56,7 +56,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
   async markFailed(id: string): Promise<Payment> {
     const [row] = await this.db
       .update(payments)
-      .set({ status: 'failed' })
+      .set({ status: 'failed', updatedAt: new Date() })
       .where(eq(payments.id, id))
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);

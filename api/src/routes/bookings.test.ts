@@ -211,7 +211,16 @@ describe('GET /bookings/view (tokenized customer view)', () => {
     expect(body.firstName).toBe('Maya');
     expect(body.totalCents).toBe(6000);
     // Allow-list: never leak the id, channel, or contact details.
-    for (const leak of ['id', 'channel', 'email', 'whatsapp', 'country', 'lastName']) {
+    for (const leak of [
+      'id',
+      'channel',
+      'email',
+      'whatsapp',
+      'country',
+      'lastName',
+      'sanitizedPayload',
+      'payloadSha256',
+    ]) {
       expect(JSON.stringify(body)).not.toContain(leak === 'email' ? 'maya@example.com' : leak === 'whatsapp' ? '+94771234567' : leak === 'country' ? 'Spain' : leak === 'lastName' ? 'Fernandez' : `"${leak}"`);
     }
   });
