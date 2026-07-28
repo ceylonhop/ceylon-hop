@@ -97,4 +97,9 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     expect(buildConfig({ NODE_ENV: 'test' }).OPS_SESSION_SECRET).toBe('dev-ops-secret-change-me');
     expect(buildConfig({ NODE_ENV: 'development' }).OPS_SESSION_SECRET).toBe('dev-ops-secret-change-me');
   });
+
+  it('keeps public quote v2 creation default-off unless explicitly enabled', () => {
+    expect(buildConfig({ NODE_ENV: 'test' }).QUOTE_V2_ENABLED).toBe(false);
+    expect(buildConfig({ NODE_ENV: 'test', QUOTE_V2_ENABLED: '1' }).QUOTE_V2_ENABLED).toBe(true);
+  });
 });

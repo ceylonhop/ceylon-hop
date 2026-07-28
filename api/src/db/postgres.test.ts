@@ -485,6 +485,56 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await quotes.patch('00000000-0000-0000-0000-000000000000', { status: 'won' })).toBeNull();
   });
 
+  it('updates a web quote with token/revision compare-and-set and fixed expiry', async () => {
+    const expiresAt = new Date('2026-08-04T12:00:00.000Z');
+    const accessTokenDigest = 'f'.repeat(64);
+    const saved = await quotes.save({
+      channel: 'web',
+      product: 'private',
+      vehicle: 'car',
+      totalCents: 4_000,
+      currency: 'USD',
+      rateCardVersion: 'test-card',
+      request: { v: 2, intent: { product: 'private' }, engine: { product: 'private' } },
+      result: { totalCents: 4_000 },
+      rateCardJson: { version: 'test-card' },
+      rateLockedUntil: expiresAt,
+      intent: { product: 'private' },
+      intentFingerprint: 'a'.repeat(64),
+      accessTokenDigest,
+    });
+    const update = {
+      id: saved.id,
+      accessTokenDigest,
+      expectedRevision: 1,
+      now: new Date('2026-07-29T12:00:00.000Z'),
+      quote: {
+        channel: 'web' as const,
+        product: 'private',
+        vehicle: 'van',
+        totalCents: 5_000,
+        currency: 'USD',
+        rateCardVersion: 'test-card',
+        request: { v: 2, intent: { product: 'private', vehicle: 'van' } },
+        result: { totalCents: 5_000 },
+        intent: { product: 'private', vehicle: 'van' },
+        intentFingerprint: 'b'.repeat(64),
+      },
+    };
+
+    const outcomes = await Promise.all([
+      quotes.updateWebV2(update),
+      quotes.updateWebV2(update),
+    ]);
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['stale_revision', 'updated']);
+    const current = await quotes.get(saved.id);
+    expect(current).toMatchObject({
+      revision: 2,
+      totalCents: 5_000,
+      rateLockedUntil: expiresAt,
+    });
+  });
+
   it('persists ops layer: ride_ops status/flags', async () => {
     const b = await bookings.create(sample);
     const created = await rideOps.getOrCreate(b.id);
