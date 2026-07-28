@@ -56,8 +56,10 @@ steps, not a parallel quote system.
 **Tests first**
 
 - Valid pinned sandbox-style notification.
-- Wrong merchant, signature, currency, missing transaction ID, duplicate critical field,
-  unknown status, malformed/zero/oversized amount, and oversized body all fail closed.
+- Wrong merchant, signature, malformed currency, missing transaction ID, duplicate critical
+  field, unknown status, malformed/zero/oversized amount, and oversized body all fail closed.
+- A signed, structurally valid currency mismatch reaches stored-payment reconciliation and
+  preserves the existing `amount_mismatch` response.
 - PayHere `2`, `0`, `-1`, `-2`, and `-3` map to the intended statuses.
 - Checkout fields/hash fixture remains unchanged.
 - Existing valid-success and ordinary-failure route response fixtures remain unchanged.

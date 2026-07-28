@@ -17,6 +17,16 @@ describe('FakePaymentAdapter', () => {
     const event = a.parseWebhook(body);
     expect(event?.orderId).toBe('CH-ABC12');
     expect(event?.status).toBe('succeeded');
+    expect(event).toMatchObject({
+      provider: 'fake',
+      merchantId: 'fake',
+      amountCents: 5000,
+      currency: 'USD',
+      providerStatusCode: 'succeeded',
+    });
+    expect(event?.receivedAt).toBeInstanceOf(Date);
+    expect(event?.payloadSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(event?.sanitizedPayload).not.toHaveProperty('signature');
   });
 
   it('rejects a tampered webhook (bad signature)', () => {
