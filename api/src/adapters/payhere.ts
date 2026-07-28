@@ -1,7 +1,44 @@
-import { createHash } from 'node:crypto';
-import type { PaymentAdapter, CheckoutParams, CreateCheckoutArgs, WebhookEvent } from './payments';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import type {
+  PaymentAdapter,
+  CheckoutParams,
+  CreateCheckoutArgs,
+  ProviderPaymentStatus,
+  VerifiedPaymentEvent,
+} from './payments';
 
 const md5Upper = (s: string): string => createHash('md5').update(s).digest('hex').toUpperCase();
+const MAX_WEBHOOK_BYTES = 8_192;
+const MAX_AMOUNT_MAJOR_UNITS = 999_999_999;
+
+const statusByCode: Readonly<Record<string, ProviderPaymentStatus>> = {
+  '2': 'succeeded',
+  '0': 'pending',
+  '-1': 'cancelled',
+  '-2': 'failed',
+  '-3': 'charged_back',
+};
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+function getExactlyOne(params: URLSearchParams, name: string): string | null {
+  const values = params.getAll(name);
+  return values.length === 1 ? (values[0] ?? null) : null;
+}
+
+function parseAmountCents(value: string): number | null {
+  if (!/^[0-9]{1,9}\.[0-9]{2}$/.test(value)) return null;
+  const [majorText, minorText] = value.split('.');
+  const major = Number(majorText);
+  const minor = Number(minorText);
+  if (major > MAX_AMOUNT_MAJOR_UNITS) return null;
+  const cents = major * 100 + minor;
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
 
 export interface PayHereOptions {
   mode: 'sandbox' | 'live';
@@ -85,24 +122,64 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     }).toString();
   }
 
-  parseWebhook(rawBody: string): WebhookEvent | null {
+  parseWebhook(rawBody: string): VerifiedPaymentEvent | null {
+    if (Buffer.byteLength(rawBody, 'utf8') > MAX_WEBHOOK_BYTES) return null;
     const p = new URLSearchParams(rawBody);
-    const merchantId = p.get('merchant_id') ?? '';
-    const orderId = p.get('order_id') ?? '';
-    const payhereAmount = p.get('payhere_amount') ?? '';
-    const payhereCurrency = p.get('payhere_currency') ?? '';
-    const statusCode = p.get('status_code') ?? '';
-    const md5sig = p.get('md5sig') ?? '';
+    const merchantId = getExactlyOne(p, 'merchant_id');
+    const orderId = getExactlyOne(p, 'order_id');
+    const providerTxnId = getExactlyOne(p, 'payment_id');
+    const payhereAmount = getExactlyOne(p, 'payhere_amount');
+    const payhereCurrency = getExactlyOne(p, 'payhere_currency');
+    const statusCode = getExactlyOne(p, 'status_code');
+    const md5sig = getExactlyOne(p, 'md5sig');
+    if (
+      merchantId === null ||
+      orderId === null ||
+      providerTxnId === null ||
+      payhereAmount === null ||
+      payhereCurrency === null ||
+      statusCode === null ||
+      md5sig === null
+    ) {
+      return null;
+    }
+    if (
+      merchantId !== this.merchantId ||
+      orderId.length === 0 ||
+      orderId.length > 128 ||
+      providerTxnId.length === 0 ||
+      providerTxnId.length > 128 ||
+      !/^[A-Z]{3}$/.test(payhereCurrency) ||
+      !/^[A-F0-9]{32}$/.test(md5sig)
+    ) {
+      return null;
+    }
+    const amountCents = parseAmountCents(payhereAmount);
+    const status = statusByCode[statusCode];
+    if (amountCents === null || status === undefined) return null;
     const local = md5Upper(
       merchantId + orderId + payhereAmount + payhereCurrency + statusCode + md5Upper(this.merchantSecret),
     );
-    if (!md5sig || local !== md5sig) return null;
+    if (!safeEqual(local, md5sig)) return null;
     return {
+      provider: this.provider,
+      merchantId,
       orderId,
-      amount: Math.round(parseFloat(payhereAmount) * 100),
+      providerTxnId,
+      amountCents,
       currency: payhereCurrency,
-      status: statusCode === '2' ? 'succeeded' : 'failed',
-      providerTxnId: p.get('payment_id') ?? '',
+      status,
+      providerStatusCode: statusCode,
+      receivedAt: new Date(),
+      payloadSha256: createHash('sha256').update(rawBody).digest('hex'),
+      sanitizedPayload: {
+        merchant_id: merchantId,
+        order_id: orderId,
+        payment_id: providerTxnId,
+        payhere_amount: payhereAmount,
+        payhere_currency: payhereCurrency,
+        status_code: statusCode,
+      },
     };
   }
 }

@@ -122,12 +122,12 @@ type ProviderPaymentStatus =
   | 'charged_back';
 
 interface VerifiedPaymentEvent {
-  provider: 'payhere';
+  provider: 'fake' | 'payhere';
   merchantId: string;
   orderId: string;
   providerTxnId: string;
   amountCents: number;
-  currency: 'USD';
+  currency: string;
   status: ProviderPaymentStatus;
   providerStatusCode: string;
   receivedAt: Date;
@@ -138,13 +138,16 @@ interface VerifiedPaymentEvent {
 
 Parsing rules:
 
-- Accept `application/x-www-form-urlencoded` only for the PayHere adapter.
+- The webhook route passes `application/x-www-form-urlencoded` bodies only to the PayHere
+  adapter. The fake adapter retains its signed JSON test/dev format.
 - Apply a small body limit before parsing.
 - Reject duplicate security-critical fields.
 - Require posted `merchant_id === configured merchantId`.
 - Require `payhere_amount` to match `^[0-9]{1,9}\.[0-9]{2}$`, be positive, and convert
   exactly to safe integer cents.
-- Require currency `USD`.
+- Require a structurally valid three-letter uppercase currency. The webhook route then
+  reconciles it against the stored payment currency (`USD` today); a signed mismatch must
+  reach that comparison and fail with the existing `amount_mismatch` response.
 - Require non-empty bounded `order_id`, `payment_id`, `status_code`, and `md5sig`.
 - Compare signatures with a length guard and `timingSafeEqual`.
 - Map PayHere status codes explicitly. Unknown codes fail closed.

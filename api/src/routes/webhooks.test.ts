@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
+import { PayHerePaymentAdapter } from '../adapters/payhere';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
@@ -35,6 +36,25 @@ async function bookAndCheckout(app: ReturnType<typeof createApp>, overrides: Rec
 }
 
 describe('POST /webhooks/payments', () => {
+  it('rejects PayHere notifications sent with a non-form content type', async () => {
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+    const body = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    const app = createApp({ adapter });
+
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+
+    expect(res.status).toBe(401);
+  });
+
   it('marks the booking paid and emails the customer on a valid webhook', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();

@@ -32,7 +32,9 @@ export function webhookRoutes(deps: {
   // succeeded and the booking paid — idempotently — then sends the confirmation (5.4).
   // M17: the silent failure paths now raise throttled ops alerts.
   r.post('/payments', async (c) => {
-    const event = adapter.parseWebhook(await c.req.text());
+    const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+    const isExpectedContentType = adapter.provider !== 'payhere' || contentType === 'application/x-www-form-urlencoded';
+    const event = isExpectedContentType ? adapter.parseWebhook(await c.req.text()) : null;
     if (!event) {
       void alerts.send({
         severity: 'critical',
@@ -47,12 +49,12 @@ export function webhookRoutes(deps: {
     const payment = await payments.findByOrderId(event.orderId);
     if (!payment) return c.json({ error: 'unknown_order' }, 404);
 
-    if (event.amount !== payment.amount || event.currency !== payment.currency) {
+    if (event.amountCents !== payment.amount || event.currency !== payment.currency) {
       void alerts.send({
         severity: 'critical',
         kind: 'payhere_amount',
         title: `PayHere amount mismatch on order ${event.orderId}`,
-        body: `expected ${payment.amount} ${payment.currency}, webhook says ${event.amount} ${event.currency}`,
+        body: `expected ${payment.amount} ${payment.currency}, webhook says ${event.amountCents} ${event.currency}`,
         dedupeKey: event.orderId,
       });
       return c.json({ error: 'amount_mismatch' }, 400);
