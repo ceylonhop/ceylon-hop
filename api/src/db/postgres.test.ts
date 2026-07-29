@@ -13,6 +13,7 @@ import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
 import type { NewBooking } from './bookingRepo';
 import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
+import { PostgresRefundRepo } from './postgresRefundRepo';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
 import { bookings as bookingRows } from './schema';
 import { eq } from 'drizzle-orm';
@@ -461,6 +462,59 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     await expect(
       sql`update shared_departure set seats_booked = seats_total where corridor_id = ${id} and date = ${date} and time = '23:59'`,
     ).resolves.toBeDefined();
+  });
+
+  it('serializes refund reservations and confirms only captured money with unique evidence', async () => {
+    const refunds = new PostgresRefundRepo(db);
+    const booking = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `refund-${booking.id}`,
+    });
+    await payments.markSucceeded(payment.id);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    await bookings.setStatus(booking.id, 'paid');
+
+    const requests = await Promise.allSettled([
+      refunds.request({
+        bookingId: booking.id,
+        amountCents: booking.total,
+        currency: 'USD',
+        reason: 'first',
+        requestedBy: 'finance@test',
+      }),
+      refunds.request({
+        bookingId: booking.id,
+        amountCents: booking.total,
+        currency: 'USD',
+        reason: 'concurrent',
+        requestedBy: 'founder@test',
+      }),
+    ]);
+    expect(requests.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(requests.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const pending = (requests.find((result) => result.status === 'fulfilled') as PromiseFulfilledResult<Awaited<ReturnType<typeof refunds.request>>>).value;
+    const gatewayRef = `PG-REF-${booking.id}`;
+    const confirmed = await refunds.confirm({
+      bookingId: booking.id,
+      refundId: pending.id,
+      gatewayRef,
+      confirmedBy: 'finance@test',
+    });
+    expect(confirmed.bookingFullyRefunded).toBe(true);
+    expect((await bookings.get(booking.id))?.status).toBe('refunded');
+    await expect(
+      refunds.confirm({
+        bookingId: booking.id,
+        refundId: pending.id,
+        gatewayRef,
+        confirmedBy: 'finance@test',
+      }),
+    ).rejects.toMatchObject({ code: 'refund_already_confirmed' });
   });
 
   it.each([

@@ -113,6 +113,45 @@ export const payments = pgTable(
   ],
 );
 
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id),
+    provider: text('provider').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    currency: text('currency').notNull(),
+    status: text('status').notNull(),
+    reason: text('reason').notNull(),
+    gatewayRef: text('gateway_ref'),
+    requestedBy: text('requested_by').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    confirmedBy: text('confirmed_by'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('refunds_provider_gateway_ref_unique').on(t.provider, t.gatewayRef),
+    index('refunds_booking_id_idx').on(t.bookingId),
+    check('refunds_amount_positive', sql`${t.amountCents} > 0`),
+    check('refunds_currency_supported', sql`${t.currency} in ('USD')`),
+    check(
+      'refunds_status_valid',
+      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled')`,
+    ),
+    check(
+      'refunds_confirmation_evidence_valid',
+      sql`(${t.status} = 'manual_confirmed' and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} <> 'manual_confirmed' and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
+    ),
+  ],
+);
+
 export const paymentEvents = pgTable(
   'payment_events',
   {

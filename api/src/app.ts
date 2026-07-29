@@ -42,10 +42,12 @@ import {
   type QuoteConversionRepo,
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
+import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
+  refunds?: RefundRepo;
   settlements?: PaymentSettlementRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
@@ -94,6 +96,7 @@ export interface AppDeps {
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
   const settlements =
     deps.settlements ??
     new InMemoryPaymentSettlementRepo({
@@ -325,6 +328,7 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
       ridePaygw: paygw,
+      refunds,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.
