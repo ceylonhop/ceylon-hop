@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { Resvg } from '@resvg/resvg-js';
 import { fileURLToPath } from 'node:url';
 import type { RideListRepo, RideListWithMembers } from '../db/rideListRepo';
@@ -187,8 +187,20 @@ export function shareCardRoutes(deps: ShareDeps, opts: { prefix?: string; guardC
   const site = deps.siteBaseUrl.replace(/\/$/, '');
   const prefix = opts.prefix ?? '/r';
 
-  const origin = (reqUrl: string): string =>
-    (deps.shareBaseUrl ?? new URL(reqUrl).origin).replace(/\/$/, '');
+  /**
+   * Absolute origin for og:url / og:image / canonical.
+   *
+   * Render terminates TLS at its edge, so `c.req.url` inside the container is http://
+   * even though the world reached us over https. Emitting an http:// og:image on an
+   * https page gets the image downgraded, ignored or refused by crawlers — no preview,
+   * which is the whole point of this endpoint. Trust x-forwarded-proto when present.
+   */
+  const origin = (c: Context): string => {
+    if (deps.shareBaseUrl) return deps.shareBaseUrl.replace(/\/$/, '');
+    const url = new URL(c.req.url);
+    const proto = (c.req.header('x-forwarded-proto') || url.protocol.replace(':', '')).split(',')[0].trim();
+    return `${proto}://${url.host}`;
+  };
 
   // GET <prefix>/:code/card.png — the og:image itself. Declared before the catch-all.
   r.get('/:code/card.png', async (c) => {
@@ -214,7 +226,7 @@ export function shareCardRoutes(deps: ShareDeps, opts: { prefix?: string; guardC
     // friends out of the share handler — fall through rather than answering for them.
     if (opts.guardCode && !CODE.test(code)) return c.notFound();
     const found = await deps.rideLists.getByCode(code);
-    const base = origin(c.req.url);
+    const base = origin(c);
 
     if (!found) {
       // A stale link still has to unfurl — a bare domain in the chat reads as broken,
