@@ -8,6 +8,7 @@ import { InMemoryDepartureRepo, type DepartureRepo } from './db/departureRepo';
 import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
+import { shareCardRoutes } from './routes/shareCard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
@@ -72,6 +73,9 @@ export interface AppDeps {
   allowLegacyCheckoutWithoutToken?: boolean;
   // Front-end origin used to build those links in emails (defaults to config.APP_BASE_URL).
   bookingBaseUrl?: string;
+  // Public origin share links are built from — the ride domain (e.g. https://ride.ceylonhop.com),
+  // which is a second custom domain on this same service. Unset = use the request's own host.
+  shareBaseUrl?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
   mapsBrowserKey?: string; // browser Maps JS key templated into the /ops itinerary map
   // Origin serving /ops, for deep links in internal emails (defaults to config.OPS_BASE_URL).
@@ -258,6 +262,14 @@ export function createApp(deps: AppDeps = {}) {
       allowedOrigins,
     }),
   );
+  // Share links for the Ride Board. Its own mount, not /board/:code — that one answers
+  // JSON to board.js, and a crawler's Accept header is too weak a thing to branch on.
+  const shareDeps = {
+    rideLists,
+    siteBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    shareBaseUrl: deps.shareBaseUrl ?? (config.SHARE_BASE_URL || undefined),
+  };
+  app.route('/r', shareCardRoutes(shareDeps));
   app.route('/quote', quoteRoutes({
     internalKey: config.INTERNAL_QUOTE_KEY,
     quotes,
@@ -297,6 +309,10 @@ export function createApp(deps: AppDeps = {}) {
   const opsUi = opsUiRoutes(opsAuthCfg.googleClientId, opsAuthCfg.nodeEnv !== 'production', deps.mapsBrowserKey ?? config.MAPS_BROWSER_KEY ?? '');
   app.route('/ops', opsUi);
   app.route('/', opsUi);
+  // …and the share routes at the bare root, for the ride domain: ride.ceylonhop.com/EA-7797
+  // is the shortest a share link gets. Registered last and guarded by the ride-code shape,
+  // so it can only ever answer for XX-1234 and never shadows a real API path.
+  app.route('/', shareCardRoutes(shareDeps, { prefix: '', guardCode: true }));
   // internal quoting tool — D-A: opens to all 3 roles via quote:manage (opsIdentity +
   // requireCap, same as /admin/ops); x-admin-key resolves to `system`, which lacks
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.

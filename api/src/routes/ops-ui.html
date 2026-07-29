@@ -3852,6 +3852,25 @@ async function apiBook(id, payload) {
     return body || { error: 'Booking failed' };
   } catch (e) { return { error: 'Network error' }; }
 }
+// Turn the server's rejection into something an operator can act on. POST /book answers
+// a Zod failure with `message` (full field paths) and `details` (flatten, top-level keys
+// only). We showed neither — just "Could not book — bad_request" — which named no field
+// and left the agent with nowhere to go. Pure, so it is unit-tested directly.
+function bookErrorText(res) {
+  if (!res) return 'Could not book — unknown error';
+  if (res.message) return 'Could not book — ' + res.message;
+  var d = res.details;
+  if (d && d.fieldErrors) {
+    var parts = [];
+    Object.keys(d.fieldErrors).forEach(function (k) {
+      var msgs = d.fieldErrors[k] || [];
+      if (msgs.length) parts.push(k + ': ' + msgs[0]);
+    });
+    if (parts.length) return 'Could not book — ' + parts.join(', ');
+  }
+  return 'Could not book — ' + (res.error || 'unknown error');
+}
+
 // Creates the booking from the modal's fields (server re-validates via the same Zod
 // schema); on success stamps the local won+convertedBookingId so the button set updates
 // without a full reopen.
@@ -3872,6 +3891,12 @@ async function bookQuote() {
     showToast('Fill in name, email, WhatsApp, country, date and time');
     return;
   }
+  // <input type="email"> hands back whatever was typed, so "roshen@gmail" passed the
+  // emptiness check above and only died server-side as a bare "bad_request".
+  if (!isValidEmail(b.customer.email)) {
+    showToast('Check the email address — it does not look valid');
+    return;
+  }
   // Re-entrancy guard: a double-clicked Confirm booking button fires bookQuote() twice
   // before the first POST resolves. Without this, both reach the server and the second
   // response is redundant at best; with it, the second call is a silent no-op.
@@ -3879,7 +3904,11 @@ async function bookQuote() {
   bookSubmitting = true;
   try {
     var res = await apiBook(state.savedId, b);
-    if (!res || res.error) { showToast('Could not book — ' + ((res && res.error) || 'unknown error')); return; }
+    if (!res || res.error) {
+      showToast(bookErrorText(res));
+      window.opsReportError && window.opsReportError('quote_book_rejected', new Error((res && (res.message || res.error)) || 'unknown error'));
+      return;
+    }
     bookOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;

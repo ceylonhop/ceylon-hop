@@ -640,7 +640,16 @@ export function internalQuoteRoutes(deps: {
     }
 
     const parsed = BookingDetailsSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: 'bad_request', details: parsed.error.flatten() }, 400);
+    if (!parsed.success) {
+      // `details` (flatten) keys only by the TOP-level field, so a bad customer.email
+      // arrives as "customer: Invalid email" — no use to an operator staring at a form
+      // with five customer fields. `message` carries the full path per issue so the ops
+      // toast can name the box to fix. Additive: `details` is unchanged.
+      const message = parsed.error.issues
+        .map((i) => `${i.path.join('.') || 'body'}: ${i.message}`)
+        .join('; ');
+      return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
+    }
 
     let mapped;
     try {
