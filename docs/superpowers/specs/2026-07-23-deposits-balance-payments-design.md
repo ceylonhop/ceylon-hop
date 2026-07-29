@@ -38,7 +38,11 @@ The deposit rails are ~80% scaffolded already:
 - **Deposit math dormant**: `RATE_CARD.deposit` in `rateCard.ts` (currently `pct 10, capCents 5000` — **wrong shape, see §4**), `depositCents()` in `extrasDeposit.ts`, `bookings.amount_due_now` column, `balanceDueCents` projection, and `paidRows()` email rendering ("Deposit paid / Balance due") all exist. The engine hard-codes `amountDueNowCents = totalCents` (engine.ts, pricing.ts), and booking.js deposit messaging is explicitly disabled.
 - **Emails**: merged to main via PR #131 — `sendDepositReceived` (dormant, awaiting a real partial deposit), `sendPaymentFailed`, `sendCustomerQuote`, concierge-letter shell, `/dev/emails` preview harness (non-prod only). Plus the 9 pre-existing customer emails in `notifications.ts`.
 - **Scheduler**: daily GitHub-Actions cron → `POST /admin/jobs/notifications` → `runScheduledNotifications` (idempotent via `notificationLog`). `runWatchdog` sweeps stuck `payment_pending`. This is the exact pattern balance reminders copy.
-- **Cancel/refund**: `POST /admin/ops/bookings/:id/{cancel,refund}` (admin.ts, `payments:act` capability = founder/finance humans only). Refund is a **pure status flip** — no gateway call, refund email always shows the full total, and seat-release/email failures are swallowed (`console.error` only). This feature fixes all three.
+- **Cancel/refund baseline (superseded by SH8–SH9):** cancellation remains capability-gated.
+  The old `POST /admin/bookings/:id/refund` pure status flip was removed in SH9. Manual
+  refunds now use the canonical request → PayHere dashboard action → evidence-backed
+  confirm/cancel ledger routes under `/admin/bookings/:id/refunds`; only confirmation
+  changes fully refunded bookings and sends the actual-amount email.
 - **Statuses**: bookings `draft, payment_pending, awaiting_details, paid, confirmed, in_progress, completed, cancelled, refunded, no_show` with an enforced transition matrix (`domain/status.ts`). Quotes `draft … sent, won, lost, expired` (quoteRepo.ts).
 - **Payments table**: one row per booking today; `orderId` unique = booking reference; statuses `pending|succeeded|failed`. No purpose concept, no gateway payment id stored.
 
@@ -60,8 +64,20 @@ The deposit rails are ~80% scaffolded already:
 - Order-ID scheme (PayHere `order_id`, our `payments.orderId`, stays unique): full = `REF` (today's format — existing rows remain valid), deposit = `REF-D`, balance = `REF-B`. The webhook already routes by orderId lookup, so purpose routing comes free.
 
 ### Refunds (new table)
-`refunds`: `id, bookingId, paymentId, amountCents, currency, status ('pending'|'succeeded'|'failed'|'manual_pending'|'manual_confirmed'), gatewayRef, reason, policyBreakdownJson, createdBy, createdAt, updatedAt`.
-One row per refund attempt against a specific payment — an audit trail, not a status flag. Failed API calls are visible records ops can retry. Manual refunds get `manual_pending` → ops confirms → `manual_confirmed`.
+Migration 0028 shipped the canonical `refunds` ledger with:
+`id, bookingId, paymentId, provider, amountCents, currency, status
+('manual_pending'|'manual_confirmed'|'cancelled'), gatewayRef, reason, requestedBy,
+requestedAt, confirmedBy, confirmedAt, createdAt, updatedAt`.
+One row records one manual refund attempt against a captured payment — an audit trail,
+not a status flag. Manual refunds move `manual_pending` → `manual_confirmed` only after
+the PayHere action is complete and its unique reference is recorded; an unperformed
+request moves to `cancelled`.
+
+Future automated PayHere refunds must extend this table and repository with additive
+statuses/fields (for example `pending|succeeded|failed` and policy breakdown), preserving
+the existing rows, actor/evidence semantics, over-refund constraints, and Ops history.
+They must not introduce a parallel refund ledger or restore a direct booking-status
+refund endpoint.
 
 ### Quotes
 - New column **`payToken`** (random, unique, nullable): generated when the quote transitions to `sent`. The hosted quote page is keyed on it — never on the guessable quote reference.
@@ -144,6 +160,11 @@ Given `refundableCents` and the booking's succeeded payments (each individually 
 ### 8.4 Ops flow & fixes
 - Cancel action shows the refund quote (band, retained, refundable) **before** confirming. Cancel and refund remain separate steps (cancel now, refund executes/confirms after), matching the existing two-endpoint shape.
 - `payments:act` capability (founder/finance humans) gates refund execution, as today.
+- **Shipped manual foundation (SH8–SH9):** Ops shows captured, confirmed, pending, and
+  refundable remaining amounts; records the requester; requires PayHere reference
+  evidence and a second confirmation after the dashboard action; and exposes
+  request/confirm/cancel history after reload. The `ops` role can see the booking but
+  neither loads the refund ledger nor renders money actions.
 - **Fix the swallow gaps** in `admin.ts` `transitionAndNotify`: seat-release and customer-email failures now raise ops alerts instead of `console.error` only.
 
 ## 9. Ops dashboard surfacing
