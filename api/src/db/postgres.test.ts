@@ -356,6 +356,113 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     ).rejects.toThrow();
   });
 
+  it('enforces booking money, currency, mode, and status constraints in Postgres', async () => {
+    const b = await bookings.create(sample);
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(
+      sql`update bookings set total = -1, amount_due_now = null where id = ${b.id}`,
+      'bookings_total_nonnegative',
+    );
+    await reject(
+      sql`update bookings set amount_due_now = total + 1 where id = ${b.id}`,
+      'bookings_amount_due_now_valid',
+    );
+    await reject(
+      sql`update bookings set currency = 'EUR' where id = ${b.id}`,
+      'bookings_currency_supported',
+    );
+    await reject(
+      sql`update bookings set mode = 'unknown' where id = ${b.id}`,
+      'bookings_mode_valid',
+    );
+    await reject(
+      sql`update bookings set status = 'unknown' where id = ${b.id}`,
+      'bookings_status_valid',
+    );
+
+    await expect(sql`update bookings set amount_due_now = null where id = ${b.id}`).resolves.toBeDefined();
+    await expect(sql`update bookings set total = 0, amount_due_now = 0 where id = ${b.id}`).resolves.toBeDefined();
+  });
+
+  it('enforces payment amount, currency, provider, status, and settlement evidence', async () => {
+    const b = await bookings.create(sample);
+    const p = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `payment-constraints-${b.id}`,
+    });
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(sql`update payments set amount = 0 where id = ${p.id}`, 'payments_amount_positive');
+    await reject(
+      sql`update payments set currency = 'EUR' where id = ${p.id}`,
+      'payments_currency_supported',
+    );
+    await reject(
+      sql`update payments set provider = 'unknown' where id = ${p.id}`,
+      'payments_provider_supported',
+    );
+    await reject(
+      sql`update payments set status = 'unknown' where id = ${p.id}`,
+      'payments_status_valid',
+    );
+    await reject(
+      sql`update payments set status = 'succeeded' where id = ${p.id}`,
+      'payments_succeeded_settled_at_required',
+    );
+    await expect(
+      sql`update payments set status = 'succeeded', settled_at = now(), settlement_source = 'webhook' where id = ${p.id}`,
+    ).resolves.toBeDefined();
+    await reject(
+      sql`update payments set settlement_source = null where id = ${p.id}`,
+      'payments_succeeded_settlement_source_required',
+    );
+  });
+
+  it('enforces shared corridor pricing, capacity, and inventory boundaries', async () => {
+    const [{ id }] = await sql<{ id: string }[]>`select id from corridor order by id limit 1`;
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(
+      sql`update corridor set seat_price = 0 where id = ${id}`,
+      'corridor_seat_price_positive',
+    );
+    await reject(
+      sql`update corridor set seat_capacity = 0 where id = ${id}`,
+      'corridor_seat_capacity_positive',
+    );
+    const date = `2099-12-${String(10 + Math.floor(Math.random() * 10))}`;
+    await sql`
+      insert into shared_departure (corridor_id, date, time, seats_total, seats_booked)
+      values (${id}, ${date}, '23:59', 4, 0)
+      on conflict (corridor_id, date, time) do update set seats_total = 4, seats_booked = 0`;
+    await reject(
+      sql`update shared_departure set seats_total = 0 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_total_positive',
+    );
+    await reject(
+      sql`update shared_departure set seats_booked = -1 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_booked_valid',
+    );
+    await reject(
+      sql`update shared_departure set seats_booked = seats_total + 1 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_booked_valid',
+    );
+    await expect(
+      sql`update shared_departure set seats_booked = seats_total where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+    ).resolves.toBeDefined();
+  });
+
   it.each([
     'after_event_insert',
     'after_payment_update',
