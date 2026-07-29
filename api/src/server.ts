@@ -23,6 +23,7 @@ import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/
 import { initTracking } from './observability/track';
 import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
+import { PostgresRefundRepo } from './db/postgresRefundRepo';
 
 if (!config.DATABASE_URL) {
   throw new Error('DATABASE_URL is required to run the server (set it in api/.env)');
@@ -97,6 +98,7 @@ const quotes = new PostgresQuoteRepo(db);
 const app = createApp({
   bookings,
   payments,
+  refunds: new PostgresRefundRepo(db),
   settlements: new PostgresPaymentSettlementRepo(db, bookings),
   conciergeTasks: new PostgresConciergeTaskRepo(db),
   departures: new PostgresDepartureRepo(sql),

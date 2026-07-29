@@ -14,33 +14,49 @@ export const customers = pgTable('customers', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const bookings = pgTable('bookings', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  customerId: uuid('customer_id')
-    .notNull()
-    .references(() => customers.id),
-  reference: text('reference').notNull().unique(),
-  status: text('status').notNull(),
-  mode: text('mode').notNull().default('single'),
-  total: integer('total').notNull(),
-  // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
-  // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
-  subtotal: integer('subtotal'),
-  discountTotal: integer('discount_total'),
-  pricingSnapshotJson: jsonb('pricing_snapshot_json'),
-  // What checkout collects now. Nullable: older rows may have no value and are charged
-  // the full total.
-  amountDueNow: integer('amount_due_now'),
-  currency: text('currency').notNull(),
-  idempotencyKey: text('idempotency_key').unique(),
-  // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
-  // payment-link tool will write 'whatsapp'.
-  channel: text('channel').notNull().default('website'),
-  // The engine could not price this booking, so `total` is a placeholder and checkout must
-  // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
-  needsPricing: boolean('needs_pricing'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const bookings = pgTable(
+  'bookings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => customers.id),
+    reference: text('reference').notNull().unique(),
+    status: text('status').notNull(),
+    mode: text('mode').notNull().default('single'),
+    total: integer('total').notNull(),
+    // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
+    // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
+    subtotal: integer('subtotal'),
+    discountTotal: integer('discount_total'),
+    pricingSnapshotJson: jsonb('pricing_snapshot_json'),
+    // What checkout collects now. Nullable: older rows may have no value and are charged
+    // the full total.
+    amountDueNow: integer('amount_due_now'),
+    currency: text('currency').notNull(),
+    idempotencyKey: text('idempotency_key').unique(),
+    // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
+    // payment-link tool will write 'whatsapp'.
+    channel: text('channel').notNull().default('website'),
+    // The engine could not price this booking, so `total` is a placeholder and checkout must
+    // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
+    needsPricing: boolean('needs_pricing'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check('bookings_total_nonnegative', sql`${t.total} >= 0`),
+    check(
+      'bookings_amount_due_now_valid',
+      sql`${t.amountDueNow} is null or (${t.amountDueNow} >= 0 and ${t.amountDueNow} <= ${t.total})`,
+    ),
+    check('bookings_currency_supported', sql`${t.currency} in ('USD')`),
+    check('bookings_mode_valid', sql`${t.mode} in ('single', 'trip', 'shared')`),
+    check(
+      'bookings_status_valid',
+      sql`${t.status} in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
+    ),
+  ],
+);
 
 export const transferRequests = pgTable('transfer_request', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -82,6 +98,57 @@ export const payments = pgTable(
   },
   (t) => [
     unique('payments_provider_gateway_payment_id_unique').on(t.provider, t.gatewayPaymentId),
+    check('payments_amount_positive', sql`${t.amount} > 0`),
+    check('payments_currency_supported', sql`${t.currency} in ('USD')`),
+    check('payments_provider_supported', sql`${t.provider} in ('payhere', 'fake')`),
+    check('payments_status_valid', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
+    check(
+      'payments_succeeded_settled_at_required',
+      sql`${t.status} <> 'succeeded' or ${t.settledAt} is not null`,
+    ),
+    check(
+      'payments_succeeded_settlement_source_required',
+      sql`${t.status} <> 'succeeded' or ${t.settlementSource} is not null`,
+    ),
+  ],
+);
+
+export const refunds = pgTable(
+  'refunds',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id),
+    provider: text('provider').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    currency: text('currency').notNull(),
+    status: text('status').notNull(),
+    reason: text('reason').notNull(),
+    gatewayRef: text('gateway_ref'),
+    requestedBy: text('requested_by').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
+    confirmedBy: text('confirmed_by'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('refunds_provider_gateway_ref_unique').on(t.provider, t.gatewayRef),
+    index('refunds_booking_id_idx').on(t.bookingId),
+    check('refunds_amount_positive', sql`${t.amountCents} > 0`),
+    check('refunds_currency_supported', sql`${t.currency} in ('USD')`),
+    check(
+      'refunds_status_valid',
+      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled')`,
+    ),
+    check(
+      'refunds_confirmation_evidence_valid',
+      sql`(${t.status} = 'manual_confirmed' and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} <> 'manual_confirmed' and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
+    ),
   ],
 );
 
@@ -160,13 +227,20 @@ export const tripRequests = pgTable('trip_request', {
   driverNights: integer('driver_nights'),
 });
 
-export const corridors = pgTable('corridor', {
-  id: text('id').primaryKey(),
-  fromPlace: text('from_place').notNull(),
-  toPlace: text('to_place').notNull(),
-  seatPrice: integer('seat_price').notNull(),
-  seatCapacity: integer('seat_capacity').notNull(),
-});
+export const corridors = pgTable(
+  'corridor',
+  {
+    id: text('id').primaryKey(),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    seatPrice: integer('seat_price').notNull(),
+    seatCapacity: integer('seat_capacity').notNull(),
+  },
+  (t) => [
+    check('corridor_seat_price_positive', sql`${t.seatPrice} > 0`),
+    check('corridor_seat_capacity_positive', sql`${t.seatCapacity} > 0`),
+  ],
+);
 
 // Inventory for the shared service (a fixed weekly schedule, not daily — corridors run
 // only on their service weekdays). The unique (corridor,date,time) lets us upsert the
@@ -183,7 +257,14 @@ export const sharedDepartures = pgTable(
     seatsTotal: integer('seats_total').notNull(),
     seatsBooked: integer('seats_booked').notNull().default(0),
   },
-  (t) => [unique().on(t.corridorId, t.date, t.time)],
+  (t) => [
+    unique().on(t.corridorId, t.date, t.time),
+    check('shared_departure_seats_total_positive', sql`${t.seatsTotal} > 0`),
+    check(
+      'shared_departure_seats_booked_valid',
+      sql`${t.seatsBooked} >= 0 and ${t.seatsBooked} <= ${t.seatsTotal}`,
+    ),
+  ],
 );
 
 export const sharedRequests = pgTable('shared_request', {
