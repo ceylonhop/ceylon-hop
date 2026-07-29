@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday } from '../testSupport/dates';
@@ -247,8 +248,9 @@ describe('shared seat release on cancel/refund', () => {
   function makeSharedApp() {
     const bookings = new InMemoryBookingRepo();
     const departures = new InMemoryDepartureRepo();
-    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email: new FakeEmailAdapter() });
-    return { app, bookings, departures };
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, payments, email: new FakeEmailAdapter() });
+    return { app, bookings, departures, payments };
   }
 
   function bookShared(app: ReturnType<typeof createApp>) {
@@ -257,6 +259,33 @@ describe('shared seat release on cancel/refund', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(shared),
     });
+  }
+
+  async function captureAndRequestFullRefund(
+    app: ReturnType<typeof createApp>,
+    payments: InMemoryPaymentRepo,
+    booking: { id: string; reference: string; total: number; currency: string },
+  ) {
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `shared-refund-${booking.id}`,
+    });
+    await payments.markSucceeded(payment.id);
+    const requested = await app.request(`/admin/bookings/${booking.id}/refunds`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({
+        amountCents: booking.total,
+        currency: booking.currency,
+        reason: 'Shared booking cancelled',
+      }),
+    });
+    expect(requested.status).toBe(201);
+    return requested.json();
   }
 
   it('cancel releases the seats — the departure can be booked again', async () => {
@@ -268,24 +297,36 @@ describe('shared seat release on cancel/refund', () => {
   });
 
   it('refund of a paid shared booking releases the seats', async () => {
-    const { app, bookings } = makeSharedApp();
+    const { app, bookings, payments } = makeSharedApp();
     const b = await (await bookShared(app)).json();
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
-    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    const refund = await captureAndRequestFullRefund(app, payments, b);
+    const confirmed = await app.request(`/admin/bookings/${b.id}/refunds/${refund.id}/confirm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({ gatewayRef: 'SHARED-REFUND-1' }),
+    });
+    expect(confirmed.status).toBe(200);
     expect((await bookShared(app)).status).toBe(201);
   });
 
   it('refund after cancel does not release the seats twice', async () => {
-    const { app, bookings, departures } = makeSharedApp();
+    const { app, bookings, departures, payments } = makeSharedApp();
     const b = await (await bookShared(app)).json();
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
+    const refund = await captureAndRequestFullRefund(app, payments, b);
     // another traveller takes 3 of the freed seats between the cancel and the refund
     await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
     const other = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 3 });
     expect(other?.seatsBooked).toBe(3);
-    await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    const confirmed = await app.request(`/admin/bookings/${b.id}/refunds/${refund.id}/confirm`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({ gatewayRef: 'SHARED-REFUND-2' }),
+    });
+    expect(confirmed.status).toBe(200);
     // the other traveller's hold must survive — no second release
     const after = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 1 });
     expect(after?.seatsBooked).toBe(4);
@@ -301,36 +342,22 @@ describe('shared seat release on cancel/refund', () => {
 });
 
 describe('POST /admin/bookings/:id/refund', () => {
-  it('refunds a paid booking for a founder/finance session, transitions it to refunded, and emails the customer', async () => {
-    const { app, bookings, email } = makeApp();
+  it('is removed so no caller can bypass the refund ledger and PayHere evidence', async () => {
+    const { app, bookings } = makeApp();
     const b = await book(app);
     await bookings.setStatus(b.id, 'payment_pending');
     await bookings.setStatus(b.id, 'paid');
     const res = await app.request(`/admin/bookings/${b.id}/refund`, {
       method: 'POST', headers: { cookie: await cookie('fin@x.com') },
     });
-    expect(res.status).toBe(200);
-    expect((await res.json()).status).toBe('refunded');
-    expect((await bookings.get(b.id))!.status).toBe('refunded');
-    expect(email.sent.filter((m) => /refund/i.test(m.subject))).toHaveLength(1);
+    expect(res.status).toBe(404);
+    expect((await bookings.get(b.id))!.status).toBe('paid');
   });
 
-  it('409 when the booking cannot be refunded (still a draft)', async () => {
+  it('does not leak the removed route to unauthenticated callers', async () => {
     const { app } = makeApp();
-    const b = await book(app);
-    const res = await app.request(`/admin/bookings/${b.id}/refund`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
-    });
-    expect(res.status).toBe(409);
-  });
-
-  it('403 for the system key — the machine key can no longer issue refunds (D6)', async () => {
-    const { app, bookings } = makeApp();
-    const b = await book(app);
-    await bookings.setStatus(b.id, 'payment_pending');
-    await bookings.setStatus(b.id, 'paid');
-    const res = await app.request(`/admin/bookings/${b.id}/refund`, { method: 'POST', headers: { 'x-admin-key': KEY } });
-    expect(res.status).toBe(403);
+    const res = await app.request('/admin/bookings/no-such/refund', { method: 'POST' });
+    expect(res.status).toBe(404);
   });
 });
 
