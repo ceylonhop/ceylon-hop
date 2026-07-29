@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { signBookingToken, verifyBookingToken } from './bookingToken';
+import {
+  CHECKOUT_TOKEN_TTL_MS,
+  signBookingToken,
+  signCheckoutToken,
+  verifyBookingToken,
+  verifyCheckoutToken,
+} from './bookingToken';
 
 const S = 'test-secret';
 
@@ -32,5 +38,40 @@ describe('bookingToken', () => {
     expect(verifyBookingToken('', S)).toBeNull();
     expect(verifyBookingToken('no-dot-here', S)).toBeNull();
     expect(verifyBookingToken('....', S)).toBeNull();
+  });
+});
+
+describe('checkout capability token', () => {
+  const NOW = Date.UTC(2026, 6, 28, 12);
+
+  it('round-trips only for its version, purpose, booking, and lifetime', () => {
+    const token = signCheckoutToken('booking-1', S, NOW);
+    expect(verifyCheckoutToken(token, 'booking-1', S, NOW)).toBe(true);
+    expect(verifyCheckoutToken(token, 'booking-2', S, NOW)).toBe(false);
+    expect(verifyCheckoutToken(token, 'booking-1', 'wrong-secret', NOW)).toBe(false);
+    expect(verifyCheckoutToken(token, 'booking-1', S, NOW + CHECKOUT_TOKEN_TTL_MS - 1)).toBe(
+      true,
+    );
+    expect(verifyCheckoutToken(token, 'booking-1', S, NOW + CHECKOUT_TOKEN_TTL_MS)).toBe(
+      false,
+    );
+  });
+
+  it('rejects missing, malformed, modified, and view-purpose tokens', () => {
+    const token = signCheckoutToken('booking-1', S, NOW);
+    const last = token.slice(-1);
+    expect(verifyCheckoutToken(undefined, 'booking-1', S, NOW)).toBe(false);
+    expect(verifyCheckoutToken('garbage', 'booking-1', S, NOW)).toBe(false);
+    expect(
+      verifyCheckoutToken(
+        token.slice(0, -1) + (last === '0' ? '1' : '0'),
+        'booking-1',
+        S,
+        NOW,
+      ),
+    ).toBe(false);
+    expect(verifyCheckoutToken(signBookingToken('booking-1', S), 'booking-1', S, NOW)).toBe(
+      false,
+    );
   });
 });

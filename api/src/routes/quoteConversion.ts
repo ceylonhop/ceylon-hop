@@ -6,6 +6,7 @@ import {
   type QuoteConversionRepo,
 } from '../db/quoteConversionRepo';
 import { WebQuoteIntentSchema } from '../quote/webQuoteV2';
+import { signCheckoutToken } from '../lib/bookingToken';
 
 const RequestSchema = z
   .object({
@@ -25,6 +26,8 @@ const RequestSchema = z
 export function quoteConversionRoutes(deps: {
   conversions?: QuoteConversionRepo;
   enabled: boolean;
+  linkSecret: string;
+  checkoutNow?: () => number;
 }) {
   const r = new Hono();
   r.post('/from-quote-v2', async (c) => {
@@ -40,7 +43,17 @@ export function quoteConversionRoutes(deps: {
     }
     try {
       const outcome = await deps.conversions.convert({ ...parsed.data, accessToken });
-      return c.json(outcome.booking, outcome.replay ? 200 : 201);
+      return c.json(
+        {
+          ...outcome.booking,
+          checkoutToken: signCheckoutToken(
+            outcome.booking.id,
+            deps.linkSecret,
+            deps.checkoutNow?.() ?? Date.now(),
+          ),
+        },
+        outcome.replay ? 200 : 201,
+      );
     } catch (error) {
       if (error instanceof QuoteConversionError) {
         const status = error.code === 'quote_access_denied' ? 403 : 409;

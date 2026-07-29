@@ -166,6 +166,30 @@ describe('CORS allow-list', () => {
     const r = await app.request('/health', { headers: { origin: 'https://evil.example.com' } });
     expect(r.headers.get('access-control-allow-origin')).toBeNull();
   });
+
+  it('allows the checkout Authorization header only for an existing allowed origin', async () => {
+    const app = createApp({ allowedOrigins: ['https://ceylonhop.com'] });
+    const allowed = await app.request('/bookings/x/checkout', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://ceylonhop.com',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://ceylonhop.com');
+    expect(allowed.headers.get('access-control-allow-headers')).toContain('authorization');
+
+    const refused = await app.request('/bookings/x/checkout', {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://evil.example.com',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization',
+      },
+    });
+    expect(refused.headers.get('access-control-allow-origin')).toBeNull();
+  });
 });
 
 // The cookie-authenticated /ops app must not be frameable (clickjacking) or MIME-sniffed.

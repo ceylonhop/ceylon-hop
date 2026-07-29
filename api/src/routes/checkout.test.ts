@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { isoToday } from '../domain/dateRules';
+import { signCheckoutToken } from '../lib/bookingToken';
+
+const SECRET = 'dev-booking-link-secret-change-me';
 
 // Dates safely in the future (past-date rejection floors bookings at today, Asia/Colombo).
 const SOON = isoToday('Asia/Colombo', new Date(Date.now() + 30 * 86_400_000));
@@ -26,12 +29,19 @@ async function book(app: ReturnType<typeof createApp>) {
   return res.json();
 }
 
+function checkout(app: ReturnType<typeof createApp>, booking: { id: string; checkoutToken: string }) {
+  return app.request(`/bookings/${booking.id}/checkout`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${booking.checkoutToken}` },
+  });
+}
+
 describe('POST /bookings/:id/checkout', () => {
   it('returns checkout params matching the booking and moves it to payment_pending', async () => {
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ bookings });
     const b = await book(app);
-    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const res = await checkout(app, b);
     expect(res.status).toBe(200);
     const params = await res.json();
     expect(params.amount).toBe(b.total);
@@ -42,7 +52,10 @@ describe('POST /bookings/:id/checkout', () => {
 
   it('404 for an unknown booking', async () => {
     const app = createApp();
-    const res = await app.request('/bookings/nope/checkout', { method: 'POST' });
+    const res = await app.request('/bookings/nope/checkout', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${signCheckoutToken('nope', SECRET)}` },
+    });
     expect(res.status).toBe(404);
   });
 });
@@ -68,7 +81,7 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
       })
     ).json();
     expect(b.total).toBe(19900); // raw 20263¢ → eligible $199 charm price
-    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const res = await checkout(app, b);
     expect(res.status).toBe(200);
     expect((await res.json()).amount).toBe(19900);
   });
@@ -79,7 +92,7 @@ describe('POST /bookings/:id/checkout — due now amount', () => {
     const b = await book(app);
     // simulate a pre-GL-3 row: amount_due_now is null in the DB
     (await bookings.get(b.id))!.amountDueNow = null;
-    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const res = await checkout(app, b);
     expect(res.status).toBe(200);
     expect((await res.json()).amount).toBe(b.total);
   });
@@ -91,7 +104,7 @@ describe('POST /bookings/:id/checkout — status gate', () => {
     const app = createApp({ bookings });
     const b = await book(app);
     await bookings.setStatus(b.id, 'cancelled'); // ops cancelled it before payment
-    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const res = await checkout(app, b);
     expect(res.status).toBe(409);
     expect((await bookings.get(b.id))!.status).toBe('cancelled'); // untouched
   });
@@ -100,9 +113,9 @@ describe('POST /bookings/:id/checkout — status gate', () => {
     const bookings = new InMemoryBookingRepo();
     const app = createApp({ bookings });
     const b = await book(app);
-    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' }); // payment_pending
+    await checkout(app, b); // payment_pending
     await bookings.setStatus(b.id, 'paid'); // settled
-    const res = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const res = await checkout(app, b);
     expect(res.status).toBe(409);
   });
 });

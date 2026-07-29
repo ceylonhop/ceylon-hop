@@ -145,7 +145,10 @@ describe('POST /bookings/from-quote-v2', () => {
     expect(editAfterConversion.status).toBe(409);
     expect((await editAfterConversion.json()).error).toBe('quote_already_converted');
 
-    const checkout = await app.request(`/bookings/${booking.id}/checkout`, { method: 'POST' });
+    const checkout = await app.request(`/bookings/${booking.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${booking.checkoutToken}` },
+    });
     expect(checkout.status).toBe(200);
     const checkoutBody = await checkout.json();
     expect(checkoutBody.amount).toBe(locked.amountDueNowCents);

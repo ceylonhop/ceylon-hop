@@ -85,6 +85,17 @@ test('booking creation sends a stable Idempotency-Key so a retried POST dedupes'
   expect(key).toMatch(/^ch-/);
 });
 
+test('checkout sends the scoped capability returned by booking creation', async ({ page }) => {
+  await gotoBooking(page);
+  await fillContact(page);
+  const checkoutRequest = page.waitForRequest('**/bookings/*/checkout');
+  await page.click('#pay-btn');
+  expect((await checkoutRequest).headers().authorization).toBe('Bearer e2e-checkout-token');
+  expect(await page.evaluate(() => JSON.stringify(window.dataLayer))).not.toContain(
+    'e2e-checkout-token',
+  );
+});
+
 test('a single transfer mints a 7-day locked quote and books against it (rate-lock §5)', async ({ page }) => {
   await gotoBooking(page);
   await fillContact(page);
