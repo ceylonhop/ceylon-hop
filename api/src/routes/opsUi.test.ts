@@ -159,6 +159,43 @@ describe('ops UI shell', () => {
   });
 });
 
+describe('ops UI — manual refund workflow (SH9)', () => {
+  it('loads the canonical refund ledger only for staff with payments:act', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain("state.caps.includes('payments:act')");
+    expect(body).toContain("adminApi.get('/bookings/'+id+'/refunds')");
+    expect(body).toContain('function refundSummary(');
+    expect(body).toContain('Refundable remaining');
+  });
+
+  it('renders request, confirm, and cancel actions against the ledger endpoints', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('data-act="refundrequest"');
+    expect(body).toContain('data-act="refundconfirm"');
+    expect(body).toContain('data-act="refundcancel"');
+    expect(body).toContain("adminApi.post('/bookings/'+id+'/refunds'");
+    expect(body).toContain("'/confirm'");
+    expect(body).toContain("'/cancel'");
+  });
+
+  it('requires PayHere dashboard completion and evidence before confirmation', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('Complete the refund in the PayHere dashboard first');
+    expect(body).toContain('PayHere refund reference');
+    expect(body).toContain('gatewayRef');
+  });
+
+  it('shows pending, confirmed, and cancelled ledger entries with actors and evidence', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('refund-status-manual_pending');
+    expect(body).toContain('refund-status-manual_confirmed');
+    expect(body).toContain('refund-status-cancelled');
+    expect(body).toContain('requestedBy');
+    expect(body).toContain('confirmedBy');
+    expect(body).toContain('gatewayRef');
+  });
+});
+
 // Bare-root alias (2026-07-19): ops.ceylonhop.com/ should serve the tool, not only /ops.
 // The shell is served at BOTH "/" and "/ops" (same-origin, same cookie); the client builds
 // URLs from location.pathname (ops-ui.html), so at the bare root the URL stays at "/".
@@ -291,6 +328,24 @@ describe('requestMismatch (spec 2026-07-17, I8/I10)', () => {
     const body = await (await createApp().request('/ops')).text();
     expect(body).toContain('requestMismatch(state.requestedService, state.service)');
     expect(body).toContain('ch-req-mismatch');
+  });
+
+  // Owner report 2026-07-26: the old 'both' line explained an internal constraint (the upsell is
+  // one-directional) instead of naming the fix, and read as gibberish next to a chooser that was
+  // visibly showing both prices. It must lead with the action and never mention "can't carry".
+  it("the 'both' note names the fix rather than the internal constraint", () => {
+    const msg = f('both', 'chauffeur') as string;
+    expect(msg).toMatch(/switch/i);
+    expect(msg).toMatch(/message to the customer/i);
+    expect(msg).not.toMatch(/can't carry/i);
+  });
+
+  it("offers a one-click switch on the 'both' mismatch, and only there", async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // The button is gated on exactly the 'both' + chauffeur pair — every other mismatch is a
+    // judgement call, so it must not sprout a remedy button.
+    expect(body).toContain("state.requestedService === 'both' && state.service === 'chauffeur'");
+    expect(body).toMatch(/ch-mismatch-fix[\s\S]{0,200}data-action="setService" data-service="private"/);
   });
 });
 

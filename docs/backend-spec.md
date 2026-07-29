@@ -256,6 +256,17 @@ prices; an unknown cost fails closed. See
 for the complete identity, lifecycle, schema, API, RBAC, UI, testing, and rollout
 contract.
 
+### 6.2 Money and checkout security gate (proposed 2026-07-27)
+
+Before broader live-payment traffic, promotions, or deposits, the payment pipeline gains a
+mandatory security gate: strict PayHere event parsing, immutable provider evidence, atomic
+payment/booking settlement, exact quote-v2 conversion, scoped checkout capabilities, database
+money constraints, and an auditable manual-refund ledger. This preserves the existing
+server-authoritative pricing and hosted-checkout decisions while closing crash/retry and
+authorization gaps. See the
+[design](./superpowers/specs/2026-07-27-money-checkout-security-hardening-design.md) and
+[implementation plan](./superpowers/plans/2026-07-27-money-checkout-security-hardening.md).
+
 ---
 
 ## 7. Booking lifecycle (state machine)

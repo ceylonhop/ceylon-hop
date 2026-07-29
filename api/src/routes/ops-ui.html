@@ -255,7 +255,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      edge, faint ink — present enough to scan for, quiet enough not to compete with the
      rows that DO name someone. Wider than a name chip; "Unassigned" must not ellipsis. */
   .qassignee.nobody{color:var(--ink-faint);background:transparent;border-style:dashed;border-color:var(--cream-deep);font-weight:600;max-width:none}
-  .qsec-mine .qsection-title{color:#0a7d78}
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
@@ -316,6 +315,21 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
+  .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
+  .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
+  .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+  .refund-form input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+  .refund-row{border:1px solid var(--line);border-left:4px solid var(--ink-faint);border-radius:11px;padding:11px 12px;margin-top:9px;background:var(--paper)}
+  .refund-row.refund-status-manual_pending{border-left-color:var(--wait);background:var(--wait-bg)}
+  .refund-row.refund-status-manual_confirmed{border-left-color:var(--ok);background:var(--ok-bg)}
+  .refund-row.refund-status-cancelled{border-left-color:var(--ink-faint);opacity:.72}
+  .refund-row-head{display:flex;justify-content:space-between;gap:10px;font-weight:700}
+  .refund-meta{font-size:.77rem;color:var(--ink-soft);margin-top:5px;overflow-wrap:anywhere}
+  .refund-confirm{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;margin-top:10px}
+  .refund-confirm label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
+  .refund-confirm input{min-width:0;border:1px solid #e4c984;background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit}
+  .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
+  @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
   /* activity */
   .act{position:relative;padding-left:23px;margin-bottom:15px}
   .act::before{content:"";position:absolute;left:5px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--c,var(--teal));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--teal)) 16%,transparent)}
@@ -480,6 +494,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-head-assign { max-width: 148px; font-size: 12.5px; font-weight: 600; padding: 7px 9px; color: var(--ink-soft); }
 .qv .ch-head-assign.mine { color: #0a7d78; background: #dff5f3; border-color: #bfe9e5; }
 .qv .ch-head-assign.none { color: var(--ink-faint); border-style: dashed; border-color: var(--cream-deep); }
+/* Disabled (pre-save) must stay READABLE. Chrome dims a disabled select's text on top of whatever
+   colour we set, and .none is already faint — the two together rendered an apparently empty box. */
+.qv .ch-head-assign:disabled { color: var(--ink-soft); opacity: 1; -webkit-text-fill-color: var(--ink-soft); cursor: not-allowed; max-width: 190px; }
 .qv .ch-assign-audit { font-size: 11.5px; color: var(--ink-faint); margin-left: auto; }
 /* Provenance footer — quiet created/updated-by line at the bottom-right of the builder. */
 .qv .ch-provenance { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line-soft); text-align: right; }
@@ -1080,6 +1097,28 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* Mismatch stays in the price panel under the service chooser (no longer under the chips), so a
    small positive top margin sits it cleanly below the price boxes. */
 .qv .ch-req-mismatch { margin: 4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
+/* "Not ready to submit" panel. Amber like the other review-state banners (this is a hold, not
+   an error), sitting where the send-back composer sits so the whole maker-checker conversation
+   happens in one place at the top of the editor. */
+.qv .ch-blockers { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.3); color: #8a5a12; }
+.qv .ch-blockers-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.qv .ch-blockers-close { margin-left: auto; border: 0; background: none; color: inherit; font-size: 18px; line-height: 1; cursor: pointer; opacity: .6; padding: 0 2px; }
+.qv .ch-blockers-close:hover { opacity: 1; }
+.qv .ch-blockers-sub { margin: 3px 0 9px; font-size: 11.5px; opacity: .85; }
+.qv .ch-blockers-locked { margin: 9px 0 0; }
+.qv .ch-blockers-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+/* Rows are buttons, so they must LOOK clickable without shouting — full-width, left-aligned,
+   with the arrow appearing on hover rather than sitting there on every row. */
+.qv .ch-blocker-row { display: block; width: 100%; text-align: left; padding: 6px 9px; border-radius: 7px; border: 1px solid rgba(214,138,42,.28); background: rgba(255,255,255,.35); color: inherit; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.qv .ch-blocker-row:hover { background: rgba(255,255,255,.7); border-color: rgba(214,138,42,.5); }
+.qv .ch-blocker-row:hover::after { content: ' \\2192'; }
+/* The submit button while something is missing: still fully live, just visibly not-yet-ready. */
+.qv .ch-btn-needs { opacity: .78; }
+.qv .ch-btn-needs:hover { opacity: 1; }
+/* The one-click remedy inside the 'both' mismatch note. Sits on its own line under the sentence
+   so the note still reads as prose, not as a button with a caption. */
+.qv .ch-mismatch-fix { display: block; margin-top: 7px; padding: 5px 10px; border-radius: 7px; border: 1px solid rgba(214,138,42,.45); background: rgba(214,138,42,.14); color: #8a5a12; font: inherit; font-weight: 700; cursor: pointer; }
+.qv .ch-mismatch-fix:hover { background: rgba(214,138,42,.24); }
 .qv .ch-svc-caption { padding: 0 16px 12px; font-size: 11.5px; color: var(--teal-d); line-height: 1.4; font-weight: 500; margin-top: -4px; }
 
 /* --- 2. km line — one text line, not tiles --- */
@@ -1230,6 +1269,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* amber-tinted one-offs that hardcode light values */
   :root[data-theme="dark"] .qv .ch-sendback{border-color:#5b4a22}
   :root[data-theme="dark"] .qv .ch-req-mismatch{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-mismatch-fix{background:rgba(224,163,62,.18);border-color:rgba(224,163,62,.45);color:#f0c880}
+  :root[data-theme="dark"] .qv .ch-mismatch-fix:hover{background:rgba(224,163,62,.3)}
+  :root[data-theme="dark"] .qv .ch-blockers{background:rgba(224,163,62,.12);border-color:rgba(224,163,62,.35);color:#e8b96a}
+  :root[data-theme="dark"] .qv .ch-blocker-row{background:rgba(255,255,255,.05);border-color:rgba(224,163,62,.3)}
+  :root[data-theme="dark"] .qv .ch-blocker-row:hover{background:rgba(255,255,255,.1);border-color:rgba(224,163,62,.5)}
   :root[data-theme="dark"] .kbar{background:rgba(0,0,0,.55)}
   :root[data-theme="dark"] .topbar{background:rgba(20,19,19,.78)}
   /* stage tones arrive as inline light pastels (STAGE map) — remix them against dark paper */
@@ -1432,6 +1476,12 @@ const api={
   async get(p){const r=await fetch('/admin/ops'+p,{credentials:'same-origin'});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
   async post(p,body){const r=await fetch('/admin/ops'+p,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body??{})});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
 };
+/* Money actions live on the capability-gated /admin API, not the general /admin/ops
+   surface. Keeping the base explicit makes an accidental status-only refund impossible. */
+const adminApi={
+  async get(p){const r=await fetch('/admin'+p,{credentials:'same-origin'});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
+  async post(p,body){const r=await fetch('/admin'+p,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body??{})});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok){const x=await r.json().catch(()=>null);throw new Error(x&&x.error?x.error:'api '+r.status);}return r.json();},
+};
 
 /* ── row → ticket mapping (backend OpsBookingRow → view model) ── */
 function rowToTicket(row){
@@ -1465,6 +1515,7 @@ const boardSeats=t=>{
 let tickets=[];
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
+const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
 
 function routeStateFromUrl(canQuote){
   const url=new URL(window.location.href);
@@ -1656,9 +1707,11 @@ const QSTATUS={
 };
 // Section order encodes "what's on your plate first". Approvers (founder) triage the
 // review queue; support acts on approved + sent-back quotes. Closed always sinks last.
-// Statuses that still need work from whoever holds the quote (drives the "Assigned to me"
-// section). Excludes sent/won/lost/expired — those are closed, not someone's to-do.
-const MINE_STATUSES=['draft','pending_review','changes_requested','ready'];
+// STATUS IS THE ONLY AXIS (owner, 2026-07-26). There used to be an "Assigned to me" section
+// that PARTITIONED the queue — a quote assigned to you was lifted OUT of its status section —
+// so a quote that was both yours and approved never appeared under "Ready to send", and the two
+// headings read as competing categories. Now every quote sits in its status section, always;
+// "mine" is an attribute of the row (the `you` chip + sort priority), not a place.
 const QUEUE_SECTIONS_APPROVER=[
   {id:'review',label:'Needs your review',statuses:['pending_review'],hint:'Check pricing &amp; margin, then approve or send back'},
   {id:'ready',label:'Ready to send',statuses:['ready'],hint:'Approved — hand back to support to send'},
@@ -1802,10 +1855,11 @@ function assigneeChip(email){
 function unassignedChip(){
   return '<span class="qassignee nobody" title="Nobody is assigned to this quote yet">Unassigned</span>';
 }
-// hideAssignee: suppress the chip inside the "Assigned to me" section, where it only ever
-// says "you". NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml)
-// would pass the array index in as hideAssignee.
-function quoteRowHtml(q,hideAssignee,query){
+// The assignee chip now rides on EVERY row: with the "Assigned to me" section gone, the chip is
+// the only thing that says a quote is yours, so it can never be suppressed.
+// NOTE callers must use .map(q=>quoteRowHtml(q)) — a bare .map(quoteRowHtml) would pass the
+// array index in as `query`.
+function quoteRowHtml(q,query){
   /* While searching, the product cell carries the route instead — a row that matched on a
      place has to say which place. Windowed around the match because this cell ellipses. */
   const route=query?quoteRouteWindow(q.routeText,query):'';
@@ -1817,7 +1871,7 @@ function quoteRowHtml(q,hideAssignee,query){
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
     <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
-    <span class="qstat">${hideAssignee?'':(q.assignedTo?assigneeChip(q.assignedTo):unassignedChip())}${quoteAgeChip(q)}${statusPill(q.status)}</span>
+    <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
 
@@ -1845,14 +1899,8 @@ function viewQuotes(){
   renderQuotesTopbar();
   const query=quoteQuery.trim();
   const sections=isApprover()?QUEUE_SECTIONS_APPROVER:QUEUE_SECTIONS_SUPPORT;
-  // "Assigned to me" is a PARTITION, not an overlay: a quote assigned to me is lifted out of
-  // its status section rather than duplicated into two. The status sections already tile the
-  // queue exactly once each (their status lists don't overlap), and a row appearing twice in
-  // one list reads as a bug. The status pill on the row still says where it is in the flow.
-  // Open states only — a sent/won/lost quote assigned to me is history, not work.
-  const mineRows=opsQuotes.filter(q=>isMineEmail(q.assignedTo)&&MINE_STATUSES.includes(q.status));
-  const mineIds=new Set(mineRows.map(q=>q.id));
-  const byStatus={};opsQuotes.forEach(q=>{if(mineIds.has(q.id))return;(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
+  // Every quote lands in exactly one status section — no rows are held back for a "mine" section.
+  const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
   const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
   const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
   // Search results come from opsQuotes DIRECTLY — never from mineRows/byStatus, which partition
@@ -1888,7 +1936,7 @@ function viewQuotes(){
         <div class="qsection-head">
           <h2 class="qsection-title">Results<span class="qsection-count">${results.length}</span></h2>
         </div>
-        <div class="qlist">${results.map(q=>quoteRowHtml(q,false,query)).join('')}</div>
+        <div class="qlist">${results.map(q=>quoteRowHtml(q,query)).join('')}</div>
       </div>`;
     }else if(hits.length){
       // The active chip is hiding every match. Say so — a filter you forgot was on is the
@@ -1901,21 +1949,15 @@ function viewQuotes(){
     paintQuotesView(html);return;
   }
   let rendered=0;
-  const mineVisible=allowed?mineRows.filter(q=>allowed.has(q.status)):mineRows;
-  if(mineVisible.length){
-    rendered++;
-    html+=`<div class="qsection qsec-mine">
-      <div class="qsection-head">
-        <h2 class="qsection-title">Assigned to me<span class="qsection-count">${mineVisible.length}</span></h2>
-        <span class="qsection-hint">Handed to you — yours to move</span>
-      </div>
-      <div class="qlist">${mineVisible.map(q=>quoteRowHtml(q,true)).join('')}</div>
-    </div>`;
-  }
   sections.forEach(sec=>{
     const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
     const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
     if(!rows.length)return;
+    // Yours first within the section. A stable partition (not .sort, which would also reorder
+    // the rest) so the server's ordering survives inside each half.
+    const mine=rows.filter(q=>isMineEmail(q.assignedTo));
+    const rest=rows.filter(q=>!isMineEmail(q.assignedTo));
+    rows.length=0;rows.push(...mine,...rest);
     rendered++;
     html+=`<div class="qsection qsec-${sec.id}">
       <div class="qsection-head">
@@ -2122,6 +2164,7 @@ function buildActivity(t,d){
   const acts=[];
   if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
   (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push(['Payment',`Received · ${money({amount:p.amount,currency:p.currency})}`]);});
+  (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
   t.notes.forEach(n=>acts.push(['Note',n]));
@@ -2141,6 +2184,47 @@ function legsHtmlFor(d){
     return `<div class="legs">${rows}</div>`;
   }
   return '<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
+}
+
+function refundSummary(d){
+  const captured=(d?.payments||[]).filter(p=>p.status==='succeeded').reduce((sum,p)=>sum+(p.amount||0),0);
+  const refunds=d?.refunds||[];
+  const confirmed=refunds.filter(r=>r.status==='manual_confirmed').reduce((sum,r)=>sum+r.amountCents,0);
+  const pending=refunds.filter(r=>r.status==='manual_pending').reduce((sum,r)=>sum+r.amountCents,0);
+  const payment=(d?.payments||[]).find(p=>p.status==='succeeded');
+  return {captured,confirmed,pending,remaining:Math.max(0,captured-confirmed-pending),currency:payment?.currency||d?.booking?.currency||'USD'};
+}
+
+function refundHtmlFor(t,d){
+  if(!state.caps||!state.caps.includes('payments:act'))return '';
+  const s=refundSummary(d),refunds=d?.refunds||[];
+  const rows=refunds.slice().reverse().map(r=>{
+    const label=r.status==='manual_pending'?'Pending':r.status==='manual_confirmed'?'Confirmed':'Cancelled';
+    const evidence=r.gatewayRef?` · PayHere ref ${esc(r.gatewayRef)}`:'';
+    const confirmed=r.confirmedBy?` · confirmed by ${esc(r.confirmedBy)}`:'';
+    const pendingActions=r.status==='manual_pending'?`
+      <p class="refund-warning">Complete the refund in the PayHere dashboard first. Then paste its reference to confirm the customer refund and send the email.</p>
+      <div class="refund-confirm">
+        <label>PayHere refund reference<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="Required evidence"></label>
+        <button class="btn btn-go" data-act="refundconfirm" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Confirm refund</button>
+        <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
+      </div>`:'';
+    return `<div class="refund-row refund-status-${esc(r.status)}">
+      <div class="refund-row-head"><span>${label}</span><span>${money({amount:r.amountCents,currency:r.currency})}</span></div>
+      <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
+      ${pendingActions}</div>`;
+  }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
+  const request=s.remaining>0?`<div class="refund-form">
+    <label>Refund amount (${esc(s.currency)})<input id="refundamount" inputmode="decimal" placeholder="0.00"></label>
+    <label>Reason<input id="refundreason" maxlength="500" placeholder="Customer request"></label>
+    <button class="btn btn-go" data-act="refundrequest" data-id="${esc(t.id)}">Request refund</button>
+  </div>`:'';
+  return `<div class="block"><h4>Refunds</h4>
+    <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Previously refunded</span><span class="v">${money({amount:s.confirmed,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Pending</span><span class="v">${money({amount:s.pending,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Refundable remaining</span><span class="v">${money({amount:s.remaining,currency:s.currency})}</span></div>
+    ${request}${rows}</div>`;
 }
 
 /* detail */
@@ -2242,6 +2326,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
+      ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
         <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
         <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
@@ -2259,8 +2344,26 @@ async function openDetail(id){
   /* A ride-board van has no booking row — GET /bookings/board:XX-1234 would 404.
      Everything its sheet shows already arrived on the queue row. */
   if(String(id).indexOf('board:')===0)return;
-  try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
+  try{
+    const detail=await api.get('/bookings/'+id);
+    if(state.caps&&state.caps.includes('payments:act')){
+      try{detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');}
+      catch(refundErr){
+        if(refundErr.message==='auth')throw refundErr;
+        detail.refunds=[];
+        window.opsReportError&&window.opsReportError('refund history',refundErr);
+        toast('Booking loaded, but refund history is unavailable');
+      }
+    }
+    state.detailData=detail;if(state.detail===id)renderSheet();
+  }
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
+}
+
+async function reloadRefundDetail(id){
+  const detail=await api.get('/bookings/'+id);
+  detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
+  if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
 let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -2476,7 +2579,7 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','refundrequest','refundconfirm','refundcancel'].includes(act))return;
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
@@ -2485,6 +2588,47 @@ document.addEventListener('click',async e=>{
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+    case 'refundrequest':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
+      const amountInput=$('#refundamount'),reasonInput=$('#refundreason');
+      const amountText=amountInput&&amountInput.value.trim();
+      const amountCents=/^\d+(?:\.\d{1,2})?$/.test(amountText||'')?Math.round(Number(amountText)*100):0;
+      const reason=reasonInput&&reasonInput.value.trim();
+      const s=refundSummary(state.detailData);
+      if(!amountCents||amountCents>s.remaining){toast('Enter an amount within the refundable balance');break;}
+      if(!reason){toast('Add a refund reason');break;}
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
+    case 'refundconfirm':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const refundId=el.dataset.refundId;
+      const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
+      const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
+      const gatewayRef=refInput&&refInput.value.trim();
+      if(!gatewayRef){toast('Paste the PayHere refund reference first');break;}
+      if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/confirm',{gatewayRef});await reloadRefundDetail(id);toast('Refund confirmed — customer emailed');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund confirm',err);toast('Could not confirm refund');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
+    case 'refundcancel':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const refundId=el.dataset.refundId;
+      const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
+      if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
   }
 });
 /* Quotes search. Repaints only #view — never the topbar — so the input keeps focus and caret
@@ -2753,6 +2897,10 @@ var hotZones = null;      // Hot-zones admin: loaded zone list (null = not loade
 var hzEditId = null;      // id of the zone currently being edited inline, or null (add mode)
 var hzBusy = false;       // a hot-zones write is in flight (disables the form)
 var sendBackOpen = false; // inline "send back for changes" note composer (founder)
+// "Not ready to submit" panel: opened by pressing Submit/Approve with blockers outstanding,
+// closed when the operator dismisses it or the submission actually goes through. Not derived
+// from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
+var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
@@ -3210,7 +3358,7 @@ function requestMismatch(requested, priced) {
   if (!requested) return null;
   if (requested === 'both') {
     return priced === 'private' ? null
-      : "Customer asked for both — a chauffeur-priced quote can't carry the point-to-point price. Price it point-to-point and add the chauffeur option.";
+      : 'Customer asked for both prices. Both are showing here, but the message to the customer can only carry both when the quote is priced Point-to-point — switch, and the chauffeur price rides along as an option.';
   }
   if (requested === priced) return null;
   return requested === 'private'
@@ -3525,11 +3673,14 @@ function resetToNew() {
   };
   lastEstimate = null;
   lastEstimateError = null;
+  _pricedLegMap = [];      // per-quote — never inherit the previous quote's map (see reopenQuote)
+  lastEstimatePartial = 0;
   outputTab = 'whatsapp';
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   outputOpen = null; // back to the layout default
   sendBackOpen = false;
+  submitBlockersOpen = false;
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
@@ -3630,8 +3781,23 @@ async function transition(toStatus, opts) {
   }
 }
 
-function submitForReview() { transition('pending_review', { toast: 'Submitted for review', goQueue: true }); }
-function approveReady()    { transition('ready', { toast: 'Approved — ready to send', goQueue: true }); }
+/* Submit readiness (owner, 2026-07-26). The button is deliberately NEVER disabled: pressing it
+   is how the operator LEARNS what's missing. A disabled control with a hover title reads as a
+   broken button, and on the states that used to gate it that is exactly what was reported. */
+function submitForReview() {
+  var blockers = submitBlockers();
+  if (blockers.length) { submitBlockersOpen = true; render(); return; } // the panel names them
+  submitBlockersOpen = false;
+  transition('pending_review', { toast: 'Submitted for review', goQueue: true });
+}
+/* Self-approval runs the same gate: 'ready' is a customer-facing state, so it can't be reached
+   with less than a submission needs. (The server independently enforces requestedService.) */
+function approveReady() {
+  var blockers = submitBlockers();
+  if (blockers.length) { submitBlockersOpen = true; render(); return; }
+  submitBlockersOpen = false;
+  transition('ready', { toast: 'Approved — ready to send', goQueue: true });
+}
 function markSent()        { transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 function markOutcome(s)    { transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
 function reopenToDraft()   { transition('draft', { toast: 'Reopened for editing' }); }
@@ -3819,9 +3985,15 @@ async function reopenQuote(id) {
 
   lastEstimate = null;
   lastEstimateError = null;
+  // The leg map is per-quote state and MUST be reset with the estimate it belongs to. Leaving the
+  // previous quote's map in place made a rate-locked quote render '—' on every leg past the old
+  // map's length — and read the wrong slot for the ones inside it (owner report 2026-07-26).
+  _pricedLegMap = [];
+  lastEstimatePartial = 0;
   outputDrafts = { whatsapp: null, email: null };
   outputIncludeChauffeurUpsell = false;
   sendBackOpen = false;
+  submitBlockersOpen = false;
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
@@ -3830,6 +4002,9 @@ async function reopenQuote(id) {
   // since approval. Editable states still price live as the operator builds.
   if ((q.status === 'ready' || q.status === 'sent') && q.estimate) {
     lastEstimate = q.estimate;
+    // The server priced the WHOLE stored itinerary (lockedEstimate), so the map is the plain
+    // driving-position one. Without this the per-leg prices have no map to read and vanish.
+    _pricedLegMap = fullPricedLegMap(state.legs);
     render();
   } else {
     render();
@@ -3873,6 +4048,18 @@ function drivingIndex(stateIdx) {
   return legDrives(state.legs[stateIdx]) ? d : -1;
 }
 
+// The FULL-itinerary leg map: every driving leg in order, stay days at -1. This is the map for
+// any estimate that priced the whole itinerary — a server-side locked estimate on a ready/sent
+// quote, where there is no partial-pricing subset to account for. _runEstimate builds its own
+// map instead, because it may deliberately price only a READY subset (Defect A).
+function fullPricedLegMap(legs) {
+  var map = [], d = -1;
+  for (var i = 0; i < (legs || []).length; i++) {
+    if (legDrives(legs[i])) { d++; map[i] = d; } else map[i] = -1;
+  }
+  return map;
+}
+
 function getLegBreakdownPrice(legIdx) {
   if (!lastEstimate || !lastEstimate.breakdown || !lastEstimate.breakdown.legs) return null;
   // _pricedLegMap slots each leg into breakdown.legs; -1 = a stay day, or a leg left out of a
@@ -3892,6 +4079,24 @@ function fmtDur(hours) {
   var mins = Math.round(hours * 60);
   var h = Math.floor(mins / 60), m = mins % 60;
   return h > 0 ? (h + 'h' + (m ? ' ' + m + 'm' : '')) : (m + 'm');
+}
+
+/* The earliest date leg `idx` may take: the nearest DATED leg above it, else today (a trip can't
+   start in the past). Two jobs at once —
+     • the native calendar opens on this month when the field is empty, so a leg added to a trip
+       three months out no longer opens on today's month (owner, 2026-07-26); and
+     • a later leg can no longer be dated before an earlier one, which until now was only a
+       warning in the flags card ("Dates out of order").
+   Scans UPWARD for the nearest dated leg rather than using idx-1, so one undated leg in the
+   middle doesn't drop the whole chain back to today. Never returns a past date: an old dated
+   leg on a reopened quote must not re-open the calendar to last month. */
+function legDateFloor(idx) {
+  var today = fmtISODateLocal(new Date());
+  for (var i = idx - 1; i >= 0; i--) {
+    var d = state.legs[i] && state.legs[i].date;
+    if (d) return d > today ? d : today;
+  }
+  return today;
 }
 
 function renderLegCard(leg, idx, total) {
@@ -3999,12 +4204,15 @@ function renderLegCard(leg, idx, total) {
     ].join('');
   }
 
-  // Date pill (KEEP input[type=date][data-field=date]). min = today so a past date can't be
-  // picked from the native calendar (the change handler also rejects a typed past value).
+  // Date pill (KEEP input[type=date][data-field=date]). min is the earliest date this leg could
+  // sensibly take — see legDateFloor: today, or the leg above's date once one is set. The native
+  // calendar opens on min's month when the field is empty, so adding leg 5 to a trip that starts
+  // in September no longer opens on today and make the operator page forward every time (owner,
+  // 2026-07-26). It also stops a later leg being dated before an earlier one.
   var dateNeeded = state.service === 'chauffeur' && distinctLegDateCount() >= 2 && !leg.date;
   var dateHtml = [
     '<div class="ch-leg-date' + (dateNeeded ? ' invalid' : '') + '">',
-    '  <input type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    '  <input type="date" min="' + esc(legDateFloor(idx)) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
     (dateNeeded ? '  <span class="ch-leg-date-hint">date required</span>' : ''),
     '</div>',
   ].join('');
@@ -4492,7 +4700,16 @@ function renderServiceChooser() {
   // the trip is priced, and this is where the priced service (state.service) is chosen and shown.
   // I8: signal, not a gate.
   var _mm = requestMismatch(state.requestedService, state.service);
-  if (_mm) parts.push('<div class="ch-req-mismatch">' + esc(_mm) + '</div>');
+  if (_mm) {
+    // The 'both' case names exactly one remedy — switching the priced service to point-to-point —
+    // so put it one click away instead of asking the operator to go find the chooser box above.
+    // Every other mismatch is a judgement call (the reviewer may well want the priced service it
+    // has), so those stay a plain sentence with no button.
+    var _mmFix = (state.requestedService === 'both' && state.service === 'chauffeur')
+      ? '<button class="ch-mismatch-fix" data-action="setService" data-service="private" type="button">Switch to Point-to-point</button>'
+      : '';
+    parts.push('<div class="ch-req-mismatch">' + esc(_mm) + _mmFix + '</div>');
+  }
 
   if (chaufActive && !chaufDisabled) {
     parts.push('<div class="ch-svc-caption">Car &amp; driver stay with you — sightseeing/waiting included.</div>');
@@ -4523,6 +4740,47 @@ function priceNeeds() {
   var undated = chauffeurUndatedLegs().length;
   if (undated > 0) needs.push(undated === 1 ? 'a date on the undated leg (chauffeur)' : 'a date on ' + undated + ' legs (chauffeur)');
   return needs;
+}
+
+/* ── Submit readiness (owner, 2026-07-26) ────────────────────────────────────
+   What must be present before a quote can go to review. Until now the ONLY submit gate was
+   requestedService, expressed as a disabled button with a hover title — so a quote with no
+   contact, no price or half-resolved distances sailed into review, and the one thing that WAS
+   gated looked broken rather than unfinished ("the button doesn't work").
+
+   Blockers are ABSENCES — things simply not filled in, which can't be a deliberate choice.
+   Judgement calls (legs that don't connect, capacity warnings, a long drive, dates out of
+   order) stay in the flags card for the reviewer to weigh; blocking those would trap an
+   operator whose gap is intentional.
+
+   Each entry carries a `focus` selector so the panel can put the cursor on the actual field.
+   Returns [] when the quote is ready. */
+function submitBlockers() {
+  var out = [];
+  var add = function(label, focus) { out.push({ label: label, focus: focus }); };
+  if (!(state.firstName || '').trim()) add('The customer’s first name', '#f-firstName');
+  if (!(state.contact || '').trim()) add('A way to contact the customer (WhatsApp or email)', '#f-contact');
+  if (!state.requestedService) add('What the customer asked for', '[data-action="setRequestedService"]');
+  if (!state.vehicleType) add('A vehicle', '[data-action="setVehicle"]');
+  if ((state.legs || []).some(legChainDuplicate)) {
+    add('Two consecutive stops are the same — remove or edit one', '.ch-leg');
+  }
+  var undist = 0;
+  (state.legs || []).forEach(function(l) { if (l.category !== 'stay_day' && !(legKm(l) > 0)) undist++; });
+  // Both point at the marker the leg card already renders for the missing value — the "No
+  // distance" pill and the date pill's invalid state — so the panel lands the operator on the
+  // exact control rather than the top of a leg.
+  if (undist > 0) add(undist === 1 ? 'A distance on one leg' : 'Distances on ' + undist + ' legs', '.ch-dist-pill.warn');
+  var undated = chauffeurUndatedLegs().length;
+  if (undated > 0) {
+    add(undated === 1 ? 'A date on the undated leg (chauffeur trips need one per leg)'
+      : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
+  }
+  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the
+     cause. Only surfaced when nothing else explains it — otherwise the panel says the same
+     thing twice. */
+  if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  return out;
 }
 
 function renderSummaryCardBody() {
@@ -5332,15 +5590,21 @@ var DELETABLE_LOCKED_STATES = ['pending_review', 'ready'];
 // a draft in one hop), sends back, or edits in place. Buttons are data-action delegated.
 function renderActionBar() {
   var s = state.status, approver = isApprover(), out = [];
-  // Quote intent (spec 2026-07-17): a quote can't be submitted for review — or self-approved —
-  // until the customer request is recorded. Mirror the server gate on the client so the buttons
-  // that would 400 are disabled with a reason. Save is NEVER gated (work-in-progress must save).
-  var needReq = !state.requestedService, reqHint = 'Record what the customer asked for first';
   var B = function(action, label, cls, disabled, title) {
     return '<button class="ch-btn ' + cls + '" data-action="' + action + '"'
       + (disabled ? ' disabled' : '') + (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</button>';
   };
-  var GB = function(action, label, cls) { return B(action, label, cls, needReq, needReq ? reqHint : null); }; // gated button
+  /* Submit readiness (owner, 2026-07-26). These used to be DISABLED whenever the customer
+     request was unrecorded, which reads as a broken button — the operator can't tell "not
+     allowed" from "not working", and the reason was hidden in a hover title. They are now
+     always live: submitForReview()/approveReady() run submitBlockers() and open a panel naming
+     everything that's missing. The visual cue moves onto the button (a quiet "needs" tint) so
+     the state is still legible before you press. The server keeps its own gate regardless. */
+  var needCount = submitBlockers().length;
+  var GB = function(action, label, cls) {
+    return B(action, label, cls + (needCount ? ' ch-btn-needs' : ''), false,
+      needCount ? (needCount === 1 ? '1 thing is still missing — press to see it' : needCount + ' things are still missing — press to see them') : null);
+  };
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
@@ -5388,13 +5652,25 @@ async function loadOpsUsers() {
 
 // Assignee picker — lives in the header next to the action buttons (spec 2026-07-22). No label:
 // the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
-// someone, so it stays a first-class control; hidden until the quote is saved (no id to assign).
-// A new quote is auto-assigned to its creator server-side, so this opens already on the maker.
+// someone, so it stays a first-class control.
+// It used to be HIDDEN until the quote was saved, which read as the control appearing and
+// disappearing at random (owner, 2026-07-26). It is now always present and simply DISABLED until
+// there is a row to assign — assignment is a PATCH against an id, so there is genuinely nothing
+// to send before the first save. A new quote is auto-assigned to its creator server-side, so it
+// resolves to the maker the moment it saves.
 function renderHeaderAssign() {
-  if (!state.savedId) return '';
+  var unsaved = !state.savedId;
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
-  var opts = ['<option value="">Unassigned</option>'];
+  // On an unsaved quote the placeholder states what WILL happen rather than "Unassigned" — the
+  // server auto-assigns a new quote to its creator on save, so "Unassigned" would be a small lie
+  // about a control the operator can't act on yet.
+  // The placeholder MUST carry `selected` when nobody holds the quote. A freshly parsed <select>
+  // defaults to option 0, but morphdom patches this element's children in place on re-render — and
+  // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
+  // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
+  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>'
+    + (unsaved ? 'Assigned to you on save' : 'Unassigned') + '</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5404,8 +5680,12 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
+  var title = unsaved
+    ? 'Save the quote first — it is assigned to you on save, and you can hand it over from here'
+    : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
-    + ' aria-label="Assign this quote" title="Assign this quote — click to reassign">' + opts.join('') + '</select>';
+    + (unsaved ? ' disabled' : '')
+    + ' aria-label="Assign this quote" title="' + esc(title) + '">' + opts.join('') + '</select>';
 }
 
 // Provenance — a quiet created/updated-by footer pinned to the bottom-right of the builder.
@@ -5437,6 +5717,36 @@ async function assignQuote(email) {
   showToast(state.assignedTo ? ('Assigned to ' + userLabel(state.assignedTo)) : 'Unassigned');
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   render();
+}
+
+/* The "Not ready to submit" panel (owner, 2026-07-26). Opened by pressing Submit for review /
+   Approve while submitBlockers() is non-empty. Each row is a button that scrolls its field into
+   view and focuses it, so the list is a route to the fix rather than a scolding. */
+function renderSubmitBlockers() {
+  if (!submitBlockersOpen) return '';
+  var blockers = submitBlockers();
+  if (!blockers.length) return ''; // everything got filled in while the panel was open
+  var rows = blockers.map(function(b) {
+    return '<li><button type="button" class="ch-blocker-row" data-action="focusBlocker"'
+      + ' data-focus="' + esc(b.focus) + '">' + esc(b.label) + '</button></li>';
+  }).join('');
+  return [
+    '<div class="ch-blockers" role="alert">',
+    '  <div class="ch-blockers-head">',
+    '    <b>Not ready to submit</b>',
+    '    <button type="button" class="ch-blockers-close" data-action="dismissBlockers" aria-label="Dismiss">&times;</button>',
+    '  </div>',
+    '  <p class="ch-blockers-sub">' + (blockers.length === 1 ? 'One thing is' : blockers.length + ' things are')
+      + ' still missing. Click one to jump to it.</p>',
+    '  <ul class="ch-blockers-list">' + rows + '</ul>',
+    /* A quote already in review is content-LOCKED (isEditableNow), so every field the rows point
+       at is disabled — which reads as a dead list unless we name the one door back in. Reachable
+       for a quote submitted before this gate existed, or one whose price later fell out. */
+    (isEditableNow() ? '' :
+      '  <p class="ch-blockers-sub ch-blockers-locked">This quote is locked while in review — '
+      + '<b>Reopen to edit</b> to fix these, then resubmit.</p>'),
+    '</div>',
+  ].join('');
 }
 
 function renderReviewBanner() {
@@ -5606,6 +5916,7 @@ function render() {
       '        </div>',
       '      </div>',
     ].join('') : ''),
+    renderSubmitBlockers(),
     renderReviewBanner(),
 
     // Customer strip (one compact row)
@@ -5620,7 +5931,10 @@ function render() {
     '            <div class="ch-input-wrap"><input class="ch-input" id="f-lastName" type="text" placeholder="e.g. Silva" value="' + esc(st.lastName) + '" /></div>',
     '          </div>',
     '          <div class="ch-field">',
-    '            <label class="ch-field-label">WhatsApp / email <span style="color:var(--ink-faint);font-weight:400">(optional)</span></label>',
+    // Required from 2026-07-26: a quote nobody can be reached with isn't reviewable, so it's a
+    // submit blocker — and the label has to agree with the gate. Still free-form while drafting;
+    // only SUBMISSION needs it, so a half-taken enquiry saves exactly as before.
+    '            <label class="ch-field-label">WhatsApp / email <em class="req">*</em></label>',
     '            <div class="ch-input-wrap"><input class="ch-input' + (contactBad ? ' invalid' : '') + '" id="f-contact" type="text" placeholder="+94 77 123 4567 or name@email.com" value="' + esc(st.contact) + '" /></div>',
     '            <span class="ch-field-err">Enter an email or a phone number with country code (e.g. +94…)</span>',
     '          </div>',
@@ -6113,6 +6427,17 @@ function attachEventListeners() {
       submitForReview();
     } else if (action === 'approveReady') {
       approveReady();
+    } else if (action === 'dismissBlockers') {
+      submitBlockersOpen = false;
+      render();
+    } else if (action === 'focusBlocker') {
+      // Jump to the field the row names. The panel stays open: fixing one blocker rarely fixes
+      // them all, and closing it would hide the rest of the list mid-repair.
+      var target = document.querySelector(el.getAttribute('data-focus') || '');
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+      }
     } else if (action === 'sendBack') {
       sendBackOpen = true;
       render();
@@ -6257,13 +6582,21 @@ function attachEventListeners() {
     } else {
       val = el.value;
     }
-    // No past dates: reject a typed/pasted leg date before today (native min guards the
-    // calendar; this guards direct entry). Clear the field and tell the operator why.
-    if (field === 'date' && val && val < fmtISODateLocal(new Date())) {
-      el.value = '';
-      showToast("Trip dates can't be in the past.");
-      updateLeg(legId, { date: '' });
-      return;
+    // Leg dates run forward: reject a typed/pasted date before this leg's floor — today, or the
+    // dated leg above it (native min guards the calendar; this guards direct entry). Clear the
+    // field and say which rule was broken, since "can't be in the past" would be baffling on a
+    // date that is merely earlier than the previous leg.
+    if (field === 'date' && val) {
+      var legIdx = state.legs.findIndex(function(l) { return l.id === legId; });
+      var floor = legIdx >= 0 ? legDateFloor(legIdx) : fmtISODateLocal(new Date());
+      if (val < floor) {
+        el.value = '';
+        showToast(floor === fmtISODateLocal(new Date())
+          ? "Trip dates can't be in the past."
+          : 'This leg can’t start before the leg above it (' + floor + ').');
+        updateLeg(legId, { date: '' });
+        return;
+      }
     }
     var patch = {};
     // Route choice (2026-07-20): this generic handler ALSO commits typed locations (native
@@ -6811,7 +7144,9 @@ async function drawItinRoute(hostEl, chains) {
   try {
     _mapMarkers.forEach(function (m) { m.setMap(null); });
     _mapMarkers = [];
-    var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22) }; };
+    // labelOrigin is what puts the stop number inside the teardrop's HEAD. Without it the label
+    // centres on `anchor` — the pin's tip, i.e. the map point — and the digit floats off the pin.
+    var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10) }; };
     var at = function (loc) { return { lat: loc.lat, lng: loc.lng }; }; // DirectionalLocation → LatLngLiteral
     var pts = []; // every stop, in itinerary order, across all chains
     routes.forEach(function (route) {
@@ -6820,10 +7155,18 @@ async function drawItinRoute(hostEl, chains) {
       pts.push(rlegs[0].startLocation);
       for (var li = 0; li < rlegs.length; li++) pts.push(rlegs[li].endLocation);
     });
+    // Number every pin with its place in the journey (owner, 2026-07-26 — a 12-stop itinerary of
+    // identical teardrops is unreadable). These are STOP numbers, which is what the pins are, and
+    // they line up with the itinerary's numbered legs: leg N runs from pin N to pin N+1.
     pts.forEach(function (loc, i) {
       var isFirst = i === 0, isLast = i === pts.length - 1;
       var fill = isFirst ? '#0a7d6f' : (isLast ? '#e8623a' : '#0AB9B6');
-      _mapMarkers.push(new libs.Marker({ map: _mapMap, position: at(loc), icon: pin(fill), zIndex: (isFirst || isLast) ? 6 : 5 }));
+      _mapMarkers.push(new libs.Marker({
+        map: _mapMap, position: at(loc), icon: pin(fill), zIndex: (isFirst || isLast) ? 6 : 5,
+        // White on all three fills; the pin head is small, so bold and tight.
+        label: { text: String(i + 1), color: '#fff', fontSize: '11px', fontWeight: '700' },
+        title: 'Stop ' + (i + 1) + ' of ' + pts.length,
+      }));
     });
   } catch (e) { /* markers are non-essential */ }
   // Fit to every chain: union the per-route viewports (LatLngBounds.union), so a
@@ -7276,10 +7619,12 @@ async function init() {
   }
   await loadOpsUsers(); // roster for the assign picker; failure just leaves it empty
   var rc = await apiRateCard();
-  if (rc) {
-    rateCard = rc;
-    render(); // repaint with rate card data
-  }
+  if (rc) rateCard = rc;
+  // Repaint UNCONDITIONALLY. This used to sit inside `if (rc)`, so whenever the rate-card fetch
+  // failed (apiRateCard returns null on any non-ok/throw) the roster that just landed above was
+  // never painted — leaving the assign picker stuck on the empty option list from the first
+  // paint, with no people to hand the quote to (owner, 2026-07-26).
+  render();
 }
 
 // Unmount: drop the unsaved-changes flag, stop every pending timer, close the

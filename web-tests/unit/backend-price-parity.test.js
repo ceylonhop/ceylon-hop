@@ -31,13 +31,33 @@ describe('customer transfer prices match the backend (rate + buffer + floor, end
 });
 
 describe('customer final-price finishing matches the backend', () => {
-  const rawCents = [4000, 8099, 8110, 40148, 102000, 112500, 112936, 152000, 206018];
+  const rawCents = [4000, 8099, 8110, 40148, 102000, 112500, 112936, 152000, 206018, 184277];
   for (const raw of rawCents) {
     it(`${raw} cents`, () => {
       const backend = finishPrice(raw, 0, RATE_CARD.priceFinishing).finalCents;
       expect(Math.round(T.finishPrice(raw / 100) * 100)).toBe(backend);
     });
   }
+
+  // The two implementations diverged silently only at LARGE totals last time (the magnitude-scaled
+  // charm interval), so spot values are not enough — sweep the whole range. Prime step so the
+  // sweep doesn't march in lockstep with the $10 grid and skip the interesting remainders.
+  it('agrees with the backend across $1–$20,000, not just at the spot values', () => {
+    for (let raw = 100; raw <= 2_000_000; raw += 97) {
+      const backend = finishPrice(raw, 0, RATE_CARD.priceFinishing).finalCents;
+      const web = Math.round(T.finishPrice(raw / 100) * 100);
+      if (web !== backend) throw new Error(`finishPrice(${raw}) web=${web} backend=${backend}`);
+    }
+  });
+
+  // The owner's rule holds on the customer side too — the website must not quote a price the
+  // backend would then have to raise.
+  it('never reduces a customer-facing price by more than $10', () => {
+    for (let raw = 100; raw <= 2_000_000; raw += 97) {
+      const off = raw - Math.round(T.finishPrice(raw / 100) * 100);
+      if (off > 1000) throw new Error(`finishPrice(${raw}) cut ${off} cents`);
+    }
+  });
 
   for (const veh of ['car', 'van']) {
     it(`matches the complete ${veh} quote path for every distance from 1–500 km`, () => {

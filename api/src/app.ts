@@ -32,10 +32,23 @@ import { track } from './observability/track';
 import { rateLimit } from './lib/rateLimit';
 import { config } from './config';
 import type { JwtVerifier } from './lib/googleAuth';
+import { InMemoryPaymentEventRepo } from './db/paymentEventRepo';
+import {
+  InMemoryPaymentSettlementRepo,
+  type PaymentSettlementRepo,
+} from './db/paymentSettlementRepo';
+import {
+  InMemoryQuoteConversionRepo,
+  type QuoteConversionRepo,
+} from './db/quoteConversionRepo';
+import { quoteConversionRoutes } from './routes/quoteConversion';
+import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
+  refunds?: RefundRepo;
+  settlements?: PaymentSettlementRepo;
   conciergeTasks?: ConciergeTaskRepo;
   departures?: DepartureRepo;
   rideLists?: RideListRepo;
@@ -50,9 +63,13 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   zones?: ZonesRepo;
+  quoteV2Enabled?: boolean;
+  quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
   bookingLinkSecret?: string;
+  checkoutNow?: () => number;
+  allowLegacyCheckoutWithoutToken?: boolean;
   // Front-end origin used to build those links in emails (defaults to config.APP_BASE_URL).
   bookingBaseUrl?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
@@ -79,6 +96,14 @@ export interface AppDeps {
 export function createApp(deps: AppDeps = {}) {
   const bookings = deps.bookings ?? new InMemoryBookingRepo();
   const payments = deps.payments ?? new InMemoryPaymentRepo();
+  const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  const settlements =
+    deps.settlements ??
+    new InMemoryPaymentSettlementRepo({
+      bookings: bookings as InMemoryBookingRepo,
+      payments: payments as InMemoryPaymentRepo,
+      events: new InMemoryPaymentEventRepo(),
+    });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
@@ -103,6 +128,13 @@ export function createApp(deps: AppDeps = {}) {
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
   const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
+  const quoteV2Enabled = deps.quoteV2Enabled ?? config.QUOTE_V2_ENABLED;
+  const quoteConversions =
+    deps.quoteConversions ??
+    (quotes instanceof InMemoryQuoteRepo && bookings instanceof InMemoryBookingRepo
+      ? new InMemoryQuoteConversionRepo(quotes, bookings)
+      : undefined);
+  const bookingLinkSecret = deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET;
 
   const app = new Hono();
 
@@ -123,7 +155,7 @@ export function createApp(deps: AppDeps = {}) {
     cors({
       origin: (origin) => (allowedOrigins.includes(origin) ? origin : null),
       allowMethods: ['GET', 'POST', 'OPTIONS'],
-      allowHeaders: ['content-type', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
+      allowHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-admin-key', 'x-internal-key'],
       // Allow the Ride Board's ch_cust session cookie to ride cross-origin fetches (board.html
       // on Pages → API on Render). Only the allow-listed origins above can read responses;
       // other endpoints don't use cookies cross-origin, so echoing this header is harmless.
@@ -194,7 +226,19 @@ export function createApp(deps: AppDeps = {}) {
       maps,
       conciergeTasks,
       quotes,
-      linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      linkSecret: bookingLinkSecret,
+      checkoutNow: deps.checkoutNow,
+      allowLegacyCheckoutWithoutToken:
+        deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
+    }),
+  );
+  app.route(
+    '/bookings',
+    quoteConversionRoutes({
+      conversions: quoteConversions,
+      enabled: quoteV2Enabled,
+      linkSecret: bookingLinkSecret,
+      checkoutNow: deps.checkoutNow,
     }),
   );
   // Ride Board — public reads + customer-authenticated writes (card side via the fake).
@@ -214,12 +258,16 @@ export function createApp(deps: AppDeps = {}) {
       allowedOrigins,
     }),
   );
-  app.route('/quote', quoteRoutes({ internalKey: config.INTERNAL_QUOTE_KEY, quotes }));
+  app.route('/quote', quoteRoutes({
+    internalKey: config.INTERNAL_QUOTE_KEY,
+    quotes,
+    maps,
+    v2Enabled: quoteV2Enabled,
+  }));
   app.route(
     '/webhooks',
     webhookRoutes({
-      bookings,
-      payments,
+      settlements,
       adapter,
       email,
       conciergeTasks,
@@ -280,6 +328,7 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
       ridePaygw: paygw,
+      refunds,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.

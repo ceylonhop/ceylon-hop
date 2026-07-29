@@ -22,7 +22,11 @@ import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import { verifyBookingToken } from '../lib/bookingToken';
+import {
+  signCheckoutToken,
+  verifyBookingToken,
+  verifyCheckoutToken,
+} from '../lib/bookingToken';
 
 // GL-3 — how far the site's quotedTotal may drift from the engine price before ops is
 // flagged ($1 absorbs rounding differences, never a real disagreement).
@@ -153,9 +157,25 @@ export function bookingRoutes(deps: {
   conciergeTasks: ConciergeTaskRepo;
   quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
   linkSecret: string;
+  checkoutNow?: () => number;
+  allowLegacyCheckoutWithoutToken?: boolean;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const r = new Hono();
+  const checkoutNow = deps.checkoutNow ?? Date.now;
+
+  function withCheckoutToken(booking: Booking) {
+    return {
+      ...booking,
+      checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()),
+    };
+  }
+
+  function bearerToken(authorization: string | undefined): string | undefined {
+    if (!authorization?.startsWith('Bearer ')) return undefined;
+    const token = authorization.slice(7);
+    return token || undefined;
+  }
 
   // Rate-lock (spec 2026-07-11 §4): the card a booking should be priced against. A quoteId from a
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
@@ -217,7 +237,7 @@ export function bookingRoutes(deps: {
     const key = c.req.header('Idempotency-Key');
     if (key) {
       const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(existing, 200);
+      if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
     // The engine is the pricing truth; the client's quotedTotal is only a fallback.
@@ -252,7 +272,7 @@ export function bookingRoutes(deps: {
       { idempotencyKey: key },
     );
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
-    return c.json(booking, 201);
+    return c.json(withCheckoutToken(booking), 201);
   });
 
   // 9.4 — create a multi-stop trip draft (planner / tour hand-off). Same idempotency
@@ -271,7 +291,7 @@ export function bookingRoutes(deps: {
     const key = c.req.header('Idempotency-Key');
     if (key) {
       const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(existing, 200);
+      if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
     // Engine-first; customer bookings currently collect the full amount now.
@@ -323,7 +343,7 @@ export function bookingRoutes(deps: {
       { idempotencyKey: key },
     );
     await flagPricing(booking, resolved, parsed.data.quotedTotal);
-    return c.json(booking, 201);
+    return c.json(withCheckoutToken(booking), 201);
   });
 
   // 10.4 — book a shared seat. Resolve the corridor, price by seats, atomically hold the
@@ -343,7 +363,7 @@ export function bookingRoutes(deps: {
     const key = c.req.header('Idempotency-Key');
     if (key) {
       const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(existing, 200);
+      if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
     const corridor = req.corridorId
@@ -423,7 +443,7 @@ export function bookingRoutes(deps: {
         `price mismatch ${booking.reference}: site quoted ${req.quotedTotal}¢, engine priced ${total}¢`,
       );
     }
-    return c.json(booking, 201);
+    return c.json(withCheckoutToken(booking), 201);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
@@ -437,13 +457,38 @@ export function bookingRoutes(deps: {
     return c.json(projectBooking(booking), 200);
   });
 
+  r.post('/view/checkout-token', async (c) => {
+    const token = bearerToken(c.req.header('authorization'));
+    const id = verifyBookingToken(token, deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    if (
+      (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
+      booking.needsPricing
+    ) {
+      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+    }
+    return c.json(
+      { checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()) },
+      200,
+    );
+  });
+
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the
   // booking to payment_pending, and returns checkout params. The checkout amount must
   // equal what the booking says is due now (currently the full total; pre-GL-3 rows
   // have no amountDueNow and are charged the total) — never present a
   // charge that disagrees with the booking.
   r.post('/:id/checkout', async (c) => {
-    const booking = await bookings.get(c.req.param('id'));
+    const id = c.req.param('id');
+    const authorization = c.req.header('authorization');
+    const token = bearerToken(authorization);
+    const legacyAllowed = !authorization && deps.allowLegacyCheckoutWithoutToken === true;
+    if (!legacyAllowed && !verifyCheckoutToken(token, id, deps.linkSecret, checkoutNow())) {
+      return c.json({ error: 'checkout_unauthorized' }, 401);
+    }
+    const booking = await bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
     // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
     // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere

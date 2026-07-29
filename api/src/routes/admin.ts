@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono';
+import { z } from 'zod';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { EmailAdapter } from '../adapters/email';
@@ -20,6 +21,7 @@ import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { RefundError, type RefundRepo } from '../db/refundRepo';
 
 // Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
 // session with payments:act (founder or finance) — the machine key (system) does NOT
@@ -47,6 +49,7 @@ export function adminRoutes(deps: {
   // callers work; when wired, the notifications tick also confirms/expires due lists.
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
+  refunds: RefundRepo;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -106,7 +109,99 @@ export function adminRoutes(deps: {
   }
 
   r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
-  r.post('/bookings/:id/refund', requireCap('payments:act'), (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
+  const RefundRequest = z
+    .object({
+      amountCents: z.number().int().positive(),
+      currency: z.string().length(3),
+      reason: z.string().trim().min(1).max(500),
+    })
+    .strict();
+  const RefundConfirm = z.object({ gatewayRef: z.string().trim().min(1).max(200) }).strict();
+
+  const refundError = (c: Context, error: unknown) => {
+    if (!(error instanceof RefundError)) throw error;
+    if (error.code === 'booking_not_found' || error.code === 'refund_not_found') {
+      return c.json({ error: error.code }, 404);
+    }
+    return c.json({ error: error.code }, 409);
+  };
+
+  r.get('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+    if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
+    return c.json(await deps.refunds.list(c.req.param('id')), 200);
+  });
+
+  r.post('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+    const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
+    try {
+      const refund = await deps.refunds.request({
+        bookingId: c.req.param('id'),
+        ...parsed.data,
+        currency: parsed.data.currency.toUpperCase(),
+        requestedBy: c.get('identity').email,
+      });
+      return c.json(refund, 201);
+    } catch (error) {
+      return refundError(c, error);
+    }
+  });
+
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:act'), async (c) => {
+    const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
+    const before = await bookings.get(c.req.param('id'));
+    if (!before) return c.json({ error: 'booking_not_found' }, 404);
+    try {
+      const outcome = await deps.refunds.confirm({
+        bookingId: c.req.param('id'),
+        refundId: c.req.param('refundId'),
+        gatewayRef: parsed.data.gatewayRef,
+        confirmedBy: c.get('identity').email,
+      });
+      const after = await bookings.get(c.req.param('id'));
+      if (!after) throw new Error(`booking_not_found_after_refund: ${c.req.param('id')}`);
+      if (outcome.bookingFullyRefunded && after.mode === 'shared' && before.status !== 'cancelled') {
+        try {
+          await departures.releaseSeats({
+            corridorId: after.input.corridorId,
+            date: after.input.date,
+            time: after.input.time,
+            seats: after.input.seats,
+          });
+        } catch (error) {
+          console.error(`seat release failed for ${after.reference}:`, error);
+        }
+      }
+      try {
+        await sendRefundConfirmation(
+          after,
+          email,
+          outcome.refund.amountCents,
+          outcome.refund.currency,
+        );
+      } catch (error) {
+        console.error(`refund email failed for ${after.reference}:`, error);
+      }
+      return c.json(outcome, 200);
+    } catch (error) {
+      return refundError(c, error);
+    }
+  });
+
+  r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('payments:act'), async (c) => {
+    try {
+      return c.json(
+        await deps.refunds.cancel({
+          bookingId: c.req.param('id'),
+          refundId: c.req.param('refundId'),
+        }),
+        200,
+      );
+    } catch (error) {
+      return refundError(c, error);
+    }
+  });
   // Ops marks the booking confirmed once the driver's arranged (paid → confirmed).
   // No customer email on this transition (owner decision 2026-07-18): the paid
   // confirmation already went out, so confirming the driver is an internal step.

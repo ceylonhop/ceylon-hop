@@ -507,6 +507,14 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   watchdog for webhook failures / stuck `payment_pending` / paid-without-confirmation, alerting to
   WhatsApp/Slack). **Strongly recommended before taking real payments. Full plan:
   [`observability-plan.md`](./observability-plan.md).**
+- **M17.5 — Money & checkout security hardening (mandatory release gate).** Make PayHere event
+  acceptance strict and auditable; settle payment + booking atomically; bind quote v2 to the exact
+  server intent/result; require a scoped checkout capability; add Postgres money/state constraints;
+  and replace the refund status flip with a truthful manual ledger. The seven review findings are
+  delivered as nine small red→green PRs, with payment acceptance first. This gate must finish before
+  broader live-payment traffic, public promotions, or deposits. Full
+  [design](./superpowers/specs/2026-07-27-money-checkout-security-hardening-design.md) and
+  [build plan](./superpowers/plans/2026-07-27-money-checkout-security-hardening.md).
 - **M18 — Discount engine contract.** Freeze current behavior, then add pure discount arithmetic and
   deterministic promotion selection with no persistence or UI. Full design:
   [`superpowers/specs/2026-07-15-discounts-design.md`](./superpowers/specs/2026-07-15-discounts-design.md).
@@ -592,6 +600,9 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   - **21.2 — Signed, revisioned `/quote/v2` lock.** Add create/update endpoints using server Maps,
     canonical intent fingerprints, fixed seven-day expiry, signed browser-session edit tokens, and
     optimistic revisions. Keep legacy `/quote/lock` unchanged and extend rate limiting to `/quote/*`.
+    This is implemented by security-hardening SH4 and must follow the
+    [money/checkout security contract](./superpowers/specs/2026-07-27-money-checkout-security-hardening-design.md);
+    do not create a parallel lock format.
     **Tests:** private/trip/chauffeur, token missing/forged/wrong/expired, stale update, non-sliding
     expiry, unpriced failure, canonical serialization, and legacy contract parity. No promotion UI.
   - **21.3 — Web promotion resolution and lock durability.** Evaluate automatic rules on every v2
@@ -601,7 +612,10 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     cost cap, expiry/deactivation, rule snapshot replay, unavailable cost, and flags default off.
   - **21.4 — Strict atomic booking conversion.** Require v2 quote ID, access token, revision, expiry,
     and exact intent; adopt stored server engine result without Maps/money recomputation and use M19's
-    conversion transaction. **Tests:** mismatch/stale/expired/forged/replay failure, injected rollback,
+    conversion transaction. Security-hardening SH5 delivers this base contract at the default-off
+    `POST /bookings/from-quote-v2`; M21.4 extends that same endpoint and transaction with the M19
+    promotion snapshot/budget rules rather than rebuilding it. **Tests:**
+    mismatch/stale/expired/forged/replay failure, injected rollback,
     concurrency/idempotency, unique quote link, immutable booking snapshot, full-payment policy,
     checkout/PayHere/webhook equality, and unchanged legacy/no-discount/shared paths.
 - **M22 — Customer surfaces and guarded release.** Render the stored promotion consistently and

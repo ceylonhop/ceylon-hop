@@ -478,9 +478,14 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
 }
 
 // ── Refund processed (→ refunded) ──────────────────────────────────────────
-export async function sendRefundConfirmation(booking: Booking, email: EmailAdapter): Promise<void> {
+export async function sendRefundConfirmation(
+  booking: Booking,
+  email: EmailAdapter,
+  amountCents = booking.total,
+  currency = booking.currency,
+): Promise<void> {
   const first = esc(booking.input.customer.firstName);
-  const amount = money(booking.total, booking.currency);
+  const amount = money(amountCents, currency);
   const html = page(
     brandHeader() +
       introBlock(

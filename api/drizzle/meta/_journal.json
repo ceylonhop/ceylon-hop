@@ -169,6 +169,41 @@
       "when": 1784906669699,
       "tag": "0023_booking_needs_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785276328193,
+      "tag": "0024_married_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785277495159,
+      "tag": "0025_absent_mulholland_black",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785283702527,
+      "tag": "0026_flippant_blacklash",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785285784256,
+      "tag": "0027_sh7_money_state_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785287028921,
+      "tag": "0028_sh8_manual_refund_ledger",
+      "breakpoints": true
     }
   ]
 }

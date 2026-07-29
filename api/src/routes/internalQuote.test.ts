@@ -1165,11 +1165,83 @@ describe('quote assignment + audit trail', () => {
     const { id } = await draftAs(app, 'op@x.com');
     await patchAs('op@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
     const q = await (await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).json();
-    expect(q.assignedTo).toBe('f@x.com'); // manual-only: transitions never re-assign
+    // Submitting for review never re-assigns — the hand-off points are ready + sent only.
+    expect(q.assignedTo).toBe('f@x.com');
     expect(q.updatedBy).toBe('op@x.com');
   });
 
-  // The queue's "Assigned to me" section filters on this, so the list projection must carry it.
+  // ── Auto-assign on hand-off (owner, 2026-07-26) ─────────────────────────────
+  // The two moments where a quote changes hands were manual, so an approved quote sat in
+  // "Ready to send" still assigned to the founder who approved it, and nobody owned a quote
+  // after it went out. Approval hands back to the agent who built it; sending takes ownership.
+  describe('auto-assign on the ready + sent transitions', () => {
+    const submit = async (app: App, id: string, by: string) =>
+      patchAs(by, app, `/admin/quote/${id}`, { status: 'pending_review' });
+
+    it('hands an approved quote back to the agent who created it', async () => {
+      const app = createApp();
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      // The founder holds it while reviewing…
+      await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+      const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' })).json();
+      expect(q.status).toBe('ready');
+      expect(q.assignedTo).toBe('op@x.com'); // …and hands it back on approval
+    });
+
+    it('assigns an approved quote to its creator when nobody holds it', async () => {
+      const app = createApp();
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: null });
+      const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' })).json();
+      expect(q.assignedTo).toBe('op@x.com');
+    });
+
+    it('never overrides a deliberate assignment to a third person on approval', async () => {
+      const app = createApp();
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      // Someone has deliberately parked it with finance — approval must not yank it away.
+      await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: 'fin@x.com' });
+      const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' })).json();
+      expect(q.assignedTo).toBe('fin@x.com');
+    });
+
+    it('assigns a sent quote to whoever marked it sent', async () => {
+      const app = createApp();
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready' });
+      // Even though the quote is currently op@x.com's, the person who sends it owns the chase.
+      const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'sent' })).json();
+      expect(q.status).toBe('sent');
+      expect(q.assignedTo).toBe('f@x.com');
+    });
+
+    it('lets an explicit assignedTo in the same patch win over the auto-assign', async () => {
+      const app = createApp();
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      const q = await (await patchAs('f@x.com', app, `/admin/quote/${id}`, { status: 'ready', assignedTo: 'fin@x.com' })).json();
+      expect(q.assignedTo).toBe('fin@x.com');
+    });
+
+    it('does not auto-assign a quote whose creator has left OPS_USERS', async () => {
+      // One repo, two apps: the quote is built while op@x.com is on the roster, then approved
+      // after they've left — so the stored createdBy no longer resolves to a real ops user.
+      const quotes = new InMemoryQuoteRepo();
+      const app = createApp({ quotes });
+      const { id } = await draftAs(app, 'op@x.com');
+      await submit(app, id, 'op@x.com');
+      await patchAs('f@x.com', app, `/admin/quote/${id}`, { assignedTo: 'f@x.com' });
+      const app2 = createApp({ quotes, auth: { ...AUTH, opsUsers: 'f@x.com:founder,fin@x.com:finance' } });
+      const q = await (await patchAs('f@x.com', app2, `/admin/quote/${id}`, { status: 'ready' })).json();
+      expect(q.assignedTo).toBe('f@x.com'); // left where it was rather than assigned to a stranger
+    });
+  });
+
+  // The queue renders an assignee chip off this, so the list projection must carry it.
   // (The projection is deliberately narrow — see postgresQuoteRepo.list — so it needs adding.)
   it('exposes assignedTo on the queue list', async () => {
     const app = createApp();

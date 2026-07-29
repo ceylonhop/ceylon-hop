@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { createApp } from '../app';
 import { FakePaymentAdapter } from '../adapters/payments';
+import { PayHerePaymentAdapter } from '../adapters/payhere';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
@@ -30,11 +31,33 @@ async function bookAndCheckout(app: ReturnType<typeof createApp>, overrides: Rec
       body: JSON.stringify({ ...valid, ...overrides }),
     })
   ).json();
-  await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+  await app.request(`/bookings/${b.id}/checkout`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${b.checkoutToken}` },
+  });
   return b;
 }
 
 describe('POST /webhooks/payments', () => {
+  it('rejects PayHere notifications sent with a non-form content type', async () => {
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+    const body = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    const app = createApp({ adapter });
+
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+
+    expect(res.status).toBe(401);
+  });
+
   it('marks the booking paid and emails the customer on a valid webhook', async () => {
     const adapter = new FakePaymentAdapter();
     const email = new FakeEmailAdapter();
@@ -98,6 +121,30 @@ describe('POST /webhooks/payments', () => {
     expect(email.sent).toHaveLength(1);
   });
 
+  it('handles concurrent success notifications with one email and one concierge task', async () => {
+    const adapter = new FakePaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const conciergeTasks = new InMemoryConciergeTaskRepo();
+    const app = createApp({ adapter, email, conciergeTasks });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+    });
+
+    const responses = await Promise.all([
+      app.request('/webhooks/payments', { method: 'POST', body }),
+      app.request('/webhooks/payments', { method: 'POST', body }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(email.sent).toHaveLength(1);
+    expect(
+      (await conciergeTasks.listByBooking(b.id)).filter((task) => task.type === 'confirm_pickup'),
+    ).toHaveLength(1);
+  });
+
   it('files a confirm_pickup concierge task on paid', async () => {
     const adapter = new FakePaymentAdapter();
     const conciergeTasks = new InMemoryConciergeTaskRepo();
@@ -131,7 +178,12 @@ describe('POST /webhooks/payments', () => {
         }),
       })
     ).json();
-    const checkout = await (await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' })).json();
+    const checkout = await (
+      await app.request(`/bookings/${b.id}/checkout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${b.checkoutToken}` },
+      })
+    ).json();
     expect(checkout.amount).toBe(b.amountDueNow);
     expect(checkout.amount).toBe(b.total);
 

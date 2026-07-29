@@ -43,6 +43,10 @@ export interface NewQuote {
   // that lock expires (null = no expiry / not yet locked). See api/src/quote/rateLock.ts.
   rateCardJson?: unknown;
   rateLockedUntil?: Date | null;
+  intent?: unknown;
+  intentFingerprint?: string | null;
+  revision?: number;
+  accessTokenDigest?: string | null;
   notes?: string | null;
   // Internal ops notes (spec 2026-07-22) — free-text, distinct from the send-back `notes`.
   internalNotes?: string | null;
@@ -55,8 +59,9 @@ export interface NewQuote {
   createdBy?: string | null;
   updatedBy?: string | null;
   // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
-  // lands in their "Assigned to me". Reassignment still happens only via the patch/picker, and
-  // update() leaves assignment untouched — so this only takes effect on insert.
+  // opens already showing a holder. Reassignment happens via the patch/picker (and, from
+  // 2026-07-26, automatically on the ready/sent transitions), and update() leaves assignment
+  // untouched — so this only takes effect on insert.
   assignedTo?: string | null;
 }
 
@@ -78,6 +83,10 @@ export interface SavedQuote {
   result: unknown;
   rateCardJson: unknown;
   rateLockedUntil: Date | null;
+  intent: unknown;
+  intentFingerprint: string | null;
+  revision: number;
+  accessTokenDigest: string | null;
   convertedBookingId: string | null;
   notes: string | null;
   internalNotes: string | null;
@@ -104,8 +113,9 @@ export interface QuoteSummary {
   customerContact: string | null;
   totalCents: number;
   currency: string;
-  // The queue's "Assigned to me" section filters on this, so it must survive the narrow
-  // projection. Sell-side only — this stays free of cost/margin (see the list route's note).
+  // The queue renders an assignee chip on every row (and floats your rows to the top of each
+  // status section) off this, so it must survive the narrow projection. Sell-side only — this
+  // stays free of cost/margin (see the list route's note).
   assignedTo: string | null;
   // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
   // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
@@ -197,6 +207,16 @@ export interface QuoteRepo {
   // the table. Idempotent-ish: returns null for an unknown or already-deleted id. Role/status
   // gating lives in the route, not here — the repo only records the intent.
   softDelete(id: string, deletedBy: string): Promise<SavedQuote | null>;
+  updateWebV2(args: {
+    id: string;
+    accessTokenDigest: string;
+    expectedRevision: number;
+    now: Date;
+    quote: NewQuote;
+  }): Promise<
+    | { kind: 'updated'; quote: SavedQuote }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
+  >;
 }
 
 // Same unambiguous alphabet as bookingRepo.generateReference (no 0/O/1/I), so a
@@ -244,8 +264,8 @@ function toSummary(q: SavedQuote): QuoteSummary {
 }
 
 export class InMemoryQuoteRepo implements QuoteRepo {
-  private readonly rows = new Map<string, SavedQuote>();
-  private readonly usedReferences = new Set<string>();
+  private rows = new Map<string, SavedQuote>();
+  private usedReferences = new Set<string>();
 
   private nextReference(): string {
     let reference = genReference();
@@ -274,6 +294,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       result: q.result,
       rateCardJson: q.rateCardJson ?? null,
       rateLockedUntil: q.rateLockedUntil ?? null,
+      intent: q.intent ?? null,
+      intentFingerprint: q.intentFingerprint ?? null,
+      revision: q.revision ?? 1,
+      accessTokenDigest: q.accessTokenDigest ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
@@ -407,5 +431,59 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.deletedBy = deletedBy;
     row.updatedAt = now;
     return { ...row };
+  }
+
+  async updateWebV2(args: {
+    id: string;
+    accessTokenDigest: string;
+    expectedRevision: number;
+    now: Date;
+    quote: NewQuote;
+  }): Promise<
+    | { kind: 'updated'; quote: SavedQuote }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
+  > {
+    const row = this.rows.get(args.id);
+    if (
+      !row ||
+      row.deletedAt ||
+      row.channel !== 'web' ||
+      !row.accessTokenDigest ||
+      row.accessTokenDigest !== args.accessTokenDigest
+    ) {
+      return { kind: 'access_denied' };
+    }
+    if (row.convertedBookingId) return { kind: 'converted' };
+    if (!row.rateLockedUntil || row.rateLockedUntil <= args.now) return { kind: 'expired' };
+    if (row.revision !== args.expectedRevision) return { kind: 'stale_revision' };
+
+    row.product = args.quote.product;
+    row.vehicle = args.quote.vehicle ?? null;
+    row.totalCents = args.quote.totalCents;
+    row.currency = args.quote.currency;
+    row.rateCardVersion = args.quote.rateCardVersion;
+    row.marginCents = args.quote.marginCents ?? null;
+    row.request = args.quote.request;
+    row.result = args.quote.result;
+    row.intent = args.quote.intent ?? null;
+    row.intentFingerprint = args.quote.intentFingerprint ?? null;
+    row.revision += 1;
+    row.updatedAt = args.now;
+    return { kind: 'updated', quote: { ...row } };
+  }
+
+  snapshotForQuoteConversion(): {
+    rows: Map<string, SavedQuote>;
+    usedReferences: Set<string>;
+  } {
+    return {
+      rows: structuredClone(this.rows),
+      usedReferences: structuredClone(this.usedReferences),
+    };
+  }
+
+  restoreForQuoteConversion(snapshot: ReturnType<InMemoryQuoteRepo['snapshotForQuoteConversion']>): void {
+    this.rows = structuredClone(snapshot.rows);
+    this.usedReferences = structuredClone(snapshot.usedReferences);
   }
 }

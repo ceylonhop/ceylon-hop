@@ -1,17 +1,18 @@
 import { Hono } from 'hono';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { BookingRepo } from '../db/bookingRepo';
-import type { PaymentRepo } from '../db/paymentRepo';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { AlertAdapter } from '../adapters/alerts';
+import {
+  PaymentSettlementError,
+  type PaymentSettlementRepo,
+} from '../db/paymentSettlementRepo';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl } from '../services/notifications';
 
 export function webhookRoutes(deps: {
-  bookings: BookingRepo;
-  payments: PaymentRepo;
+  settlements: PaymentSettlementRepo;
   adapter: PaymentAdapter;
   email: EmailAdapter;
   conciergeTasks: ConciergeTaskRepo;
@@ -24,7 +25,7 @@ export function webhookRoutes(deps: {
   baseUrl: string;
   linkSecret: string;
 }) {
-  const { bookings, payments, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
+  const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
 
@@ -32,7 +33,9 @@ export function webhookRoutes(deps: {
   // succeeded and the booking paid — idempotently — then sends the confirmation (5.4).
   // M17: the silent failure paths now raise throttled ops alerts.
   r.post('/payments', async (c) => {
-    const event = adapter.parseWebhook(await c.req.text());
+    const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+    const isExpectedContentType = adapter.provider !== 'payhere' || contentType === 'application/x-www-form-urlencoded';
+    const event = isExpectedContentType ? adapter.parseWebhook(await c.req.text()) : null;
     if (!event) {
       void alerts.send({
         severity: 'critical',
@@ -44,46 +47,45 @@ export function webhookRoutes(deps: {
       return c.json({ error: 'invalid_signature' }, 401);
     }
 
-    const payment = await payments.findByOrderId(event.orderId);
-    if (!payment) return c.json({ error: 'unknown_order' }, 404);
-
-    if (event.amount !== payment.amount || event.currency !== payment.currency) {
+    let outcome;
+    try {
+      outcome = await settlements.acceptVerifiedEvent(event);
+    } catch (error) {
+      if (!(error instanceof PaymentSettlementError)) throw error;
+      if (error.code === 'unknown_order') return c.json({ error: 'unknown_order' }, 404);
+      const payment = error.payment;
       void alerts.send({
         severity: 'critical',
         kind: 'payhere_amount',
         title: `PayHere amount mismatch on order ${event.orderId}`,
-        body: `expected ${payment.amount} ${payment.currency}, webhook says ${event.amount} ${event.currency}`,
+        body: payment
+          ? `expected ${payment.amount} ${payment.currency}, webhook says ${event.amountCents} ${event.currency}`
+          : `Payment amount/currency mismatch for ${event.orderId}`,
         dedupeKey: event.orderId,
       });
       return c.json({ error: 'amount_mismatch' }, 400);
     }
 
-    // An already-settled payment. A duplicate SUCCESS notify is a harmless no-op — but a
-    // NON-success event (PayHere status -1/-2/-3: cancel/fail/chargeback) arriving AFTER
-    // settlement is money being clawed back. Never swallow that silently.
-    if (payment.status === 'succeeded') {
-      if (event.status !== 'succeeded') {
-        void alerts.send({
-          severity: 'critical',
-          kind: 'payment_reversed',
-          title: `Payment reversed for order ${event.orderId}`,
-          body: `A non-success PayHere notification (cancel/chargeback) arrived for order ${event.orderId}, which was already settled. The booking may still read PAID — investigate and reconcile the refund/chargeback.`,
-          dedupeKey: event.orderId,
-        });
-        return c.json({ ok: true, reversed: true }, 200);
-      }
+    if (outcome.kind === 'duplicate') {
       return c.json({ ok: true, idempotent: true }, 200);
     }
 
-    // Non-success (PayHere cancel/fail) on a not-yet-settled payment: record the failure so
-    // the payment row doesn't sit at 'pending' forever. The booking stays payment_pending —
-    // the customer can retry — and the stale-hold sweep / watchdog handle abandonment.
-    if (event.status !== 'succeeded') {
-      await payments.markFailed(payment.id);
+    if (outcome.kind === 'reversal') {
+      void alerts.send({
+        severity: 'critical',
+        kind: 'payment_reversed',
+        title: `Payment reversed for order ${event.orderId}`,
+        body: `A non-success PayHere notification (cancel/chargeback) arrived for order ${event.orderId}, which was already settled. The booking may still read PAID — investigate and reconcile the refund/chargeback.`,
+        dedupeKey: event.orderId,
+      });
+      return c.json({ ok: true, reversed: true }, 200);
+    }
+
+    if (outcome.kind === 'failed') {
       // Immediate best-effort nudge so the customer can retry. Idempotent (once per booking),
       // and never fails the webhook — PayHere must not retry over a mail hiccup.
-      const failed = await bookings.get(payment.bookingId);
-      if (failed && failed.status === 'payment_pending' && !(await notificationLog?.wasSent(failed.id, 'payment_failed'))) {
+      const failed = outcome.booking;
+      if (failed.status === 'payment_pending' && !(await notificationLog?.wasSent(failed.id, 'payment_failed'))) {
         try {
           await sendPaymentFailed(failed, email, { resume: manageUrl(failed, baseUrl, linkSecret) });
           await notificationLog?.markSent(failed.id, 'payment_failed');
@@ -94,10 +96,8 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, status: 'failed' }, 200);
     }
 
-    await payments.markSucceeded(payment.id);
-    const booking = await bookings.get(payment.bookingId);
-    if (booking && booking.status === 'payment_pending') {
-      const paid = await bookings.setStatus(booking.id, 'paid');
+    if (outcome.kind === 'settled') {
+      const paid = outcome.booking;
       // Best-effort: the booking is already paid, so a concierge-task hiccup must NOT 500 the
       // webhook (PayHere would retry, hit the idempotent return, and skip the task forever).
       try {
@@ -153,7 +153,7 @@ export function webhookRoutes(deps: {
         severity: 'critical',
         kind: 'paid_in_unexpected_status',
         title: `Payment settled for order ${event.orderId} in an unexpected state`,
-        body: `Payment for ${event.orderId} succeeded, but its booking is ${booking ? `in status '${booking.status}'` : 'missing'} (not payment_pending). Money was captured with no paid-transition and no confirmation — investigate and reconcile.`,
+        body: `Payment for ${event.orderId} succeeded, but its booking is in status '${outcome.booking.status}' (not payment_pending). Money was captured with no paid-transition and no confirmation — investigate and reconcile.`,
         dedupeKey: event.orderId,
       });
     }

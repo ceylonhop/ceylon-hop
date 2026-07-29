@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createDb, type Sql } from './client';
+import { createDb, type Db, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
+import { PostgresPaymentEventRepo } from './postgresPaymentEventRepo';
+import { PostgresPaymentSettlementRepo } from './postgresPaymentSettlementRepo';
 import { PostgresConciergeTaskRepo } from './postgresConciergeTaskRepo';
 import { PostgresDepartureRepo, seedCorridors } from './postgresDepartureRepo';
 import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
@@ -10,6 +12,11 @@ import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
 import type { NewBooking } from './bookingRepo';
+import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
+import { PostgresRefundRepo } from './postgresRefundRepo';
+import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
+import { bookings as bookingRows } from './schema';
+import { eq } from 'drizzle-orm';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -33,20 +40,24 @@ const sample: NewBooking = {
 describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   let bookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
+  let paymentEvents: PostgresPaymentEventRepo;
   let tasks: PostgresConciergeTaskRepo;
   let departures: PostgresDepartureRepo;
   let rideOps: PostgresRideOpsRepo;
   let notifLog: PostgresNotificationLogRepo;
   let quotes: PostgresQuoteRepo;
+  let db: Db;
   let sql: Sql;
 
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
+    db = conn.db;
     sql = conn.sql;
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     await seedCorridors(sql);
     bookings = new PostgresBookingRepo(conn.db);
     payments = new PostgresPaymentRepo(conn.db);
+    paymentEvents = new PostgresPaymentEventRepo(conn.db);
     tasks = new PostgresConciergeTaskRepo(conn.db);
     departures = new PostgresDepartureRepo(sql);
     rideOps = new PostgresRideOpsRepo(conn.db);
@@ -249,6 +260,345 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await tasks.listByBooking(b.id)).toHaveLength(1);
   });
 
+  it('stores payment evidence idempotently and permits a later reversal', async () => {
+    const b = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `evidence-${b.id}`,
+    });
+    const providerTxnId = `PAY-${payment.id}`;
+    const event = {
+      paymentId: payment.id,
+      provider: 'payhere',
+      providerTxnId,
+      providerStatusCode: '2',
+      normalizedStatus: 'succeeded' as const,
+      amount: payment.amount,
+      currency: payment.currency,
+      payloadSha256: 'a'.repeat(64),
+      sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      receivedAt: new Date('2026-07-28T12:00:00.000Z'),
+    };
+
+    const first = await paymentEvents.record(event);
+    const retry = await paymentEvents.record(event);
+    const reversal = await paymentEvents.record({
+      ...event,
+      providerStatusCode: '-3',
+      normalizedStatus: 'charged_back',
+      payloadSha256: 'b'.repeat(64),
+      sanitizedPayload: { ...event.sanitizedPayload, status_code: '-3' },
+      receivedAt: new Date('2026-07-29T12:00:00.000Z'),
+    });
+
+    expect(first.inserted).toBe(true);
+    expect(retry).toMatchObject({ inserted: false, event: { id: first.event.id } });
+    expect(reversal.inserted).toBe(true);
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(2);
+  });
+
+  it('enforces payment-event money and status constraints in Postgres', async () => {
+    const b = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `constraints-${b.id}`,
+    });
+    const base = {
+      paymentId: payment.id,
+      provider: 'payhere',
+      providerTxnId: `PAY-${payment.id}`,
+      providerStatusCode: '2',
+      normalizedStatus: 'succeeded' as const,
+      amount: payment.amount,
+      currency: payment.currency,
+      payloadSha256: 'c'.repeat(64),
+      sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      receivedAt: new Date(),
+    };
+
+    await expect(
+      paymentEvents.record({ ...base, providerTxnId: `${base.providerTxnId}-zero`, amount: 0 }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-missing-amount`,
+        amount: undefined as never,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-currency`,
+        currency: 'EUR',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-status`,
+        normalizedStatus: 'unknown' as never,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      paymentEvents.record({
+        ...base,
+        providerTxnId: `${base.providerTxnId}-missing-status`,
+        normalizedStatus: undefined as never,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('enforces booking money, currency, mode, and status constraints in Postgres', async () => {
+    const b = await bookings.create(sample);
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(
+      sql`update bookings set total = -1, amount_due_now = null where id = ${b.id}`,
+      'bookings_total_nonnegative',
+    );
+    await reject(
+      sql`update bookings set amount_due_now = total + 1 where id = ${b.id}`,
+      'bookings_amount_due_now_valid',
+    );
+    await reject(
+      sql`update bookings set currency = 'EUR' where id = ${b.id}`,
+      'bookings_currency_supported',
+    );
+    await reject(
+      sql`update bookings set mode = 'unknown' where id = ${b.id}`,
+      'bookings_mode_valid',
+    );
+    await reject(
+      sql`update bookings set status = 'unknown' where id = ${b.id}`,
+      'bookings_status_valid',
+    );
+
+    await expect(sql`update bookings set amount_due_now = null where id = ${b.id}`).resolves.toBeDefined();
+    await expect(sql`update bookings set total = 0, amount_due_now = 0 where id = ${b.id}`).resolves.toBeDefined();
+  });
+
+  it('enforces payment amount, currency, provider, status, and settlement evidence', async () => {
+    const b = await bookings.create(sample);
+    const p = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.total,
+      currency: b.currency,
+      idempotencyKey: `payment-constraints-${b.id}`,
+    });
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(sql`update payments set amount = 0 where id = ${p.id}`, 'payments_amount_positive');
+    await reject(
+      sql`update payments set currency = 'EUR' where id = ${p.id}`,
+      'payments_currency_supported',
+    );
+    await reject(
+      sql`update payments set provider = 'unknown' where id = ${p.id}`,
+      'payments_provider_supported',
+    );
+    await reject(
+      sql`update payments set status = 'unknown' where id = ${p.id}`,
+      'payments_status_valid',
+    );
+    await reject(
+      sql`update payments set status = 'succeeded' where id = ${p.id}`,
+      'payments_succeeded_settled_at_required',
+    );
+    await expect(
+      sql`update payments set status = 'succeeded', settled_at = now(), settlement_source = 'webhook' where id = ${p.id}`,
+    ).resolves.toBeDefined();
+    await reject(
+      sql`update payments set settlement_source = null where id = ${p.id}`,
+      'payments_succeeded_settlement_source_required',
+    );
+  });
+
+  it('enforces shared corridor pricing, capacity, and inventory boundaries', async () => {
+    const [{ id }] = await sql<{ id: string }[]>`select id from corridor order by id limit 1`;
+    const reject = async (query: PromiseLike<unknown>, constraint: string) => {
+      await expect(query).rejects.toMatchObject({ code: '23514', constraint_name: constraint });
+    };
+
+    await reject(
+      sql`update corridor set seat_price = 0 where id = ${id}`,
+      'corridor_seat_price_positive',
+    );
+    await reject(
+      sql`update corridor set seat_capacity = 0 where id = ${id}`,
+      'corridor_seat_capacity_positive',
+    );
+    const date = `2099-12-${String(10 + Math.floor(Math.random() * 10))}`;
+    await sql`
+      insert into shared_departure (corridor_id, date, time, seats_total, seats_booked)
+      values (${id}, ${date}, '23:59', 4, 0)
+      on conflict (corridor_id, date, time) do update set seats_total = 4, seats_booked = 0`;
+    await reject(
+      sql`update shared_departure set seats_total = 0 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_total_positive',
+    );
+    await reject(
+      sql`update shared_departure set seats_booked = -1 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_booked_valid',
+    );
+    await reject(
+      sql`update shared_departure set seats_booked = seats_total + 1 where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+      'shared_departure_seats_booked_valid',
+    );
+    await expect(
+      sql`update shared_departure set seats_booked = seats_total where corridor_id = ${id} and date = ${date} and time = '23:59'`,
+    ).resolves.toBeDefined();
+  });
+
+  it('serializes refund reservations and confirms only captured money with unique evidence', async () => {
+    const refunds = new PostgresRefundRepo(db);
+    const booking = await bookings.create(sample);
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `refund-${booking.id}`,
+    });
+    await payments.markSucceeded(payment.id);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    await bookings.setStatus(booking.id, 'paid');
+
+    const requests = await Promise.allSettled([
+      refunds.request({
+        bookingId: booking.id,
+        amountCents: booking.total,
+        currency: 'USD',
+        reason: 'first',
+        requestedBy: 'finance@test',
+      }),
+      refunds.request({
+        bookingId: booking.id,
+        amountCents: booking.total,
+        currency: 'USD',
+        reason: 'concurrent',
+        requestedBy: 'founder@test',
+      }),
+    ]);
+    expect(requests.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(requests.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const pending = (requests.find((result) => result.status === 'fulfilled') as PromiseFulfilledResult<Awaited<ReturnType<typeof refunds.request>>>).value;
+    const gatewayRef = `PG-REF-${booking.id}`;
+    const confirmed = await refunds.confirm({
+      bookingId: booking.id,
+      refundId: pending.id,
+      gatewayRef,
+      confirmedBy: 'finance@test',
+    });
+    expect(confirmed.bookingFullyRefunded).toBe(true);
+    expect((await bookings.get(booking.id))?.status).toBe('refunded');
+    await expect(
+      refunds.confirm({
+        bookingId: booking.id,
+        refundId: pending.id,
+        gatewayRef,
+        confirmedBy: 'finance@test',
+      }),
+    ).rejects.toMatchObject({ code: 'refund_already_confirmed' });
+  });
+
+  it.each([
+    'after_event_insert',
+    'after_payment_update',
+    'after_booking_update',
+  ] as const)('atomically rolls back a settlement failure at %s and permits retry', async (point) => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `atomic-${point}-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: 'd'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const broken = new PostgresPaymentSettlementRepo(db, bookings, async (at) => {
+      if (at === point) throw new Error(`injected_${point}`);
+    });
+
+    await expect(broken.acceptVerifiedEvent(event)).rejects.toThrow(`injected_${point}`);
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('pending');
+    expect((await bookings.get(booking.id))?.status).toBe('payment_pending');
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(0);
+
+    const retried = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent(event);
+    expect(retried).toMatchObject({
+      kind: 'settled',
+      payment: { status: 'succeeded' },
+      booking: { status: 'paid' },
+    });
+  });
+
+  it('settles concurrent verified successes once without split state', async () => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const payment = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `concurrent-${booking.id}`,
+    });
+    const event = {
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-${payment.id}`,
+      amountCents: payment.amount,
+      currency: payment.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: 'e'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    };
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+
+    const outcomes = await Promise.all([
+      settlement.acceptVerifiedEvent(event),
+      settlement.acceptVerifiedEvent(event),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['duplicate', 'settled']);
+    expect(await paymentEvents.listForReconciliation(payment.id)).toHaveLength(1);
+    expect((await payments.findByOrderId(booking.reference))?.status).toBe('succeeded');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
   it('persists a quote with JSONB request/result and patches its status', async () => {
     const saved = await quotes.save({
       product: 'private',
@@ -299,6 +649,186 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 
     expect(await quotes.patch('00000000-0000-0000-0000-000000000000', { status: 'won' })).toBeNull();
   });
+
+  it('updates a web quote with token/revision compare-and-set and fixed expiry', async () => {
+    const expiresAt = new Date('2026-08-04T12:00:00.000Z');
+    const accessTokenDigest = 'f'.repeat(64);
+    const saved = await quotes.save({
+      channel: 'web',
+      product: 'private',
+      vehicle: 'car',
+      totalCents: 4_000,
+      currency: 'USD',
+      rateCardVersion: 'test-card',
+      request: { v: 2, intent: { product: 'private' }, engine: { product: 'private' } },
+      result: { totalCents: 4_000 },
+      rateCardJson: { version: 'test-card' },
+      rateLockedUntil: expiresAt,
+      intent: { product: 'private' },
+      intentFingerprint: 'a'.repeat(64),
+      accessTokenDigest,
+    });
+    const update = {
+      id: saved.id,
+      accessTokenDigest,
+      expectedRevision: 1,
+      now: new Date('2026-07-29T12:00:00.000Z'),
+      quote: {
+        channel: 'web' as const,
+        product: 'private',
+        vehicle: 'van',
+        totalCents: 5_000,
+        currency: 'USD',
+        rateCardVersion: 'test-card',
+        request: { v: 2, intent: { product: 'private', vehicle: 'van' } },
+        result: { totalCents: 5_000 },
+        intent: { product: 'private', vehicle: 'van' },
+        intentFingerprint: 'b'.repeat(64),
+      },
+    };
+
+    const outcomes = await Promise.all([
+      quotes.updateWebV2(update),
+      quotes.updateWebV2(update),
+    ]);
+    expect(outcomes.map((outcome) => outcome.kind).sort()).toEqual(['stale_revision', 'updated']);
+    const current = await quotes.get(saved.id);
+    expect(current).toMatchObject({
+      revision: 2,
+      totalCents: 5_000,
+      rateLockedUntil: expiresAt,
+    });
+  });
+
+  async function lockedWebQuote(token: string) {
+    const intent: WebQuoteIntent = {
+      product: 'private',
+      routeId: `integration-${Date.now()}-${Math.random()}`,
+      vehicle: 'car',
+      pax: 2,
+      bags: 1,
+      date: '2026-09-10',
+      time: '09:00',
+      legs: [{ from: 'Kandy', to: 'Nanu Oya' }],
+      extras: [],
+    };
+    const rateCardVersion = 'conversion-integration-v1';
+    const result = {
+      product: 'private',
+      currency: 'USD',
+      lineItems: [{ label: 'Private transfer', amountCents: 12_345 }],
+      subtotalCents: 12_345,
+      totalCents: 12_345,
+      priceAdjustmentCents: 0,
+      priceStrategy: 'none',
+      depositCents: 12_345,
+      amountDueNowCents: 12_345,
+      marginEstimateCents: null,
+      rateCardVersion,
+      warnings: [],
+    };
+    const quote = await quotes.save({
+      channel: 'web',
+      product: 'private',
+      vehicle: 'car',
+      totalCents: result.totalCents,
+      currency: result.currency,
+      rateCardVersion,
+      request: {
+        v: 2,
+        intent,
+        engine: {
+          product: 'private',
+          vehicle: 'car',
+          pax: 2,
+          bags: 1,
+          legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 }],
+          extras: [],
+        },
+      },
+      result,
+      rateCardJson: { version: rateCardVersion },
+      rateLockedUntil: new Date('2026-10-01T00:00:00.000Z'),
+      intent,
+      intentFingerprint: fingerprintIntent(intent),
+      accessTokenDigest: digestAccessToken(token),
+    });
+    return {
+      quote,
+      request: {
+        quoteId: quote.id,
+        accessToken: token,
+        revision: quote.revision,
+        intent,
+        bookingDetails: {
+          customer: sample.input.customer,
+          date: intent.date,
+          time: intent.time,
+        },
+      },
+    };
+  }
+
+  it('atomically converts one Postgres quote under concurrent double-submit', async () => {
+    const locked = await lockedWebQuote(`concurrent-${Date.now()}`);
+    const converter = new PostgresQuoteConversionRepo(
+      db,
+      bookings,
+      () => new Date('2026-09-01T00:00:00.000Z'),
+    );
+    const [first, second] = await Promise.all([
+      converter.convert(locked.request),
+      converter.convert(locked.request),
+    ]);
+    expect([first.replay, second.replay].sort()).toEqual([false, true]);
+    expect(first.booking.id).toBe(second.booking.id);
+    const saved = await quotes.get(locked.quote.id);
+    expect(saved).toMatchObject({ status: 'won', convertedBookingId: first.booking.id });
+
+    const [stored] = await db
+      .select({
+        subtotal: bookingRows.subtotal,
+        discountTotal: bookingRows.discountTotal,
+        pricingSnapshot: bookingRows.pricingSnapshotJson,
+      })
+      .from(bookingRows)
+      .where(eq(bookingRows.id, first.booking.id));
+    expect(stored).toMatchObject({
+      subtotal: 12_345,
+      discountTotal: 0,
+      pricingSnapshot: {
+        quoteId: locked.quote.id,
+        totalCents: 12_345,
+        amountDueNowCents: 12_345,
+      },
+    });
+  });
+
+  it.each(['after_booking_insert', 'after_quote_update'] as const)(
+    'rolls back the Postgres transaction on %s and permits retry',
+    async (failurePoint) => {
+      const locked = await lockedWebQuote(`rollback-${failurePoint}-${Date.now()}`);
+      const failing = new PostgresQuoteConversionRepo(
+        db,
+        bookings,
+        () => new Date('2026-09-01T00:00:00.000Z'),
+        (point) => {
+          if (point === failurePoint) throw new Error(`injected:${point}`);
+        },
+      );
+      await expect(failing.convert(locked.request)).rejects.toThrow(`injected:${failurePoint}`);
+      expect(await bookings.findByIdempotencyKey(`quote-v2:${locked.quote.id}`)).toBeNull();
+      expect((await quotes.get(locked.quote.id))?.convertedBookingId).toBeNull();
+
+      const retry = await new PostgresQuoteConversionRepo(
+        db,
+        bookings,
+        () => new Date('2026-09-01T00:00:00.000Z'),
+      ).convert(locked.request);
+      expect(retry.replay).toBe(false);
+      expect((await quotes.get(locked.quote.id))?.convertedBookingId).toBe(retry.booking.id);
+    },
+  );
 
   it('persists ops layer: ride_ops status/flags', async () => {
     const b = await bookings.create(sample);

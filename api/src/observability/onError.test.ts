@@ -3,7 +3,7 @@ import { createApp } from '../app';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
-import { signBookingToken } from '../lib/bookingToken';
+import { signBookingToken, signCheckoutToken } from '../lib/bookingToken';
 
 // M17: an unhandled route error still returns the same generic 500, but now also raises
 // a throttled critical alert (and reports to Sentry when configured — covered in track.test).
@@ -27,7 +27,10 @@ describe('app.onError alerting', () => {
   // /bookings/view?t=... — keeps the varying part IN the path itself (c.req.path strips
   // query strings), so it's the route that can actually demonstrate distinct-path dedupe keys.
   const checkout = (app: ReturnType<typeof createApp>, id: string) =>
-    app.request(`/bookings/${id}/checkout`, { method: 'POST' });
+    app.request(`/bookings/${id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${signCheckoutToken(id, SECRET)}` },
+    });
 
   it('returns the unchanged 500 body and sends one critical alert', async () => {
     const inner = new FakeAlertAdapter();
