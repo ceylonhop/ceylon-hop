@@ -64,6 +64,20 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   needsPricing?: boolean | null;
 };
 
+export interface BookingPricingSnapshot {
+  version: 1;
+  quoteId: string;
+  quoteRevision: number;
+  intentFingerprint: string;
+  subtotalCents: number;
+  discountTotalCents: number;
+  totalCents: number;
+  amountDueNowCents: number;
+  currency: string;
+  rateCardVersion: string;
+  lineItems: unknown[];
+}
+
 // The storage seam. The route layer depends only on this interface, so swapping the
 // in-memory store for Postgres later (M2) touches nothing else.
 export class BookingNotFoundError extends Error {
@@ -96,6 +110,7 @@ export class InMemoryBookingRepo implements BookingRepo {
   private byId = new Map<string, Booking>();
   private refs = new Set<string>();
   private byKey = new Map<string, string>();
+  private pricingSnapshots = new Map<string, BookingPricingSnapshot>();
 
   async create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking> {
     const key = opts?.idempotencyKey;
@@ -147,5 +162,46 @@ export class InMemoryBookingRepo implements BookingRepo {
     if (!filter?.status) return all;
     const statuses = Array.isArray(filter.status) ? filter.status : [filter.status];
     return all.filter((b) => statuses.includes(b.status));
+  }
+
+  snapshotForSettlement(): Map<string, Booking> {
+    return new Map([...this.byId].map(([id, booking]) => [id, structuredClone(booking)]));
+  }
+
+  restoreForSettlement(snapshot: Map<string, Booking>): void {
+    this.byId = new Map([...snapshot].map(([id, booking]) => [id, structuredClone(booking)]));
+  }
+
+  snapshotForQuoteConversion(): {
+    byId: Map<string, Booking>;
+    refs: Set<string>;
+    byKey: Map<string, string>;
+    pricingSnapshots: Map<string, BookingPricingSnapshot>;
+  } {
+    return {
+      byId: structuredClone(this.byId),
+      refs: structuredClone(this.refs),
+      byKey: structuredClone(this.byKey),
+      pricingSnapshots: structuredClone(this.pricingSnapshots),
+    };
+  }
+
+  restoreForQuoteConversion(snapshot: ReturnType<InMemoryBookingRepo['snapshotForQuoteConversion']>): void {
+    this.byId = structuredClone(snapshot.byId);
+    this.refs = structuredClone(snapshot.refs);
+    this.byKey = structuredClone(snapshot.byKey);
+    this.pricingSnapshots = structuredClone(snapshot.pricingSnapshots);
+  }
+
+  setPricingSnapshotForQuoteConversion(
+    bookingId: string,
+    snapshot: BookingPricingSnapshot,
+  ): void {
+    this.pricingSnapshots.set(bookingId, structuredClone(snapshot));
+  }
+
+  getPricingSnapshotForQuoteConversion(bookingId: string): BookingPricingSnapshot | null {
+    const snapshot = this.pricingSnapshots.get(bookingId);
+    return snapshot ? structuredClone(snapshot) : null;
   }
 }

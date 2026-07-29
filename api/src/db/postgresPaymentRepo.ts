@@ -44,9 +44,18 @@ export class PostgresPaymentRepo implements PaymentRepo {
   }
 
   async markSucceeded(id: string): Promise<Payment> {
+    const now = new Date();
     const [row] = await this.db
       .update(payments)
-      .set({ status: 'succeeded' })
+      // This legacy repository method has no gateway event to cite. Keep its stable
+      // interface for tests/internal callers while making the lack of gateway provenance
+      // explicit; real webhook settlement uses PostgresPaymentSettlementRepo atomically.
+      .set({
+        status: 'succeeded',
+        settledAt: now,
+        settlementSource: 'legacy_backfill',
+        updatedAt: now,
+      })
       .where(eq(payments.id, id))
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);
@@ -56,7 +65,7 @@ export class PostgresPaymentRepo implements PaymentRepo {
   async markFailed(id: string): Promise<Payment> {
     const [row] = await this.db
       .update(payments)
-      .set({ status: 'failed' })
+      .set({ status: 'failed', updatedAt: new Date() })
       .where(eq(payments.id, id))
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);

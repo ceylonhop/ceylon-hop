@@ -51,7 +51,10 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     ).json();
     expect(b.status).toBe('draft');
 
-    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     expect(checkout.status).toBe(200);
 
     const wh = await app.request('/webhooks/payments', {
@@ -97,7 +100,10 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     ).json();
     expect(b.mode).toBe('trip');
 
-    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     await app.request('/webhooks/payments', {
       method: 'POST',
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),
@@ -137,7 +143,10 @@ describe('E2E smoke: book → checkout → webhook → paid → ops', () => {
     ).json();
     expect(b.mode).toBe('shared');
 
-    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     await app.request('/webhooks/payments', {
       method: 'POST',
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),

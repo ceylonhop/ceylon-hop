@@ -123,7 +123,10 @@ describe('POST /bookings/trip', () => {
     // Resolvable stops: this test is about the checkout→webhook→paid pipeline, and an unpriced
     // booking is deliberately not chargeable.
     const b = await (await postTrip(app, { ...valid, stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'] })).json();
-    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
     const wh = await app.request('/webhooks/payments', { method: 'POST', body });
     expect(wh.status).toBe(200);

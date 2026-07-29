@@ -63,6 +63,16 @@ const Env = z.object({
   BOOKING_LINK_SECRET: z.string().default('dev-booking-link-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
+  QUOTE_V2_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
+  // Temporary rollout seam: staging may accept the legacy tokenless checkout while the
+  // website deploy catches up. Default-off; live production with real payments rejects it.
+  CHECKOUT_TOKEN_COMPATIBILITY: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   // Ride Board customer session (first customer-facing auth) — signs the ch_cust cookie.
   // A DEDICATED secret (not OPS_SESSION_SECRET) so a customer session can never be
   // cross-replayed as a staff session. Set to a strong unique value at launch.
@@ -113,6 +123,16 @@ export function buildConfig(env: Record<string, string | undefined>) {
     throw new Error(
       'CUSTOMER_SESSION_SECRET must be set to a strong unique value in production ' +
         '(the default would let anyone forge a customer session) — refusing to boot',
+    );
+  }
+  if (
+    cfg.NODE_ENV === 'production' &&
+    cfg.CHECKOUT_TOKEN_COMPATIBILITY &&
+    !allowFakePayments(cfg.ALLOW_FAKE_PAYMENTS)
+  ) {
+    throw new Error(
+      'CHECKOUT_TOKEN_COMPATIBILITY cannot be enabled in live production — ' +
+        'tokenless checkout is a staging-only rollout seam.',
     );
   }
   // Without PayHere credentials the payment seam silently falls back to FakePaymentAdapter,

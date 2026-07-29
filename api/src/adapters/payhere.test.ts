@@ -15,6 +15,30 @@ function adapter() {
   });
 }
 
+function signedNotify(overrides: Partial<Record<
+  'merchant_id' | 'order_id' | 'payment_id' | 'payhere_amount' | 'payhere_currency' | 'status_code',
+  string
+>> = {}): string {
+  const fields = {
+    merchant_id: MID,
+    order_id: 'CH-ABC12',
+    payment_id: 'PAY123',
+    payhere_amount: '40.00',
+    payhere_currency: 'USD',
+    status_code: '2',
+    ...overrides,
+  };
+  const md5sig = md5Upper(
+    fields.merchant_id +
+      fields.order_id +
+      fields.payhere_amount +
+      fields.payhere_currency +
+      fields.status_code +
+      md5Upper(SECRET),
+  );
+  return new URLSearchParams({ ...fields, md5sig }).toString();
+}
+
 describe('PayHerePaymentAdapter', () => {
   it('builds sandbox checkout fields with the correct hash and 2dp amount', async () => {
     const p = await adapter().createCheckout({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
@@ -31,8 +55,18 @@ describe('PayHerePaymentAdapter', () => {
     const body = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
     const event = a.parseWebhook(body);
     expect(event?.status).toBe('succeeded');
-    expect(event?.amount).toBe(4000); // 40.00 -> 4000 cents
+    expect(event?.amountCents).toBe(4000); // 40.00 -> 4000 cents
     expect(event?.orderId).toBe('CH-ABC12');
+    expect(event).toMatchObject({
+      provider: 'payhere',
+      merchantId: MID,
+      providerTxnId: 'PAY123',
+      currency: 'USD',
+      providerStatusCode: '2',
+    });
+    expect(event?.receivedAt).toBeInstanceOf(Date);
+    expect(event?.payloadSha256).toBe(createHash('sha256').update(body).digest('hex'));
+    expect(event?.sanitizedPayload).not.toHaveProperty('md5sig');
   });
 
   it('rejects a tampered notify (bad md5sig)', () => {
@@ -41,10 +75,14 @@ describe('PayHerePaymentAdapter', () => {
     expect(a.parseWebhook(body.replace('40.00', '1.00'))).toBeNull();
   });
 
-  it('maps a non-2 status to failed', () => {
-    const a = adapter();
-    const body = a.simulateNotify({ orderId: 'CH-X', amount: 4000, currency: 'USD', statusCode: '-2' });
-    expect(a.parseWebhook(body)?.status).toBe('failed');
+  it.each([
+    ['2', 'succeeded'],
+    ['0', 'pending'],
+    ['-1', 'cancelled'],
+    ['-2', 'failed'],
+    ['-3', 'charged_back'],
+  ] as const)('maps PayHere status %s -> %s', (statusCode, status) => {
+    expect(adapter().parseWebhook(signedNotify({ status_code: statusCode }))?.status).toBe(status);
   });
 
   // Pinned known-good signature: locks the md5sig algorithm + field ORDER against
@@ -66,7 +104,7 @@ describe('PayHerePaymentAdapter', () => {
     const event = adapter().parseWebhook(body);
     expect(event).not.toBeNull();
     expect(event?.status).toBe('succeeded');
-    expect(event?.amount).toBe(4000);
+    expect(event?.amountCents).toBe(4000);
     expect(event?.orderId).toBe('CH-LOCK1');
   });
 
@@ -93,5 +131,43 @@ describe('PayHerePaymentAdapter', () => {
     const failed = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD', statusCode: '-2' });
     const forgedSuccess = failed.replace('status_code=-2', 'status_code=2');
     expect(a.parseWebhook(forgedSuccess)).toBeNull();
+  });
+
+  it('rejects a correctly signed notification for a different merchant', () => {
+    expect(adapter().parseWebhook(signedNotify({ merchant_id: '7654321' }))).toBeNull();
+  });
+
+  it('leaves a signed three-letter currency for stored-payment reconciliation', () => {
+    const event = adapter().parseWebhook(signedNotify({ payhere_currency: 'EUR' }));
+    expect(event?.currency).toBe('EUR');
+  });
+
+  it.each(['usd', 'US', 'USDD', 'U1D'])('rejects malformed currency %s', (currency) => {
+    expect(adapter().parseWebhook(signedNotify({ payhere_currency: currency }))).toBeNull();
+  });
+
+  it.each(['NaN', '40', '40.0', '0.00', '-1.00', '1e2', '1000000000.00'])(
+    'rejects malformed, non-positive, or oversized amount %s',
+    (amount) => {
+      expect(adapter().parseWebhook(signedNotify({ payhere_amount: amount }))).toBeNull();
+    },
+  );
+
+  it('rejects a missing provider transaction id', () => {
+    expect(adapter().parseWebhook(signedNotify({ payment_id: '' }))).toBeNull();
+  });
+
+  it('rejects duplicate security-critical fields', () => {
+    const body = `${signedNotify()}&order_id=CH-OTHER`;
+    expect(adapter().parseWebhook(body)).toBeNull();
+  });
+
+  it('rejects an unknown PayHere status code', () => {
+    expect(adapter().parseWebhook(signedNotify({ status_code: '9' }))).toBeNull();
+  });
+
+  it('rejects an oversized webhook body before parsing', () => {
+    const body = `${signedNotify()}&padding=${'x'.repeat(9_000)}`;
+    expect(adapter().parseWebhook(body)).toBeNull();
   });
 });

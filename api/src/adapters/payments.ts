@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 // Constant-time string compare (length-guarded — timingSafeEqual throws on unequal lengths).
 function safeEqual(a: string, b: string): boolean {
@@ -30,7 +30,23 @@ export interface CreateCheckoutArgs {
   };
 }
 
-export interface WebhookEvent {
+export type ProviderPaymentStatus = 'succeeded' | 'pending' | 'cancelled' | 'failed' | 'charged_back';
+
+export interface VerifiedPaymentEvent {
+  provider: 'fake' | 'payhere';
+  merchantId: string;
+  orderId: string;
+  providerTxnId: string;
+  amountCents: number;
+  currency: string;
+  status: ProviderPaymentStatus;
+  providerStatusCode: string;
+  receivedAt: Date;
+  payloadSha256: string;
+  sanitizedPayload: Record<string, string>;
+}
+
+interface FakeWebhookEvent {
   orderId: string;
   amount: number;
   currency: string;
@@ -38,7 +54,7 @@ export interface WebhookEvent {
   providerTxnId: string;
 }
 
-interface WebhookBody extends WebhookEvent {
+interface WebhookBody extends FakeWebhookEvent {
   signature: string;
 }
 
@@ -49,12 +65,12 @@ export interface PaymentAdapter {
   readonly provider: string;
   createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
   // Verify + parse a raw webhook body. Returns null when the signature is invalid.
-  parseWebhook(rawBody: string): WebhookEvent | null;
+  parseWebhook(rawBody: string): VerifiedPaymentEvent | null;
 }
 
 const DEFAULT_SECRET = process.env.FAKE_PAYMENT_SECRET ?? 'fake-secret';
 
-function canonical(e: WebhookEvent): string {
+function canonical(e: FakeWebhookEvent): string {
   return [e.orderId, e.amount, e.currency, e.status, e.providerTxnId].join('|');
 }
 
@@ -86,7 +102,7 @@ export class FakePaymentAdapter implements PaymentAdapter {
     }
   }
 
-  private sign(e: WebhookEvent): string {
+  private sign(e: FakeWebhookEvent): string {
     return createHmac('sha256', this.secret).update(canonical(e)).digest('hex');
   }
 
@@ -108,7 +124,7 @@ export class FakePaymentAdapter implements PaymentAdapter {
     status?: 'succeeded' | 'failed';
     providerTxnId?: string;
   }): string {
-    const event: WebhookEvent = {
+    const event: FakeWebhookEvent = {
       orderId: args.orderId,
       amount: args.amount,
       currency: args.currency,
@@ -118,7 +134,7 @@ export class FakePaymentAdapter implements PaymentAdapter {
     return JSON.stringify({ ...event, signature: this.sign(event) });
   }
 
-  parseWebhook(rawBody: string): WebhookEvent | null {
+  parseWebhook(rawBody: string): VerifiedPaymentEvent | null {
     let parsed: unknown;
     try {
       parsed = JSON.parse(rawBody);
@@ -127,6 +143,25 @@ export class FakePaymentAdapter implements PaymentAdapter {
     }
     if (!isWebhookBody(parsed)) return null;
     const { signature, ...event } = parsed;
-    return safeEqual(signature, this.sign(event)) ? event : null;
+    if (!safeEqual(signature, this.sign(event))) return null;
+    return {
+      provider: this.provider,
+      merchantId: 'fake',
+      orderId: event.orderId,
+      providerTxnId: event.providerTxnId,
+      amountCents: event.amount,
+      currency: event.currency,
+      status: event.status,
+      providerStatusCode: event.status,
+      receivedAt: new Date(),
+      payloadSha256: createHash('sha256').update(rawBody).digest('hex'),
+      sanitizedPayload: {
+        orderId: event.orderId,
+        amount: String(event.amount),
+        currency: event.currency,
+        status: event.status,
+        providerTxnId: event.providerTxnId,
+      },
+    };
   }
 }

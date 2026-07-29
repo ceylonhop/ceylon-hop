@@ -211,7 +211,17 @@ describe('GET /bookings/view (tokenized customer view)', () => {
     expect(body.firstName).toBe('Maya');
     expect(body.totalCents).toBe(6000);
     // Allow-list: never leak the id, channel, or contact details.
-    for (const leak of ['id', 'channel', 'email', 'whatsapp', 'country', 'lastName']) {
+    for (const leak of [
+      'id',
+      'channel',
+      'email',
+      'whatsapp',
+      'country',
+      'lastName',
+      'sanitizedPayload',
+      'payloadSha256',
+      'checkoutToken',
+    ]) {
       expect(JSON.stringify(body)).not.toContain(leak === 'email' ? 'maya@example.com' : leak === 'whatsapp' ? '+94771234567' : leak === 'country' ? 'Spain' : leak === 'lastName' ? 'Fernandez' : `"${leak}"`);
     }
   });
@@ -402,7 +412,10 @@ describe('a Maps outage must not silently reprice', () => {
     expect(res.status).toBe(201); // the lead is kept, not thrown away
 
     const b = await res.json();
-    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     expect(checkout.status).toBe(409);
     expect((await checkout.json()).error).toBe('awaiting_price');
   });
@@ -421,7 +434,10 @@ describe('a Maps outage must not silently reprice', () => {
     const res = await post(app, { ...valid, from: 'Colombo Airport (CMB)', to: 'Galle' });
     const b = await res.json();
     expect(b.total).toBe(7850);
-    const checkout = await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    const checkout = await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     expect(checkout.status).toBe(200);
   });
 });

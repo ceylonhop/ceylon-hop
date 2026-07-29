@@ -114,7 +114,10 @@ describe('POST /bookings/shared', () => {
     const app = createApp({ adapter, email, bookings });
 
     const b = await (await postShared(app, valid)).json();
-    await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+    await app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}` },
+    });
     await app.request('/webhooks/payments', {
       method: 'POST',
       body: adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency }),

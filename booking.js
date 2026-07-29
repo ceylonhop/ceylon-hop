@@ -1446,7 +1446,13 @@ async function runPayment(){
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
   let checkout=null;
   try{
-    const res = await fetch(API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',{method:'POST'});
+    const checkoutHeaders = booking.checkoutToken
+      ? { authorization: 'Bearer '+booking.checkoutToken }
+      : {};
+    const res = await fetch(
+      API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
+      {method:'POST',headers:checkoutHeaders}
+    );
     if(res.ok) checkout = await res.json();
   }catch(e){}
 
