@@ -315,6 +315,21 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
+  .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
+  .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
+  .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+  .refund-form input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+  .refund-row{border:1px solid var(--line);border-left:4px solid var(--ink-faint);border-radius:11px;padding:11px 12px;margin-top:9px;background:var(--paper)}
+  .refund-row.refund-status-manual_pending{border-left-color:var(--wait);background:var(--wait-bg)}
+  .refund-row.refund-status-manual_confirmed{border-left-color:var(--ok);background:var(--ok-bg)}
+  .refund-row.refund-status-cancelled{border-left-color:var(--ink-faint);opacity:.72}
+  .refund-row-head{display:flex;justify-content:space-between;gap:10px;font-weight:700}
+  .refund-meta{font-size:.77rem;color:var(--ink-soft);margin-top:5px;overflow-wrap:anywhere}
+  .refund-confirm{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;margin-top:10px}
+  .refund-confirm label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
+  .refund-confirm input{min-width:0;border:1px solid #e4c984;background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit}
+  .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
+  @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
   /* activity */
   .act{position:relative;padding-left:23px;margin-bottom:15px}
   .act::before{content:"";position:absolute;left:5px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--c,var(--teal));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--teal)) 16%,transparent)}
@@ -1461,6 +1476,12 @@ const api={
   async get(p){const r=await fetch('/admin/ops'+p,{credentials:'same-origin'});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
   async post(p,body){const r=await fetch('/admin/ops'+p,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body??{})});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
 };
+/* Money actions live on the capability-gated /admin API, not the general /admin/ops
+   surface. Keeping the base explicit makes an accidental status-only refund impossible. */
+const adminApi={
+  async get(p){const r=await fetch('/admin'+p,{credentials:'same-origin'});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok)throw new Error('api '+r.status);return r.json();},
+  async post(p,body){const r=await fetch('/admin'+p,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(body??{})});if(r.status===401){showLogin();throw new Error('auth');}if(!r.ok){const x=await r.json().catch(()=>null);throw new Error(x&&x.error?x.error:'api '+r.status);}return r.json();},
+};
 
 /* ── row → ticket mapping (backend OpsBookingRow → view model) ── */
 function rowToTicket(row){
@@ -1494,6 +1515,7 @@ const boardSeats=t=>{
 let tickets=[];
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
+const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
 
 function routeStateFromUrl(canQuote){
   const url=new URL(window.location.href);
@@ -2142,6 +2164,7 @@ function buildActivity(t,d){
   const acts=[];
   if(d?.booking?.createdAt)acts.push([fmtDateTime(d.booking.createdAt),`Booking created · ${chanLabel(t.chan)}`]);
   (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push(['Payment',`Received · ${money({amount:p.amount,currency:p.currency})}`]);});
+  (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
   t.notes.forEach(n=>acts.push(['Note',n]));
@@ -2161,6 +2184,47 @@ function legsHtmlFor(d){
     return `<div class="legs">${rows}</div>`;
   }
   return '<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
+}
+
+function refundSummary(d){
+  const captured=(d?.payments||[]).filter(p=>p.status==='succeeded').reduce((sum,p)=>sum+(p.amount||0),0);
+  const refunds=d?.refunds||[];
+  const confirmed=refunds.filter(r=>r.status==='manual_confirmed').reduce((sum,r)=>sum+r.amountCents,0);
+  const pending=refunds.filter(r=>r.status==='manual_pending').reduce((sum,r)=>sum+r.amountCents,0);
+  const payment=(d?.payments||[]).find(p=>p.status==='succeeded');
+  return {captured,confirmed,pending,remaining:Math.max(0,captured-confirmed-pending),currency:payment?.currency||d?.booking?.currency||'USD'};
+}
+
+function refundHtmlFor(t,d){
+  if(!state.caps||!state.caps.includes('payments:act'))return '';
+  const s=refundSummary(d),refunds=d?.refunds||[];
+  const rows=refunds.slice().reverse().map(r=>{
+    const label=r.status==='manual_pending'?'Pending':r.status==='manual_confirmed'?'Confirmed':'Cancelled';
+    const evidence=r.gatewayRef?` · PayHere ref ${esc(r.gatewayRef)}`:'';
+    const confirmed=r.confirmedBy?` · confirmed by ${esc(r.confirmedBy)}`:'';
+    const pendingActions=r.status==='manual_pending'?`
+      <p class="refund-warning">Complete the refund in the PayHere dashboard first. Then paste its reference to confirm the customer refund and send the email.</p>
+      <div class="refund-confirm">
+        <label>PayHere refund reference<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="Required evidence"></label>
+        <button class="btn btn-go" data-act="refundconfirm" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Confirm refund</button>
+        <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
+      </div>`:'';
+    return `<div class="refund-row refund-status-${esc(r.status)}">
+      <div class="refund-row-head"><span>${label}</span><span>${money({amount:r.amountCents,currency:r.currency})}</span></div>
+      <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
+      ${pendingActions}</div>`;
+  }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
+  const request=s.remaining>0?`<div class="refund-form">
+    <label>Refund amount (${esc(s.currency)})<input id="refundamount" inputmode="decimal" placeholder="0.00"></label>
+    <label>Reason<input id="refundreason" maxlength="500" placeholder="Customer request"></label>
+    <button class="btn btn-go" data-act="refundrequest" data-id="${esc(t.id)}">Request refund</button>
+  </div>`:'';
+  return `<div class="block"><h4>Refunds</h4>
+    <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Previously refunded</span><span class="v">${money({amount:s.confirmed,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Pending</span><span class="v">${money({amount:s.pending,currency:s.currency})}</span></div>
+    <div class="kv"><span class="k">Refundable remaining</span><span class="v">${money({amount:s.remaining,currency:s.currency})}</span></div>
+    ${request}${rows}</div>`;
 }
 
 /* detail */
@@ -2262,6 +2326,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
+      ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
         <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
         <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
@@ -2279,8 +2344,26 @@ async function openDetail(id){
   /* A ride-board van has no booking row — GET /bookings/board:XX-1234 would 404.
      Everything its sheet shows already arrived on the queue row. */
   if(String(id).indexOf('board:')===0)return;
-  try{state.detailData=await api.get('/bookings/'+id);if(state.detail===id)renderSheet();}
+  try{
+    const detail=await api.get('/bookings/'+id);
+    if(state.caps&&state.caps.includes('payments:act')){
+      try{detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');}
+      catch(refundErr){
+        if(refundErr.message==='auth')throw refundErr;
+        detail.refunds=[];
+        window.opsReportError&&window.opsReportError('refund history',refundErr);
+        toast('Booking loaded, but refund history is unavailable');
+      }
+    }
+    state.detailData=detail;if(state.detail===id)renderSheet();
+  }
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
+}
+
+async function reloadRefundDetail(id){
+  const detail=await api.get('/bookings/'+id);
+  detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
+  if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
 let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
@@ -2496,7 +2579,7 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','refundrequest','refundconfirm','refundcancel'].includes(act))return;
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
@@ -2505,6 +2588,47 @@ document.addEventListener('click',async e=>{
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+    case 'refundrequest':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
+      const amountInput=$('#refundamount'),reasonInput=$('#refundreason');
+      const amountText=amountInput&&amountInput.value.trim();
+      const amountCents=/^\d+(?:\.\d{1,2})?$/.test(amountText||'')?Math.round(Number(amountText)*100):0;
+      const reason=reasonInput&&reasonInput.value.trim();
+      const s=refundSummary(state.detailData);
+      if(!amountCents||amountCents>s.remaining){toast('Enter an amount within the refundable balance');break;}
+      if(!reason){toast('Add a refund reason');break;}
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
+    case 'refundconfirm':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const refundId=el.dataset.refundId;
+      const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
+      const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
+      const gatewayRef=refInput&&refInput.value.trim();
+      if(!gatewayRef){toast('Paste the PayHere refund reference first');break;}
+      if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/confirm',{gatewayRef});await reloadRefundDetail(id);toast('Refund confirmed — customer emailed');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund confirm',err);toast('Could not confirm refund');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
+    case 'refundcancel':{
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const refundId=el.dataset.refundId;
+      const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
+      if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
+      refundBusy.add(busyKey);el.disabled=true;
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request');if(el.isConnected)el.disabled=false;}}
+      finally{refundBusy.delete(busyKey);}
+      break;
+    }
   }
 });
 /* Quotes search. Repaints only #view — never the topbar — so the input keeps focus and caret

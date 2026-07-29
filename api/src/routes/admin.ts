@@ -109,8 +109,6 @@ export function adminRoutes(deps: {
   }
 
   r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
-  r.post('/bookings/:id/refund', requireCap('payments:act'), (c) => transitionAndNotify(c, 'refunded', sendRefundConfirmation));
-
   const RefundRequest = z
     .object({
       amountCents: z.number().int().positive(),
