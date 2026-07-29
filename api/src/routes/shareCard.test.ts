@@ -195,3 +195,38 @@ describe('ride-domain share links at the root', () => {
     expect((await app.request('/not-a-code')).status).toBe(404);
   });
 });
+
+// Render (and any other proxy) terminates TLS at the edge, so the request URL the app
+// sees is plain http. Building og:url / og:image from it emitted http:// links on a site
+// served over https — which crawlers variously downgrade, ignore, or refuse outright,
+// costing exactly the preview this whole endpoint exists to produce.
+describe('absolute URLs behind a TLS-terminating proxy', () => {
+  it('honours x-forwarded-proto when building og tags', async () => {
+    const { app, code } = await seeded(5);
+    const res = await app.request(`/r/${code}`, { headers: { 'x-forwarded-proto': 'https' } });
+    const html = await res.text();
+
+    expect(meta(html, 'og:image')).toMatch(/^https:\/\//);
+    expect(meta(html, 'og:url')).toMatch(/^https:\/\//);
+    expect(html).not.toContain('content="http://');
+  });
+
+  it('leaves plain http alone when nothing is proxying (local dev)', async () => {
+    const { app, code } = await seeded(5);
+    const html = await (await app.request(`/r/${code}`)).text();
+    expect(meta(html, 'og:image')).toMatch(/^http:\/\/localhost/);
+  });
+
+  it('an explicit share host still wins over both', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 's', firstName: 'Ann', country: 'PL', email: 'a@b.com', seats: 1 });
+    const app = createApp({
+      rideLists,
+      bookingBaseUrl: 'https://prod.ceylonhop.com',
+      shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const html = await (await app.request(`/r/${l.code}`, { headers: { 'x-forwarded-proto': 'http' } })).text();
+    expect(meta(html, 'og:url')).toBe(`https://ride.ceylonhop.com/r/${l.code}`);
+  });
+});
