@@ -66,6 +66,8 @@ export interface AppDeps {
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
   bookingLinkSecret?: string;
+  checkoutNow?: () => number;
+  allowLegacyCheckoutWithoutToken?: boolean;
   // Front-end origin used to build those links in emails (defaults to config.APP_BASE_URL).
   bookingBaseUrl?: string;
   auth?: { opsUsers: string; googleClientId: string; opsSessionSecret: string; nodeEnv?: string };
@@ -129,6 +131,7 @@ export function createApp(deps: AppDeps = {}) {
     (quotes instanceof InMemoryQuoteRepo && bookings instanceof InMemoryBookingRepo
       ? new InMemoryQuoteConversionRepo(quotes, bookings)
       : undefined);
+  const bookingLinkSecret = deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET;
 
   const app = new Hono();
 
@@ -220,12 +223,20 @@ export function createApp(deps: AppDeps = {}) {
       maps,
       conciergeTasks,
       quotes,
-      linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
+      linkSecret: bookingLinkSecret,
+      checkoutNow: deps.checkoutNow,
+      allowLegacyCheckoutWithoutToken:
+        deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
     }),
   );
   app.route(
     '/bookings',
-    quoteConversionRoutes({ conversions: quoteConversions, enabled: quoteV2Enabled }),
+    quoteConversionRoutes({
+      conversions: quoteConversions,
+      enabled: quoteV2Enabled,
+      linkSecret: bookingLinkSecret,
+      checkoutNow: deps.checkoutNow,
+    }),
   );
   // Ride Board — public reads + customer-authenticated writes (card side via the fake).
   app.route(

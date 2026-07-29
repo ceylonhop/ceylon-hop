@@ -31,7 +31,10 @@ async function bookAndCheckout(app: ReturnType<typeof createApp>, overrides: Rec
       body: JSON.stringify({ ...valid, ...overrides }),
     })
   ).json();
-  await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' });
+  await app.request(`/bookings/${b.id}/checkout`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${b.checkoutToken}` },
+  });
   return b;
 }
 
@@ -175,7 +178,12 @@ describe('POST /webhooks/payments', () => {
         }),
       })
     ).json();
-    const checkout = await (await app.request(`/bookings/${b.id}/checkout`, { method: 'POST' })).json();
+    const checkout = await (
+      await app.request(`/bookings/${b.id}/checkout`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${b.checkoutToken}` },
+      })
+    ).json();
     expect(checkout.amount).toBe(b.amountDueNow);
     expect(checkout.amount).toBe(b.total);
 

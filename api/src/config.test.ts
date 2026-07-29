@@ -102,4 +102,33 @@ describe('config — OPS_SESSION_SECRET fails closed in production', () => {
     expect(buildConfig({ NODE_ENV: 'test' }).QUOTE_V2_ENABLED).toBe(false);
     expect(buildConfig({ NODE_ENV: 'test', QUOTE_V2_ENABLED: '1' }).QUOTE_V2_ENABLED).toBe(true);
   });
+
+  it('keeps legacy tokenless checkout default-off and refuses it in live production', () => {
+    expect(buildConfig({ NODE_ENV: 'test' }).CHECKOUT_TOKEN_COMPATIBILITY).toBe(false);
+    expect(
+      buildConfig({ NODE_ENV: 'test', CHECKOUT_TOKEN_COMPATIBILITY: 'true' })
+        .CHECKOUT_TOKEN_COMPATIBILITY,
+    ).toBe(true);
+    expect(() =>
+      buildConfig({
+        NODE_ENV: 'production',
+        OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+        BOOKING_LINK_SECRET: 'another-real-32char-secret',
+        CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+        PAYHERE_MERCHANT_ID: '1226',
+        PAYHERE_MERCHANT_SECRET: 'a-real-payhere-merchant-secret',
+        CHECKOUT_TOKEN_COMPATIBILITY: 'true',
+      }),
+    ).toThrow(/CHECKOUT_TOKEN_COMPATIBILITY/);
+    expect(() =>
+      buildConfig({
+        NODE_ENV: 'production',
+        OPS_SESSION_SECRET: 'a-real-32char-random-secret',
+        BOOKING_LINK_SECRET: 'another-real-32char-secret',
+        CUSTOMER_SESSION_SECRET: 'a-third-real-32char-secret',
+        ALLOW_FAKE_PAYMENTS: 'true',
+        CHECKOUT_TOKEN_COMPATIBILITY: 'true',
+      }),
+    ).not.toThrow();
+  });
 });

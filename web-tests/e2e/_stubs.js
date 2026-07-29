@@ -140,12 +140,12 @@ export async function gotoBooking(page, opts = {}) {
   // booking creation
   await page.route('**/bookings/single', (r) => {
     if (bookingStatus !== 201) return r.fulfill({ status: bookingStatus, contentType: 'application/json', body: '{"error":"boom"}' });
-    const b = { id: 'e2e-booking-1', reference: 'CH-E2E01', status: 'draft', total: bookingTotal, currency: 'USD', mode: 'single' };
+    const b = { id: 'e2e-booking-1', reference: 'CH-E2E01', status: 'draft', total: bookingTotal, currency: 'USD', mode: 'single', checkoutToken: 'e2e-checkout-token' };
     if (bookingAmountDueNow !== undefined) b.amountDueNow = bookingAmountDueNow;
     return r.fulfill(json(b));
   });
-  await page.route('**/bookings/trip', (r) => r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip' })));
-  await page.route('**/bookings/shared', (r) => r.fulfill(json({ id: 'e2e-shared-1', reference: 'CH-E2ES1', status: 'draft', mode: 'shared' })));
+  await page.route('**/bookings/trip', (r) => r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip', checkoutToken: 'e2e-trip-checkout-token' })));
+  await page.route('**/bookings/shared', (r) => r.fulfill(json({ id: 'e2e-shared-1', reference: 'CH-E2ES1', status: 'draft', mode: 'shared', checkoutToken: 'e2e-shared-checkout-token' })));
 
   // Rate-lock: the client mints a 7-day locked quote before a single-transfer booking (§5).
   await page.route('**/quote/lock', (r) => r.fulfill(json({
