@@ -37,6 +37,11 @@ import {
   InMemoryPaymentSettlementRepo,
   type PaymentSettlementRepo,
 } from './db/paymentSettlementRepo';
+import {
+  InMemoryQuoteConversionRepo,
+  type QuoteConversionRepo,
+} from './db/quoteConversionRepo';
+import { quoteConversionRoutes } from './routes/quoteConversion';
 
 export interface AppDeps {
   bookings?: BookingRepo;
@@ -57,6 +62,7 @@ export interface AppDeps {
   quotes?: QuoteRepo;
   zones?: ZonesRepo;
   quoteV2Enabled?: boolean;
+  quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
   bookingLinkSecret?: string;
@@ -117,6 +123,12 @@ export function createApp(deps: AppDeps = {}) {
   const allowedOrigins =
     deps.allowedOrigins ?? config.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
   const rl = deps.rateLimit ?? { max: config.RATE_LIMIT_MAX, windowMs: config.RATE_LIMIT_WINDOW_MS };
+  const quoteV2Enabled = deps.quoteV2Enabled ?? config.QUOTE_V2_ENABLED;
+  const quoteConversions =
+    deps.quoteConversions ??
+    (quotes instanceof InMemoryQuoteRepo && bookings instanceof InMemoryBookingRepo
+      ? new InMemoryQuoteConversionRepo(quotes, bookings)
+      : undefined);
 
   const app = new Hono();
 
@@ -211,6 +223,10 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  app.route(
+    '/bookings',
+    quoteConversionRoutes({ conversions: quoteConversions, enabled: quoteV2Enabled }),
+  );
   // Ride Board — public reads + customer-authenticated writes (card side via the fake).
   app.route(
     '/board',
@@ -232,7 +248,7 @@ export function createApp(deps: AppDeps = {}) {
     internalKey: config.INTERNAL_QUOTE_KEY,
     quotes,
     maps,
-    v2Enabled: deps.quoteV2Enabled ?? config.QUOTE_V2_ENABLED,
+    v2Enabled: quoteV2Enabled,
   }));
   app.route(
     '/webhooks',

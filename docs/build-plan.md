@@ -612,8 +612,9 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     cost cap, expiry/deactivation, rule snapshot replay, unavailable cost, and flags default off.
   - **21.4 — Strict atomic booking conversion.** Require v2 quote ID, access token, revision, expiry,
     and exact intent; adopt stored server engine result without Maps/money recomputation and use M19's
-    conversion transaction. Security-hardening SH5 delivers this base contract; M21.4 extends it with
-    the M19 promotion snapshot/budget transaction rather than rebuilding it. **Tests:**
+    conversion transaction. Security-hardening SH5 delivers this base contract at the default-off
+    `POST /bookings/from-quote-v2`; M21.4 extends that same endpoint and transaction with the M19
+    promotion snapshot/budget rules rather than rebuilding it. **Tests:**
     mismatch/stale/expired/forged/replay failure, injected rollback,
     concurrency/idempotency, unique quote link, immutable booking snapshot, full-payment policy,
     checkout/PayHere/webhook equality, and unchanged legacy/no-discount/shared paths.

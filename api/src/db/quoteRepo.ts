@@ -215,7 +215,7 @@ export interface QuoteRepo {
     quote: NewQuote;
   }): Promise<
     | { kind: 'updated'; quote: SavedQuote }
-    | { kind: 'access_denied' | 'expired' | 'stale_revision' }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
   >;
 }
 
@@ -264,8 +264,8 @@ function toSummary(q: SavedQuote): QuoteSummary {
 }
 
 export class InMemoryQuoteRepo implements QuoteRepo {
-  private readonly rows = new Map<string, SavedQuote>();
-  private readonly usedReferences = new Set<string>();
+  private rows = new Map<string, SavedQuote>();
+  private usedReferences = new Set<string>();
 
   private nextReference(): string {
     let reference = genReference();
@@ -441,7 +441,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     quote: NewQuote;
   }): Promise<
     | { kind: 'updated'; quote: SavedQuote }
-    | { kind: 'access_denied' | 'expired' | 'stale_revision' }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
   > {
     const row = this.rows.get(args.id);
     if (
@@ -453,6 +453,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     ) {
       return { kind: 'access_denied' };
     }
+    if (row.convertedBookingId) return { kind: 'converted' };
     if (!row.rateLockedUntil || row.rateLockedUntil <= args.now) return { kind: 'expired' };
     if (row.revision !== args.expectedRevision) return { kind: 'stale_revision' };
 
@@ -469,5 +470,20 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.revision += 1;
     row.updatedAt = args.now;
     return { kind: 'updated', quote: { ...row } };
+  }
+
+  snapshotForQuoteConversion(): {
+    rows: Map<string, SavedQuote>;
+    usedReferences: Set<string>;
+  } {
+    return {
+      rows: structuredClone(this.rows),
+      usedReferences: structuredClone(this.usedReferences),
+    };
+  }
+
+  restoreForQuoteConversion(snapshot: ReturnType<InMemoryQuoteRepo['snapshotForQuoteConversion']>): void {
+    this.rows = structuredClone(snapshot.rows);
+    this.usedReferences = structuredClone(snapshot.usedReferences);
   }
 }
