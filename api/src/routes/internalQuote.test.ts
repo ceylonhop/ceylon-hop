@@ -1542,6 +1542,25 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(await bookings.get(b.id)).not.toBeNull();
   });
 
+  it('names the offending field when the modal payload is rejected', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await sentQuote(quotes);
+    // What an operator actually does: mis-types the email. The old response said only
+    // "bad_request", so the ops toast could not tell them which field to fix.
+    const res = await book(createApp({ quotes }), id, {
+      ...BODY,
+      customer: { ...BODY.customer, email: 'roshen@gmail' },
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('bad_request');
+    expect(body.message).toContain('customer.email');
+    expect(body.message.toLowerCase()).toContain('email');
+    // the machine-readable shape stays as it was
+    expect(body.details.fieldErrors).toBeDefined();
+  });
+
   it('books an already-won quote (backfill) and leaves it won', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
