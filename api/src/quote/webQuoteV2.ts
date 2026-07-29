@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { EXTRA_CODES } from './rateCard';
 
@@ -19,6 +19,8 @@ export const WebQuoteIntentSchema = z.discriminatedUnion('product', [
       vehicle: Vehicle,
       pax: z.number().int().min(1).max(14),
       bags: z.number().int().min(0).max(30),
+      date: DateOnly.optional(),
+      time: z.string().regex(/^\d{2}:\d{2}$/).optional(),
       legs: z
         .array(
           z
@@ -80,4 +82,14 @@ export function canonicalJson(value: unknown): string {
 
 export function fingerprintIntent(value: unknown): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+export function digestAccessToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+export function safeDigestEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
 }

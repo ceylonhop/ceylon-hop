@@ -9,10 +9,12 @@ import type { MapsAdapter } from '../adapters/maps';
 import type { RateCard } from '../quote/rateCard';
 import {
   WebQuoteIntentSchema,
+  digestAccessToken,
   fingerprintIntent,
+  safeDigestEqual,
   type WebQuoteIntent,
 } from '../quote/webQuoteV2';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 const ExtraCode = z.enum(EXTRA_CODES);
 const ENGINE_ERRORS = new Set(['TOO_BIG', 'UNKNOWN_EXTRA', 'NO_LEGS']);
@@ -43,16 +45,6 @@ const V2UpdateSchema = z.object({
   revision: z.number().int().min(1),
   intent: WebQuoteIntentSchema,
 }).strict();
-
-function digestToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
-
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
 
 async function engineRequestFor(intent: WebQuoteIntent, maps: MapsAdapter): Promise<QuoteRequest | null> {
   if (intent.product === 'private') {
@@ -195,7 +187,7 @@ export function quoteRoutes(deps: {
         intent: parsed.data,
         intentFingerprint: fingerprintIntent(parsed.data),
         revision: 1,
-        accessTokenDigest: digestToken(accessToken),
+        accessTokenDigest: digestAccessToken(accessToken),
       });
       return c.json({ ...publicV2(saved, result), accessToken }, 201);
     } catch (error) {
@@ -215,14 +207,17 @@ export function quoteRoutes(deps: {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
     const existing = await deps.quotes.get(c.req.param('id'));
-    const tokenDigest = digestToken(token);
+    const tokenDigest = digestAccessToken(token);
     if (
       !existing ||
       existing.channel !== 'web' ||
       !existing.accessTokenDigest ||
-      !safeEqual(existing.accessTokenDigest, tokenDigest)
+      !safeDigestEqual(existing.accessTokenDigest, tokenDigest)
     ) {
       return c.json({ error: 'quote_access_denied' }, 403);
+    }
+    if (existing.convertedBookingId) {
+      return c.json({ error: 'quote_already_converted' }, 409);
     }
     const now = deps.now?.() ?? new Date();
     if (!existing.rateLockedUntil || existing.rateLockedUntil <= now) {
@@ -256,6 +251,7 @@ export function quoteRoutes(deps: {
         },
       });
       if (updated.kind === 'access_denied') return c.json({ error: 'quote_access_denied' }, 403);
+      if (updated.kind === 'converted') return c.json({ error: 'quote_already_converted' }, 409);
       if (updated.kind === 'expired') return c.json({ error: 'quote_expired' }, 409);
       if (updated.kind === 'stale_revision') return c.json({ error: 'stale_revision' }, 409);
       if (!('quote' in updated)) throw new Error('quote_update_outcome_invalid');

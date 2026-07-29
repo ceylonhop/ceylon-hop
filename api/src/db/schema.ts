@@ -23,6 +23,11 @@ export const bookings = pgTable('bookings', {
   status: text('status').notNull(),
   mode: text('mode').notNull().default('single'),
   total: integer('total').notNull(),
+  // Immutable quote-conversion evidence. Nullable so every legacy booking keeps its exact
+  // storage/checkout behaviour; populated only by POST /bookings/from-quote-v2.
+  subtotal: integer('subtotal'),
+  discountTotal: integer('discount_total'),
+  pricingSnapshotJson: jsonb('pricing_snapshot_json'),
   // What checkout collects now. Nullable: older rows may have no value and are charged
   // the full total.
   amountDueNow: integer('amount_due_now'),

@@ -12,6 +12,10 @@ import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
 import type { NewBooking } from './bookingRepo';
+import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
+import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
+import { bookings as bookingRows } from './schema';
+import { eq } from 'drizzle-orm';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -534,6 +538,136 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       rateLockedUntil: expiresAt,
     });
   });
+
+  async function lockedWebQuote(token: string) {
+    const intent: WebQuoteIntent = {
+      product: 'private',
+      routeId: `integration-${Date.now()}-${Math.random()}`,
+      vehicle: 'car',
+      pax: 2,
+      bags: 1,
+      date: '2026-09-10',
+      time: '09:00',
+      legs: [{ from: 'Kandy', to: 'Nanu Oya' }],
+      extras: [],
+    };
+    const rateCardVersion = 'conversion-integration-v1';
+    const result = {
+      product: 'private',
+      currency: 'USD',
+      lineItems: [{ label: 'Private transfer', amountCents: 12_345 }],
+      subtotalCents: 12_345,
+      totalCents: 12_345,
+      priceAdjustmentCents: 0,
+      priceStrategy: 'none',
+      depositCents: 12_345,
+      amountDueNowCents: 12_345,
+      marginEstimateCents: null,
+      rateCardVersion,
+      warnings: [],
+    };
+    const quote = await quotes.save({
+      channel: 'web',
+      product: 'private',
+      vehicle: 'car',
+      totalCents: result.totalCents,
+      currency: result.currency,
+      rateCardVersion,
+      request: {
+        v: 2,
+        intent,
+        engine: {
+          product: 'private',
+          vehicle: 'car',
+          pax: 2,
+          bags: 1,
+          legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 }],
+          extras: [],
+        },
+      },
+      result,
+      rateCardJson: { version: rateCardVersion },
+      rateLockedUntil: new Date('2026-10-01T00:00:00.000Z'),
+      intent,
+      intentFingerprint: fingerprintIntent(intent),
+      accessTokenDigest: digestAccessToken(token),
+    });
+    return {
+      quote,
+      request: {
+        quoteId: quote.id,
+        accessToken: token,
+        revision: quote.revision,
+        intent,
+        bookingDetails: {
+          customer: sample.input.customer,
+          date: intent.date,
+          time: intent.time,
+        },
+      },
+    };
+  }
+
+  it('atomically converts one Postgres quote under concurrent double-submit', async () => {
+    const locked = await lockedWebQuote(`concurrent-${Date.now()}`);
+    const converter = new PostgresQuoteConversionRepo(
+      db,
+      bookings,
+      () => new Date('2026-09-01T00:00:00.000Z'),
+    );
+    const [first, second] = await Promise.all([
+      converter.convert(locked.request),
+      converter.convert(locked.request),
+    ]);
+    expect([first.replay, second.replay].sort()).toEqual([false, true]);
+    expect(first.booking.id).toBe(second.booking.id);
+    const saved = await quotes.get(locked.quote.id);
+    expect(saved).toMatchObject({ status: 'won', convertedBookingId: first.booking.id });
+
+    const [stored] = await db
+      .select({
+        subtotal: bookingRows.subtotal,
+        discountTotal: bookingRows.discountTotal,
+        pricingSnapshot: bookingRows.pricingSnapshotJson,
+      })
+      .from(bookingRows)
+      .where(eq(bookingRows.id, first.booking.id));
+    expect(stored).toMatchObject({
+      subtotal: 12_345,
+      discountTotal: 0,
+      pricingSnapshot: {
+        quoteId: locked.quote.id,
+        totalCents: 12_345,
+        amountDueNowCents: 12_345,
+      },
+    });
+  });
+
+  it.each(['after_booking_insert', 'after_quote_update'] as const)(
+    'rolls back the Postgres transaction on %s and permits retry',
+    async (failurePoint) => {
+      const locked = await lockedWebQuote(`rollback-${failurePoint}-${Date.now()}`);
+      const failing = new PostgresQuoteConversionRepo(
+        db,
+        bookings,
+        () => new Date('2026-09-01T00:00:00.000Z'),
+        (point) => {
+          if (point === failurePoint) throw new Error(`injected:${point}`);
+        },
+      );
+      await expect(failing.convert(locked.request)).rejects.toThrow(`injected:${failurePoint}`);
+      expect(await bookings.findByIdempotencyKey(`quote-v2:${locked.quote.id}`)).toBeNull();
+      expect((await quotes.get(locked.quote.id))?.convertedBookingId).toBeNull();
+
+      const retry = await new PostgresQuoteConversionRepo(
+        db,
+        bookings,
+        () => new Date('2026-09-01T00:00:00.000Z'),
+      ).convert(locked.request);
+      expect(retry.replay).toBe(false);
+      expect((await quotes.get(locked.quote.id))?.convertedBookingId).toBe(retry.booking.id);
+    },
+  );
 
   it('persists ops layer: ride_ops status/flags', async () => {
     const b = await bookings.create(sample);

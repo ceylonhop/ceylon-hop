@@ -276,7 +276,8 @@ Updates require the access token and current revision. Updates do not slide the 
 
 ### 7.3 Strict conversion
 
-Conversion requires `{ quoteId, accessToken, revision, bookingDetails }`.
+The default-off `POST /bookings/from-quote-v2` conversion endpoint requires
+`{ quoteId, revision, intent, bookingDetails }` plus the quote access token as a Bearer credential.
 
 The service:
 

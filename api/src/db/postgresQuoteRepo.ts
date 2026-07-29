@@ -32,7 +32,7 @@ function isReferenceCollision(err: unknown): boolean {
   return code === UNIQUE_VIOLATION && constraint.includes('reference');
 }
 
-function toSaved(r: Row): SavedQuote {
+export function quoteRowToSaved(r: Row): SavedQuote {
   return {
     id: r.id,
     reference: r.reference,
@@ -109,7 +109,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
             assignedAt: q.assignedTo ? new Date() : null,
           })
           .returning();
-        return toSaved(row);
+        return quoteRowToSaved(row);
       } catch (err) {
         if (!isReferenceCollision(err)) throw err;
         lastErr = err;
@@ -123,7 +123,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .select()
       .from(quotes)
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
-    return rows[0] ? toSaved(rows[0]) : null;
+    return rows[0] ? quoteRowToSaved(rows[0]) : null;
   }
 
   async updateWebV2(args: {
@@ -134,7 +134,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
     quote: NewQuote;
   }): Promise<
     | { kind: 'updated'; quote: SavedQuote }
-    | { kind: 'access_denied' | 'expired' | 'stale_revision' }
+    | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
   > {
     const [updated] = await this.db
       .update(quotes)
@@ -160,10 +160,11 @@ export class PostgresQuoteRepo implements QuoteRepo {
           eq(quotes.revision, args.expectedRevision),
           gt(quotes.rateLockedUntil, args.now),
           isNull(quotes.deletedAt),
+          isNull(quotes.convertedBookingId),
         ),
       )
       .returning();
-    if (updated) return { kind: 'updated', quote: toSaved(updated) };
+    if (updated) return { kind: 'updated', quote: quoteRowToSaved(updated) };
 
     const [current] = await this.db.select().from(quotes).where(eq(quotes.id, args.id));
     if (
@@ -175,6 +176,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
     ) {
       return { kind: 'access_denied' };
     }
+    if (current.convertedBookingId) return { kind: 'converted' };
     if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' };
     return { kind: 'stale_revision' };
   }
@@ -324,7 +326,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       })
       .where(eq(quotes.id, id))
       .returning();
-    return row ? toSaved(row) : null;
+    return row ? quoteRowToSaved(row) : null;
   }
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
@@ -353,7 +355,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       })
       .where(eq(quotes.id, id))
       .returning();
-    return row ? toSaved(row) : null;
+    return row ? quoteRowToSaved(row) : null;
   }
 
   async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {
@@ -365,6 +367,6 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .set({ deletedAt: now, deletedBy, updatedAt: now })
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
-    return row ? toSaved(row) : null;
+    return row ? quoteRowToSaved(row) : null;
   }
 }
