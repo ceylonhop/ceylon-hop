@@ -1973,6 +1973,20 @@ describe('unpriced shells cannot leave draft', () => {
     expect(res.status).toBe(200);
   });
 
+  it('allows a legitimately zero-priced quote through (comp/promotional, not a shell)', async () => {
+    // A $0 total is valid if properly priced (e.g., a comp ride, promotional offer, or internal
+    // use). The gate keyed to the shell marker, not totalCents, so this real request with a
+    // real $0 engine result must be sendable.
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 0 },
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
   it('lets a shell through once a real save has priced it', async () => {
     const quotes = new InMemoryQuoteRepo();
     const q = await shell(quotes);
