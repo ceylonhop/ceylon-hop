@@ -31,8 +31,25 @@ test.describe('ops autosave drafts', () => {
     const others = assign.locator('option:not([value=""])');
     await expect(others.first()).toBeAttached();
     const target = await others.last().getAttribute('value');
+
+    // selectOption() only sets the native <select> DOM value — it doesn't prove the
+    // change-listener wiring (assignQuote() -> apiPatch) actually fired a PATCH. Set the
+    // waiter up BEFORE triggering the change so a fast response can't race past us.
+    const patchResponse = page.waitForResponse(
+      (res) => res.request().method() === 'PATCH' && /\/admin\/quote\/[^/]+$/.test(new URL(res.url()).pathname),
+    );
     await assign.selectOption(target);
+    const res = await patchResponse;
+    expect(res.ok()).toBeTruthy();
     await expect(assign).toHaveValue(target);
+
+    // Prove it stuck server-side, not just in the DOM: the builder binds the claimed
+    // quote's id into the URL (opsBindQuoteUrl -> setShellRoute, ?quote=<id>), so reloading
+    // that same URL reopens the same row rather than starting a new one.
+    const reloadUrl = page.url();
+    expect(reloadUrl).toMatch(/[?&]quote=/);
+    await page.goto(reloadUrl);
+    await expect(page.locator('#assignSel')).toHaveValue(target, { timeout: 10000 });
   });
 
   test('the queue marks the shell as not priced', async ({ page }) => {
@@ -40,8 +57,19 @@ test.describe('ops autosave drafts', () => {
     await page.locator('[data-qnew]').click();
     await expect(page.locator('#assignSel')).toBeEnabled({ timeout: 10000 });
 
+    // The builder binds the claimed quote's id into the URL (opsBindQuoteUrl -> setShellRoute,
+    // ?quote=<id>) once the shell row lands. Read that id so the queue assertion below can be
+    // anchored to the exact row this test created, not just "whichever unpriced row sorts
+    // first" — the shared e2e DB can carry leftover shells from earlier runs.
+    const quoteId = new URL(page.url()).searchParams.get('quote');
+    expect(quoteId).toBeTruthy();
+
     await page.goto(OPS); // back to the queue
-    await expect(page.locator('.qrow .qtotal-unpriced').first()).toHaveText('Not priced yet');
+    const row = page.locator(`.qrow[data-qopen="${quoteId}"]`);
+    await expect(row).toBeVisible({ timeout: 10000 });
+    const total = row.locator('.qtotal');
+    await expect(total).toHaveText('Not priced yet');
+    await expect(total).toHaveClass(/qtotal-unpriced/);
   });
 
   test('submitting a shell is blocked and names the price', async ({ page }) => {
