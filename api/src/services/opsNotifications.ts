@@ -1,5 +1,6 @@
 import type { EmailAdapter } from '../adapters/email';
 import { opsEmailShell, heroRef, detailTable, ctaBlock, money, esc } from './opsEmail';
+import { isUnpricedShell } from '../db/quoteRepo';
 
 // Internal staff notifications (spec 2026-07-16). Deliberately separate from
 // services/notifications.ts: that file is customer-facing and Booking-shaped, this one goes to
@@ -13,6 +14,10 @@ export interface AssignedQuote {
   customerName: string | null;
   totalCents: number;
   currency: string;
+  // The stored request payload, carried purely so the template can spot an unpriced shell via the
+  // one canonical marker check (isUnpricedShell) instead of keeping a second copy of it here.
+  // Every caller passes a SavedQuote, which already has this.
+  request: unknown;
 }
 
 // 'pending_review' → 'Pending review'
@@ -30,9 +35,14 @@ export function quoteDeepLink(id: string, opsBaseUrl: string): string {
 }
 
 function assignedBody(q: AssignedQuote, lead: string, cta: { label: string; link: string }): { html: string; text: string } {
+  // A shell is handed over BEFORE it is priced (spec 2026-07-29), so its stored total is a
+  // placeholder 0 — mailing "$0.00" would tell the colleague the quote is worthless. Match the
+  // queue's wording. (Only the assign path can reach this: the send gate blocks a shell from
+  // pending_review/ready, so the approval and send-back mails never see one.)
+  const total = isUnpricedShell(q) ? 'Not priced yet' : money(q.totalCents, q.currency);
   const rows: [string, string][] = [
     ['Customer', q.customerName || '—'],
-    ['Total', money(q.totalCents, q.currency)],
+    ['Total', total],
     ['Status', statusLabel(q.status)],
   ];
   const html = [
@@ -46,7 +56,7 @@ function assignedBody(q: AssignedQuote, lead: string, cta: { label: string; link
     '',
     `Reference: ${q.reference}`,
     `Customer:  ${q.customerName || '—'}`,
-    `Total:     ${money(q.totalCents, q.currency)}`,
+    `Total:     ${total}`,
     `Status:    ${statusLabel(q.status)}`,
     '',
     cta.link ? `${cta.label}: ${cta.link}` : 'Open it from the Quotes tab in the ops dashboard.',
