@@ -23,6 +23,23 @@ below to `dataLayer`; these steps turn them into tags. Reuse the EXISTING contai
 - [ ] Enable Consent Mode; confirm all tags have "Require additional consent" =
       `analytics_storage` / `ad_storage` as appropriate. Defaults are set in the page head.
 
+## WhatsApp contact tracking (added 2026-07-30)
+
+`analytics.js` fires **`contact_whatsapp`** on every click of a `wa.me/<number>` link,
+plus search.js's programmatic 6+ pax handoff. Params: `method` (`whatsapp`), `link_id`
+(the anchor's id, `''` if unset), `page` (pathname). No phone number, no href, no PII.
+
+- [ ] GA4 event tag → Custom Event trigger on `contact_whatsapp`, params `method`,
+      `link_id`, `page`. Requires `analytics_storage`.
+- [ ] Register `link_id` and `method` as event-scoped custom dimensions.
+- [ ] Mark `contact_whatsapp` a **key event** — for a WhatsApp-first business this is a
+      conversion, not an engagement signal.
+
+**Do not** trigger on all `wa.me` clicks. board.js builds phone-less `wa.me/?text=…`
+links for travellers sharing a van with a friend; those are shares, not contacts, and the
+site code already excludes them. A broad `Click URL contains wa.me` trigger in GTM would
+put them straight back in and inflate the metric with the board's own virality loop.
+
 ## Deferred to Phase 1 (do NOT configure yet)
 - [ ] Google Ads `AW-16942077888` conversion on `purchase`.
 - [ ] Meta Pixel `656008603498739` base + Purchase.
