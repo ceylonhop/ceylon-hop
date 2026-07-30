@@ -5907,7 +5907,13 @@ function renderHeaderAssign() {
   // defaults to option 0, but morphdom patches this element's children in place on re-render — and
   // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
   // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
-  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>Unassigned</option>'];
+  // The same empty box appears when `cur` is set but matches NO option — now the ordinary first
+  // frame, because claimDraftRow() assigns the fresh row to its creator while the roster fetch is
+  // still in flight (and that fetch fails SILENTLY, which would make the blank permanent). So the
+  // placeholder takes `selected` whenever nothing else will: an unmatched name reading as
+  // "Unassigned" for a frame is recoverable, an empty box is not.
+  var curMatched = opsUsers.some(function(u) { return u.email === cur; });
+  var opts = ['<option value=""' + (curMatched ? '' : ' selected') + '>Unassigned</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5945,7 +5951,17 @@ function renderAssignStrip() {
 // showing a handover that never happened.
 async function assignQuote(email) {
   if (!state.savedId) return;
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiPatch(state.savedId, { assignedTo: email || null });
+  // Superseded while in flight: the operator assigned quote A and clicked quote B before the
+  // PATCH resolved. Every write below targets whatever is on screen NOW, so applying this would
+  // paint B with A's assignee and toast "Assigned to …" while B is untouched server-side. Drop
+  // it on both branches — but still refresh the queue, because A's assignment really did land.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('assignQuote', 'stale assign discarded (superseded while in flight)');
+    if (res && !res.error && window.opsRefreshQuotes) window.opsRefreshQuotes();
+    return;
+  }
   if (!res || res.error) {
     showToast('Could not assign — ' + ((res && res.error) || 'unknown error'));
     render();

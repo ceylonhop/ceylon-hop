@@ -616,4 +616,22 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(save.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(save.indexOf('await apiSave('));
     expect(save.indexOf('if (seq !== _openSeq)')).toBeLessThan(save.indexOf('state.savedId = res.id;'));
   });
+
+  it('an assign superseded while in flight is dropped, not painted onto the quote now open', () => {
+    const assign = fnBody('assignQuote');
+    // assignQuote was the one async state writer without the guard, and the shell row made it far
+    // more reachable: the picker is live from the first click. Assign A, click B, the PATCH
+    // resolves — without this, B shows A's assignee and toasts "Assigned to …" while B is
+    // untouched server-side.
+    expect(assign).toContain('var seq = _openSeq;');
+    expect(assign).toContain('if (seq !== _openSeq)');
+    // Captured BEFORE the await, or it can never differ from the live _openSeq when compared —
+    // permanently inert while a mere toContain assertion still passes.
+    expect(assign.indexOf('var seq = _openSeq;')).toBeLessThan(assign.indexOf('await apiPatch('));
+    // …and compared AFTER it, ahead of BOTH branches: the failure toast + re-render is as wrong
+    // on the newly-opened quote as the success write is.
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(assign.indexOf('await apiPatch('));
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('if (!res || res.error)'));
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('state.assignedTo = res.assignedTo'));
+  });
 });
