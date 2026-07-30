@@ -72,6 +72,28 @@ describe('runWatchdog', () => {
     expect(alerts.sent).toHaveLength(0);
   });
 
+
+  // The exemption is about HOW the money arrived, not which channel booked it. That only
+  // started mattering once ops could hand a WhatsApp customer a card link: a whatsapp-channel
+  // booking paid at the gateway IS a genuine silent-confirmation failure, and a channel-keyed
+  // exemption — the shape the stuck-pending sweep above uses — would quietly swallow it.
+  it('still alerts a gateway-paid booking on the whatsapp channel', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const payments = new InMemoryPaymentRepo();
+    const p = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: b.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `checkout:${b.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(16), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments });
+    expect(res.paidUnconfirmed).toBe(1);
+    expect(alerts.sent[0].kind).toBe('watchdog_paid_unconfirmed');
+  });
+
   it('a persisting problem alerts once per cooldown across repeated sweeps (dedupe by booking)', async () => {
     const { bookings } = await seed('payment_pending');
     const inner = new FakeAlertAdapter();

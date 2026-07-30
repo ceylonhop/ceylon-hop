@@ -126,6 +126,15 @@ export class PostgresQuoteRepo implements QuoteRepo {
     return rows[0] ? quoteRowToSaved(rows[0]) : null;
   }
 
+  async findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null> {
+    const rows = await this.db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.convertedBookingId, bookingId), isNull(quotes.deletedAt)))
+      .limit(1);
+    return rows[0] ? quoteRowToSaved(rows[0]) : null;
+  }
+
   async updateWebV2(args: {
     id: string;
     accessTokenDigest: string;

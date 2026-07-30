@@ -5,7 +5,10 @@ import type { RideStatus } from '../domain/rideStatus';
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
 // advance. It rides in this union so one queue can show both kinds of row.
-export type OpsStage = 'awaiting_payment' | 'gathering' | RideStatus;
+// 'cancelled'/'refunded' come from the BOOKING lifecycle rather than ride_ops — a booking
+// closed on the money side has no fulfilment stage to report, and before these existed it
+// simply dropped out of the queue with no way to find it again.
+export type OpsStage = 'awaiting_payment' | 'gathering' | 'cancelled' | 'refunded' | RideStatus;
 
 /** Where a queue row came from. Ride-board rows are read-only projections. */
 export type OpsRowSource = 'booking' | 'ride_board';
@@ -63,6 +66,11 @@ function travel(b: Booking): { date: string | null; time: string | null } {
 }
 
 function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
+  // A closed booking outranks whatever the fulfilment row last said: a refund on a ride ops
+  // had already marked 'on_trip' is still a refund, and showing it mid-pipeline would invite
+  // someone to keep advancing it.
+  if (b.status === 'cancelled') return 'cancelled';
+  if (b.status === 'refunded') return 'refunded';
   if (b.status === 'payment_pending') return 'awaiting_payment';
   return rideOps?.fulfilmentStatus ?? 'paid';
 }

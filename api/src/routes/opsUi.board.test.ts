@@ -104,12 +104,17 @@ describe('stageLabel keeps grouping and wording separate', () => {
 
 describe('reason() never nags about a van', () => {
   it('returns nothing for a ride-board row whatever its stage', () => {
-    const src = liftConst(body, 'reason');
+    // reason() consults CLOSED to stay silent about finished bookings, so lift both.
+    const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'reason')}`;
     const reason = new Function(`${src}; return reason;`)() as (t: unknown) => string;
     expect(reason({ source: 'ride_board', stage: 'gathering' })).toBe('');
     expect(reason({ source: 'ride_board', stage: 'paid' })).toBe('');
     // a real booking still nags
     expect(reason({ source: 'booking', stage: 'paid' })).toBe('Vehicle not confirmed yet');
+    // …but a closed one never does, whichever way it closed.
+    for (const stage of ['completed', 'no_show', 'cancelled', 'refunded']) {
+      expect(reason({ source: 'booking', stage })).toBe('');
+    }
   });
 });
 
@@ -133,7 +138,7 @@ describe('the ops shell wires board rows up safely', () => {
 
   it('blocks every booking mutation for a board row', () => {
     expect(body).toContain(
-      "if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','refundrequest','refundconfirm','refundcancel'].includes(act))return;",
+      "if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundcancel'].includes(act))return;",
     );
   });
 
