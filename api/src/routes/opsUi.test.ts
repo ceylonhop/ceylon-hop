@@ -527,17 +527,44 @@ describe('ops UI — unpriced shell lifecycle', () => {
     return body.slice(start, i + 1);
   }
 
-  it('the save chip reads exactly "Not priced yet" on a shell — dirty or clean', () => {
+  it('the save chip never says "Not priced yet" over unsaved typed content', () => {
     const chip = fnBody('renderSaveState');
-    // Both branches: mid-edit (dirty, price still missing) and untouched (clean shell).
-    expect(chip).toContain("state.unpriced ? 'Not priced yet' : (state.savedId ? 'Edits pending' : 'Unsaved')");
+    // "Not priced yet" belongs to ONE branch only: the clean shell, where there is no typed
+    // content at risk. While _dirty, something typed has not reached the server — autosave is
+    // debounced, and before a vehicle type fireAutosave() does not run at all, so the customer
+    // name, contact, legs and internal notes are held in memory only. Saying "Not priced yet"
+    // there told the operator their typing was safe when it was not.
+    expect(chip.match(/txt = 'Not priced yet'/g)).toHaveLength(1); // assignments, not prose
+    expect(chip).not.toContain("state.unpriced ? 'Not priced yet'");
     expect(chip).toContain("txt = 'Not priced yet';");
-    // A shell must never be described as unpersisted — the row exists server-side.
-    expect(chip.match(/Not priced yet/g)).toHaveLength(2);
+    // The dirty branch talks about PERSISTENCE. "Edits pending" is reserved for a row that has
+    // already saved successfully at least once — which is exactly `savedId && !unpriced`, since
+    // the shell marker clears only on a successful save. Everything else is "Unsaved".
+    expect(chip).toContain("txt = (state.savedId && !state.unpriced) ? 'Edits pending' : 'Unsaved';");
     // Branch ORDER, not just text: error must be checked before dirty. A failed save leaves
     // _dirty true, so if the dirty branch came first it would win and the error chip would be
     // unreachable — exactly the bug this test suite exists to pin.
     expect(chip.indexOf("_autoState === 'error'")).toBeLessThan(chip.indexOf('else if (_dirty)'));
+    // …and the clean-shell branch stays BELOW dirty, or it would swallow the dirty chip again.
+    expect(chip.indexOf('else if (_dirty)')).toBeLessThan(chip.indexOf("txt = 'Not priced yet';"));
+  });
+
+  it('a real autosave failure surfaces on a shell — the shell marker must not suppress it', () => {
+    const chip = fnBody('renderSaveState');
+    // state.unpriced clears only on a SUCCESSFUL save, so it is still true while a shell's
+    // autosave is failing. Gating the error branch on it swallowed every failed save of a
+    // not-yet-priced row: autosave is silent (no toast), so a fully-filled quote showing its
+    // price could fail to persist indefinitely and the chip would read a benign "Not priced yet",
+    // never advertising the Save-button escape hatch.
+    expect(chip).not.toContain("_autoState === 'error' && !state.unpriced");
+    // The distinction is whether autosave can run at all — fireAutosave() returns early without
+    // a vehicle type, so an unpriceable shell never reaches _autoState 'error' in the first
+    // place. That keeps the original intent without suppressing a genuine failure.
+    expect(chip).toContain('var autosaveArmed = !!state.vehicleType;');
+    expect(chip).toContain("else if (_autoState === 'error' && autosaveArmed)");
+    expect(chip).toContain("txt = 'Autosave failed &mdash; use Save';");
+    // The gate is only meaningful if it matches fireAutosave's own early return.
+    expect(fnBody('fireAutosave')).toContain('if (!isEditableNow() || !state.vehicleType) return;');
   });
 
   it('claiming the row marks it unpriced, and a successful save clears the marker', () => {

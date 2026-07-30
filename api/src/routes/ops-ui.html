@@ -3392,19 +3392,29 @@ async function fireAutosave() {
 function renderSaveState() {
   if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
+  // Whether anything typed is being written down at all. fireAutosave() returns early while
+  // there is no vehicle type (POST /save prices, and an unpriceable payload cannot be
+  // persisted), so before that choice the customer name, contact, legs and internal notes live
+  // in memory ONLY. This — not the shell marker — is the line the chip has to speak to.
+  var autosaveArmed = !!state.vehicleType;
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
   // Error must win over dirty, or a repeatedly-failing autosave paints the dirty chip forever and
-  // the escape hatch (the Save button) never gets advertised. Exception: a shell that has never
-  // priced yet (state.unpriced) is expected to fail to save while the operator is still filling
-  // it in — that's the normal pre-priceable window, not an alarm-worthy failure, so it falls
-  // through to the dirty branch below instead. Once a quote has priced at least once
-  // (unpriced === false), a save that starts failing IS worth surfacing.
-  else if (_autoState === 'error' && !state.unpriced) { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
-  // On a shell the row already exists, so "Unsaved" would overstate the risk: what is pending is
-  // a PRICE, not persistence. Say so.
-  else if (_dirty) { cls += ' dirty'; txt = state.unpriced ? 'Not priced yet' : (state.savedId ? 'Edits pending' : 'Unsaved'); }
+  // the escape hatch (the Save button) never gets advertised. The guard is autosaveArmed, NOT
+  // state.unpriced: a shell stays unpriced until its FIRST successful save, so gating on it
+  // swallowed every failed autosave of a shell — and autosave is silent (no toast), so a
+  // fully-filled quote showing its price could fail to save indefinitely with no signal at all.
+  // The original intent survives anyway: a shell that simply cannot be priced yet never reaches
+  // _autoState 'error', because fireAutosave() never runs to set it.
+  else if (_autoState === 'error' && autosaveArmed) { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
+  // "Not priced yet" is about the PRICE and must never stand in for persistence. While _dirty
+  // there is typed content that has not reached the server — either because autosave cannot run
+  // at all yet (no vehicle type) or because the debounce has not landed — and the operator needs
+  // to know their typing is not safe. Only a row that has already saved successfully (unpriced
+  // cleared) earns the gentler "Edits pending"; the clean-shell branch below still says what is
+  // missing when there is nothing typed to lose.
+  else if (_dirty) { cls += ' dirty'; txt = (state.savedId && !state.unpriced) ? 'Edits pending' : 'Unsaved'; }
   else if (_lastSavedAt) { cls += ' saved'; txt = 'Saved ' + _lastSavedAt.toTimeString().slice(0, 5); }
-  else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; }
+  else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; } // clean shell: no typed content at risk, only a price missing
   else if (state.savedId) { cls += ' saved'; txt = 'Saved'; }
   else return '<span id="ch-savestate" class="ch-savestate"></span>';
   return '<span id="ch-savestate" class="' + cls + '"><i class="ch-savestate-dot"></i>' + txt + '</span>';
