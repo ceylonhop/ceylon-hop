@@ -583,7 +583,9 @@ export function internalQuoteRoutes(deps: {
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
   // An optional `id` on the body means "update this existing quote in place" (the founder
   // editing a quote mid-review, or an operator re-saving a reopened one) — same row, no
-  // orphaned duplicate, lifecycle untouched. An unknown id falls back to an insert.
+  // orphaned duplicate, lifecycle untouched. An id that no longer names a live row (the shell
+  // sweep deleted it under the operator, or it was never ours) is a 409 quote_deleted — never an
+  // insert, which would silently mint a SECOND quote with a brand-new reference.
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
@@ -626,8 +628,14 @@ export function internalQuoteRoutes(deps: {
         createdBy: c.get('identity').email,
         updatedBy: c.get('identity').email,
       };
-      const updated = existingId ? await deps.quotes.update(existingId, content) : null;
-      if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+      if (existingId) {
+        const updated = await deps.quotes.update(existingId, content);
+        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+        // update() refuses a soft-deleted (or absent) row. Falling through to the insert would
+        // hand the operator a duplicate under a reference nobody has seen — tell them instead so
+        // they can re-create the quote from what is still on their screen.
+        return c.json({ error: 'quote_deleted' }, 409);
+      }
       // Auto-assign a NEW quote to its creator (spec 2026-07-22) so it lands in their "Assigned to
       // me". Insert-only: update() above leaves assignment to the picker.
       const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });

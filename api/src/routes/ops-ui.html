@@ -3812,6 +3812,15 @@ async function saveQuote(opts) {
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
     return true;
   }
+  // The row this editor is bound to no longer exists server-side (the shell sweep deleted it
+  // while the quote sat open). Deliberately shown even for a silent autosave: the operator's work
+  // is still on screen and only they can rescue it, so a quiet "Autosave failed" chip is not
+  // enough — this is the one save failure that must always speak.
+  if (res && res.error === 'quote_deleted') {
+    showToast('This quote was removed — copy what you need and use "+ New quote" to re-create it');
+    window.opsReportError && window.opsReportError('saveQuote', 'save rejected: quote_deleted');
+    return false;
+  }
   if (!opts.silent) showToast((res && res.error) ? res.error : 'Save failed');
   return false;
 }

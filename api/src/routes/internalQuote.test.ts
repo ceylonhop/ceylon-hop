@@ -185,12 +185,30 @@ describe('internal quoting tool route', () => {
     expect(got.customerName).toBe('Maya'); // approved content untouched
   });
 
-  it('POST /save with an unknown id falls back to creating a new quote (201)', async () => {
-    const app = createApp();
+  it('POST /save with an unknown id is rejected (409) rather than minting a second quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
     const res = await post(app, '/admin/quote/save', { id: 'no-such-id', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.id).not.toBe('no-such-id');
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_deleted');
+    expect((await quotes.list()).length).toBe(0); // no orphan row with a brand-new reference
+  });
+
+  // The shell sweep (spec 2026-07-29) makes this reachable: it soft-deletes a stale shell while
+  // an operator still has it open, and their first autosave arrives afterwards. update() must
+  // refuse the deleted row and the route must say so — writing real work into a deleted row
+  // (200, invisible forever) or inserting a duplicate are both data loss.
+  it('POST /save against a soft-deleted quote is 409 quote_deleted and creates no new row', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+    const id = (await draft(app, 'op@x.com')).id;
+    expect((await del('op@x.com', app, `/admin/quote/${id}`)).status).toBe(200);
+
+    const res = await post(app, '/admin/quote/save', { id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_deleted');
+    expect((await quotes.list()).length).toBe(0); // still nothing live — no duplicate was minted
+    expect(await quotes.get(id)).toBeNull();      // and the deleted row stayed deleted
   });
 
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {

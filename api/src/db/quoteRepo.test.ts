@@ -172,6 +172,21 @@ describe('InMemoryQuoteRepo', () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
   });
 
+  // A soft-deleted row is off-limits to a content write, exactly like softDelete() refuses to
+  // re-stamp one. Without this the shell sweep and a late autosave race: the sweep deletes the
+  // shell, the operator's next autosave writes the real priced quote into the deleted row and
+  // gets a 200, and the work is invisible in the queue forever.
+  it('update returns null for a soft-deleted row and leaves its content untouched', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 4048, customerName: 'Maya' }));
+    await repo.softDelete(q.id, 'sweep@x.com');
+    expect(await repo.update(q.id, sample({ totalCents: 9900, customerName: 'Overwritten' }))).toBeNull();
+    // get()/list() hide deleted rows, so read the retained row straight out of the store.
+    const row = repo.snapshotForQuoteConversion().rows.get(q.id);
+    expect(row!.totalCents).toBe(4048);
+    expect(row!.customerName).toBe('Maya');
+  });
+
   it('patch stamps convertedBookingId (the booking a won quote became)', async () => {
     const repo = new InMemoryQuoteRepo();
     const q = await repo.save({

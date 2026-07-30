@@ -353,6 +353,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
     // Content only — status/reference/createdAt, the sent/decided stamps, createdBy and the
     // assignment are all left as-is. (createdBy is write-once; assignment moves only via patch.)
+    // Soft-delete guard (same as softDelete's): a deleted row is off-limits. The shell sweep can
+    // delete a shell an operator still has open, and their next autosave would otherwise write
+    // the real priced quote into the deleted row — a 200 for work that is invisible forever.
     const [row] = await this.db
       .update(quotes)
       .set({
@@ -374,7 +377,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(quotes.id, id))
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
     return row ? quoteRowToSaved(row) : null;
   }

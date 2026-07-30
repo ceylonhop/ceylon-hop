@@ -420,7 +420,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    if (!row) return null;
+    // Same guard softDelete uses: a deleted row is off-limits to a content write. The shell sweep
+    // can delete a shell an operator still has open, and their next autosave would otherwise
+    // write the real priced quote into the deleted row — invisible in the queue forever.
+    if (!row || row.deletedAt) return null; // unknown or deleted
     // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
     row.product = q.product;
     row.vehicle = q.vehicle ?? null;
