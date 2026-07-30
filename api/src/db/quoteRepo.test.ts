@@ -402,20 +402,31 @@ describe('analytics projections exclude unpriced shells', () => {
       channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
       rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
     });
+    // A legitimately $0 priced quote (e.g. a comp ride) — NOT a shell, must still count as
+    // demand. Distinguishes "excluded because it's a shell" from "excluded because totalCents
+    // is 0", which the original two-row seed above could not tell apart.
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {}, comp: true }, result: { totalCents: 0 },
+    });
     return repo;
   }
 
   it('omits shells from the funnel rows', async () => {
     const repo = await seed();
     const { rows } = await repo.listFunnelRows(new Date(0), 100, 'ops');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.totalCents).toBe(4048);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
   });
 
   it('omits shells from the demand rows', async () => {
     const repo = await seed();
     const { rows } = await repo.listDemandRows(new Date(0), new Date('2100-01-01'), 100, 'ops');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.totalCents).toBe(4048);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
   });
 });

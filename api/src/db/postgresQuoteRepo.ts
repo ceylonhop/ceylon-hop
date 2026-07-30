@@ -209,7 +209,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ),
         // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
         // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
-        sql`coalesce(${quotes.requestJson}->>'shell', '') <> 'true'`,
+        // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
+        // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
+        // a real shell marker from a string that merely says "true". The jsonb comparison here
+        // must agree exactly with isUnpricedShell's `=== true` in quoteRepo.ts. NULL-safe: `->`
+        // yields SQL NULL whenever request_json is SQL NULL, JSON null, a JSON scalar, or an
+        // object without a `shell` key, and coalescing that NULL to false (then negating) keeps
+        // all of those rows included rather than silently dropped by NULL's three-valued logic.
+        sql`NOT coalesce(${quotes.requestJson} -> 'shell' = 'true'::jsonb, false)`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1); // one extra row = cheap truncation probe
@@ -237,7 +244,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
         lte(quotes.createdAt, to),
         // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
         // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
-        sql`coalesce(${quotes.requestJson}->>'shell', '') <> 'true'`,
+        // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
+        // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
+        // a real shell marker from a string that merely says "true". The jsonb comparison here
+        // must agree exactly with isUnpricedShell's `=== true` in quoteRepo.ts. NULL-safe: `->`
+        // yields SQL NULL whenever request_json is SQL NULL, JSON null, a JSON scalar, or an
+        // object without a `shell` key, and coalescing that NULL to false (then negating) keeps
+        // all of those rows included rather than silently dropped by NULL's three-valued logic.
+        sql`NOT coalesce(${quotes.requestJson} -> 'shell' = 'true'::jsonb, false)`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1);
