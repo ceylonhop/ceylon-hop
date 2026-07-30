@@ -110,8 +110,10 @@ test('the strip renders the span, one tile per day, and gives the all-clear', as
   await expect(cal.locator('.ch-cal-sum')).toContainText('6 days');
   await expect(cal.locator('.ch-cal-sum')).toContainText('4 driving legs');
   await expect(cal.locator('.ch-cal-ok')).toContainText('every leg dated'); // goal 2: visibly no mistakes
-  await expect(cal.locator('.ch-cal-cell')).toHaveCount(6);
-  await expect(cal.locator('.ch-cal-cell.idle')).toHaveCount(2);
+  // Calm strip (2026-07-31): only days that CARRY legs get a full tile; short empty runs
+  // are slim ghost columns, so the strip stops repeating "no legs" beside the leg list.
+  await expect(cal.locator('.ch-cal-cell:not(.collapsed)')).toHaveCount(4);
+  await expect(cal.locator('.ch-cal-ghost')).toHaveCount(2);
   // Day tags cross-reference the cards to the strip.
   await expect(page.locator('.ch-leg').nth(0).locator('.ch-day-tag')).toHaveText('Day 1');
   await expect(page.locator('.ch-leg').nth(3).locator('.ch-day-tag')).toHaveText('Day 6');
@@ -149,6 +151,53 @@ test('a fat-fingered month turns the strip amber and names the gap', async ({ pa
   await expect(cal.locator('[data-testid="cal-warn"]')).toBeVisible();
   await expect(cal.locator('[data-testid="cal-warn"]')).toContainText('a date is off');
   await expect(cal.locator('.ch-cal-cell.collapsed')).toBeVisible(); // the "+N empty days" tile
+  // The gap is described by the LEG it precedes — a day number would leave the operator
+  // counting — and both the sentence and the tile jump straight to that leg.
+  await expect(cal.locator('[data-testid="cal-warn"] [data-action="jumpToLeg"]')).toContainText('before leg 3');
+  await expect(cal.locator('.ch-cal-cell.collapsed')).toContainText('before leg 3');
+});
+
+test('clicking a gap jumps to the leg it names, flags the card and focuses its date', async ({ page }) => {
+  test.slow();
+  await buildTrip(page);
+  await setLegDate(page, 2, plusDays(BASE + 33));
+  await page.locator('#trip-cal .ch-cal-cell.collapsed').first().click();
+  const leg3 = page.locator('.ch-leg').nth(2);
+  await expect(leg3).toHaveClass(/is-flagged/);
+  await expect(leg3.locator('[data-field="date"]')).toBeFocused();
+});
+
+test('leg cards are quiet at rest and reveal their tools on hover and focus', async ({ page }) => {
+  test.slow();
+  await buildTrip(page);
+  const leg2 = page.locator('.ch-leg').nth(1);
+  const reorder = leg2.locator('.ch-leg-reorder');
+  const actions = leg2.locator('.ch-leg-actions');
+  // At rest the controls are present (no layout shift when they appear) but invisible.
+  await expect(reorder).toHaveCount(1);
+  await expect(reorder).toHaveCSS('opacity', '0');
+  await expect(actions).toHaveCSS('opacity', '0');
+  // Hovering the card brings them back…
+  await leg2.hover();
+  await expect(reorder).toHaveCSS('opacity', '1');
+  await expect(actions).toHaveCSS('opacity', '1');
+  // …and so does keyboard focus landing anywhere inside it, so tab users are never locked out.
+  await page.locator('.ch-leg').nth(0).hover(); // move the pointer away
+  await expect(reorder).toHaveCSS('opacity', '0');
+  await leg2.locator('[data-field="date"]').focus();
+  await expect(reorder).toHaveCSS('opacity', '1');
+});
+
+test('the condensed span bar appears only once the strip scrolls away', async ({ page }) => {
+  test.slow();
+  await buildTrip(page);
+  const mini = page.locator('#trip-cal-mini');
+  await expect(mini).toHaveCSS('opacity', '0');
+  await page.locator('.ch-leg').nth(3).scrollIntoViewIfNeeded();
+  await expect(mini).toHaveClass(/show/);
+  await expect(mini).toContainText('every leg dated');
+  await page.locator('#trip-cal').scrollIntoViewIfNeeded();
+  await expect(mini).not.toHaveClass(/show/);
 });
 
 test('an undated leg offers one-tap chips instead of a guessed date', async ({ page }) => {

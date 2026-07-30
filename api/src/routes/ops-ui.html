@@ -979,12 +979,45 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-cal-cell.idle { background: var(--idle-bg); border-style: dashed; }
 .qv .ch-cal-cell.idle .ch-cal-dnum { color: var(--idle); }
 .qv .ch-cal-idletag { margin-top: auto; font-size: 9.5px; font-weight: 700; color: var(--idle); line-height: 1.25; }
+/* Quiet strip (2026-07-31): a short run of empty days is a slim ghost column, not a full
+   tile repeating "no legs". The strip stops competing with the leg list it sits above, and
+   the amber gap tiles become the loudest thing in it — which is the point. */
+.qv .ch-cal-ghost { flex: none; width: 20px; align-self: stretch; border: 1px dashed var(--line); border-radius: 8px; background: var(--idle-bg); position: relative; }
+.qv .ch-cal-ghost:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font-size: 10.5px; font-weight: 600; color: var(--muted); white-space: nowrap; z-index: 4; pointer-events: none; }
+/* Gap tiles and the warning's leg link are jumps, not decoration. */
+.qv .ch-cal-cell.collapsed { cursor: pointer; transition: transform .16s ease; }
+.qv .ch-cal-cell.collapsed:hover { transform: translateY(-1px); }
+.qv .ch-cal-jump { border: 0; background: none; padding: 0; font: inherit; color: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.qv .ch-cal-jump:hover { color: var(--ink); }
+/* The card a jump lands on flashes once, so the eye follows the click. */
+@keyframes chLegFlash { 0%, 55% { border-color: var(--amber, #e0a33e); box-shadow: 0 0 0 3px rgba(224,163,62,.16); } 100% { box-shadow: 0 0 0 3px rgba(224,163,62,0); } }
+.qv .ch-leg.is-flagged { animation: chLegFlash 1.6s ease; }
+@media (prefers-reduced-motion: reduce) { .qv .ch-leg.is-flagged { animation: none; outline: 2px solid #e0a33e; outline-offset: 2px; } }
 .qv .ch-cal-chip { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 7px; padding: 3px 6px; font-size: 10px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qv .ch-cal-chip .n { color: var(--go); font-weight: 800; }
 .qv .ch-cal-chip.stay { color: var(--muted); border-style: dashed; }
 .qv .ch-cal-cell.collapsed { justify-content: center; align-items: center; text-align: center; border-style: dashed; background: var(--wait-bg); border-color: var(--wait); }
 .qv .ch-cal-cell.collapsed .big { font-size: 19px; font-weight: 800; color: var(--wait); line-height: 1; }
 .qv .ch-cal-cell.collapsed .small { font-size: 9.5px; font-weight: 700; color: var(--wait); margin-top: 3px; line-height: 1.3; }
+/* Condensed span bar (2026-07-31): the strip is the verification instrument, and it scrolls
+   away the moment you edit leg 4. This pins the one line that matters — span + any warning —
+   to the top of the itinerary column while the full strip is off-screen. Hidden by default;
+   an IntersectionObserver on the strip toggles .show. */
+.qv .ch-cal-mini { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; background: color-mix(in srgb, var(--cream) 88%, transparent); backdrop-filter: blur(8px); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 11px 11px; padding: 7px 13px; margin: 0 0 10px; font-size: 12px; color: var(--muted); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity .22s ease, transform .22s ease; }
+.qv .ch-cal-mini.show { opacity: 1; pointer-events: auto; transform: none; }
+.qv .ch-cal-mini b { color: var(--ink); font-weight: 700; }
+/* Keeps Delete out of arm's reach of Save/Submit in the action bar. */
+.qv .ch-act-gap { display: inline-block; width: 18px; }
+/* A price built on a span the strip is warning about must not read as authoritative. */
+.qv .ch-svc-box.suspect { border-color: var(--amber-line, #f6e3c0); background: var(--wait-bg, #fdf3e0); }
+.qv .ch-svc-box.suspect .ch-svc-price { color: #c7841f; }
+.qv .ch-svc-box .ch-svc-flag { display: block; font-size: 10px; font-weight: 700; color: #c7841f; margin-top: 3px; line-height: 1.3; }
+:root[data-theme="dark"] .qv .ch-svc-box.suspect { border-color: rgba(224,163,62,.45); background: rgba(224,163,62,.1); }
+:root[data-theme="dark"] .qv .ch-svc-box.suspect .ch-svc-price,
+:root[data-theme="dark"] .qv .ch-svc-box .ch-svc-flag { color: #e0a33e; }
+.qv .ch-cal-mini .ok { color: var(--ok); font-weight: 700; }
+.qv .ch-cal-mini .warn { color: var(--wait); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .qv .ch-cal-mini { transition: none; } }
 .qv .ch-leg-date.invalid input { border-color: var(--red); background: rgba(236,58,36,.06); }
 .qv .ch-leg-date-hint { display: block; font-size: 10px; font-weight: 600; color: var(--red); margin-top: 3px; text-align: center; }
 
@@ -999,6 +1032,45 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    same grammar as the + Add leg pill), solidifying on hover. The route chip right-aligns
    as a state readout — picked reads as a set decision, not another add. */
 .qv .ch-leg-tools { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
+
+/* ── Quiet cards (2026-07-31) ────────────────────────────────────────────────────────────
+   A 4-leg quote was rendering ~24 controls at rest — reorder arrows, +Stop, Return to
+   start, +Fees, duplicate, remove on every card — none of which the operator is reaching
+   for while reading. They now fade in for the card under the cursor, the card holding
+   keyboard focus, or the card the operator last touched. Nothing is removed and nothing
+   moves: the row keeps its height at rest (visibility, not display), so revealing a
+   toolbelt never reflows the itinerary under a click.
+
+   `.ch-leg-tools` is NOT hidden when it holds the route chip — that chip is a state
+   readout ("via the toll road"), not an action, and hiding state would lose information.
+
+   Guarded by (hover: hover): on a touch device there is no hover, so everything stays
+   visible exactly as before rather than becoming unreachable. */
+@media (hover: hover) and (pointer: fine) {
+  .qv .ch-leg-quiet .ch-leg-reorder,
+  .qv .ch-leg-quiet .ch-leg-actions,
+  .qv .ch-leg-quiet .ch-leg-tools.is-actions-only {
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+  .qv .ch-leg-quiet:hover .ch-leg-reorder,
+  .qv .ch-leg-quiet:hover .ch-leg-actions,
+  .qv .ch-leg-quiet:hover .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet:focus-within .ch-leg-reorder,
+  .qv .ch-leg-quiet:focus-within .ch-leg-actions,
+  .qv .ch-leg-quiet:focus-within .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-reorder,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-actions,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-tools.is-actions-only {
+    opacity: 1;
+  }
+  /* Reduced motion: still reveal, just without the fade. */
+  @media (prefers-reduced-motion: reduce) {
+    .qv .ch-leg-quiet .ch-leg-reorder,
+    .qv .ch-leg-quiet .ch-leg-actions,
+    .qv .ch-leg-quiet .ch-leg-tools.is-actions-only { transition: none; }
+  }
+}
 .qv .ch-tool-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--cream-deep); background: transparent; color: var(--muted); border-radius: 999px; padding: 3.5px 11px; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .1s ease; }
 .qv .ch-tool-chip:hover { color: var(--ink); border-color: var(--line); border-style: solid; background: var(--surface); }
 .qv .ch-tool-chip:active { transform: translateY(1px); }
@@ -4466,6 +4538,13 @@ const tripCal = {
     }
     return best;
   },
+  // Which day does the first leg AFTER `day` sit on? Gaps are described by the leg they
+  // precede ("45 empty days before leg 4"), not by a day number the operator would have to
+  // count out — the whole point is to say where to go and fix it.
+  nextLegDay: function (m, day) {
+    for (var d = day; d <= m.span; d++) if (m.byDay[d]) return d;
+    return null;
+  },
   // Amber warning or null. Two smells, both from real mistakes in team testing: a span no
   // itinerary of this size plausibly has (a month typo), and idle days far outnumbering
   // driving legs (a smaller version of the same). Thresholds are deliberately loose — this
@@ -4695,7 +4774,14 @@ function renderLegCard(leg, idx, total) {
       : '<button class="ch-tool-chip" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Sightseeing, waiting, and safari-wait fees">&#43; Fees</button>');
   }
   if (routeChipHtml) tools.push(routeChipHtml);
-  var toolsRow = tools.length ? '<div class="ch-leg-tools">' + tools.join('') + '</div>' : '';
+  // Quiet cards (2026-07-31): the tools row only fades out when everything in it is an
+  // ACTION. A route chip is a state readout ("via the toll road") and an active add-on chip
+  // names money already on the leg — both must stay legible at rest, or reading the quote
+  // would need a hover tour. `is-actions-only` is what the CSS keys the fade on.
+  var toolsAreActionsOnly = !routeChipHtml && !activeAddonLabels.length;
+  var toolsRow = tools.length
+    ? '<div class="ch-leg-tools' + (toolsAreActionsOnly ? ' is-actions-only' : '') + '">' + tools.join('') + '</div>'
+    : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -4713,7 +4799,7 @@ function renderLegCard(leg, idx, total) {
   // row can act as the leg's header band (see the route-rail CSS). Compact 2-stop legs
   // keep the route inline in the main row, exactly as before.
   return [
-    '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
+    '<div class="ch-leg ch-tl-item ch-leg-quiet ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '">' + (isStay ? '' : (idx + 1)) + '</span>',
@@ -5091,12 +5177,19 @@ function renderServiceChooser() {
   parts.push('    <span class="ch-svc-lbl">Point-to-point</span>');
   parts.push('    <span class="ch-svc-price">' + p2pPrice + '</span>'); // pre-escaped above
   parts.push('  </button>');
-  // Chauffeur-guide box
-  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  // Chauffeur-guide box. When the trip calendar is warning about the span, this price is
+  // BUILT ON that span (chauffeur.ts charges every day between first and last leg), so it
+  // must not read as authoritative — an $4,339 quote from a fat-fingered month looked
+  // exactly as confident as a real one. Amber + a one-line reason, never a hidden number:
+  // the operator still needs to see it to recognise it as wrong.
+  var spanSuspect = !chaufDisabled && !!_calModel && !!tripCal.warning(_calModel, state.service === 'chauffeur');
+  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
   parts.push('    <span class="ch-svc-lbl">Chauffeur-guide</span>');
   parts.push('    <span class="ch-svc-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
   if (chaufDisabled) {
     parts.push('    <span class="ch-svc-hint">' + esc(chaufErr) + '</span>');
+  } else if (spanSuspect) {
+    parts.push('    <span class="ch-svc-flag">reflects the ' + _calModel.span + '-day span &mdash; check the dates</span>');
   }
   parts.push('  </button>');
   parts.push('</div>');
@@ -6044,7 +6137,10 @@ function renderActionBar() {
     s === 'draft' || s === 'changes_requested' ||
     (DELETABLE_LOCKED_STATES.indexOf(s) >= 0 && approver)
   );
-  if (canDelete) out.push(B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
+  // Separated from the cluster (2026-07-31): Delete used to sit immediately beside Save and
+  // Submit — the two most-pressed buttons in the tool — with only colour to tell them apart.
+  // A spacer pushes it clear so the destructive action is never a near-miss of a routine one.
+  if (canDelete) out.push('<span class="ch-act-gap"></span>', B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
   return out.join('');
 }
 
@@ -6301,11 +6397,28 @@ function renderTripCalendar() {
   }
   head.push('</div>');
 
+  // The leg a given day belongs to, 1-based in the operator's list. Gap copy and the jump
+  // targets both speak in leg numbers, because that is what the operator can act on.
+  var legNoOnDay = function (d) {
+    var on = m.byDay[d];
+    return on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+  };
+
   var warnHtml = '';
   if (warn) {
     var gap = tripCal.biggestGap(m);
+    var gapLegNo = gap ? legNoOnDay(tripCal.nextLegDay(m, gap.fromDay)) : null;
+    // "45 empty days before leg 4" beats "from Day 38" — and it is a button that scrolls to
+    // that leg and flashes it, so seeing the problem and reaching it is one click.
+    var gapSentence = '';
+    if (gap && gap.days > 2) {
+      gapSentence = gapLegNo
+        ? ' <button type="button" class="ch-cal-jump" data-action="jumpToLeg" data-leg-no="' + gapLegNo + '">'
+          + gap.days + ' empty days before leg ' + gapLegNo + ' &#8594;</button>'
+        : ' Largest gap: ' + gap.days + ' empty days at the end.';
+    }
     warnHtml = '<div class="ch-cal-warn" data-testid="cal-warn"><span>&#9888;</span><span>' + esc(warn)
-      + (gap && gap.days > 2 ? ' Largest gap: ' + gap.days + ' empty days from Day ' + gap.fromDay + '.' : '') + '</span></div>';
+      + gapSentence + '</span></div>';
   }
 
   // Cells. Chips show the leg's number in the list, so strip and cards cross-reference.
@@ -6315,9 +6428,21 @@ function renderTripCalendar() {
       var run = 0;
       while (day + run <= m.span && !m.byDay[day + run]) run++;
       if (run > CAL_COLLAPSE_RUN) {
-        cells.push('<div class="ch-cal-cell collapsed"><div class="big">+' + run + '</div><div class="small">empty days' + (state.service === 'chauffeur' ? '<br>all charged as idle' : '') + '</div></div>');
+        // A long empty run: the amber counter, now a jump to the leg it sits before.
+        var afterNo = legNoOnDay(tripCal.nextLegDay(m, day + run));
+        cells.push('<div class="ch-cal-cell collapsed"'
+          + (afterNo ? ' data-action="jumpToLeg" data-leg-no="' + afterNo + '" title="Go to leg ' + afterNo + '"' : '')
+          + '><div class="big">+' + run + '</div><div class="small">empty days'
+          + (afterNo ? '<br>before leg ' + afterNo : '') + '</div></div>');
         day += run; continue;
       }
+      // A SHORT empty run collapses to slim ghost columns — the strip stops repeating
+      // "no legs" in full-size tiles and the amber counters above become the loud thing.
+      for (var g = 0; g < run; g++) {
+        cells.push('<div class="ch-cal-ghost" data-tip="' + esc(fmtCell(day + g, 'd')) + ' &middot; '
+          + (state.service === 'chauffeur' ? 'idle &middot; driver waits' : 'no legs') + '"></div>');
+      }
+      day += run; continue;
     }
     var ls = m.byDay[day] || [];
     var chips = ls.map(function (l) {
@@ -6328,18 +6453,60 @@ function renderTripCalendar() {
         : '<span class="n">' + n + '</span> ' + esc((l.stops[0] || '?')) + ' &#8594; ' + esc((l.stops[l.stops.length - 1] || '?'));
       return '<div class="ch-cal-chip' + (isStayChip ? ' stay' : '') + '" title="Leg ' + n + '">' + label + '</div>';
     }).join('');
-    cells.push('<div class="ch-cal-cell' + (ls.length ? '' : ' idle') + '" data-cal-day="' + day + '">'
+    // Only days that actually carry legs reach here now — empty ones became ghosts or an
+    // amber counter above, so a full tile always has something to say.
+    cells.push('<div class="ch-cal-cell" data-cal-day="' + day + '">'
       + '<div><span class="ch-cal-dnum">Day ' + day + '</span>'
       + '<div class="ch-cal-ddate">' + esc(fmtCell(day, 'd')) + '</div>'
       + '<div class="ch-cal-dwk">' + esc(fmtCell(day, 'wk')) + '</div></div>'
       + chips
-      + (ls.length ? '' : '<div class="ch-cal-idletag">' + (state.service === 'chauffeur' ? 'idle &middot; driver waits' : 'no legs') + '</div>')
       + '</div>');
     day++;
   }
 
-  return '<div class="ch-cal" id="trip-cal">' + head.join('') + warnHtml
+  // The condensed line that survives scrolling. Same facts, one row: span, then the
+  // all-clear or the warning — never both, and never more than fits on a line.
+  var miniState = warn
+    ? '<span class="warn">&#9888; ' + esc(gapShort(m, warn)) + '</span>'
+    : (m.undated > 0
+      ? '<span>' + m.undated + ' leg' + (m.undated === 1 ? '' : 's') + ' still undated</span>'
+      : '<span class="ok">&#10003; every leg dated</span>');
+  var mini = '<div class="ch-cal-mini" id="trip-cal-mini" aria-hidden="true">'
+    + '<b>' + esc(fmtCell(1, 'd')) + ' &#8594; ' + esc(fmtCell(m.span, 'd')) + '</b>'
+    + '<span>&middot; ' + m.span + ' day' + (m.span === 1 ? '' : 's') + '</span>'
+    + miniState + '</div>';
+
+  return mini + '<div class="ch-cal" id="trip-cal">' + head.join('') + warnHtml
     + '<div class="ch-cal-strip">' + cells.join('') + '</div></div>';
+}
+
+// The warning, compressed to the one clause that fits the pinned bar. Prefers naming the
+// gap's leg (the actionable half) and falls back to the span when there is no clear gap.
+function gapShort(m, warn) {
+  var gap = tripCal.biggestGap(m);
+  if (gap && gap.days > 2) {
+    var day = tripCal.nextLegDay(m, gap.fromDay);
+    var on = day && m.byDay[day];
+    var no = on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+    if (no) return gap.days + ' empty days before leg ' + no;
+  }
+  return m.span + '-day span — check the dates';
+}
+
+// Keep the condensed bar in step with the strip's visibility. One observer for the app's
+// lifetime, re-pointed after each render (morphdom may replace either node).
+var _calMiniObs = null;
+function syncCalMini() {
+  var strip = document.getElementById('trip-cal');
+  var mini = document.getElementById('trip-cal-mini');
+  if (_calMiniObs) { _calMiniObs.disconnect(); _calMiniObs = null; }
+  if (!strip || !mini || typeof IntersectionObserver !== 'function') return;
+  _calMiniObs = new IntersectionObserver(function (entries) {
+    var off = !entries[0].isIntersecting;
+    mini.classList.toggle('show', off);
+    mini.setAttribute('aria-hidden', off ? 'false' : 'true');
+  }, { threshold: 0 });
+  _calMiniObs.observe(strip);
 }
 
 function render() {
@@ -6729,6 +6896,7 @@ function render() {
   if (_menuWasOpen) reopenAutoCompleteMenu();
   syncItinMap(); // move/refresh the persistent route map into this render's slot
   syncRouteModalMap(); // draw both routes in the open route-choice modal (no-op when closed)
+  syncCalMini(); // re-point the condensed span bar's observer at this render's strip
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -6861,6 +7029,18 @@ function attachEventListeners() {
     if (t && t.id === 'f-internalNotes') { state.internalNotes = t.value; markDirty(); }
   });
 
+  // Quiet cards (2026-07-31): a hybrid laptop reports (hover: hover) but is still touched.
+  // A tap anywhere on a leg card reveals its toolbelt and leaves it revealed until the
+  // operator moves to a different card, so a touch user is never locked out of controls
+  // the CSS is fading. Pointer-typed so a mouse click never sticks a card open.
+  app.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'mouse') return;
+    var card = e.target.closest('.ch-leg-quiet');
+    var open = app.querySelectorAll('.ch-leg-quiet.is-revealed');
+    for (var i = 0; i < open.length; i++) if (open[i] !== card) open[i].classList.remove('is-revealed');
+    if (card) card.classList.add('is-revealed');
+  }, true);
+
   app.addEventListener('click', function(e) {
     var el = e.target.closest('[data-action]');
     if (!el) return;
@@ -6878,6 +7058,23 @@ function attachEventListeners() {
       moveLeg(legId, -1);
     } else if (action === 'moveLegDown') {
       moveLeg(legId, 1);
+    } else if (action === 'jumpToLeg') {
+      // Seeing a date problem and reaching it should be one click. Scrolls the named leg
+      // into view and flashes its card; the flash class is stripped on the next render, so
+      // it can never persist into a state the operator didn't ask for.
+      var jumpNo = parseInt(el.getAttribute('data-leg-no'), 10);
+      var jumpLeg = state.legs[jumpNo - 1];
+      if (jumpLeg) {
+        var jumpCard = document.querySelector('.ch-leg[data-leg-id="' + jumpLeg.id + '"]');
+        if (jumpCard) {
+          jumpCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          jumpCard.classList.remove('is-flagged');
+          void jumpCard.offsetWidth; // restart the animation on a repeat click
+          jumpCard.classList.add('is-flagged');
+          var jumpDate = jumpCard.querySelector('[data-field="date"]');
+          if (jumpDate) jumpDate.focus({ preventScroll: true });
+        }
+      }
     } else if (action === 'stepDate') {
       // ±1-day nudge (trip calendar, 2026-07-30). Clamped BOTH ways so the itinerary's date
       // order can never be broken by a click: down stops at the leg-above's date (the same
