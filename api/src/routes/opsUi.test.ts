@@ -534,6 +534,10 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(chip).toContain("txt = 'Not priced yet';");
     // A shell must never be described as unpersisted — the row exists server-side.
     expect(chip.match(/Not priced yet/g)).toHaveLength(2);
+    // Branch ORDER, not just text: error must be checked before dirty. A failed save leaves
+    // _dirty true, so if the dirty branch came first it would win and the error chip would be
+    // unreachable — exactly the bug this test suite exists to pin.
+    expect(chip.indexOf("_autoState === 'error'")).toBeLessThan(chip.indexOf('else if (_dirty)'));
   });
 
   it('claiming the row marks it unpriced, and a successful save clears the marker', () => {

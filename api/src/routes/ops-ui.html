@@ -3830,6 +3830,12 @@ async function saveQuote(opts) {
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
     state.unpriced = false; // a real save prices the quote — the shell marker is gone server-side
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
+    // Clear a stale 'error' from an earlier failed autosave — this save just succeeded, so the
+    // chip must not keep reading "Autosave failed" once _dirty is false. 'idle' (not 'saved') so
+    // fireAutosave's own 'saved'/_lastSavedAt bookkeeping (set right after this call returns) is
+    // the only thing that ever writes those; renderSaveState falls through to the plain _lastSavedAt/
+    // state.savedId "Saved" branches on its own.
+    _autoState = 'idle';
     if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
     return true;

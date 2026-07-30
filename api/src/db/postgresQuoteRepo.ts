@@ -245,8 +245,10 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...this.channelCond(channel),
         gte(quotes.createdAt, from),
         lte(quotes.createdAt, to),
-        // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
-        // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
+        // Autosave shells never count as demand (spec 2026-07-29). Unlike listFunnelRows, this
+        // query already selects request_json above (this is the one analytics query that needs
+        // it), so referencing it again here in the WHERE adds no extra fetch/detoast cost — it's
+        // already coming off the heap for the select.
         // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
         // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
         // a real shell marker from a string that merely says "true". The jsonb comparison here
