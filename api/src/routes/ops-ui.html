@@ -156,6 +156,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+  /* An unpriced shell (spec 2026-07-29) states its condition instead of showing a $0 total; muted
+     and non-numeric so it never reads as a real price at a glance. --ink-3 isn't defined on this
+     page — --ink-faint is the token the row already uses for its own "unset" states (qref, the
+     unassigned chip), so it matches the existing muted vocabulary instead of inventing a new one. */
+  .qrow .qtotal-unpriced{color:var(--ink-faint);font-variant-numeric:normal;font-weight:400}
   .qrow:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .tk:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   /* Read-only status pill (queue rows) — status changes happen in the detail view */
@@ -1866,11 +1871,11 @@ function quoteRowHtml(q,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
-    <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
+    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(quoteUsd(q.totalCents))}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -4907,10 +4912,11 @@ function submitBlockers() {
     add(undated === 1 ? 'A date on the undated leg (chauffeur trips need one per leg)'
       : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
   }
-  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the
-     cause. Only surfaced when nothing else explains it — otherwise the panel says the same
-     thing twice. */
-  if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the cause.
+     On a shell the server refuses the transition outright (400 unpriced_quote), so say so even
+     when other blockers are listed — otherwise the panel could look satisfiable when it isn't. */
+  if (state.unpriced) add('A price — this quote has not been priced yet', '.ch-money');
+  else if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
   return out;
 }
 
