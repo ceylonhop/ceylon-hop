@@ -28,6 +28,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
     --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
     --espresso:#1b1714;
+    /* Elevated overlay surface (toasts, dark chips). Its OWN token on purpose: these used
+       to borrow --ink/--black, which are TEXT colours — so in dark mode they inverted to a
+       near-white panel while the text stayed hardcoded #fff, and every toast went
+       white-on-white. A surface must never be expressed as a text token. */
+    --pop-bg:#241f1d;--pop-fg:#fffdf8;--pop-line:transparent;
     --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
@@ -351,7 +356,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
 
-  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
 
   /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
@@ -407,7 +412,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      the accent unifies on ops teal, type on Newsreader + Hanken Grotesk. */
   --blue: #0AB9B6;      /* accent → ops teal (was #63BFD6) */
   --blue-d: #08938f;    /* → ops teal-deep */
-  --black: #241f1d;     /* → ops ink */
+  --black: #241f1d;     /* → ops ink (TEXT — never use as a background, see --pop-bg) */
+  /* Elevated overlay surface for the builder's toast + dark chips. Mirrors the ops-scope
+     token above; both themes define it explicitly so nothing inverts by accident. */
+  --pop-bg: #241f1d;
+  --pop-fg: #fffdf8;
+  --pop-line: transparent;
   --cream: #F1EEE4;     /* → ops cream */
   --cream-d: #e4dfd0;   /* → ops cream-deep */
   --orange: #F9A429;    /* == ops saffron (already matched) */
@@ -534,7 +544,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-card-head-l { display: flex; align-items: center; gap: 11px; }
 .qv .ch-card-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
 .qv .ch-card-head-l { min-width: 0; }
-.qv .ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--black); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
+.qv .ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--pop-bg); color: var(--pop-fg); display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
 .qv .ch-card-head-r { display: flex; align-items: center; gap: 10px; }
 .qv .ch-chev { font-size: 19px; color: var(--muted); transition: transform .2s; line-height: 1; }
 .qv .ch-chev.open { transform: rotate(180deg); }
@@ -592,7 +602,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-d); }
 .qv .ch-btn-primary:hover { filter: brightness(1.04); transform: translateY(-1px); }
 .qv .ch-btn-teal { background: var(--teal); color: #fff; box-shadow: 0 2px 0 var(--teal-d); }
-.qv .ch-btn-dark { background: var(--black); color: #fff; }
+.qv .ch-btn-dark { background: var(--pop-bg); color: var(--pop-fg); }
 .qv .ch-btn-dark:hover { filter: brightness(1.2); }
 .qv .ch-btn-outline { background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); }
 .qv .ch-btn-outline:hover { border-color: var(--blue); color: var(--blue-d); }
@@ -837,7 +847,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* ---------- Toast ---------- */
 /* T5: fixed→absolute — .qv is position:relative, so the toast centers in the
    quote pane rather than the full viewport (which includes the ops rail). */
-.qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
+.qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--pop-bg); color: var(--pop-fg); border: 1px solid var(--pop-line); padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
 .qv .ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .qv .ch-toast .tick { color: var(--teal); }
 
@@ -1370,8 +1380,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     --ok:#4fbf7e;--ok-bg:#132a1c;--wait:#e0a33e;--wait-bg:#2e2410;--go:#2fbfb4;--go-bg:#0e2a27;
     --alert:#ef6a4c;--alert-bg:#331812;--alert-line:#4d2418;--idle:#9a948a;--idle-bg:#262219;
     --wa:#37c96e;--wa-bg:#0f2b1a;--web:#2fbfb4;--web-bg:#0e2a27;
+    /* A toast on a dark page is an ELEVATED surface, not an inverted one: a near-white
+       panel flashing over a dark ops screen at night is worse than the bug it replaces.
+       Lifted above --paper/--surface and given a hairline so it still reads as floating. */
+    --pop-bg:#33302c;--pop-fg:#f4f2ed;--pop-line:#47433d;
   }
   :root[data-theme="dark"] .qv{
+    --pop-bg:#33302c;--pop-fg:#f4f2ed;--pop-line:#47433d;
     --black:#eceae5;--cream:#141313;--cream-d:#232221;
     --paper:#1c1b1a;--ink:#eceae5;--muted:#b3afa7;--muted-2:#807b73;
     --line:#302e2b;--line-soft:#282624;
