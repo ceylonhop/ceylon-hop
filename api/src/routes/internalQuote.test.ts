@@ -1637,9 +1637,10 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
 
   // The gap guarantee: a booking converted from a quote is charged the quote's FROZEN total and
   // is never re-priced. That matters because services/pricing.ts walks consecutive stop pairs —
-  // it cannot see a `driven` flag, so re-pricing a gapped trip would bill the customer for the
-  // hop they arranged themselves (the Ella → Galle train). This test pins the boundary: as long
-  // as /book takes the price from the quote, a gap can never leak into a charge.
+  // the booking's flat `stops` array can't mark a gap, so re-pricing a gapped trip would bill
+  // the customer for the hop they arranged themselves (the Ella → Galle train). This test pins
+  // the boundary: as long as /book takes the price from the quote, a gap can never leak into a
+  // charge.
   it('prices a gapped quote at the frozen quote total — never re-priced through pricing.ts', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
@@ -1660,7 +1661,6 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(b.total).toBe(34500); // the quote's total, not a recomputed one
     expect(b.amountDueNow).toBe(34500);
     expect(b.input.stops).toEqual(['Colombo Airport (CMB)', 'Ella', 'Galle', 'Colombo City']);
-    expect(b.input.driven).toEqual([true, false, true]);
   });
 
   it('a concurrent double-submit never 500s and creates exactly one booking', async () => {
