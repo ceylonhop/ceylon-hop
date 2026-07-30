@@ -76,6 +76,9 @@ window.updateSearch = function (e) {
       selectedDate ? ('Date: ' + selectedDate) : 'Date: flexible',
       'Travellers: 6+'
     ].join('\n');
+    // Not an anchor click, so analytics.js's delegated listener never sees it.
+    // Highest-intent contact on the site — track it explicitly or it's invisible.
+    if (window.chTrack) window.chTrack('contact_whatsapp', { method: 'whatsapp', link_id: 'search-group-6plus', page: location.pathname });
     location.href = 'https://wa.me/94779669662?text=' + encodeURIComponent(msg);
     return false;
   }
