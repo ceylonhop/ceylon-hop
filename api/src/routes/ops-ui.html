@@ -3280,9 +3280,11 @@ let state = {
 // beforeunload asks the browser to confirm the close so an unsaved quote is never lost silently.
 var _dirty = false;
 /* D4 (design elevation): autosave. Every markDirty() arms a 2.5s debounce; when it fires we
-   silently re-save IF the quote is already a real row (savedId set) and still editable. New
-   quotes stay manual-first — auto-creating rows on half-typed enquiries would pollute the
-   queue. The Save button remains as the explicit path (and the only way to CREATE the row). */
+   silently re-save as long as the quote is still editable. "+ New quote" now creates the row
+   up front (spec 2026-07-29), so savedId is no longer the gate — Save is no longer the only
+   way a row comes into existence. The one gate that IS still real: state.vehicleType, because
+   POST /save runs resolveAndPrice() and cannot persist a payload it can't price. The 24h shell
+   sweep is what bounds the queue now, not manual-first creation. */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
 function isEditableNow() {
   // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
@@ -3323,8 +3325,15 @@ async function fireAutosave() {
   var seq = _openSeq;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
-  var ok = await saveQuote({ silent: true });
-  _autoSaving = false; // must always clear, or autosave locks up for the rest of the session
+  var ok;
+  try {
+    ok = await saveQuote({ silent: true });
+  } finally {
+    // Always clears, even if something above throws — nothing on today's path does (apiSave has
+    // a full try/catch), but were that ever to change, an ungated `_autoSaving = false` below
+    // would skip and autosave would be dead for the rest of the session with no signal.
+    _autoSaving = false;
+  }
   // saveQuote returns false when it drops a superseded result — writing that here would paint
   // "Autosave failed" on the quote now on screen, which never attempted a save. The new quote's
   // chip was already set by resetToNew()/reopenQuote().
@@ -3337,10 +3346,16 @@ function renderSaveState() {
   if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
+  // Error must win over dirty, or a repeatedly-failing autosave paints the dirty chip forever and
+  // the escape hatch (the Save button) never gets advertised. Exception: a shell that has never
+  // priced yet (state.unpriced) is expected to fail to save while the operator is still filling
+  // it in — that's the normal pre-priceable window, not an alarm-worthy failure, so it falls
+  // through to the dirty branch below instead. Once a quote has priced at least once
+  // (unpriced === false), a save that starts failing IS worth surfacing.
+  else if (_autoState === 'error' && !state.unpriced) { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
   // On a shell the row already exists, so "Unsaved" would overstate the risk: what is pending is
   // a PRICE, not persistence. Say so.
   else if (_dirty) { cls += ' dirty'; txt = state.unpriced ? 'Not priced yet' : (state.savedId ? 'Edits pending' : 'Unsaved'); }
-  else if (_autoState === 'error') { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
   else if (_lastSavedAt) { cls += ' saved'; txt = 'Saved ' + _lastSavedAt.toTimeString().slice(0, 5); }
   else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; }
   else if (state.savedId) { cls += ' saved'; txt = 'Saved'; }
@@ -3621,7 +3636,14 @@ async function apiSave(payload) {
 async function apiCreateDraft() {
   try {
     var r = await api('/admin/quote/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-    if (!r.ok) return await errPayload(r);
+    if (!r.ok) {
+      var errBody = await errPayload(r);
+      // Unlike apiSave/apiPatch, a failed draft-create has no caller-side special case to fall
+      // back on — claimDraftRow() just silently no-ops (by design), so this is the only place
+      // a 500 here would ever get reported.
+      window.opsReportError && window.opsReportError('apiCreateDraft', new Error(errBody.error || ('HTTP ' + r.status)));
+      return errBody;
+    }
     var body = await jsonOrNull(r);
     return body || { error: 'Could not start a quote' };
   } catch (e) { window.opsReportError && window.opsReportError('apiCreateDraft', e); return { error: 'Network error' }; }
@@ -3844,6 +3866,10 @@ async function transition(toStatus, opts) {
     // Quote intent (spec 2026-07-17): the server gate can 400 even if a client bypassed the
     // disabled button — give it the same friendly copy as the button hint, not the raw code.
     if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first'); return; }
+    // Same gate the blockers panel already names (submitBlockers' "A price — this quote has not
+    // been priced yet"); near-unreachable since that panel blocks the button first, but if a
+    // client bypasses it the raw code shouldn't leak through.
+    if (res && res.error === 'unpriced_quote') { showToast('This quote needs a price before it can move'); return; }
     showToast('Could not update — ' + ((res && res.error) || 'unknown error'));
     return;
   }
