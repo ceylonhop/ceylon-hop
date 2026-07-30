@@ -1401,8 +1401,8 @@ const dayGroup=t=>{
 const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Completed:'done'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
-   channel, awaiting payment after a link was sent). Quoting/payment-link steps
-   live outside ops in WhatsApp/Notion. ── */
+   channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
+   steps live outside ops in WhatsApp/Notion. ── */
 const STAGES=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed','on_trip','completed'];
 const STAGE={
   awaiting_payment:{label:'Awaiting payment',short:'Awaiting',c:'#c7841f',cbg:'#fbf0d8'},
@@ -1419,7 +1419,8 @@ const STAGE={
 };
 const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
 /* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
-   payment arrives via the webhook; ops follows up instead. */
+   it leaves that stage by money arriving, either a PayHere webhook or an ops agent
+   recording an out-of-band payment with the drawer's Mark paid control. */
 const NEXT={
   paid:{to:'vehicle_confirmed',label:'Confirm vehicle',act:'advance'},
   vehicle_confirmed:{to:'pickup_confirmed',label:'Confirm pickup',act:'advance'},
@@ -1445,7 +1446,7 @@ const reason=t=>{
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
-  if(t.stage==='awaiting_payment')return 'Payment link sent — follow up';
+  if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -2353,7 +2354,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and recorded here. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
       ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
