@@ -23,6 +23,8 @@ import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { RefundError, type RefundRepo } from '../db/refundRepo';
+import type { PaymentRepo } from '../db/paymentRepo';
+import type { RideOpsRepo } from '../db/rideOpsRepo';
 
 // Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
 // session with payments:act (founder or finance) — the machine key (system) does NOT
@@ -51,6 +53,10 @@ export function adminRoutes(deps: {
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
   refunds: RefundRepo;
+  // Manual settlement (mark-paid) needs the payment ledger to record the money and the ride-ops
+  // row to write the audit note the booking sheet's activity list renders.
+  payments: PaymentRepo;
+  rideOps: RideOpsRepo;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -211,6 +217,79 @@ export function adminRoutes(deps: {
   );
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
   r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
+
+  const MarkPaid = z
+    .object({
+      method: z.enum(['cash', 'bank_transfer', 'manual_other']),
+      reference: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict();
+
+  // Ops marks an out-of-band booking paid (owner 2026-07-30). A booking converted from a
+  // quote lands in payment_pending and is settled by cash or bank transfer, so no PayHere
+  // webhook is ever coming — without this it is stranded at "Awaiting payment" forever and
+  // can never advance through the pipeline. The money is RECORDED, not just asserted: a
+  // refund requires a captured payment (refundRepo's payment_not_captured), so a status-only
+  // flip would leave a cash booking unrefundable.
+  // Deliberately sends NO customer email (owner 2026-07-30); automatic sending is wanted
+  // later and belongs with the rest of the confirmation flow.
+  r.post('/bookings/:id/mark-paid', requireCap('payments:act'), async (c) => {
+    const booking = await bookings.get(c.req.param('id'));
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const parsed = MarkPaid.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_mark_paid_request' }, 400);
+    const { method } = parsed.data;
+    const reference = parsed.data.reference ?? null;
+
+    // Idempotent on a key derived from the booking id, the same way POST /admin/quote/:id/book
+    // is: a double-click, or a retry after a mid-flight failure, finds the payment it already
+    // recorded and returns the booking as it stands rather than taking the money twice.
+    const idempotencyKey = `manual-paid:${booking.id}`;
+    if (await deps.payments.findByIdempotencyKey(idempotencyKey)) return c.json(booking, 200);
+
+    if (booking.status !== 'payment_pending') {
+      return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
+    }
+
+    const payment = await deps.payments.create({
+      bookingId: booking.id,
+      // The method is genuinely the provider of this money — a cash payment's provider is cash.
+      // NOTE: the live CHECK `payments_provider_supported` (migration 0027) still admits only
+      // 'payhere' | 'fake', so it must be widened to include the three manual methods before
+      // this insert can run against Postgres. It is a whitelist, not a safety property.
+      provider: method,
+      // Not the bare booking reference: the checkout route already claims that as its orderId,
+      // and order_id is unique — a booking once handed a PayHere form must still be settleable
+      // in cash.
+      orderId: `${booking.reference}-MANUAL`,
+      amount: booking.amountDueNow ?? booking.total,
+      currency: booking.currency,
+      idempotencyKey,
+    });
+    await deps.payments.markSucceededManually(payment.id, { reference });
+
+    let paid: Booking;
+    try {
+      paid = await bookings.setStatus(booking.id, 'paid');
+    } catch (err) {
+      if (!(err instanceof IllegalTransitionError)) throw err;
+      // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
+      // money is recorded either way, so report the booking as it now stands, not a 500.
+      paid = (await bookings.get(booking.id)) ?? booking;
+    }
+
+    // Audit trail: who took the money, how, and against what reference. It goes in the ops
+    // notes because that is what the booking sheet's activity list renders (one note per line);
+    // best-effort like the emails above — a note failure must not undo money already recorded.
+    try {
+      const ops = await deps.rideOps.getOrCreate(booking.id);
+      const note = `Marked paid — ${method} · ${reference ?? 'no reference'} · by ${c.get('identity').email}`;
+      await deps.rideOps.setFlags(booking.id, { opsNotes: ops.opsNotes ? `${ops.opsNotes}\n${note}` : note });
+    } catch (err) {
+      console.error(`mark-paid note failed for ${paid.reference}:`, err);
+    }
+    return c.json(paid, 200);
+  });
 
   // Cron tick — an external scheduler (cron-job.org / GitHub Actions) POSTs here on a
   // cadence; the work is idempotent via the notification log, so over-calling is harmless.

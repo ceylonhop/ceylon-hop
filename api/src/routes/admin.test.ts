@@ -4,6 +4,7 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday } from '../testSupport/dates';
@@ -430,5 +431,140 @@ describe('POST /admin/bookings/:id/no-show', () => {
       method: 'POST', headers: { cookie: await cookie('op@x.com') },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// A booking converted from an ops quote is settled by cash or bank transfer, so no PayHere
+// webhook is ever coming. mark-paid RECORDS that money (it does not merely flip the status)
+// so the booking can leave "Awaiting payment" AND still be refundable later.
+describe('POST /admin/bookings/:id/mark-paid', () => {
+  function makeCashApp() {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const rideOps = new InMemoryRideOpsRepo();
+    const email = new FakeEmailAdapter();
+    return { app: createApp({ adminApiKey: KEY, auth, bookings, payments, rideOps, email }), bookings, payments, rideOps, email };
+  }
+
+  // The state the ops quote → booking conversion leaves behind: "Awaiting payment".
+  async function awaitingPayment(app: ReturnType<typeof createApp>, bookings: InMemoryBookingRepo) {
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    return b as { id: string; total: number; amountDueNow?: number | null; currency: string };
+  }
+
+  const markPaid = async (app: ReturnType<typeof createApp>, id: string, body: unknown, who = 'f@x.com') =>
+    app.request(`/admin/bookings/${id}/mark-paid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie(who) },
+      body: JSON.stringify(body),
+    });
+
+  it('moves the booking to paid and records exactly one manually-settled payment for the amount due', async () => {
+    const { app, bookings, payments, email } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('succeeded');
+    expect(rows[0].provider).toBe('cash');
+    expect(rows[0].amount).toBe(b.amountDueNow ?? b.total);
+    expect(rows[0].currency).toBe(b.currency);
+    // Provenance (SH7): real cash must NEVER be labelled a legacy backfill or a webhook.
+    const settlement = payments.getForSettlement(rows[0].id)!;
+    expect(settlement.settlementSource).toBe('manual');
+    expect(settlement.settledAt).toBeInstanceOf(Date);
+    // Explicit owner decision (2026-07-30): no customer email on this action.
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('lands the operator reference on the payment, and succeeds without one', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const withRef = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, withRef.id, { method: 'bank_transfer', reference: 'BOC-77219' })).status).toBe(200);
+    const paid = (await payments.findByBookingId(withRef.id))[0];
+    expect(paid.provider).toBe('bank_transfer');
+    expect(payments.getForSettlement(paid.id)!.gatewayPaymentId).toBe('BOC-77219');
+
+    const noRef = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, noRef.id, { method: 'cash' })).status).toBe(200);
+    const cash = (await payments.findByBookingId(noRef.id))[0];
+    expect(cash.status).toBe('succeeded');
+    expect(payments.getForSettlement(cash.id)!.gatewayPaymentId).toBeNull();
+  });
+
+  it('leaves the booking refundable — the whole reason the money is recorded', async () => {
+    const { app, bookings } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const refund = await app.request(`/admin/bookings/${b.id}/refunds`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({ amountCents: b.amountDueNow ?? b.total, currency: b.currency, reason: 'Trip cancelled' }),
+    });
+    expect(refund.status).toBe(201); // NOT 409 payment_not_captured
+  });
+
+  it('records the operator, the method and the reference in the booking activity notes', async () => {
+    const { app, bookings, rideOps } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await markPaid(app, b.id, { method: 'bank_transfer', reference: 'BOC-77219' }, 'fin@x.com');
+    const notes = (await rideOps.get(b.id))!.opsNotes ?? '';
+    expect(notes).toContain('fin@x.com');
+    expect(notes).toContain('bank_transfer');
+    expect(notes).toContain('BOC-77219');
+  });
+
+  it('400 not_awaiting_payment for a booking that is not awaiting payment, and records nothing', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await book(app); // still draft
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'not_awaiting_payment', status: 'draft' });
+    expect((await bookings.get(b.id))!.status).toBe('draft');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('400 for an unknown method', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'crypto' })).status).toBe(400);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('refuses a caller without payments:act (ops session, and the machine key)', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' }, 'op@x.com')).status).toBe(403);
+    const key = await app.request(`/admin/bookings/${b.id}/mark-paid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-key': KEY },
+      body: JSON.stringify({ method: 'cash' }),
+    });
+    expect(key.status).toBe(403);
+    expect((await app.request(`/admin/bookings/${b.id}/mark-paid`, { method: 'POST' })).status).toBe(401);
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('404 for an unknown booking', async () => {
+    const { app } = makeCashApp();
+    expect((await markPaid(app, 'no-such', { method: 'cash' })).status).toBe(404);
+  });
+
+  it('is idempotent — a double-click never records the money twice', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const second = await markPaid(app, b.id, { method: 'cash' });
+    expect(second.status).toBe(200);
+    expect((await second.json()).status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows.reduce((sum, p) => sum + p.amount, 0)).toBe(b.amountDueNow ?? b.total);
   });
 });

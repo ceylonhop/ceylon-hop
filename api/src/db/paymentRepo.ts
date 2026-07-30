@@ -19,7 +19,12 @@ export interface Payment extends NewPayment {
 export interface PaymentSettlementEvidence {
   gatewayPaymentId: string | null;
   settledAt: Date | null;
-  settlementSource: 'webhook' | 'legacy_backfill' | null;
+  // 'manual' = an operator recorded money that arrived out-of-band (cash / bank transfer for a
+  // WhatsApp booking). Distinct from 'legacy_backfill' on purpose: that source means "we have no
+  // idea how this settled", whereas a manual settlement has a named operator in the booking's
+  // activity notes. The DB CHECK only requires this to be non-null for a succeeded payment, so
+  // the new value needs no migration.
+  settlementSource: 'webhook' | 'legacy_backfill' | 'manual' | null;
   updatedAt: Date;
 }
 
@@ -31,6 +36,10 @@ export interface PaymentRepo {
   findByOrderId(orderId: string): Promise<Payment | null>;
   findByBookingId(bookingId: string): Promise<Payment[]>;
   markSucceeded(id: string): Promise<Payment>;
+  // Settle a payment that no gateway will ever confirm (cash / bank transfer taken by ops).
+  // Separate from markSucceeded() so real out-of-band money is never stamped 'legacy_backfill';
+  // `reference` is whatever the operator can cite (a bank slip number), and is optional.
+  markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment>;
   markFailed(id: string): Promise<Payment>;
 }
 
@@ -75,6 +84,22 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     const p = this.byId.get(id);
     if (!p) throw new Error(`payment_not_found: ${id}`);
     const updated: InternalPaymentRecord = { ...p, status: 'succeeded', updatedAt: new Date() };
+    this.byId.set(id, updated);
+    return this.toPayment(updated);
+  }
+
+  async markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment> {
+    const p = this.byId.get(id);
+    if (!p) throw new Error(`payment_not_found: ${id}`);
+    const now = new Date();
+    const updated: InternalPaymentRecord = {
+      ...p,
+      status: 'succeeded',
+      gatewayPaymentId: evidence.reference,
+      settledAt: now,
+      settlementSource: 'manual',
+      updatedAt: now,
+    };
     this.byId.set(id, updated);
     return this.toPayment(updated);
   }

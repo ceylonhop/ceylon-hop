@@ -62,6 +62,27 @@ export class PostgresPaymentRepo implements PaymentRepo {
     return toPayment(row);
   }
 
+  // Out-of-band settlement (cash / bank transfer). The provenance is explicit — 'manual' says a
+  // human recorded this, never a gateway — and the operator's optional reference is the only
+  // evidence there is, so it goes where a gateway id would. Who did it lives in the booking's
+  // activity notes, written by the route.
+  async markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment> {
+    const now = new Date();
+    const [row] = await this.db
+      .update(payments)
+      .set({
+        status: 'succeeded',
+        gatewayPaymentId: evidence.reference,
+        settledAt: now,
+        settlementSource: 'manual',
+        updatedAt: now,
+      })
+      .where(eq(payments.id, id))
+      .returning();
+    if (!row) throw new Error(`payment_not_found: ${id}`);
+    return toPayment(row);
+  }
+
   async markFailed(id: string): Promise<Payment> {
     const [row] = await this.db
       .update(payments)

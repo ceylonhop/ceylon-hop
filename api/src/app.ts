@@ -345,6 +345,10 @@ export function createApp(deps: AppDeps = {}) {
       rideLists,
       ridePaygw: paygw,
       refunds,
+      // Manual settlement (mark-paid) records the money in the payment ledger and its audit
+      // note on the ride-ops row.
+      payments,
+      rideOps,
     }),
   );
   // Dev-only email preview harness (renders real sender output). Never mounted in prod.
