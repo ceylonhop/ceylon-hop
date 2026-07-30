@@ -320,6 +320,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
+  /* manual settlement row: method picker + a quiet secondary button, so "Copy payment
+     reminder" stays the loud primary action in the same stack. */
+  .settle{display:flex;gap:8px;align-items:center}
+  .settle select{flex:1;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+  .settle select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
   .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
   .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
   .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
@@ -1426,6 +1431,12 @@ const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop
 
 /* The only surviving template: the payment-reminder copy an ops agent sends to nudge
    an awaiting-payment customer. Interpolates the first name and the amount. */
+/* Manual settlement methods, in the order the drawer offers them. The keys are the
+   API's `method` values, so the <select>, the confirm() and the toast all say the
+   same thing about the same money. */
+const PAY_METHODS=[['cash','Cash'],['bank_transfer','Bank transfer'],['manual_other','Other']];
+const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[1]:m;};
+
 const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.\n\nHere's your secure link again to lock it in 🌴 Reply if you have any questions!`;
 
 /* attention logic — what an ops agent must act on */
@@ -2299,8 +2310,21 @@ function renderSheet(){
   const isPending=t.stage==='awaiting_payment';
   let pipeAction;
   if(isPending){
-    pipeAction=`<div class="followup"><div><b>Payment link sent — follow up.</b> Payment lands automatically via the webhook. Nudge the customer if it's overdue.</div></div>
-      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
+    /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
+       see the reminder only. The <select> + confirm() IS the whole interaction — this view
+       has no modal layer, and inventing one for three options would be a lot of machinery
+       for a question a confirm() already asks well. */
+    const canSettle=state.caps&&state.caps.includes('payments:act');
+    const settle=canSettle?`<div class="settle">
+        <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
+        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
+      </div>`:'';
+    /* The old copy said payment "lands automatically via the webhook". That is false for the
+       bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
+       cash or bank transfer, and no webhook is ever coming for it. This wording holds either
+       way — link or hand-collected. */
+    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> It can still arrive through the payment link, or be recorded here once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${settle}</div>`;
   }else if(nx){
     pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
       +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
@@ -2592,6 +2616,28 @@ document.addEventListener('click',async e=>{
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
+    case 'markpaid':{
+      /* Money lives on the capability-gated /admin API, not /admin/ops — the same split the
+         refund actions use. Re-checked here because a sheet rendered before a session change
+         must not be able to POST what it should no longer offer. */
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const sel=$('#paidmethod');const method=(sel&&sel.value)||'cash';const label=payMethodLabel(method);
+      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid.`))break;
+      el.disabled=true;
+      try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      catch(err){
+        if(err.message==='auth')break;
+        if(el.isConnected)el.disabled=false;
+        /* The server's two "someone got here first" answers are states, not faults, and each
+           needs its own sentence. already_paid in particular means the money may genuinely be
+           in already (a late PayHere webhook) — reading it as a plain failure would invite a
+           retry, or worse, a second collection from the customer. */
+        if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment');await refreshRow(id);}
+        else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid');}
+      }
+      break;
+    }
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
       if(!state.caps||!state.caps.includes('payments:act'))break;
