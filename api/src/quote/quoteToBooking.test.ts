@@ -91,15 +91,20 @@ describe('quoteToBooking', () => {
     expect(m.distanceKm).toBe(380); // 115 + 90 + 175, summed via rideRawKm
   });
 
-  it('pins the pre-existing quirk (GC-13): a non-chaining later leg silently drops its own from', () => {
+  // Was: "pins the pre-existing quirk (GC-13)". GC-13 dropped a non-chaining leg's own origin,
+  // so this booking used to read ['CMB','Kandy','Galle'] — 'Ella' gone and a leg Kandy → Galle
+  // that nobody drives invented. That reached the driver's drawer and the customer's email, so
+  // the quirk is now fixed and this test asserts the itinerary the operator actually quoted.
+  it('a non-chaining later leg keeps its own from, bridged by a not-driven gap', () => {
     const m = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
       { from: 'CMB', to: 'Kandy', distanceKm: 115 },
       { from: 'Ella', to: 'Galle', distanceKm: 200 }, // leg 2 does NOT start at Kandy
     ] }), DETAILS);
     expect(m.mode).toBe('trip');
-    // today's list = [legs[0].from, ...legs.map(l=>l.to)] = ['CMB','Kandy','Galle'] — 'Ella' is dropped.
-    // This is pre-existing behavior we deliberately reproduce (NOT fix).
-    if (m.mode === 'trip') expect(m.input.stops).toEqual(['CMB', 'Kandy', 'Galle']);
+    if (m.mode === 'trip') {
+      expect(m.input.stops).toEqual(['CMB', 'Kandy', 'Ella', 'Galle']);
+      expect(m.input.driven).toEqual([true, false, true]);
+    }
   });
 
   it('chauffeur with a multi-stop ride day chains stops + sums distance the same way', () => {
@@ -120,5 +125,104 @@ describe('quoteToBooking', () => {
   it('shared or engine-less quote is not bookable', () => {
     expect(() => quoteToBooking(q({ product: 'shared', legs: [] }), DETAILS)).toThrow(QuoteNotBookableError);
     expect(() => quoteToBooking(q(undefined), DETAILS)).toThrow(QuoteNotBookableError);
+  });
+});
+
+// A quote whose legs don't join up is a legitimate itinerary, not an operator error: the
+// customer takes the Ella → Galle train themselves. The booking must therefore say what the
+// quote said, gaps included — it is what the ops drawer shows a driver and what the itinerary
+// email shows the customer.
+describe('a quote whose legs do not connect', () => {
+  const privateQuote = (legs: unknown[]) => q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs });
+
+  it('keeps every stop and marks the gaps as not driven', () => {
+    // CMB→Ella, then the customer makes their own way to Galle, then Galle→Colombo City.
+    const m = quoteToBooking(privateQuote([
+      { from: 'Colombo Airport (CMB)', to: 'Ella', distanceKm: 213 },
+      { from: 'Galle', to: 'Colombo City', distanceKm: 132 },
+      { from: 'Kandy', to: 'Batticaloa', distanceKm: 186 },
+    ]), DETAILS);
+
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.stops).toEqual([
+      'Colombo Airport (CMB)', 'Ella', 'Galle', 'Colombo City', 'Kandy', 'Batticaloa',
+    ]);
+    // One flag per segment: drive, gap, drive, gap, drive.
+    expect(m.input.driven).toEqual([true, false, true, false, true]);
+    expect(m.input.driven).toHaveLength(m.input.stops.length - 1);
+    expect(m.input.nights).toHaveLength(m.input.stops.length - 1);
+  });
+
+  it('leaves a fully connected itinerary all-driven', () => {
+    const m = quoteToBooking(privateQuote([
+      { from: 'A', to: 'B', distanceKm: 10 },
+      { from: 'B', to: 'C', distanceKm: 20 },
+    ]), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.stops).toEqual(['A', 'B', 'C']);
+    expect(m.input.driven).toEqual([true, true]);
+  });
+
+  it('a gap inside a multi-stop ride is impossible — its own stops always chain', () => {
+    const m = quoteToBooking(privateQuote([
+      { stops: ['A', 'B', 'C'], segmentKms: [10, 20] },
+      { stops: ['D', 'E'], segmentKms: [30] },
+    ]), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.stops).toEqual(['A', 'B', 'C', 'D', 'E']);
+    expect(m.input.driven).toEqual([true, true, false, true]);
+  });
+
+  it("keeps a chauffeur trip's dates on the right segments across a gap", () => {
+    // Chauffeur days DO carry dates. Inserting a gap stop shifts the segment indices, so each
+    // date must still land on the day it belongs to and the gap must carry none.
+    const m = quoteToBooking(q({ product: 'chauffeur', vehicle: 'van',
+      firstDate: '2026-07-22', lastDate: '2026-07-24', travelDays: [
+        { date: '2026-07-22', from: 'A', to: 'B', distanceKm: 10 },
+        { date: '2026-07-24', from: 'C', to: 'D', distanceKm: 20 },
+      ] }), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.driven).toEqual([true, false, true]);
+    expect(m.input.dates).toEqual(['2026-07-22', '', '2026-07-24']);
+    expect(m.input.dates).toHaveLength(m.input.stops.length - 1);
+  });
+
+  it('a chauffeur day with several stops repeats its date across its own segments', () => {
+    const m = quoteToBooking(q({ product: 'chauffeur', vehicle: 'van',
+      firstDate: '2026-08-01', lastDate: '2026-08-03', travelDays: [
+        { date: '2026-08-01', stops: ['CMB', 'Kandy', 'Sigiriya'], segmentKms: [115, 90] },
+        { date: '2026-08-03', from: 'Sigiriya', to: 'CMB', distanceKm: 175 },
+      ] }), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.dates).toEqual(['2026-08-01', '2026-08-01', '2026-08-03']);
+    expect(m.input.driven).toEqual([true, true, true]);
+  });
+
+  it('a private trip still carries only the modal date, on the first segment', () => {
+    // PrivateLeg has no date of its own (the operator's per-leg dates live in the tool payload,
+    // not the engine request — its own bug). Only the shape changes: one entry per segment.
+    const m = quoteToBooking(privateQuote([
+      { from: 'A', to: 'B', distanceKm: 10 },
+      { from: 'C', to: 'D', distanceKm: 20 },
+    ]), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.dates).toEqual(['2026-08-01', '', '']);
+    expect(m.input.dates).toHaveLength(m.input.stops.length - 1);
+  });
+
+  it('a private trip with no modal date leaves dates absent, as before', () => {
+    const m = quoteToBooking(privateQuote([
+      { from: 'A', to: 'B', distanceKm: 10 },
+      { from: 'B', to: 'C', distanceKm: 20 },
+    ]), { ...DETAILS, date: undefined });
+    expect(m.mode).toBe('trip');
+    if (m.mode !== 'trip') return;
+    expect(m.input.dates).toBeUndefined();
   });
 });

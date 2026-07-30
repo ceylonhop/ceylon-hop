@@ -15,6 +15,13 @@ export const TripInput = z.object({
   // Bounded for the same reason, and because `nights` feeds the chauffeur placeholder price.
   nights: z.array(z.number().int().min(0)).max(MAX_TRIP_STOPS),
   dates: z.array(z.string()).max(MAX_TRIP_STOPS).optional(),
+  // Per-SEGMENT (stops[i] → stops[i+1]) flag: true = we drive it, false = the customer
+  // arranges that hop themselves. Optional, and ABSENT MEANS ALL DRIVEN — every website
+  // booking and every row written before gaps existed omits it and must keep behaving as
+  // it always has. Present only on bookings converted from an ops quote whose legs don't
+  // connect, which is a legitimate itinerary (a customer taking the train Ella→Galle), not
+  // an error to reject.
+  driven: z.array(z.boolean()).max(MAX_TRIP_STOPS).optional(),
   pax: z.number().int().min(1),
   vehicleType: z.enum(['car', 'van']),
   serviceType: z.enum(['private', 'chauffeur']),
