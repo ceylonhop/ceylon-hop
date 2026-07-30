@@ -37,7 +37,10 @@ export async function buildDigest(
   if (deps.quotes) {
     // QuoteSummary.createdAt is a Date (see db/quoteRepo.ts).
     const q = await deps.quotes.list({ channel: 'ops' });
-    const qRecent = q.filter((r) => r.createdAt.getTime() >= since.getTime());
+    // Exclude unpriced shells (spec 2026-07-29) — a "+ New quote" click shouldn't inflate this
+    // for the 24h it takes the sweep to soft-delete it. QuoteSummary.unpriced is already computed
+    // per row by list(); read it rather than re-deriving the shell marker here.
+    const qRecent = q.filter((r) => !r.unpriced && r.createdAt.getTime() >= since.getTime());
     const qByStatus = (s: string) => q.filter((r) => r.status === s).length;
     rows.push(['Quotes created (24h)', String(qRecent.length)]);
     rows.push(['Open pipeline', `ready: ${qByStatus('ready')} · sent: ${qByStatus('sent')}`]);

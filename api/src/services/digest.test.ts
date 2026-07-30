@@ -29,4 +29,13 @@ describe('buildDigest', () => {
     const d = await buildDigest(new Date(), { bookings: new InMemoryBookingRepo() });
     expect(d.text).not.toContain('Quotes created');
   });
+
+  it('does not count unpriced shells towards Quotes created', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    await quotes.save({ channel: 'ops', product: 'private', totalCents: 1000, currency: 'USD', rateCardVersion: 'v1', request: {}, result: {} });
+    await quotes.save({ channel: 'ops', product: 'private', totalCents: 0, currency: 'USD', rateCardVersion: 'v1', request: { shell: true }, result: { shell: true } });
+    const d = await buildDigest(new Date(), { bookings, quotes });
+    expect(d.text).toContain('Quotes created (24h): 1'); // the shell is excluded, only the real quote counts
+  });
 });
