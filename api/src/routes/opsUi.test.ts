@@ -561,6 +561,22 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(body).toContain("setShellRoute('quote',{ quoteId:id, replace:true })");
   });
 
+  it('the shell price blocker cannot fire while a price is on screen', () => {
+    const blockers = fnBody('submitBlockers');
+    // `state.unpriced` only clears on a save round-trip and autosave is debounced 2.5s, so a bare
+    // `if (state.unpriced)` told an operator the quote "has not been priced yet" with the real
+    // total right there on screen — and submitForReview() checks the blockers BEFORE transition()
+    // runs the save that would have cleared it. The blocker must be gated on the absence of a
+    // price, never on the shell marker alone.
+    expect(blockers).toContain('if (state.unpriced && !lastEstimate) add(');
+    expect(blockers).not.toMatch(/if \(state\.unpriced\) add\(/);
+    // The two price branches stay mutually exclusive (else-if), so the panel can never name a
+    // price twice, and the "could not be costed" line still comes last — it only speaks up when
+    // nothing else already explains the missing price.
+    expect(blockers.indexOf('if (state.unpriced && !lastEstimate)'))
+      .toBeLessThan(blockers.indexOf('else if (!out.length && !lastEstimate)'));
+  });
+
   it('a save superseded while in flight is dropped and reported as failure', () => {
     const save = fnBody('saveQuote');
     expect(save).toContain('var seq = _openSeq;');

@@ -5001,9 +5001,15 @@ function submitBlockers() {
       : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
   }
   /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the cause.
-     On a shell the server refuses the transition outright (400 unpriced_quote), so say so even
-     when other blockers are listed — otherwise the panel could look satisfiable when it isn't. */
-  if (state.unpriced) add('A price — this quote has not been priced yet', '.ch-money');
+     A shell the server still holds at $0 refuses the transition outright (400 unpriced_quote), so
+     say so even when other blockers are listed — otherwise the panel could look satisfiable when
+     it isn't. But `state.unpriced` only clears on a SAVE round-trip, and autosave is debounced:
+     an operator who fills a quote, sees the real total, and submits inside that window was told
+     the quote "has not been priced yet" while the price sat on screen. So require that there is
+     genuinely no price. A priced shell falls through to no price blocker at all — transition()
+     saves first, which clears the shell server-side before the PATCH, and if that save fails its
+     error handling already maps the server's 400 unpriced_quote to human copy. */
+  if (state.unpriced && !lastEstimate) add('A price — this quote has not been priced yet', '.ch-money');
   else if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
   return out;
 }
