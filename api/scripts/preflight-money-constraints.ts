@@ -25,7 +25,11 @@ const checks = {
   bookings_status_valid: () => sql`select count(*)::int as count from bookings where status not in ('draft', 'payment_pending', 'awaiting_details', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show')`,
   payments_amount_positive: () => sql`select count(*)::int as count from payments where amount <= 0`,
   payments_currency_supported: () => sql`select count(*)::int as count from payments where currency not in ('USD')`,
-  payments_provider_supported: () => sql`select count(*)::int as count from payments where provider not in ('payhere', 'fake')`,
+  // Mirrors the live CHECK as widened by migration 0029: the two gateways plus the three
+  // out-of-band settlement channels ops records via POST /admin/bookings/:id/mark-paid. Left at
+  // the pre-0029 pair, every legitimate cash row reads as incompatible and this tool — the one
+  // whose whole job is to report money-constraint violations — false-alarms and exits 1.
+  payments_provider_supported: () => sql`select count(*)::int as count from payments where provider not in ('payhere', 'fake', 'cash', 'bank_transfer', 'manual_other')`,
   payments_status_valid: () => sql`select count(*)::int as count from payments where status not in ('pending', 'succeeded', 'failed')`,
   payments_succeeded_settled_at_required: () => sql`select count(*)::int as count from payments where status = 'succeeded' and settled_at is null`,
   payments_succeeded_settlement_source_required: () => sql`select count(*)::int as count from payments where status = 'succeeded' and settlement_source is null`,
