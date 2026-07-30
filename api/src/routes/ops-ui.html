@@ -2684,6 +2684,11 @@ function bootApp(identity){
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
+  /* The builder just claimed a real row for the quote on screen — bind the URL to it so a reload
+     (or a bookmark/share) reopens THAT row instead of a bare #quote that would claim a second
+     shell and orphan the first. replace, not push: claiming isn't a navigation the operator
+     performed, so it must not add a back-button step. */
+  window.opsBindQuoteUrl=(id)=>{if(id&&state.route==='quote')setShellRoute('quote',{ quoteId:id, replace:true });};
   window.opsEmail=identity.email||''; /* the builder labels the assign picker's "(you)" option */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
   /* URL is the single source of truth for route/deep-link state across login refreshes,
@@ -3310,10 +3315,15 @@ async function fireAutosave() {
   // persisted at all. That window is the only place the beforeunload guard still matters.
   if (!isEditableNow() || !state.vehicleType) return;
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  var seq = _openSeq;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok = await saveQuote({ silent: true });
-  _autoSaving = false;
+  _autoSaving = false; // must always clear, or autosave locks up for the rest of the session
+  // saveQuote returns false when it drops a superseded result — writing that here would paint
+  // "Autosave failed" on the quote now on screen, which never attempted a save. The new quote's
+  // chip was already set by resetToNew()/reopenQuote().
+  if (seq !== _openSeq) return;
   _autoState = ok ? 'saved' : 'error';
   if (ok) _lastSavedAt = new Date();
   updateSaveChip();
@@ -3731,6 +3741,10 @@ async function claimDraftRow() {
   state.reference = res.reference || res.id;
   state.unpriced = true;
   if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+  // Bind the URL to the row we just claimed (history REPLACE — see opsBindQuoteUrl). Without this
+  // a mid-quote reload landed on an id-less #quote: no row claimed, savedId null, assign picker
+  // disabled, and the $0 shell stranded in the queue.
+  if (window.opsBindQuoteUrl) window.opsBindQuoteUrl(res.id);
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   render();
 }
@@ -3769,7 +3783,17 @@ async function saveQuote(opts) {
     if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing'); }
     return false;
   }
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiSave(savePayload());
+  // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
+  // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
+  // and every later edit would then overwrite A. Drop the result and report FAILURE: callers
+  // persist-then-transition against state.savedId, which now points at another quote, so a `true`
+  // would let transition() PATCH the wrong row. A false only costs the operator a retry.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('saveQuote', 'stale save discarded (superseded while in flight)');
+    return false;
+  }
   if (res && res.id) {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
@@ -3998,6 +4022,11 @@ async function reopenQuote(id) {
     state.assignedTo = q.assignedTo || null;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
+    // A shell carries no priced content, but the server DOES allow an internal note on one — and
+    // savePayload() sends both fields unconditionally, so not restoring them would clobber a note
+    // added via the internal-notes PATCH on the next real save.
+    state.notes = q.notes || '';
+    state.internalNotes = q.internalNotes || '';
     state.unpriced = true;
     render();
     showToast('Opened ' + (q.reference || q.id));
@@ -4084,6 +4113,11 @@ async function reopenQuote(id) {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
+  // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
+  // opening quote B right after autosaving A showed A's "Saved 14:32" — or A's "Autosave failed
+  // — use Save" — over a quote B that was never saved in this session.
+  _autoState = 'idle';
+  _lastSavedAt = null;
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
   // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
   // since approval. Editable states still price live as the operator builds.
@@ -5763,8 +5797,10 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
+  // Don't assert a cause here: usually nothing was attempted, let alone failed. Say only what is
+  // true in every disabled case — there is no row yet, and saving makes one.
   var title = noRow
-    ? 'Could not start this quote on the server — save it to assign'
+    ? 'Assign this quote — available once it’s saved'
     : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
     + (noRow ? ' disabled' : '')

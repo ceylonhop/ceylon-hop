@@ -505,3 +505,64 @@ describe('ops UI — review lock', () => {
     expect(body).toContain('Submitted — locked');
   });
 });
+
+// Unpriced shells (spec 2026-07-29): "+ New quote" claims a real $0 row up front so the ticket is
+// assignable before anything is priced. The chip must say what is actually pending — a PRICE, not
+// persistence — and that marker must clear the moment a real save prices the row. Source-level
+// assertions anchored to the OWNING FUNCTION's body, so a copy change or a dropped assignment
+// fails here rather than being satisfied by the string existing anywhere in a 7700-line page.
+describe('ops UI — unpriced shell lifecycle', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  /** The source of `function <name>(`, brace-matched to its closing `}`. */
+  function fnBody(name: string): string {
+    const start = body.indexOf(`function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  }
+
+  it('the save chip reads exactly "Not priced yet" on a shell — dirty or clean', () => {
+    const chip = fnBody('renderSaveState');
+    // Both branches: mid-edit (dirty, price still missing) and untouched (clean shell).
+    expect(chip).toContain("state.unpriced ? 'Not priced yet' : (state.savedId ? 'Edits pending' : 'Unsaved')");
+    expect(chip).toContain("txt = 'Not priced yet';");
+    // A shell must never be described as unpersisted — the row exists server-side.
+    expect(chip.match(/Not priced yet/g)).toHaveLength(2);
+  });
+
+  it('claiming the row marks it unpriced, and a successful save clears the marker', () => {
+    expect(fnBody('claimDraftRow')).toContain('state.unpriced = true;');
+    const save = fnBody('saveQuote');
+    // Inside the `res && res.id` success block — not in the failure paths below it.
+    const ok = save.slice(save.indexOf('if (res && res.id) {'));
+    expect(ok).toContain('state.unpriced = false;');
+    expect(ok.indexOf('state.unpriced = false;')).toBeLessThan(ok.indexOf('return true;'));
+  });
+
+  it('reopening a shell binds the builder to that row and keeps its notes', () => {
+    const reopen = fnBody('reopenQuote');
+    const shell = reopen.slice(reopen.indexOf("q.request.shell === true"));
+    expect(shell).toContain('state.unpriced = true;');
+    expect(shell).toContain('state.internalNotes = q.internalNotes');
+  });
+
+  it('the claimed row is bound into the URL by history replace, never push', () => {
+    expect(fnBody('claimDraftRow')).toContain('window.opsBindQuoteUrl(res.id)');
+    expect(body).toContain("setShellRoute('quote',{ quoteId:id, replace:true })");
+  });
+
+  it('a save superseded while in flight is dropped and reported as failure', () => {
+    const save = fnBody('saveQuote');
+    expect(save).toContain('var seq = _openSeq;');
+    expect(save).toMatch(/if \(seq !== _openSeq\) \{[\s\S]{0,300}return false;/);
+    // The guard must sit between the await and the state writes.
+    expect(save.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(save.indexOf('await apiSave('));
+    expect(save.indexOf('if (seq !== _openSeq)')).toBeLessThan(save.indexOf('state.savedId = res.id;'));
+  });
+});

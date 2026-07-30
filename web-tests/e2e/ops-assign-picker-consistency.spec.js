@@ -74,7 +74,11 @@ test('a failed draft create falls back to a disabled picker that still shows its
 
   await expect(picker(page)).toBeVisible({ timeout: 10000 });
   await expect(picker(page)).toBeDisabled();
-  await expect(picker(page)).toHaveAttribute('title', /save it to assign/i);
+  // The disabled tooltip states the condition ("once it's saved") without asserting a cause: the
+  // control is also disabled when no create was ever attempted, so the old "Could not start this
+  // quote on the server" copy was usually a lie.
+  await expect(picker(page)).toHaveAttribute('title', /available once/i);
+  await expect(picker(page)).not.toHaveAttribute('title', /could not/i);
 
   // It must SHOW something. morphdom patches this <select>'s children in place when the roster
   // lands, and with no option carrying `selected` the browser leaves selectedIndex at -1 and
