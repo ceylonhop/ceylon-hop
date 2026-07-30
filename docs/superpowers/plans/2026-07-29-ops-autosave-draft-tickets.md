@@ -476,10 +476,12 @@ describe('sweepAbandonedDrafts', () => {
 
   it('stamps the sweep as the deleting actor', async () => {
     const repo = new InMemoryQuoteRepo();
-    await savedAt(repo, new Date(NOW.getTime() - ABANDONED_DRAFT_TTL_MS - HOUR), shell());
+    const q = await savedAt(repo, new Date(NOW.getTime() - ABANDONED_DRAFT_TTL_MS - HOUR), shell());
+    const spy = vi.spyOn(repo, 'softDelete');
+
     await sweepAbandonedDrafts(NOW, { quotes: repo });
-    const all = await repo.list({ channel: 'ops' });
-    expect(all).toHaveLength(0);
+
+    expect(spy).toHaveBeenCalledWith(q.id, 'system:draft-cleanup');
   });
 
   it('spares an unpriced draft younger than the TTL', async () => {
