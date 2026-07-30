@@ -1663,6 +1663,37 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(b.input.stops).toEqual(['Colombo Airport (CMB)', 'Ella', 'Galle', 'Colombo City']);
   });
 
+  // The long multi-day chauffeur tour this conversion exists to serve. 11 chained legs = 12 stops
+  // (the cap); one leg the customer arranges themselves (a train hop) inserts a gap stop and puts
+  // it at 13, so TripInput rejects it. The operator cannot act on a bare "invalid_booking" — the
+  // response has to name the length AND the gaps, which are the only two things they can change.
+  it('explains a too-long itinerary instead of 400 invalid_booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const legs = Array.from({ length: 11 }, (_, i) => ({
+      from: i === 5 ? 'Galle' : `Stop ${i}`, // leg 5 starts elsewhere: the customer trains there
+      to: `Stop ${i + 1}`,
+      distanceKm: 40,
+    }));
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 99900, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+
+    const res = await book(createApp({ quotes, bookings }), q.id, BODY);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('itinerary_too_long');
+    expect(body.message).toContain('13'); // the stop count it actually needs
+    expect(body.message).toContain('12'); // the cap
+    expect(body.message.toLowerCase()).toContain('gap');
+    expect((await bookings.list()).length).toBe(0);
+    expect((await quotes.get(q.id))?.status).toBe('sent'); // not stamped won
+  });
+
   it('a concurrent double-submit never 500s and creates exactly one booking', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();

@@ -17,7 +17,7 @@ import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddlewar
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
-import { TripInput } from '../domain/trip';
+import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 
@@ -693,7 +693,24 @@ export function internalQuoteRoutes(deps: {
     // Validate the built input against the same schema the public booking routes use —
     // a bad mapping fails loudly instead of persisting a malformed booking.
     const schema = mapped.mode === 'single' ? SingleTransferInput : TripInput;
-    if (!schema.safeParse(mapped.input).success) return c.json({ error: 'invalid_booking' }, 400);
+    if (!schema.safeParse(mapped.input).success) {
+      // The one rejection an operator can actually act on, and the one a real itinerary hits:
+      // chaining inserts a stop wherever a leg doesn't start where the previous one ended (the
+      // customer's own train hop), so a long multi-day tour can pass the cap on gaps alone. The
+      // cap stays where it is — it is a Maps-spend and latency bound on a schema the public
+      // booker shares — so name the cause instead, with both levers they have: shorten, or close
+      // the gaps. Anything else stays the generic invalid_booking (a mapping bug, not their doing).
+      if (mapped.mode === 'trip' && mapped.input.stops.length > MAX_TRIP_STOPS) {
+        return c.json(
+          {
+            error: 'itinerary_too_long',
+            message: `This itinerary needs ${mapped.input.stops.length} stops once the gaps between legs that don't connect are counted — over the ${MAX_TRIP_STOPS}-stop limit for a booking. Shorten the itinerary, or close the gaps so each leg starts where the previous one ended.`,
+          },
+          400,
+        );
+      }
+      return c.json({ error: 'invalid_booking' }, 400);
+    }
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
