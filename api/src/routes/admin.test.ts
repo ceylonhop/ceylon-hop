@@ -605,6 +605,36 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect(payments.getForSettlement(rows[0].id)!.settlementSource).toBe('manual');
   });
 
+  // The other half of the same window: the money settled but the status write did not land (a
+  // connection blip on setStatus). The payment is succeeded while the booking is still
+  // payment_pending, and nothing else can move payment_pending → paid — no webhook is coming for
+  // cash, and confirm/cancel/no-show do not start there. A retry must finish the status step
+  // rather than answer 200 with the stranded booking, and must not take the money a second time.
+  it('a retry after the status write failed finishes the transition — the money is not taken twice', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    // Exactly what a mark-paid whose setStatus threw leaves behind: money recorded, booking stuck.
+    const settled = await payments.create({
+      bookingId: b.id,
+      provider: 'cash',
+      orderId: `${b.reference}-MANUAL`,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `manual-paid:${b.id}`,
+    });
+    await payments.markSucceededManually(settled.id, { reference: 'BOC-77219' });
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+
+    const res = await markPaid(app, b.id, { method: 'cash', reference: 'BOC-77219' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1); // our own succeeded row must not trip the already_paid ledger guard
+    expect(rows[0].id).toBe(settled.id);
+    expect(rows.reduce((sum, p) => sum + p.amount, 0)).toBe(b.amountDueNow ?? b.total);
+  });
+
   // A PayHere webhook that settles late (delayed or retried) can land on a booking ops has
   // already decided to settle by hand. Two succeeded rows for one booking double the captured
   // total refundRepo sums, so refund_exceeds_captured would let us refund twice the money taken.

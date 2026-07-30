@@ -253,33 +253,47 @@ export function adminRoutes(deps: {
     // the existing row for a claimed key, so the settle and status steps simply re-run.
     const idempotencyKey = `manual-paid:${booking.id}`;
     const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
-    if (claimed && claimed.status === 'succeeded') return c.json(booking, 200);
+    // The money of an earlier attempt is already in the ledger; only the booking may still be
+    // behind. Short-circuit ONLY once the booking has actually reached paid — the second half of
+    // the same window as the pending case above: if setStatus threw something other than an
+    // IllegalTransitionError (a pool timeout, a connection blip), the payment is succeeded while
+    // the booking sits in payment_pending, and nothing else can move it (no webhook is coming for
+    // cash, and confirm/cancel/no-show do not start from payment_pending). Answering 200 with the
+    // unchanged booking would strand it for good, repairable only by hand-written SQL in prod.
+    const recorded = claimed?.status === 'succeeded';
+    if (recorded && booking.status === 'paid') return c.json(booking, 200);
 
     if (booking.status !== 'payment_pending') {
       return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
     }
-    // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
-    // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
-    // succeeded rows on one booking double the captured total refundRepo sums, which would make
-    // refund_exceeds_captured wave through a refund of twice the money actually taken.
-    const settled = (await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
-    if (settled) return c.json({ error: 'already_paid', status: booking.status }, 409);
 
-    const payment = await deps.payments.create({
-      bookingId: booking.id,
-      // The method is genuinely the provider of this money — a cash payment's provider is cash.
-      // The CHECK `payments_provider_supported` admits all three manual methods alongside the two
-      // gateways since migration 0029; it is a typo guard on channel names, not a safety property.
-      provider: method,
-      // Not the bare booking reference: the checkout route already claims that as its orderId,
-      // and order_id is unique — a booking once handed a PayHere form must still be settleable
-      // in cash.
-      orderId: `${booking.reference}-MANUAL`,
-      amount: booking.amountDueNow ?? booking.total,
-      currency: booking.currency,
-      idempotencyKey,
-    });
-    await deps.payments.markSucceededManually(payment.id, { reference });
+    // Only when the money still has to be taken. On the repair path above it is already recorded,
+    // so create/settle must not run again — and neither may the ledger guard, whose succeeded row
+    // is OUR OWN: it would turn a legitimate repair into a 409 and leave the booking stranded.
+    if (!recorded) {
+      // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
+      // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
+      // succeeded rows on one booking double the captured total refundRepo sums, which would make
+      // refund_exceeds_captured wave through a refund of twice the money actually taken.
+      const settled = (await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
+      if (settled) return c.json({ error: 'already_paid', status: booking.status }, 409);
+
+      const payment = await deps.payments.create({
+        bookingId: booking.id,
+        // The method is genuinely the provider of this money — a cash payment's provider is cash.
+        // The CHECK `payments_provider_supported` admits all three manual methods alongside the two
+        // gateways since migration 0029; it is a typo guard on channel names, not a safety property.
+        provider: method,
+        // Not the bare booking reference: the checkout route already claims that as its orderId,
+        // and order_id is unique — a booking once handed a PayHere form must still be settleable
+        // in cash.
+        orderId: `${booking.reference}-MANUAL`,
+        amount: booking.amountDueNow ?? booking.total,
+        currency: booking.currency,
+        idempotencyKey,
+      });
+      await deps.payments.markSucceededManually(payment.id, { reference });
+    }
 
     let paid: Booking;
     try {
