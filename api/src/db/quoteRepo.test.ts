@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
+import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, isUnpricedShell, type NewQuote } from './quoteRepo';
 
 describe('canTransition (quote review lifecycle)', () => {
   it('allows the maker-checker path but requires review before approval', () => {
@@ -356,5 +356,37 @@ describe('analytics projections', () => {
     const all = await repo.listFunnelRows(new Date(now - 30 * DAY), 100, 'all');
     const ids = all.rows.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
+  });
+});
+
+describe('isUnpricedShell', () => {
+  it('is true only for the { shell: true } marker', () => {
+    expect(isUnpricedShell({ request: { shell: true } })).toBe(true);
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+    expect(isUnpricedShell({ request: null })).toBe(false);
+    expect(isUnpricedShell({ request: undefined })).toBe(false);
+    expect(isUnpricedShell({ request: 'shell' })).toBe(false);
+  });
+
+  it('does NOT treat a legitimately zero-priced quote as a shell', () => {
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+  });
+});
+
+describe('list() summaries', () => {
+  it('flags an unpriced shell and leaves a priced quote unflagged', async () => {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+
+    const rows = await repo.list({ channel: 'ops' });
+    expect(rows.find((r) => r.totalCents === 0)!.unpriced).toBe(true);
+    expect(rows.find((r) => r.totalCents === 4048)!.unpriced).toBe(false);
   });
 });

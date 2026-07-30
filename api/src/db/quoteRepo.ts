@@ -120,6 +120,11 @@ export interface QuoteSummary {
   // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
   // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
   routeText: string | null;
+  // Autosave shells (spec 2026-07-29): true when this row was created by "+ New quote" and has
+  // never been priced. The queue renders "Not priced yet" instead of a $0 total, and the send
+  // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
+  // a $0 total is a symptom, the marker is the fact.
+  unpriced: boolean;
   createdAt: Date;
 }
 
@@ -246,6 +251,14 @@ export function parseDateFilter(value: string, bound: 'from' | 'to'): Date {
   return new Date(value);
 }
 
+// A shell is the row "+ New quote" creates before anything is priceable: request_json and
+// result_json are both { shell: true }. POST /save overwrites request/result wholesale, so the
+// marker cannot survive a real save — that is what makes it safe to store a $0 row with no
+// nullable-money migration.
+export function isUnpricedShell(q: { request: unknown }): boolean {
+  return !!q.request && typeof q.request === 'object' && (q.request as { shell?: unknown }).shell === true;
+}
+
 function toSummary(q: SavedQuote): QuoteSummary {
   return {
     id: q.id,
@@ -259,6 +272,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     currency: q.currency,
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
+    unpriced: isUnpricedShell(q),
     createdAt: q.createdAt,
   };
 }

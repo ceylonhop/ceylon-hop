@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
-import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
+import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import type {
   QuoteRepo,
@@ -287,6 +287,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       assignedTo: r.assignedTo,
       createdAt: r.createdAt,
       routeText: quoteRouteText(requestLegs(r.request)),
+      unpriced: isUnpricedShell({ request: r.request }),
     }));
   }
 
