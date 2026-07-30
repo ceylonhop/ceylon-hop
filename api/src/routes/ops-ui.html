@@ -2309,13 +2309,17 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
+     see the reminder only. The <select> + confirm() IS the whole interaction — this view
+     has no modal layer, and inventing one for three options would be a lot of machinery
+     for a question a confirm() already asks well. */
+  const canSettle=state.caps&&state.caps.includes('payments:act');
+  /* Copy has to be true for whoever is reading it: "recorded here" is a promise only a
+     payments:act holder can keep. An ops agent told a stranded booking can be settled here
+     hunts for a button they will never see — so name who can instead. */
+  const recordedBy=canSettle?'recorded here':'recorded by a founder or finance';
   let pipeAction;
   if(isPending){
-    /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
-       see the reminder only. The <select> + confirm() IS the whole interaction — this view
-       has no modal layer, and inventing one for three options would be a lot of machinery
-       for a question a confirm() already asks well. */
-    const canSettle=state.caps&&state.caps.includes('payments:act');
     const settle=canSettle?`<div class="settle">
         <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
         <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
@@ -2324,7 +2328,7 @@ function renderSheet(){
        bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
        cash or bank transfer, and no webhook is ever coming for it. This wording holds either
        way — link or hand-collected. */
-    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> It can still arrive through the payment link, or be recorded here once the customer has paid directly. Nudge them if it's overdue.</div></div>
+    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> It can still arrive through the payment link, or be ${recordedBy} once the customer has paid directly. Nudge them if it's overdue.</div></div>
       <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${settle}</div>`;
   }else if(nx){
     pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
@@ -2354,7 +2358,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and recorded here. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
       ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
@@ -2623,7 +2627,10 @@ document.addEventListener('click',async e=>{
          must not be able to POST what it should no longer offer. */
       if(!state.caps||!state.caps.includes('payments:act'))break;
       const sel=$('#paidmethod');const method=(sel&&sel.value)||'cash';const label=payMethodLabel(method);
-      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid.`))break;
+      /* Every other consequential action in this sheet states its email consequence, and on the
+         PayHere path a booking reaching Paid DOES auto-send a confirmation — so silence here
+         reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
+      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
       el.disabled=true;
       try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
       catch(err){
