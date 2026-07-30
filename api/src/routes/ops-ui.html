@@ -4008,6 +4008,11 @@ async function reopenQuote(id) {
       : ('Couldn’t open the quote' + (q && q.error && q.error !== 'not_found' ? ' — ' + q.error : ''));
     if (window.opsToast) window.opsToast(msg); else showToast(msg);
     if (window.opsGoQuotes) window.opsGoQuotes();
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
   var tool = q.request && q.request.tool;
@@ -4035,6 +4040,11 @@ async function reopenQuote(id) {
   if (!tool) {
     // Legacy row saved before the { tool, engine } shape.
     showToast('This quote was saved before reopen support — re-create it to edit.');
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
 

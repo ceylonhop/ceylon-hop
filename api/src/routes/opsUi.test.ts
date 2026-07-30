@@ -561,6 +561,10 @@ describe('ops UI — unpriced shell lifecycle', () => {
     const save = fnBody('saveQuote');
     expect(save).toContain('var seq = _openSeq;');
     expect(save).toMatch(/if \(seq !== _openSeq\) \{[\s\S]{0,300}return false;/);
+    // The capture must happen BEFORE the await — captured after it (or dropped below it) can
+    // never differ from the live _openSeq by the time it's compared, making the guard permanently
+    // inert while every assertion here still passes.
+    expect(save.indexOf('var seq = _openSeq;')).toBeLessThan(save.indexOf('await apiSave('));
     // The guard must sit between the await and the state writes.
     expect(save.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(save.indexOf('await apiSave('));
     expect(save.indexOf('if (seq !== _openSeq)')).toBeLessThan(save.indexOf('state.savedId = res.id;'));
