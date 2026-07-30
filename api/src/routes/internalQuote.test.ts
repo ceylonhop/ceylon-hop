@@ -1933,3 +1933,71 @@ describe('POST /admin/quote/draft (autosave shell)', () => {
     expect((await res.json()).error).toBe('bad_origin');
   });
 });
+
+describe('unpriced shells cannot leave draft', () => {
+  async function shell(quotes: InMemoryQuoteRepo) {
+    return quotes.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+      // requestedService is set so this test isolates the price gate from the intent gate
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+  }
+  function patch(app: App, id: string, body: unknown) {
+    return app.request('/admin/quote/' + id, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+      body: JSON.stringify(body),
+    });
+  }
+
+  for (const to of ['pending_review', 'ready', 'sent'] as const) {
+    it(`400 unpriced_quote on ${to}`, async () => {
+      const quotes = new InMemoryQuoteRepo();
+      const q = await shell(quotes);
+      const res = await patch(createApp({ quotes }), q.id, { status: to });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('unpriced_quote');
+      expect((await quotes.get(q.id))!.status).toBe('draft');
+    });
+  }
+
+  it('allows a priced quote through the same transition', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
+  it('lets a shell through once a real save has priced it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    // A real save replaces request/result wholesale — the marker is gone by construction.
+    await quotes.update(q.id, {
+      product: 'private', totalCents: 4048, currency: 'USD', rateCardVersion: 'v',
+      request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+      customerName: 'Maya', customerContact: '+34600', requestedService: 'private',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
+  it('still allows an internal-notes-only PATCH on a shell', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    const res = await patch(createApp({ quotes }), q.id, { internalNotes: 'called back at 4' });
+    expect(res.status).toBe(200);
+  });
+
+  it('still allows assigning a shell', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    const res = await patch(createApp({ quotes }), q.id, { assignedTo: 'op@x.com' });
+    expect(res.status).toBe(200);
+    expect((await quotes.get(q.id))!.assignedTo).toBe('op@x.com');
+  });
+});

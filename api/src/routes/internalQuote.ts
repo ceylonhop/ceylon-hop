@@ -9,7 +9,7 @@ import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types
 import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
-import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
+import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
@@ -852,6 +852,17 @@ export function internalQuoteRoutes(deps: {
       const to = body.status as QuoteStatus;
       // Lowercased to compare against stored assignees, which resolveAssignee normalises.
       const actorEmail = c.get('identity').email.toLowerCase();
+      // Autosave shells (spec 2026-07-29, owner: "make sure zero $ quotes can never be sent").
+      // A shell is a real draft row created before anything was priceable; it must never reach
+      // review, approval or the customer. Checked against the STORED row, never the body — only
+      // POST /save writes pricing, so a body value here would be a hole, not a shortcut.
+      // Assignment and internal notes stay allowed: that is the whole point of the early row.
+      // Deliberately ahead of the canTransition check below: a caller jumping straight from draft
+      // to ready/sent must see unpriced_quote, not the generic illegal_transition — the price gate
+      // is the more specific (and more important) reason the request cannot proceed.
+      if ((to === 'pending_review' || to === 'ready' || to === 'sent') && isUnpricedShell(current)) {
+        return c.json({ error: 'unpriced_quote' }, 400);
+      }
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
       // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
       // straight to ready — until the submitter has recorded what the customer asked for.
