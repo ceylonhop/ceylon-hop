@@ -40,10 +40,35 @@ describe('chIsProd', () => {
     expect(at('ceylonhop.com')).toBe(true);
     expect(at('www.ceylonhop.com')).toBe(true);
   });
+  it('false on prod.ceylonhop.com — deliberately, do not "fix" this', () => {
+    // prod.* is where the app is served TODAY, so this looks like a bug: the
+    // funnel has no `purchase` step. It isn't one. PayHere is apex-only (no
+    // subdomains — docs/go-live-checklist.md §2), so a real payment CANNOT
+    // happen on prod.*; anything completing there is sandbox. Widening this to
+    // prod.* would only ever report test transactions as revenue, and GA4
+    // cannot retroactively delete them.
+    //
+    // At the apex cutover the site moves to ceylonhop.com and the rule above
+    // starts matching on its own. No code change is needed then.
+    expect(at('prod.ceylonhop.com')).toBe(false);
+  });
+
   it('false on Pages / localhost / previews', () => {
     expect(at('ceylonhop.github.io')).toBe(false);
     expect(at('localhost')).toBe(false);
     expect(at('127.0.0.1')).toBe(false);
     expect(at('staging.ceylonhop.com')).toBe(false);
+  });
+
+  it('false on staging and ops, which must never pollute revenue reporting', () => {
+    expect(at('ops.ceylonhop.com')).toBe(false);
+    expect(at('ops.staging.ceylonhop.com')).toBe(false);
+    expect(at('prod.staging.ceylonhop.com')).toBe(false);
+  });
+
+  it('false on lookalike hosts that merely end in our domain', () => {
+    expect(at('prod.ceylonhop.com.evil.example')).toBe(false);
+    expect(at('notceylonhop.com')).toBe(false);
+    expect(at('evil-prod.ceylonhop.com')).toBe(false);
   });
 });
