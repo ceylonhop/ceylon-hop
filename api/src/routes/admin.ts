@@ -16,6 +16,7 @@ import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
+import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
 import { runWatchdog } from '../services/watchdog';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
@@ -244,6 +245,18 @@ export function adminRoutes(deps: {
         console.error('quote expiry sweep failed:', err);
       }
     }
+    // Abandoned autosave shells ride the same tick, best-effort: "+ New quote" creates a real
+    // row so the ticket is assignable immediately, and this is what stops the unfinished ones
+    // accumulating. Idempotent (a soft-deleted row no longer lists) and a failure here must
+    // never block the customer notifications the caller asked for.
+    let abandonedDrafts = 0;
+    if (deps.quotes) {
+      try {
+        abandonedDrafts = (await sweepAbandonedDrafts(new Date(), { quotes: deps.quotes })).swept;
+      } catch (err) {
+        console.error('abandoned-draft sweep failed:', err);
+      }
+    }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
     // failure must never block the customer notifications the caller asked for.
     let digest = false;
@@ -264,7 +277,7 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest, rideBoard }, 200);
+    return c.json({ ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their

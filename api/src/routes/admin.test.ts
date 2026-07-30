@@ -217,6 +217,13 @@ describe('POST /admin/jobs/notifications', () => {
       vi.useRealTimers();
     }
   });
+
+  it('the notifications tick reports the abandoned-draft sweep', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ abandonedDrafts: 0 });
+  });
 });
 
 describe('POST /admin/jobs/watchdog', () => {
