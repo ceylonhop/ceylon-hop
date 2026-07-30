@@ -207,6 +207,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
           gte(quotes.decidedAt, since),
           inArray(quotes.status, [...LIVE_STATUSES]),
         ),
+        // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
+        // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
+        sql`coalesce(${quotes.requestJson}->>'shell', '') <> 'true'`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1); // one extra row = cheap truncation probe
@@ -232,6 +235,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...this.channelCond(channel),
         gte(quotes.createdAt, from),
         lte(quotes.createdAt, to),
+        // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
+        // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
+        sql`coalesce(${quotes.requestJson}->>'shell', '') <> 'true'`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1);

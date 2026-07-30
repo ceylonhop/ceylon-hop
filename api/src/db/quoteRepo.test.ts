@@ -390,3 +390,32 @@ describe('list() summaries', () => {
     expect(rows.find((r) => r.totalCents === 4048)!.unpriced).toBe(false);
   });
 });
+
+describe('analytics projections exclude unpriced shells', () => {
+  async function seed() {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+    return repo;
+  }
+
+  it('omits shells from the funnel rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listFunnelRows(new Date(0), 100, 'ops');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.totalCents).toBe(4048);
+  });
+
+  it('omits shells from the demand rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listDemandRows(new Date(0), new Date('2100-01-01'), 100, 'ops');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.totalCents).toBe(4048);
+  });
+});

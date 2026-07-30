@@ -360,10 +360,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
   async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
       .filter((r) =>
-        r.createdAt >= since ||
+        (r.createdAt >= since ||
         (r.sentAt && r.sentAt >= since) ||
         (r.decidedAt && r.decidedAt >= since) ||
-        LIVE_STATUSES.includes(r.status))
+        LIVE_STATUSES.includes(r.status)) &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
       id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
@@ -375,7 +378,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
-      .filter((r) => r.createdAt >= from && r.createdAt <= to)
+      .filter((r) =>
+        r.createdAt >= from && r.createdAt <= to &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
       id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
