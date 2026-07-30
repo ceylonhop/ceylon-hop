@@ -98,6 +98,12 @@ comes up, so launch is a clean, mechanical switch-over.
 - [ ] The confirmation email actually arrives at a **non-owner** address (proves the domain is verified).
 - [ ] Maps + Places autocomplete work on the apex (no referrer/console errors).
 - [ ] WhatsApp CTA opens the correct number (`+94779669662`).
+- [ ] **`purchase` reaches GA4.** It is suppressed today *by design*: `chIsProd()` matches the
+      apex/`www` only, and the app currently serves from `prod.ceylonhop.com`. Since PayHere is
+      apex-only (§2), nothing completing on `prod.*` is a real payment, so reporting it would put
+      sandbox transactions into revenue permanently — GA4 cannot delete events after the fact.
+      Moving to the apex re-enables it with **no code change**. Confirm in GA4 DebugView after the
+      first live booking; if it does not appear, the cause is the GTM tag, not `chIsProd`.
 - [ ] `web-tests` (`npm run test:all`) and `api` (`npm run check`) both green.
 
 ### 4a. Customer-email campaign (send one of each to a real, non-owner inbox)
