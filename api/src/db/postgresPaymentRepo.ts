@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
 import type { PaymentRepo, NewPayment, Payment, PaymentStatus } from './paymentRepo';
@@ -81,6 +81,23 @@ export class PostgresPaymentRepo implements PaymentRepo {
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);
     return toPayment(row);
+  }
+
+  // Cheapest possible existence check — the watchdog asks this once per paid booking on every
+  // ~15-min sweep, and nothing downstream wants the row itself.
+  async hasManualSettlement(bookingId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.bookingId, bookingId),
+          eq(payments.status, 'succeeded'),
+          eq(payments.settlementSource, 'manual'),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   async markFailed(id: string): Promise<Payment> {

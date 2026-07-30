@@ -41,6 +41,11 @@ export interface PaymentRepo {
   // `reference` is whatever the operator can cite (a bank slip number), and is optional.
   markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment>;
   markFailed(id: string): Promise<Payment>;
+  // Did this booking's money arrive out-of-band? findByBookingId() returns the narrow Payment
+  // shape, which drops the provenance; the watchdog needs exactly this distinction to tell a
+  // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
+  // silently failed to confirm. A predicate rather than a row read: no caller wants the rows.
+  hasManualSettlement(bookingId: string): Promise<boolean>;
 }
 
 export class InMemoryPaymentRepo implements PaymentRepo {
@@ -110,6 +115,12 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     const updated: InternalPaymentRecord = { ...p, status: 'failed', updatedAt: new Date() };
     this.byId.set(id, updated);
     return this.toPayment(updated);
+  }
+
+  async hasManualSettlement(bookingId: string): Promise<boolean> {
+    return [...this.byId.values()].some(
+      (p) => p.bookingId === bookingId && p.status === 'succeeded' && p.settlementSource === 'manual',
+    );
   }
 
   getForSettlement(id: string): InternalPaymentRecord | null {
