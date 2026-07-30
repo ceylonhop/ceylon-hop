@@ -557,6 +557,29 @@ export function internalQuoteRoutes(deps: {
     }
   });
 
+  // "+ New quote" (spec 2026-07-29). Creates the row BEFORE anything is priceable, so an ops
+  // agent can claim or hand over the ticket on the call rather than after a Save. /save prices
+  // via resolveAndPrice() and therefore cannot create an empty row — hence this separate insert.
+  // The row is a $0 SHELL: request/result are the { shell: true } marker, which POST /save
+  // overwrites wholesale on the first real save. Nothing else about the row is special, so the
+  // queue, assignment, soft-delete and reopen paths all work on it unchanged.
+  r.post('/draft', csrf, async (c) => {
+    const actor = c.get('identity').email;
+    const saved = await deps.quotes.save({
+      channel: 'ops',
+      product: 'private', // the builder's default service; the first real save overwrites it
+      totalCents: 0,
+      currency: RATE_CARD.currency,
+      rateCardVersion: RATE_CARD.version,
+      request: { shell: true },
+      result: { shell: true },
+      createdBy: actor,
+      updatedBy: actor,
+      assignedTo: actor, // same auto-assign-to-creator rule /save applies on insert
+    });
+    return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
+  });
+
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
   // An optional `id` on the body means "update this existing quote in place" (the founder
   // editing a quote mid-review, or an operator re-saving a reopened one) — same row, no

@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
-import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
@@ -1890,5 +1890,46 @@ describe('multi-stop rides — ops wire (stops + segmentKms)', () => {
     expect(d.lineItems[0].meta.billableKm).toBe(88);
     expect(d.lineItems[0].meta.stops).toBeUndefined(); // 2-stop leg never carries a stops array
     expect(d.lineItems[0].meta.segmentKms).toBeUndefined();
+  });
+});
+
+describe('POST /admin/quote/draft (autosave shell)', () => {
+  it('creates a $0 draft shell assigned to its creator', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+
+    const res = await post(app, '/admin/quote/draft', {});
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.status).toBe('draft');
+    expect(body.reference).toMatch(/\S/);
+    expect(body.assignedTo).toBe('f@x.com');
+
+    const saved = await quotes.get(body.id);
+    expect(saved!.totalCents).toBe(0);
+    expect(saved!.channel).toBe('ops');
+    expect(saved!.customerName).toBeNull();
+    expect(saved!.requestedService).toBeNull();
+    expect(isUnpricedShell(saved!)).toBe(true);
+  });
+
+  it('401s without a session', async () => {
+    const res = await realCreateApp({ auth: AUTH, adminApiKey: 'k' }).request('/admin/quote/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('403s on a cross-site POST', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    const res = await app.request('/admin/quote/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE, 'sec-fetch-site': 'cross-site' },
+      body: '{}',
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
   });
 });
