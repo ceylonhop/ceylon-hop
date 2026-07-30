@@ -68,6 +68,16 @@ describe('sweepAbandonedDrafts', () => {
     expect(await repo.get(q.id)).not.toBeNull();
   });
 
+  it('spares a legitimately $0 priced draft (comp or promo)', async () => {
+    const repo = new InMemoryQuoteRepo();
+    // A $0 quote (comp/promo) with a real request object, not a shell marker.
+    // The sweep key is the unpriced flag, not totalCents===0. A regression to price-based
+    // deletion would silently sweep comp/promo rides — this case catches that.
+    const q = await savedAt(repo, new Date(NOW.getTime() - ABANDONED_DRAFT_TTL_MS - HOUR), priced({ totalCents: 0 }));
+    expect(await sweepAbandonedDrafts(NOW, { quotes: repo })).toEqual({ swept: 0 });
+    expect(await repo.get(q.id)).not.toBeNull();
+  });
+
   it('spares an old shell that was touched inside the window', async () => {
     const repo = new InMemoryQuoteRepo();
     const q = await savedAt(repo, new Date(NOW.getTime() - 5 * 24 * HOUR), shell());
