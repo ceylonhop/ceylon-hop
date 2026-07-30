@@ -6121,7 +6121,13 @@ function render() {
   var basicsDone = basicsComplete();
   var _unlockedNow = basicsDone && !_basicsUnlocked; // D5: gate just flipped open this render
   _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
-  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
+  // `savedId` stopped meaning "has been saved at least once" when "+ New quote" began claiming a
+  // $0 shell row within ~200ms (spec 2026-07-29) — it now means only "a row exists", which
+  // unlocked this section on every new quote: the guidance panel flashed and vanished, the
+  // just-unlocked reveal never played, and the itinerary appeared under the operator's cursor
+  // mid-typing. `savedId && !unpriced` is what "already saved with real content" means now — the
+  // shell marker clears only on a successful save.
+  var hasBuiltItinerary = (!!st.savedId && !st.unpriced) || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
   var showItinerary = basicsDone || hasBuiltItinerary;
   var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 

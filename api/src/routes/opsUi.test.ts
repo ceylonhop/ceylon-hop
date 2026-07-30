@@ -634,4 +634,23 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('if (!res || res.error)'));
     expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('state.assignedTo = res.assignedTo'));
   });
+
+  it('the itinerary basics gate is not unlocked by the shell row merely existing', () => {
+    // claimDraftRow() sets savedId within ~200ms of "+ New quote", so a bare `!!st.savedId` made
+    // showItinerary true on every new quote: the ch-itin-locked guidance panel only flashed, the
+    // just-unlocked reveal never played, and the section appeared under the operator's cursor
+    // mid-typing. "Already saved with real content" is now savedId AND the shell marker cleared.
+    const gate = body.split('\n').find(l => l.includes('var hasBuiltItinerary =')) as string;
+    expect(gate).toBeTruthy();
+    expect(gate).toContain('(!!st.savedId && !st.unpriced)');
+    expect(gate).not.toMatch(/=\s*!!st\.savedId \|\|/);
+    // The other half — real typed leg content — still unlocks it, so a built itinerary is never
+    // hidden, and basicsDone remains the ordinary way in.
+    expect(gate).toContain("(s || '').trim() !== ''");
+    expect(body).toContain('var showItinerary = basicsDone || hasBuiltItinerary;');
+    // The panel the gate exists to show is still wired to it.
+    expect(body).toContain('ch-itin-locked');
+    expect(body).toContain('Complete the trip basics to start');
+    expect(body).toContain('esc(basicsMissingText())');
+  });
 });
