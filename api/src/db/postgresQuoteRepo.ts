@@ -207,8 +207,11 @@ export class PostgresQuoteRepo implements QuoteRepo {
           gte(quotes.decidedAt, since),
           inArray(quotes.status, [...LIVE_STATUSES]),
         ),
-        // Autosave shells never count as demand (spec 2026-07-29). Predicate only — request_json
-        // stays OUT of the funnel's select, so the scalar-only perf contract is intact.
+        // Autosave shells never count as demand (spec 2026-07-29). request_json stays OUT of the
+        // funnel's select — the response never carries it — but it IS referenced in this WHERE,
+        // so Postgres still fetches and detoasts it off the heap to evaluate the predicate for
+        // every candidate row. Not scalar-only cost-wise, just scalar-only on the wire. Fine at
+        // today's volumes; revisit if this table or the shell-exclusion check ever gets heavier.
         // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
         // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
         // a real shell marker from a string that merely says "true". The jsonb comparison here
