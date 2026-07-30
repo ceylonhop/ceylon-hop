@@ -338,6 +338,35 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(alerts.sent.map((a) => a.kind)).toContain('paid_in_unexpected_status');
   });
 
+  // A late notify on a booking ops already settled in cash: two succeeded payments on one
+  // booking, and refundRepo sums them, so the refundable ceiling really is cash + gateway. The
+  // money is genuinely captured twice — the alert has to say THAT, not the old generic
+  // "captured with no paid-transition", which describes a different (and cheaper) accident.
+  it('alerts a DOUBLE CAPTURE when a late gateway payment lands on a cash-settled booking', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ adapter, alerts, bookings, payments });
+    const b = await bookAndCheckout(app); // payment_pending, gateway payment row waiting
+    // ops takes the cash and marks it paid while the customer's PayHere notify is in flight
+    const manual = await payments.create({
+      bookingId: b.id, provider: 'cash', orderId: `${b.reference}-MANUAL`,
+      amount: b.total, currency: b.currency, idempotencyKey: `manual-paid:${b.id}`,
+    });
+    await payments.markSucceededManually(manual.id, { reference: 'slip-9' });
+    await bookings.setStatus(b.id, 'paid');
+
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+
+    expect(res.status).toBe(200);
+    expect(alerts.sent.map((a) => a.kind)).toContain('payment_double_capture');
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('paid_in_unexpected_status');
+    // the gateway money is recorded, not dropped — the business is holding both amounts
+    expect((await payments.findByOrderId(b.reference))!.status).toBe('succeeded');
+  });
+
   it('does not 500 the webhook when concierge-task creation fails (booking stays paid, alert raised)', async () => {
     const adapter = new FakePaymentAdapter();
     const alerts = new FakeAlertAdapter();
