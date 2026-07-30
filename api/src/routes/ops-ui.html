@@ -3305,7 +3305,10 @@ function armAutosave() {
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
-  if (!state.savedId || !isEditableNow() || !state.vehicleType) return;
+  // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
+  // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
+  // persisted at all. That window is the only place the beforeunload guard still matters.
+  if (!isEditableNow() || !state.vehicleType) return;
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
@@ -3319,9 +3322,12 @@ function renderSaveState() {
   if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
-  else if (_dirty) { cls += ' dirty'; txt = state.savedId ? 'Edits pending' : 'Unsaved'; }
+  // On a shell the row already exists, so "Unsaved" would overstate the risk: what is pending is
+  // a PRICE, not persistence. Say so.
+  else if (_dirty) { cls += ' dirty'; txt = state.unpriced ? 'Not priced yet' : (state.savedId ? 'Edits pending' : 'Unsaved'); }
   else if (_autoState === 'error') { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
   else if (_lastSavedAt) { cls += ' saved'; txt = 'Saved ' + _lastSavedAt.toTimeString().slice(0, 5); }
+  else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; }
   else if (state.savedId) { cls += ' saved'; txt = 'Saved'; }
   else return '<span id="ch-savestate" class="ch-savestate"></span>';
   return '<span id="ch-savestate" class="' + cls + '"><i class="ch-savestate-dot"></i>' + txt + '</span>';
@@ -3595,6 +3601,17 @@ async function apiSave(payload) {
   } catch (e) { window.opsReportError && window.opsReportError('apiSave', e); return { error: 'Network error' }; }
 }
 
+// "+ New quote" creates the row up front (spec 2026-07-29) so the assignee picker is live before
+// anything is priceable — an agent claims or hands over the ticket on the call, not after a Save.
+async function apiCreateDraft() {
+  try {
+    var r = await api('/admin/quote/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!r.ok) return await errPayload(r);
+    var body = await jsonOrNull(r);
+    return body || { error: 'Could not start a quote' };
+  } catch (e) { window.opsReportError && window.opsReportError('apiCreateDraft', e); return { error: 'Network error' }; }
+}
+
 async function apiPatch(id, patch) {
   try {
     var r = await api('/admin/quote/' + encodeURIComponent(id), {
@@ -3667,6 +3684,7 @@ function resetToNew() {
     savedId: null,
     reference: null,
     assignedTo: null, // who holds it; set only via the assign picker (never by a transition)
+    unpriced: false, // true while this row is a server-side shell (never priced) — spec 2026-07-29
     createdBy: null,
     updatedBy: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
@@ -3684,15 +3702,37 @@ function resetToNew() {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
+  // The save chip belongs to the quote, not the session: without this a fresh row inherited the
+  // PREVIOUS quote's "Saved 14:32" and outranked its own "Not priced yet" (spec 2026-07-29).
+  _autoState = 'idle';
+  _lastSavedAt = null;
   refreshEstimate();
   render();
 }
 
-// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when
-// there are unsaved edits to lose.
+// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when there are
+// unsaved edits to lose, then claim a real row so the ticket is assignable immediately. The
+// create is fire-and-forget from the operator's point of view — they can start typing at once.
 function startNew() {
   if (_dirty && !confirm('Start a new quote? Unsaved changes will be lost.')) return;
   resetToNew();
+  claimDraftRow();
+}
+
+// Create the shell row for the quote now on screen. Non-blocking by design: on failure the
+// builder simply behaves as it did before this shipped (unsaved, assign disabled, manual Save)
+// rather than trapping the operator behind a network error.
+async function claimDraftRow() {
+  var seq = _openSeq; // a reopen that lands mid-flight must win
+  var res = await apiCreateDraft();
+  if (seq !== _openSeq) return;
+  if (!res || !res.id) return;
+  state.savedId = res.id;
+  state.reference = res.reference || res.id;
+  state.unpriced = true;
+  if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  render();
 }
 
 function savePayload() {
@@ -3737,6 +3777,7 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    state.unpriced = false; // a real save prices the quote — the shell marker is gone server-side
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
     if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
@@ -3946,6 +3987,22 @@ async function reopenQuote(id) {
     return;
   }
   var tool = q.request && q.request.tool;
+  // An unpriced shell (spec 2026-07-29) has no tool yet — it is a row "+ New quote" claimed
+  // before anything was priceable. Open it as a blank builder BOUND to that row so whoever it
+  // was handed to prices it in place, rather than falling into the legacy-row dead end below.
+  if (!tool && q.request && q.request.shell === true) {
+    resetToNew();
+    state.savedId = q.id;
+    state.reference = q.reference || q.id;
+    state.status = q.status || 'draft';
+    state.assignedTo = q.assignedTo || null;
+    state.createdBy = q.createdBy || null;
+    state.updatedBy = q.updatedBy || null;
+    state.unpriced = true;
+    render();
+    showToast('Opened ' + (q.reference || q.id));
+    return;
+  }
   if (!tool) {
     // Legacy row saved before the { tool, engine } shape.
     showToast('This quote was saved before reopen support — re-create it to edit.');
@@ -4007,6 +4064,7 @@ async function reopenQuote(id) {
   state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
   state.savedId = q.id;
   state.reference = q.reference || q.id;
+  state.unpriced = !!(q.request && q.request.shell === true);
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
@@ -5683,23 +5741,19 @@ async function loadOpsUsers() {
 // the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
 // someone, so it stays a first-class control.
 // It used to be HIDDEN until the quote was saved, which read as the control appearing and
-// disappearing at random (owner, 2026-07-26). It is now always present and simply DISABLED until
-// there is a row to assign — assignment is a PATCH against an id, so there is genuinely nothing
-// to send before the first save. A new quote is auto-assigned to its creator server-side, so it
-// resolves to the maker the moment it saves.
+// disappearing at random (owner, 2026-07-26). It is now always present.
 function renderHeaderAssign() {
-  var unsaved = !state.savedId;
+  // The row is created by "+ New quote" (spec 2026-07-29), so this is live from the first frame.
+  // It stays disabled only when there is genuinely no row — i.e. the draft create failed and the
+  // builder fell back to manual-save behaviour.
+  var noRow = !state.savedId;
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
-  // On an unsaved quote the placeholder states what WILL happen rather than "Unassigned" — the
-  // server auto-assigns a new quote to its creator on save, so "Unassigned" would be a small lie
-  // about a control the operator can't act on yet.
   // The placeholder MUST carry `selected` when nobody holds the quote. A freshly parsed <select>
   // defaults to option 0, but morphdom patches this element's children in place on re-render — and
   // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
   // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
-  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>'
-    + (unsaved ? 'Assigned to you on save' : 'Unassigned') + '</option>'];
+  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>Unassigned</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5709,11 +5763,11 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
-  var title = unsaved
-    ? 'Save the quote first — it is assigned to you on save, and you can hand it over from here'
+  var title = noRow
+    ? 'Could not start this quote on the server — save it to assign'
     : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
-    + (unsaved ? ' disabled' : '')
+    + (noRow ? ' disabled' : '')
     + ' aria-label="Assign this quote" title="' + esc(title) + '">' + opts.join('') + '</select>';
 }
 

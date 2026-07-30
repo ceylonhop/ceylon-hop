@@ -450,10 +450,14 @@ describe('ops UI — design elevation', () => {
     expect(body).not.toContain('vehicleType = sug'); // suggestion must not silently pick
   });
 
-  it('D4: autosave is debounced, gated on savedId + editable status, with a saved chip', () => {
+  // Spec 2026-07-29: the row now exists from "+ New quote", so savedId is no longer part of the
+  // gate — a shell's first real content must be able to autosave. vehicleType still gates it,
+  // because POST /save prices server-side and cannot persist an unpriceable payload.
+  it('D4: autosave is debounced, gated on priceability + editable status, with a saved chip', () => {
     expect(body).toContain('function fireAutosave(');
     expect(body).toContain('setTimeout(fireAutosave, 2500)');
-    expect(body).toContain('if (!state.savedId || !isEditableNow() || !state.vehicleType) return;');
+    expect(body).toContain('if (!isEditableNow() || !state.vehicleType) return;');
+    expect(body).not.toContain('if (!state.savedId || !isEditableNow()');
     expect(body).toContain('ch-savestate');
   });
 
