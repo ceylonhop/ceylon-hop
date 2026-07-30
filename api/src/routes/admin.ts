@@ -242,21 +242,34 @@ export function adminRoutes(deps: {
     const reference = parsed.data.reference ?? null;
 
     // Idempotent on a key derived from the booking id, the same way POST /admin/quote/:id/book
-    // is: a double-click, or a retry after a mid-flight failure, finds the payment it already
-    // recorded and returns the booking as it stands rather than taking the money twice.
+    // is: a double-click finds the payment it already recorded and returns the booking as it
+    // stands rather than taking the money twice.
+    // Only a SUCCEEDED payment may short-circuit. create() claims the key with a 'pending' row,
+    // so a settle step that dies mid-flight (a 23505 on the provider/gateway-reference UNIQUE
+    // when one bank slip is entered on two bookings, or any transient connection error) leaves
+    // that row behind: short-circuiting on its mere existence would answer every retry with a
+    // cheerful 200 and an unchanged booking — stranded forever with no repair path, which is the
+    // exact condition this route exists to end. Falling through is safe because create() returns
+    // the existing row for a claimed key, so the settle and status steps simply re-run.
     const idempotencyKey = `manual-paid:${booking.id}`;
-    if (await deps.payments.findByIdempotencyKey(idempotencyKey)) return c.json(booking, 200);
+    const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
+    if (claimed && claimed.status === 'succeeded') return c.json(booking, 200);
 
     if (booking.status !== 'payment_pending') {
       return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
     }
+    // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
+    // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
+    // succeeded rows on one booking double the captured total refundRepo sums, which would make
+    // refund_exceeds_captured wave through a refund of twice the money actually taken.
+    const settled = (await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
+    if (settled) return c.json({ error: 'already_paid', status: booking.status }, 409);
 
     const payment = await deps.payments.create({
       bookingId: booking.id,
       // The method is genuinely the provider of this money — a cash payment's provider is cash.
-      // NOTE: the live CHECK `payments_provider_supported` (migration 0027) still admits only
-      // 'payhere' | 'fake', so it must be widened to include the three manual methods before
-      // this insert can run against Postgres. It is a whitelist, not a safety property.
+      // The CHECK `payments_provider_supported` admits all three manual methods alongside the two
+      // gateways since migration 0029; it is a typo guard on channel names, not a safety property.
       provider: method,
       // Not the bare booking reference: the checkout route already claims that as its orderId,
       // and order_id is unique — a booking once handed a PayHere form must still be settleable

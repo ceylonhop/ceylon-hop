@@ -450,7 +450,7 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
   async function awaitingPayment(app: ReturnType<typeof createApp>, bookings: InMemoryBookingRepo) {
     const b = await book(app);
     await bookings.setStatus(b.id, 'payment_pending');
-    return b as { id: string; total: number; amountDueNow?: number | null; currency: string };
+    return b as { id: string; reference: string; total: number; amountDueNow?: number | null; currency: string };
   }
 
   const markPaid = async (app: ReturnType<typeof createApp>, id: string, body: unknown, who = 'f@x.com') =>
@@ -474,6 +474,10 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect(rows[0].provider).toBe('cash');
     expect(rows[0].amount).toBe(b.amountDueNow ?? b.total);
     expect(rows[0].currency).toBe(b.currency);
+    // order_id is UNIQUE and the checkout route claims the bare reference: a booking once handed
+    // a PayHere form must still settle in cash rather than 23505 in Postgres (invisible here —
+    // the in-memory repo just overwrites the duplicate).
+    expect(rows[0].orderId).toBe(`${b.reference}-MANUAL`);
     // Provenance (SH7): real cash must NEVER be labelled a legacy backfill or a webhook.
     const settlement = payments.getForSettlement(rows[0].id)!;
     expect(settlement.settlementSource).toBe('manual');
@@ -532,7 +536,9 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
   it('400 for an unknown method', async () => {
     const { app, bookings, payments } = makeCashApp();
     const b = await awaitingPayment(app, bookings);
-    expect((await markPaid(app, b.id, { method: 'crypto' })).status).toBe(400);
+    const res = await markPaid(app, b.id, { method: 'crypto' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_mark_paid_request' });
     expect((await bookings.get(b.id))!.status).toBe('payment_pending');
     expect(await payments.findByBookingId(b.id)).toHaveLength(0);
   });
@@ -566,5 +572,58 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     const rows = await payments.findByBookingId(b.id);
     expect(rows).toHaveLength(1);
     expect(rows.reduce((sum, p) => sum + p.amount, 0)).toBe(b.amountDueNow ?? b.total);
+  });
+
+  // The failure mode this route exists to prevent, reintroduced by a too-eager idempotency gate:
+  // create() claims the key with a PENDING row, so if the settle step dies (a 23505 on the
+  // provider/gateway-reference UNIQUE when ops enters one bank slip on two bookings, or any
+  // transient connection error), every retry short-circuits on that pending row and answers 200
+  // with an unchanged booking — no money recorded, no error, and no repair path. Only a
+  // SUCCEEDED payment may short-circuit.
+  it('a retry after a mid-flight failure finishes the job — a pending row must not short-circuit', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    // Exactly what a crashed first attempt leaves behind: the key claimed, the money not settled.
+    const stranded = await payments.create({
+      bookingId: b.id,
+      provider: 'cash',
+      orderId: `${b.reference}-MANUAL`,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `manual-paid:${b.id}`,
+    });
+    expect(stranded.status).toBe('pending');
+
+    const res = await markPaid(app, b.id, { method: 'cash', reference: 'BOC-77219' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1); // the retry reuses the claimed row, it does not take the money twice
+    expect(rows[0].id).toBe(stranded.id);
+    expect(rows[0].status).toBe('succeeded');
+    expect(payments.getForSettlement(rows[0].id)!.settlementSource).toBe('manual');
+  });
+
+  // A PayHere webhook that settles late (delayed or retried) can land on a booking ops has
+  // already decided to settle by hand. Two succeeded rows for one booking double the captured
+  // total refundRepo sums, so refund_exceeds_captured would let us refund twice the money taken.
+  it('409 already_paid when the ledger already holds a succeeded payment, and records nothing', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const gateway = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `checkout:${b.id}`,
+    });
+    await payments.markSucceeded(gateway.id);
+
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'already_paid', status: 'payment_pending' });
+    expect(await payments.findByBookingId(b.id)).toHaveLength(1);
   });
 });
