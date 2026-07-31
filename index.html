@@ -191,6 +191,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .book-go:active{transform:translateY(1px)}
   .book-go:focus-visible{outline:3px solid rgba(236,58,36,.4);outline-offset:2px}
   .book-go[disabled]{opacity:.55;cursor:not-allowed;transform:none;filter:none}
+  /* Not-ready-yet, but still pressable. Reads as "there's a step left" rather than "this control
+     is dead": softer than the live button, but it keeps its pointer and its hover, and pressing
+     it runs goBook()'s validation, which names the missing field and focuses it. */
+  .book-go.needs-input{opacity:.72}
+  .book-go.needs-input:hover{opacity:1}
   .book-go .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;display:inline-block;animation:bspin .7s linear infinite;margin-right:.2rem}
   @keyframes bspin{to{transform:rotate(360deg)}}
   @media(max-width:560px){
@@ -378,7 +383,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
-      <form class="booker mode-single" id="form-go" onsubmit="return goBook(event)">
+      <!-- novalidate: the browser's own constraint check fires BEFORE submit, so with the two
+           inputs marked required it swallowed the event entirely — goBook() never ran, and the
+           traveller got the generic "Please fill out this field." tooltip instead of the copy
+           written for this form ("Choose where we're picking you up.", "Pick-up and drop-off
+           are the same…"). goBook() validates both fields and the same-place case itself, and
+           marks the offending field, so nothing is lost by turning the native pass off. The
+           inputs keep `required` for semantics and assistive tech. -->
+      <form class="booker mode-single" id="form-go" novalidate onsubmit="return goBook(event)">
         <div class="bk-tabs" role="tablist" aria-label="Booking type">
           <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
           <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
@@ -701,8 +713,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const fr=resolvePlaceInput(f), tr=resolvePlaceInput(t);
       const multi=bookMode==='multi';
       goBtn.textContent = multi ? 'Plan this trip' : 'See prices & book';
-      // date & traveller count are collected later in the flow, so all we need up front is from + to
-      goBtn.disabled = !(f && t);
+      /* Date & traveller count are collected later in the flow, so all we need up front is
+         from + to — but the button is NEVER disabled for missing them. It used to be, which
+         made goBook()'s validation below unreachable: it has per-field messages and moves the
+         cursor to the field at fault, and none of that could ever fire because the press that
+         would trigger it was blocked. A dead primary CTA on the homepage is indistinguishable
+         from a broken one — the traveller gets no reason and nowhere to go. Same call the ops
+         tool made for Submit ("pressing it is how the operator LEARNS what's missing"), and it
+         matters more here, where the visitor has no training and no support channel open.
+         `.needs-input` keeps the not-ready-yet signal without taking the press away. */
+      goBtn.disabled = false;
+      goBtn.classList.toggle('needs-input', !(f && t));
       if(multi || !f || !t || f===t){ if(pcPin)pcPin.hidden=true; return; }
       if(pcPin){
         pcPin.innerHTML=`<span class="dot" style="background:var(--saffron)"></span>${fr.name.replace(' (CMB)','')} <span class="pp-ar">→</span> ${tr.name}`;

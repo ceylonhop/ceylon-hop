@@ -302,6 +302,8 @@
   var state = {
     me: null,
     lists: [],            // currently displayed normalized lists
+    loadFailed: false,    // last /board fetch failed — lists is empty because we couldn't ask,
+                          // NOT because there are none (renderFilters must not report "0")
     byCode: {},           // code → normalized list (detail cache)
     mineCodes: new Set(), // lists the signed-in user is on
     manageTokens: {},     // code → manageToken (from create/join)
@@ -611,6 +613,13 @@
     var open = state.lists.filter(function (L) { return !L.confirmed && L.committed < L.minSeats; }).length;
     var mineN = state.mineCodes.size;
     var f = state.filter;
+    /* Zero is a claim; "we couldn't ask" is not the same claim. When the board fetch fails we
+       clear state.lists, so this counter used to announce a confident "0 gathering now" directly
+       above the card explaining that we never reached the server — and to a traveller "0 rides"
+       reads as "this product is dead", not "try again". Say nothing rather than say zero. */
+    var countHtml = state.loadFailed
+      ? '<span class="count count-unknown">rides unavailable</span>'
+      : '<span class="count"><b>' + open + '</b> gathering now</span>';
     filtersEl.innerHTML =
       '<label class="fsel"><span>Leaving from</span>' +
       '<select id="f-from"><option value="all">Anywhere</option>' +
@@ -620,7 +629,7 @@
       '<select id="f-when"><option value="all">Any time</option><option value="week">This week</option><option value="fortnight">Next 2 weeks</option></select></label>' +
       (mineN ? '<button class="chip ' + (f.mine ? 'active' : '') + '" id="f-mine">My rides · ' + mineN + '</button>' : '') +
       ((f.from !== 'all' || f.when !== 'all' || f.mine) ? '<button class="chip ghost" id="f-clear">Clear</button>' : '') +
-      '<span class="count"><b>' + open + '</b> gathering now</span>';
+      countHtml;
     var ff = document.getElementById('f-from'), fw = document.getElementById('f-when');
     ff.value = f.from; fw.value = f.when;
     ff.addEventListener('change', function () { f.from = ff.value; f.mine = false; loadBoard(); });
@@ -660,6 +669,7 @@
       lists.forEach(function (L) { state.byCode[L.code] = L; });
       rememberFromOptions(lists);
       state.lists = lists;
+      state.loadFailed = false; // a good response clears a previous failure
       renderFilters();
       render();
       // Top of the funnel: how many vans a traveller was actually offered, and
@@ -671,6 +681,10 @@
       });
     }).catch(function (e) {
       state.lists = [];
+      // state.fromOptions is deliberately NOT cleared: it accumulates across loads, and wiping
+      // it here collapsed the "Leaving from" dropdown back to "Anywhere" on a failed refresh —
+      // so a traveller who had filtered to their town silently lost the option to filter at all.
+      state.loadFailed = true;
       renderFilters();
       grid.removeAttribute('aria-busy');
       grid.innerHTML =
