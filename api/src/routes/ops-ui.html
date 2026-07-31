@@ -505,6 +505,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-status-pill.tone-red { color: #c0362a; background: #fbe8e6; border-color: #f4cec9; }
 .qv .ch-status-pill.tone-muted { color: #8a8378; background: #f1efea; border-color: #e6e2da; }
 /* ---------- Review banner ---------- */
+.qv .ch-paylink-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; }
+.qv .ch-paylink-lbl { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
+.qv .ch-paylink-url { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--cream); border-radius: 8px; padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--ink); }
+.qv .ch-paylink-sandbox { flex: none; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 6px; padding: 4px 7px; white-space: nowrap; }
 .qv .ch-review-banner { display: flex; align-items: baseline; gap: 8px; padding: 7px 12px; border-radius: 999px; margin-bottom: 10px; border: 1px solid transparent; width: fit-content; max-width: 100%; }
 .qv .ch-review-banner b { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .qv .ch-assign { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -3140,6 +3144,7 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 // from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
 var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
@@ -3975,6 +3980,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
+  _payLink = null;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -4148,6 +4154,50 @@ function approveReady() {
   transition('ready', { toast: 'Approved — ready to send', goQueue: true });
 }
 function markSent()        { transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
+
+/* Payment link (spec 2026-07-31). Minting is STATELESS server-side — no booking, no status
+   change — so this button is safe to press any number of times: the URL is identical per
+   revision. The row it reveals is what ops copies into the WhatsApp message next to the
+   quote. A non-live PayHere mode gets an amber SANDBOX chip: a sandbox link takes test-card
+   money and marks real bookings Paid, so it must never pass for a live one. */
+async function mintPayLink() {
+  if (!state.savedId) return;
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', { method: 'POST' });
+    if (!r.ok) {
+      var err = await jsonOrNull(r);
+      showToast(err && err.error === 'not_linkable'
+        ? 'Only an approved (ready or sent) quote can take a payment link'
+        : 'Could not create the payment link');
+      return;
+    }
+    var body = await jsonOrNull(r);
+    if (!body || !body.url) { showToast('Could not create the payment link'); return; }
+    _payLink = { url: body.url, mode: body.payhereMode || 'off' };
+    render();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('mint pay link', e);
+    showToast('Could not create the payment link');
+  }
+}
+function copyPayLink() {
+  if (!_payLink) return;
+  if (navigator.clipboard) navigator.clipboard.writeText(_payLink.url).catch(function(){});
+  showToast('Payment link copied');
+}
+
+function renderPayLinkRow() {
+  if (!_payLink) return '';
+  var sandbox = _payLink.mode !== 'live'
+    ? '<span class="ch-paylink-sandbox">SANDBOX — test cards only</span>'
+    : '';
+  return '<div class="ch-paylink-row" id="paylink-row">'
+    + '<span class="ch-paylink-lbl">Payment link</span>'
+    + '<input class="ch-paylink-url" readonly value="' + esc(_payLink.url) + '" onfocus="this.select()" />'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm" data-action="copyPayLink">Copy</button>'
+    + sandbox
+    + '</div>';
+}
 function markOutcome(s)    { transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
 function reopenToDraft()   { transition('draft', { toast: 'Reopened for editing' }); }
 
@@ -4259,6 +4309,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
+  _payLink = null;
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -4405,6 +4456,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
+  _payLink = null;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -6137,14 +6189,14 @@ function renderActionBar() {
     // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), B('mintPayLink', 'Payment link', 'ch-btn-outline')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
@@ -6622,6 +6674,7 @@ function render() {
     (viewerCan('margin:view') ? '      <button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="openRates" id="btnRates">Rates</button>' : ''),
     '    </div>',
     '  </div>',
+    renderPayLinkRow(),
     '</header>',
 
     '<div class="ch-container">',
@@ -7245,6 +7298,10 @@ function attachEventListeners() {
       render();
     } else if (action === 'markSent') {
       markSent();
+    } else if (action === 'mintPayLink') {
+      mintPayLink();
+    } else if (action === 'copyPayLink') {
+      copyPayLink();
     } else if (action === 'markWon') {
       bookOpen = true;
       render();
@@ -7254,6 +7311,7 @@ function attachEventListeners() {
       bookQuote();
     } else if (action === 'cancelBook') {
       bookOpen = false;
+  _payLink = null;
       render();
     } else if (action === 'reopenToDraft') {
       reopenToDraft();

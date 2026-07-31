@@ -5,6 +5,8 @@ import {
   signCheckoutToken,
   verifyBookingToken,
   verifyCheckoutToken,
+  signQuotePayToken,
+  verifyQuotePayToken,
 } from './bookingToken';
 
 const S = 'test-secret';
@@ -73,5 +75,41 @@ describe('checkout capability token', () => {
     expect(verifyCheckoutToken(signBookingToken('booking-1', S), 'booking-1', S, NOW)).toBe(
       false,
     );
+  });
+});
+
+describe('quote pay token', () => {
+  const S = 'link-secret';
+
+  it('round-trips quote id and revision', () => {
+    const t = signQuotePayToken('q-1', 3, S);
+    expect(verifyQuotePayToken(t, S)).toEqual({ quoteId: 'q-1', revision: 3 });
+  });
+
+  it('rejects a wrong secret, tampering, and garbage', () => {
+    const t = signQuotePayToken('q-1', 3, S);
+    expect(verifyQuotePayToken(t, 'other-secret')).toBeNull();
+    const last = t.at(-1)!;
+    expect(verifyQuotePayToken(t.slice(0, -1) + (last === '0' ? '1' : '0'), S)).toBeNull();
+    expect(verifyQuotePayToken('not-a-token', S)).toBeNull();
+    expect(verifyQuotePayToken(undefined, S)).toBeNull();
+  });
+
+  it('never cross-verifies with the other token purposes', () => {
+    // A checkout or view token must not open the pay page, and a pay token must not
+    // authorise a checkout — same secret, disjoint purposes.
+    expect(verifyQuotePayToken(signBookingToken('q-1', S), S)).toBeNull();
+    expect(verifyQuotePayToken(signCheckoutToken('q-1', S), S)).toBeNull();
+    expect(verifyBookingToken(signQuotePayToken('q-1', 1, S), S)).toBeNull();
+    expect(verifyCheckoutToken(signQuotePayToken('q-1', 1, S), 'q-1', S, Date.now())).toBe(false);
+  });
+
+  it('pins the revision — a revised quote invalidates old links at the token layer', () => {
+    const t = signQuotePayToken('q-1', 1, S);
+    const parsed = verifyQuotePayToken(t, S)!;
+    expect(parsed.revision).toBe(1);
+    // The caller compares against quote.revision; a non-integer revision never verifies.
+    const forged = signQuotePayToken('q-1', 1.5 as unknown as number, S);
+    expect(verifyQuotePayToken(forged, S)).toBeNull();
   });
 });
