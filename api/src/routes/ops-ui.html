@@ -951,9 +951,40 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-leg-in::placeholder { color: var(--muted-2); }
 .qv .ch-leg-arrow { color: var(--muted-2); font-size: 14px; flex: none; }
 
-.qv .ch-leg-date { flex: none; }
+.qv .ch-leg-date { flex: none; display: flex; align-items: center; gap: 4px; }
 .qv .ch-leg-date input { border: 1px solid var(--line); background: var(--cream); border-radius: 7px; padding: 6px 8px; font-size: 12px; font-family: inherit; color: var(--ink); outline: none; }
 .qv .ch-leg-date input:focus { border-color: var(--blue); background: var(--surface); }
+/* Date steppers (2026-07-30): ±1-day nudges either side of the native input. The calendar
+   stays for the anchor date and big jumps; day-to-day movement is a click, not a popover. */
+.qv .ch-date-step { flex: none; width: 22px; height: 28px; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1; padding: 0; transition: background .15s, color .15s, border-color .15s; }
+.qv .ch-date-step:hover { background: var(--cream); color: var(--ink); border-color: var(--muted-2); }
+.qv .ch-day-tag { flex: none; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--go); background: var(--go-bg); border-radius: 6px; padding: 3px 6px; white-space: nowrap; }
+.qv .ch-date-chip { flex: none; border: 1px dashed var(--line); background: var(--surface); border-radius: 7px; padding: 5px 8px; font-size: 11px; font-weight: 700; color: var(--muted); transition: background .15s, color .15s, border-color .15s; }
+.qv .ch-date-chip:hover { border-color: var(--go); color: var(--go); background: var(--go-bg); border-style: solid; }
+/* ── Trip calendar (2026-07-30): the date span, rendered — one tile per calendar day. In a
+   chauffeur quote the span IS the price (chauffeur.ts: days × day rate + idle minimums), so
+   it must be a visible object the operator can check at a glance, not an emergent property
+   of N separate date pickers. ── */
+.qv .ch-cal { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 12px 14px 10px; margin-bottom: 14px; }
+.qv .ch-cal-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-bottom: 9px; }
+.qv .ch-cal-sum b { color: var(--ink); font-weight: 700; }
+.qv .ch-cal-ok { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 3px 9px; }
+.qv .ch-cal-note { font-size: 11.5px; font-weight: 650; color: var(--idle); background: var(--idle-bg); border-radius: 8px; padding: 5px 9px; }
+.qv .ch-cal-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; font-weight: 650; color: var(--wait); background: var(--wait-bg); border: 1px solid var(--wait); border-radius: 9px; padding: 7px 10px; margin-bottom: 9px; }
+.qv .ch-cal-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 1px 6px; scrollbar-width: thin; }
+.qv .ch-cal-cell { flex: none; width: 96px; min-height: 78px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 7px 8px; display: flex; flex-direction: column; gap: 5px; }
+.qv .ch-cal-dnum { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--go); }
+.qv .ch-cal-ddate { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1.15; }
+.qv .ch-cal-dwk { font-size: 10px; color: var(--muted-2); font-weight: 600; }
+.qv .ch-cal-cell.idle { background: var(--idle-bg); border-style: dashed; }
+.qv .ch-cal-cell.idle .ch-cal-dnum { color: var(--idle); }
+.qv .ch-cal-idletag { margin-top: auto; font-size: 9.5px; font-weight: 700; color: var(--idle); line-height: 1.25; }
+.qv .ch-cal-chip { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 7px; padding: 3px 6px; font-size: 10px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qv .ch-cal-chip .n { color: var(--go); font-weight: 800; }
+.qv .ch-cal-chip.stay { color: var(--muted); border-style: dashed; }
+.qv .ch-cal-cell.collapsed { justify-content: center; align-items: center; text-align: center; border-style: dashed; background: var(--wait-bg); border-color: var(--wait); }
+.qv .ch-cal-cell.collapsed .big { font-size: 19px; font-weight: 800; color: var(--wait); line-height: 1; }
+.qv .ch-cal-cell.collapsed .small { font-size: 9.5px; font-weight: 700; color: var(--wait); margin-top: 3px; line-height: 1.3; }
 .qv .ch-leg-date.invalid input { border-color: var(--red); background: rgba(236,58,36,.06); }
 .qv .ch-leg-date-hint { display: block; font-size: 10px; font-weight: 600; color: var(--red); margin-top: 3px; text-align: center; }
 
@@ -2993,6 +3024,9 @@ function basicsMissingText() {
 // name/contact input handler re-render ONLY when the gate flips, avoiding a per-keystroke
 // rebuild (which would fight the operator's focus).
 var _basicsUnlocked = false;
+// Trip-calendar model for the CURRENT render pass — computed once at the top of render()
+// (it feeds both the strip and every leg card's "Day N" tag), never read outside a render.
+var _calModel = null;
 function syncBasics() {
   var contactEl = document.getElementById('f-contact');
   if (contactEl) contactEl.classList.toggle('invalid', (state.contact || '').trim() !== '' && !contactValid(state.contact));
@@ -4390,6 +4424,66 @@ function legDateFloor(idx) {
   return today;
 }
 
+/* Trip calendar maths (2026-07-30). Pure over a legs array — no state reads — so the unit
+   suite can lift and exercise it (see opsUi.dates.test.ts). MIRRORS THE ENGINE, deliberately:
+   chauffeur.ts prices span = last−first+1 over ALL dated legs (stay days included) and
+   charged idle = span − driving LEG COUNT (not distinct days) — the summary must show the
+   numbers the price is actually built from, or "looks right" and "priced right" can drift.
+   All parsing is UTC-midnight on the YYYY-MM-DD part, same as the engine's dayNumber(). */
+const tripCal = {
+  DAY: 86400000,
+  parse: function (s) { return Date.parse(String(s || '').slice(0, 10) + 'T00:00:00Z'); },
+  iso: function (ms) { return new Date(ms).toISOString().slice(0, 10); },
+  // '' for an unparseable base — callers treat that as "cannot step".
+  addDays: function (isoStr, n) { var t = this.parse(isoStr); return isNaN(t) ? '' : this.iso(t + n * this.DAY); },
+  // null when nothing is dated yet (nothing to verify). byDay is 1-based day → legs on it.
+  model: function (legs) {
+    var self = this;
+    var dated = legs.filter(function (l) { return l.date && !isNaN(self.parse(l.date)); });
+    if (!dated.length) return null;
+    var ts = dated.map(function (l) { return self.parse(l.date); });
+    var start = Math.min.apply(null, ts), end = Math.max.apply(null, ts);
+    var span = Math.round((end - start) / this.DAY) + 1;
+    var drivingLegs = dated.filter(function (l) { return l.category !== 'stay_day'; }).length;
+    var byDay = {};
+    dated.forEach(function (l) {
+      var d = Math.round((self.parse(l.date) - start) / self.DAY) + 1;
+      (byDay[d] || (byDay[d] = [])).push(l);
+    });
+    return {
+      start: this.iso(start), end: this.iso(end), span: span,
+      drivingLegs: drivingLegs, chargedIdle: Math.max(0, span - drivingLegs),
+      byDay: byDay, undated: legs.length - dated.length,
+    };
+  },
+  // Longest run of days with no leg at all: {fromDay, days} or null. Names the typo's
+  // likely location — a fat-fingered month shows up as one huge empty run.
+  biggestGap: function (m) {
+    var best = null, run = 0, from = 0;
+    for (var d = 1; d <= m.span + 1; d++) { // +1 sentinel flushes a trailing run
+      if (d <= m.span && !m.byDay[d]) { if (!run) from = d; run++; }
+      else { if (run && (!best || run > best.days)) best = { fromDay: from, days: run }; run = 0; }
+    }
+    return best;
+  },
+  // Amber warning or null. Two smells, both from real mistakes in team testing: a span no
+  // itinerary of this size plausibly has (a month typo), and idle days far outnumbering
+  // driving legs (a smaller version of the same). Thresholds are deliberately loose — this
+  // must never nag a genuine 10-day tour. `charged` = chauffeur pricing (idle days cost
+  // money); point-to-point idle days are merely suspicious, and the copy must not claim a
+  // charge the engine won't make.
+  warning: function (m, charged) {
+    if (!m || m.span < 2) return null;
+    if (m.span > 14 || m.chargedIdle > m.drivingLegs + 2) {
+      return m.span + '-day span from ' + m.drivingLegs + ' driving leg' + (m.drivingLegs === 1 ? '' : 's')
+        + ' — ' + m.chargedIdle + ' idle day' + (m.chargedIdle === 1 ? '' : 's')
+        + (charged ? ' will be charged.' : ' in between.')
+        + ' If the trip isn’t this long, a date is off.';
+    }
+    return null;
+  },
+};
+
 function renderLegCard(leg, idx, total) {
   var tone = legTone(idx, total, leg.category);
   var isStay = leg.category === 'stay_day';
@@ -4500,10 +4594,32 @@ function renderLegCard(leg, idx, total) {
   // calendar opens on min's month when the field is empty, so adding leg 5 to a trip that starts
   // in September no longer opens on today and make the operator page forward every time (owner,
   // 2026-07-26). It also stops a later leg being dated before an earlier one.
+  //
+  // Trip calendar (2026-07-30): a dated leg grows ± steppers and a "Day N" tag, so day-to-day
+  // movement is a click and the leg's place in the trip reads at a glance — in a chauffeur
+  // quote a mis-picked month is ~30 extra day-rates, and a calendar popover per leg is where
+  // those mistakes were made. An UNDATED leg with a dated leg above it gets two quick chips
+  // ("same day" / "next day"): one-tap EXPLICIT choices, which respects the addLeg() rule
+  // that dates are never auto-guessed — the operator presses the chip; nothing is invented.
   var dateNeeded = state.service === 'chauffeur' && distinctLegDateCount() >= 2 && !leg.date;
+  var prevLegDate = null;
+  for (var pdi = idx - 1; pdi >= 0; pdi--) { if (state.legs[pdi].date) { prevLegDate = state.legs[pdi].date; break; } }
+  var dayTag = '';
+  if (leg.date && _calModel) {
+    var dayNo = Math.round((tripCal.parse(leg.date) - tripCal.parse(_calModel.start)) / tripCal.DAY) + 1;
+    dayTag = '<span class="ch-day-tag">Day ' + dayNo + '</span>';
+  }
+  var dateChips = (!leg.date && prevLegDate)
+    ? '  <button type="button" class="ch-date-chip" data-action="setDateRel" data-leg="' + esc(leg.id) + '" data-rel="0" title="Same day as the leg above">same day</button>'
+      + '  <button type="button" class="ch-date-chip" data-action="setDateRel" data-leg="' + esc(leg.id) + '" data-rel="1" title="Day after the leg above">next day</button>'
+    : '';
   var dateHtml = [
     '<div class="ch-leg-date' + (dateNeeded ? ' invalid' : '') + '">',
+    (leg.date ? '  <button type="button" class="ch-date-step" data-action="stepDate" data-leg="' + esc(leg.id) + '" data-dir="-1" title="A day earlier">&#8722;</button>' : ''),
     '  <input type="date" min="' + esc(legDateFloor(idx)) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    (leg.date ? '  <button type="button" class="ch-date-step" data-action="stepDate" data-leg="' + esc(leg.id) + '" data-dir="1" title="A day later">&#43;</button>' : ''),
+    dayTag,
+    dateChips,
     (dateNeeded ? '  <span class="ch-leg-date-hint">date required</span>' : ''),
     '</div>',
   ].join('');
@@ -6149,8 +6265,86 @@ function runNumberTicks() {
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
+// The trip calendar (2026-07-30): one tile per calendar day of the span, so "did I get the
+// dates right?" is answered by looking, not by re-opening N date pickers. Renders only once
+// there is something to verify — two dated legs, or any date on a chauffeur trip (where the
+// span is priced). Cells are read-only in v1; the steppers on each leg card do the moving.
+var CAL_COLLAPSE_RUN = 4; // idle runs longer than this collapse into one "+N idle days" tile
+function renderTripCalendar() {
+  var m = _calModel;
+  if (!m) return '';
+  var datedLegs = state.legs.length - m.undated;
+  if (datedLegs < 2 && state.service !== 'chauffeur') return '';
+
+  var fmtCell = function (dayNo, part) {
+    var d = new Date(tripCal.parse(m.start) + (dayNo - 1) * tripCal.DAY);
+    return d.toLocaleDateString('en-GB', part === 'wk'
+      ? { weekday: 'short', timeZone: 'UTC' }
+      : { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  };
+
+  // Header: the span spelled out, then either the all-clear or what's still wrong. The
+  // all-clear is the point of the strip — "done, and visibly no mistakes".
+  var head = ['<div class="ch-cal-sum"><b>' + esc(fmtCell(1, 'd')) + ' &#8594; ' + esc(fmtCell(m.span, 'd')) + '</b>'
+    + ' &middot; <b>' + m.span + ' day' + (m.span === 1 ? '' : 's') + '</b>'
+    + ' &middot; ' + m.drivingLegs + ' driving leg' + (m.drivingLegs === 1 ? '' : 's')
+    + (state.service === 'chauffeur' ? ' &middot; ' + m.chargedIdle + ' idle day' + (m.chargedIdle === 1 ? '' : 's') + ' charged' : '')];
+  var warn = tripCal.warning(m, state.service === 'chauffeur');
+  if (!warn && m.undated === 0 && m.span > 1) {
+    head.push('<span class="ch-cal-ok">&#10003; every leg dated</span>');
+  }
+  if (m.undated > 0) {
+    head.push('<span class="ch-cal-note">' + m.undated + ' leg' + (m.undated === 1 ? '' : 's') + ' still undated</span>');
+  }
+  if (m.span === 1 && state.legs.length > 1) {
+    head.push('<span class="ch-cal-note">one-day trip &middot; priced point-to-point, no chauffeur day rate</span>');
+  }
+  head.push('</div>');
+
+  var warnHtml = '';
+  if (warn) {
+    var gap = tripCal.biggestGap(m);
+    warnHtml = '<div class="ch-cal-warn" data-testid="cal-warn"><span>&#9888;</span><span>' + esc(warn)
+      + (gap && gap.days > 2 ? ' Largest gap: ' + gap.days + ' empty days from Day ' + gap.fromDay + '.' : '') + '</span></div>';
+  }
+
+  // Cells. Chips show the leg's number in the list, so strip and cards cross-reference.
+  var cells = [], day = 1;
+  while (day <= m.span) {
+    if (!m.byDay[day]) {
+      var run = 0;
+      while (day + run <= m.span && !m.byDay[day + run]) run++;
+      if (run > CAL_COLLAPSE_RUN) {
+        cells.push('<div class="ch-cal-cell collapsed"><div class="big">+' + run + '</div><div class="small">empty days' + (state.service === 'chauffeur' ? '<br>all charged as idle' : '') + '</div></div>');
+        day += run; continue;
+      }
+    }
+    var ls = m.byDay[day] || [];
+    var chips = ls.map(function (l) {
+      var n = state.legs.indexOf(l) + 1;
+      var isStayChip = l.category === 'stay_day';
+      var label = isStayChip
+        ? 'Stay &middot; ' + esc((l.stops[l.stops.length - 1] || '').trim() || '&#8212;')
+        : '<span class="n">' + n + '</span> ' + esc((l.stops[0] || '?')) + ' &#8594; ' + esc((l.stops[l.stops.length - 1] || '?'));
+      return '<div class="ch-cal-chip' + (isStayChip ? ' stay' : '') + '" title="Leg ' + n + '">' + label + '</div>';
+    }).join('');
+    cells.push('<div class="ch-cal-cell' + (ls.length ? '' : ' idle') + '" data-cal-day="' + day + '">'
+      + '<div><span class="ch-cal-dnum">Day ' + day + '</span>'
+      + '<div class="ch-cal-ddate">' + esc(fmtCell(day, 'd')) + '</div>'
+      + '<div class="ch-cal-dwk">' + esc(fmtCell(day, 'wk')) + '</div></div>'
+      + chips
+      + (ls.length ? '' : '<div class="ch-cal-idletag">' + (state.service === 'chauffeur' ? 'idle &middot; driver waits' : 'no legs') + '</div>')
+      + '</div>');
+    day++;
+  }
+
+  return '<div class="ch-cal" id="trip-cal">' + head.join('') + warnHtml
+    + '<div class="ch-cal-strip">' + cells.join('') + '</div></div>';
+}
+
 function render() {
   var st = state;
+  _calModel = tripCal.model(st.legs);
 
   // Build legs HTML (dense rows; no connectors in the compact list)
   var legsHtml = '';
@@ -6283,6 +6477,7 @@ function render() {
     '          <div class="ch-sec-head-r">' + (showItinerary ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
     '        </div>',
     (showItinerary ? [
+      renderTripCalendar(),
       legsHtml,
       (st.legs.length > 0 ? [
         '        <div class="ch-legs-add">',
@@ -6683,6 +6878,47 @@ function attachEventListeners() {
       moveLeg(legId, -1);
     } else if (action === 'moveLegDown') {
       moveLeg(legId, 1);
+    } else if (action === 'stepDate') {
+      // ±1-day nudge (trip calendar, 2026-07-30). Clamped BOTH ways so the itinerary's date
+      // order can never be broken by a click: down stops at the leg-above's date (the same
+      // floor the calendar's min enforces), up stops at the first dated leg below — the
+      // calendar path can't create that inversion either (min), so neither may this one.
+      var dLeg = state.legs.find(function (l) { return l.id === legId; });
+      if (!dLeg || !dLeg.date) { /* steppers only render on dated legs */ }
+      else {
+        var dDir = parseInt(el.getAttribute('data-dir'), 10) || 0;
+        var dNext = tripCal.addDays(dLeg.date, dDir);
+        var dIdx = state.legs.indexOf(dLeg);
+        var dFloor = legDateFloor(dIdx);
+        var dCeil = null;
+        for (var dci = dIdx + 1; dci < state.legs.length; dci++) { if (state.legs[dci].date) { dCeil = state.legs[dci].date; break; } }
+        if (!dNext) { /* unparseable stored date — leave it to the calendar */ }
+        else if (dNext < dFloor) {
+          showToast(dFloor === fmtISODateLocal(new Date())
+            ? "Trip dates can't be in the past."
+            : 'This leg can’t start before the leg above it (' + dFloor + ').');
+        } else if (dCeil && dNext > dCeil) {
+          showToast('The leg below is already on ' + dCeil + ' — move that one first.');
+        } else {
+          updateLeg(legId, { date: dNext });
+        }
+      }
+    } else if (action === 'setDateRel') {
+      // "same day" / "next day" quick chips on an undated leg — an EXPLICIT one-tap choice
+      // relative to the dated leg above. Distinct from auto-guessing a date on addLeg(),
+      // which is deliberately forbidden: here the operator presses the button.
+      var rLeg = state.legs.find(function (l) { return l.id === legId; });
+      if (rLeg && !rLeg.date) {
+        var rIdx = state.legs.indexOf(rLeg);
+        var rBase = null;
+        for (var rbi = rIdx - 1; rbi >= 0; rbi--) { if (state.legs[rbi].date) { rBase = state.legs[rbi].date; break; } }
+        if (rBase) {
+          var rNext = tripCal.addDays(rBase, parseInt(el.getAttribute('data-rel'), 10) || 0);
+          var rToday = fmtISODateLocal(new Date());
+          if (rNext && rNext < rToday) rNext = rToday; // a stale reopened draft must not mint a past date
+          if (rNext) updateLeg(legId, { date: rNext });
+        }
+      }
     } else if (action === 'addStop' || action === 'removeStop' || action === 'andReturn') {
       // Multi-stop rides (Task 8). Every stop-list change goes through rebuildSegments
       // (structural invalidation, spec §5) and clears the 2-stop-only route-choice state
