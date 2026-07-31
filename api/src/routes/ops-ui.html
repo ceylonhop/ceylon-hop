@@ -4315,6 +4315,51 @@ function savePayload() {
   }, buildToolRequest());
 }
 
+/* A leg's identity ON THE WIRE — everything that decides which distances belong to it, and
+   deliberately NOT the distances themselves (those are what we're adopting). */
+function pricedLegKey(l) {
+  return [l.category || 'transfer', l.from || '', l.to || '', (l.stops || []).join('>')].join('|');
+}
+
+/* Adopt the distances /save had to resolve in order to price the quote.
+   The builder deliberately prices only its READY legs while one still has no distance (Defect A,
+   "Covers the ready legs"), but savePayload() sends the WHOLE itinerary and the server resolves
+   the rest — so the total it stored, and that the queue row shows, could be far above the number
+   the operator was reading. Nothing reconciled the two ($75 on screen, $266 stored, measured).
+   Filling the gaps here and re-pricing puts the screen on the total that was actually saved.
+   Never markDirty(): the server stored exactly this, and flagging it unsaved would re-arm
+   autosave and make every save trigger another one. */
+function adoptPricedLegs(sent, res) {
+  if (!res || !sent || !Array.isArray(res.legs) || !Array.isArray(sent.legs)) return;
+  if (res.legs.length !== sent.legs.length || sent.legs.length !== state.legs.length) return;
+  var changed = false;
+  var next = state.legs.map(function (leg, i) {
+    var got = res.legs[i];
+    if (!got) return leg;
+    // Edited while the save was in flight: these distances describe the OLD route and must never
+    // be written onto the new one.
+    if (pricedLegKey(toolLegPayload(leg)) !== pricedLegKey(sent.legs[i])) return leg;
+    var kms = Array.isArray(got.segmentKms) ? got.segmentKms
+      : (typeof got.distanceKm === 'number' && leg.segments.length === 1) ? [got.distanceKm] : null;
+    if (!kms || kms.length !== leg.segments.length) return leg;
+    var segChanged = false;
+    var segs = leg.segments.map(function (s, si) {
+      var km = Number(kms[si]);
+      // Only ever FILL a gap. A manual km is the operator's own number and outranks the server's;
+      // an already-resolved one is the same value anyway.
+      if (!(km > 0) || s.manual || Number(s.km) > 0) return s;
+      segChanged = true;
+      return Object.assign({}, s, { km: km, autoMatched: true });
+    });
+    if (!segChanged) return leg;
+    changed = true;
+    return Object.assign({}, leg, { segments: segs });
+  });
+  if (!changed) return;
+  state.legs = next;
+  refreshEstimate();
+}
+
 // Persist the quote's content. Because savePayload() carries state.savedId as `id`,
 // an already-saved quote is updated in place (same row, status preserved server-side);
 // a fresh one is inserted as a draft. Returns true on success. `opts.silent` skips the
@@ -4333,7 +4378,8 @@ async function saveQuote(opts) {
     return false;
   }
   var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
-  var res = await apiSave(savePayload());
+  var sent = savePayload();
+  var res = await apiSave(sent);
   // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
   // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
   // and every later edit would then overwrite A. Drop the result and report FAILURE: callers
@@ -4350,6 +4396,12 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    // Take on the distances the server had to resolve to price this. Without it the builder
+    // kept showing its PARTIAL total ("Covers the ready legs") while the stored quote — the
+    // queue row, the locked estimate, what the customer would be told — was priced on the FULL
+    // itinerary and could be far higher. adoptPricedLegs() re-prices when it changes anything,
+    // so the screen ends up on the number that was actually saved.
+    adoptPricedLegs(sent, res);
     state.unpriced = false; // a real save prices the quote — the shell marker is gone server-side
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
     // Clear a stale 'error' from an earlier failed autosave — this save just succeeded, so the
