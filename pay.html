@@ -23,6 +23,7 @@ function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
+<script src="phone-countries.js"></script>
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
 <style>
   /* The pay page (spec D10): a travel document, not a checkout. Everything on site.css
@@ -183,35 +184,83 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     document.getElementById('paybtn').addEventListener('click', renderDetails);
   }
 
-  // ── details step: only what the quote couldn't already tell us ──────────────────────
-  var FIELDS = [
-    ['firstName', 'First name', 'text'],
-    ['lastName', 'Last name', 'text'],
-    ['email', 'Email', 'email'],
-    ['whatsapp', 'WhatsApp number', 'tel'],
-    ['country', 'Country', 'text'],
-  ];
+  // ── details step: only what the quote couldn't already tell us. Country + phone use
+  // the SAME widget as the website checkout (booking.html step 4): a country select
+  // carrying the dial code, a LOCAL-number field, and the wizard's normaliser — so
+  // "+94…", "094…", "77…" and "9477…" all resolve to one honest whatsapp value. ──────
+  var COUNTRIES = window.PHONE_COUNTRIES || [['LK', 'Sri Lanka', '+94']];
+
+  // Longest-dial-code match, verbatim from booking.js matchDialCode.
+  function matchDialCode(digits){
+    var best = '';
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      var d = (COUNTRIES[i][2] || '').replace(/[^\d]/g, '');
+      if (d && digits.indexOf(d) === 0 && d.length > best.length) best = d;
+    }
+    return best;
+  }
+  // Split a prefilled international number into { country, number } for the widget.
+  function splitPrefill(whatsapp){
+    var raw = String(whatsapp || '').trim();
+    if (!raw) return { country: 'Sri Lanka', number: '' };
+    var digits = raw.replace(/[^\d]/g, '');
+    var dc = /^\s*\+/.test(raw) ? matchDialCode(digits) : '';
+    if (!dc) return { country: 'Sri Lanka', number: raw };
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      if ((COUNTRIES[i][2] || '').replace(/[^\d]/g, '') === dc) {
+        return { country: COUNTRIES[i][1], number: digits.slice(dc.length) };
+      }
+    }
+    return { country: 'Sri Lanka', number: digits };
+  }
+  // booking.js phoneParts, ported: the select's dial code + the typed number → one whatsapp.
+  function phoneParts(){
+    var countryEl = document.getElementById('f-country');
+    var phoneEl = document.getElementById('f-phone');
+    var country = (countryEl && countryEl.value ? countryEl.value : 'Sri Lanka').trim();
+    var selCode = '+94';
+    for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][1] === country) { selCode = COUNTRIES[i][2]; break; }
+    var selDigits = selCode.replace(/[^\d]/g, '');
+    var raw = (phoneEl && phoneEl.value ? phoneEl.value : '').trim();
+    var digits = raw.replace(/[^\d]/g, '');
+    if (/^\s*\+/.test(raw)) {
+      var dc = matchDialCode(digits);
+      return { country: country, whatsapp: '+' + digits, empty: !digits, _dc: dc };
+    }
+    var number = digits.replace(/^0+/, '');
+    if (selDigits && number.indexOf(selDigits) === 0 && number.length > selDigits.length) {
+      number = number.slice(selDigits.length); // typed the code too — don't double it
+    }
+    return { country: country, whatsapp: selCode + number, empty: !number };
+  }
+
   function renderDetails(){
     var pre = data.prefill || {};
-    var inputs = FIELDS.map(function(f){
-      var v = pre[f[0]] || '';
-      return '<div class="fld"><label for="f-' + f[0] + '">' + f[1] + '</label>'
-        + '<input id="f-' + f[0] + '" type="' + f[2] + '" value="' + esc(v) + '" '
-        + (f[0] === 'whatsapp' ? 'placeholder="+94 77 123 4567" ' : '')
-        + 'autocomplete="' + (f[0] === 'firstName' ? 'given-name' : f[0] === 'lastName' ? 'family-name' : f[0] === 'email' ? 'email' : f[0] === 'whatsapp' ? 'tel' : 'country-name') + '" /></div>';
+    var split = splitPrefill(pre.whatsapp);
+    var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
+    var options = ordered.map(function(c){
+      return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
+        + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
     }).join('');
     app.innerHTML =
       '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
-      + '<div class="ticket"><div class="t-main">' + inputs + '</div>'
+      + '<div class="ticket"><div class="t-main">'
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
+      + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
+      + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
       + '<button class="btn btn-cta pp-cta" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '</div></div>' + waLine();
-    // Focus the first empty box — usually email or country.
-    for (var i = 0; i < FIELDS.length; i++) {
-      var el = document.getElementById('f-' + FIELDS[i][0]);
+    // Focus the first empty box — usually email, or the number for email-contact quotes.
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
+    for (var i = 0; i < order.length; i++) {
+      var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
     }
     document.getElementById('gobtn').addEventListener('click', startPayment);
@@ -227,8 +276,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function startPayment(){
     var btn = document.getElementById('gobtn');
     btn.disabled = true; btn.textContent = 'Opening secure payment…';
-    var customer = {};
-    FIELDS.forEach(function(f){ customer[f[0]] = (document.getElementById('f-' + f[0]).value || '').trim(); });
+    var parts = phoneParts();
+    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    var customer = {
+      firstName: (document.getElementById('f-firstName').value || '').trim(),
+      lastName: (document.getElementById('f-lastName').value || '').trim(),
+      email: (document.getElementById('f-email').value || '').trim(),
+      whatsapp: parts.whatsapp,
+      country: parts.country,
+    };
     fetch(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ t: t, customer: customer }),

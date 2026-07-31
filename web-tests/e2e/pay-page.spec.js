@@ -88,15 +88,19 @@ test('chauffeur: the four shape facts, never a leg list', async ({ page }) => {
   await expect(page.locator('.hop')).toHaveCount(0);
 });
 
-test('the details step prefills what the quote knew and focuses the first gap', async ({ page }) => {
+test('the details step uses the wizard widget: country code select + local number', async ({ page }) => {
   await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
   await expect(page.locator('#f-firstName')).toHaveValue('Nimal');
-  await expect(page.locator('#f-whatsapp')).toHaveValue('+94770001111');
+  // "+94770001111" prefill splits into the LK dial code + a LOCAL number, like booking.html.
+  await expect(page.locator('#f-country')).toHaveValue('Sri Lanka');
+  await expect(page.locator('#f-phone')).toHaveValue('770001111');
   await expect(page.locator('#f-email')).toHaveValue('');
   await expect(page.locator('#f-email')).toBeFocused(); // first empty field
   await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
+  // The select shows dial codes the way the wizard does.
+  await expect(page.locator('#f-country option').first()).toContainText('+94');
 });
 
 test('paid: keepsake with reference, no way to pay again', async ({ page }) => {
