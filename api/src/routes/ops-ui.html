@@ -6756,10 +6756,25 @@ function runNumberTicks() {
     );
     // …and count the digits, not just fade the box they sit in. The fade said "this figure
     // changed"; it never said which way, which is the only thing the operator is reading a
-    // re-price for. _prevNum was stashed by the diff just before the swap.
-    countTo(el, el._prevNum, el.textContent);
-    el._prevNum = null;
+    // re-price for. _prevNums was stashed by the diff just before the swap.
+    countTo(el, el._prevNums);
+    el._prevNums = null;
   });
+}
+
+// Every text node under `el`, in document order. The tick counts these INDIVIDUALLY: the
+// elements it animates are the outermost matches, and an amount is a container — the USD text
+// plus a block-level LKR sub-line span (.ch-val-sub / .ch-total-lkr). Writing el.textContent
+// replaced those children with one flat text node, so the sub-line lost its display:block and
+// LKR rendered inline beside the USD — and the .ch-total-usd/.ch-total-lkr hooks disappeared
+// from the page until the next render rebuilt them (owner report 2026-07-31).
+function tickTextNodes(el) {
+  var out = [];
+  if (!el || !document.createTreeWalker) return out;
+  var walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  var n;
+  while ((n = walk.nextNode())) out.push(n);
+  return out;
 }
 
 /* Grow / collapse for the itinerary. The console has no site.js, so these are the ops-local
@@ -6803,34 +6818,54 @@ function collapseEl(el) {
    A stalled count must never strand a stale PRICE, so the true value is also written by a
    timer that does not depend on a single frame ever firing. */
 var OPS_NUM = /\d[\d,]*\.?\d*/g;
-function countTo(el, fromText, toText) {
-  if (!el || fromText == null || fromText === toText) return;
+/* `fromTexts` = the element's text-node strings as they were BEFORE the diff (stashed as
+   _prevNums). Counting is per TEXT NODE and writes node.nodeValue, never el.textContent —
+   see tickTextNodes for why. Nodes are paired positionally with the element's current text
+   nodes; a structural change (different node count) simply skips the count and leaves the
+   fade to carry the update, which is the same fallback as an unparseable figure. */
+function countTo(el, fromTexts) {
+  if (!el || !fromTexts || !fromTexts.length) return;
   try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* no matchMedia */ }
   if (document.hidden) return;
-  var a = String(fromText).match(OPS_NUM), b = String(toText).match(OPS_NUM);
-  if (!a || !b || a.length !== b.length) return;
-  var av = a.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
-  var bv = b.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
-  if (av.every(function (v, i) { return v === bv[i]; })) return;
-  var dp = b.map(function (n) { return (n.split('.')[1] || '').length; });
+  var nodes = tickTextNodes(el);
+  if (nodes.length !== fromTexts.length) return;
+  // One plan per text node that actually holds a changed, same-shaped set of figures.
+  var plans = [];
+  for (var i = 0; i < nodes.length; i++) {
+    var toText = nodes[i].nodeValue, fromText = fromTexts[i];
+    if (fromText == null || fromText === toText) continue;
+    var a = String(fromText).match(OPS_NUM), b = String(toText).match(OPS_NUM);
+    if (!a || !b || a.length !== b.length) continue;
+    var av = a.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
+    var bv = b.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
+    if (av.every(function (v, k) { return v === bv[k]; })) continue;
+    plans.push({
+      node: nodes[i], toText: toText, av: av, bv: bv,
+      dp: b.map(function (n) { return (n.split('.')[1] || '').length; }),
+    });
+  }
+  if (!plans.length) return;
   var dur = 420, t0 = performance.now();
   if (el._numRaf) cancelAnimationFrame(el._numRaf);
   if (el._numT) clearTimeout(el._numT);
   var land = function () {
     if (el._numRaf) cancelAnimationFrame(el._numRaf);
     el._numRaf = null; el._numT = null;
-    el.textContent = toText;   // the exact rendered string, never a rebuilt approximation
+    // the exact rendered strings, never a rebuilt approximation
+    plans.forEach(function (pl) { pl.node.nodeValue = pl.toText; });
   };
   el._numT = setTimeout(land, dur + 80);
   (function frame(now) {
     if (!el.isConnected) { land(); return; }   // diffed away mid-count — stop touching it
     var p = Math.min(1, (now - t0) / dur);
     var e = 1 - Math.pow(1 - p, 3);
-    var i = 0;
-    el.textContent = toText.replace(OPS_NUM, function () {
-      var v = av[i] + (bv[i] - av[i]) * e, d = dp[i];
-      i++;
-      return v.toFixed(d);
+    plans.forEach(function (pl) {
+      var i = 0;
+      pl.node.nodeValue = pl.toText.replace(OPS_NUM, function () {
+        var v = pl.av[i] + (pl.bv[i] - pl.av[i]) * e, d = pl.dp[i];
+        i++;
+        return v.toFixed(d);
+      });
     });
     if (p < 1) el._numRaf = requestAnimationFrame(frame); else land();
   })(t0);
@@ -7382,7 +7417,7 @@ function render() {
       // nothing travelling between them — the fade said "this changed" but never which way.
       // Stash the outgoing text so the tick can count from it.
       if (fromEl.nodeType === 1 && fromEl.matches && fromEl.matches(NUM_TICK_SELECTOR)) {
-        fromEl._prevNum = fromEl.textContent;
+        fromEl._prevNums = tickTextNodes(fromEl).map(function (n) { return n.nodeValue; });
       }
       return true;
     },
