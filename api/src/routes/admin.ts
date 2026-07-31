@@ -22,6 +22,8 @@ import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
+import { releaseWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundRepo } from '../db/refundRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
@@ -107,6 +109,9 @@ export function adminRoutes(deps: {
         console.error(`seat release failed for ${updated.reference}:`, err);
       }
     }
+    // A cancelled booking's source quote is no longer won — see services/quoteOutcome. Not
+    // for no_show: the fare is forfeited, so that one really was won. Best-effort.
+    if (to === 'cancelled') await releaseWonQuote(updated.id, 'Booking cancelled', deps);
     try {
       await notify(updated, email);
     } catch (err) {
@@ -168,6 +173,9 @@ export function adminRoutes(deps: {
       });
       const after = await bookings.get(c.req.param('id'));
       if (!after) throw new Error(`booking_not_found_after_refund: ${c.req.param('id')}`);
+      // Money fully returned ⇒ the quote behind it was not won after all. A PARTIAL refund
+      // leaves it won: we kept part of the fare, so the business did happen.
+      if (outcome.bookingFullyRefunded) await releaseWonQuote(after.id, 'Booking refunded', deps);
       if (outcome.bookingFullyRefunded && after.mode === 'shared' && before.status !== 'cancelled') {
         try {
           await departures.releaseSeats({
@@ -220,7 +228,7 @@ export function adminRoutes(deps: {
 
   const MarkPaid = z
     .object({
-      method: z.enum(['cash', 'bank_transfer', 'manual_other']),
+      method: z.enum(MANUAL_PAYMENT_METHODS),
       reference: z.string().trim().min(1).max(200).optional(),
     })
     .strict();

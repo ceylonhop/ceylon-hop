@@ -33,9 +33,11 @@ async function seed(bookings: InMemoryBookingRepo, overrides: { travelDate?: str
 
 describe('ops bookings endpoints', () => {
   let app: ReturnType<typeof createApp>; let bookings: InMemoryBookingRepo; let bid: string;
+  let rideOps: InMemoryRideOpsRepo;
   beforeEach(async () => {
     bookings = new InMemoryBookingRepo();
-    app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
+    rideOps = new InMemoryRideOpsRepo();
+    app = createApp({ bookings, rideOps, auth, adminApiKey: 'adminkey' });
     bid = (await seed(bookings)).id;
     await bookings.setStatus(bid, 'payment_pending');
   });
@@ -83,7 +85,7 @@ describe('ops bookings endpoints', () => {
     expect(flags.status).toBe(400);
   });
 
-  it('lists payment_pending and paid bookings as the ops queue, ordered by travel date', async () => {
+  it('lists every post-cart booking as the ops queue, ordered by travel date', async () => {
     const paid = await seed(bookings, { travelDate: '2026-07-10' });
     await bookings.setStatus(paid.id, 'payment_pending');
     await bookings.setStatus(paid.id, 'paid');
@@ -99,21 +101,44 @@ describe('ops bookings endpoints', () => {
     await bookings.setStatus(completed.id, 'paid');
     await bookings.setStatus(completed.id, 'confirmed');
     await bookings.setStatus(completed.id, 'in_progress');
-    await bookings.setStatus(completed.id, 'completed'); // excluded (booking-level)
+    await bookings.setStatus(completed.id, 'completed'); // closed, but still listed
 
     const res = await app.request('/admin/ops/bookings', { headers: await hdr() });
     const rows = await res.json();
-    // Queue = bid (payment_pending, travelDate 2026-06-22, from beforeEach) + paid + pending.
-    // draft and completed are excluded. Sorted by travelDate ascending.
-    expect(rows).toHaveLength(3);
+    // Queue = bid (payment_pending, travelDate 2026-06-22, from beforeEach) + completed +
+    // pending + paid. Only `draft` is excluded — a half-finished web cart is not ops work.
+    // A closed booking stays listed so it can still be opened; the UI files it under Closed.
+    expect(rows).toHaveLength(4);
     expect(rows[0].id).toBe(bid);
     expect(rows[0].travelDate).toBe('2026-06-22');
     expect(rows[0].stage).toBe('awaiting_payment');
-    expect(rows[1].travelDate).toBe('2026-07-05');
-    expect(rows[1].stage).toBe('awaiting_payment');
-    expect(rows[2].travelDate).toBe('2026-07-10');
-    expect(rows[2].stage).toBe('paid');
+    expect(rows[1].travelDate).toBe('2026-07-01');
+    expect(rows[1].id).toBe(completed.id);
+    expect(rows[2].travelDate).toBe('2026-07-05');
+    expect(rows[2].stage).toBe('awaiting_payment');
+    expect(rows[3].travelDate).toBe('2026-07-10');
+    expect(rows[3].stage).toBe('paid');
     expect(rows[0].channel).toBe('website');
+    expect(rows.find((r: { id: string }) => r.id === draft.id)).toBeUndefined();
+  });
+
+  it('keeps a cancelled or refunded booking in the queue, stamped closed', async () => {
+    const cancelled = await seed(bookings, { travelDate: '2026-07-02' });
+    await bookings.setStatus(cancelled.id, 'payment_pending');
+    await bookings.setStatus(cancelled.id, 'cancelled');
+
+    // A refund lands on a booking whose ride_ops row had already advanced — the closed
+    // status must win, or the row invites another "Confirm pickup".
+    const refunded = await seed(bookings, { travelDate: '2026-07-03' });
+    await bookings.setStatus(refunded.id, 'payment_pending');
+    await bookings.setStatus(refunded.id, 'paid');
+    await rideOps.setStatus(refunded.id, 'vehicle_confirmed');
+    await bookings.setStatus(refunded.id, 'refunded');
+
+    const rows = await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json();
+    const byId = (id: string) => rows.find((r: { id: string }) => r.id === id);
+    expect(byId(cancelled.id).stage).toBe('cancelled');
+    expect(byId(refunded.id).stage).toBe('refunded');
   });
 
   it('reflects ride_ops fulfilment as stage for paid bookings', async () => {
@@ -141,6 +166,67 @@ describe('ops bookings endpoints', () => {
       method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'completed' }),
     });
     expect(bad.status).toBe(400);
+  });
+
+  // The ops pipeline is the only thing that drives a booking to completion, so without this
+  // mirror booking.status never left 'paid': no trip was ever recorded as having happened.
+  it('mirrors each fulfilment milestone onto the booking lifecycle', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const step = async (to: string, expected: string) => {
+      expect((await app.request(`/admin/ops/bookings/${b.id}/status`, {
+        method: 'POST', headers: await hdr(), body: JSON.stringify({ to }),
+      })).status).toBe(200);
+      expect((await bookings.get(b.id))!.status).toBe(expected);
+    };
+    await step('vehicle_confirmed', 'confirmed');
+    // No booking counterpart — the money row holds still rather than inventing a transition.
+    await step('pickup_confirmed', 'confirmed');
+    await step('on_trip', 'in_progress');
+    await step('completed', 'completed');
+  });
+
+  it('a fulfilment backtrack leaves the booking lifecycle alone', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    for (const to of ['vehicle_confirmed', 'pickup_confirmed']) {
+      await app.request(`/admin/ops/bookings/${b.id}/status`, {
+        method: 'POST', headers: await hdr(), body: JSON.stringify({ to }),
+      });
+    }
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+    const back = await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    });
+    expect(back.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('confirmed'); // never walks backwards
+  });
+
+  it('mirrors a no-show, and mirroring never fails the ops action it rides on', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    });
+    const res = await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'no_show' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('no_show');
+  });
+
+  // The drawer's "payment link" was copy with nothing behind it — an ops-booked trip had no
+  // way to reach a card form at all. This is the link ops actually pastes into WhatsApp.
+  it('hands ops a payment link while the booking is chargeable, and none once it is not', async () => {
+    const detail = async (id: string) => (await (await app.request(`/admin/ops/bookings/${id}`, { headers: await hdr() })).json());
+    const pending = await detail(bid);
+    expect(pending.payLink).toContain('/manage.html?t=');
+
+    await bookings.setStatus(bid, 'paid');
+    expect((await detail(bid)).payLink).toBeNull();
   });
 
   it('has no coordinator, manifest, or rides routes', async () => {

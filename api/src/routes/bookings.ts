@@ -469,8 +469,15 @@ export function bookingRoutes(deps: {
     ) {
       return c.json({ error: 'not_chargeable', status: booking.status }, 409);
     }
+    // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
+    // customer-safe view projection deliberately withholds it. The caller has already proved
+    // it holds a valid link token for exactly this booking, so this tells it nothing new —
+    // and without it the manage page cannot complete a payment it is authorised to start.
     return c.json(
-      { checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()) },
+      {
+        checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()),
+        bookingId: booking.id,
+      },
       200,
     );
   });

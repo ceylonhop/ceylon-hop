@@ -196,6 +196,9 @@ export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
+  // The quote a booking was converted from, if any. Reverse of convertedBookingId, so a
+  // booking that dies can take its quote's "won" outcome down with it (services/quoteOutcome).
+  findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
   // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
   // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
@@ -334,6 +337,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
   async get(id: string): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
     return row && !row.deletedAt ? { ...row } : null;
+  }
+
+  async findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null> {
+    for (const row of this.rows.values()) {
+      if (!row.deletedAt && row.convertedBookingId === bookingId) return { ...row };
+    }
+    return null;
   }
 
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {

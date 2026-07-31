@@ -1390,15 +1390,18 @@ const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('e
 const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
 const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
 
-const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Completed'];
+const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Closed'];
 const dayGroup=t=>{
-  if(t.stage==='completed')return 'Completed';
+  /* Every closed outcome files together — a cancelled or refunded booking has a travel date
+     that has not stopped being "tomorrow", and dating it into the live groups would put a
+     dead booking at the top of the day's work. */
+  if(CLOSED.includes(t.stage))return 'Closed';
   if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
   if(t.date===TODAY)return 'Today';
   if(t.date===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
-const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Completed:'done'};
+const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
    channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
@@ -1412,6 +1415,10 @@ const STAGE={
   on_trip:{label:'On trip',short:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
   completed:{label:'Completed',short:'Done',c:'#7c7a73',cbg:'#eeece4'},
   no_show:{label:'No-show',short:'No-show',c:'#b23214',cbg:'#fbe7e2'},
+  /* Closed on the money side rather than the fulfilment side — these come from
+     booking.status, not ride_ops, and never appear as a step in the pipeline rail. */
+  cancelled:{label:'Cancelled',short:'Cancelled',c:'#8a6a63',cbg:'#f2eae8'},
+  refunded:{label:'Refunded',short:'Refunded',c:'#5b6b7a',cbg:'#e9eef2'},
   /* Ride board only — a van still collecting names. No payment to chase and no
      vehicle to assign until it locks at cutoff, so it sits outside the booking
      pipeline entirely (deliberately absent from STAGES and NEXT). */
@@ -1438,7 +1445,16 @@ const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop
 const PAY_METHODS=[['cash','Cash'],['bank_transfer','Bank transfer'],['manual_other','Other']];
 const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[1]:m;};
 
-const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.\n\nHere's your secure link again to lock it in 🌴 Reply if you have any questions!`;
+/* The link is interpolated, not alluded to: the old copy said "here's your secure link again"
+   and shipped no URL at all, so every reminder ops sent pointed at nothing. Without a link
+   (a booking that can no longer be charged) the sentence about one is dropped rather than
+   left as a promise nobody can keep. */
+const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.`
+  +(link?`\n\nYou can pay securely by card here: ${link}`:'')
+  +`\n\nReply if you have any questions! 🌴`;
+/* Stages a booking can still legally be cancelled from — the booking machine allows
+   payment_pending/paid/confirmed → cancelled, but not once the trip is under way. */
+const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed'];
 
 /* attention logic — what an ops agent must act on */
 const reason=t=>{
@@ -1446,12 +1462,14 @@ const reason=t=>{
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
+  /* A closed booking has no outstanding action, whatever it looked like on the way out. */
+  if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
 };
-const isAttn=t=>!!reason(t)&&t.stage!=='completed';
+const isAttn=t=>!!reason(t);
 
 const GROUPS=[
   {id:'all',label:'All open',c:'#241f1d'},
@@ -1459,9 +1477,9 @@ const GROUPS=[
   {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
   {id:'ready',label:'Ready',c:'#0a8f86'},
   {id:'trip',label:'On trip',c:'#1f6fd0'},
-  {id:'done',label:'Completed',c:'#7c7a73'},
+  {id:'done',label:'Closed',c:'#7c7a73'},
 ];
-const CLOSED=['completed','no_show'];
+const CLOSED=['completed','no_show','cancelled','refunded'];
 const inGroup=(t,g)=>{
   if(g==='all')return !CLOSED.includes(t.stage);
   if(g==='pay')return t.stage==='awaiting_payment';
@@ -2328,14 +2346,27 @@ function renderSheet(){
        bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
        cash or bank transfer, and no webhook is ever coming for it. This wording holds either
        way — link or hand-collected. */
-    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> It can still arrive through the payment link, or be ${recordedBy} once the customer has paid directly. Nudge them if it's overdue.</div></div>
-      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${settle}</div>`;
+    const link=d&&d.payLink;
+    /* Only offer the link once the backend has actually issued one. It used to be advertised
+       unconditionally, in copy alone, for a booking that had no payable link anywhere. */
+    const linkBtn=link?`<button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy payment link</button>`:'';
+    /* Both halves of the sentence have to be true for whoever is reading it: the link half
+       only when one exists, and `recordedBy` names who can settle when the reader can't. */
+    const arrive=link?`It can still arrive through the payment link, or be ${recordedBy}`:`It can be ${recordedBy}`;
+    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${linkBtn}${settle}</div>`;
   }else if(nx){
     pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
       +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
       +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button>`
       +`</div>`;
   }else{pipeAction='';}
+  /* Cancelling is a payments:act action and only legal while the trip hasn't started — the
+     booking machine has no in_progress → cancelled edge, so offering it there would just 409.
+     Before this the tool had no cancel at all: a customer who called off their trip left ops
+     either refunding a booking nobody had paid for, or leaving it live forever. */
+  const canCancel=state.caps&&state.caps.includes('payments:act')&&CANCELLABLE.includes(t.stage);
+  if(canCancel)pipeAction+=`<div class="sheet-actions" style="margin-top:10px"><button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button></div>`;
   sh.innerHTML=`
     <div class="sheet-h"><button class="x" data-act="close">✕</button>
       <div class="ey"><span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}</div>
@@ -2613,7 +2644,7 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','refundrequest','refundconfirm','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundcancel'].includes(act))return;
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
@@ -2621,6 +2652,25 @@ document.addEventListener('click',async e=>{
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
+    case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
+    case 'cancelbooking':{
+      /* payments:act, re-checked here for the same reason markpaid does: a sheet rendered
+         before a session change must not be able to POST what it should no longer offer. */
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
+      el.disabled=true;
+      try{await adminApi.post(`/bookings/${id}/cancel`);toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      catch(err){
+        if(err.message==='auth')break;
+        if(el.isConnected)el.disabled=false;
+        /* illegal_transition means someone else moved it (or the trip already started) —
+           a state, not a fault, so say what happened rather than "something went wrong". */
+        if(err.message==='illegal_transition'){toast('Too late to cancel — the booking has already moved on');await refreshRow(id);break;}
+        window.opsReportError&&window.opsReportError('booking cancel',err);
+        toast('Could not cancel');
+      }
+      break;
+    }
     case 'markpaid':{
       /* Money lives on the capability-gated /admin API, not /admin/ops — the same split the
          refund actions use. Re-checked here because a sheet rendered before a session change
@@ -2646,7 +2696,7 @@ document.addEventListener('click',async e=>{
       }
       break;
     }
-    case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+    case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
       if(!state.caps||!state.caps.includes('payments:act'))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
