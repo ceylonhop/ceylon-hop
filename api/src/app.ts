@@ -43,6 +43,7 @@ import {
   type QuoteConversionRepo,
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
+import { quotePayRoutes } from './routes/quotePay';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
@@ -176,6 +177,9 @@ export function createApp(deps: AppDeps = {}) {
 
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
+  // Quote pay links (spec 2026-07-31): public bearer-token routes; same per-IP budget as
+  // the other public write surfaces.
+  app.use('/quotes/pay/*', rateLimit(rl));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -297,6 +301,11 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  app.route('/quotes/pay', quotePayRoutes({
+    quotes, bookings, payments,
+    linkSecret: bookingLinkSecret,
+    checkoutNow: deps.checkoutNow,
+  }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
