@@ -168,6 +168,22 @@ describe('InMemoryQuoteRepo', () => {
     expect((await repo.list()).length).toBe(1); // still exactly one quote
   });
 
+  // A content write is a NEW REVISION of the quote, and anything holding the old one must be
+  // able to notice. Pay links pin {quoteId, revision} (bookingToken.ts) and refuse a token
+  // whose revision has moved — without this bump that guard is unreachable, because update()
+  // is the only way an ops quote's content ever changes. Owner-caught, 2026-07-31: a link sent
+  // at one price stayed payable at another.
+  it('update bumps the revision, so a link pinned to the old one goes stale', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 4048 }));
+    expect(q.revision).toBe(1);
+    const once = await repo.update(q.id, sample({ totalCents: 5200 }));
+    expect(once?.revision).toBe(2);
+    const twice = await repo.update(q.id, sample({ totalCents: 6100 }));
+    expect(twice?.revision).toBe(3);
+    expect((await repo.get(q.id))?.revision).toBe(3); // persisted, not just returned
+  });
+
   it('update returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
   });

@@ -467,6 +467,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
+    // See postgresQuoteRepo.update(): a content write is a new revision, and that bump is what
+    // makes a pay link minted against the old price refuse to be paid.
+    row.revision += 1;
     row.updatedAt = new Date();
     return { ...row };
   }

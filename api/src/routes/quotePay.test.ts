@@ -73,7 +73,11 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     const quotes = new InMemoryQuoteRepo();
     const q = await readyQuote(quotes);
     await quotes.update(q.id, { customerContact: 'nimal@x.com' } as never);
-    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    // Re-read for the revision: the edit above bumped it, and minting always signs the CURRENT
+    // one (routes/internalQuote.ts reads quote.revision fresh). Signing the captured `q.revision`
+    // would mint a link that is already stale — which is the point of the bump, not a bug here.
+    const edited = await quotes.get(q.id);
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, edited!.revision, SECRET))).json();
     expect(body.prefill.email).toBe('nimal@x.com');
     expect(body.prefill.whatsapp ?? '').toBe('');
   });
@@ -93,6 +97,43 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision + 1, SECRET))).json();
     expect(body.state).toBe('revised');
     expect(body.copy).toBeUndefined();
+  });
+
+  // The test above fabricates the mismatch (q.revision + 1). This one earns it, by driving the
+  // real editing path an operator uses — reopen to draft, re-save, re-approve — because that is
+  // where the guard was found unreachable (owner report, 2026-07-31): update() left the revision
+  // at 1, so a link sent at $219 was still payable once the quote had become $1,019.
+  it('revised: a quote reopened, re-priced and re-approved retires the link already sent', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+    const q = await readyQuote(quotes, { status: 'ready' });
+    const sent = signQuotePayToken(q.id, q.revision, SECRET); // this URL is now in WhatsApp
+
+    await quotes.patch(q.id, { status: 'draft' });
+    await quotes.update(q.id, { ...(await quotes.get(q.id))!, totalCents: 101900 } as never);
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    expect((await quotes.get(q.id))!.totalCents).toBe(101900); // the price really did move
+
+    const body = await (await view(app, sent)).json();
+    expect(body.state).toBe('revised');
+    expect(body.totals).toBeUndefined(); // never quotes the new amount under the old link
+    // …and the door is shut, not just the window: paying with the retired link is refused.
+    const res = await start(app, sent);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_revised');
+  });
+
+  // The operator's side of the same story: re-minting after an edit must hand back a DIFFERENT
+  // URL. A byte-identical one is how this shipped — ops copied "the new link" and re-sent the old.
+  it('a link re-minted after an edit is not the one that was already sent', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes, { status: 'ready' });
+    const sent = signQuotePayToken(q.id, q.revision, SECRET);
+    await quotes.patch(q.id, { status: 'draft' });
+    await quotes.update(q.id, { ...(await quotes.get(q.id))!, totalCents: 101900 } as never);
+    const after = await quotes.get(q.id);
+    expect(signQuotePayToken(after!.id, after!.revision, SECRET)).not.toBe(sent);
   });
 
   it('unavailable: garbage token, unknown quote, and every non-payable status', async () => {

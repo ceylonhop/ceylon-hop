@@ -393,6 +393,13 @@ export class PostgresQuoteRepo implements QuoteRepo {
         internalNotes: q.internalNotes ?? null,
         requestedService: q.requestedService ?? null,
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
+        // A content write is a NEW REVISION, and whatever is holding the old one must be able
+        // to tell. Pay links pin {quoteId, revision}; the bump is what lets quotePay.ts refuse a
+        // link minted against a price that has since changed. Unconditional on purpose — this is
+        // the ops save path, and "did the total really move?" is not a question a safety guard
+        // should be asking. Saves happen only while draft/changes_requested, so autosave churn
+        // costs nothing: the counter simply climbs while the quote is being worked on.
+        revision: sql`${quotes.revision} + 1`,
         updatedAt: new Date(),
       })
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
