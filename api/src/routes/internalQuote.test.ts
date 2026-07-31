@@ -2092,3 +2092,51 @@ describe('unpriced shells cannot leave draft', () => {
     expect((await quotes.get(q.id))!.assignedTo).toBe('op@x.com');
   });
 });
+
+describe('reviving an expired quote', () => {
+  // Local helper: the patchReq above is scoped to another describe and always sends the
+  // founder cookie; these cases need to vary the actor to prove the gate.
+  const patchAs = (app: App, path: string, body: unknown, ck = FOUNDER_COOKIE) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify(body) });
+
+  // Context: the sweep closes idle 'sent' quotes. Before 2026-07-31 that was terminal, so a
+  // background clock could strand the team's real work with no way to revise and re-send.
+  async function expiredQuote(quotes: InMemoryQuoteRepo) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {}, requestedService: 'private',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+    // Freeze a rate card the way approval does, so we can prove the revive drops it.
+    await quotes.patch(q.id, { rateLock: { rateCardJson: { version: 'STALE-CARD' }, rateLockedUntil: null } });
+    await quotes.patch(q.id, { status: 'expired' });
+    return q.id;
+  }
+
+  it('an ops-role holder can reopen it to draft — no founder needed', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    const res = await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'draft' }, cookie('op@x.com'));
+    expect(res.status).toBe(200);
+    expect((await quotes.get(id))?.status).toBe('draft');
+  });
+
+  it('reviving drops the frozen card, so it re-prices at today’s rates', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    expect((await quotes.get(id))?.rateCardJson).toMatchObject({ version: 'STALE-CARD' });
+    await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'draft' });
+    const revived = await quotes.get(id);
+    expect(revived?.rateCardJson).toBeNull();
+    // …and it is no longer counted as decided.
+    expect(revived?.decidedAt).toBeNull();
+  });
+
+  it('still refuses the moves that were never legal from expired', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    const res = await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'sent' });
+    expect(res.status).toBe(409);
+  });
+});

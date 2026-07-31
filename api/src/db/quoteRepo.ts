@@ -20,7 +20,12 @@ const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
   sent:              ['draft'], // reopen-to-edit a sent quote (founder-gated in the route)
   won:               [],
   lost:              [],
-  expired:           [],
+  // Reopen-to-edit an EXPIRED quote (2026-07-31). Expiry is applied by a background sweep,
+  // not by a person, so a terminal 'expired' meant the clock could silently strand real work
+  // with no way back — the operator could only mark it won or lost, never revise and re-send.
+  // Reopening drops the frozen rate card (see the route), so a revived quote re-prices at
+  // today's rates and can never carry a months-old locked price back to a customer.
+  expired:           ['draft'],
 };
 export function canTransition(from: QuoteStatus, to: QuoteStatus): boolean {
   if (DECIDED.includes(to) && from !== 'draft') return true; // outcome flip from any live state
@@ -409,7 +414,16 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (patch.status) {
       row.status = patch.status;
       if (patch.status === 'sent' && !row.sentAt) row.sentAt = now;
-      if (DECIDED.includes(patch.status) && !row.decidedAt) row.decidedAt = now;
+      // Write-once WHILE decided: an outcome flip (won→lost when a booking is cancelled)
+      // deliberately keeps the original decision date, so correcting an outcome never moves
+      // the row between analytics windows. But returning to an editable state means the quote
+      // is no longer decided at all — leaving the stamp would make a revived-then-won quote
+      // report as won on the day it EXPIRED. Clear it and let the next decision stamp fresh.
+      if (DECIDED.includes(patch.status)) {
+        if (!row.decidedAt) row.decidedAt = now;
+      } else {
+        row.decidedAt = null;
+      }
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;

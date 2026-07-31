@@ -6,7 +6,14 @@ import type { QuoteRepo } from '../db/quoteRepo';
 // ops quotes lock at approval with rate_locked_until = null, so they carry no rate-lock expiry.
 // Web quotes are deliberately out of scope here — their pricing already rolls to the current
 // card after the lock via rateCardFor(); see api/src/quote/rateLock.ts.
-export const SENT_QUOTE_TTL_MS = 30 * 24 * 3600 * 1000; // 30 days
+// Raised 30 → 180 days (owner, 2026-07-31). The 30-day figure assumed 'sent' meant "the
+// customer has it and has gone quiet". In practice the team parks quotes in 'sent' as a
+// working state while the public site is dark — 44 of them, ~85% of the live pipeline, the
+// oldest 18 days old when this was measured. At 30 days the sweep would have started
+// closing real work in under a fortnight. 180 days keeps the hygiene intent for genuinely
+// dead quotes without touching an active pipeline; expiry is also now reversible (see
+// quoteRepo's ALLOWED_TRANSITIONS), so hitting it is no longer a one-way door either.
+export const SENT_QUOTE_TTL_MS = 180 * 24 * 3600 * 1000; // 180 days
 
 // Close ops quotes that have sat unanswered in 'sent' past the TTL. Pure over (now, repos) like
 // the other scheduler sweeps so it's deterministic in tests; the cron tick drives it with the

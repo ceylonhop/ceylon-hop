@@ -353,9 +353,13 @@ export class PostgresQuoteRepo implements QuoteRepo {
                 patch.status === 'sent'
                   ? sql`coalesce(${quotes.sentAt}, now())`
                   : sql`${quotes.sentAt}`,
+              // Mirrors InMemoryQuoteRepo: keep the stamp while the quote stays decided (an
+              // outcome flip must not move it between analytics windows), but clear it when
+              // the quote returns to an editable state — a reopened quote is not decided, and
+              // a stale stamp would report a revived-then-won quote as won on its expiry date.
               decidedAt: DECIDED.includes(patch.status)
                 ? sql`coalesce(${quotes.decidedAt}, now())`
-                : sql`${quotes.decidedAt}`,
+                : sql`null`,
             }
           : {}),
       })

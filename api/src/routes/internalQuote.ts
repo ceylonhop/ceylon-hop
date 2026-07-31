@@ -902,6 +902,10 @@ export function internalQuoteRoutes(deps: {
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
       // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
       // customer for changes, so it needs the same approval authority as sending it did.
+      // Reviving an EXPIRED quote is deliberately NOT founder-gated, unlike pulling back a
+      // 'sent' one: nobody chose to close it — a background sweep did — so restoring it is
+      // undoing the system's action, not overriding a person's. It also re-prices at the live
+      // card (rateLock above), so a revived quote can never carry a stale price to a customer.
       const reopeningSent = current.status === 'sent' && EDITABLE.includes(to);
       if ((to === 'ready' || to === 'changes_requested' || reopeningSent) && !can(c.get('identity').role, 'quote:approve')) {
         return c.json({ error: 'approve_forbidden' }, 403);
@@ -912,8 +916,12 @@ export function internalQuoteRoutes(deps: {
         // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
         // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
-      } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
-        rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
+      } else if ((current.status === 'ready' || current.status === 'sent' || current.status === 'expired') && EDITABLE.includes(to)) {
+        // Reopen-to-edit (from ready, sent, OR expired) unlocks; sending keeps the lock.
+        // 'expired' matters most here: a quote can now sit closed for months before someone
+        // revives it, and re-pricing against the card it was frozen at would quote a stale
+        // rate. Dropping the lock re-prices at today's card, which is the whole point.
+        rateLock = null;
       }
       // Auto-assign on hand-off (owner, 2026-07-26). These are the two moments a quote changes
       // hands, and leaving them manual meant approved quotes sat in "Ready to send" still held by
