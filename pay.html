@@ -96,6 +96,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .next{margin-top:14px;background:var(--cream);border-radius:11px;padding:11px 13px;text-align:left}
   .next b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
   .next ul{margin:0;padding-left:17px;font-size:.8rem;line-height:1.75;color:var(--ink-soft)}
+
+  /* PayHere interstitial */
+  .pp-loading{text-align:center;padding:44px 0 20px}
+  .pp-spin{width:44px;height:44px;border-radius:50%;border:3.5px solid var(--line);border-top-color:var(--accent);margin:0 auto 16px;animation:ppspin .8s linear infinite}
+  @keyframes ppspin{to{transform:rotate(360deg)}}
+  .pp-loading h2{font-family:var(--display);font-weight:800;font-size:1.35rem;margin:0 0 4px}
+  .pp-loading .amt{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:10px 0 2px}
+  .pp-loading p{font-size:.83rem;color:var(--ink-soft);margin:4px 0 0}
 </style>
 </head>
 <body>
@@ -116,6 +124,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var t = new URLSearchParams(location.search).get('t');
   var data = null;         // last /view payload
   var booking = null;      // { bookingId, checkoutToken } once /start succeeds
+  var typed = null;        // raw form values, so a payment failure restores what they typed
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
   function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
@@ -237,6 +246,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderDetails(){
     var pre = data.prefill || {};
     var split = splitPrefill(pre.whatsapp);
+    // A failed/dismissed payment returns here — with everything as the customer left it,
+    // never reset to the prefill.
+    if (typed) {
+      pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
+      split = { country: typed.country, number: typed.phone };
+    }
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
     var options = ordered.map(function(c){
       return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
@@ -266,7 +281,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     document.getElementById('gobtn').addEventListener('click', startPayment);
   }
 
+  // "We're loading PayHere" — shown the moment the customer commits, so a slow network
+  // never reads as a dead button. PayHere's own modal replaces it when ready.
+  function renderLoading(){
+    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+      + '<h2>Opening secure payment…</h2>'
+      + '<p>Taking you to PayHere to pay by card.</p>'
+      + '<div class="amt">' + esc(data.totals.usd) + '</div>'
+      + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
+  }
+
   function fail(msg){
+    // If the interstitial (or PayHere) is on screen, rebuild the details step first —
+    // with the customer's typed values — then surface the error on it.
+    if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
     var e = document.getElementById('payerr');
     if (e) { e.textContent = msg; e.hidden = false; }
     var b = document.getElementById('gobtn') || document.getElementById('paybtn');
@@ -274,17 +302,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 
   function startPayment(){
-    var btn = document.getElementById('gobtn');
-    btn.disabled = true; btn.textContent = 'Opening secure payment…';
     var parts = phoneParts();
-    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
-    var customer = {
+    typed = {
       firstName: (document.getElementById('f-firstName').value || '').trim(),
       lastName: (document.getElementById('f-lastName').value || '').trim(),
       email: (document.getElementById('f-email').value || '').trim(),
+      country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
+      phone: (document.getElementById('f-phone').value || '').trim(),
+    };
+    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    var customer = {
+      firstName: typed.firstName,
+      lastName: typed.lastName,
+      email: typed.email,
       whatsapp: parts.whatsapp,
       country: parts.country,
     };
+    renderLoading();
     fetch(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ t: t, customer: customer }),

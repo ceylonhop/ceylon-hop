@@ -124,3 +124,28 @@ test('revised and unavailable: soft states, no button, nothing charged', async (
   await expect(page.locator('.st-title')).toContainText('no longer active');
   await expect(page.locator('body')).toContainText('WhatsApp');
 });
+
+test('continuing shows the PayHere interstitial; a failure restores the typed form', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
+  // /start answers slowly, then with a named-field error — long enough for the
+  // interstitial to be assertable, honest enough to exercise the recovery path.
+  await page.route('**/quotes/pay/start', async (r) => {
+    await new Promise((res) => setTimeout(res, 600));
+    await r.fulfill({ status: 400, contentType: 'application/json',
+      body: JSON.stringify({ error: 'bad_request', message: 'customer.email: Invalid email' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-email').fill('nimal@@typo');
+  await page.locator('#gobtn').click();
+
+  // The interstitial: spinner, copy, and the amount — never a silent dead button.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Opening secure payment…');
+  await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
+
+  // The failure returns to the details step WITH what the customer typed, plus the error.
+  await expect(page.locator('#gobtn')).toBeVisible();
+  await expect(page.locator('#f-email')).toHaveValue('nimal@@typo');
+  await expect(page.locator('#f-phone')).toHaveValue('770001111'); // the fixture's prefill, kept
+  await expect(page.locator('#payerr')).toContainText('email');
+});
