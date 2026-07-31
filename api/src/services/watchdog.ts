@@ -40,14 +40,25 @@ export async function runWatchdog(
   const { bookings, log, alerts, email, baseUrl, linkSecret, payments } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
-  const stuck = pending.filter((b) => {
-    // Ops-booked bookings (channel 'whatsapp') are paid out-of-band / settled via the
-    // payment-link flow, not web checkout — the abandoned-cart sweep (ops alert + customer
-    // "finish paying" email) must never fire for them.
-    if (b.channel === 'whatsapp') return false;
+  const stuck: typeof pending = [];
+  for (const b of pending) {
     const age = now.getTime() - Date.parse(b.createdAt);
-    return age >= STUCK_PENDING_MS && age < STUCK_PENDING_MAX_MS;
-  });
+    if (age < STUCK_PENDING_MS || age >= STUCK_PENDING_MAX_MS) continue;
+    // Ops-booked bookings (channel 'whatsapp') were exempt wholesale when every one of
+    // them was settled by hand. Pay links (2026-07-31) changed that: once a customer has
+    // STARTED a gateway checkout on one, an abandoned payment is a real event again — the
+    // same abandoned cart the website flow gets chased for. So the exemption now applies
+    // only while no gateway payment is pending; hand-settled bookings never have one.
+    if (b.channel === 'whatsapp') {
+      const gatewayPending = payments
+        ? (await payments.findByBookingId(b.id)).some(
+            (p) => p.status === 'pending' && (p.provider === 'payhere' || p.provider === 'fake'),
+          )
+        : false;
+      if (!gatewayPending) continue;
+    }
+    stuck.push(b);
+  }
   let recoveryEmails = 0;
   for (const b of stuck) {
     await alerts.send({

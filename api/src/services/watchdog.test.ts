@@ -183,3 +183,37 @@ describe('runWatchdog', () => {
     const res = await runWatchdog(later(31), { bookings, log: new InMemoryNotificationLogRepo(), alerts });
     expect(res.recoveryEmails).toBe(0);
   });
+
+describe('pay links re-arm the abandoned-checkout watch', () => {
+  it('a whatsapp booking with a STARTED gateway checkout is watched again', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const payments = new InMemoryPaymentRepo();
+    await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: b.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `checkout:${b.id}`,
+    }); // pending — the customer opened PayHere and walked away
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const res = await runWatchdog(later(31), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts, payments,
+      email, baseUrl: 'https://ceylonhop.com', linkSecret: 'sek',
+    });
+    expect(res.stuckPending).toBe(1);
+    expect(res.recoveryEmails).toBe(1);
+    expect(email.sent[0].to).toBe('maya@example.com');
+  });
+
+  it('a whatsapp booking with NO payments stays exempt — cash is still collected by hand', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    await bookings.setStatus(b.id, 'payment_pending');
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts, payments: new InMemoryPaymentRepo(),
+    });
+    expect(res.stuckPending).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+});

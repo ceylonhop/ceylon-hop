@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pay for your trip · Ceylon Hop</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
+<link rel="stylesheet" href="site.css">
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<script src="analytics.js"></script>
+<script src="consent.js" defer></script>
+<script>
+window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
+<script src="phone-countries.js"></script>
+<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<style>
+  /* The pay page (spec D10): a travel document, not a checkout. Everything on site.css
+     tokens; the money button is the wizard's .btn-cta verbatim. The column caps narrow —
+     a payment page has one job, and width would dilute it. */
+  .pp-top{border-bottom:1px solid var(--line);background:var(--paper)}
+  .pp-topin{max-width:470px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
+  .pp-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
+  /* The real logo glyph, same file + sizing rule as the site header's cmark() (site.js). */
+  .pp-cmark{width:32px;height:32px;object-fit:contain;flex:none}
+  .pp-word{font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--accent-deep);letter-spacing:-.01em}
+  .pp-wa{font-size:.78rem;color:var(--ink-soft)}
+  .pp-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+  .pp-wrap{max-width:470px;margin:0 auto;padding:26px 18px 60px}
+  /* The name leads. It used to be the faintest text on the page, buried mid-sentence under a
+     huge route title — a payment page should open by telling you it is YOURS. Display face,
+     brand teal, sized as a kicker so it reads before the headline without competing with it. */
+  .pp-hello{font-family:var(--display);font-weight:800;font-size:1.3rem;line-height:1.15;
+    letter-spacing:-.01em;color:var(--accent-deep);margin-bottom:3px}
+  .pp-title{font-family:var(--display);font-weight:800;font-size:1.9rem;line-height:1.12;letter-spacing:-.015em;margin:4px 0 2px}
+  .pp-sub{font-size:.85rem;color:var(--ink-soft);margin-bottom:16px}
+
+  .ticket{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
+  .t-main{padding:16px 18px 14px}
+  .t-ref{font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
+  .fact{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-soft,#f0ece1);font-size:.86rem}
+  .fact:last-of-type{border-bottom:0}
+  .fact .k{color:var(--ink-soft);flex:none}
+  .fact .v{font-weight:700;text-align:right}
+  .fact .v small{display:block;font-weight:600;font-size:.7rem;color:var(--ink-faint)}
+  .hops{margin-top:10px}
+  .hop{display:grid;grid-template-columns:16px 1fr;gap:9px}
+  .hop-rail{display:flex;flex-direction:column;align-items:center}
+  .hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+  .hop-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
+  .hop-line{width:2px;flex:1;min-height:12px;background:var(--line)}
+  .hop-t{font-weight:700;font-size:.88rem;line-height:1.25}
+  .hop-d{font-family:var(--mono,ui-monospace,monospace);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}
+  .included{margin-top:11px;background:var(--cream);border-radius:11px;padding:10px 12px;font-size:.78rem;line-height:1.6;color:var(--ink-soft)}
+  .included b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
+  .perf{position:relative;border-top:2px dashed var(--line)}
+  .perf:before,.perf:after{content:'';position:absolute;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--cream);border:1px solid var(--line)}
+  .perf:before{left:-10px}.perf:after{right:-10px}
+  .t-stub{padding:13px 18px 18px}
+  .tot{display:flex;justify-content:space-between;align-items:baseline}
+  .tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .tot .v{font-family:var(--display);font-weight:800;font-size:2rem;letter-spacing:-.02em}
+  .pp-cta{width:100%;margin-top:13px}
+  .pp-cta[disabled]{opacity:.6;cursor:default}
+  .paysub{text-align:center;font-size:.73rem;color:var(--ink-soft);margin-top:10px}
+  .badges{display:flex;justify-content:center;gap:6px;margin-top:10px}
+  .badges .card-badge{width:auto;padding:0 8px;font-size:.6rem;font-weight:800;color:var(--ink-soft)}
+  .pp-err{margin-top:10px;font-size:.82rem;color:#b23214;font-weight:650;text-align:center}
+  .pp-note{text-align:center;font-size:.75rem;color:var(--ink-soft);margin-top:14px}
+  .pp-note a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+
+  /* details step */
+  .dt-h{font-family:var(--display);font-weight:800;font-size:1.15rem;margin:0 0 2px}
+  .dt-sub{font-size:.8rem;color:var(--ink-soft);margin:0 0 12px}
+  .fld{margin-bottom:10px}
+  .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
+  .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
+  .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
+
+  /* states */
+  .st-wrap{text-align:center;padding:26px 0 6px}
+  .st-badge{width:56px;height:56px;border-radius:50%;display:inline-grid;place-items:center;font-size:1.5rem;margin-bottom:12px}
+  .st-badge.ok{background:#e6f4ec;color:#2f9558;box-shadow:0 0 0 8px rgba(47,149,88,.08)}
+  .st-badge.warn{background:#fbf0d8;color:#c7841f}
+  .st-title{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1.15;margin:0 0 4px}
+  .st-sub{font-size:.85rem;color:var(--ink-soft)}
+  .refchip{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-weight:600;font-size:.9rem;color:var(--accent-deep);background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:12px 0}
+  .next{margin-top:14px;background:var(--cream);border-radius:11px;padding:11px 13px;text-align:left}
+  .next b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
+  .next ul{margin:0;padding-left:17px;font-size:.8rem;line-height:1.75;color:var(--ink-soft)}
+
+  /* PayHere interstitial */
+  .pp-loading{text-align:center;padding:44px 0 20px}
+  .pp-spin{width:44px;height:44px;border-radius:50%;border:3.5px solid var(--line);border-top-color:var(--accent);margin:0 auto 16px;animation:ppspin .8s linear infinite}
+  @keyframes ppspin{to{transform:rotate(360deg)}}
+  .pp-loading h2{font-family:var(--display);font-weight:800;font-size:1.35rem;margin:0 0 4px}
+  .pp-loading .amt{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:10px 0 2px}
+  .pp-loading p{font-size:.83rem;color:var(--ink-soft);margin:4px 0 0}
+</style>
+</head>
+<body>
+<header class="pp-top"><div class="pp-topin">
+  <a class="pp-brand" href="index.html">
+    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <span class="pp-word">Ceylon Hop</span>
+  </a>
+  <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
+</div></header>
+<div class="pp-wrap"><div id="app"><p style="color:var(--ink-soft)">Loading your trip…</p></div></div>
+
+<script>
+(function(){
+  'use strict';
+  var app = document.getElementById('app');
+  var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
+  var t = new URLSearchParams(location.search).get('t');
+  var data = null;         // last /view payload
+  var booking = null;      // { bookingId, checkoutToken } once /start succeeds
+  var typed = null;        // raw form values, so a payment failure restores what they typed
+
+  function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
+  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+
+  // ── states ──────────────────────────────────────────────────────────────────────────
+  function renderUnavailable(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">!</div>'
+      + '<h1 class="st-title">This quote is no longer active</h1>'
+      + '<p class="st-sub">It may have been updated or closed. Message us and we’ll sort it out.</p></div>' + waLine();
+  }
+  function renderRevised(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">&#8635;</div>'
+      + '<h1 class="st-title">This quote has been updated</h1>'
+      + '<p class="st-sub">This link points at an older version, so nothing has been charged. '
+      + 'We’ll WhatsApp you a fresh link.</p></div>' + waLine();
+  }
+  function renderPaid(p){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">You’re booked' + (p && p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
+      + (p && p.title ? '<p class="st-sub">' + esc(p.title) + '</p>' : '')
+      + (p && p.reference ? '<div><span class="refchip">' + esc(p.reference) + '</span></div>' : '')
+      + (p && p.amountUsd ? '<p class="st-sub">Paid ' + esc(p.amountUsd) + ' · confirmation emailed.</p>' : '')
+      + '<div class="next"><b>What happens next</b><ul>'
+      + '<li>We confirm your driver &amp; vehicle and send their details.</li>'
+      + '<li>A reminder arrives 2 days before pick-up.</li>'
+      + '<li>Need anything? Just reply on WhatsApp.</li></ul></div>'
+      + '</div>' + waLine();
+  }
+
+  // ── the ticket ──────────────────────────────────────────────────────────────────────
+  function ticketBody(c){
+    if (c.legs && c.legs.length) {
+      var rows = c.legs.map(function(l, i){
+        var last = i === c.legs.length - 1;
+        return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
+          + (last ? '' : '<span class="hop-line"></span>') + '</div>'
+          + '<div><div class="hop-t">' + esc(l.route) + '</div>'
+          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed') + '</div></div></div>';
+      }).join('');
+      return '<div class="hops">' + rows + '</div>';
+    }
+    return c.facts.map(function(f){
+      return '<div class="fact"><span class="k">' + esc(f.k) + '</span><span class="v">' + esc(f.v)
+        + (f.sub ? '<small>' + esc(f.sub) + '</small>' : '') + '</span></div>';
+    }).join('');
+  }
+
+  function renderPayable(){
+    var c = data.copy, tt = data.totals;
+    app.innerHTML =
+      '<div class="pp-hello">' + (c.greetingName ? 'Hi ' + esc(c.greetingName) + ',' : 'Here’s your trip.') + '</div>'
+      + '<h1 class="pp-title">' + esc(c.title) + '</h1>'
+      + '<p class="pp-sub">' + esc(c.subtitle) + '</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + ticketBody(c)
+      + '<div class="included"><b>Included</b>' + esc(c.includedText) + '</div>'
+      + '</div><div class="perf"></div><div class="t-stub">'
+      + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
+      + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
+      + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
+      + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
+      + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+      + '<p class="pp-err" id="payerr" hidden></p>'
+      + '</div></div>' + waLine();
+    document.getElementById('paybtn').addEventListener('click', renderDetails);
+  }
+
+  // ── details step: only what the quote couldn't already tell us. Country + phone use
+  // the SAME widget as the website checkout (booking.html step 4): a country select
+  // carrying the dial code, a LOCAL-number field, and the wizard's normaliser — so
+  // "+94…", "094…", "77…" and "9477…" all resolve to one honest whatsapp value. ──────
+  var COUNTRIES = window.PHONE_COUNTRIES || [['LK', 'Sri Lanka', '+94']];
+
+  // Longest-dial-code match, verbatim from booking.js matchDialCode.
+  function matchDialCode(digits){
+    var best = '';
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      var d = (COUNTRIES[i][2] || '').replace(/[^\d]/g, '');
+      if (d && digits.indexOf(d) === 0 && d.length > best.length) best = d;
+    }
+    return best;
+  }
+  // Split a prefilled international number into { country, number } for the widget.
+  function splitPrefill(whatsapp){
+    var raw = String(whatsapp || '').trim();
+    if (!raw) return { country: 'Sri Lanka', number: '' };
+    var digits = raw.replace(/[^\d]/g, '');
+    var dc = /^\s*\+/.test(raw) ? matchDialCode(digits) : '';
+    if (!dc) return { country: 'Sri Lanka', number: raw };
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      if ((COUNTRIES[i][2] || '').replace(/[^\d]/g, '') === dc) {
+        return { country: COUNTRIES[i][1], number: digits.slice(dc.length) };
+      }
+    }
+    return { country: 'Sri Lanka', number: digits };
+  }
+  // booking.js phoneParts, ported: the select's dial code + the typed number → one whatsapp.
+  function phoneParts(){
+    var countryEl = document.getElementById('f-country');
+    var phoneEl = document.getElementById('f-phone');
+    var country = (countryEl && countryEl.value ? countryEl.value : 'Sri Lanka').trim();
+    var selCode = '+94';
+    for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][1] === country) { selCode = COUNTRIES[i][2]; break; }
+    var selDigits = selCode.replace(/[^\d]/g, '');
+    var raw = (phoneEl && phoneEl.value ? phoneEl.value : '').trim();
+    var digits = raw.replace(/[^\d]/g, '');
+    if (/^\s*\+/.test(raw)) {
+      var dc = matchDialCode(digits);
+      return { country: country, whatsapp: '+' + digits, empty: !digits, _dc: dc };
+    }
+    var number = digits.replace(/^0+/, '');
+    if (selDigits && number.indexOf(selDigits) === 0 && number.length > selDigits.length) {
+      number = number.slice(selDigits.length); // typed the code too — don't double it
+    }
+    return { country: country, whatsapp: selCode + number, empty: !number };
+  }
+
+  function renderDetails(){
+    var pre = data.prefill || {};
+    var split = splitPrefill(pre.whatsapp);
+    // A failed/dismissed payment returns here — with everything as the customer left it,
+    // never reset to the prefill.
+    if (typed) {
+      pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
+      split = { country: typed.country, number: typed.phone };
+    }
+    var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
+    var options = ordered.map(function(c){
+      return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
+        + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
+    }).join('');
+    app.innerHTML =
+      '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
+      + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
+      + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
+      + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '</div>'
+      + '<div class="perf"></div><div class="t-stub">'
+      + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
+      + '<button class="btn btn-cta pp-cta" id="gobtn">Continue to payment</button>'
+      + '<p class="pp-err" id="payerr" hidden></p>'
+      + '</div></div>' + waLine();
+    // Focus the first empty box — usually email, or the number for email-contact quotes.
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
+    for (var i = 0; i < order.length; i++) {
+      var el = document.getElementById(order[i]);
+      if (el && !el.value) { el.focus(); break; }
+    }
+    document.getElementById('gobtn').addEventListener('click', startPayment);
+  }
+
+  // "We're loading PayHere" — shown the moment the customer commits, so a slow network
+  // never reads as a dead button. PayHere's own modal replaces it when ready.
+  function renderLoading(){
+    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+      + '<h2>Taking you to PayHere…</h2>'
+      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
+      + '<div class="amt">' + esc(data.totals.usd) + '</div>'
+      + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
+  }
+
+  function fail(msg){
+    // If the interstitial (or PayHere) is on screen, rebuild the details step first —
+    // with the customer's typed values — then surface the error on it.
+    if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
+    var e = document.getElementById('payerr');
+    if (e) { e.textContent = msg; e.hidden = false; }
+    var b = document.getElementById('gobtn') || document.getElementById('paybtn');
+    if (b) { b.disabled = false; b.textContent = b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere'; }
+  }
+
+  function startPayment(){
+    var parts = phoneParts();
+    typed = {
+      firstName: (document.getElementById('f-firstName').value || '').trim(),
+      lastName: (document.getElementById('f-lastName').value || '').trim(),
+      email: (document.getElementById('f-email').value || '').trim(),
+      country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
+      phone: (document.getElementById('f-phone').value || '').trim(),
+    };
+    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    var customer = {
+      firstName: typed.firstName,
+      lastName: typed.lastName,
+      email: typed.email,
+      whatsapp: parts.whatsapp,
+      country: parts.country,
+    };
+    renderLoading();
+    fetch(A + '/quotes/pay/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t: t, customer: customer }),
+    }).then(function(r){
+      if (r.ok) return r.json();
+      return r.json().catch(function(){ return {}; }).then(function(x){
+        if (x.error === 'quote_revised') { renderRevised(); throw { handled: true }; }
+        if (x.error === 'already_paid') { load(); throw { handled: true }; }
+        throw new Error(x.message || 'We couldn’t start your payment just now — no charge was made.');
+      });
+    }).then(function(st){
+      booking = st;
+      return fetch(A + '/bookings/' + st.bookingId + '/checkout', {
+        method: 'POST', headers: { authorization: 'Bearer ' + st.checkoutToken },
+      }).then(function(r){
+        if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.');
+        return r.json();
+      });
+    }).then(function(checkout){
+      if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
+      if (!/payhere\.lk/.test(checkout.checkoutUrl)) {
+        // Dev/fake gateway: be honest rather than simulate a payment that never happened.
+        throw new Error('Payments aren’t enabled on this environment yet — nothing was charged.');
+      }
+      if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
+      var payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
+      payhere.onCompleted = function(){ awaitSettle(); };
+      payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged. Tap to try again.'); };
+      payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
+      payhere.startPayment(payment);
+    }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
+  }
+
+  // The webhook is the source of truth: poll until it lands, then show the keepsake.
+  function awaitSettle(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+      + '<h1 class="st-title">Confirming your payment…</h1>'
+      + '<p class="st-sub">This usually takes a few seconds.</p></div>';
+    var tries = 0;
+    (function poll(){
+      tries++;
+      fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){ return r.json(); }).then(function(v){
+        if (v.state === 'paid') { renderPaid(v.paid); return; }
+        if (tries < 30) { setTimeout(poll, 2000); return; }
+        app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+          + '<h1 class="st-title">Payment received?</h1>'
+          + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
+          + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
+      }).catch(function(){ if (tries < 30) setTimeout(poll, 2000); });
+    })();
+  }
+
+  // ── boot ────────────────────────────────────────────────────────────────────────────
+  function load(){
+    fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t || '')).then(function(r){
+      if (!r.ok) throw new Error('view ' + r.status);
+      return r.json();
+    }).then(function(v){
+      data = v;
+      if (v.state === 'paid') return renderPaid(v.paid);
+      if (v.state === 'revised') return renderRevised();
+      if (v.state === 'payable') return renderPayable();
+      return renderUnavailable();
+    }).catch(function(){ renderUnavailable(); });
+  }
+  if (!t) { renderUnavailable(); } else { load(); }
+})();
+</script>
+</body>
+</html>

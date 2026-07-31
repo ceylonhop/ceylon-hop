@@ -660,3 +660,29 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect(await payments.findByBookingId(b.id)).toHaveLength(1);
   });
 });
+
+describe('mark-paid claims the linked quote', () => {
+  it('recording cash on a pay-link booking flips its quote to won', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adminApiKey: KEY, auth, quotes, bookings });
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: { engine: {} }, result: {},
+    });
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    await quotes.patch(q.id, { status: 'sent' });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await quotes.patch(q.id, { convertedBookingId: b.id });
+
+    const res = await app.request(`/admin/bookings/${b.id}/mark-paid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({ method: 'bank_transfer', reference: 'slip-9' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+});
