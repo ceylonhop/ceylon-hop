@@ -89,3 +89,26 @@
 .pp-loading h2{font-family:var(--display);font-weight:800;font-size:1.35rem;margin:0 0 4px}
 .pp-loading .amt{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:10px 0 2px}
 .pp-loading p{font-size:.83rem;color:var(--ink-soft);margin:4px 0 0}
+
+/* ── First-paint skeleton ───────────────────────────────────────────────────────
+   This page is where a customer lands straight after paying, so the wait is the
+   moment they are most anxious — and it opened on a bare line of text that then
+   jumped as the real ticket replaced it. The skeleton is the TICKET's own shape
+   (header, facts, perforation, stub), so the layout is already correct when the
+   data arrives and only the content changes. Reuses the palette above; no new
+   colours, no new geometry.
+   ────────────────────────────────────────────────────────────────────────────── */
+.tk-sk i{display:block;border-radius:6px;
+  background:linear-gradient(100deg,var(--cream),var(--paper),var(--cream));
+  background-size:200% 100%;animation:tksh 1.15s linear infinite}
+.tk-sk .sk-hello{width:34%;height:13px;margin-bottom:12px}
+.tk-sk .sk-title{width:76%;height:30px;margin-bottom:10px}
+.tk-sk .sk-sub{width:46%;height:13px;margin-bottom:20px}
+.tk-sk .sk-ref{width:38%;height:11px}
+.tk-sk .sk-stat{width:78px;height:19px;border-radius:999px}
+.tk-sk .sk-k{width:30%;height:12px}
+.tk-sk .sk-v{width:22%;height:12px}
+.tk-sk .sk-tot-l{width:26%;height:11px}
+.tk-sk .sk-tot-v{width:34%;height:28px}
+@keyframes tksh{to{background-position:-200% 0}}
+@media(prefers-reduced-motion:reduce){.tk-sk i{animation:none}}

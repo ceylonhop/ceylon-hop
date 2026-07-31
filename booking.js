@@ -855,10 +855,17 @@ window.toggleFlexDate=function(){
 // service chooser (trip mode)
 window.pickSvc=function(svc){
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()) return;
+  if(svc===state.svc) return;                 // re-pressing the active option shouldn't animate
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
   state.payPlan = 'full';
-  render();
+  // Switching service rewrites the whole summary — different rows, different total, often a
+  // different height. Doing that in one frame made the panel look like it was replaced rather
+  // than re-priced, and shifted everything below it without warning. Travel between the two
+  // heights instead; the figures inside are already counting (setNum).
+  const card=document.querySelector('.summary .s-body') || document.querySelector('.summary');
+  if(card && window.CH && CH.motion) CH.motion.resize(card, render, { duration:300 });
+  else render();
 };
 function ensureRepriceEl(){
   let el=document.getElementById('reprice-note');

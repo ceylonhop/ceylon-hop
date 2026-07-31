@@ -3946,7 +3946,35 @@ function moveLeg(id, dir) {
   state.legs = next;
   markDirty();
   refreshEstimate();
-  render();
+  // Two legs swapping used to teleport: the list simply WAS in a different order, so on a long
+  // itinerary the operator had to re-read it to confirm the move went the way they meant.
+  // morphdom keys leg cards on data-leg-id, so the nodes genuinely move rather than being
+  // rebuilt — exactly the condition FLIP needs to slide them past each other.
+  flipLegs(render);
+}
+
+/* FLIP for the itinerary: measure every leg, let `mutate` re-render, measure again, then offset
+   each card back to where it was and animate the offset away. Only cards that actually moved are
+   touched; one that stayed put costs nothing. */
+function flipLegs(mutate) {
+  var sel = '.ch-leg[data-leg-id]';
+  if (opsReduce()) { mutate(); return; }
+  var first = {};
+  document.querySelectorAll(sel).forEach(function (el) {
+    first[el.getAttribute('data-leg-id')] = el.getBoundingClientRect();
+  });
+  mutate();
+  document.querySelectorAll(sel).forEach(function (el) {
+    var from = first[el.getAttribute('data-leg-id')];
+    if (!from || typeof el.animate !== 'function') return;
+    var to = el.getBoundingClientRect();
+    var dy = from.top - to.top, dx = from.left - to.left;
+    if (Math.abs(dy) < 1 && Math.abs(dx) < 1) return;
+    el.animate(
+      [{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }],
+      { duration: 320, easing: OPS_EASE }
+    );
+  });
 }
 
 function dupLeg(id) {

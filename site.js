@@ -444,5 +444,36 @@
     });
   }
 
-  window.CH.motion = { enter, exit, resize, tweenNumber, details, reduce, EASE };
+  /* FLIP: run `mutate`, then slide every child from where it WAS to where it now is.
+     Reordering a list by dragging used to end with every row teleporting to its new position —
+     the drop confirmed that something changed but not what, so on a five-leg itinerary you had
+     to re-read the whole list to find your own edit. Sliding the rows means the change is
+     legible without reading.
+
+     First (measure) → mutate → Last (measure) → Invert (offset each row back to where it was)
+     → Play (animate the offset away). Rows keyed so the same DOM node is tracked across a
+     re-render; anything unkeyed or newly created is simply left alone. */
+  function flip(container, mutate, opts){
+    opts = opts || {};
+    const key = opts.key || 'data-flip-key';
+    if(!container || reduce()){ mutate(); return; }
+    const first = new Map();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      first.set(el.getAttribute(key), el.getBoundingClientRect());
+    });
+    mutate();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      const from = first.get(el.getAttribute(key));
+      if(!from || typeof el.animate !== 'function') return;
+      const to = el.getBoundingClientRect();
+      const dx = from.left - to.left, dy = from.top - to.top;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // didn't actually move
+      el.animate(
+        [{ transform:`translate(${dx}px, ${dy}px)` }, { transform:'none' }],
+        { duration: opts.duration || 320, easing: EASE }
+      );
+    });
+  }
+
+  window.CH.motion = { enter, exit, resize, tweenNumber, details, flip, reduce, EASE };
 })();
