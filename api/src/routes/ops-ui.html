@@ -547,6 +547,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-status-pill.tone-red { color: #c0362a; background: #fbe8e6; border-color: #f4cec9; }
 .qv .ch-status-pill.tone-muted { color: #8a8378; background: #f1efea; border-color: #e6e2da; }
 /* ---------- Review banner ---------- */
+/* Just-copied. Deliberately NOT the .ch-btn:disabled treatment (opacity .45), which says
+   "you can't do this" — the operator just did it successfully. Teal-tinted and confident,
+   inert only because there is nothing more to press for a moment. */
+.qv .ch-btn-copied:disabled { opacity: 1; cursor: default; border-color: var(--teal); color: var(--teal-d); background: color-mix(in srgb, var(--teal) 12%, transparent); }
 .qv .ch-paylink-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; }
 .qv .ch-paylink-lbl { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
 .qv .ch-paylink-url { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--cream); border-radius: 8px; padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--ink); }
@@ -3322,6 +3326,9 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
+var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
+var _payLinkCopiedT = null;
+var _payLinkShowRow = false;  // fallback only — the URL row appears when the clipboard write fails
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
 var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
@@ -4231,7 +4238,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -4431,14 +4438,55 @@ async function mintPayLink() {
     showToast('Could not create the payment link', 'error');
   }
 }
+/* "Payment link" copies. It used to reveal a bar above the builder holding the URL, a Copy
+   button and the SANDBOX chip — so getting a link into WhatsApp was press, look up, press again,
+   and the bar then sat there for the rest of the session. The button now does the whole job in
+   one press: mint if needed, copy, say so, and go quiet.
+   The SANDBOX warning moves into the toast rather than being dropped. It is not decoration — a
+   sandbox link takes test-card money and still marks a real booking Paid, so it must never be
+   pasted to a customer in the belief it is live. It rides as an ERROR-kind toast to get the
+   alert mark; "copied" is not the part that needs emphasis. */
+function payLinkToast() {
+  var live = _payLink && _payLink.mode === 'live';
+  if (live) showToast('Payment link copied');
+  else showToast('Payment link copied — SANDBOX, test cards only', 'error');
+}
 function copyPayLink() {
-  if (!_payLink) return;
-  if (navigator.clipboard) navigator.clipboard.writeText(_payLink.url).catch(function(){});
-  showToast('Payment link copied');
+  if (!_payLink) return false;
+  var ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(_payLink.url).catch(function () { _payLinkShowRow = true; render(); });
+      ok = true;
+    }
+  } catch (e) { ok = false; }
+  if (!ok) { _payLinkShowRow = true; render(); return false; }  // no clipboard API — fall back to the row
+  payLinkToast();
+  _payLinkCopied = true;
+  clearTimeout(_payLinkCopiedT);
+  // Inactive, but not forever: an operator who loses the clipboard needs it back. Long enough to
+  // read as "done", short enough that a second paste isn't a dead end.
+  _payLinkCopiedT = setTimeout(function () { _payLinkCopied = false; render(); }, 2600);
+  render();
+  return true;
+}
+
+/* The action bar's "Payment link" press. Two paths, and the difference matters:
+   - Already minted (the common case): copy SYNCHRONOUSLY. clipboard.writeText needs the click's
+     transient user activation, and awaiting a network round-trip first can spend it — Safari in
+     particular then rejects the write silently.
+   - Not minted yet: mint, then try. If the write is refused after the await, copyPayLink falls
+     back to showing the row so the operator can still get the URL by hand. */
+async function payLinkPress() {
+  if (_payLink) { copyPayLink(); return; }
+  await mintPayLink();
+  if (_payLink) copyPayLink();
 }
 
 function renderPayLinkRow() {
-  if (!_payLink) return '';
+  // Only when copying failed. The happy path never shows this — the link goes straight to the
+  // clipboard and the toast says so.
+  if (!_payLink || !_payLinkShowRow) return '';
   var sandbox = _payLink.mode !== 'live'
     ? '<span class="ch-paylink-sandbox">SANDBOX — test cards only</span>'
     : '';
@@ -4560,7 +4608,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
-  _payLink = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -4707,7 +4755,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -6434,20 +6482,28 @@ function renderActionBar() {
       needCount ? (needCount === 1 ? '1 thing is still missing — press to see it' : needCount + ' things are still missing — press to see them') : null);
   };
   var SAVE = B('saveDraft', 'Save', 'ch-btn-outline'); // persist edits, keep status
+  /* Payment link. After a successful copy the button says so and goes inert for a couple of
+     seconds — the press needs an answer, and the answer is on the control you pressed rather
+     than only in a toast that may be off to the side of where you are looking. It comes BACK
+     rather than staying dead: losing the clipboard is common, and a permanently spent button
+     would be a dead end. */
+  var PAYLINK = _payLinkCopied
+    ? B('mintPayLink', 'Link copied ✓', 'ch-btn-outline ch-btn-copied', true)
+    : B('mintPayLink', 'Payment link', 'ch-btn-outline', false, 'Copies the customer payment link to your clipboard');
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
     // before it can be Approved (no self-approve straight from a draft). Approve appears only in
     // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), PAYLINK, B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK, B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), B('mintPayLink', 'Payment link', 'ch-btn-outline')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), B('mintPayLink', 'Payment link', 'ch-btn-outline'), B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), PAYLINK); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK, B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
@@ -7637,7 +7693,7 @@ function attachEventListeners() {
     } else if (action === 'markSent') {
       runAction(action, markSent);
     } else if (action === 'mintPayLink') {
-      runAction(action, mintPayLink);
+      runAction(action, payLinkPress);
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'markWon') {
@@ -7649,7 +7705,7 @@ function attachEventListeners() {
       runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
-  _payLink = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
       render();
     } else if (action === 'reopenToDraft') {
       runAction(action, reopenToDraft);
