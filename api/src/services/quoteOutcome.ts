@@ -37,3 +37,27 @@ export async function releaseWonQuote(
     return null;
   }
 }
+
+// The other direction (spec D6, 2026-07-31): payment SETTLING is what wins a quote. The
+// pay-link flow stamps convertedBookingId at pay-commit but deliberately leaves the quote's
+// status alone — a booking sitting in Awaiting payment is not business won. When money
+// actually lands (PayHere webhook, or ops recording cash via mark-paid), this flips the
+// quote to won. Only from ready|sent: ready because payment can land before ops marks
+// sent; never from a decided state — a lost/expired quote that somehow gets paid is a
+// human situation, not one a hook should rewrite. Best-effort like releaseWonQuote: the
+// money is the durable fact and a bookkeeping failure must never break settlement.
+export async function claimWonQuote(
+  bookingId: string,
+  deps: { quotes?: QuoteRepo },
+): Promise<boolean> {
+  if (!deps.quotes) return false;
+  try {
+    const quote = await deps.quotes.findByConvertedBookingId(bookingId);
+    if (!quote || (quote.status !== 'ready' && quote.status !== 'sent')) return false;
+    await deps.quotes.patch(quote.id, { status: 'won', updatedBy: 'system:payment-settled' });
+    return true;
+  } catch (err) {
+    console.error(`claiming the won quote for booking ${bookingId} failed:`, err);
+    return false;
+  }
+}
