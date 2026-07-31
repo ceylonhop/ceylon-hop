@@ -298,6 +298,9 @@
     if(opts.breadcrumbs) mountBreadcrumbs(opts.breadcrumbs);
     mountWA();
     initReveal();
+    // Every page gets animated <details> — the FAQ is the only user today, but this is the
+    // right place for it: any page that grows one later is covered without a second thought.
+    if(window.CH && CH.motion) CH.motion.details();
   };
 })();
 
@@ -419,5 +422,58 @@
   }
 
   window.CH = window.CH || {};
-  window.CH.motion = { enter, exit, resize, tweenNumber, reduce, EASE };
+  /* Upgrade native <details> so the panel travels open instead of snapping. The FAQ's summary
+     marker already rotates on a .2s transition — someone intended this to feel like opening —
+     but the panel itself appeared in one frame, so the icon animated and the content did not.
+
+     Intercepting the summary click (rather than listening for `toggle`, which fires after the
+     box has already resized) lets resize() measure both states and travel between them. Under
+     reduced motion we don't preventDefault at all, so the browser's own instant behaviour and
+     all of its keyboard/AT semantics are left completely untouched. */
+  function details(root){
+    (root || document).querySelectorAll('details').forEach(function(d){
+      if(d._chDetails) return;
+      d._chDetails = true;
+      const sum = d.querySelector('summary');
+      if(!sum) return;
+      sum.addEventListener('click', function(e){
+        if(reduce()) return;                       // native open/close, no interception
+        e.preventDefault();                        // we own the state change for this gesture
+        resize(d, function(){ d.open = !d.open; }, { duration: 260 });
+      });
+    });
+  }
+
+  /* FLIP: run `mutate`, then slide every child from where it WAS to where it now is.
+     Reordering a list by dragging used to end with every row teleporting to its new position —
+     the drop confirmed that something changed but not what, so on a five-leg itinerary you had
+     to re-read the whole list to find your own edit. Sliding the rows means the change is
+     legible without reading.
+
+     First (measure) → mutate → Last (measure) → Invert (offset each row back to where it was)
+     → Play (animate the offset away). Rows keyed so the same DOM node is tracked across a
+     re-render; anything unkeyed or newly created is simply left alone. */
+  function flip(container, mutate, opts){
+    opts = opts || {};
+    const key = opts.key || 'data-flip-key';
+    if(!container || reduce()){ mutate(); return; }
+    const first = new Map();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      first.set(el.getAttribute(key), el.getBoundingClientRect());
+    });
+    mutate();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      const from = first.get(el.getAttribute(key));
+      if(!from || typeof el.animate !== 'function') return;
+      const to = el.getBoundingClientRect();
+      const dx = from.left - to.left, dy = from.top - to.top;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // didn't actually move
+      el.animate(
+        [{ transform:`translate(${dx}px, ${dy}px)` }, { transform:'none' }],
+        { duration: opts.duration || 320, easing: EASE }
+      );
+    });
+  }
+
+  window.CH.motion = { enter, exit, resize, tweenNumber, details, flip, reduce, EASE };
 })();

@@ -740,6 +740,16 @@ function flagIncompleteLeg(i){
   setTimeout(()=>card.classList.remove('leg-bad'),2200);
 }
 
+// Count a summary stat from whatever is on screen to its new value. Unlike the price (which
+// only counts on a vehicle switch, where the traveller is watching), these are safe to count on
+// every update: they change when the itinerary changes, which is exactly when you want to see
+// them move.
+function setStat(id, next){
+  const el=document.getElementById(id);
+  if(!el) return;
+  if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
+  else el.textContent = next;
+}
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
   let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
@@ -758,11 +768,14 @@ function updateSummary(opts={}){
     ? `${dated[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}${dated.length>1?' – '+dated[dated.length-1].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):', '+dated[0].getFullYear()}${paxText}`
     : `Dates flexible${paxText}`;
 
+  // These four sit directly under a price that now counts, so leaving them to snap made the
+  // panel read as half-alive. Same helper, same rules: it declines when the shape changes
+  // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
-  document.getElementById('st-stops').textContent=seq.length;
-  document.getElementById('st-nights').textContent = stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None';
-  document.getElementById('st-legs').textContent=transferLegs;
-  document.getElementById('st-drive').textContent=totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request';
+  setStat('st-stops', String(seq.length));
+  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None');
+  setStat('st-legs', String(transferLegs));
+  setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
     seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');

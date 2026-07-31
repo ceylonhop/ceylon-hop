@@ -34,7 +34,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   </a>
   <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
 </div></header>
-<div class="pp-wrap"><div id="app"><p style="color:var(--ink-soft)">Loading your booking…</p></div></div>
+<div class="pp-wrap"><div id="app" class="tk-sk" aria-busy="true" aria-label="Loading your booking">
+  <i class="sk-hello"></i><i class="sk-title"></i><i class="sk-sub"></i>
+  <div class="ticket"><div class="t-main">
+    <div class="t-head"><i class="sk-ref"></i><i class="sk-stat"></i></div>
+    <div class="fact"><i class="sk-k"></i><i class="sk-v"></i></div>
+    <div class="fact"><i class="sk-k"></i><i class="sk-v"></i></div>
+    <div class="fact"><i class="sk-k"></i><i class="sk-v"></i></div>
+  </div>
+  <div class="perf"></div>
+  <div class="t-stub"><div class="tot"><i class="sk-tot-l"></i><i class="sk-tot-v"></i></div></div></div>
+</div></div>
 
 <script>
 (function(){
@@ -88,10 +98,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return s ? '<span class="t-stat ' + s[0] + '">' + s[1] + '</span>' : '';
   }
 
+  // Every path that replaces the first-paint skeleton goes through here. Clearing aria-busy
+  // matters as much as clearing the class: a screen reader announcing "busy" over a booking
+  // that is already on screen is worse than never announcing it.
+  function paint(html){
+    app.innerHTML = html;
+    app.classList.remove('tk-sk');
+    app.removeAttribute('aria-busy');
+    app.removeAttribute('aria-label');
+  }
+
   function errView(msg){
-    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">!</div>'
+    paint('<div class="st-wrap"><div class="st-badge warn">!</div>'
       + '<h1 class="st-title">We couldn’t open this booking</h1>'
-      + '<p class="st-sub">' + esc(msg) + '</p></div>' + waLine();
+      + '<p class="st-sub">' + esc(msg) + '</p></div>' + waLine());
   }
 
   // A booking can only be charged while it is genuinely open and something is owed. Offering
@@ -124,7 +144,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         + '<p class="pp-err" id="payerr"' + (errMsg ? '' : ' hidden') + '>' + esc(errMsg || '') + '</p>';
     }
     html += '</div></div>' + waLine();
-    app.innerHTML = html;
+    paint(html);
     var btn = document.getElementById('paybtn');
     if (btn) btn.addEventListener('click', function(){ pay(v); });
   }
@@ -132,11 +152,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // The same interstitial as the pay page: PayHere's window takes a moment to appear, and a
   // button that simply goes quiet reads as broken.
   function renderLoading(v){
-    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+    paint('<div class="pp-loading"><div class="pp-spin"></div>'
       + '<h2>Taking you to PayHere…</h2>'
       + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
       + '<div class="amt">' + esc(money(v.amountDueNowCents, v.currency)) + '</div>'
-      + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p></div>';
+      + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p></div>');
   }
 
   function pay(v){

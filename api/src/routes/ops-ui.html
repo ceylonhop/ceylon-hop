@@ -3913,13 +3913,22 @@ function addLeg(cat) {
   state.legs = state.legs.concat([leg]);
   refreshEstimate();
   render();
+  // morphdom keys leg cards on data-leg-id, so the one just added is a genuinely new node and
+  // arrived at full size mid-list — the same jolt the customer planner had. Grow it in.
+  growEl(document.querySelector('.ch-leg[data-leg-id="' + leg.id + '"]'));
 }
 
 function removeLeg(id) {
-  state.legs = state.legs.filter(function(leg) { return leg.id !== id; });
-  markDirty();
-  refreshEstimate();
-  render();
+  // Collapse first, drop after: removing from state re-renders immediately and destroys the
+  // element we would be animating, and the legs below would snap up to fill the hole anyway.
+  var el = document.querySelector('.ch-leg[data-leg-id="' + id + '"]');
+  var drop = function () {
+    state.legs = state.legs.filter(function(leg) { return leg.id !== id; });
+    markDirty();
+    refreshEstimate();
+    render();
+  };
+  if (el) collapseEl(el).then(drop); else drop();
 }
 
 // Fix 5: swap a leg with its neighbour. Order affects the date-order flag,
@@ -3937,7 +3946,35 @@ function moveLeg(id, dir) {
   state.legs = next;
   markDirty();
   refreshEstimate();
-  render();
+  // Two legs swapping used to teleport: the list simply WAS in a different order, so on a long
+  // itinerary the operator had to re-read it to confirm the move went the way they meant.
+  // morphdom keys leg cards on data-leg-id, so the nodes genuinely move rather than being
+  // rebuilt — exactly the condition FLIP needs to slide them past each other.
+  flipLegs(render);
+}
+
+/* FLIP for the itinerary: measure every leg, let `mutate` re-render, measure again, then offset
+   each card back to where it was and animate the offset away. Only cards that actually moved are
+   touched; one that stayed put costs nothing. */
+function flipLegs(mutate) {
+  var sel = '.ch-leg[data-leg-id]';
+  if (opsReduce()) { mutate(); return; }
+  var first = {};
+  document.querySelectorAll(sel).forEach(function (el) {
+    first[el.getAttribute('data-leg-id')] = el.getBoundingClientRect();
+  });
+  mutate();
+  document.querySelectorAll(sel).forEach(function (el) {
+    var from = first[el.getAttribute('data-leg-id')];
+    if (!from || typeof el.animate !== 'function') return;
+    var to = el.getBoundingClientRect();
+    var dy = from.top - to.top, dx = from.left - to.left;
+    if (Math.abs(dy) < 1 && Math.abs(dx) < 1) return;
+    el.animate(
+      [{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }],
+      { duration: 320, easing: OPS_EASE }
+    );
+  });
 }
 
 function dupLeg(id) {
@@ -6641,7 +6678,86 @@ function runNumberTicks() {
       [{ opacity: 0.3, transform: 'translateY(3px)' }, { opacity: 1, transform: 'translateY(0)' }],
       { duration: 260, easing: 'cubic-bezier(0.2, 0.6, 0.2, 1)' }
     );
+    // …and count the digits, not just fade the box they sit in. The fade said "this figure
+    // changed"; it never said which way, which is the only thing the operator is reading a
+    // re-price for. _prevNum was stashed by the diff just before the swap.
+    countTo(el, el._prevNum, el.textContent);
+    el._prevNum = null;
   });
+}
+
+/* Grow / collapse for the itinerary. The console has no site.js, so these are the ops-local
+   twins of CH.motion.enter/exit — same curve, same measured-height approach, same reduced-motion
+   behaviour (apply the end state, never skip it). Kept deliberately small rather than pulling in
+   the site bundle for two functions. */
+var OPS_EASE = 'cubic-bezier(.22,.75,.3,1)';
+function opsReduce() {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+  catch (e) { return false; }
+}
+function growEl(el) {
+  if (!el || opsReduce() || typeof el.animate !== 'function') return Promise.resolve();
+  var h = el.getBoundingClientRect().height;
+  var mb = getComputedStyle(el).marginBottom;
+  var prev = el.style.cssText;
+  el.style.overflow = 'hidden';
+  return el.animate([
+    { height: '0px', opacity: 0, marginBottom: '0px', transform: 'translateY(-4px)' },
+    { height: h + 'px', opacity: 1, marginBottom: mb, transform: 'none' },
+  ], { duration: 340, easing: OPS_EASE }).finished
+    .catch(function () {}).then(function () { el.style.cssText = prev; });
+}
+function collapseEl(el) {
+  if (!el || opsReduce() || typeof el.animate !== 'function') return Promise.resolve();
+  var h = el.getBoundingClientRect().height;
+  var mb = getComputedStyle(el).marginBottom;
+  el.style.overflow = 'hidden';
+  return el.animate([
+    { height: h + 'px', opacity: 1, marginBottom: mb, transform: 'none' },
+    { height: '0px', opacity: 0, marginBottom: '0px', transform: 'translateY(-4px)' },
+  ], { duration: 240, easing: OPS_EASE }).finished.catch(function () {});
+}
+
+/* Count an element's numbers from their previous rendered values to their current ones.
+   Works off the two STRINGS, so "$1,240" keeps its comma and "3h 56m" moves as two figures —
+   no format rules live here. Bails to the value already on screen whenever counting would be
+   wrong or impossible: a different count of numbers ("—" → "$240"), reduced motion, or a
+   hidden tab where rAF never runs.
+
+   A stalled count must never strand a stale PRICE, so the true value is also written by a
+   timer that does not depend on a single frame ever firing. */
+var OPS_NUM = /\d[\d,]*\.?\d*/g;
+function countTo(el, fromText, toText) {
+  if (!el || fromText == null || fromText === toText) return;
+  try { if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* no matchMedia */ }
+  if (document.hidden) return;
+  var a = String(fromText).match(OPS_NUM), b = String(toText).match(OPS_NUM);
+  if (!a || !b || a.length !== b.length) return;
+  var av = a.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
+  var bv = b.map(function (n) { return parseFloat(n.replace(/,/g, '')); });
+  if (av.every(function (v, i) { return v === bv[i]; })) return;
+  var dp = b.map(function (n) { return (n.split('.')[1] || '').length; });
+  var dur = 420, t0 = performance.now();
+  if (el._numRaf) cancelAnimationFrame(el._numRaf);
+  if (el._numT) clearTimeout(el._numT);
+  var land = function () {
+    if (el._numRaf) cancelAnimationFrame(el._numRaf);
+    el._numRaf = null; el._numT = null;
+    el.textContent = toText;   // the exact rendered string, never a rebuilt approximation
+  };
+  el._numT = setTimeout(land, dur + 80);
+  (function frame(now) {
+    if (!el.isConnected) { land(); return; }   // diffed away mid-count — stop touching it
+    var p = Math.min(1, (now - t0) / dur);
+    var e = 1 - Math.pow(1 - p, 3);
+    var i = 0;
+    el.textContent = toText.replace(OPS_NUM, function () {
+      var v = av[i] + (bv[i] - av[i]) * e, d = dp[i];
+      i++;
+      return v.toFixed(d);
+    });
+    if (p < 1) el._numRaf = requestAnimationFrame(frame); else land();
+  })(t0);
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
@@ -7185,6 +7301,13 @@ function render() {
       // syncRouteModalMap keep a long-lived map element inside them). Their children
       // aren't in the rendered HTML, so the diff must never descend into them.
       if (fromEl.id === 'itin-map-slot' || fromEl.id === 'route-modal-map') return false;
+      // Last moment the OLD figure exists. runNumberTicks() used to fade the new value in
+      // without it, so a re-priced total dissolved from one number straight to another with
+      // nothing travelling between them — the fade said "this changed" but never which way.
+      // Stash the outgoing text so the tick can count from it.
+      if (fromEl.nodeType === 1 && fromEl.matches && fromEl.matches(NUM_TICK_SELECTOR)) {
+        fromEl._prevNum = fromEl.textContent;
+      }
       return true;
     },
     onElUpdated: function (el) {

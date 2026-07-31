@@ -855,10 +855,17 @@ window.toggleFlexDate=function(){
 // service chooser (trip mode)
 window.pickSvc=function(svc){
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()) return;
+  if(svc===state.svc) return;                 // re-pressing the active option shouldn't animate
   state.svc=svc;
   document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc===svc));
   state.payPlan = 'full';
-  render();
+  // Switching service rewrites the whole summary — different rows, different total, often a
+  // different height. Doing that in one frame made the panel look like it was replaced rather
+  // than re-priced, and shifted everything below it without warning. Travel between the two
+  // heights instead; the figures inside are already counting (setNum).
+  const card=document.querySelector('.summary .s-body') || document.querySelector('.summary');
+  if(card && window.CH && CH.motion) CH.motion.resize(card, render, { duration:300 });
+  else render();
 };
 function ensureRepriceEl(){
   let el=document.getElementById('reprice-note');
@@ -1159,6 +1166,21 @@ function cancelText(){
     ? 'Free cancellation up to 10 days before'
     : 'Free cancellation up to 24 hours before';
 }
+/* The summary figures change on almost every interaction in this flow — a traveller added, a
+   bag, an extra, a switch between private and shared — and each change rewrote the number
+   outright. On a RUNNING TOTAL that loses the only thing the customer is watching for: whether
+   what they just did made it go up or down. Counting from whatever is already on screen makes
+   the direction of travel visible without adding a word of copy.
+
+   CH.motion.tweenNumber declines on its own when counting would be wrong: mismatched number
+   shapes ("—" → "$139"), no actual change, reduced motion, or a hidden tab. It also carries a
+   timer that writes the true value even if not one animation frame runs, so a stalled count can
+   never strand an out-of-date PRICE in front of someone about to pay. */
+function setNum(el, next){
+  if(!el) return;
+  if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
+  else el.textContent = next;
+}
 function render(){
   renderRepriceNote();
   // live route from the actual entered locations
@@ -1278,22 +1300,30 @@ function render(){
     let otherRows = 0; state.addons.forEach(function(a){ otherRows += (addonPrices[a] || 0); });
     if (isTrip && state.svc==='chauffeur') otherRows += chauffeurFee();
     const baseAmt = calcTotal() - otherRows;
-    document.getElementById('sum-adamt').textContent=money(baseAmt);
+    setNum(document.getElementById('sum-adamt'), money(baseAmt));
     chrow.style.display='flex';
     document.getElementById('sum-chlabel').textContent='Travellers';
-    document.getElementById('sum-chamt').textContent=`${state.ad+state.ch} · included`;
+    setNum(document.getElementById('sum-chamt'), `${state.ad+state.ch} · included`);
   } else {
     document.getElementById('sum-adlabel').textContent= isShared ? `Seats × ${state.ad}` : `Adults × ${state.ad}`;
-    document.getElementById('sum-adamt').textContent=money(unit*state.ad);
-    if(!isShared && state.ch>0){chrow.style.display='flex';document.getElementById('sum-chlabel').textContent=`Children × ${state.ch}`;document.getElementById('sum-chamt').textContent=money(unit*0.6*state.ch);}
+    setNum(document.getElementById('sum-adamt'), money(unit*state.ad));
+    if(!isShared && state.ch>0){chrow.style.display='flex';document.getElementById('sum-chlabel').textContent=`Children × ${state.ch}`;setNum(document.getElementById('sum-chamt'), money(unit*0.6*state.ch));}
     else chrow.style.display='none';
   }
   let addonHtml='';
   if(chauffeurFee()>0){ addonHtml+=`<div class="s-row"><span>Chauffeur-guide · ${tripDays} days</span><b>${money(chauffeurFee())}</b></div>`; }
   if(isShared){ const free=Math.max(1,state.ad+state.ch); const xb=Math.max(0,state.bags-free); if(xb>0){ addonHtml+=`<div class="s-row"><span>Extra bag${xb>1?'s':''} × ${xb}</span><b>${money(xb*10)}</b></div>`; } }
   state.addons.forEach(a=>{addonHtml+=`<div class="s-row"><span>${addonNames[a]}</span><b>${money(addonPrices[a])}</b></div>`;});
-  document.getElementById('sum-addons').innerHTML=addonHtml;
-  document.getElementById('sum-total').textContent=money(calcTotal());
+  // Ticking an extra used to make a summary row and a new total appear in the same frame, which
+  // read as the panel redrawing rather than the customer's choice landing in it. The rows are
+  // rebuilt wholesale (they're cheap), so the CONTAINER travels between its old and new height
+  // and the rows fade up inside it — one movement, not a jump plus a repaint.
+  const addonsEl=document.getElementById('sum-addons');
+  if(addonsEl.innerHTML!==addonHtml){
+    if(window.CH && CH.motion) CH.motion.resize(addonsEl, ()=>{ addonsEl.innerHTML=addonHtml; }, { duration:260 });
+    else addonsEl.innerHTML=addonHtml;
+  }
+  setNum(document.getElementById('sum-total'), money(calcTotal()));
 
   // Deposit messaging is disabled for now: every customer booking pays in full.
   let depEl=document.getElementById('s-deposit');
@@ -1866,7 +1896,9 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
   // ── info mirror: total into the bar; route + date into the strip
   const txt=id=>{ const el=document.getElementById(id); return el?el.textContent.trim():''; };
   function syncInfo(){
-    amt.textContent=txt('sum-total')||'—';
+    // The sticky mobile bar mirrors the summary total, so it needs the same count — otherwise
+    // on a phone (where the bar is the ONLY total in view) the figure still snaps.
+    setNum(amt, txt('sum-total')||'—');
     const from=txt('sum-from'), to=txt('sum-to');
     msRoute.textContent=(from&&to&&from!=='—')?from+' → '+to:(txt('sum-name')||'Your trip');
     const d=txt('sum-date');

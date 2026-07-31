@@ -98,6 +98,14 @@
     var n = Number(dollars) || 0;
     return '$' + (Number.isInteger(n) ? String(n) : n.toFixed(2));
   }
+  /* Write a figure by counting from whatever is on screen. CH.motion.tweenNumber declines by
+     itself when counting would be wrong (mismatched shapes, no change, reduced motion, hidden
+     tab) and backs every count with a timer, so a stalled animation can't leave a stale price. */
+  function setNum(el, next) {
+    if (!el) return;
+    if (window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
+    else el.textContent = next;
+  }
 
   // Short-code country → flag emoji. Passes through anything that isn't a
   // 2-letter code (already an emoji, or a 3–4 letter code) so it never breaks.
@@ -585,6 +593,41 @@
     var nl = document.getElementById('new-list');
     if (nl) nl.addEventListener('click', function () { openModal(null); });
     observe();
+    playSeatFills();
+  }
+
+  /* A seat filling is the whole point of this board, and it was the one thing that never
+     animated. board.html:.goal-dots i carries `transition:.3s` — written for exactly this —
+     but render() rebuilds every card through innerHTML, so each <i> is a BRAND NEW element
+     with no previous state to transition from. A CSS transition cannot fire on an element
+     that did not exist a frame ago, so that rule has never once run.
+
+     Rather than restructure the render, the newly-filled dots are animated explicitly, and
+     only the ones that actually gained: we remember each list's committed count from the last
+     paint and animate the difference, staggered so two seats arriving read as two events. */
+  var _prevCommitted = Object.create(null);
+  function playSeatFills() {
+    var reduce = window.CH && CH.motion ? CH.motion.reduce() : false;
+    document.querySelectorAll('.lcard[data-code]').forEach(function (cardEl) {
+      var code = cardEl.getAttribute('data-code');
+      var L = state.byCode[code];
+      if (!L) return;
+      var prev = _prevCommitted[code];
+      _prevCommitted[code] = L.committed;
+      // First sight of this list, or no gain — nothing happened worth pointing at. (A LOSS
+      // isn't animated either: someone leaving a ride is not a moment to celebrate.)
+      if (reduce || prev == null || L.committed <= prev) return;
+      var dots = cardEl.querySelectorAll('.goal-dots i.f');
+      for (var i = prev; i < Math.min(L.committed, dots.length); i++) {
+        var d = dots[i];
+        if (!d || typeof d.animate !== 'function') continue;
+        d.animate([
+          { transform: 'scale(.2)', opacity: .25 },
+          { transform: 'scale(1.3)', opacity: 1, offset: .55 },
+          { transform: 'scale(1)', opacity: 1 },
+        ], { duration: 460, delay: (i - prev) * 90, easing: 'cubic-bezier(.22,.75,.3,1)', fill: 'backwards' });
+      }
+    });
   }
 
   function updateMyRidesButton() {
@@ -854,6 +897,33 @@
       var self = this;
       copy(self.getAttribute('data-copy')).then(function () { self.textContent = 'Copied ✓'; setTimeout(function () { self.textContent = 'Copy link'; }, 1600); });
     });
+    playRosterArrivals(L);
+  }
+
+  /* Somebody joining is the single best thing that happens on this board, and it happened
+     silently: renderDetail rebuilds the roster wholesale, so a new traveller simply existed in
+     the list where a moment ago they didn't. We remember who was on each list at the last paint
+     and animate only the names that are new — so YOUR join is a moment, and so is watching
+     someone else's land while you have the ride open. */
+  var _prevMembers = Object.create(null);
+  function playRosterArrivals(L) {
+    if (!L || !L.members) return;
+    var key = L.code;
+    var names = L.members.map(function (m) { return m.name + '#' + (m.seats || 1); });
+    var prev = _prevMembers[key];
+    _prevMembers[key] = names;
+    var reduce = window.CH && CH.motion ? CH.motion.reduce() : false;
+    if (reduce || !prev) return;                    // first sight of this roster — no arrivals to mark
+    var people = detailInner.querySelectorAll('.d-person:not(.slot)');
+    names.forEach(function (n, i) {
+      if (prev.indexOf(n) !== -1) return;           // already there last time
+      var el = people[i];
+      if (!el || typeof el.animate !== 'function') return;
+      el.animate([
+        { opacity: 0, transform: 'scale(.82) translateY(6px)' },
+        { opacity: 1, transform: 'none' },
+      ], { duration: 420, easing: 'cubic-bezier(.22,.75,.3,1)' });
+    });
   }
 
   function openDetail(code, autoJoin) {
@@ -998,8 +1068,11 @@
     var each = current ? current.cost : (pairCorridor(cFrom.value, cTo.value) || { seat: 21 }).seat;
     var n = selectedSeats();
     var total = seatTotal(each, n);
-    document.getElementById('m-cost').textContent = money(total) + (Number.isInteger(Number(total)) ? '.00' : '');
-    document.getElementById('m-cost-break').textContent = n > 1 ? ' (' + n + ' seats × ' + money(each) + ')' : '';
+    // The figure the traveller is agreeing to, and it moves every time they touch the seat
+    // stepper. Counting it makes 1→2 seats read as the price climbing rather than a different
+    // price replacing the old one — the difference between a stepper and a slot machine.
+    setNum(document.getElementById('m-cost'), money(total) + (Number.isInteger(Number(total)) ? '.00' : ''));
+    setNum(document.getElementById('m-cost-break'), n > 1 ? ' (' + n + ' seats × ' + money(each) + ')' : '');
   }
 
   /* ----- create-a-list form (uses transfers-data) ----- */
