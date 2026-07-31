@@ -40,6 +40,7 @@ describe('customer pay pages are served by the API host', () => {
   it('serves the assets the pages actually reference', async () => {
     const cases: [string, string][] = [
       ['/site.css', 'text/css'],
+      ['/ticket.css', 'text/css'],
       ['/phone-countries.js', 'javascript'],
       ['/analytics.js', 'javascript'],
       ['/consent.js', 'javascript'],

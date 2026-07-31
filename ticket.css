@@ -1,0 +1,91 @@
+/* The customer travel-document design (spec D10): the approved pay-ticket look, shared by
+   BOTH customer-facing pages — pay.html (pay for a quote) and manage.html (your booking).
+   Everything rides on site.css tokens; the money button is the wizard's .btn-cta verbatim.
+   The column caps narrow: these pages have one job each, and width would dilute it.
+
+   This file exists because the two pages drifted. manage.html shipped first with its own
+   plainer styling and never got the design pass, so a customer following a booking link
+   landed somewhere that looked nothing like the page that was signed off (owner, 2026-07-31).
+   Keeping ONE stylesheet is the fix — the alternative is the two-copies-of-cmark() trap.
+
+   Page-specific pieces stay inline on their own page: the leg rail and the details form are
+   pay.html's; nothing here should depend on them. */
+
+/* header */
+.pp-top{border-bottom:1px solid var(--line);background:var(--paper)}
+.pp-topin{max-width:470px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
+.pp-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
+/* The real logo glyph, same file + sizing rule as the site header's cmark() (site.js). */
+.pp-cmark{width:32px;height:32px;object-fit:contain;flex:none}
+.pp-word{font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--accent-deep);letter-spacing:-.01em}
+.pp-wa{font-size:.78rem;color:var(--ink-soft)}
+.pp-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+
+/* page */
+.pp-wrap{max-width:470px;margin:0 auto;padding:26px 18px 60px}
+/* The name leads. It used to be the faintest text on the page, buried mid-sentence under a
+   huge route title — these pages should open by telling you they are YOURS. Display face,
+   brand teal, sized as a kicker so it reads before the headline without competing with it. */
+.pp-hello{font-family:var(--display);font-weight:800;font-size:1.3rem;line-height:1.15;
+  letter-spacing:-.01em;color:var(--accent-deep);margin-bottom:3px}
+.pp-title{font-family:var(--display);font-weight:800;font-size:1.9rem;line-height:1.12;letter-spacing:-.015em;margin:4px 0 2px}
+.pp-sub{font-size:.85rem;color:var(--ink-soft);margin-bottom:16px}
+
+/* ticket */
+.ticket{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
+.t-main{padding:16px 18px 14px}
+.t-ref{font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
+.t-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
+/* Booking state in the customer's language. Never the raw enum: "payment_pending" is a
+   database value, not something a traveller should be asked to interpret. */
+.t-stat{font-size:.6rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  border-radius:999px;padding:4px 10px;white-space:nowrap}
+.t-stat.wait{background:#fbf0d8;color:#96631a}
+.t-stat.ok{background:#e6f4ec;color:#2f7d51}
+.t-stat.off{background:var(--cream);color:var(--ink-faint)}
+.fact{display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-soft,#f0ece1);font-size:.86rem}
+.fact:last-of-type{border-bottom:0}
+.fact .k{color:var(--ink-soft);flex:none}
+.fact .v{font-weight:700;text-align:right}
+.fact .v small{display:block;font-weight:600;font-size:.7rem;color:var(--ink-faint)}
+.included{margin-top:11px;background:var(--cream);border-radius:11px;padding:10px 12px;font-size:.78rem;line-height:1.6;color:var(--ink-soft)}
+.included b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
+.perf{position:relative;border-top:2px dashed var(--line)}
+.perf:before,.perf:after{content:'';position:absolute;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--cream);border:1px solid var(--line)}
+.perf:before{left:-10px}.perf:after{right:-10px}
+.t-stub{padding:13px 18px 18px}
+.tot{display:flex;justify-content:space-between;align-items:baseline}
+.tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+.tot .v{font-family:var(--display);font-weight:800;font-size:2rem;letter-spacing:-.02em}
+.tot.due{margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft,#f0ece1)}
+.tot.due .v{font-size:1.15rem;color:var(--accent-deep)}
+
+/* call to action */
+.pp-cta{width:100%;margin-top:13px}
+.pp-cta[disabled]{opacity:.6;cursor:default}
+.paysub{text-align:center;font-size:.73rem;color:var(--ink-soft);margin-top:10px}
+.badges{display:flex;justify-content:center;gap:6px;margin-top:10px}
+.badges .card-badge{width:auto;padding:0 8px;font-size:.6rem;font-weight:800;color:var(--ink-soft)}
+.pp-err{margin-top:10px;font-size:.82rem;color:#b23214;font-weight:650;text-align:center}
+.pp-note{text-align:center;font-size:.75rem;color:var(--ink-soft);margin-top:14px}
+.pp-note a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+
+/* states */
+.st-wrap{text-align:center;padding:26px 0 6px}
+.st-badge{width:56px;height:56px;border-radius:50%;display:inline-grid;place-items:center;font-size:1.5rem;margin-bottom:12px}
+.st-badge.ok{background:#e6f4ec;color:#2f9558;box-shadow:0 0 0 8px rgba(47,149,88,.08)}
+.st-badge.warn{background:#fbf0d8;color:#c7841f}
+.st-title{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1.15;margin:0 0 4px}
+.st-sub{font-size:.85rem;color:var(--ink-soft)}
+.refchip{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-weight:600;font-size:.9rem;color:var(--accent-deep);background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:12px 0}
+.next{margin-top:14px;background:var(--cream);border-radius:11px;padding:11px 13px;text-align:left}
+.next b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
+.next ul{margin:0;padding-left:17px;font-size:.8rem;line-height:1.75;color:var(--ink-soft)}
+
+/* PayHere interstitial */
+.pp-loading{text-align:center;padding:44px 0 20px}
+.pp-spin{width:44px;height:44px;border-radius:50%;border:3.5px solid var(--line);border-top-color:var(--accent);margin:0 auto 16px;animation:ppspin .8s linear infinite}
+@keyframes ppspin{to{transform:rotate(360deg)}}
+.pp-loading h2{font-family:var(--display);font-weight:800;font-size:1.35rem;margin:0 0 4px}
+.pp-loading .amt{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:10px 0 2px}
+.pp-loading p{font-size:.83rem;color:var(--ink-soft);margin:4px 0 0}
