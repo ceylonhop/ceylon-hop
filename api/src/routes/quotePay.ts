@@ -7,7 +7,6 @@ import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { CustomerInput } from '../domain/singleTransfer';
-import { RATE_CARD } from '../quote/rateCard';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
 // whoever holds the link may view and pay the quote — intended, and identical to the
@@ -30,7 +29,6 @@ type PayState = 'paid' | 'revised' | 'payable' | 'unavailable';
 const StartSchema = z.object({ t: z.string(), customer: CustomerInput }).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
-const lkr = (cents: number): string => `LKR ${Math.round((cents * RATE_CARD.fxUsdToLkr) / 100).toLocaleString('en-US')}`;
 
 // Best-effort prefill from what the quote already knows — the page asks only for the rest.
 function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; email: string; whatsapp: string; country: string } {
@@ -105,7 +103,7 @@ export function quotePayRoutes(deps: {
     return c.json({
       state,
       copy: payPageCopy(quote),
-      totals: { cents: quote.totalCents, usd: usd(quote.totalCents), lkr: lkr(quote.totalCents) },
+      totals: { cents: quote.totalCents, usd: usd(quote.totalCents) },
       prefill: prefillFor(quote),
     });
   });

@@ -32,13 +32,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pp-top{border-bottom:1px solid var(--line);background:var(--paper)}
   .pp-topin{max-width:470px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between}
   .pp-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
-  .pp-cmark{width:28px;height:28px;border-radius:8px;background:var(--saffron,#F9A429);display:grid;place-items:center;flex:none}
+  /* The real logo glyph, same file + sizing rule as the site header's cmark() (site.js). */
+  .pp-cmark{width:32px;height:32px;object-fit:contain;flex:none}
   .pp-word{font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--accent-deep);letter-spacing:-.01em}
   .pp-wa{font-size:.78rem;color:var(--ink-soft)}
   .pp-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
   .pp-wrap{max-width:470px;margin:0 auto;padding:26px 18px 60px}
-  .pp-hello{font-size:.92rem;color:var(--ink-soft)}
-  .pp-hello b{color:var(--ink)}
+  /* The name leads. It used to be the faintest text on the page, buried mid-sentence under a
+     huge route title — a payment page should open by telling you it is YOURS. Display face,
+     brand teal, sized as a kicker so it reads before the headline without competing with it. */
+  .pp-hello{font-family:var(--display);font-weight:800;font-size:1.3rem;line-height:1.15;
+    letter-spacing:-.01em;color:var(--accent-deep);margin-bottom:3px}
   .pp-title{font-family:var(--display);font-weight:800;font-size:1.9rem;line-height:1.12;letter-spacing:-.015em;margin:4px 0 2px}
   .pp-sub{font-size:.85rem;color:var(--ink-soft);margin-bottom:16px}
 
@@ -67,7 +71,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .tot{display:flex;justify-content:space-between;align-items:baseline}
   .tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
   .tot .v{font-family:var(--display);font-weight:800;font-size:2rem;letter-spacing:-.02em}
-  .lkr{font-family:var(--mono,ui-monospace,monospace);font-size:.72rem;color:var(--ink-faint);text-align:right;margin-top:-2px}
   .pp-cta{width:100%;margin-top:13px}
   .pp-cta[disabled]{opacity:.6;cursor:default}
   .paysub{text-align:center;font-size:.73rem;color:var(--ink-soft);margin-top:10px}
@@ -109,7 +112,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <body>
 <header class="pp-top"><div class="pp-topin">
   <a class="pp-brand" href="index.html">
-    <span class="pp-cmark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M17.5 7.5A7 7 0 1 0 17.5 16.5" stroke="#171412" stroke-width="3.4" stroke-linecap="round"/></svg></span>
+    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
     <span class="pp-word">Ceylon Hop</span>
   </a>
   <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
@@ -175,7 +178,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderPayable(){
     var c = data.copy, tt = data.totals;
     app.innerHTML =
-      '<div class="pp-hello">' + (c.greetingName ? 'Hi <b>' + esc(c.greetingName) + '</b> — here’s your trip.' : 'Here’s your trip.') + '</div>'
+      '<div class="pp-hello">' + (c.greetingName ? 'Hi ' + esc(c.greetingName) + ',' : 'Here’s your trip.') + '</div>'
       + '<h1 class="pp-title">' + esc(c.title) + '</h1>'
       + '<p class="pp-sub">' + esc(c.subtitle) + '</p>'
       + '<div class="ticket"><div class="t-main">'
@@ -183,7 +186,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="included"><b>Included</b>' + esc(c.includedText) + '</div>'
       + '</div><div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
-      + '<div class="lkr">≈ ' + esc(tt.lkr) + '</div>'
       + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
       + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'

@@ -58,7 +58,8 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.state).toBe('payable');
     expect(body.copy.product).toBe('single');
     expect(body.copy.title).toBe('Colombo Airport (CMB) → Galle');
-    expect(body.totals).toEqual({ cents: 21900, usd: '$219.00', lkr: expect.stringContaining('LKR') });
+    // USD only — the owner cut the LKR conversion line (2026-07-31); customers pay in USD.
+    expect(body.totals).toEqual({ cents: 21900, usd: '$219.00' });
     expect(body.prefill.firstName).toBe('Nimal');
     expect(body.prefill.whatsapp).toContain('77');
     // The three fields that must never reach a public URL, checked on the raw wire.

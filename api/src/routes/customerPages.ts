@@ -36,6 +36,7 @@ const ASSETS: [string, string][] = [
   ['consent.js', JS],
   ['phone-countries.js', JS],
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
+  ['img/ceylon-hop-c.png', 'image/png'], // the header logo glyph — same file site.js's cmark() uses
 ];
 
 // Read-through cache: these files never change within a deploy.
