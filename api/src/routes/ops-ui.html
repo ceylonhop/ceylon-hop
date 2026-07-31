@@ -3618,6 +3618,26 @@ function segmentsWith(leg, idx, patch) {
   if (segs[idx]) segs[idx] = Object.assign({}, segs[idx], patch);
   return segs;
 }
+// The value a leg editor input currently HOLDS in state, for the change handler's
+// no-change guard. Task 7/8 moved two of these off the leg: `stop` lives in leg.stops[data-stop]
+// and `distanceKm` in leg.segments[data-seg].km, so reading leg[field] returned undefined for
+// both — which normalises to '' and made "the operator emptied the box" indistinguishable from
+// "nothing changed". Clearing a manual km was therefore swallowed: no commit, no re-price, and
+// the leg kept quoting the distance behind a blank field (owner report 2026-07-31). Always
+// returns a string so the caller's comparison stays a plain string compare.
+function legFieldValue(leg, el, field) {
+  if (field === 'stop') {
+    var si = parseInt(el.getAttribute('data-stop'), 10);
+    return isNaN(si) ? '' : (leg.stops[si] == null ? '' : leg.stops[si]);
+  }
+  if (field === 'distanceKm') {
+    var gi = parseInt(el.getAttribute('data-seg'), 10);
+    if (isNaN(gi)) gi = 0;
+    var seg = leg.segments[gi];
+    return (!seg || seg.km == null) ? '' : seg.km;
+  }
+  return leg[field] == null ? '' : leg[field];
+}
 
 // buildToolRequest wire shape (Task 7). Per DRIVING leg: the stop chain (`stops`, 2–8) +
 // `segmentKms` (number when the segment is manual or resolved; null = "resolve for me") PLUS
@@ -7819,7 +7839,7 @@ function attachEventListeners() {
     // a repeat — updateLeg would still markDirty + re-render + re-price, sustaining the
     // loop, so a no-change commit must be a true no-op.
     var legNow = state.legs.find(function(l) { return l.id === legId; });
-    if (legNow && el.type !== 'checkbox' && String(legNow[field] == null ? '' : legNow[field]) === String(el.value)) return;
+    if (legNow && el.type !== 'checkbox' && String(legFieldValue(legNow, el, field)) === String(el.value)) return;
 
     var val;
     if (el.type === 'checkbox') {
