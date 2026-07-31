@@ -10,6 +10,8 @@ import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { futureIsoDate } from '../testSupport/dates';
+import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { signQuotePayToken } from '../lib/bookingToken';
 
 const valid = {
   from: 'Colombo Airport (CMB)',
@@ -477,5 +479,69 @@ describe('POST /webhooks/payments — awaiting-details follow-up', () => {
 
     expect(email.sent).toHaveLength(1);
     expect(email.sent.some((m) => /detail/i.test(m.subject))).toBe(false);
+  });
+});
+
+describe('settlement claims the quote (pay links)', () => {
+  // The full loop: mint-shaped quote → /start creates the booking → checkout → PayHere
+  // notify settles → the QUOTE flips to won. Money is what wins a quote, nothing earlier.
+  it('a settling payment flips the linked quote sent → won', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+    const app = createApp({ quotes, bookings, payments, adapter, bookingLinkSecret: 'test-link-secret' });
+
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+      totalCents: 21900, currency: 'USD', rateCardVersion: 'v1', requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: futureIsoDate(30) }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+      result: {},
+    });
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    await quotes.patch(q.id, { status: 'sent' });
+
+    const t = signQuotePayToken(q.id, (await quotes.get(q.id))!.revision, 'test-link-secret');
+    const started = await (await app.request('/quotes/pay/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t, customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' } }),
+    })).json();
+    await app.request(`/bookings/${started.bookingId}/checkout`, {
+      method: 'POST', headers: { authorization: `Bearer ${started.checkoutToken}` },
+    });
+    expect((await quotes.get(q.id))?.status).toBe('sent'); // checkout intent alone wins nothing
+
+    const booking = (await bookings.get(started.bookingId))!;
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: adapter.simulateNotify({ orderId: booking.reference, amount: 21900, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(started.bookingId))?.status).toBe('paid');
+    expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+
+  it('a settle on a booking with no quote behind it changes nothing and never errors', async () => {
+    const adapter = new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox', notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/r', cancelUrl: 'https://example.com/c',
+    });
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ adapter, quotes });
+    const b = await bookAndCheckout(app);
+    const res = await app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: 'USD' }),
+    });
+    expect(res.status).toBe(200);
   });
 });

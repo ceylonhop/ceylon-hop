@@ -291,6 +291,7 @@ export function createApp(deps: AppDeps = {}) {
     '/webhooks',
     webhookRoutes({
       settlements,
+      quotes,
       adapter,
       email,
       conciergeTasks,

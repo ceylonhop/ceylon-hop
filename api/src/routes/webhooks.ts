@@ -10,9 +10,15 @@ import {
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
 import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl } from '../services/notifications';
+import type { QuoteRepo } from '../db/quoteRepo';
+import { claimWonQuote } from '../services/quoteOutcome';
 
 export function webhookRoutes(deps: {
   settlements: PaymentSettlementRepo;
+  // Pay links (2026-07-31): settlement is what wins a quote, so the webhook needs the
+  // quote repo to flip the one behind this booking. Optional: without it (older tests)
+  // settlement behaves exactly as before.
+  quotes?: QuoteRepo;
   adapter: PaymentAdapter;
   email: EmailAdapter;
   conciergeTasks: ConciergeTaskRepo;
@@ -114,6 +120,9 @@ export function webhookRoutes(deps: {
 
     if (outcome.kind === 'settled') {
       const paid = outcome.booking;
+      // Money landed — claim the quote behind this booking (pay-link flow). Best-effort
+      // inside claimWonQuote itself: a bookkeeping failure never 500s the webhook.
+      await claimWonQuote(paid.id, deps);
       // Best-effort: the booking is already paid, so a concierge-task hiccup must NOT 500 the
       // webhook (PayHere would retry, hit the idempotent return, and skip the task forever).
       try {
