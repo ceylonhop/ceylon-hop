@@ -25,27 +25,27 @@ async function stubOps(page, me = 'op@e2e.test') {
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 120, durationMin: 180 })));
   // A fresh save auto-assigns to the creator and returns assignedTo.
   await page.route('**/admin/quote/save', (r) => r.fulfill(json({ id: 'q1', reference: 'Q-ASN01', status: 'draft', assignedTo: me })));
+  // "+ New quote" claims the row up front (spec 2026-07-29) — same shape, same auto-assign.
+  await page.route('**/admin/quote/draft', (r) => r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'q1', reference: 'Q-SHL01', status: 'draft', assignedTo: me }) }));
   await page.route('**/admin/quote/q1', (r) => r.fulfill(json({})));
 }
 
 test('the assignee picker sits in the header before the actions, label-less, and shows the creator', async ({ page }) => {
   await stubOps(page, 'op@e2e.test');
-  await page.goto(OPS_FILE + '#quote');
+  await page.goto(OPS_FILE);
+  await page.locator('#view [data-qnew]').click();
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+
+  // "+ New quote" claims the row (spec 2026-07-29), so the picker is usable before anything is
+  // priced — it no longer waits for a Save to become live.
+  await expect(page.locator('.ch-header #assignSel')).toBeEnabled({ timeout: 10000 });
+
   await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
   await page.fill('#f-firstName', 'Test');
   await page.fill('#f-contact', '+94771234567');
   await page.dispatchEvent('#f-contact', 'change');
 
-  // Before saving there is no id to PATCH, so the picker is present but inert. (It used to be
-  // absent entirely, which read as a control that came and went — owner 2026-07-26; see
-  // ops-assign-picker-consistency.spec.js.)
-  await expect(page.locator('.ch-header #assignSel')).toBeDisabled();
-
-  // Save → the quote gets an id and is auto-assigned to its creator.
-  await page.locator('.ch-header [data-action="saveDraft"]').click();
-
-  // The picker is now in the HEADER tools, before the action bar, with no "Assigned to" label.
+  // The picker is in the HEADER tools, before the action bar, with no "Assigned to" label.
   const picker = page.locator('.ch-header-tools #assignSel.ch-head-assign');
   await expect(picker).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ch-assign-lbl')).toHaveCount(0);

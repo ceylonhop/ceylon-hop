@@ -10,6 +10,13 @@ export type PaymentSettlementOutcome =
   | { kind: 'duplicate'; payment: Payment; booking: Booking }
   | { kind: 'failed'; payment: Payment; booking: Booking }
   | { kind: 'reversal'; payment: Payment; booking: Booking }
+  // A SECOND capture: some other payment on this booking had already settled when this one
+  // arrived (a late PayHere notify on a booking ops settled in cash). The money is real and is
+  // recorded — refundRepo sums succeeded payments, so dropping it would cap a refund below what
+  // we actually hold — but the booking is deliberately left exactly as the first settlement left
+  // it: a human has to decide which capture to give back. Distinct from unexpected_booking_state,
+  // whose story ("captured with no paid-transition") is the wrong one to page an operator with.
+  | { kind: 'double_capture'; payment: Payment; booking: Booking }
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
@@ -112,6 +119,11 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
+    // Read before our own write, so this asks only about OTHER payments on the booking.
+    const alreadyCaptured = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).some(
+      (p) => p.id !== paymentRecord.id && p.status === 'succeeded',
+    );
+
     this.deps.payments.putForSettlement({
       ...paymentRecord,
       status: 'succeeded',
@@ -121,6 +133,14 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       updatedAt: event.receivedAt,
     });
     await this.failureHook?.('after_payment_update');
+
+    if (alreadyCaptured) {
+      return {
+        kind: 'double_capture',
+        payment: this.requirePayment(event.orderId),
+        booking,
+      };
+    }
 
     if (booking.status !== 'payment_pending') {
       return {

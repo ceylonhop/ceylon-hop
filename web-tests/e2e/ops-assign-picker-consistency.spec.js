@@ -36,21 +36,49 @@ async function stubOps(page, opts = {}) {
     ? r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
     : r.fulfill(json({ vehicle: { car: { maxPax: 3, maxBags: 3 } }, perKmCents: { car: 50 }, floorCents: { car: 0 } }))));
   await page.route('**/admin/quote/save', (r) => r.fulfill(json({ id: 'q1', reference: 'Q-ASN01', status: 'draft', assignedTo: ME })));
+  // Spec 2026-07-29: "+ New quote" claims a real row up front, auto-assigned to its creator.
+  // `draftFails` is the fallback path — the builder must degrade to the old manual-save behaviour.
+  await page.route('**/admin/quote/draft', (r) => (opts.draftFails
+    ? r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
+    : r.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'q1', reference: 'Q-SHL01', status: 'draft', assignedTo: ME }) })));
 }
 
 const picker = (page) => page.locator('.ch-header-tools #assignSel');
 
-test('a brand-new quote already shows the assign control', async ({ page }) => {
+// Spec 2026-07-29: "+ New quote" claims the row on the server before anything is priceable, so
+// an agent on a live call can hand the ticket over without pressing Save first. The picker used
+// to be DISABLED until the first save; it is now live from the first frame.
+test('a brand-new quote shows the assign control, live and on its creator', async ({ page }) => {
   await stubOps(page);
-  await page.goto(OPS_FILE + '#quote');
+  await page.goto(OPS_FILE);
+  await page.locator('#view [data-qnew]').click();
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
 
   // Present from the very first paint — not conjured by the first save.
   await expect(picker(page)).toBeVisible({ timeout: 10000 });
-  // Until there's a row to assign, it can't be changed — and it says why rather than
-  // looking broken.
+  // The row exists, so the picker is usable: no Save click stands between the operator and
+  // handing the ticket to a colleague.
+  await expect(picker(page)).toBeEnabled({ timeout: 10000 });
+  await expect(picker(page)).toHaveAttribute('title', /reassign/i);
+  // The server auto-assigns a new row to its creator, so it opens on the maker.
+  await expect(picker(page)).toHaveValue(ME, { timeout: 10000 });
+});
+
+// The one state that still disables it: the draft create failed, so there is genuinely no row.
+// This is also where the placeholder-selected regression lives.
+test('a failed draft create falls back to a disabled picker that still shows its placeholder', async ({ page }) => {
+  await stubOps(page, { draftFails: true });
+  await page.goto(OPS_FILE);
+  await page.locator('#view [data-qnew]').click();
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+
+  await expect(picker(page)).toBeVisible({ timeout: 10000 });
   await expect(picker(page)).toBeDisabled();
-  await expect(picker(page)).toHaveAttribute('title', /save/i);
+  // The disabled tooltip states the condition ("once it's saved") without asserting a cause: the
+  // control is also disabled when no create was ever attempted, so the old "Could not start this
+  // quote on the server" copy was usually a lie.
+  await expect(picker(page)).toHaveAttribute('title', /available once/i);
+  await expect(picker(page)).not.toHaveAttribute('title', /could not/i);
 
   // It must SHOW something. morphdom patches this <select>'s children in place when the roster
   // lands, and with no option carrying `selected` the browser leaves selectedIndex at -1 and
@@ -60,8 +88,7 @@ test('a brand-new quote already shows the assign control', async ({ page }) => {
     return { idx: s.selectedIndex, text: s.options[s.selectedIndex] ? s.options[s.selectedIndex].text : null };
   });
   expect(shown.idx).toBe(0);
-  // …and what it shows is the truth: the server auto-assigns a new quote to its creator on save.
-  expect(shown.text).toMatch(/on save/i);
+  expect(shown.text).toMatch(/unassigned/i);
 });
 
 test('a saved but unassigned quote still shows a populated picker after a repaint', async ({ page }) => {

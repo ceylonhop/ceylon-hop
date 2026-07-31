@@ -156,6 +156,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+  /* An unpriced shell (spec 2026-07-29) states its condition instead of showing a $0 total; muted
+     and non-numeric so it never reads as a real price at a glance. --ink-3 isn't defined on this
+     page — --ink-faint is the token the row already uses for its own "unset" states (qref, the
+     unassigned chip), so it matches the existing muted vocabulary instead of inventing a new one. */
+  .qrow .qtotal-unpriced{color:var(--ink-faint);font-variant-numeric:normal;font-weight:400}
   .qrow:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .tk:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   /* Read-only status pill (queue rows) — status changes happen in the detail view */
@@ -315,6 +320,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
+  /* manual settlement row: method picker + a quiet secondary button, so "Copy payment
+     reminder" stays the loud primary action in the same stack. */
+  .settle{display:flex;gap:8px;align-items:center}
+  .settle select{flex:1;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+  .settle select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
   .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
   .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
   .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
@@ -1391,8 +1401,8 @@ const dayGroup=t=>{
 const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Completed:'done'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
-   channel, awaiting payment after a link was sent). Quoting/payment-link steps
-   live outside ops in WhatsApp/Notion. ── */
+   channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
+   steps live outside ops in WhatsApp/Notion. ── */
 const STAGES=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed','on_trip','completed'];
 const STAGE={
   awaiting_payment:{label:'Awaiting payment',short:'Awaiting',c:'#c7841f',cbg:'#fbf0d8'},
@@ -1409,7 +1419,8 @@ const STAGE={
 };
 const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
 /* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
-   payment arrives via the webhook; ops follows up instead. */
+   it leaves that stage by money arriving, either a PayHere webhook or an ops agent
+   recording an out-of-band payment with the drawer's Mark paid control. */
 const NEXT={
   paid:{to:'vehicle_confirmed',label:'Confirm vehicle',act:'advance'},
   vehicle_confirmed:{to:'pickup_confirmed',label:'Confirm pickup',act:'advance'},
@@ -1421,6 +1432,12 @@ const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop
 
 /* The only surviving template: the payment-reminder copy an ops agent sends to nudge
    an awaiting-payment customer. Interpolates the first name and the amount. */
+/* Manual settlement methods, in the order the drawer offers them. The keys are the
+   API's `method` values, so the <select>, the confirm() and the toast all say the
+   same thing about the same money. */
+const PAY_METHODS=[['cash','Cash'],['bank_transfer','Bank transfer'],['manual_other','Other']];
+const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[1]:m;};
+
 const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.\n\nHere's your secure link again to lock it in 🌴 Reply if you have any questions!`;
 
 /* attention logic — what an ops agent must act on */
@@ -1429,7 +1446,7 @@ const reason=t=>{
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
-  if(t.stage==='awaiting_payment')return 'Payment link sent — follow up';
+  if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -1866,11 +1883,11 @@ function quoteRowHtml(q,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
-    <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
+    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(quoteUsd(q.totalCents))}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -2292,10 +2309,27 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
+     see the reminder only. The <select> + confirm() IS the whole interaction — this view
+     has no modal layer, and inventing one for three options would be a lot of machinery
+     for a question a confirm() already asks well. */
+  const canSettle=state.caps&&state.caps.includes('payments:act');
+  /* Copy has to be true for whoever is reading it: "recorded here" is a promise only a
+     payments:act holder can keep. An ops agent told a stranded booking can be settled here
+     hunts for a button they will never see — so name who can instead. */
+  const recordedBy=canSettle?'recorded here':'recorded by a founder or finance';
   let pipeAction;
   if(isPending){
-    pipeAction=`<div class="followup"><div><b>Payment link sent — follow up.</b> Payment lands automatically via the webhook. Nudge the customer if it's overdue.</div></div>
-      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
+    const settle=canSettle?`<div class="settle">
+        <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
+        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
+      </div>`:'';
+    /* The old copy said payment "lands automatically via the webhook". That is false for the
+       bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
+       cash or bank transfer, and no webhook is ever coming for it. This wording holds either
+       way — link or hand-collected. */
+    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> It can still arrive through the payment link, or be ${recordedBy} once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${settle}</div>`;
   }else if(nx){
     pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
       +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
@@ -2324,7 +2358,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
       ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
@@ -2587,6 +2621,31 @@ document.addEventListener('click',async e=>{
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
+    case 'markpaid':{
+      /* Money lives on the capability-gated /admin API, not /admin/ops — the same split the
+         refund actions use. Re-checked here because a sheet rendered before a session change
+         must not be able to POST what it should no longer offer. */
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const sel=$('#paidmethod');const method=(sel&&sel.value)||'cash';const label=payMethodLabel(method);
+      /* Every other consequential action in this sheet states its email consequence, and on the
+         PayHere path a booking reaching Paid DOES auto-send a confirmation — so silence here
+         reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
+      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
+      el.disabled=true;
+      try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      catch(err){
+        if(err.message==='auth')break;
+        if(el.isConnected)el.disabled=false;
+        /* The server's two "someone got here first" answers are states, not faults, and each
+           needs its own sentence. already_paid in particular means the money may genuinely be
+           in already (a late PayHere webhook) — reading it as a plain failure would invite a
+           retry, or worse, a second collection from the customer. */
+        if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment');await refreshRow(id);}
+        else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid');}
+      }
+      break;
+    }
     case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
       if(!state.caps||!state.caps.includes('payments:act'))break;
@@ -2684,6 +2743,11 @@ function bootApp(identity){
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
+  /* The builder just claimed a real row for the quote on screen — bind the URL to it so a reload
+     (or a bookmark/share) reopens THAT row instead of a bare #quote that would claim a second
+     shell and orphan the first. replace, not push: claiming isn't a navigation the operator
+     performed, so it must not add a back-button step. */
+  window.opsBindQuoteUrl=(id)=>{if(id&&state.route==='quote')setShellRoute('quote',{ quoteId:id, replace:true });};
   window.opsEmail=identity.email||''; /* the builder labels the assign picker's "(you)" option */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
   /* URL is the single source of truth for route/deep-link state across login refreshes,
@@ -3270,9 +3334,11 @@ let state = {
 // beforeunload asks the browser to confirm the close so an unsaved quote is never lost silently.
 var _dirty = false;
 /* D4 (design elevation): autosave. Every markDirty() arms a 2.5s debounce; when it fires we
-   silently re-save IF the quote is already a real row (savedId set) and still editable. New
-   quotes stay manual-first — auto-creating rows on half-typed enquiries would pollute the
-   queue. The Save button remains as the explicit path (and the only way to CREATE the row). */
+   silently re-save as long as the quote is still editable. "+ New quote" now creates the row
+   up front (spec 2026-07-29), so savedId is no longer the gate — Save is no longer the only
+   way a row comes into existence. The one gate that IS still real: state.vehicleType, because
+   POST /save runs resolveAndPrice() and cannot persist a payload it can't price. The 24h shell
+   sweep is what bounds the queue now, not manual-first creation. */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
 function isEditableNow() {
   // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
@@ -3305,12 +3371,27 @@ function armAutosave() {
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
-  if (!state.savedId || !isEditableNow() || !state.vehicleType) return;
+  // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
+  // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
+  // persisted at all. That window is the only place the beforeunload guard still matters.
+  if (!isEditableNow() || !state.vehicleType) return;
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  var seq = _openSeq;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
-  var ok = await saveQuote({ silent: true });
-  _autoSaving = false;
+  var ok;
+  try {
+    ok = await saveQuote({ silent: true });
+  } finally {
+    // Always clears, even if something above throws — nothing on today's path does (apiSave has
+    // a full try/catch), but were that ever to change, an ungated `_autoSaving = false` below
+    // would skip and autosave would be dead for the rest of the session with no signal.
+    _autoSaving = false;
+  }
+  // saveQuote returns false when it drops a superseded result — writing that here would paint
+  // "Autosave failed" on the quote now on screen, which never attempted a save. The new quote's
+  // chip was already set by resetToNew()/reopenQuote().
+  if (seq !== _openSeq) return;
   _autoState = ok ? 'saved' : 'error';
   if (ok) _lastSavedAt = new Date();
   updateSaveChip();
@@ -3318,10 +3399,29 @@ async function fireAutosave() {
 function renderSaveState() {
   if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
+  // Whether anything typed is being written down at all. fireAutosave() returns early while
+  // there is no vehicle type (POST /save prices, and an unpriceable payload cannot be
+  // persisted), so before that choice the customer name, contact, legs and internal notes live
+  // in memory ONLY. This — not the shell marker — is the line the chip has to speak to.
+  var autosaveArmed = !!state.vehicleType;
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
-  else if (_dirty) { cls += ' dirty'; txt = state.savedId ? 'Edits pending' : 'Unsaved'; }
-  else if (_autoState === 'error') { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
+  // Error must win over dirty, or a repeatedly-failing autosave paints the dirty chip forever and
+  // the escape hatch (the Save button) never gets advertised. The guard is autosaveArmed, NOT
+  // state.unpriced: a shell stays unpriced until its FIRST successful save, so gating on it
+  // swallowed every failed autosave of a shell — and autosave is silent (no toast), so a
+  // fully-filled quote showing its price could fail to save indefinitely with no signal at all.
+  // The original intent survives anyway: a shell that simply cannot be priced yet never reaches
+  // _autoState 'error', because fireAutosave() never runs to set it.
+  else if (_autoState === 'error' && autosaveArmed) { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
+  // "Not priced yet" is about the PRICE and must never stand in for persistence. While _dirty
+  // there is typed content that has not reached the server — either because autosave cannot run
+  // at all yet (no vehicle type) or because the debounce has not landed — and the operator needs
+  // to know their typing is not safe. Only a row that has already saved successfully (unpriced
+  // cleared) earns the gentler "Edits pending"; the clean-shell branch below still says what is
+  // missing when there is nothing typed to lose.
+  else if (_dirty) { cls += ' dirty'; txt = (state.savedId && !state.unpriced) ? 'Edits pending' : 'Unsaved'; }
   else if (_lastSavedAt) { cls += ' saved'; txt = 'Saved ' + _lastSavedAt.toTimeString().slice(0, 5); }
+  else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; } // clean shell: no typed content at risk, only a price missing
   else if (state.savedId) { cls += ' saved'; txt = 'Saved'; }
   else return '<span id="ch-savestate" class="ch-savestate"></span>';
   return '<span id="ch-savestate" class="' + cls + '"><i class="ch-savestate-dot"></i>' + txt + '</span>';
@@ -3595,6 +3695,24 @@ async function apiSave(payload) {
   } catch (e) { window.opsReportError && window.opsReportError('apiSave', e); return { error: 'Network error' }; }
 }
 
+// "+ New quote" creates the row up front (spec 2026-07-29) so the assignee picker is live before
+// anything is priceable — an agent claims or hands over the ticket on the call, not after a Save.
+async function apiCreateDraft() {
+  try {
+    var r = await api('/admin/quote/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!r.ok) {
+      var errBody = await errPayload(r);
+      // Unlike apiSave/apiPatch, a failed draft-create has no caller-side special case to fall
+      // back on — claimDraftRow() just silently no-ops (by design), so this is the only place
+      // a 500 here would ever get reported.
+      window.opsReportError && window.opsReportError('apiCreateDraft', new Error(errBody.error || ('HTTP ' + r.status)));
+      return errBody;
+    }
+    var body = await jsonOrNull(r);
+    return body || { error: 'Could not start a quote' };
+  } catch (e) { window.opsReportError && window.opsReportError('apiCreateDraft', e); return { error: 'Network error' }; }
+}
+
 async function apiPatch(id, patch) {
   try {
     var r = await api('/admin/quote/' + encodeURIComponent(id), {
@@ -3667,6 +3785,7 @@ function resetToNew() {
     savedId: null,
     reference: null,
     assignedTo: null, // who holds it; set only via the assign picker (never by a transition)
+    unpriced: false, // true while this row is a server-side shell (never priced) — spec 2026-07-29
     createdBy: null,
     updatedBy: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
@@ -3684,15 +3803,41 @@ function resetToNew() {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
+  // The save chip belongs to the quote, not the session: without this a fresh row inherited the
+  // PREVIOUS quote's "Saved 14:32" and outranked its own "Not priced yet" (spec 2026-07-29).
+  _autoState = 'idle';
+  _lastSavedAt = null;
   refreshEstimate();
   render();
 }
 
-// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when
-// there are unsaved edits to lose.
+// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when there are
+// unsaved edits to lose, then claim a real row so the ticket is assignable immediately. The
+// create is fire-and-forget from the operator's point of view — they can start typing at once.
 function startNew() {
   if (_dirty && !confirm('Start a new quote? Unsaved changes will be lost.')) return;
   resetToNew();
+  claimDraftRow();
+}
+
+// Create the shell row for the quote now on screen. Non-blocking by design: on failure the
+// builder simply behaves as it did before this shipped (unsaved, assign disabled, manual Save)
+// rather than trapping the operator behind a network error.
+async function claimDraftRow() {
+  var seq = _openSeq; // a reopen that lands mid-flight must win
+  var res = await apiCreateDraft();
+  if (seq !== _openSeq) return;
+  if (!res || !res.id) return;
+  state.savedId = res.id;
+  state.reference = res.reference || res.id;
+  state.unpriced = true;
+  if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+  // Bind the URL to the row we just claimed (history REPLACE — see opsBindQuoteUrl). Without this
+  // a mid-quote reload landed on an id-less #quote: no row claimed, savedId null, assign picker
+  // disabled, and the $0 shell stranded in the queue.
+  if (window.opsBindQuoteUrl) window.opsBindQuoteUrl(res.id);
+  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  render();
 }
 
 function savePayload() {
@@ -3729,7 +3874,17 @@ async function saveQuote(opts) {
     if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing'); }
     return false;
   }
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiSave(savePayload());
+  // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
+  // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
+  // and every later edit would then overwrite A. Drop the result and report FAILURE: callers
+  // persist-then-transition against state.savedId, which now points at another quote, so a `true`
+  // would let transition() PATCH the wrong row. A false only costs the operator a retry.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('saveQuote', 'stale save discarded (superseded while in flight)');
+    return false;
+  }
   if (res && res.id) {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
@@ -3737,10 +3892,26 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    state.unpriced = false; // a real save prices the quote — the shell marker is gone server-side
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
+    // Clear a stale 'error' from an earlier failed autosave — this save just succeeded, so the
+    // chip must not keep reading "Autosave failed" once _dirty is false. 'idle' (not 'saved') so
+    // fireAutosave's own 'saved'/_lastSavedAt bookkeeping (set right after this call returns) is
+    // the only thing that ever writes those; renderSaveState falls through to the plain _lastSavedAt/
+    // state.savedId "Saved" branches on its own.
+    _autoState = 'idle';
     if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
     return true;
+  }
+  // The row this editor is bound to no longer exists server-side (the shell sweep deleted it
+  // while the quote sat open). Deliberately shown even for a silent autosave: the operator's work
+  // is still on screen and only they can rescue it, so a quiet "Autosave failed" chip is not
+  // enough — this is the one save failure that must always speak.
+  if (res && res.error === 'quote_deleted') {
+    showToast('This quote was removed — copy what you need and use "+ New quote" to re-create it');
+    window.opsReportError && window.opsReportError('saveQuote', 'save rejected: quote_deleted');
+    return false;
   }
   if (!opts.silent) showToast((res && res.error) ? res.error : 'Save failed');
   return false;
@@ -3765,6 +3936,10 @@ async function transition(toStatus, opts) {
     // Quote intent (spec 2026-07-17): the server gate can 400 even if a client bypassed the
     // disabled button — give it the same friendly copy as the button hint, not the raw code.
     if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first'); return; }
+    // Same gate the blockers panel already names (submitBlockers' "A price — this quote has not
+    // been priced yet"); near-unreachable since that panel blocks the button first, but if a
+    // client bypasses it the raw code shouldn't leak through.
+    if (res && res.error === 'unpriced_quote') { showToast('This quote needs a price before it can move'); return; }
     showToast('Could not update — ' + ((res && res.error) || 'unknown error'));
     return;
   }
@@ -3943,12 +4118,43 @@ async function reopenQuote(id) {
       : ('Couldn’t open the quote' + (q && q.error && q.error !== 'not_found' ? ' — ' + q.error : ''));
     if (window.opsToast) window.opsToast(msg); else showToast(msg);
     if (window.opsGoQuotes) window.opsGoQuotes();
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
   var tool = q.request && q.request.tool;
+  // An unpriced shell (spec 2026-07-29) has no tool yet — it is a row "+ New quote" claimed
+  // before anything was priceable. Open it as a blank builder BOUND to that row so whoever it
+  // was handed to prices it in place, rather than falling into the legacy-row dead end below.
+  if (!tool && q.request && q.request.shell === true) {
+    resetToNew();
+    state.savedId = q.id;
+    state.reference = q.reference || q.id;
+    state.status = q.status || 'draft';
+    state.assignedTo = q.assignedTo || null;
+    state.createdBy = q.createdBy || null;
+    state.updatedBy = q.updatedBy || null;
+    // A shell carries no priced content, but the server DOES allow an internal note on one — and
+    // savePayload() sends both fields unconditionally, so not restoring them would clobber a note
+    // added via the internal-notes PATCH on the next real save.
+    state.notes = q.notes || '';
+    state.internalNotes = q.internalNotes || '';
+    state.unpriced = true;
+    render();
+    showToast('Opened ' + (q.reference || q.id));
+    return;
+  }
   if (!tool) {
     // Legacy row saved before the { tool, engine } shape.
     showToast('This quote was saved before reopen support — re-create it to edit.');
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
 
@@ -4007,6 +4213,7 @@ async function reopenQuote(id) {
   state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
   state.savedId = q.id;
   state.reference = q.reference || q.id;
+  state.unpriced = !!(q.request && q.request.shell === true);
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
@@ -4026,6 +4233,11 @@ async function reopenQuote(id) {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
+  // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
+  // opening quote B right after autosaving A showed A's "Saved 14:32" — or A's "Autosave failed
+  // — use Save" — over a quote B that was never saved in this session.
+  _autoState = 'idle';
+  _lastSavedAt = null;
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
   // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
   // since approval. Editable states still price live as the operator builds.
@@ -4805,10 +5017,17 @@ function submitBlockers() {
     add(undated === 1 ? 'A date on the undated leg (chauffeur trips need one per leg)'
       : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
   }
-  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the
-     cause. Only surfaced when nothing else explains it — otherwise the panel says the same
-     thing twice. */
-  if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the cause.
+     A shell the server still holds at $0 refuses the transition outright (400 unpriced_quote), so
+     say so even when other blockers are listed — otherwise the panel could look satisfiable when
+     it isn't. But `state.unpriced` only clears on a SAVE round-trip, and autosave is debounced:
+     an operator who fills a quote, sees the real total, and submits inside that window was told
+     the quote "has not been priced yet" while the price sat on screen. So require that there is
+     genuinely no price. A priced shell falls through to no price blocker at all — transition()
+     saves first, which clears the shell server-side before the PATCH, and if that save fails its
+     error handling already maps the server's 400 unpriced_quote to human copy. */
+  if (state.unpriced && !lastEstimate) add('A price — this quote has not been priced yet', '.ch-money');
+  else if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
   return out;
 }
 
@@ -5683,23 +5902,25 @@ async function loadOpsUsers() {
 // the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
 // someone, so it stays a first-class control.
 // It used to be HIDDEN until the quote was saved, which read as the control appearing and
-// disappearing at random (owner, 2026-07-26). It is now always present and simply DISABLED until
-// there is a row to assign — assignment is a PATCH against an id, so there is genuinely nothing
-// to send before the first save. A new quote is auto-assigned to its creator server-side, so it
-// resolves to the maker the moment it saves.
+// disappearing at random (owner, 2026-07-26). It is now always present.
 function renderHeaderAssign() {
-  var unsaved = !state.savedId;
+  // The row is created by "+ New quote" (spec 2026-07-29), so this is live from the first frame.
+  // It stays disabled only when there is genuinely no row — i.e. the draft create failed and the
+  // builder fell back to manual-save behaviour.
+  var noRow = !state.savedId;
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
-  // On an unsaved quote the placeholder states what WILL happen rather than "Unassigned" — the
-  // server auto-assigns a new quote to its creator on save, so "Unassigned" would be a small lie
-  // about a control the operator can't act on yet.
   // The placeholder MUST carry `selected` when nobody holds the quote. A freshly parsed <select>
   // defaults to option 0, but morphdom patches this element's children in place on re-render — and
   // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
   // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
-  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>'
-    + (unsaved ? 'Assigned to you on save' : 'Unassigned') + '</option>'];
+  // The same empty box appears when `cur` is set but matches NO option — now the ordinary first
+  // frame, because claimDraftRow() assigns the fresh row to its creator while the roster fetch is
+  // still in flight (and that fetch fails SILENTLY, which would make the blank permanent). So the
+  // placeholder takes `selected` whenever nothing else will: an unmatched name reading as
+  // "Unassigned" for a frame is recoverable, an empty box is not.
+  var curMatched = opsUsers.some(function(u) { return u.email === cur; });
+  var opts = ['<option value=""' + (curMatched ? '' : ' selected') + '>Unassigned</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5709,11 +5930,13 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
-  var title = unsaved
-    ? 'Save the quote first — it is assigned to you on save, and you can hand it over from here'
+  // Don't assert a cause here: usually nothing was attempted, let alone failed. Say only what is
+  // true in every disabled case — there is no row yet, and saving makes one.
+  var title = noRow
+    ? 'Assign this quote — available once it’s saved'
     : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
-    + (unsaved ? ' disabled' : '')
+    + (noRow ? ' disabled' : '')
     + ' aria-label="Assign this quote" title="' + esc(title) + '">' + opts.join('') + '</select>';
 }
 
@@ -5735,7 +5958,17 @@ function renderAssignStrip() {
 // showing a handover that never happened.
 async function assignQuote(email) {
   if (!state.savedId) return;
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiPatch(state.savedId, { assignedTo: email || null });
+  // Superseded while in flight: the operator assigned quote A and clicked quote B before the
+  // PATCH resolved. Every write below targets whatever is on screen NOW, so applying this would
+  // paint B with A's assignee and toast "Assigned to …" while B is untouched server-side. Drop
+  // it on both branches — but still refresh the queue, because A's assignment really did land.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('assignQuote', 'stale assign discarded (superseded while in flight)');
+    if (res && !res.error && window.opsRefreshQuotes) window.opsRefreshQuotes();
+    return;
+  }
   if (!res || res.error) {
     showToast('Could not assign — ' + ((res && res.error) || 'unknown error'));
     render();
@@ -5895,7 +6128,13 @@ function render() {
   var basicsDone = basicsComplete();
   var _unlockedNow = basicsDone && !_basicsUnlocked; // D5: gate just flipped open this render
   _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
-  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
+  // `savedId` stopped meaning "has been saved at least once" when "+ New quote" began claiming a
+  // $0 shell row within ~200ms (spec 2026-07-29) — it now means only "a row exists", which
+  // unlocked this section on every new quote: the guidance panel flashed and vanished, the
+  // just-unlocked reveal never played, and the itinerary appeared under the operator's cursor
+  // mid-typing. `savedId && !unpriced` is what "already saved with real content" means now — the
+  // shell marker clears only on a successful save.
+  var hasBuiltItinerary = (!!st.savedId && !st.unpriced) || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
   var showItinerary = basicsDone || hasBuiltItinerary;
   var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 

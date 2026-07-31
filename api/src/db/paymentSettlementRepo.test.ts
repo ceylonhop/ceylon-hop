@@ -121,6 +121,31 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(1);
   });
 
+  // The ordering that used to slip through: ops takes the cash and marks the booking paid while
+  // the customer's PayHere notify is still in flight. Both captures are real, so the second one
+  // must still be recorded (refundRepo sums succeeded payments — dropping it would cap the refund
+  // below the money actually held), but it must never pass as an ordinary settlement.
+  it('flags a second capture on a booking already settled in cash, and still records the money', async () => {
+    const f = await fixture();
+    const manual = await f.payments.create({
+      bookingId: f.booking.id,
+      provider: 'cash',
+      orderId: `${f.booking.reference}-MANUAL`,
+      amount: f.booking.total,
+      currency: 'USD',
+      idempotencyKey: `manual-paid:${f.booking.id}`,
+    });
+    await f.payments.markSucceededManually(manual.id, { reference: 'slip-9' });
+    await f.bookings.setStatus(f.booking.id, 'paid');
+
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(f.event);
+
+    expect(outcome.kind).toBe('double_capture');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect(await f.events.listForReconciliation(f.payment.id)).toHaveLength(1);
+    expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
+  });
+
   it('repairs a legacy succeeded-payment/pending-booking split on the next verified success', async () => {
     const f = await fixture();
     await f.payments.markSucceeded(f.payment.id);

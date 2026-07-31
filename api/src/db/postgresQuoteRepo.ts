@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { quotes } from './schema';
-import { genReference, parseDateFilter, LIVE_STATUSES } from './quoteRepo';
+import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import type {
   QuoteRepo,
@@ -207,6 +207,19 @@ export class PostgresQuoteRepo implements QuoteRepo {
           gte(quotes.decidedAt, since),
           inArray(quotes.status, [...LIVE_STATUSES]),
         ),
+        // Autosave shells never count as demand (spec 2026-07-29). request_json stays OUT of the
+        // funnel's select — the response never carries it — but it IS referenced in this WHERE,
+        // so Postgres still fetches and detoasts it off the heap to evaluate the predicate for
+        // every candidate row. Not scalar-only cost-wise, just scalar-only on the wire. Fine at
+        // today's volumes; revisit if this table or the shell-exclusion check ever gets heavier.
+        // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
+        // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
+        // a real shell marker from a string that merely says "true". The jsonb comparison here
+        // must agree exactly with isUnpricedShell's `=== true` in quoteRepo.ts. NULL-safe: `->`
+        // yields SQL NULL whenever request_json is SQL NULL, JSON null, a JSON scalar, or an
+        // object without a `shell` key, and coalescing that NULL to false (then negating) keeps
+        // all of those rows included rather than silently dropped by NULL's three-valued logic.
+        sql`NOT coalesce(${quotes.requestJson} -> 'shell' = 'true'::jsonb, false)`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1); // one extra row = cheap truncation probe
@@ -232,6 +245,18 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...this.channelCond(channel),
         gte(quotes.createdAt, from),
         lte(quotes.createdAt, to),
+        // Autosave shells never count as demand (spec 2026-07-29). Unlike listFunnelRows, this
+        // query already selects request_json above (this is the one analytics query that needs
+        // it), so referencing it again here in the WHERE adds no extra fetch/detoast cost — it's
+        // already coming off the heap for the select.
+        // Compare as jsonb (->), not text (->>): ->> renders both the jsonb boolean `true` and
+        // the jsonb string `"true"` as the identical text 'true', so a text comparison can't tell
+        // a real shell marker from a string that merely says "true". The jsonb comparison here
+        // must agree exactly with isUnpricedShell's `=== true` in quoteRepo.ts. NULL-safe: `->`
+        // yields SQL NULL whenever request_json is SQL NULL, JSON null, a JSON scalar, or an
+        // object without a `shell` key, and coalescing that NULL to false (then negating) keeps
+        // all of those rows included rather than silently dropped by NULL's three-valued logic.
+        sql`NOT coalesce(${quotes.requestJson} -> 'shell' = 'true'::jsonb, false)`,
       ))
       .orderBy(desc(quotes.createdAt))
       .limit(limit + 1);
@@ -287,6 +312,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       assignedTo: r.assignedTo,
       createdAt: r.createdAt,
       routeText: quoteRouteText(requestLegs(r.request)),
+      unpriced: isUnpricedShell({ request: r.request }),
     }));
   }
 
@@ -332,6 +358,9 @@ export class PostgresQuoteRepo implements QuoteRepo {
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
     // Content only — status/reference/createdAt, the sent/decided stamps, createdBy and the
     // assignment are all left as-is. (createdBy is write-once; assignment moves only via patch.)
+    // Soft-delete guard (same as softDelete's): a deleted row is off-limits. The shell sweep can
+    // delete a shell an operator still has open, and their next autosave would otherwise write
+    // the real priced quote into the deleted row — a 200 for work that is invisible forever.
     const [row] = await this.db
       .update(quotes)
       .set({
@@ -353,7 +382,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(quotes.id, id))
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
     return row ? quoteRowToSaved(row) : null;
   }

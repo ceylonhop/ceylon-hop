@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
+import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, isUnpricedShell, type NewQuote } from './quoteRepo';
 
 describe('canTransition (quote review lifecycle)', () => {
   it('allows the maker-checker path but requires review before approval', () => {
@@ -170,6 +170,21 @@ describe('InMemoryQuoteRepo', () => {
 
   it('update returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
+  });
+
+  // A soft-deleted row is off-limits to a content write, exactly like softDelete() refuses to
+  // re-stamp one. Without this the shell sweep and a late autosave race: the sweep deletes the
+  // shell, the operator's next autosave writes the real priced quote into the deleted row and
+  // gets a 200, and the work is invisible in the queue forever.
+  it('update returns null for a soft-deleted row and leaves its content untouched', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 4048, customerName: 'Maya' }));
+    await repo.softDelete(q.id, 'sweep@x.com');
+    expect(await repo.update(q.id, sample({ totalCents: 9900, customerName: 'Overwritten' }))).toBeNull();
+    // get()/list() hide deleted rows, so read the retained row straight out of the store.
+    const row = repo.snapshotForQuoteConversion().rows.get(q.id);
+    expect(row!.totalCents).toBe(4048);
+    expect(row!.customerName).toBe('Maya');
   });
 
   it('patch stamps convertedBookingId (the booking a won quote became)', async () => {
@@ -356,5 +371,77 @@ describe('analytics projections', () => {
     const all = await repo.listFunnelRows(new Date(now - 30 * DAY), 100, 'all');
     const ids = all.rows.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
+  });
+});
+
+describe('isUnpricedShell', () => {
+  it('is true only for the { shell: true } marker', () => {
+    expect(isUnpricedShell({ request: { shell: true } })).toBe(true);
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+    expect(isUnpricedShell({ request: null })).toBe(false);
+    expect(isUnpricedShell({ request: undefined })).toBe(false);
+    expect(isUnpricedShell({ request: 'shell' })).toBe(false);
+  });
+
+  it('does NOT treat a legitimately zero-priced quote as a shell', () => {
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+  });
+});
+
+describe('list() summaries', () => {
+  it('flags an unpriced shell and leaves a priced quote unflagged', async () => {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+
+    const rows = await repo.list({ channel: 'ops' });
+    expect(rows.find((r) => r.totalCents === 0)!.unpriced).toBe(true);
+    expect(rows.find((r) => r.totalCents === 4048)!.unpriced).toBe(false);
+  });
+});
+
+describe('analytics projections exclude unpriced shells', () => {
+  async function seed() {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+    // A legitimately $0 priced quote (e.g. a comp ride) — NOT a shell, must still count as
+    // demand. Distinguishes "excluded because it's a shell" from "excluded because totalCents
+    // is 0", which the original two-row seed above could not tell apart.
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {}, comp: true }, result: { totalCents: 0 },
+    });
+    return repo;
+  }
+
+  it('omits shells from the funnel rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listFunnelRows(new Date(0), 100, 'ops');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
+  });
+
+  it('omits shells from the demand rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listDemandRows(new Date(0), new Date('2100-01-01'), 100, 'ops');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
   });
 });

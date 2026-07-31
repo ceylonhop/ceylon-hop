@@ -27,12 +27,31 @@ function sumKm(rides: Ride[]): number | null {
   return total > 0 ? Math.round(total) : null;
 }
 
-// Generalize today's [rides[0].from, ...rides.map(r => r.to)] chain to multi-stop rides:
-// the first ride contributes all its stops; every later ride contributes everything AFTER
-// its first stop (r.stops.slice(1)). For all-2-stop input this is byte-identical to today,
-// including the quirk that a non-chaining later ride's first stop is silently dropped (GC-13).
-function chainStops(rides: Ride[]): string[] {
-  return [...rides[0].stops, ...rides.slice(1).flatMap((r) => r.stops.slice(1))];
+// Chain the rides into one stop list. A later ride that does NOT start where the previous one
+// ended still contributes its own origin — that hop is the customer's own arrangement (e.g. the
+// Ella → Galle train), not something to silently drop. This replaces the old behaviour, which
+// dropped the non-chaining origin and so invented a leg nobody drives (GC-13); it reached the
+// ops drawer AND the customer's email. The booking's flat `stops` array can't mark which
+// consecutive pair is a gap versus a driven leg — every pair renders as a leg we drive
+// downstream (known gap, see docs/known-bugs.md 2026-07-30).
+//
+// `rideIndex` says which ride each segment belongs to (-1 for a gap). Anything the caller keeps
+// aligned per segment (today: `dates`) must be rebuilt through it, because inserting a gap stop
+// shifts every later index.
+function chainStops(rides: Ride[]): { stops: string[]; rideIndex: number[] } {
+  const stops = [...rides[0].stops];
+  const rideIndex: number[] = rides[0].stops.slice(1).map(() => 0);
+  rides.slice(1).forEach((ride, i) => {
+    if (ride.stops[0] !== stops[stops.length - 1]) {
+      stops.push(ride.stops[0]); // the gap: a stop we don't drive to/from the previous one
+      rideIndex.push(-1);
+    }
+    for (const stop of ride.stops.slice(1)) {
+      stops.push(stop);
+      rideIndex.push(i + 1);
+    }
+  });
+  return { stops, rideIndex };
 }
 
 // Inclusive day span between two ISO dates (e.g. 08-01..08-03 = 3 days).
@@ -74,14 +93,21 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
         },
       };
     }
-    const stops = chainStops(rides);
+    const { stops } = chainStops(rides);
+    const startDate = details.date;
+    const segmentCount = Math.max(0, stops.length - 1);
     return {
       mode: 'trip',
       distanceKm,
       input: {
         stops,
-        nights: Array(Math.max(0, stops.length - 1)).fill(0),
-        dates: details.date ? [details.date] : undefined,
+        nights: Array(segmentCount).fill(0),
+        // Per segment, like the chauffeur branch, so the two don't drift. A PrivateLeg carries
+        // no date of its own (the operator's per-leg dates live in the quote's TOOL payload,
+        // not the engine request we map from — logged as its own bug), so the only date we know
+        // is the trip start from the modal: it lands on the first segment and the rest stay
+        // blank — exactly what the old single-element array meant.
+        dates: startDate ? Array.from({ length: segmentCount }, (_, i) => (i === 0 ? startDate : '')) : undefined,
         pax: details.pax,
         vehicleType: details.vehicleType,
         serviceType: 'private',
@@ -94,14 +120,17 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
   if (!engine.travelDays.length) throw new QuoteNotBookableError('chauffeur quote has no travel days');
   const days = engine.travelDays.map(normalizeChauffeurDay).sort((a, b) => a.date.localeCompare(b.date));
   const span = daySpan(engine.firstDate, engine.lastDate);
-  const stops = chainStops(days);
+  const { stops, rideIndex } = chainStops(days);
   return {
     mode: 'trip',
     distanceKm: sumKm(days),
     input: {
       stops,
       nights: Array(Math.max(0, stops.length - 1)).fill(0),
-      dates: days.map((d) => d.date),
+      // One date per SEGMENT, not per day: a day with 3+ stops owns several segments, and a gap
+      // stop shifts every later index. Rebuild it through rideIndex so each date stays on the
+      // segment it belongs to; a gap gets '' (blank reads as "flexible" everywhere downstream).
+      dates: rideIndex.map((i) => (i < 0 ? '' : days[i].date)),
       pax: details.pax,
       vehicleType: details.vehicleType,
       serviceType: 'chauffeur',

@@ -450,10 +450,14 @@ describe('ops UI — design elevation', () => {
     expect(body).not.toContain('vehicleType = sug'); // suggestion must not silently pick
   });
 
-  it('D4: autosave is debounced, gated on savedId + editable status, with a saved chip', () => {
+  // Spec 2026-07-29: the row now exists from "+ New quote", so savedId is no longer part of the
+  // gate — a shell's first real content must be able to autosave. vehicleType still gates it,
+  // because POST /save prices server-side and cannot persist an unpriceable payload.
+  it('D4: autosave is debounced, gated on priceability + editable status, with a saved chip', () => {
     expect(body).toContain('function fireAutosave(');
     expect(body).toContain('setTimeout(fireAutosave, 2500)');
-    expect(body).toContain('if (!state.savedId || !isEditableNow() || !state.vehicleType) return;');
+    expect(body).toContain('if (!isEditableNow() || !state.vehicleType) return;');
+    expect(body).not.toContain('if (!state.savedId || !isEditableNow()');
     expect(body).toContain('ch-savestate');
   });
 
@@ -499,5 +503,154 @@ describe('ops UI — review lock', () => {
   it('the banner names the lock', () => {
     expect(body).toContain('In review — locked');
     expect(body).toContain('Submitted — locked');
+  });
+});
+
+// Unpriced shells (spec 2026-07-29): "+ New quote" claims a real $0 row up front so the ticket is
+// assignable before anything is priced. The chip must say what is actually pending — a PRICE, not
+// persistence — and that marker must clear the moment a real save prices the row. Source-level
+// assertions anchored to the OWNING FUNCTION's body, so a copy change or a dropped assignment
+// fails here rather than being satisfied by the string existing anywhere in a 7700-line page.
+describe('ops UI — unpriced shell lifecycle', () => {
+  let body: string;
+  beforeAll(async () => { body = await (await createApp().request('/ops')).text(); });
+
+  /** The source of `function <name>(`, brace-matched to its closing `}`. */
+  function fnBody(name: string): string {
+    const start = body.indexOf(`function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    let depth = 0; let i = body.indexOf('{', start);
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}' && --depth === 0) break;
+    }
+    return body.slice(start, i + 1);
+  }
+
+  it('the save chip never says "Not priced yet" over unsaved typed content', () => {
+    const chip = fnBody('renderSaveState');
+    // "Not priced yet" belongs to ONE branch only: the clean shell, where there is no typed
+    // content at risk. While _dirty, something typed has not reached the server — autosave is
+    // debounced, and before a vehicle type fireAutosave() does not run at all, so the customer
+    // name, contact, legs and internal notes are held in memory only. Saying "Not priced yet"
+    // there told the operator their typing was safe when it was not.
+    expect(chip.match(/txt = 'Not priced yet'/g)).toHaveLength(1); // assignments, not prose
+    expect(chip).not.toContain("state.unpriced ? 'Not priced yet'");
+    expect(chip).toContain("txt = 'Not priced yet';");
+    // The dirty branch talks about PERSISTENCE. "Edits pending" is reserved for a row that has
+    // already saved successfully at least once — which is exactly `savedId && !unpriced`, since
+    // the shell marker clears only on a successful save. Everything else is "Unsaved".
+    expect(chip).toContain("txt = (state.savedId && !state.unpriced) ? 'Edits pending' : 'Unsaved';");
+    // Branch ORDER, not just text: error must be checked before dirty. A failed save leaves
+    // _dirty true, so if the dirty branch came first it would win and the error chip would be
+    // unreachable — exactly the bug this test suite exists to pin.
+    expect(chip.indexOf("_autoState === 'error'")).toBeLessThan(chip.indexOf('else if (_dirty)'));
+    // …and the clean-shell branch stays BELOW dirty, or it would swallow the dirty chip again.
+    expect(chip.indexOf('else if (_dirty)')).toBeLessThan(chip.indexOf("txt = 'Not priced yet';"));
+  });
+
+  it('a real autosave failure surfaces on a shell — the shell marker must not suppress it', () => {
+    const chip = fnBody('renderSaveState');
+    // state.unpriced clears only on a SUCCESSFUL save, so it is still true while a shell's
+    // autosave is failing. Gating the error branch on it swallowed every failed save of a
+    // not-yet-priced row: autosave is silent (no toast), so a fully-filled quote showing its
+    // price could fail to persist indefinitely and the chip would read a benign "Not priced yet",
+    // never advertising the Save-button escape hatch.
+    expect(chip).not.toContain("_autoState === 'error' && !state.unpriced");
+    // The distinction is whether autosave can run at all — fireAutosave() returns early without
+    // a vehicle type, so an unpriceable shell never reaches _autoState 'error' in the first
+    // place. That keeps the original intent without suppressing a genuine failure.
+    expect(chip).toContain('var autosaveArmed = !!state.vehicleType;');
+    expect(chip).toContain("else if (_autoState === 'error' && autosaveArmed)");
+    expect(chip).toContain("txt = 'Autosave failed &mdash; use Save';");
+    // The gate is only meaningful if it matches fireAutosave's own early return.
+    expect(fnBody('fireAutosave')).toContain('if (!isEditableNow() || !state.vehicleType) return;');
+  });
+
+  it('claiming the row marks it unpriced, and a successful save clears the marker', () => {
+    expect(fnBody('claimDraftRow')).toContain('state.unpriced = true;');
+    const save = fnBody('saveQuote');
+    // Inside the `res && res.id` success block — not in the failure paths below it.
+    const ok = save.slice(save.indexOf('if (res && res.id) {'));
+    expect(ok).toContain('state.unpriced = false;');
+    expect(ok.indexOf('state.unpriced = false;')).toBeLessThan(ok.indexOf('return true;'));
+  });
+
+  it('reopening a shell binds the builder to that row and keeps its notes', () => {
+    const reopen = fnBody('reopenQuote');
+    const shell = reopen.slice(reopen.indexOf("q.request.shell === true"));
+    expect(shell).toContain('state.unpriced = true;');
+    expect(shell).toContain('state.internalNotes = q.internalNotes');
+  });
+
+  it('the claimed row is bound into the URL by history replace, never push', () => {
+    expect(fnBody('claimDraftRow')).toContain('window.opsBindQuoteUrl(res.id)');
+    expect(body).toContain("setShellRoute('quote',{ quoteId:id, replace:true })");
+  });
+
+  it('the shell price blocker cannot fire while a price is on screen', () => {
+    const blockers = fnBody('submitBlockers');
+    // `state.unpriced` only clears on a save round-trip and autosave is debounced 2.5s, so a bare
+    // `if (state.unpriced)` told an operator the quote "has not been priced yet" with the real
+    // total right there on screen — and submitForReview() checks the blockers BEFORE transition()
+    // runs the save that would have cleared it. The blocker must be gated on the absence of a
+    // price, never on the shell marker alone.
+    expect(blockers).toContain('if (state.unpriced && !lastEstimate) add(');
+    expect(blockers).not.toMatch(/if \(state\.unpriced\) add\(/);
+    // The two price branches stay mutually exclusive (else-if), so the panel can never name a
+    // price twice, and the "could not be costed" line still comes last — it only speaks up when
+    // nothing else already explains the missing price.
+    expect(blockers.indexOf('if (state.unpriced && !lastEstimate)'))
+      .toBeLessThan(blockers.indexOf('else if (!out.length && !lastEstimate)'));
+  });
+
+  it('a save superseded while in flight is dropped and reported as failure', () => {
+    const save = fnBody('saveQuote');
+    expect(save).toContain('var seq = _openSeq;');
+    expect(save).toMatch(/if \(seq !== _openSeq\) \{[\s\S]{0,300}return false;/);
+    // The capture must happen BEFORE the await — captured after it (or dropped below it) can
+    // never differ from the live _openSeq by the time it's compared, making the guard permanently
+    // inert while every assertion here still passes.
+    expect(save.indexOf('var seq = _openSeq;')).toBeLessThan(save.indexOf('await apiSave('));
+    // The guard must sit between the await and the state writes.
+    expect(save.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(save.indexOf('await apiSave('));
+    expect(save.indexOf('if (seq !== _openSeq)')).toBeLessThan(save.indexOf('state.savedId = res.id;'));
+  });
+
+  it('an assign superseded while in flight is dropped, not painted onto the quote now open', () => {
+    const assign = fnBody('assignQuote');
+    // assignQuote was the one async state writer without the guard, and the shell row made it far
+    // more reachable: the picker is live from the first click. Assign A, click B, the PATCH
+    // resolves — without this, B shows A's assignee and toasts "Assigned to …" while B is
+    // untouched server-side.
+    expect(assign).toContain('var seq = _openSeq;');
+    expect(assign).toContain('if (seq !== _openSeq)');
+    // Captured BEFORE the await, or it can never differ from the live _openSeq when compared —
+    // permanently inert while a mere toContain assertion still passes.
+    expect(assign.indexOf('var seq = _openSeq;')).toBeLessThan(assign.indexOf('await apiPatch('));
+    // …and compared AFTER it, ahead of BOTH branches: the failure toast + re-render is as wrong
+    // on the newly-opened quote as the success write is.
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeGreaterThan(assign.indexOf('await apiPatch('));
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('if (!res || res.error)'));
+    expect(assign.indexOf('if (seq !== _openSeq)')).toBeLessThan(assign.indexOf('state.assignedTo = res.assignedTo'));
+  });
+
+  it('the itinerary basics gate is not unlocked by the shell row merely existing', () => {
+    // claimDraftRow() sets savedId within ~200ms of "+ New quote", so a bare `!!st.savedId` made
+    // showItinerary true on every new quote: the ch-itin-locked guidance panel only flashed, the
+    // just-unlocked reveal never played, and the section appeared under the operator's cursor
+    // mid-typing. "Already saved with real content" is now savedId AND the shell marker cleared.
+    const gate = body.split('\n').find(l => l.includes('var hasBuiltItinerary =')) as string;
+    expect(gate).toBeTruthy();
+    expect(gate).toContain('(!!st.savedId && !st.unpriced)');
+    expect(gate).not.toMatch(/=\s*!!st\.savedId \|\|/);
+    // The other half — real typed leg content — still unlocks it, so a built itinerary is never
+    // hidden, and basicsDone remains the ordinary way in.
+    expect(gate).toContain("(s || '').trim() !== ''");
+    expect(body).toContain('var showItinerary = basicsDone || hasBuiltItinerary;');
+    // The panel the gate exists to show is still wired to it.
+    expect(body).toContain('ch-itin-locked');
+    expect(body).toContain('Complete the trip basics to start');
+    expect(body).toContain('esc(basicsMissingText())');
   });
 });

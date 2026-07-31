@@ -120,6 +120,11 @@ export interface QuoteSummary {
   // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
   // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
   routeText: string | null;
+  // Autosave shells (spec 2026-07-29): true when this row was created by "+ New quote" and has
+  // never been priced. The queue renders "Not priced yet" instead of a $0 total, and the send
+  // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
+  // a $0 total is a symptom, the marker is the fact.
+  unpriced: boolean;
   createdAt: Date;
 }
 
@@ -246,6 +251,14 @@ export function parseDateFilter(value: string, bound: 'from' | 'to'): Date {
   return new Date(value);
 }
 
+// A shell is the row "+ New quote" creates before anything is priceable: request_json and
+// result_json are both { shell: true }. POST /save overwrites request/result wholesale, so the
+// marker cannot survive a real save — that is what makes it safe to store a $0 row with no
+// nullable-money migration.
+export function isUnpricedShell(q: { request: unknown }): boolean {
+  return !!q.request && typeof q.request === 'object' && (q.request as { shell?: unknown }).shell === true;
+}
+
 function toSummary(q: SavedQuote): QuoteSummary {
   return {
     id: q.id,
@@ -259,6 +272,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     currency: q.currency,
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
+    unpriced: isUnpricedShell(q),
     createdAt: q.createdAt,
   };
 }
@@ -346,10 +360,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
   async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
       .filter((r) =>
-        r.createdAt >= since ||
+        (r.createdAt >= since ||
         (r.sentAt && r.sentAt >= since) ||
         (r.decidedAt && r.decidedAt >= since) ||
-        LIVE_STATUSES.includes(r.status))
+        LIVE_STATUSES.includes(r.status)) &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
       id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
@@ -361,7 +378,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
-      .filter((r) => r.createdAt >= from && r.createdAt <= to)
+      .filter((r) =>
+        r.createdAt >= from && r.createdAt <= to &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
       id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
@@ -399,7 +420,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    if (!row) return null;
+    // Same guard softDelete uses: a deleted row is off-limits to a content write. The shell sweep
+    // can delete a shell an operator still has open, and their next autosave would otherwise
+    // write the real priced quote into the deleted row — invisible in the queue forever.
+    if (!row || row.deletedAt) return null; // unknown or deleted
     // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
     row.product = q.product;
     row.vehicle = q.vehicle ?? null;
