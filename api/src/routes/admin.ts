@@ -16,12 +16,17 @@ import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
+import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
 import { runWatchdog } from '../services/watchdog';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
+import { releaseWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundRepo } from '../db/refundRepo';
+import type { PaymentRepo } from '../db/paymentRepo';
+import type { RideOpsRepo } from '../db/rideOpsRepo';
 
 // Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
 // session with payments:act (founder or finance) — the machine key (system) does NOT
@@ -50,6 +55,10 @@ export function adminRoutes(deps: {
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
   refunds: RefundRepo;
+  // Manual settlement (mark-paid) needs the payment ledger to record the money and the ride-ops
+  // row to write the audit note the booking sheet's activity list renders.
+  payments: PaymentRepo;
+  rideOps: RideOpsRepo;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -100,6 +109,9 @@ export function adminRoutes(deps: {
         console.error(`seat release failed for ${updated.reference}:`, err);
       }
     }
+    // A cancelled booking's source quote is no longer won — see services/quoteOutcome. Not
+    // for no_show: the fare is forfeited, so that one really was won. Best-effort.
+    if (to === 'cancelled') await releaseWonQuote(updated.id, 'Booking cancelled', deps);
     try {
       await notify(updated, email);
     } catch (err) {
@@ -161,6 +173,9 @@ export function adminRoutes(deps: {
       });
       const after = await bookings.get(c.req.param('id'));
       if (!after) throw new Error(`booking_not_found_after_refund: ${c.req.param('id')}`);
+      // Money fully returned ⇒ the quote behind it was not won after all. A PARTIAL refund
+      // leaves it won: we kept part of the fare, so the business did happen.
+      if (outcome.bookingFullyRefunded) await releaseWonQuote(after.id, 'Booking refunded', deps);
       if (outcome.bookingFullyRefunded && after.mode === 'shared' && before.status !== 'cancelled') {
         try {
           await departures.releaseSeats({
@@ -211,6 +226,106 @@ export function adminRoutes(deps: {
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
   r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
 
+  const MarkPaid = z
+    .object({
+      method: z.enum(MANUAL_PAYMENT_METHODS),
+      reference: z.string().trim().min(1).max(200).optional(),
+    })
+    .strict();
+
+  // Ops marks an out-of-band booking paid (owner 2026-07-30). A booking converted from a
+  // quote lands in payment_pending and is settled by cash or bank transfer, so no PayHere
+  // webhook is ever coming — without this it is stranded at "Awaiting payment" forever and
+  // can never advance through the pipeline. The money is RECORDED, not just asserted: a
+  // refund requires a captured payment (refundRepo's payment_not_captured), so a status-only
+  // flip would leave a cash booking unrefundable.
+  // Deliberately sends NO customer email (owner 2026-07-30); automatic sending is wanted
+  // later and belongs with the rest of the confirmation flow.
+  r.post('/bookings/:id/mark-paid', requireCap('payments:act'), async (c) => {
+    const booking = await bookings.get(c.req.param('id'));
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const parsed = MarkPaid.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'invalid_mark_paid_request' }, 400);
+    const { method } = parsed.data;
+    const reference = parsed.data.reference ?? null;
+
+    // Idempotent on a key derived from the booking id, the same way POST /admin/quote/:id/book
+    // is: a double-click finds the payment it already recorded and returns the booking as it
+    // stands rather than taking the money twice.
+    // Only a SUCCEEDED payment may short-circuit. create() claims the key with a 'pending' row,
+    // so a settle step that dies mid-flight (a 23505 on the provider/gateway-reference UNIQUE
+    // when one bank slip is entered on two bookings, or any transient connection error) leaves
+    // that row behind: short-circuiting on its mere existence would answer every retry with a
+    // cheerful 200 and an unchanged booking — stranded forever with no repair path, which is the
+    // exact condition this route exists to end. Falling through is safe because create() returns
+    // the existing row for a claimed key, so the settle and status steps simply re-run.
+    const idempotencyKey = `manual-paid:${booking.id}`;
+    const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
+    // The money of an earlier attempt is already in the ledger; only the booking may still be
+    // behind. Short-circuit ONLY once the booking has actually reached paid — the second half of
+    // the same window as the pending case above: if setStatus threw something other than an
+    // IllegalTransitionError (a pool timeout, a connection blip), the payment is succeeded while
+    // the booking sits in payment_pending, and nothing else can move it (no webhook is coming for
+    // cash, and confirm/cancel/no-show do not start from payment_pending). Answering 200 with the
+    // unchanged booking would strand it for good, repairable only by hand-written SQL in prod.
+    const recorded = claimed?.status === 'succeeded';
+    if (recorded && booking.status === 'paid') return c.json(booking, 200);
+
+    if (booking.status !== 'payment_pending') {
+      return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
+    }
+
+    // Only when the money still has to be taken. On the repair path above it is already recorded,
+    // so create/settle must not run again — and neither may the ledger guard, whose succeeded row
+    // is OUR OWN: it would turn a legitimate repair into a 409 and leave the booking stranded.
+    if (!recorded) {
+      // Defence in depth: if some other payment already settled — a PayHere webhook arriving late
+      // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
+      // succeeded rows on one booking double the captured total refundRepo sums, which would make
+      // refund_exceeds_captured wave through a refund of twice the money actually taken.
+      const settled = (await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
+      if (settled) return c.json({ error: 'already_paid', status: booking.status }, 409);
+
+      const payment = await deps.payments.create({
+        bookingId: booking.id,
+        // The method is genuinely the provider of this money — a cash payment's provider is cash.
+        // The CHECK `payments_provider_supported` admits all three manual methods alongside the two
+        // gateways since migration 0029; it is a typo guard on channel names, not a safety property.
+        provider: method,
+        // Not the bare booking reference: the checkout route already claims that as its orderId,
+        // and order_id is unique — a booking once handed a PayHere form must still be settleable
+        // in cash.
+        orderId: `${booking.reference}-MANUAL`,
+        amount: booking.amountDueNow ?? booking.total,
+        currency: booking.currency,
+        idempotencyKey,
+      });
+      await deps.payments.markSucceededManually(payment.id, { reference });
+    }
+
+    let paid: Booking;
+    try {
+      paid = await bookings.setStatus(booking.id, 'paid');
+    } catch (err) {
+      if (!(err instanceof IllegalTransitionError)) throw err;
+      // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
+      // money is recorded either way, so report the booking as it now stands, not a 500.
+      paid = (await bookings.get(booking.id)) ?? booking;
+    }
+
+    // Audit trail: who took the money, how, and against what reference. It goes in the ops
+    // notes because that is what the booking sheet's activity list renders (one note per line);
+    // best-effort like the emails above — a note failure must not undo money already recorded.
+    try {
+      const ops = await deps.rideOps.getOrCreate(booking.id);
+      const note = `Marked paid — ${method} · ${reference ?? 'no reference'} · by ${c.get('identity').email}`;
+      await deps.rideOps.setFlags(booking.id, { opsNotes: ops.opsNotes ? `${ops.opsNotes}\n${note}` : note });
+    } catch (err) {
+      console.error(`mark-paid note failed for ${paid.reference}:`, err);
+    }
+    return c.json(paid, 200);
+  });
+
   // Cron tick — an external scheduler (cron-job.org / GitHub Actions) POSTs here on a
   // cadence; the work is idempotent via the notification log, so over-calling is harmless.
   // The stale shared-hold sweep (GL-3) rides the same tick, best-effort: a sweep failure
@@ -244,6 +359,18 @@ export function adminRoutes(deps: {
         console.error('quote expiry sweep failed:', err);
       }
     }
+    // Abandoned autosave shells ride the same tick, best-effort: "+ New quote" creates a real
+    // row so the ticket is assignable immediately, and this is what stops the unfinished ones
+    // accumulating. Idempotent (a soft-deleted row no longer lists) and a failure here must
+    // never block the customer notifications the caller asked for.
+    let abandonedDrafts = 0;
+    if (deps.quotes) {
+      try {
+        abandonedDrafts = (await sweepAbandonedDrafts(new Date(), { quotes: deps.quotes })).swept;
+      } catch (err) {
+        console.error('abandoned-draft sweep failed:', err);
+      }
+    }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
     // failure must never block the customer notifications the caller asked for.
     let digest = false;
@@ -264,13 +391,13 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, expiredQuotes, digest, rideBoard }, 200);
+    return c.json({ ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
-    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret });
+    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments });
     return c.json(result, 200);
   });
 

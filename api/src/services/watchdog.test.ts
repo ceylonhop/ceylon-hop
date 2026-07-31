@@ -5,6 +5,7 @@ import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -71,6 +72,28 @@ describe('runWatchdog', () => {
     expect(alerts.sent).toHaveLength(0);
   });
 
+
+  // The exemption is about HOW the money arrived, not which channel booked it. That only
+  // started mattering once ops could hand a WhatsApp customer a card link: a whatsapp-channel
+  // booking paid at the gateway IS a genuine silent-confirmation failure, and a channel-keyed
+  // exemption — the shape the stuck-pending sweep above uses — would quietly swallow it.
+  it('still alerts a gateway-paid booking on the whatsapp channel', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const b = await bookings.create({ ...sample, channel: 'whatsapp' });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    const payments = new InMemoryPaymentRepo();
+    const p = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: b.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `checkout:${b.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(16), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments });
+    expect(res.paidUnconfirmed).toBe(1);
+    expect(alerts.sent[0].kind).toBe('watchdog_paid_unconfirmed');
+  });
+
   it('a persisting problem alerts once per cooldown across repeated sweeps (dedupe by booking)', async () => {
     const { bookings } = await seed('payment_pending');
     const inner = new FakeAlertAdapter();
@@ -81,6 +104,37 @@ describe('runWatchdog', () => {
     expect(r1.stuckPending).toBe(1);
     expect(r2.stuckPending).toBe(1); // still counted as stuck…
     expect(inner.sent).toHaveLength(1); // …but the founder got exactly one email
+  });
+
+  // A cash/bank booking settled through POST /admin/bookings/:id/mark-paid deliberately sends no
+  // confirmation email, and its status never leaves 'paid' (the pipeline advances on ride_ops).
+  // Without an exemption it would page the founder on every sweep until departure.
+  it('skips a booking settled out-of-band (manual payment) — no paid-unconfirmed alert', async () => {
+    const { bookings, booking } = await seed('paid');
+    const payments = new InMemoryPaymentRepo();
+    const p = await payments.create({
+      bookingId: booking.id, provider: 'cash', orderId: `${booking.reference}-MANUAL`,
+      amount: 5000, currency: 'USD', idempotencyKey: `manual-paid:${booking.id}`,
+    });
+    await payments.markSucceededManually(p.id, { reference: 'slip-1' });
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments });
+    expect(res.paidUnconfirmed).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  it('still alerts a gateway-paid booking whose confirmation never went out', async () => {
+    const { bookings, booking } = await seed('paid');
+    const payments = new InMemoryPaymentRepo();
+    const p = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+      amount: 5000, currency: 'USD', idempotencyKey: `web:${booking.id}`,
+    });
+    await payments.markSucceeded(p.id);
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments });
+    expect(res.paidUnconfirmed).toBe(1);
+    expect(alerts.sent[0].kind).toBe('watchdog_paid_unconfirmed');
   });
 
   it('skips ops-booked (channel whatsapp) bookings — no stuck alert, no recovery email', async () => {

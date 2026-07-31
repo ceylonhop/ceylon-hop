@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, type NewQuote } from './quoteRepo';
+import { InMemoryQuoteRepo, genReference, parseDateFilter, canTransition, isUnpricedShell, type NewQuote } from './quoteRepo';
 
 describe('canTransition (quote review lifecycle)', () => {
   it('allows the maker-checker path but requires review before approval', () => {
@@ -170,6 +170,21 @@ describe('InMemoryQuoteRepo', () => {
 
   it('update returns null for an unknown id', async () => {
     expect(await new InMemoryQuoteRepo().update('nope', sample())).toBeNull();
+  });
+
+  // A soft-deleted row is off-limits to a content write, exactly like softDelete() refuses to
+  // re-stamp one. Without this the shell sweep and a late autosave race: the sweep deletes the
+  // shell, the operator's next autosave writes the real priced quote into the deleted row and
+  // gets a 200, and the work is invisible in the queue forever.
+  it('update returns null for a soft-deleted row and leaves its content untouched', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 4048, customerName: 'Maya' }));
+    await repo.softDelete(q.id, 'sweep@x.com');
+    expect(await repo.update(q.id, sample({ totalCents: 9900, customerName: 'Overwritten' }))).toBeNull();
+    // get()/list() hide deleted rows, so read the retained row straight out of the store.
+    const row = repo.snapshotForQuoteConversion().rows.get(q.id);
+    expect(row!.totalCents).toBe(4048);
+    expect(row!.customerName).toBe('Maya');
   });
 
   it('patch stamps convertedBookingId (the booking a won quote became)', async () => {
@@ -356,5 +371,144 @@ describe('analytics projections', () => {
     const all = await repo.listFunnelRows(new Date(now - 30 * DAY), 100, 'all');
     const ids = all.rows.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([webRecent.id, recentDraft.id]));
+  });
+});
+
+describe('isUnpricedShell', () => {
+  it('is true only for the { shell: true } marker', () => {
+    expect(isUnpricedShell({ request: { shell: true } })).toBe(true);
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+    expect(isUnpricedShell({ request: null })).toBe(false);
+    expect(isUnpricedShell({ request: undefined })).toBe(false);
+    expect(isUnpricedShell({ request: 'shell' })).toBe(false);
+  });
+
+  it('does NOT treat a legitimately zero-priced quote as a shell', () => {
+    expect(isUnpricedShell({ request: { tool: {}, engine: {} } })).toBe(false);
+  });
+});
+
+describe('list() summaries', () => {
+  it('flags an unpriced shell and leaves a priced quote unflagged', async () => {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+
+    const rows = await repo.list({ channel: 'ops' });
+    expect(rows.find((r) => r.totalCents === 0)!.unpriced).toBe(true);
+    expect(rows.find((r) => r.totalCents === 4048)!.unpriced).toBe(false);
+  });
+});
+
+describe('analytics projections exclude unpriced shells', () => {
+  async function seed() {
+    const repo = new InMemoryQuoteRepo();
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+    });
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+    });
+    // A legitimately $0 priced quote (e.g. a comp ride) — NOT a shell, must still count as
+    // demand. Distinguishes "excluded because it's a shell" from "excluded because totalCents
+    // is 0", which the original two-row seed above could not tell apart.
+    await repo.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {}, comp: true }, result: { totalCents: 0 },
+    });
+    return repo;
+  }
+
+  it('omits shells from the funnel rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listFunnelRows(new Date(0), 100, 'ops');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
+  });
+
+  it('omits shells from the demand rows', async () => {
+    const repo = await seed();
+    const { rows } = await repo.listDemandRows(new Date(0), new Date('2100-01-01'), 100, 'ops');
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.totalCents).sort((a, b) => a - b)).toEqual([0, 4048]);
+    expect(rows.some((r) => r.totalCents === 4048)).toBe(true);
+    expect(rows.some((r) => r.totalCents === 0)).toBe(true);
+  });
+});
+
+describe('expiry is reversible, and reopening un-decides the quote', () => {
+  // The sweep — not a person — applies 'expired'. A terminal 'expired' therefore let a
+  // background clock strand real work with no way back, which is exactly the trap the team
+  // was 12 days from hitting with 44 quotes parked in 'sent'.
+  it('allows expired → draft, and nothing else', () => {
+    expect(canTransition('expired', 'draft')).toBe(true);
+    expect(canTransition('expired', 'sent')).toBe(false);
+    expect(canTransition('expired', 'ready')).toBe(false);
+    expect(canTransition('expired', 'pending_review')).toBe(false);
+    // The outcome flip stays available from any decided state (DECIDED shortcut).
+    expect(canTransition('expired', 'won')).toBe(true);
+    expect(canTransition('expired', 'lost')).toBe(true);
+    // won/lost remain terminal for editing — only expiry became reversible.
+    expect(canTransition('won', 'draft')).toBe(false);
+    expect(canTransition('lost', 'draft')).toBe(false);
+  });
+
+  it('clears decidedAt on reopen, so a revived quote is not still "decided"', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'expired' });
+    const expired = await repo.get(q.id);
+    expect(expired?.decidedAt).toBeInstanceOf(Date);
+
+    await repo.patch(q.id, { status: 'draft' });
+    expect((await repo.get(q.id))?.decidedAt).toBeNull();
+
+    // …and the NEXT decision stamps fresh, rather than reporting the old expiry date.
+    await repo.patch(q.id, { status: 'won' });
+    const won = await repo.get(q.id);
+    expect(won?.decidedAt).toBeInstanceOf(Date);
+    expect(won!.decidedAt!.getTime()).toBeGreaterThanOrEqual(expired!.decidedAt!.getTime());
+  });
+
+  it('an outcome FLIP still keeps its original date — correcting is not re-deciding', async () => {
+    // Guards services/quoteOutcome: won → lost when a booking is cancelled must not move the
+    // row into a different analytics window.
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'won' });
+    const first = (await repo.get(q.id))!.decidedAt;
+    await repo.patch(q.id, { status: 'lost', lostReason: 'Booking cancelled' });
+    expect((await repo.get(q.id))?.decidedAt).toEqual(first);
+  });
+
+  it('a notes-only patch never touches decidedAt', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'won' });
+    const before = (await repo.get(q.id))!.decidedAt;
+    await repo.patch(q.id, { internalNotes: 'just a note' });
+    expect((await repo.get(q.id))?.decidedAt).toEqual(before);
   });
 });

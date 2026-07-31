@@ -4,9 +4,11 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday } from '../testSupport/dates';
+import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
 import { Hono } from 'hono';
 
 const KEY = 'secret-key';
@@ -204,8 +206,10 @@ describe('POST /admin/jobs/notifications', () => {
         channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
         rateCardVersion: '2026-06-28', request: {}, result: {},
       });
-      // stamp sentAt 31 days ago — past the 30-day idle TTL
-      vi.setSystemTime(new Date(NOW.getTime() - 31 * 24 * 3600 * 1000));
+      // Stamp sentAt just past the idle TTL, DERIVED from the constant rather than a literal
+      // "31 days": the TTL moved 30 → 180 once the team began parking real quotes in 'sent',
+      // and a hardcoded age silently stops testing expiry the moment it changes again.
+      vi.setSystemTime(new Date(NOW.getTime() - SENT_QUOTE_TTL_MS - 24 * 3600 * 1000));
       await quotes.patch(q.id, { status: 'sent' });
       vi.setSystemTime(NOW);
 
@@ -216,6 +220,13 @@ describe('POST /admin/jobs/notifications', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('the notifications tick reports the abandoned-draft sweep', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ abandonedDrafts: 0 });
   });
 });
 
@@ -423,5 +434,229 @@ describe('POST /admin/bookings/:id/no-show', () => {
       method: 'POST', headers: { cookie: await cookie('op@x.com') },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// A booking converted from an ops quote is settled by cash or bank transfer, so no PayHere
+// webhook is ever coming. mark-paid RECORDS that money (it does not merely flip the status)
+// so the booking can leave "Awaiting payment" AND still be refundable later.
+describe('POST /admin/bookings/:id/mark-paid', () => {
+  function makeCashApp() {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const rideOps = new InMemoryRideOpsRepo();
+    const email = new FakeEmailAdapter();
+    return { app: createApp({ adminApiKey: KEY, auth, bookings, payments, rideOps, email }), bookings, payments, rideOps, email };
+  }
+
+  // The state the ops quote → booking conversion leaves behind: "Awaiting payment".
+  async function awaitingPayment(app: ReturnType<typeof createApp>, bookings: InMemoryBookingRepo) {
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    return b as { id: string; reference: string; total: number; amountDueNow?: number | null; currency: string };
+  }
+
+  const markPaid = async (app: ReturnType<typeof createApp>, id: string, body: unknown, who = 'f@x.com') =>
+    app.request(`/admin/bookings/${id}/mark-paid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie(who) },
+      body: JSON.stringify(body),
+    });
+
+  it('moves the booking to paid and records exactly one manually-settled payment for the amount due', async () => {
+    const { app, bookings, payments, email } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('succeeded');
+    expect(rows[0].provider).toBe('cash');
+    expect(rows[0].amount).toBe(b.amountDueNow ?? b.total);
+    expect(rows[0].currency).toBe(b.currency);
+    // order_id is UNIQUE and the checkout route claims the bare reference: a booking once handed
+    // a PayHere form must still settle in cash rather than 23505 in Postgres (invisible here —
+    // the in-memory repo just overwrites the duplicate).
+    expect(rows[0].orderId).toBe(`${b.reference}-MANUAL`);
+    // Provenance (SH7): real cash must NEVER be labelled a legacy backfill or a webhook.
+    const settlement = payments.getForSettlement(rows[0].id)!;
+    expect(settlement.settlementSource).toBe('manual');
+    expect(settlement.settledAt).toBeInstanceOf(Date);
+    // Explicit owner decision (2026-07-30): no customer email on this action.
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('lands the operator reference on the payment, and succeeds without one', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const withRef = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, withRef.id, { method: 'bank_transfer', reference: 'BOC-77219' })).status).toBe(200);
+    const paid = (await payments.findByBookingId(withRef.id))[0];
+    expect(paid.provider).toBe('bank_transfer');
+    expect(payments.getForSettlement(paid.id)!.gatewayPaymentId).toBe('BOC-77219');
+
+    const noRef = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, noRef.id, { method: 'cash' })).status).toBe(200);
+    const cash = (await payments.findByBookingId(noRef.id))[0];
+    expect(cash.status).toBe('succeeded');
+    expect(payments.getForSettlement(cash.id)!.gatewayPaymentId).toBeNull();
+  });
+
+  it('leaves the booking refundable — the whole reason the money is recorded', async () => {
+    const { app, bookings } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const refund = await app.request(`/admin/bookings/${b.id}/refunds`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: await cookie('f@x.com') },
+      body: JSON.stringify({ amountCents: b.amountDueNow ?? b.total, currency: b.currency, reason: 'Trip cancelled' }),
+    });
+    expect(refund.status).toBe(201); // NOT 409 payment_not_captured
+  });
+
+  it('records the operator, the method and the reference in the booking activity notes', async () => {
+    const { app, bookings, rideOps } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await markPaid(app, b.id, { method: 'bank_transfer', reference: 'BOC-77219' }, 'fin@x.com');
+    const notes = (await rideOps.get(b.id))!.opsNotes ?? '';
+    expect(notes).toContain('fin@x.com');
+    expect(notes).toContain('bank_transfer');
+    expect(notes).toContain('BOC-77219');
+  });
+
+  it('400 not_awaiting_payment for a booking that is not awaiting payment, and records nothing', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await book(app); // still draft
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'not_awaiting_payment', status: 'draft' });
+    expect((await bookings.get(b.id))!.status).toBe('draft');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('400 for an unknown method', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const res = await markPaid(app, b.id, { method: 'crypto' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'invalid_mark_paid_request' });
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('refuses a caller without payments:act (ops session, and the machine key)', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' }, 'op@x.com')).status).toBe(403);
+    const key = await app.request(`/admin/bookings/${b.id}/mark-paid`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-key': KEY },
+      body: JSON.stringify({ method: 'cash' }),
+    });
+    expect(key.status).toBe(403);
+    expect((await app.request(`/admin/bookings/${b.id}/mark-paid`, { method: 'POST' })).status).toBe(401);
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('404 for an unknown booking', async () => {
+    const { app } = makeCashApp();
+    expect((await markPaid(app, 'no-such', { method: 'cash' })).status).toBe(404);
+  });
+
+  it('is idempotent — a double-click never records the money twice', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    const second = await markPaid(app, b.id, { method: 'cash' });
+    expect(second.status).toBe(200);
+    expect((await second.json()).status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1);
+    expect(rows.reduce((sum, p) => sum + p.amount, 0)).toBe(b.amountDueNow ?? b.total);
+  });
+
+  // The failure mode this route exists to prevent, reintroduced by a too-eager idempotency gate:
+  // create() claims the key with a PENDING row, so if the settle step dies (a 23505 on the
+  // provider/gateway-reference UNIQUE when ops enters one bank slip on two bookings, or any
+  // transient connection error), every retry short-circuits on that pending row and answers 200
+  // with an unchanged booking — no money recorded, no error, and no repair path. Only a
+  // SUCCEEDED payment may short-circuit.
+  it('a retry after a mid-flight failure finishes the job — a pending row must not short-circuit', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    // Exactly what a crashed first attempt leaves behind: the key claimed, the money not settled.
+    const stranded = await payments.create({
+      bookingId: b.id,
+      provider: 'cash',
+      orderId: `${b.reference}-MANUAL`,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `manual-paid:${b.id}`,
+    });
+    expect(stranded.status).toBe('pending');
+
+    const res = await markPaid(app, b.id, { method: 'cash', reference: 'BOC-77219' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1); // the retry reuses the claimed row, it does not take the money twice
+    expect(rows[0].id).toBe(stranded.id);
+    expect(rows[0].status).toBe('succeeded');
+    expect(payments.getForSettlement(rows[0].id)!.settlementSource).toBe('manual');
+  });
+
+  // The other half of the same window: the money settled but the status write did not land (a
+  // connection blip on setStatus). The payment is succeeded while the booking is still
+  // payment_pending, and nothing else can move payment_pending → paid — no webhook is coming for
+  // cash, and confirm/cancel/no-show do not start there. A retry must finish the status step
+  // rather than answer 200 with the stranded booking, and must not take the money a second time.
+  it('a retry after the status write failed finishes the transition — the money is not taken twice', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    // Exactly what a mark-paid whose setStatus threw leaves behind: money recorded, booking stuck.
+    const settled = await payments.create({
+      bookingId: b.id,
+      provider: 'cash',
+      orderId: `${b.reference}-MANUAL`,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `manual-paid:${b.id}`,
+    });
+    await payments.markSucceededManually(settled.id, { reference: 'BOC-77219' });
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+
+    const res = await markPaid(app, b.id, { method: 'cash', reference: 'BOC-77219' });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe('paid');
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    const rows = await payments.findByBookingId(b.id);
+    expect(rows).toHaveLength(1); // our own succeeded row must not trip the already_paid ledger guard
+    expect(rows[0].id).toBe(settled.id);
+    expect(rows.reduce((sum, p) => sum + p.amount, 0)).toBe(b.amountDueNow ?? b.total);
+  });
+
+  // A PayHere webhook that settles late (delayed or retried) can land on a booking ops has
+  // already decided to settle by hand. Two succeeded rows for one booking double the captured
+  // total refundRepo sums, so refund_exceeds_captured would let us refund twice the money taken.
+  it('409 already_paid when the ledger already holds a succeeded payment, and records nothing', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    const gateway = await payments.create({
+      bookingId: b.id,
+      provider: 'payhere',
+      orderId: b.reference,
+      amount: b.amountDueNow ?? b.total,
+      currency: b.currency,
+      idempotencyKey: `checkout:${b.id}`,
+    });
+    await payments.markSucceeded(gateway.id);
+
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'already_paid', status: 'payment_pending' });
+    expect(await payments.findByBookingId(b.id)).toHaveLength(1);
   });
 });

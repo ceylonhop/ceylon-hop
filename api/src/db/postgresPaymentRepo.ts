@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from './client';
 import { payments } from './schema';
 import type { PaymentRepo, NewPayment, Payment, PaymentStatus } from './paymentRepo';
@@ -60,6 +60,44 @@ export class PostgresPaymentRepo implements PaymentRepo {
       .returning();
     if (!row) throw new Error(`payment_not_found: ${id}`);
     return toPayment(row);
+  }
+
+  // Out-of-band settlement (cash / bank transfer). The provenance is explicit — 'manual' says a
+  // human recorded this, never a gateway — and the operator's optional reference is the only
+  // evidence there is, so it goes where a gateway id would. Who did it lives in the booking's
+  // activity notes, written by the route.
+  async markSucceededManually(id: string, evidence: { reference: string | null }): Promise<Payment> {
+    const now = new Date();
+    const [row] = await this.db
+      .update(payments)
+      .set({
+        status: 'succeeded',
+        gatewayPaymentId: evidence.reference,
+        settledAt: now,
+        settlementSource: 'manual',
+        updatedAt: now,
+      })
+      .where(eq(payments.id, id))
+      .returning();
+    if (!row) throw new Error(`payment_not_found: ${id}`);
+    return toPayment(row);
+  }
+
+  // Cheapest possible existence check — the watchdog asks this once per paid booking on every
+  // ~15-min sweep, and nothing downstream wants the row itself.
+  async hasManualSettlement(bookingId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.bookingId, bookingId),
+          eq(payments.status, 'succeeded'),
+          eq(payments.settlementSource, 'manual'),
+        ),
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   async markFailed(id: string): Promise<Payment> {

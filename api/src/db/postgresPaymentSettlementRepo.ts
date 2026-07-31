@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import type { VerifiedPaymentEvent } from '../adapters/payments';
 import type { BookingRepo } from './bookingRepo';
 import type { Db } from './client';
@@ -93,6 +93,23 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         return { kind: 'failed' as const, payment: failed, bookingId: booking.id };
       }
 
+      // Has some OTHER payment on this booking already captured? Read inside the transaction,
+      // after the booking row is locked FOR UPDATE above, so a concurrent settle on a sibling
+      // payment can't slip in between this read and our write — and before our own update, so
+      // this row is not its own evidence. `ne` is the whole point: an ordinary retry re-settling
+      // the same payment must stay a plain settlement.
+      const [otherCapture] = await tx
+        .select({ id: payments.id })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.bookingId, payment.bookingId),
+            eq(payments.status, 'succeeded'),
+            ne(payments.id, payment.id),
+          ),
+        )
+        .limit(1);
+
       const [succeeded] = await tx
         .update(payments)
         .set({
@@ -105,6 +122,12 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         .where(eq(payments.id, payment.id))
         .returning();
       await this.failureHook?.('after_payment_update');
+
+      // Keep the capture (the money moved; the refund ceiling must reflect it) but leave the
+      // booking as the first settlement left it and hand the case to a human, loudly.
+      if (otherCapture) {
+        return { kind: 'double_capture' as const, payment: succeeded, bookingId: booking.id };
+      }
 
       if (booking.status !== 'payment_pending') {
         return {

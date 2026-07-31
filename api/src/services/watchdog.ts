@@ -1,5 +1,6 @@
 import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import type { PaymentRepo } from '../db/paymentRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
 import { sendPaymentIncomplete, manageUrl } from './notifications';
@@ -30,9 +31,13 @@ export async function runWatchdog(
     email?: EmailAdapter;
     baseUrl?: string;
     linkSecret?: string;
+    // Optional like the email deps above so existing callers/tests keep working. Without it the
+    // out-of-band exemption below can't be evaluated and every manually settled booking alerts;
+    // the one production mount (POST /admin/jobs/watchdog) always passes it.
+    payments?: PaymentRepo;
   },
 ): Promise<{ stuckPending: number; paidUnconfirmed: number; recoveryEmails: number }> {
-  const { bookings, log, alerts, email, baseUrl, linkSecret } = deps;
+  const { bookings, log, alerts, email, baseUrl, linkSecret, payments } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck = pending.filter((b) => {
@@ -70,6 +75,16 @@ export async function runWatchdog(
   for (const b of paid) {
     if (now.getTime() - Date.parse(b.createdAt) < UNCONFIRMED_PAID_MS) continue;
     if (await log.wasSent(b.id, 'confirmation')) continue;
+    // Money that arrived out-of-band (cash/bank recorded by ops via mark-paid) is NOT a silent
+    // failure — that route deliberately sends no confirmation email (owner 2026-07-30), so the
+    // missing log entry is the expected state, not a symptom. Same spirit as the channel
+    // 'whatsapp' exemption above. It matters more here because nothing ever clears the
+    // condition: a paid booking stays 'paid' (the pipeline advances ride_ops.fulfilmentStatus,
+    // not bookings.status), so without this a cash booking taken six weeks out would page the
+    // founder every sweep until departure and drown the alerts that mean something.
+    // Deliberately NOT keyed on the notification log: writing a fake 'confirmation' entry would
+    // assert an email that never went out, and the same key gates the real send later.
+    if (payments && (await payments.hasManualSettlement(b.id))) continue;
     paidUnconfirmed += 1;
     await alerts.send({
       severity: 'critical',

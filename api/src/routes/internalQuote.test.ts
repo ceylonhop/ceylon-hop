@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
-import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
@@ -185,12 +185,30 @@ describe('internal quoting tool route', () => {
     expect(got.customerName).toBe('Maya'); // approved content untouched
   });
 
-  it('POST /save with an unknown id falls back to creating a new quote (201)', async () => {
-    const app = createApp();
+  it('POST /save with an unknown id is rejected (409) rather than minting a second quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
     const res = await post(app, '/admin/quote/save', { id: 'no-such-id', vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [leg({ distanceKm: 80 })] });
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.id).not.toBe('no-such-id');
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_deleted');
+    expect((await quotes.list()).length).toBe(0); // no orphan row with a brand-new reference
+  });
+
+  // The shell sweep (spec 2026-07-29) makes this reachable: it soft-deletes a stale shell while
+  // an operator still has it open, and their first autosave arrives afterwards. update() must
+  // refuse the deleted row and the route must say so — writing real work into a deleted row
+  // (200, invisible forever) or inserting a duplicate are both data loss.
+  it('POST /save against a soft-deleted quote is 409 quote_deleted and creates no new row', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+    const id = (await draft(app, 'op@x.com')).id;
+    expect((await del('op@x.com', app, `/admin/quote/${id}`)).status).toBe(200);
+
+    const res = await post(app, '/admin/quote/save', { id, name: 'Maya R.', vehicle: 'van_6', passengerCount: 4, luggageCount: 3, legs: [leg({ distanceKm: 120 })] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_deleted');
+    expect((await quotes.list()).length).toBe(0); // still nothing live — no duplicate was minted
+    expect(await quotes.get(id)).toBeNull();      // and the deleted row stayed deleted
   });
 
   it('POST /save re-prices server-side and ignores any client-supplied total', async () => {
@@ -1617,6 +1635,65 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect(res.status).toBe(404);
   });
 
+  // The gap guarantee: a booking converted from a quote is charged the quote's FROZEN total and
+  // is never re-priced. That matters because services/pricing.ts walks consecutive stop pairs —
+  // the booking's flat `stops` array can't mark a gap, so re-pricing a gapped trip would bill
+  // the customer for the hop they arranged themselves (the Ella → Galle train). This test pins
+  // the boundary: as long as /book takes the price from the quote, a gap can never leak into a
+  // charge.
+  it('prices a gapped quote at the frozen quote total — never re-priced through pricing.ts', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 34500, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+        { from: 'Colombo Airport (CMB)', to: 'Ella', distanceKm: 213 },
+        { from: 'Galle', to: 'Colombo City', distanceKm: 132 }, // customer trains Ella → Galle
+      ] } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+
+    const res = await book(createApp({ quotes, bookings }), q.id, BODY);
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.mode).toBe('trip');
+    expect(b.total).toBe(34500); // the quote's total, not a recomputed one
+    expect(b.amountDueNow).toBe(34500);
+    expect(b.input.stops).toEqual(['Colombo Airport (CMB)', 'Ella', 'Galle', 'Colombo City']);
+  });
+
+  // The long multi-day chauffeur tour this conversion exists to serve. 11 chained legs = 12 stops
+  // (the cap); one leg the customer arranges themselves (a train hop) inserts a gap stop and puts
+  // it at 13, so TripInput rejects it. The operator cannot act on a bare "invalid_booking" — the
+  // response has to name the length AND the gaps, which are the only two things they can change.
+  it('explains a too-long itinerary instead of 400 invalid_booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const legs = Array.from({ length: 11 }, (_, i) => ({
+      from: i === 5 ? 'Galle' : `Stop ${i}`, // leg 5 starts elsewhere: the customer trains there
+      to: `Stop ${i + 1}`,
+      distanceKm: 40,
+    }));
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 99900, currency: 'USD',
+      rateCardVersion: 'v1', result: {},
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+
+    const res = await book(createApp({ quotes, bookings }), q.id, BODY);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('itinerary_too_long');
+    expect(body.message).toContain('13'); // the stop count it actually needs
+    expect(body.message).toContain('12'); // the cap
+    expect(body.message.toLowerCase()).toContain('gap');
+    expect((await bookings.list()).length).toBe(0);
+    expect((await quotes.get(q.id))?.status).toBe('sent'); // not stamped won
+  });
+
   it('a concurrent double-submit never 500s and creates exactly one booking', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
@@ -1890,5 +1967,176 @@ describe('multi-stop rides — ops wire (stops + segmentKms)', () => {
     expect(d.lineItems[0].meta.billableKm).toBe(88);
     expect(d.lineItems[0].meta.stops).toBeUndefined(); // 2-stop leg never carries a stops array
     expect(d.lineItems[0].meta.segmentKms).toBeUndefined();
+  });
+});
+
+describe('POST /admin/quote/draft (autosave shell)', () => {
+  it('creates a $0 draft shell assigned to its creator', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ quotes });
+
+    const res = await post(app, '/admin/quote/draft', {});
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.status).toBe('draft');
+    expect(body.reference).toMatch(/\S/);
+    expect(body.assignedTo).toBe('f@x.com');
+
+    const saved = await quotes.get(body.id);
+    expect(saved!.totalCents).toBe(0);
+    expect(saved!.channel).toBe('ops');
+    expect(saved!.customerName).toBeNull();
+    expect(saved!.requestedService).toBeNull();
+    expect(isUnpricedShell(saved!)).toBe(true);
+  });
+
+  it('401s without a session', async () => {
+    const res = await realCreateApp({ auth: AUTH, adminApiKey: 'k' }).request('/admin/quote/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('403s on a cross-site POST', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    const res = await app.request('/admin/quote/draft', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE, 'sec-fetch-site': 'cross-site' },
+      body: '{}',
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe('bad_origin');
+  });
+});
+
+describe('unpriced shells cannot leave draft', () => {
+  async function shell(quotes: InMemoryQuoteRepo) {
+    return quotes.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { shell: true }, result: { shell: true },
+      // requestedService is set so this test isolates the price gate from the intent gate
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+  }
+  function patch(app: App, id: string, body: unknown) {
+    return app.request('/admin/quote/' + id, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+      body: JSON.stringify(body),
+    });
+  }
+
+  for (const to of ['pending_review', 'ready', 'sent'] as const) {
+    it(`400 unpriced_quote on ${to}`, async () => {
+      const quotes = new InMemoryQuoteRepo();
+      const q = await shell(quotes);
+      const res = await patch(createApp({ quotes }), q.id, { status: to });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('unpriced_quote');
+      expect((await quotes.get(q.id))!.status).toBe('draft');
+    });
+  }
+
+  it('allows a priced quote through the same transition', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
+  it('allows a legitimately zero-priced quote through (comp/promotional, not a shell)', async () => {
+    // A $0 total is valid if properly priced (e.g., a comp ride, promotional offer, or internal
+    // use). The gate keyed to the shell marker, not totalCents, so this real request with a
+    // real $0 engine result must be sendable.
+    const quotes = new InMemoryQuoteRepo();
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD',
+      rateCardVersion: 'v', request: { tool: {}, engine: {} }, result: { totalCents: 0 },
+      requestedService: 'private', customerName: 'Maya', customerContact: '+34600',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
+  it('lets a shell through once a real save has priced it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    // A real save replaces request/result wholesale — the marker is gone by construction.
+    await quotes.update(q.id, {
+      product: 'private', totalCents: 4048, currency: 'USD', rateCardVersion: 'v',
+      request: { tool: {}, engine: {} }, result: { totalCents: 4048 },
+      customerName: 'Maya', customerContact: '+34600', requestedService: 'private',
+    });
+    const res = await patch(createApp({ quotes }), q.id, { status: 'pending_review' });
+    expect(res.status).toBe(200);
+  });
+
+  it('still allows an internal-notes-only PATCH on a shell', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    const res = await patch(createApp({ quotes }), q.id, { internalNotes: 'called back at 4' });
+    expect(res.status).toBe(200);
+  });
+
+  it('still allows assigning a shell', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await shell(quotes);
+    const res = await patch(createApp({ quotes }), q.id, { assignedTo: 'op@x.com' });
+    expect(res.status).toBe(200);
+    expect((await quotes.get(q.id))!.assignedTo).toBe('op@x.com');
+  });
+});
+
+describe('reviving an expired quote', () => {
+  // Local helper: the patchReq above is scoped to another describe and always sends the
+  // founder cookie; these cases need to vary the actor to prove the gate.
+  const patchAs = (app: App, path: string, body: unknown, ck = FOUNDER_COOKIE) =>
+    app.request(path, { method: 'PATCH', headers: { 'content-type': 'application/json', cookie: ck }, body: JSON.stringify(body) });
+
+  // Context: the sweep closes idle 'sent' quotes. Before 2026-07-31 that was terminal, so a
+  // background clock could strand the team's real work with no way to revise and re-send.
+  async function expiredQuote(quotes: InMemoryQuoteRepo) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {}, requestedService: 'private',
+      request: { engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    await quotes.patch(q.id, { status: 'sent' });
+    // Freeze a rate card the way approval does, so we can prove the revive drops it.
+    await quotes.patch(q.id, { rateLock: { rateCardJson: { version: 'STALE-CARD' }, rateLockedUntil: null } });
+    await quotes.patch(q.id, { status: 'expired' });
+    return q.id;
+  }
+
+  it('an ops-role holder can reopen it to draft — no founder needed', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    const res = await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'draft' }, cookie('op@x.com'));
+    expect(res.status).toBe(200);
+    expect((await quotes.get(id))?.status).toBe('draft');
+  });
+
+  it('reviving drops the frozen card, so it re-prices at today’s rates', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    expect((await quotes.get(id))?.rateCardJson).toMatchObject({ version: 'STALE-CARD' });
+    await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'draft' });
+    const revived = await quotes.get(id);
+    expect(revived?.rateCardJson).toBeNull();
+    // …and it is no longer counted as decided.
+    expect(revived?.decidedAt).toBeNull();
+  });
+
+  it('still refuses the moves that were never legal from expired', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await expiredQuote(quotes);
+    const res = await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'sent' });
+    expect(res.status).toBe(409);
   });
 });

@@ -28,6 +28,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
     --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
     --espresso:#1b1714;
+    /* Elevated overlay surface (toasts, dark chips). Its OWN token on purpose: these used
+       to borrow --ink/--black, which are TEXT colours — so in dark mode they inverted to a
+       near-white panel while the text stayed hardcoded #fff, and every toast went
+       white-on-white. A surface must never be expressed as a text token. */
+    --pop-bg:#241f1d;--pop-fg:#fffdf8;--pop-line:transparent;
     --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
@@ -156,6 +161,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
+  /* An unpriced shell (spec 2026-07-29) states its condition instead of showing a $0 total; muted
+     and non-numeric so it never reads as a real price at a glance. --ink-3 isn't defined on this
+     page — --ink-faint is the token the row already uses for its own "unset" states (qref, the
+     unassigned chip), so it matches the existing muted vocabulary instead of inventing a new one. */
+  .qrow .qtotal-unpriced{color:var(--ink-faint);font-variant-numeric:normal;font-weight:400}
   .qrow:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   .tk:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
   /* Read-only status pill (queue rows) — status changes happen in the detail view */
@@ -315,6 +325,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
+  /* manual settlement row: method picker + a quiet secondary button, so "Copy payment
+     reminder" stays the loud primary action in the same stack. */
+  .settle{display:flex;gap:8px;align-items:center}
+  .settle select{flex:1;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+  .settle select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
   .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
   .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
   .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
@@ -341,7 +356,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
 
-  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
 
   /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
@@ -397,7 +412,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      the accent unifies on ops teal, type on Newsreader + Hanken Grotesk. */
   --blue: #0AB9B6;      /* accent → ops teal (was #63BFD6) */
   --blue-d: #08938f;    /* → ops teal-deep */
-  --black: #241f1d;     /* → ops ink */
+  --black: #241f1d;     /* → ops ink (TEXT — never use as a background, see --pop-bg) */
+  /* Elevated overlay surface for the builder's toast + dark chips. Mirrors the ops-scope
+     token above; both themes define it explicitly so nothing inverts by accident. */
+  --pop-bg: #241f1d;
+  --pop-fg: #fffdf8;
+  --pop-line: transparent;
   --cream: #F1EEE4;     /* → ops cream */
   --cream-d: #e4dfd0;   /* → ops cream-deep */
   --orange: #F9A429;    /* == ops saffron (already matched) */
@@ -524,7 +544,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-card-head-l { display: flex; align-items: center; gap: 11px; }
 .qv .ch-card-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; letter-spacing: .2px; white-space: nowrap; }
 .qv .ch-card-head-l { min-width: 0; }
-.qv .ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--black); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
+.qv .ch-card-icon { width: 26px; height: 26px; border-radius: 8px; background: var(--pop-bg); color: var(--pop-fg); display: grid; place-items: center; font-size: 13px; font-weight: 600; opacity: .92; }
 .qv .ch-card-head-r { display: flex; align-items: center; gap: 10px; }
 .qv .ch-chev { font-size: 19px; color: var(--muted); transition: transform .2s; line-height: 1; }
 .qv .ch-chev.open { transform: rotate(180deg); }
@@ -582,7 +602,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-d); }
 .qv .ch-btn-primary:hover { filter: brightness(1.04); transform: translateY(-1px); }
 .qv .ch-btn-teal { background: var(--teal); color: #fff; box-shadow: 0 2px 0 var(--teal-d); }
-.qv .ch-btn-dark { background: var(--black); color: #fff; }
+.qv .ch-btn-dark { background: var(--pop-bg); color: var(--pop-fg); }
 .qv .ch-btn-dark:hover { filter: brightness(1.2); }
 .qv .ch-btn-outline { background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); }
 .qv .ch-btn-outline:hover { border-color: var(--blue); color: var(--blue-d); }
@@ -827,7 +847,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* ---------- Toast ---------- */
 /* T5: fixed→absolute — .qv is position:relative, so the toast centers in the
    quote pane rather than the full viewport (which includes the ops rail). */
-.qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--black); color: #fff; padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
+.qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--pop-bg); color: var(--pop-fg); border: 1px solid var(--pop-line); padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
 .qv .ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .qv .ch-toast .tick { color: var(--teal); }
 
@@ -941,9 +961,76 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-leg-in::placeholder { color: var(--muted-2); }
 .qv .ch-leg-arrow { color: var(--muted-2); font-size: 14px; flex: none; }
 
-.qv .ch-leg-date { flex: none; }
+.qv .ch-leg-date { flex: none; display: flex; align-items: center; gap: 4px; }
 .qv .ch-leg-date input { border: 1px solid var(--line); background: var(--cream); border-radius: 7px; padding: 6px 8px; font-size: 12px; font-family: inherit; color: var(--ink); outline: none; }
 .qv .ch-leg-date input:focus { border-color: var(--blue); background: var(--surface); }
+/* Date steppers (2026-07-30): ±1-day nudges either side of the native input. The calendar
+   stays for the anchor date and big jumps; day-to-day movement is a click, not a popover. */
+.qv .ch-date-step { flex: none; width: 22px; height: 28px; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; font-size: 13px; font-weight: 700; color: var(--muted); line-height: 1; padding: 0; transition: background .15s, color .15s, border-color .15s; }
+.qv .ch-date-step:hover { background: var(--cream); color: var(--ink); border-color: var(--muted-2); }
+.qv .ch-day-tag { flex: none; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--go); background: var(--go-bg); border-radius: 6px; padding: 3px 6px; white-space: nowrap; }
+.qv .ch-date-chip { flex: none; border: 1px dashed var(--line); background: var(--surface); border-radius: 7px; padding: 5px 8px; font-size: 11px; font-weight: 700; color: var(--muted); transition: background .15s, color .15s, border-color .15s; }
+.qv .ch-date-chip:hover { border-color: var(--go); color: var(--go); background: var(--go-bg); border-style: solid; }
+/* ── Trip calendar (2026-07-30): the date span, rendered — one tile per calendar day. In a
+   chauffeur quote the span IS the price (chauffeur.ts: days × day rate + idle minimums), so
+   it must be a visible object the operator can check at a glance, not an emergent property
+   of N separate date pickers. ── */
+.qv .ch-cal { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 12px 14px 10px; margin-bottom: 14px; }
+/* Warning-only card: the size gate hid the tiles, but not the safety net. */
+.qv .ch-cal-bare { padding: 12px 14px; }
+.qv .ch-cal-bare .ch-cal-warn { margin-bottom: 0; }
+.qv .ch-cal-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-bottom: 9px; }
+.qv .ch-cal-sum b { color: var(--ink); font-weight: 700; }
+.qv .ch-cal-ok { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 3px 9px; }
+.qv .ch-cal-note { font-size: 11.5px; font-weight: 650; color: var(--idle); background: var(--idle-bg); border-radius: 8px; padding: 5px 9px; }
+.qv .ch-cal-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; font-weight: 650; color: var(--wait); background: var(--wait-bg); border: 1px solid var(--wait); border-radius: 9px; padding: 7px 10px; margin-bottom: 9px; }
+.qv .ch-cal-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 1px 6px; scrollbar-width: thin; }
+.qv .ch-cal-cell { flex: none; width: 96px; min-height: 78px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 7px 8px; display: flex; flex-direction: column; gap: 5px; }
+.qv .ch-cal-dnum { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--go); }
+.qv .ch-cal-ddate { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1.15; }
+.qv .ch-cal-dwk { font-size: 10px; color: var(--muted-2); font-weight: 600; }
+.qv .ch-cal-cell.idle { background: var(--idle-bg); border-style: dashed; }
+.qv .ch-cal-cell.idle .ch-cal-dnum { color: var(--idle); }
+.qv .ch-cal-idletag { margin-top: auto; font-size: 9.5px; font-weight: 700; color: var(--idle); line-height: 1.25; }
+/* Quiet strip (2026-07-31): a short run of empty days is a slim ghost column, not a full
+   tile repeating "no legs". The strip stops competing with the leg list it sits above, and
+   the amber gap tiles become the loudest thing in it — which is the point. */
+.qv .ch-cal-ghost { flex: none; width: 20px; align-self: stretch; border: 1px dashed var(--line); border-radius: 8px; background: var(--idle-bg); position: relative; }
+.qv .ch-cal-ghost:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font-size: 10.5px; font-weight: 600; color: var(--muted); white-space: nowrap; z-index: 4; pointer-events: none; }
+/* Gap tiles and the warning's leg link are jumps, not decoration. */
+.qv .ch-cal-cell.collapsed { cursor: pointer; transition: transform .16s ease; }
+.qv .ch-cal-cell.collapsed:hover { transform: translateY(-1px); }
+.qv .ch-cal-jump { border: 0; background: none; padding: 0; font: inherit; color: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.qv .ch-cal-jump:hover { color: var(--ink); }
+/* The card a jump lands on flashes once, so the eye follows the click. */
+@keyframes chLegFlash { 0%, 55% { border-color: var(--amber, #e0a33e); box-shadow: 0 0 0 3px rgba(224,163,62,.16); } 100% { box-shadow: 0 0 0 3px rgba(224,163,62,0); } }
+.qv .ch-leg.is-flagged { animation: chLegFlash 1.6s ease; }
+@media (prefers-reduced-motion: reduce) { .qv .ch-leg.is-flagged { animation: none; outline: 2px solid #e0a33e; outline-offset: 2px; } }
+.qv .ch-cal-chip { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 7px; padding: 3px 6px; font-size: 10px; font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qv .ch-cal-chip .n { color: var(--go); font-weight: 800; }
+.qv .ch-cal-chip.stay { color: var(--muted); border-style: dashed; }
+.qv .ch-cal-cell.collapsed { justify-content: center; align-items: center; text-align: center; border-style: dashed; background: var(--wait-bg); border-color: var(--wait); }
+.qv .ch-cal-cell.collapsed .big { font-size: 19px; font-weight: 800; color: var(--wait); line-height: 1; }
+.qv .ch-cal-cell.collapsed .small { font-size: 9.5px; font-weight: 700; color: var(--wait); margin-top: 3px; line-height: 1.3; }
+/* Condensed span bar (2026-07-31): the strip is the verification instrument, and it scrolls
+   away the moment you edit leg 4. This pins the one line that matters — span + any warning —
+   to the top of the itinerary column while the full strip is off-screen. Hidden by default;
+   an IntersectionObserver on the strip toggles .show. */
+.qv .ch-cal-mini { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; background: color-mix(in srgb, var(--cream) 88%, transparent); backdrop-filter: blur(8px); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 11px 11px; padding: 7px 13px; margin: 0 0 10px; font-size: 12px; color: var(--muted); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity .22s ease, transform .22s ease; }
+.qv .ch-cal-mini.show { opacity: 1; pointer-events: auto; transform: none; }
+.qv .ch-cal-mini b { color: var(--ink); font-weight: 700; }
+/* Keeps Delete out of arm's reach of Save/Submit in the action bar. */
+.qv .ch-act-gap { display: inline-block; width: 18px; }
+/* A price built on a span the strip is warning about must not read as authoritative. */
+.qv .ch-svc-box.suspect { border-color: var(--amber-line, #f6e3c0); background: var(--wait-bg, #fdf3e0); }
+.qv .ch-svc-box.suspect .ch-svc-price { color: #c7841f; }
+.qv .ch-svc-box .ch-svc-flag { display: block; font-size: 10px; font-weight: 700; color: #c7841f; margin-top: 3px; line-height: 1.3; }
+:root[data-theme="dark"] .qv .ch-svc-box.suspect { border-color: rgba(224,163,62,.45); background: rgba(224,163,62,.1); }
+:root[data-theme="dark"] .qv .ch-svc-box.suspect .ch-svc-price,
+:root[data-theme="dark"] .qv .ch-svc-box .ch-svc-flag { color: #e0a33e; }
+.qv .ch-cal-mini .ok { color: var(--ok); font-weight: 700; }
+.qv .ch-cal-mini .warn { color: var(--wait); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .qv .ch-cal-mini { transition: none; } }
 .qv .ch-leg-date.invalid input { border-color: var(--red); background: rgba(236,58,36,.06); }
 .qv .ch-leg-date-hint { display: block; font-size: 10px; font-weight: 600; color: var(--red); margin-top: 3px; text-align: center; }
 
@@ -958,6 +1045,45 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    same grammar as the + Add leg pill), solidifying on hover. The route chip right-aligns
    as a state readout — picked reads as a set decision, not another add. */
 .qv .ch-leg-tools { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
+
+/* ── Quiet cards (2026-07-31) ────────────────────────────────────────────────────────────
+   A 4-leg quote was rendering ~24 controls at rest — reorder arrows, +Stop, Return to
+   start, +Fees, duplicate, remove on every card — none of which the operator is reaching
+   for while reading. They now fade in for the card under the cursor, the card holding
+   keyboard focus, or the card the operator last touched. Nothing is removed and nothing
+   moves: the row keeps its height at rest (visibility, not display), so revealing a
+   toolbelt never reflows the itinerary under a click.
+
+   `.ch-leg-tools` is NOT hidden when it holds the route chip — that chip is a state
+   readout ("via the toll road"), not an action, and hiding state would lose information.
+
+   Guarded by (hover: hover): on a touch device there is no hover, so everything stays
+   visible exactly as before rather than becoming unreachable. */
+@media (hover: hover) and (pointer: fine) {
+  .qv .ch-leg-quiet .ch-leg-reorder,
+  .qv .ch-leg-quiet .ch-leg-actions,
+  .qv .ch-leg-quiet .ch-leg-tools.is-actions-only {
+    opacity: 0;
+    transition: opacity .18s ease;
+  }
+  .qv .ch-leg-quiet:hover .ch-leg-reorder,
+  .qv .ch-leg-quiet:hover .ch-leg-actions,
+  .qv .ch-leg-quiet:hover .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet:focus-within .ch-leg-reorder,
+  .qv .ch-leg-quiet:focus-within .ch-leg-actions,
+  .qv .ch-leg-quiet:focus-within .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-reorder,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-actions,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-tools.is-actions-only {
+    opacity: 1;
+  }
+  /* Reduced motion: still reveal, just without the fade. */
+  @media (prefers-reduced-motion: reduce) {
+    .qv .ch-leg-quiet .ch-leg-reorder,
+    .qv .ch-leg-quiet .ch-leg-actions,
+    .qv .ch-leg-quiet .ch-leg-tools.is-actions-only { transition: none; }
+  }
+}
 .qv .ch-tool-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--cream-deep); background: transparent; color: var(--muted); border-radius: 999px; padding: 3.5px 11px; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .1s ease; }
 .qv .ch-tool-chip:hover { color: var(--ink); border-color: var(--line); border-style: solid; background: var(--surface); }
 .qv .ch-tool-chip:active { transform: translateY(1px); }
@@ -1257,8 +1383,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
     --ok:#4fbf7e;--ok-bg:#132a1c;--wait:#e0a33e;--wait-bg:#2e2410;--go:#2fbfb4;--go-bg:#0e2a27;
     --alert:#ef6a4c;--alert-bg:#331812;--alert-line:#4d2418;--idle:#9a948a;--idle-bg:#262219;
     --wa:#37c96e;--wa-bg:#0f2b1a;--web:#2fbfb4;--web-bg:#0e2a27;
+    /* A toast on a dark page is an ELEVATED surface, not an inverted one: a near-white
+       panel flashing over a dark ops screen at night is worse than the bug it replaces.
+       Lifted above --paper/--surface and given a hairline so it still reads as floating. */
+    --pop-bg:#33302c;--pop-fg:#f4f2ed;--pop-line:#47433d;
   }
   :root[data-theme="dark"] .qv{
+    --pop-bg:#33302c;--pop-fg:#f4f2ed;--pop-line:#47433d;
     --black:#eceae5;--cream:#141313;--cream-d:#232221;
     --paper:#1c1b1a;--ink:#eceae5;--muted:#b3afa7;--muted-2:#807b73;
     --line:#302e2b;--line-soft:#282624;
@@ -1380,19 +1511,22 @@ const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('e
 const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
 const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
 
-const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Completed'];
+const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Closed'];
 const dayGroup=t=>{
-  if(t.stage==='completed')return 'Completed';
+  /* Every closed outcome files together — a cancelled or refunded booking has a travel date
+     that has not stopped being "tomorrow", and dating it into the live groups would put a
+     dead booking at the top of the day's work. */
+  if(CLOSED.includes(t.stage))return 'Closed';
   if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
   if(t.date===TODAY)return 'Today';
   if(t.date===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
-const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Completed:'done'};
+const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
-   channel, awaiting payment after a link was sent). Quoting/payment-link steps
-   live outside ops in WhatsApp/Notion. ── */
+   channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
+   steps live outside ops in WhatsApp/Notion. ── */
 const STAGES=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed','on_trip','completed'];
 const STAGE={
   awaiting_payment:{label:'Awaiting payment',short:'Awaiting',c:'#c7841f',cbg:'#fbf0d8'},
@@ -1402,6 +1536,10 @@ const STAGE={
   on_trip:{label:'On trip',short:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
   completed:{label:'Completed',short:'Done',c:'#7c7a73',cbg:'#eeece4'},
   no_show:{label:'No-show',short:'No-show',c:'#b23214',cbg:'#fbe7e2'},
+  /* Closed on the money side rather than the fulfilment side — these come from
+     booking.status, not ride_ops, and never appear as a step in the pipeline rail. */
+  cancelled:{label:'Cancelled',short:'Cancelled',c:'#8a6a63',cbg:'#f2eae8'},
+  refunded:{label:'Refunded',short:'Refunded',c:'#5b6b7a',cbg:'#e9eef2'},
   /* Ride board only — a van still collecting names. No payment to chase and no
      vehicle to assign until it locks at cutoff, so it sits outside the booking
      pipeline entirely (deliberately absent from STAGES and NEXT). */
@@ -1409,7 +1547,8 @@ const STAGE={
 };
 const stVars=s=>`--c:${STAGE[s].c};--cbg:${STAGE[s].cbg}`;
 /* NEXT covers only the post-payment machine. awaiting_payment has NO advance button —
-   payment arrives via the webhook; ops follows up instead. */
+   it leaves that stage by money arriving, either a PayHere webhook or an ops agent
+   recording an out-of-band payment with the drawer's Mark paid control. */
 const NEXT={
   paid:{to:'vehicle_confirmed',label:'Confirm vehicle',act:'advance'},
   vehicle_confirmed:{to:'pickup_confirmed',label:'Confirm pickup',act:'advance'},
@@ -1421,7 +1560,22 @@ const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop
 
 /* The only surviving template: the payment-reminder copy an ops agent sends to nudge
    an awaiting-payment customer. Interpolates the first name and the amount. */
-const payreminder=t=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.\n\nHere's your secure link again to lock it in 🌴 Reply if you have any questions!`;
+/* Manual settlement methods, in the order the drawer offers them. The keys are the
+   API's `method` values, so the <select>, the confirm() and the toast all say the
+   same thing about the same money. */
+const PAY_METHODS=[['cash','Cash'],['bank_transfer','Bank transfer'],['manual_other','Other']];
+const payMethodLabel=m=>{const hit=PAY_METHODS.find(x=>x[0]===m);return hit?hit[1]:m;};
+
+/* The link is interpolated, not alluded to: the old copy said "here's your secure link again"
+   and shipped no URL at all, so every reminder ops sent pointed at nothing. Without a link
+   (a booking that can no longer be charged) the sentence about one is dropped rather than
+   left as a promise nobody can keep. */
+const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylon Hop — your booking for ${t.route} is held pending payment of ${money(t)}.`
+  +(link?`\n\nYou can pay securely by card here: ${link}`:'')
+  +`\n\nReply if you have any questions! 🌴`;
+/* Stages a booking can still legally be cancelled from — the booking machine allows
+   payment_pending/paid/confirmed → cancelled, but not once the trip is under way. */
+const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed'];
 
 /* attention logic — what an ops agent must act on */
 const reason=t=>{
@@ -1429,12 +1583,14 @@ const reason=t=>{
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
-  if(t.stage==='awaiting_payment')return 'Payment link sent — follow up';
+  /* A closed booking has no outstanding action, whatever it looked like on the way out. */
+  if(CLOSED.includes(t.stage))return '';
+  if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
 };
-const isAttn=t=>!!reason(t)&&t.stage!=='completed';
+const isAttn=t=>!!reason(t);
 
 const GROUPS=[
   {id:'all',label:'All open',c:'#241f1d'},
@@ -1442,9 +1598,9 @@ const GROUPS=[
   {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
   {id:'ready',label:'Ready',c:'#0a8f86'},
   {id:'trip',label:'On trip',c:'#1f6fd0'},
-  {id:'done',label:'Completed',c:'#7c7a73'},
+  {id:'done',label:'Closed',c:'#7c7a73'},
 ];
-const CLOSED=['completed','no_show'];
+const CLOSED=['completed','no_show','cancelled','refunded'];
 const inGroup=(t,g)=>{
   if(g==='all')return !CLOSED.includes(t.stage);
   if(g==='pay')return t.stage==='awaiting_payment';
@@ -1866,11 +2022,11 @@ function quoteRowHtml(q,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
-    <span class="qtotal" title="${esc(quoteUsd(q.totalCents))}">${esc(quoteUsdWhole(q.totalCents))}</span>
+    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(quoteUsd(q.totalCents))}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(q.totalCents))}</span>
     <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -2292,16 +2448,46 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
+     see the reminder only. The <select> + confirm() IS the whole interaction — this view
+     has no modal layer, and inventing one for three options would be a lot of machinery
+     for a question a confirm() already asks well. */
+  const canSettle=state.caps&&state.caps.includes('payments:act');
+  /* Copy has to be true for whoever is reading it: "recorded here" is a promise only a
+     payments:act holder can keep. An ops agent told a stranded booking can be settled here
+     hunts for a button they will never see — so name who can instead. */
+  const recordedBy=canSettle?'recorded here':'recorded by a founder or finance';
   let pipeAction;
   if(isPending){
-    pipeAction=`<div class="followup"><div><b>Payment link sent — follow up.</b> Payment lands automatically via the webhook. Nudge the customer if it's overdue.</div></div>
-      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
+    const settle=canSettle?`<div class="settle">
+        <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
+        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
+      </div>`:'';
+    /* The old copy said payment "lands automatically via the webhook". That is false for the
+       bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
+       cash or bank transfer, and no webhook is ever coming for it. This wording holds either
+       way — link or hand-collected. */
+    const link=d&&d.payLink;
+    /* Only offer the link once the backend has actually issued one. It used to be advertised
+       unconditionally, in copy alone, for a booking that had no payable link anywhere. */
+    const linkBtn=link?`<button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy payment link</button>`:'';
+    /* Both halves of the sentence have to be true for whoever is reading it: the link half
+       only when one exists, and `recordedBy` names who can settle when the reader can't. */
+    const arrive=link?`It can still arrive through the payment link, or be ${recordedBy}`:`It can be ${recordedBy}`;
+    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${linkBtn}${settle}</div>`;
   }else if(nx){
     pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
       +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
       +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button>`
       +`</div>`;
   }else{pipeAction='';}
+  /* Cancelling is a payments:act action and only legal while the trip hasn't started — the
+     booking machine has no in_progress → cancelled edge, so offering it there would just 409.
+     Before this the tool had no cancel at all: a customer who called off their trip left ops
+     either refunding a booking nobody had paid for, or leaving it live forever. */
+  const canCancel=state.caps&&state.caps.includes('payments:act')&&CANCELLABLE.includes(t.stage);
+  if(canCancel)pipeAction+=`<div class="sheet-actions" style="margin-top:10px"><button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button></div>`;
   sh.innerHTML=`
     <div class="sheet-h"><button class="x" data-act="close">✕</button>
       <div class="ey"><span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}</div>
@@ -2324,7 +2510,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         <div class="kv"><span class="k">Status</span><span class="v">${t.paid?'<span style="color:var(--ok);font-weight:700">Paid</span>':'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Payment link was sent — quoting &amp; links live outside ops. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
       ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
@@ -2579,7 +2765,7 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','refundrequest','refundconfirm','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundcancel'].includes(act))return;
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
@@ -2587,7 +2773,51 @@ document.addEventListener('click',async e=>{
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
-    case 'payreminder':{const text=payreminder(t);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+    case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
+    case 'cancelbooking':{
+      /* payments:act, re-checked here for the same reason markpaid does: a sheet rendered
+         before a session change must not be able to POST what it should no longer offer. */
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
+      el.disabled=true;
+      try{await adminApi.post(`/bookings/${id}/cancel`);toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      catch(err){
+        if(err.message==='auth')break;
+        if(el.isConnected)el.disabled=false;
+        /* illegal_transition means someone else moved it (or the trip already started) —
+           a state, not a fault, so say what happened rather than "something went wrong". */
+        if(err.message==='illegal_transition'){toast('Too late to cancel — the booking has already moved on');await refreshRow(id);break;}
+        window.opsReportError&&window.opsReportError('booking cancel',err);
+        toast('Could not cancel');
+      }
+      break;
+    }
+    case 'markpaid':{
+      /* Money lives on the capability-gated /admin API, not /admin/ops — the same split the
+         refund actions use. Re-checked here because a sheet rendered before a session change
+         must not be able to POST what it should no longer offer. */
+      if(!state.caps||!state.caps.includes('payments:act'))break;
+      const sel=$('#paidmethod');const method=(sel&&sel.value)||'cash';const label=payMethodLabel(method);
+      /* Every other consequential action in this sheet states its email consequence, and on the
+         PayHere path a booking reaching Paid DOES auto-send a confirmation — so silence here
+         reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
+      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
+      el.disabled=true;
+      try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      catch(err){
+        if(err.message==='auth')break;
+        if(el.isConnected)el.disabled=false;
+        /* The server's two "someone got here first" answers are states, not faults, and each
+           needs its own sentence. already_paid in particular means the money may genuinely be
+           in already (a late PayHere webhook) — reading it as a plain failure would invite a
+           retry, or worse, a second collection from the customer. */
+        if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment');await refreshRow(id);}
+        else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid');}
+      }
+      break;
+    }
+    case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
       if(!state.caps||!state.caps.includes('payments:act'))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
@@ -2684,6 +2914,11 @@ function bootApp(identity){
   window.opsGoQuotes=()=>{setShellRoute('quotes',{ replace:true });}; /* builder returns to the queue after a hand-off action */
   window.opsToast=toast; /* D6: shell-level toast the builder can use when it routes back to the queue (its own #ch-toast is inside the now-hidden builder pane) */
   window.opsRefreshQuotes=loadOpsQuotes; /* builder asks the shell to refresh the queue list after save/transition */
+  /* The builder just claimed a real row for the quote on screen — bind the URL to it so a reload
+     (or a bookmark/share) reopens THAT row instead of a bare #quote that would claim a second
+     shell and orphan the first. replace, not push: claiming isn't a navigation the operator
+     performed, so it must not add a back-button step. */
+  window.opsBindQuoteUrl=(id)=>{if(id&&state.route==='quote')setShellRoute('quote',{ quoteId:id, replace:true });};
   window.opsEmail=identity.email||''; /* the builder labels the assign picker's "(you)" option */
   window.opsCaps=identity.caps||[]; window.opsRole=identity.role; /* the builder reads the viewer's role/caps for the maker-checker action bar */
   /* URL is the single source of truth for route/deep-link state across login refreshes,
@@ -2879,6 +3114,9 @@ function basicsMissingText() {
 // name/contact input handler re-render ONLY when the gate flips, avoiding a per-keystroke
 // rebuild (which would fight the operator's focus).
 var _basicsUnlocked = false;
+// Trip-calendar model for the CURRENT render pass — computed once at the top of render()
+// (it feeds both the strip and every leg card's "Day N" tag), never read outside a render.
+var _calModel = null;
 function syncBasics() {
   var contactEl = document.getElementById('f-contact');
   if (contactEl) contactEl.classList.toggle('invalid', (state.contact || '').trim() !== '' && !contactValid(state.contact));
@@ -3270,9 +3508,11 @@ let state = {
 // beforeunload asks the browser to confirm the close so an unsaved quote is never lost silently.
 var _dirty = false;
 /* D4 (design elevation): autosave. Every markDirty() arms a 2.5s debounce; when it fires we
-   silently re-save IF the quote is already a real row (savedId set) and still editable. New
-   quotes stay manual-first — auto-creating rows on half-typed enquiries would pollute the
-   queue. The Save button remains as the explicit path (and the only way to CREATE the row). */
+   silently re-save as long as the quote is still editable. "+ New quote" now creates the row
+   up front (spec 2026-07-29), so savedId is no longer the gate — Save is no longer the only
+   way a row comes into existence. The one gate that IS still real: state.vehicleType, because
+   POST /save runs resolveAndPrice() and cannot persist a payload it can't price. The 24h shell
+   sweep is what bounds the queue now, not manual-first creation. */
 var _autoTimer = null, _autoState = 'idle', _lastSavedAt = null, _autoSaving = false;
 function isEditableNow() {
   // Review lock (owner, 2026-07-17): submission freezes content. pending_review is read-only —
@@ -3305,12 +3545,27 @@ function armAutosave() {
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
-  if (!state.savedId || !isEditableNow() || !state.vehicleType) return;
+  // The row now exists from the first click (spec 2026-07-29), so savedId is no longer the gate.
+  // vehicleType still is: POST /save runs resolveAndPrice(), so an unpriceable payload cannot be
+  // persisted at all. That window is the only place the beforeunload guard still matters.
+  if (!isEditableNow() || !state.vehicleType) return;
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  var seq = _openSeq;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
-  var ok = await saveQuote({ silent: true });
-  _autoSaving = false;
+  var ok;
+  try {
+    ok = await saveQuote({ silent: true });
+  } finally {
+    // Always clears, even if something above throws — nothing on today's path does (apiSave has
+    // a full try/catch), but were that ever to change, an ungated `_autoSaving = false` below
+    // would skip and autosave would be dead for the rest of the session with no signal.
+    _autoSaving = false;
+  }
+  // saveQuote returns false when it drops a superseded result — writing that here would paint
+  // "Autosave failed" on the quote now on screen, which never attempted a save. The new quote's
+  // chip was already set by resetToNew()/reopenQuote().
+  if (seq !== _openSeq) return;
   _autoState = ok ? 'saved' : 'error';
   if (ok) _lastSavedAt = new Date();
   updateSaveChip();
@@ -3318,10 +3573,29 @@ async function fireAutosave() {
 function renderSaveState() {
   if (!isEditableNow()) return '<span id="ch-savestate" class="ch-savestate"></span>'; // locked: the banner speaks
   var cls = 'ch-savestate', txt = '';
+  // Whether anything typed is being written down at all. fireAutosave() returns early while
+  // there is no vehicle type (POST /save prices, and an unpriceable payload cannot be
+  // persisted), so before that choice the customer name, contact, legs and internal notes live
+  // in memory ONLY. This — not the shell marker — is the line the chip has to speak to.
+  var autosaveArmed = !!state.vehicleType;
   if (_autoState === 'saving') { cls += ' saving'; txt = 'Saving&hellip;'; }
-  else if (_dirty) { cls += ' dirty'; txt = state.savedId ? 'Edits pending' : 'Unsaved'; }
-  else if (_autoState === 'error') { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
+  // Error must win over dirty, or a repeatedly-failing autosave paints the dirty chip forever and
+  // the escape hatch (the Save button) never gets advertised. The guard is autosaveArmed, NOT
+  // state.unpriced: a shell stays unpriced until its FIRST successful save, so gating on it
+  // swallowed every failed autosave of a shell — and autosave is silent (no toast), so a
+  // fully-filled quote showing its price could fail to save indefinitely with no signal at all.
+  // The original intent survives anyway: a shell that simply cannot be priced yet never reaches
+  // _autoState 'error', because fireAutosave() never runs to set it.
+  else if (_autoState === 'error' && autosaveArmed) { cls += ' error'; txt = 'Autosave failed &mdash; use Save'; }
+  // "Not priced yet" is about the PRICE and must never stand in for persistence. While _dirty
+  // there is typed content that has not reached the server — either because autosave cannot run
+  // at all yet (no vehicle type) or because the debounce has not landed — and the operator needs
+  // to know their typing is not safe. Only a row that has already saved successfully (unpriced
+  // cleared) earns the gentler "Edits pending"; the clean-shell branch below still says what is
+  // missing when there is nothing typed to lose.
+  else if (_dirty) { cls += ' dirty'; txt = (state.savedId && !state.unpriced) ? 'Edits pending' : 'Unsaved'; }
   else if (_lastSavedAt) { cls += ' saved'; txt = 'Saved ' + _lastSavedAt.toTimeString().slice(0, 5); }
+  else if (state.unpriced) { cls += ' dirty'; txt = 'Not priced yet'; } // clean shell: no typed content at risk, only a price missing
   else if (state.savedId) { cls += ' saved'; txt = 'Saved'; }
   else return '<span id="ch-savestate" class="ch-savestate"></span>';
   return '<span id="ch-savestate" class="' + cls + '"><i class="ch-savestate-dot"></i>' + txt + '</span>';
@@ -3595,6 +3869,24 @@ async function apiSave(payload) {
   } catch (e) { window.opsReportError && window.opsReportError('apiSave', e); return { error: 'Network error' }; }
 }
 
+// "+ New quote" creates the row up front (spec 2026-07-29) so the assignee picker is live before
+// anything is priceable — an agent claims or hands over the ticket on the call, not after a Save.
+async function apiCreateDraft() {
+  try {
+    var r = await api('/admin/quote/draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    if (!r.ok) {
+      var errBody = await errPayload(r);
+      // Unlike apiSave/apiPatch, a failed draft-create has no caller-side special case to fall
+      // back on — claimDraftRow() just silently no-ops (by design), so this is the only place
+      // a 500 here would ever get reported.
+      window.opsReportError && window.opsReportError('apiCreateDraft', new Error(errBody.error || ('HTTP ' + r.status)));
+      return errBody;
+    }
+    var body = await jsonOrNull(r);
+    return body || { error: 'Could not start a quote' };
+  } catch (e) { window.opsReportError && window.opsReportError('apiCreateDraft', e); return { error: 'Network error' }; }
+}
+
 async function apiPatch(id, patch) {
   try {
     var r = await api('/admin/quote/' + encodeURIComponent(id), {
@@ -3667,6 +3959,7 @@ function resetToNew() {
     savedId: null,
     reference: null,
     assignedTo: null, // who holds it; set only via the assign picker (never by a transition)
+    unpriced: false, // true while this row is a server-side shell (never priced) — spec 2026-07-29
     createdBy: null,
     updatedBy: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
@@ -3684,15 +3977,41 @@ function resetToNew() {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
+  // The save chip belongs to the quote, not the session: without this a fresh row inherited the
+  // PREVIOUS quote's "Saved 14:32" and outranked its own "Not priced yet" (spec 2026-07-29).
+  _autoState = 'idle';
+  _lastSavedAt = null;
   refreshEstimate();
   render();
 }
 
-// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when
-// there are unsaved edits to lose.
+// The ops shell's "+ New quote" entry: reset to a fresh draft, guarding only when there are
+// unsaved edits to lose, then claim a real row so the ticket is assignable immediately. The
+// create is fire-and-forget from the operator's point of view — they can start typing at once.
 function startNew() {
   if (_dirty && !confirm('Start a new quote? Unsaved changes will be lost.')) return;
   resetToNew();
+  claimDraftRow();
+}
+
+// Create the shell row for the quote now on screen. Non-blocking by design: on failure the
+// builder simply behaves as it did before this shipped (unsaved, assign disabled, manual Save)
+// rather than trapping the operator behind a network error.
+async function claimDraftRow() {
+  var seq = _openSeq; // a reopen that lands mid-flight must win
+  var res = await apiCreateDraft();
+  if (seq !== _openSeq) return;
+  if (!res || !res.id) return;
+  state.savedId = res.id;
+  state.reference = res.reference || res.id;
+  state.unpriced = true;
+  if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+  // Bind the URL to the row we just claimed (history REPLACE — see opsBindQuoteUrl). Without this
+  // a mid-quote reload landed on an id-less #quote: no row claimed, savedId null, assign picker
+  // disabled, and the $0 shell stranded in the queue.
+  if (window.opsBindQuoteUrl) window.opsBindQuoteUrl(res.id);
+  if (window.opsRefreshQuotes) window.opsRefreshQuotes();
+  render();
 }
 
 function savePayload() {
@@ -3729,7 +4048,17 @@ async function saveQuote(opts) {
     if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing'); }
     return false;
   }
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiSave(savePayload());
+  // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
+  // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
+  // and every later edit would then overwrite A. Drop the result and report FAILURE: callers
+  // persist-then-transition against state.savedId, which now points at another quote, so a `true`
+  // would let transition() PATCH the wrong row. A false only costs the operator a retry.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('saveQuote', 'stale save discarded (superseded while in flight)');
+    return false;
+  }
   if (res && res.id) {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
@@ -3737,10 +4066,26 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    state.unpriced = false; // a real save prices the quote — the shell marker is gone server-side
     _dirty = false; // persisted — nothing unsaved to lose (GL-1b)
+    // Clear a stale 'error' from an earlier failed autosave — this save just succeeded, so the
+    // chip must not keep reading "Autosave failed" once _dirty is false. 'idle' (not 'saved') so
+    // fireAutosave's own 'saved'/_lastSavedAt bookkeeping (set right after this call returns) is
+    // the only thing that ever writes those; renderSaveState falls through to the plain _lastSavedAt/
+    // state.savedId "Saved" branches on its own.
+    _autoState = 'idle';
     if (window.opsRefreshQuotes) window.opsRefreshQuotes(); // keep the shell queue in sync
     if (!opts.silent) { render(); showToast('Saved as ' + state.reference); }
     return true;
+  }
+  // The row this editor is bound to no longer exists server-side (the shell sweep deleted it
+  // while the quote sat open). Deliberately shown even for a silent autosave: the operator's work
+  // is still on screen and only they can rescue it, so a quiet "Autosave failed" chip is not
+  // enough — this is the one save failure that must always speak.
+  if (res && res.error === 'quote_deleted') {
+    showToast('This quote was removed — copy what you need and use "+ New quote" to re-create it');
+    window.opsReportError && window.opsReportError('saveQuote', 'save rejected: quote_deleted');
+    return false;
   }
   if (!opts.silent) showToast((res && res.error) ? res.error : 'Save failed');
   return false;
@@ -3765,6 +4110,10 @@ async function transition(toStatus, opts) {
     // Quote intent (spec 2026-07-17): the server gate can 400 even if a client bypassed the
     // disabled button — give it the same friendly copy as the button hint, not the raw code.
     if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first'); return; }
+    // Same gate the blockers panel already names (submitBlockers' "A price — this quote has not
+    // been priced yet"); near-unreachable since that panel blocks the button first, but if a
+    // client bypasses it the raw code shouldn't leak through.
+    if (res && res.error === 'unpriced_quote') { showToast('This quote needs a price before it can move'); return; }
     showToast('Could not update — ' + ((res && res.error) || 'unknown error'));
     return;
   }
@@ -3943,12 +4292,43 @@ async function reopenQuote(id) {
       : ('Couldn’t open the quote' + (q && q.error && q.error !== 'not_found' ? ' — ' + q.error : ''));
     if (window.opsToast) window.opsToast(msg); else showToast(msg);
     if (window.opsGoQuotes) window.opsGoQuotes();
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
   var tool = q.request && q.request.tool;
+  // An unpriced shell (spec 2026-07-29) has no tool yet — it is a row "+ New quote" claimed
+  // before anything was priceable. Open it as a blank builder BOUND to that row so whoever it
+  // was handed to prices it in place, rather than falling into the legacy-row dead end below.
+  if (!tool && q.request && q.request.shell === true) {
+    resetToNew();
+    state.savedId = q.id;
+    state.reference = q.reference || q.id;
+    state.status = q.status || 'draft';
+    state.assignedTo = q.assignedTo || null;
+    state.createdBy = q.createdBy || null;
+    state.updatedBy = q.updatedBy || null;
+    // A shell carries no priced content, but the server DOES allow an internal note on one — and
+    // savePayload() sends both fields unconditionally, so not restoring them would clobber a note
+    // added via the internal-notes PATCH on the next real save.
+    state.notes = q.notes || '';
+    state.internalNotes = q.internalNotes || '';
+    state.unpriced = true;
+    render();
+    showToast('Opened ' + (q.reference || q.id));
+    return;
+  }
   if (!tool) {
     // Legacy row saved before the { tool, engine } shape.
     showToast('This quote was saved before reopen support — re-create it to edit.');
+    // This early return still supersedes whatever quote was in flight before it — an autosave
+    // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
+    // (same rule as resetToNew / the normal reopen path below).
+    _autoState = 'idle';
+    _lastSavedAt = null;
     return;
   }
 
@@ -4007,6 +4387,7 @@ async function reopenQuote(id) {
   state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
   state.savedId = q.id;
   state.reference = q.reference || q.id;
+  state.unpriced = !!(q.request && q.request.shell === true);
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
@@ -4026,6 +4407,11 @@ async function reopenQuote(id) {
   bookOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
+  // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
+  // opening quote B right after autosaving A showed A's "Saved 14:32" — or A's "Autosave failed
+  // — use Save" — over a quote B that was never saved in this session.
+  _autoState = 'idle';
+  _lastSavedAt = null;
   // A ready/sent quote is rate-locked (spec 2026-07-11 §3): render the APPROVED price the server
   // priced against the frozen snapshot, rather than live-recomputing on a card that may have moved
   // since approval. Editable states still price live as the operator builds.
@@ -4127,6 +4513,73 @@ function legDateFloor(idx) {
   }
   return today;
 }
+
+/* Trip calendar maths (2026-07-30). Pure over a legs array — no state reads — so the unit
+   suite can lift and exercise it (see opsUi.dates.test.ts). MIRRORS THE ENGINE, deliberately:
+   chauffeur.ts prices span = last−first+1 over ALL dated legs (stay days included) and
+   charged idle = span − driving LEG COUNT (not distinct days) — the summary must show the
+   numbers the price is actually built from, or "looks right" and "priced right" can drift.
+   All parsing is UTC-midnight on the YYYY-MM-DD part, same as the engine's dayNumber(). */
+const tripCal = {
+  DAY: 86400000,
+  parse: function (s) { return Date.parse(String(s || '').slice(0, 10) + 'T00:00:00Z'); },
+  iso: function (ms) { return new Date(ms).toISOString().slice(0, 10); },
+  // '' for an unparseable base — callers treat that as "cannot step".
+  addDays: function (isoStr, n) { var t = this.parse(isoStr); return isNaN(t) ? '' : this.iso(t + n * this.DAY); },
+  // null when nothing is dated yet (nothing to verify). byDay is 1-based day → legs on it.
+  model: function (legs) {
+    var self = this;
+    var dated = legs.filter(function (l) { return l.date && !isNaN(self.parse(l.date)); });
+    if (!dated.length) return null;
+    var ts = dated.map(function (l) { return self.parse(l.date); });
+    var start = Math.min.apply(null, ts), end = Math.max.apply(null, ts);
+    var span = Math.round((end - start) / this.DAY) + 1;
+    var drivingLegs = dated.filter(function (l) { return l.category !== 'stay_day'; }).length;
+    var byDay = {};
+    dated.forEach(function (l) {
+      var d = Math.round((self.parse(l.date) - start) / self.DAY) + 1;
+      (byDay[d] || (byDay[d] = [])).push(l);
+    });
+    return {
+      start: this.iso(start), end: this.iso(end), span: span,
+      drivingLegs: drivingLegs, chargedIdle: Math.max(0, span - drivingLegs),
+      byDay: byDay, undated: legs.length - dated.length,
+    };
+  },
+  // Longest run of days with no leg at all: {fromDay, days} or null. Names the typo's
+  // likely location — a fat-fingered month shows up as one huge empty run.
+  biggestGap: function (m) {
+    var best = null, run = 0, from = 0;
+    for (var d = 1; d <= m.span + 1; d++) { // +1 sentinel flushes a trailing run
+      if (d <= m.span && !m.byDay[d]) { if (!run) from = d; run++; }
+      else { if (run && (!best || run > best.days)) best = { fromDay: from, days: run }; run = 0; }
+    }
+    return best;
+  },
+  // Which day does the first leg AFTER `day` sit on? Gaps are described by the leg they
+  // precede ("45 empty days before leg 4"), not by a day number the operator would have to
+  // count out — the whole point is to say where to go and fix it.
+  nextLegDay: function (m, day) {
+    for (var d = day; d <= m.span; d++) if (m.byDay[d]) return d;
+    return null;
+  },
+  // Amber warning or null. Two smells, both from real mistakes in team testing: a span no
+  // itinerary of this size plausibly has (a month typo), and idle days far outnumbering
+  // driving legs (a smaller version of the same). Thresholds are deliberately loose — this
+  // must never nag a genuine 10-day tour. `charged` = chauffeur pricing (idle days cost
+  // money); point-to-point idle days are merely suspicious, and the copy must not claim a
+  // charge the engine won't make.
+  warning: function (m, charged) {
+    if (!m || m.span < 2) return null;
+    if (m.span > 14 || m.chargedIdle > m.drivingLegs + 2) {
+      return m.span + '-day span from ' + m.drivingLegs + ' driving leg' + (m.drivingLegs === 1 ? '' : 's')
+        + ' — ' + m.chargedIdle + ' idle day' + (m.chargedIdle === 1 ? '' : 's')
+        + (charged ? ' will be charged.' : ' in between.')
+        + ' If the trip isn’t this long, a date is off.';
+    }
+    return null;
+  },
+};
 
 function renderLegCard(leg, idx, total) {
   var tone = legTone(idx, total, leg.category);
@@ -4238,10 +4691,32 @@ function renderLegCard(leg, idx, total) {
   // calendar opens on min's month when the field is empty, so adding leg 5 to a trip that starts
   // in September no longer opens on today and make the operator page forward every time (owner,
   // 2026-07-26). It also stops a later leg being dated before an earlier one.
+  //
+  // Trip calendar (2026-07-30): a dated leg grows ± steppers and a "Day N" tag, so day-to-day
+  // movement is a click and the leg's place in the trip reads at a glance — in a chauffeur
+  // quote a mis-picked month is ~30 extra day-rates, and a calendar popover per leg is where
+  // those mistakes were made. An UNDATED leg with a dated leg above it gets two quick chips
+  // ("same day" / "next day"): one-tap EXPLICIT choices, which respects the addLeg() rule
+  // that dates are never auto-guessed — the operator presses the chip; nothing is invented.
   var dateNeeded = state.service === 'chauffeur' && distinctLegDateCount() >= 2 && !leg.date;
+  var prevLegDate = null;
+  for (var pdi = idx - 1; pdi >= 0; pdi--) { if (state.legs[pdi].date) { prevLegDate = state.legs[pdi].date; break; } }
+  var dayTag = '';
+  if (leg.date && _calModel) {
+    var dayNo = Math.round((tripCal.parse(leg.date) - tripCal.parse(_calModel.start)) / tripCal.DAY) + 1;
+    dayTag = '<span class="ch-day-tag">Day ' + dayNo + '</span>';
+  }
+  var dateChips = (!leg.date && prevLegDate)
+    ? '  <button type="button" class="ch-date-chip" data-action="setDateRel" data-leg="' + esc(leg.id) + '" data-rel="0" title="Same day as the leg above">same day</button>'
+      + '  <button type="button" class="ch-date-chip" data-action="setDateRel" data-leg="' + esc(leg.id) + '" data-rel="1" title="Day after the leg above">next day</button>'
+    : '';
   var dateHtml = [
     '<div class="ch-leg-date' + (dateNeeded ? ' invalid' : '') + '">',
+    (leg.date ? '  <button type="button" class="ch-date-step" data-action="stepDate" data-leg="' + esc(leg.id) + '" data-dir="-1" title="A day earlier">&#8722;</button>' : ''),
     '  <input type="date" min="' + esc(legDateFloor(idx)) + '" value="' + esc(leg.date) + '" data-leg="' + esc(leg.id) + '" data-field="date" />',
+    (leg.date ? '  <button type="button" class="ch-date-step" data-action="stepDate" data-leg="' + esc(leg.id) + '" data-dir="1" title="A day later">&#43;</button>' : ''),
+    dayTag,
+    dateChips,
     (dateNeeded ? '  <span class="ch-leg-date-hint">date required</span>' : ''),
     '</div>',
   ].join('');
@@ -4317,7 +4792,14 @@ function renderLegCard(leg, idx, total) {
       : '<button class="ch-tool-chip" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Sightseeing, waiting, and safari-wait fees">&#43; Fees</button>');
   }
   if (routeChipHtml) tools.push(routeChipHtml);
-  var toolsRow = tools.length ? '<div class="ch-leg-tools">' + tools.join('') + '</div>' : '';
+  // Quiet cards (2026-07-31): the tools row only fades out when everything in it is an
+  // ACTION. A route chip is a state readout ("via the toll road") and an active add-on chip
+  // names money already on the leg — both must stay legible at rest, or reading the quote
+  // would need a hover tour. `is-actions-only` is what the CSS keys the fade on.
+  var toolsAreActionsOnly = !routeChipHtml && !activeAddonLabels.length;
+  var toolsRow = tools.length
+    ? '<div class="ch-leg-tools' + (toolsAreActionsOnly ? ' is-actions-only' : '') + '">' + tools.join('') + '</div>'
+    : '';
 
   // Add-on line (thin second line, only when the popover is toggled open; private travel only)
   var sightChecked = leg.addSightseeingFee ? ' checked' : '';
@@ -4335,7 +4817,7 @@ function renderLegCard(leg, idx, total) {
   // row can act as the leg's header band (see the route-rail CSS). Compact 2-stop legs
   // keep the route inline in the main row, exactly as before.
   return [
-    '<div class="ch-leg ch-tl-item ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
+    '<div class="ch-leg ch-tl-item ch-leg-quiet ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '">' + (isStay ? '' : (idx + 1)) + '</span>',
@@ -4713,12 +5195,19 @@ function renderServiceChooser() {
   parts.push('    <span class="ch-svc-lbl">Point-to-point</span>');
   parts.push('    <span class="ch-svc-price">' + p2pPrice + '</span>'); // pre-escaped above
   parts.push('  </button>');
-  // Chauffeur-guide box
-  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
+  // Chauffeur-guide box. When the trip calendar is warning about the span, this price is
+  // BUILT ON that span (chauffeur.ts charges every day between first and last leg), so it
+  // must not read as authoritative — an $4,339 quote from a fat-fingered month looked
+  // exactly as confident as a real one. Amber + a one-line reason, never a hidden number:
+  // the operator still needs to see it to recognise it as wrong.
+  var spanSuspect = !chaufDisabled && !!_calModel && !!tripCal.warning(_calModel, state.service === 'chauffeur');
+  parts.push('  <button class="ch-svc-box' + (chaufActive ? ' active' : '') + (spanSuspect ? ' suspect' : '') + '"' + (chaufDisabled ? ' disabled' : '') + ' data-action="setService" data-service="chauffeur">');
   parts.push('    <span class="ch-svc-lbl">Chauffeur-guide</span>');
   parts.push('    <span class="ch-svc-price">' + (chaufDisabled ? '—' : chaufPrice) + '</span>'); // pre-escaped above
   if (chaufDisabled) {
     parts.push('    <span class="ch-svc-hint">' + esc(chaufErr) + '</span>');
+  } else if (spanSuspect) {
+    parts.push('    <span class="ch-svc-flag">reflects the ' + _calModel.span + '-day span &mdash; check the dates</span>');
   }
   parts.push('  </button>');
   parts.push('</div>');
@@ -4805,10 +5294,17 @@ function submitBlockers() {
     add(undated === 1 ? 'A date on the undated leg (chauffeur trips need one per leg)'
       : 'Dates on ' + undated + ' legs (chauffeur trips need one per leg)', '.ch-leg-date.invalid input');
   }
-  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the
-     cause. Only surfaced when nothing else explains it — otherwise the panel says the same
-     thing twice. */
-  if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  /* A price last: it's the SYMPTOM of most of the above, so naming it first would bury the cause.
+     A shell the server still holds at $0 refuses the transition outright (400 unpriced_quote), so
+     say so even when other blockers are listed — otherwise the panel could look satisfiable when
+     it isn't. But `state.unpriced` only clears on a SAVE round-trip, and autosave is debounced:
+     an operator who fills a quote, sees the real total, and submits inside that window was told
+     the quote "has not been priced yet" while the price sat on screen. So require that there is
+     genuinely no price. A priced shell falls through to no price blocker at all — transition()
+     saves first, which clears the shell server-side before the PATCH, and if that save fails its
+     error handling already maps the server's 400 unpriced_quote to human copy. */
+  if (state.unpriced && !lastEstimate) add('A price — this quote has not been priced yet', '.ch-money');
+  else if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
   return out;
 }
 
@@ -5659,7 +6155,10 @@ function renderActionBar() {
     s === 'draft' || s === 'changes_requested' ||
     (DELETABLE_LOCKED_STATES.indexOf(s) >= 0 && approver)
   );
-  if (canDelete) out.push(B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
+  // Separated from the cluster (2026-07-31): Delete used to sit immediately beside Save and
+  // Submit — the two most-pressed buttons in the tool — with only colour to tell them apart.
+  // A spacer pushes it clear so the destructive action is never a near-miss of a routine one.
+  if (canDelete) out.push('<span class="ch-act-gap"></span>', B('deleteQuote', 'Delete', 'ch-btn-ghostdanger'));
   return out.join('');
 }
 
@@ -5683,23 +6182,25 @@ async function loadOpsUsers() {
 // the selected name IS the label, and clicking the select reassigns. Assignment is what notifies
 // someone, so it stays a first-class control.
 // It used to be HIDDEN until the quote was saved, which read as the control appearing and
-// disappearing at random (owner, 2026-07-26). It is now always present and simply DISABLED until
-// there is a row to assign — assignment is a PATCH against an id, so there is genuinely nothing
-// to send before the first save. A new quote is auto-assigned to its creator server-side, so it
-// resolves to the maker the moment it saves.
+// disappearing at random (owner, 2026-07-26). It is now always present.
 function renderHeaderAssign() {
-  var unsaved = !state.savedId;
+  // The row is created by "+ New quote" (spec 2026-07-29), so this is live from the first frame.
+  // It stays disabled only when there is genuinely no row — i.e. the draft create failed and the
+  // builder fell back to manual-save behaviour.
+  var noRow = !state.savedId;
   var cur = state.assignedTo || '';
   var me = (window.opsEmail || '').toLowerCase();
-  // On an unsaved quote the placeholder states what WILL happen rather than "Unassigned" — the
-  // server auto-assigns a new quote to its creator on save, so "Unassigned" would be a small lie
-  // about a control the operator can't act on yet.
   // The placeholder MUST carry `selected` when nobody holds the quote. A freshly parsed <select>
   // defaults to option 0, but morphdom patches this element's children in place on re-render — and
   // with no option marked selected the browser leaves selectedIndex at -1, rendering an EMPTY box.
   // That is why the picker looked blank/absent after the roster arrived (owner, 2026-07-26).
-  var opts = ['<option value=""' + (cur ? '' : ' selected') + '>'
-    + (unsaved ? 'Assigned to you on save' : 'Unassigned') + '</option>'];
+  // The same empty box appears when `cur` is set but matches NO option — now the ordinary first
+  // frame, because claimDraftRow() assigns the fresh row to its creator while the roster fetch is
+  // still in flight (and that fetch fails SILENTLY, which would make the blank permanent). So the
+  // placeholder takes `selected` whenever nothing else will: an unmatched name reading as
+  // "Unassigned" for a frame is recoverable, an empty box is not.
+  var curMatched = opsUsers.some(function(u) { return u.email === cur; });
+  var opts = ['<option value=""' + (curMatched ? '' : ' selected') + '>Unassigned</option>'];
   opsUsers.forEach(function(u) {
     // Name the person, not their inbox. displayName comes from the server ('Roshen W.') and
     // falls back to the email local part for anyone who hasn't signed in since profiles shipped.
@@ -5709,11 +6210,13 @@ function renderHeaderAssign() {
       esc(label) + (u.email === me ? ' (you)' : '') + '</option>');
   });
   var tone = (cur && cur === me) ? ' mine' : (cur ? '' : ' none');
-  var title = unsaved
-    ? 'Save the quote first — it is assigned to you on save, and you can hand it over from here'
+  // Don't assert a cause here: usually nothing was attempted, let alone failed. Say only what is
+  // true in every disabled case — there is no row yet, and saving makes one.
+  var title = noRow
+    ? 'Assign this quote — available once it’s saved'
     : 'Assign this quote — click to reassign';
   return '<select class="ch-assign-sel ch-head-assign' + tone + '" id="assignSel" data-action="assignQuote"'
-    + (unsaved ? ' disabled' : '')
+    + (noRow ? ' disabled' : '')
     + ' aria-label="Assign this quote" title="' + esc(title) + '">' + opts.join('') + '</select>';
 }
 
@@ -5735,7 +6238,17 @@ function renderAssignStrip() {
 // showing a handover that never happened.
 async function assignQuote(email) {
   if (!state.savedId) return;
+  var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
   var res = await apiPatch(state.savedId, { assignedTo: email || null });
+  // Superseded while in flight: the operator assigned quote A and clicked quote B before the
+  // PATCH resolved. Every write below targets whatever is on screen NOW, so applying this would
+  // paint B with A's assignee and toast "Assigned to …" while B is untouched server-side. Drop
+  // it on both branches — but still refresh the queue, because A's assignment really did land.
+  if (seq !== _openSeq) {
+    window.opsReportError && window.opsReportError('assignQuote', 'stale assign discarded (superseded while in flight)');
+    if (res && !res.error && window.opsRefreshQuotes) window.opsRefreshQuotes();
+    return;
+  }
   if (!res || res.error) {
     showToast('Could not assign — ' + ((res && res.error) || 'unknown error'));
     render();
@@ -5866,8 +6379,183 @@ function runNumberTicks() {
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
+// The trip calendar (2026-07-30): one tile per calendar day of the span, so "did I get the
+// dates right?" is answered by looking, not by re-opening N date pickers. Renders only once
+// there is something to verify — two dated legs, or any date on a chauffeur trip (where the
+// span is priced). Cells are read-only in v1; the steppers on each leg card do the moving.
+var CAL_COLLAPSE_RUN = 4; // idle runs longer than this collapse into one "+N idle days" tile
+// Below this many legs the strip is hidden (owner 2026-07-31) — see renderTripCalendar.
+var CAL_MIN_LEGS = 3;
+
+// The amber warning row. Shared, because it renders in two places: inside the full strip,
+// and on its own for a short itinerary where the tiles are gated away but the safety net
+// must not be. Returns '' when there is nothing wrong.
+function calWarnHtml(m, warn) {
+  if (!warn) return '';
+  var gap = tripCal.biggestGap(m);
+  var legNoOnDay = function (d) {
+    var on = m.byDay[d];
+    return on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+  };
+  var gapLegNo = gap ? legNoOnDay(tripCal.nextLegDay(m, gap.fromDay)) : null;
+  // "45 empty days before leg 4" beats "from Day 38" — and it is a button that scrolls to
+  // that leg and flashes it, so seeing the problem and reaching it is one click.
+  var gapSentence = '';
+  if (gap && gap.days > 2) {
+    gapSentence = gapLegNo
+      ? ' <button type="button" class="ch-cal-jump" data-action="jumpToLeg" data-leg-no="' + gapLegNo + '">'
+        + gap.days + ' empty days before leg ' + gapLegNo + ' &#8594;</button>'
+      : ' Largest gap: ' + gap.days + ' empty days at the end.';
+  }
+  return '<div class="ch-cal-warn" data-testid="cal-warn"><span>&#9888;</span><span>' + esc(warn)
+    + gapSentence + '</span></div>';
+}
+function renderTripCalendar() {
+  var m = _calModel;
+  if (!m) return '';
+
+  // Size gate (owner, 2026-07-31): the strip only earns its space on a multi-leg itinerary.
+  // On a 1–2 leg quote both dates already sit side by side in the cards a few pixels below,
+  // so the strip was a second, larger copy of what the operator could already see — the
+  // clutter this whole pass exists to remove.
+  //
+  // The WARNING is exempt, and deliberately so: a 2-leg chauffeur trip is exactly where a
+  // fat-fingered month is most expensive (Colombo→Kandy 1 Aug, Kandy→Colombo 5 Sept prices
+  // 36 charged days), and that is the mistake the calendar was built to catch. Below the
+  // threshold the tiles go and the amber line stays — it is never "always-on" clutter,
+  // because it only exists when something is actually wrong.
+  var warnEarly = tripCal.warning(m, state.service === 'chauffeur');
+  if (state.legs.length < CAL_MIN_LEGS) {
+    return warnEarly
+      ? '<div class="ch-cal ch-cal-bare" id="trip-cal">' + calWarnHtml(m, warnEarly) + '</div>'
+      : '';
+  }
+
+  var fmtCell = function (dayNo, part) {
+    var d = new Date(tripCal.parse(m.start) + (dayNo - 1) * tripCal.DAY);
+    return d.toLocaleDateString('en-GB', part === 'wk'
+      ? { weekday: 'short', timeZone: 'UTC' }
+      : { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  };
+
+  // Header: the span spelled out, then either the all-clear or what's still wrong. The
+  // all-clear is the point of the strip — "done, and visibly no mistakes".
+  var head = ['<div class="ch-cal-sum"><b>' + esc(fmtCell(1, 'd')) + ' &#8594; ' + esc(fmtCell(m.span, 'd')) + '</b>'
+    + ' &middot; <b>' + m.span + ' day' + (m.span === 1 ? '' : 's') + '</b>'
+    + ' &middot; ' + m.drivingLegs + ' driving leg' + (m.drivingLegs === 1 ? '' : 's')
+    + (state.service === 'chauffeur' ? ' &middot; ' + m.chargedIdle + ' idle day' + (m.chargedIdle === 1 ? '' : 's') + ' charged' : '')];
+  var warn = tripCal.warning(m, state.service === 'chauffeur');
+  if (!warn && m.undated === 0 && m.span > 1) {
+    head.push('<span class="ch-cal-ok">&#10003; every leg dated</span>');
+  }
+  if (m.undated > 0) {
+    head.push('<span class="ch-cal-note">' + m.undated + ' leg' + (m.undated === 1 ? '' : 's') + ' still undated</span>');
+  }
+  if (m.span === 1 && state.legs.length > 1) {
+    head.push('<span class="ch-cal-note">one-day trip &middot; priced point-to-point, no chauffeur day rate</span>');
+  }
+  head.push('</div>');
+
+  // The leg a given day belongs to, 1-based in the operator's list. Gap copy and the jump
+  // targets both speak in leg numbers, because that is what the operator can act on.
+  var legNoOnDay = function (d) {
+    var on = m.byDay[d];
+    return on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+  };
+
+  var warnHtml = calWarnHtml(m, warn);
+
+  // Cells. Chips show the leg's number in the list, so strip and cards cross-reference.
+  var cells = [], day = 1;
+  while (day <= m.span) {
+    if (!m.byDay[day]) {
+      var run = 0;
+      while (day + run <= m.span && !m.byDay[day + run]) run++;
+      if (run > CAL_COLLAPSE_RUN) {
+        // A long empty run: the amber counter, now a jump to the leg it sits before.
+        var afterNo = legNoOnDay(tripCal.nextLegDay(m, day + run));
+        cells.push('<div class="ch-cal-cell collapsed"'
+          + (afterNo ? ' data-action="jumpToLeg" data-leg-no="' + afterNo + '" title="Go to leg ' + afterNo + '"' : '')
+          + '><div class="big">+' + run + '</div><div class="small">empty days'
+          + (afterNo ? '<br>before leg ' + afterNo : '') + '</div></div>');
+        day += run; continue;
+      }
+      // A SHORT empty run collapses to slim ghost columns — the strip stops repeating
+      // "no legs" in full-size tiles and the amber counters above become the loud thing.
+      for (var g = 0; g < run; g++) {
+        cells.push('<div class="ch-cal-ghost" data-tip="' + esc(fmtCell(day + g, 'd')) + ' &middot; '
+          + (state.service === 'chauffeur' ? 'idle &middot; driver waits' : 'no legs') + '"></div>');
+      }
+      day += run; continue;
+    }
+    var ls = m.byDay[day] || [];
+    var chips = ls.map(function (l) {
+      var n = state.legs.indexOf(l) + 1;
+      var isStayChip = l.category === 'stay_day';
+      var label = isStayChip
+        ? 'Stay &middot; ' + esc((l.stops[l.stops.length - 1] || '').trim() || '&#8212;')
+        : '<span class="n">' + n + '</span> ' + esc((l.stops[0] || '?')) + ' &#8594; ' + esc((l.stops[l.stops.length - 1] || '?'));
+      return '<div class="ch-cal-chip' + (isStayChip ? ' stay' : '') + '" title="Leg ' + n + '">' + label + '</div>';
+    }).join('');
+    // Only days that actually carry legs reach here now — empty ones became ghosts or an
+    // amber counter above, so a full tile always has something to say.
+    cells.push('<div class="ch-cal-cell" data-cal-day="' + day + '">'
+      + '<div><span class="ch-cal-dnum">Day ' + day + '</span>'
+      + '<div class="ch-cal-ddate">' + esc(fmtCell(day, 'd')) + '</div>'
+      + '<div class="ch-cal-dwk">' + esc(fmtCell(day, 'wk')) + '</div></div>'
+      + chips
+      + '</div>');
+    day++;
+  }
+
+  // The condensed line that survives scrolling. Same facts, one row: span, then the
+  // all-clear or the warning — never both, and never more than fits on a line.
+  var miniState = warn
+    ? '<span class="warn">&#9888; ' + esc(gapShort(m, warn)) + '</span>'
+    : (m.undated > 0
+      ? '<span>' + m.undated + ' leg' + (m.undated === 1 ? '' : 's') + ' still undated</span>'
+      : '<span class="ok">&#10003; every leg dated</span>');
+  var mini = '<div class="ch-cal-mini" id="trip-cal-mini" aria-hidden="true">'
+    + '<b>' + esc(fmtCell(1, 'd')) + ' &#8594; ' + esc(fmtCell(m.span, 'd')) + '</b>'
+    + '<span>&middot; ' + m.span + ' day' + (m.span === 1 ? '' : 's') + '</span>'
+    + miniState + '</div>';
+
+  return mini + '<div class="ch-cal" id="trip-cal">' + head.join('') + warnHtml
+    + '<div class="ch-cal-strip">' + cells.join('') + '</div></div>';
+}
+
+// The warning, compressed to the one clause that fits the pinned bar. Prefers naming the
+// gap's leg (the actionable half) and falls back to the span when there is no clear gap.
+function gapShort(m, warn) {
+  var gap = tripCal.biggestGap(m);
+  if (gap && gap.days > 2) {
+    var day = tripCal.nextLegDay(m, gap.fromDay);
+    var on = day && m.byDay[day];
+    var no = on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+    if (no) return gap.days + ' empty days before leg ' + no;
+  }
+  return m.span + '-day span — check the dates';
+}
+
+// Keep the condensed bar in step with the strip's visibility. One observer for the app's
+// lifetime, re-pointed after each render (morphdom may replace either node).
+var _calMiniObs = null;
+function syncCalMini() {
+  var strip = document.getElementById('trip-cal');
+  var mini = document.getElementById('trip-cal-mini');
+  if (_calMiniObs) { _calMiniObs.disconnect(); _calMiniObs = null; }
+  if (!strip || !mini || typeof IntersectionObserver !== 'function') return;
+  _calMiniObs = new IntersectionObserver(function (entries) {
+    var off = !entries[0].isIntersecting;
+    mini.classList.toggle('show', off);
+    mini.setAttribute('aria-hidden', off ? 'false' : 'true');
+  }, { threshold: 0 });
+  _calMiniObs.observe(strip);
+}
+
 function render() {
   var st = state;
+  _calModel = tripCal.model(st.legs);
 
   // Build legs HTML (dense rows; no connectors in the compact list)
   var legsHtml = '';
@@ -5895,7 +6583,13 @@ function render() {
   var basicsDone = basicsComplete();
   var _unlockedNow = basicsDone && !_basicsUnlocked; // D5: gate just flipped open this render
   _basicsUnlocked = basicsDone; // let syncBasics() detect a gate flip on live input
-  var hasBuiltItinerary = !!st.savedId || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
+  // `savedId` stopped meaning "has been saved at least once" when "+ New quote" began claiming a
+  // $0 shell row within ~200ms (spec 2026-07-29) — it now means only "a row exists", which
+  // unlocked this section on every new quote: the guidance panel flashed and vanished, the
+  // just-unlocked reveal never played, and the itinerary appeared under the operator's cursor
+  // mid-typing. `savedId && !unpriced` is what "already saved with real content" means now — the
+  // shell marker clears only on a successful save.
+  var hasBuiltItinerary = (!!st.savedId && !st.unpriced) || st.legs.some(function(l) { return l.stops.some(function(s) { return (s || '').trim() !== ''; }); });
   var showItinerary = basicsDone || hasBuiltItinerary;
   var contactBad = (st.contact || '').trim() !== '' && !contactValid(st.contact);
 
@@ -5994,6 +6688,7 @@ function render() {
     '          <div class="ch-sec-head-r">' + (showItinerary ? '<span class="ch-badge tone-slate">' + esc(itinBadge) + '</span>' : '') + '</div>',
     '        </div>',
     (showItinerary ? [
+      renderTripCalendar(),
       legsHtml,
       (st.legs.length > 0 ? [
         '        <div class="ch-legs-add">',
@@ -6245,6 +6940,7 @@ function render() {
   if (_menuWasOpen) reopenAutoCompleteMenu();
   syncItinMap(); // move/refresh the persistent route map into this render's slot
   syncRouteModalMap(); // draw both routes in the open route-choice modal (no-op when closed)
+  syncCalMini(); // re-point the condensed span bar's observer at this render's strip
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -6377,6 +7073,18 @@ function attachEventListeners() {
     if (t && t.id === 'f-internalNotes') { state.internalNotes = t.value; markDirty(); }
   });
 
+  // Quiet cards (2026-07-31): a hybrid laptop reports (hover: hover) but is still touched.
+  // A tap anywhere on a leg card reveals its toolbelt and leaves it revealed until the
+  // operator moves to a different card, so a touch user is never locked out of controls
+  // the CSS is fading. Pointer-typed so a mouse click never sticks a card open.
+  app.addEventListener('pointerdown', function(e) {
+    if (e.pointerType === 'mouse') return;
+    var card = e.target.closest('.ch-leg-quiet');
+    var open = app.querySelectorAll('.ch-leg-quiet.is-revealed');
+    for (var i = 0; i < open.length; i++) if (open[i] !== card) open[i].classList.remove('is-revealed');
+    if (card) card.classList.add('is-revealed');
+  }, true);
+
   app.addEventListener('click', function(e) {
     var el = e.target.closest('[data-action]');
     if (!el) return;
@@ -6394,6 +7102,64 @@ function attachEventListeners() {
       moveLeg(legId, -1);
     } else if (action === 'moveLegDown') {
       moveLeg(legId, 1);
+    } else if (action === 'jumpToLeg') {
+      // Seeing a date problem and reaching it should be one click. Scrolls the named leg
+      // into view and flashes its card; the flash class is stripped on the next render, so
+      // it can never persist into a state the operator didn't ask for.
+      var jumpNo = parseInt(el.getAttribute('data-leg-no'), 10);
+      var jumpLeg = state.legs[jumpNo - 1];
+      if (jumpLeg) {
+        var jumpCard = document.querySelector('.ch-leg[data-leg-id="' + jumpLeg.id + '"]');
+        if (jumpCard) {
+          jumpCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          jumpCard.classList.remove('is-flagged');
+          void jumpCard.offsetWidth; // restart the animation on a repeat click
+          jumpCard.classList.add('is-flagged');
+          var jumpDate = jumpCard.querySelector('[data-field="date"]');
+          if (jumpDate) jumpDate.focus({ preventScroll: true });
+        }
+      }
+    } else if (action === 'stepDate') {
+      // ±1-day nudge (trip calendar, 2026-07-30). Clamped BOTH ways so the itinerary's date
+      // order can never be broken by a click: down stops at the leg-above's date (the same
+      // floor the calendar's min enforces), up stops at the first dated leg below — the
+      // calendar path can't create that inversion either (min), so neither may this one.
+      var dLeg = state.legs.find(function (l) { return l.id === legId; });
+      if (!dLeg || !dLeg.date) { /* steppers only render on dated legs */ }
+      else {
+        var dDir = parseInt(el.getAttribute('data-dir'), 10) || 0;
+        var dNext = tripCal.addDays(dLeg.date, dDir);
+        var dIdx = state.legs.indexOf(dLeg);
+        var dFloor = legDateFloor(dIdx);
+        var dCeil = null;
+        for (var dci = dIdx + 1; dci < state.legs.length; dci++) { if (state.legs[dci].date) { dCeil = state.legs[dci].date; break; } }
+        if (!dNext) { /* unparseable stored date — leave it to the calendar */ }
+        else if (dNext < dFloor) {
+          showToast(dFloor === fmtISODateLocal(new Date())
+            ? "Trip dates can't be in the past."
+            : 'This leg can’t start before the leg above it (' + dFloor + ').');
+        } else if (dCeil && dNext > dCeil) {
+          showToast('The leg below is already on ' + dCeil + ' — move that one first.');
+        } else {
+          updateLeg(legId, { date: dNext });
+        }
+      }
+    } else if (action === 'setDateRel') {
+      // "same day" / "next day" quick chips on an undated leg — an EXPLICIT one-tap choice
+      // relative to the dated leg above. Distinct from auto-guessing a date on addLeg(),
+      // which is deliberately forbidden: here the operator presses the button.
+      var rLeg = state.legs.find(function (l) { return l.id === legId; });
+      if (rLeg && !rLeg.date) {
+        var rIdx = state.legs.indexOf(rLeg);
+        var rBase = null;
+        for (var rbi = rIdx - 1; rbi >= 0; rbi--) { if (state.legs[rbi].date) { rBase = state.legs[rbi].date; break; } }
+        if (rBase) {
+          var rNext = tripCal.addDays(rBase, parseInt(el.getAttribute('data-rel'), 10) || 0);
+          var rToday = fmtISODateLocal(new Date());
+          if (rNext && rNext < rToday) rNext = rToday; // a stale reopened draft must not mint a past date
+          if (rNext) updateLeg(legId, { date: rNext });
+        }
+      }
     } else if (action === 'addStop' || action === 'removeStop' || action === 'andReturn') {
       // Multi-stop rides (Task 8). Every stop-list change goes through rebuildSegments
       // (structural invalidation, spec §5) and clears the 2-stop-only route-choice state

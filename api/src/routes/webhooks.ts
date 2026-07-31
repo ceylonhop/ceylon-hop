@@ -96,6 +96,22 @@ export function webhookRoutes(deps: {
       return c.json({ ok: true, status: 'failed' }, 200);
     }
 
+    // Captured twice: another payment on this booking had already settled (ops took the cash and
+    // marked it paid while this notify was in flight). Both amounts are real, so the refundable
+    // ceiling legitimately sums them — which is exactly why this can't be quiet: whoever refunds
+    // must know there are two captures to give back, not one. No customer email: the booking was
+    // already settled by the first capture, and a second "confirmed" would only confuse.
+    if (outcome.kind === 'double_capture') {
+      void alerts.send({
+        severity: 'critical',
+        kind: 'payment_double_capture',
+        title: `DOUBLE CAPTURE on booking ${outcome.booking.reference}`,
+        body: `Order ${event.orderId} captured ${event.currency} ${event.amountCents / 100}, but another payment on booking ${outcome.booking.reference} had ALREADY settled. The customer has been charged twice (or a cash settlement was double-collected) — refund one capture. Until then the refundable total is the SUM of both.`,
+        dedupeKey: event.orderId,
+      });
+      return c.json({ ok: true, doubleCapture: true }, 200);
+    }
+
     if (outcome.kind === 'settled') {
       const paid = outcome.booking;
       // Best-effort: the booking is already paid, so a concierge-task hiccup must NOT 500 the

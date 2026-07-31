@@ -9,7 +9,7 @@ import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types
 import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
-import { QUOTE_STATUSES, canTransition, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
+import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
@@ -17,7 +17,7 @@ import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddlewar
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
-import { TripInput } from '../domain/trip';
+import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 
@@ -557,10 +557,35 @@ export function internalQuoteRoutes(deps: {
     }
   });
 
+  // "+ New quote" (spec 2026-07-29). Creates the row BEFORE anything is priceable, so an ops
+  // agent can claim or hand over the ticket on the call rather than after a Save. /save prices
+  // via resolveAndPrice() and therefore cannot create an empty row — hence this separate insert.
+  // The row is a $0 SHELL: request/result are the { shell: true } marker, which POST /save
+  // overwrites wholesale on the first real save. Nothing else about the row is special, so the
+  // queue, assignment, soft-delete and reopen paths all work on it unchanged.
+  r.post('/draft', csrf, async (c) => {
+    const actor = c.get('identity').email;
+    const saved = await deps.quotes.save({
+      channel: 'ops',
+      product: 'private', // the builder's default service; the first real save overwrites it
+      totalCents: 0,
+      currency: RATE_CARD.currency,
+      rateCardVersion: RATE_CARD.version,
+      request: { shell: true },
+      result: { shell: true },
+      createdBy: actor,
+      updatedBy: actor,
+      assignedTo: actor, // same auto-assign-to-creator rule /save applies on insert
+    });
+    return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
+  });
+
   // Persist the currently-priced quote. Re-prices server-side — never trusts a client total.
   // An optional `id` on the body means "update this existing quote in place" (the founder
   // editing a quote mid-review, or an operator re-saving a reopened one) — same row, no
-  // orphaned duplicate, lifecycle untouched. An unknown id falls back to an insert.
+  // orphaned duplicate, lifecycle untouched. An id that no longer names a live row (the shell
+  // sweep deleted it under the operator, or it was never ours) is a 409 quote_deleted — never an
+  // insert, which would silently mint a SECOND quote with a brand-new reference.
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
@@ -603,8 +628,14 @@ export function internalQuoteRoutes(deps: {
         createdBy: c.get('identity').email,
         updatedBy: c.get('identity').email,
       };
-      const updated = existingId ? await deps.quotes.update(existingId, content) : null;
-      if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+      if (existingId) {
+        const updated = await deps.quotes.update(existingId, content);
+        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+        // update() refuses a soft-deleted (or absent) row. Falling through to the insert would
+        // hand the operator a duplicate under a reference nobody has seen — tell them instead so
+        // they can re-create the quote from what is still on their screen.
+        return c.json({ error: 'quote_deleted' }, 409);
+      }
       // Auto-assign a NEW quote to its creator (spec 2026-07-22) so it lands in their "Assigned to
       // me". Insert-only: update() above leaves assignment to the picker.
       const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });
@@ -662,7 +693,24 @@ export function internalQuoteRoutes(deps: {
     // Validate the built input against the same schema the public booking routes use —
     // a bad mapping fails loudly instead of persisting a malformed booking.
     const schema = mapped.mode === 'single' ? SingleTransferInput : TripInput;
-    if (!schema.safeParse(mapped.input).success) return c.json({ error: 'invalid_booking' }, 400);
+    if (!schema.safeParse(mapped.input).success) {
+      // The one rejection an operator can actually act on, and the one a real itinerary hits:
+      // chaining inserts a stop wherever a leg doesn't start where the previous one ended (the
+      // customer's own train hop), so a long multi-day tour can pass the cap on gaps alone. The
+      // cap stays where it is — it is a Maps-spend and latency bound on a schema the public
+      // booker shares — so name the cause instead, with both levers they have: shorten, or close
+      // the gaps. Anything else stays the generic invalid_booking (a mapping bug, not their doing).
+      if (mapped.mode === 'trip' && mapped.input.stops.length > MAX_TRIP_STOPS) {
+        return c.json(
+          {
+            error: 'itinerary_too_long',
+            message: `This itinerary needs ${mapped.input.stops.length} stops once the gaps between legs that don't connect are counted — over the ${MAX_TRIP_STOPS}-stop limit for a booking. Shorten the itinerary, or close the gaps so each leg starts where the previous one ended.`,
+          },
+          400,
+        );
+      }
+      return c.json({ error: 'invalid_booking' }, 400);
+    }
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
@@ -829,6 +877,17 @@ export function internalQuoteRoutes(deps: {
       const to = body.status as QuoteStatus;
       // Lowercased to compare against stored assignees, which resolveAssignee normalises.
       const actorEmail = c.get('identity').email.toLowerCase();
+      // Autosave shells (spec 2026-07-29, owner: "make sure zero $ quotes can never be sent").
+      // A shell is a real draft row created before anything was priceable; it must never reach
+      // review, approval or the customer. Checked against the STORED row, never the body — only
+      // POST /save writes pricing, so a body value here would be a hole, not a shortcut.
+      // Assignment and internal notes stay allowed: that is the whole point of the early row.
+      // Deliberately ahead of the canTransition check below: a caller jumping straight from draft
+      // to ready/sent must see unpriced_quote, not the generic illegal_transition — the price gate
+      // is the more specific (and more important) reason the request cannot proceed.
+      if ((to === 'pending_review' || to === 'ready' || to === 'sent') && isUnpricedShell(current)) {
+        return c.json({ error: 'unpriced_quote' }, 400);
+      }
       if (!canTransition(current.status, to)) return c.json({ error: 'illegal_transition' }, 409);
       // Quote intent (spec 2026-07-17, I3): a quote may not enter review — or be self-approved
       // straight to ready — until the submitter has recorded what the customer asked for.
@@ -843,6 +902,10 @@ export function internalQuoteRoutes(deps: {
       const EDITABLE = ['draft', 'pending_review', 'changes_requested'] as QuoteStatus[];
       // Reopening an already-SENT quote is founder-only — it pulls a quote back from the
       // customer for changes, so it needs the same approval authority as sending it did.
+      // Reviving an EXPIRED quote is deliberately NOT founder-gated, unlike pulling back a
+      // 'sent' one: nobody chose to close it — a background sweep did — so restoring it is
+      // undoing the system's action, not overriding a person's. It also re-prices at the live
+      // card (rateLock above), so a revived quote can never carry a stale price to a customer.
       const reopeningSent = current.status === 'sent' && EDITABLE.includes(to);
       if ((to === 'ready' || to === 'changes_requested' || reopeningSent) && !can(c.get('identity').role, 'quote:approve')) {
         return c.json({ error: 'approve_forbidden' }, 403);
@@ -853,8 +916,12 @@ export function internalQuoteRoutes(deps: {
         // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
         // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
-      } else if ((current.status === 'ready' || current.status === 'sent') && EDITABLE.includes(to)) {
-        rateLock = null; // reopen-to-edit (from ready OR sent) unlocks; sending keeps the lock
+      } else if ((current.status === 'ready' || current.status === 'sent' || current.status === 'expired') && EDITABLE.includes(to)) {
+        // Reopen-to-edit (from ready, sent, OR expired) unlocks; sending keeps the lock.
+        // 'expired' matters most here: a quote can now sit closed for months before someone
+        // revives it, and re-pricing against the card it was frozen at would quote a stale
+        // rate. Dropping the lock re-prices at today's card, which is the whole point.
+        rateLock = null;
       }
       // Auto-assign on hand-off (owner, 2026-07-26). These are the two moments a quote changes
       // hands, and leaving them manual meant approved quotes sat in "Ready to send" still held by

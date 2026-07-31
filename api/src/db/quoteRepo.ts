@@ -20,7 +20,12 @@ const ALLOWED_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
   sent:              ['draft'], // reopen-to-edit a sent quote (founder-gated in the route)
   won:               [],
   lost:              [],
-  expired:           [],
+  // Reopen-to-edit an EXPIRED quote (2026-07-31). Expiry is applied by a background sweep,
+  // not by a person, so a terminal 'expired' meant the clock could silently strand real work
+  // with no way back — the operator could only mark it won or lost, never revise and re-send.
+  // Reopening drops the frozen rate card (see the route), so a revived quote re-prices at
+  // today's rates and can never carry a months-old locked price back to a customer.
+  expired:           ['draft'],
 };
 export function canTransition(from: QuoteStatus, to: QuoteStatus): boolean {
   if (DECIDED.includes(to) && from !== 'draft') return true; // outcome flip from any live state
@@ -120,6 +125,11 @@ export interface QuoteSummary {
   // Trip places, joined for the queue's search (spec 2026-07-25). Derived per request from
   // request_json.legs — NOT a stored column. Null when a quote has no usable legs.
   routeText: string | null;
+  // Autosave shells (spec 2026-07-29): true when this row was created by "+ New quote" and has
+  // never been priced. The queue renders "Not priced yet" instead of a $0 total, and the send
+  // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
+  // a $0 total is a symptom, the marker is the fact.
+  unpriced: boolean;
   createdAt: Date;
 }
 
@@ -191,6 +201,9 @@ export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
+  // The quote a booking was converted from, if any. Reverse of convertedBookingId, so a
+  // booking that dies can take its quote's "won" outcome down with it (services/quoteOutcome).
+  findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null>;
   list(filter?: QuoteListFilter): Promise<QuoteSummary[]>;
   // Rows whose created/sent/decided stamp falls after `since`, PLUS every currently-live row
   // (see LIVE_STATUSES). Ordered createdAt desc; `truncated` = the limit cut rows off.
@@ -246,6 +259,14 @@ export function parseDateFilter(value: string, bound: 'from' | 'to'): Date {
   return new Date(value);
 }
 
+// A shell is the row "+ New quote" creates before anything is priceable: request_json and
+// result_json are both { shell: true }. POST /save overwrites request/result wholesale, so the
+// marker cannot survive a real save — that is what makes it safe to store a $0 row with no
+// nullable-money migration.
+export function isUnpricedShell(q: { request: unknown }): boolean {
+  return !!q.request && typeof q.request === 'object' && (q.request as { shell?: unknown }).shell === true;
+}
+
 function toSummary(q: SavedQuote): QuoteSummary {
   return {
     id: q.id,
@@ -259,6 +280,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     currency: q.currency,
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
+    unpriced: isUnpricedShell(q),
     createdAt: q.createdAt,
   };
 }
@@ -322,6 +344,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return row && !row.deletedAt ? { ...row } : null;
   }
 
+  async findByConvertedBookingId(bookingId: string): Promise<SavedQuote | null> {
+    for (const row of this.rows.values()) {
+      if (!row.deletedAt && row.convertedBookingId === bookingId) return { ...row };
+    }
+    return null;
+  }
+
   async list(filter: QuoteListFilter = {}): Promise<QuoteSummary[]> {
     let rows = [...this.rows.values()].filter((r) => !r.deletedAt);
     if (filter.channel) rows = rows.filter((r) => r.channel === filter.channel);
@@ -346,10 +375,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
   async listFunnelRows(since: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: FunnelQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
       .filter((r) =>
-        r.createdAt >= since ||
+        (r.createdAt >= since ||
         (r.sentAt && r.sentAt >= since) ||
         (r.decidedAt && r.decidedAt >= since) ||
-        LIVE_STATUSES.includes(r.status))
+        LIVE_STATUSES.includes(r.status)) &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
       id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
@@ -361,7 +393,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async listDemandRows(from: Date, to: Date, limit: number, channel: AnalyticsChannel = 'ops'): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }> {
     const all = this.analyticsBase(channel)
-      .filter((r) => r.createdAt >= from && r.createdAt <= to)
+      .filter((r) =>
+        r.createdAt >= from && r.createdAt <= to &&
+        // Autosave shells never count as demand (spec 2026-07-29): they are rows created by clicking
+        // "+ New quote", not quotes anyone built. Counting them would inflate the funnel's draft stage.
+        !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
       id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
@@ -378,7 +414,16 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (patch.status) {
       row.status = patch.status;
       if (patch.status === 'sent' && !row.sentAt) row.sentAt = now;
-      if (DECIDED.includes(patch.status) && !row.decidedAt) row.decidedAt = now;
+      // Write-once WHILE decided: an outcome flip (won→lost when a booking is cancelled)
+      // deliberately keeps the original decision date, so correcting an outcome never moves
+      // the row between analytics windows. But returning to an editable state means the quote
+      // is no longer decided at all — leaving the stamp would make a revived-then-won quote
+      // report as won on the day it EXPIRED. Clear it and let the next decision stamp fresh.
+      if (DECIDED.includes(patch.status)) {
+        if (!row.decidedAt) row.decidedAt = now;
+      } else {
+        row.decidedAt = null;
+      }
     }
     if (patch.lostReason !== undefined) row.lostReason = patch.lostReason;
     if (patch.notes !== undefined) row.notes = patch.notes;
@@ -399,7 +444,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
 
   async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
-    if (!row) return null;
+    // Same guard softDelete uses: a deleted row is off-limits to a content write. The shell sweep
+    // can delete a shell an operator still has open, and their next autosave would otherwise
+    // write the real priced quote into the deleted row — invisible in the queue forever.
+    if (!row || row.deletedAt) return null; // unknown or deleted
     // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
     row.product = q.product;
     row.vehicle = q.vehicle ?? null;

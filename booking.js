@@ -1530,11 +1530,13 @@ function startPayHere(checkout, booking){
 }
 
 function showPayFailed(){
-  if(typeof window.chTrack==='function') window.chTrack('payment_failed',{});
+  // Same dimensions as payment_initiated, so a failure can be compared against
+  // its own initiation — otherwise GA4 shows a count with nothing to divide by.
+  if(typeof window.chTrack==='function') window.chTrack('payment_failed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
   phShowEnd('error','Your payment didn’t go through — no charge was made. Please try again.');
 }
 function showPayDismissed(){
-  if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{});
+  if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
   phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
 }
 

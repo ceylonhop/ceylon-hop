@@ -599,6 +599,53 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await bookings.get(booking.id))?.status).toBe('paid');
   });
 
+  // The ordering the webhook used to commit silently: ops settles the booking in cash, then the
+  // gateway notify lands. The write must survive (both amounts are genuinely captured, and
+  // refundRepo sums succeeded payments), but it must not pass as an ordinary settlement.
+  it('reports a double capture when another payment on the booking already settled', async () => {
+    const booking = await bookings.create(sample);
+    await bookings.setStatus(booking.id, 'payment_pending');
+    const gateway = await payments.create({
+      bookingId: booking.id,
+      provider: 'payhere',
+      orderId: booking.reference,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `double-gateway-${booking.id}`,
+    });
+    const cash = await payments.create({
+      bookingId: booking.id,
+      provider: 'cash',
+      orderId: `${booking.reference}-MANUAL`,
+      amount: booking.total,
+      currency: booking.currency,
+      idempotencyKey: `manual-paid:${booking.id}`,
+    });
+    // Unique per run: (provider, gateway_payment_id) is UNIQUE, and the test DB persists.
+    await payments.markSucceededManually(cash.id, { reference: `slip-${booking.id}` });
+    await bookings.setStatus(booking.id, 'paid');
+
+    const outcome = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent({
+      provider: 'payhere' as const,
+      merchantId: '1234567',
+      orderId: booking.reference,
+      providerTxnId: `PAY-${gateway.id}`,
+      amountCents: gateway.amount,
+      currency: gateway.currency,
+      status: 'succeeded' as const,
+      providerStatusCode: '2',
+      receivedAt: new Date(),
+      payloadSha256: 'f'.repeat(64),
+      sanitizedPayload: { order_id: booking.reference, status_code: '2' },
+    });
+
+    expect(outcome.kind).toBe('double_capture');
+    expect(outcome.payment.status).toBe('succeeded'); // committed, not discarded
+    expect(await paymentEvents.listForReconciliation(gateway.id)).toHaveLength(1);
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+    expect(await payments.hasManualSettlement(booking.id)).toBe(true);
+  });
+
   it('persists a quote with JSONB request/result and patches its status', async () => {
     const saved = await quotes.save({
       product: 'private',

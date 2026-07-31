@@ -100,7 +100,14 @@ export const payments = pgTable(
     unique('payments_provider_gateway_payment_id_unique').on(t.provider, t.gatewayPaymentId),
     check('payments_amount_positive', sql`${t.amount} > 0`),
     check('payments_currency_supported', sql`${t.currency} in ('USD')`),
-    check('payments_provider_supported', sql`${t.provider} in ('payhere', 'fake')`),
+    // A typo guard on provider names, not a money invariant. 'payhere' and 'fake' are
+    // gateways; 'cash', 'bank_transfer' and 'manual_other' are out-of-band settlements
+    // recorded by ops via POST /admin/bookings/:id/mark-paid, where the money moved
+    // outside any gateway and the provider names the channel it moved through.
+    check(
+      'payments_provider_supported',
+      sql`${t.provider} in ('payhere', 'fake', 'cash', 'bank_transfer', 'manual_other')`,
+    ),
     check('payments_status_valid', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
     check(
       'payments_succeeded_settled_at_required',

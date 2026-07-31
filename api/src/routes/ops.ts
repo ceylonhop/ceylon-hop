@@ -11,12 +11,14 @@ import {
   type OpsAuthConfig,
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
+import { canTransition, type BookingStatus } from '../domain/status';
+import type { RideStatus } from '../domain/rideStatus';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import { boardRowsForOps } from '../services/opsBoardView';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
-import { sendNoShowNotice } from '../services/notifications';
+import { sendNoShowNotice, manageUrl } from '../services/notifications';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -44,12 +46,49 @@ const ALL_ACTIONS: OpsAction[] = [
   'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view',
 ];
 
-const QUEUE_STATUSES = ['payment_pending', 'paid'] as const;
+// Every status a booking can hold once it has left the website's cart. 'draft' and
+// 'awaiting_details' stay out on purpose — those are half-finished web checkouts, not ops work.
+// The closed half (completed…no_show) is here so a booking never silently disappears from the
+// tool the moment it is finished, cancelled or refunded: before this, confirming a full refund
+// removed the row and its refund history with no way back to it short of knowing the id.
+const QUEUE_STATUSES = [
+  'payment_pending', 'paid', 'confirmed', 'in_progress', 'completed', 'cancelled', 'refunded', 'no_show',
+] as const;
+
+// Fulfilment milestone → the money-side lifecycle status that milestone implies. The ops
+// pipeline lives in ride_ops, and before this the booking row never moved past 'paid': every
+// booking looked unfinished forever, `GET /admin/bookings?status=completed` was always empty,
+// and nothing outside ops could tell a trip that had happened from one that had not.
+// Milestones with no counterpart (pickup_confirmed) and every backtrack map to nothing.
+const BOOKING_STATUS_FOR_STAGE: Partial<Record<RideStatus, BookingStatus>> = {
+  vehicle_confirmed: 'confirmed',
+  on_trip: 'in_progress',
+  completed: 'completed',
+  no_show: 'no_show',
+};
 
 // A fulfilment milestone that has a customer email attached. 'no_show' → the
 // forfeited-fare notice. The 'vehicle_confirmed' (driver-arranged) milestone
 // deliberately sends NO customer email (owner decision 2026-07-18): the paid
 // confirmation already went out, so confirming the driver is an internal step.
+// Carry a fulfilment milestone across to the booking's own lifecycle. Best-effort by design:
+// the ops action the operator took is the durable fact, and the money row lagging must never
+// turn a successful advance into a 500. Silently does nothing when the move is not a legal
+// booking transition — every ride_ops backtrack, a re-set of the same stage, and any stage
+// reached on a booking already cancelled or refunded.
+async function mirrorToBooking(deps: OpsDeps, bookingId: string, to: RideStatus): Promise<void> {
+  const target = BOOKING_STATUS_FOR_STAGE[to];
+  if (!target) return;
+  try {
+    const booking = await deps.bookings.get(bookingId);
+    if (!booking || booking.status === target) return;
+    if (!canTransition(booking.status, target)) return;
+    await deps.bookings.setStatus(bookingId, target);
+  } catch (err) {
+    console.error(`ops stage mirror to booking status failed for ${bookingId} (${to}):`, err);
+  }
+}
+
 async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string): Promise<void> {
   const kind = to === 'no_show' ? 'no_show_notice' : null;
   if (!kind || !deps.email) return;
@@ -205,7 +244,16 @@ export function opsRoutes(deps: OpsDeps) {
     if (!b) return c.json({ error: 'not_found' }, 404);
     const ops = await deps.rideOps.getOrCreate(b.id);
     const payments = await deps.payments.findByBookingId(b.id);
-    return c.json({ booking: b, ops, payments });
+    // The customer's own pay-by-card link, for ops to paste into WhatsApp. A booking converted
+    // from a quote gets no email of its own, so before this there was no way to hand a customer
+    // a card option at all — the drawer promised a "payment link" that existed nowhere. Only
+    // while the booking can actually be charged, so a paid or closed booking never yields a
+    // live link. Same signed token as the "manage my booking" links in customer email.
+    const chargeable = (b.status === 'draft' || b.status === 'payment_pending') && !b.needsPricing;
+    const payLink = chargeable && deps.baseUrl && deps.linkSecret
+      ? manageUrl(b, deps.baseUrl, deps.linkSecret)
+      : null;
+    return c.json({ booking: b, ops, payments, payLink });
   });
 
   r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {
@@ -219,8 +267,10 @@ export function opsRoutes(deps: OpsDeps) {
     } catch {
       return c.json({ error: 'illegal_transition' }, 400);
     }
-    // Fire the matching customer email on the milestone, once (idempotent via the log).
-    // Best-effort: a mail hiccup must never fail the ops action the operator just took.
+    // Carry the milestone across to the booking's own lifecycle, then fire the matching
+    // customer email once (idempotent via the log). Both best-effort: neither may fail the
+    // ops action the operator just took.
+    await mirrorToBooking(deps, id, body.data.to as RideStatus);
     await maybeEmailForStage(deps, id, body.data.to);
     return c.json(updated);
   });
