@@ -655,14 +655,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
     // explicit single-transfer vs multi-stop mode (set by the toggle)
     let bookMode='single';
-    function setMode(m){
+    /* Single ↔ Multi-stop adds or drops the waypoint rows, so the card changes height. It used
+       to do that in one frame: the card was one size, then it was another, with nothing in
+       between — the tab looked like it had swapped in a different card rather than opened up
+       the one already there. CH.motion.resize measures the card before and after the swap and
+       travels between the two, so the growth is the thing you see. Height comes from the real
+       laid-out card, so a seeded stop row can never be clipped. */
+    function applyMode(m){
       bookMode = m==='multi' ? 'multi' : 'single';
       form.classList.toggle('mode-multi', bookMode==='multi');
       form.classList.toggle('mode-single', bookMode==='single');
       tabs.forEach(b=>{ const on=b.dataset.mode===bookMode; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
       if(bookMode==='single'){ mids.innerHTML=''; }       // a single transfer has no waypoints
-      else if(!midCount()){ addMid(); return; }            // multi: seed one stop row (addMid calls relabel+update)
+      else if(!midCount()){ addMid('', { silent:true }); return; } // multi: seed one stop row (addMid calls relabel+update)
       relabel(); update();
+    }
+    function setMode(m){
+      if(m===bookMode) return;                             // re-pressing the active tab shouldn't animate
+      if(window.CH && CH.motion) CH.motion.resize(form, ()=>applyMode(m));
+      else applyMode(m);
     }
     tabs.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 
@@ -682,7 +693,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if(input) input.placeholder = last ? 'Where to next?' : 'Add a place along the way…';
       });
     }
-    function addMid(val=''){
+    function addMid(val='', opts={}){
       if(midCount()>=8) return;
       const row=document.createElement('div');
       row.className='field mid-stop place-field';
@@ -691,10 +702,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const sel=row.querySelector('input');
       if(val) sel.value=val;
       attachLocalPlaceAutocomplete(sel,{onInput:update});
-      row.querySelector('.rm').addEventListener('click',()=>{ row.remove(); relabel(); update(); });
+      // Stop rows grow in and collapse out for the same reason the card does — a row that
+      // appears fully formed makes the card look like it jumped a size.
+      row.querySelector('.rm').addEventListener('click',()=>{
+        const drop=()=>{ row.remove(); relabel(); update(); };
+        if(window.CH && CH.motion) CH.motion.exit(row).then(drop); else drop();
+      });
       mids.appendChild(row);
       relabel(); update();
-      sel.focus();
+      // Seeding the first row happens inside a CH.motion.resize() that is already measuring the
+      // card, so let that own the growth — animating the row too would double the movement.
+      if(!opts.silent && window.CH && CH.motion) CH.motion.enter(row);
+      sel.focus({ preventScroll:true });
     }
     addStop.addEventListener('click',()=>addMid());
 
