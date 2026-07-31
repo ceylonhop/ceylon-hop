@@ -106,6 +106,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sel{border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:9px 12px;font:inherit;font-weight:600;font-size:.84rem;color:var(--ink-soft);box-shadow:var(--shadow-s)}
   .btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-weight:700;font-size:.82rem;padding:9px 14px;border-radius:10px;transition:.16s;display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow-s)}
   .btn:hover{border-color:var(--ink-soft);transform:translateY(-1px)}.btn svg{width:14px;height:14px}
+  /* Booking mutation in flight (see the data-act guard). Spinner sits in the button's existing
+     icon gap so the label doesn't shift, and the sheet ignores further presses until it lands. */
+  .btn.is-pending::before{content:"";width:13px;height:13px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;opacity:.75;animation:ops-btn-spin .62s linear infinite}
+  .btn.is-pending{cursor:progress;transform:none}
+  .btn.is-pending:hover{transform:none}
+  @keyframes ops-btn-spin{to{transform:rotate(360deg)}}
   .btn-go{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:var(--teal-deep);color:#fff;box-shadow:0 12px 26px -13px rgba(8,147,143,.85)}
   .btn-go::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .65s ease}
   .btn-go:hover{filter:brightness(1.05);transform:translateY(-1px)}.btn-go:hover::after{transform:translateX(130%)}
@@ -122,6 +128,15 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   #quoteRoot::-webkit-scrollbar{width:11px}#quoteRoot::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
   /* [hidden] must win over .topbar{display:flex} etc. when routes swap panels */
   #topbar[hidden],#view[hidden],#quoteRoot[hidden]{display:none}
+  /* Opening a saved quote switches to this pane instantly and THEN fetches, so for the length of
+     the round-trip the operator was looking at either an empty builder or the previous quote's
+     numbers — with nothing to say a different quote was on its way. (The _openSeq guard already
+     stopped the wrong quote from landing; this is about the seconds before anything lands.)
+     A veil over the pane, held up by a refcount so overlapping opens can't uncover each other. */
+  #quoteRoot.is-opening::after{content:"";position:absolute;inset:0;z-index:30;background:color-mix(in srgb,var(--cream) 72%,transparent);backdrop-filter:blur(1.5px);animation:qv-veil-in .18s ease both}
+  #quoteRoot.is-opening::before{content:"";position:absolute;top:50%;left:50%;z-index:31;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2.5px solid var(--teal);border-top-color:transparent;animation:ops-btn-spin .7s linear infinite}
+  @keyframes qv-veil-in{from{opacity:0}to{opacity:1}}
+  @media(prefers-reduced-motion:reduce){#quoteRoot.is-opening::before{animation:none;border-top-color:var(--teal);opacity:.4}}
   .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:-.025em;line-height:1}
   .pagesub{color:var(--ink-soft);margin:9px 0 22px;font-size:.95rem}.pagesub b{color:var(--ink);font-weight:700}.pagesub .a{color:var(--alert);font-weight:700}
   .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
@@ -358,6 +373,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
+  /* A failed action reads as failed at a glance: warm-red mark and a hairline to match. */
+  .toast.bad{border-color:#7d3b2e}.toast.bad svg{color:#ff9d85}
 
   /* login overlay — calm, confident, beautifully lit single-purpose screen (Datadog-benchmark) */
   .login{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:radial-gradient(135% 90% at 18% -10%,#241d18,#161210 62%);opacity:0;pointer-events:none;transition:opacity .5s cubic-bezier(.2,.7,.3,1)}
@@ -601,6 +618,18 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* ---------- Buttons ---------- */
 .qv .ch-btn { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: var(--r-sm); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .qv .ch-btn:disabled { opacity: .45; cursor: not-allowed; }
+/* In-flight lifecycle action (see runAction / paintActionBusy). The pressed button grows a
+   spinner in its existing icon gap so the label never reflows — the bar keeps its exact width
+   while the request is out. Siblings stay at full contrast but stop accepting clicks: a second
+   press used to send a second lifecycle write. */
+.qv .ch-btn.is-pending::before { content: ""; width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; opacity: .8; animation: ch-btn-spin .62s linear infinite; }
+.qv .ch-btn.is-pending { cursor: progress; }
+.qv [data-action][data-inflight] { pointer-events: none; }
+@keyframes ch-btn-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  /* No spin, but the state must still READ as busy — a steady dot beats nothing at all. */
+  .qv .ch-btn.is-pending::before { animation: none; border-top-color: currentColor; opacity: .45; }
+}
 .qv .ch-btn-icon { font-size: 13px; line-height: 1; }
 .qv .ch-btn-sm { padding: 6px 10px; font-size: 12px; }
 .qv .ch-btn-primary { background: var(--blue); color: #fff; box-shadow: 0 2px 0 var(--blue-d); }
@@ -853,7 +882,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    quote pane rather than the full viewport (which includes the ops rail). */
 .qv .ch-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--pop-bg); color: var(--pop-fg); border: 1px solid var(--pop-line); padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; transition: all .25s; z-index: 950; display: flex; align-items: center; gap: 8px; }
 .qv .ch-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.qv .ch-toast .tick { color: var(--teal); }
+.qv .ch-toast .tick { color: var(--teal); font-weight: 700; }
+/* Error toasts: the tick becomes "!" (see showToast) and the whole chip shifts warm-red, so a
+   failure never again borrows the visual language of a successful save. */
+.qv .ch-toast.bad { border-color: #7d3b2e; }
+.qv .ch-toast.bad .tick { color: #ff9d85; }
 
 /* ---------- Recent quotes ---------- */
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1619,6 +1652,9 @@ const ICON={
   web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
   arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>',
+  /* Failure toasts used to ship the green check above — "Save failed ✓" reads as a success and
+     quietly costs the console its credibility. Every toast now declares its kind. */
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   /* Ride-board rows are a vehicle, not a channel — a van reads instantly in the list. */
   van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V8a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v5"/><path d="M3 17h2m14 0h2M9 17h6"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
@@ -1676,6 +1712,7 @@ let tickets=[];
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
+let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
 
 function routeStateFromUrl(canQuote){
   const url=new URL(window.location.href);
@@ -1980,7 +2017,7 @@ async function loadOpsQuotes(){
     const body=await r.json();
     opsQuotes=(body&&body.quotes)||[];opsQuotesLoaded=true;
     if(state.route==='quotes')viewQuotes();
-  }catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadOpsQuotes',e);toast('Could not load quotes');}}
+  }catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadOpsQuotes',e);toast('Could not load quotes','error');}}
 }
 function statusPill(status){
   const m=QSTATUS[status]||{label:status||'—',tone:'muted'};
@@ -2542,12 +2579,12 @@ async function openDetail(id){
         if(refundErr.message==='auth')throw refundErr;
         detail.refunds=[];
         window.opsReportError&&window.opsReportError('refund history',refundErr);
-        toast('Booking loaded, but refund history is unavailable');
+        toast('Booking loaded, but refund history is unavailable','error');
       }
     }
     state.detailData=detail;if(state.detail===id)renderSheet();
   }
-  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details');}}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details','error');}}
 }
 
 async function reloadRefundDetail(id){
@@ -2556,12 +2593,14 @@ async function reloadRefundDetail(id){
   if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
-let toastT;function toast(m){const t=$('#toast');t.innerHTML=ICON.check+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
+/* kind: 'ok' (default) | 'error'. An error toast also lingers a beat longer — a failure is
+   worth reading twice, a confirmation isn't. */
+let toastT;function toast(m,kind){const t=$('#toast');const bad=kind==='error';t.classList.toggle('bad',bad);t.innerHTML=(bad?ICON.alert:ICON.check)+esc(m);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),bad?3600:2200);}
 
 /* re-fetch the single row after a mutation and splice it in, then re-render */
 async function refreshRow(id){
   try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)state.detail=null;render();}
-  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('refreshRow',e);toast('Refresh failed');}}
+  catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('refreshRow',e);toast('Refresh failed','error');}}
 }
 
 /* T6: #view and #quoteRoot are each persistent DOM nodes (only [hidden] toggles, never
@@ -2579,7 +2618,7 @@ function showQuoteView(){
   qr.hidden=false;$('#view').hidden=true;$('#topbar').hidden=true;
   if(!qr.querySelector('.ch-app')){
     qr.innerHTML='<div class="ch-app ch-app-inner"></div>'
-      +'<div class="ch-toast" id="ch-toast"><span class="tick">&#x2713;</span><span class="ch-toast-msg"></span></div>';
+      +'<div class="ch-toast" id="ch-toast"><span class="tick">&#x2713;</span><span class="ch-toast-msg"></span></div>'; /* .tick swaps to "!" on an error toast — see showToast */
   }
   QuoteView.init(); /* _inited-guarded inside the module — later calls are no-ops */
 }
@@ -2770,14 +2809,26 @@ document.addEventListener('click',async e=>{
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
   if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundcancel'].includes(act))return;
+  /* Same in-flight guard the quote action bar got (runAction). Each of these is a booking
+     mutation that used to run with no visible sign and no re-entry guard — a double press on
+     "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
+     spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
+     this is the outer guard that covers the rest of the sheet. */
+  const MUTATES=['advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundcancel'];
+  const guarded=MUTATES.includes(act);
+  if(guarded){
+    if(sheetBusy)return;
+    sheetBusy=true;el.classList.add('is-pending');el.setAttribute('aria-busy','true');
+  }
+  try{
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
-    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance');}}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show');}}break;}
-    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed');}}break;}
-    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note');}}break;}
-    case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
+    case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
       /* payments:act, re-checked here for the same reason markpaid does: a sheet rendered
          before a session change must not be able to POST what it should no longer offer. */
@@ -2790,9 +2841,9 @@ document.addEventListener('click',async e=>{
         if(el.isConnected)el.disabled=false;
         /* illegal_transition means someone else moved it (or the trip already started) —
            a state, not a fault, so say what happened rather than "something went wrong". */
-        if(err.message==='illegal_transition'){toast('Too late to cancel — the booking has already moved on');await refreshRow(id);break;}
+        if(err.message==='illegal_transition'){toast('Too late to cancel — the booking has already moved on','error');await refreshRow(id);break;}
         window.opsReportError&&window.opsReportError('booking cancel',err);
-        toast('Could not cancel');
+        toast('Could not cancel','error');
       }
       break;
     }
@@ -2815,9 +2866,9 @@ document.addEventListener('click',async e=>{
            needs its own sentence. already_paid in particular means the money may genuinely be
            in already (a late PayHere webhook) — reading it as a plain failure would invite a
            retry, or worse, a second collection from the customer. */
-        if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again');await refreshRow(id);}
-        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment');await refreshRow(id);}
-        else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid');}
+        if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again','error');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment','error');await refreshRow(id);}
+        else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid','error');}
       }
       break;
     }
@@ -2830,11 +2881,11 @@ document.addEventListener('click',async e=>{
       const amountCents=/^\d+(?:\.\d{1,2})?$/.test(amountText||'')?Math.round(Number(amountText)*100):0;
       const reason=reasonInput&&reasonInput.value.trim();
       const s=refundSummary(state.detailData);
-      if(!amountCents||amountCents>s.remaining){toast('Enter an amount within the refundable balance');break;}
-      if(!reason){toast('Add a refund reason');break;}
+      if(!amountCents||amountCents>s.remaining){toast('Enter an amount within the refundable balance','error');break;}
+      if(!reason){toast('Add a refund reason','error');break;}
       refundBusy.add(busyKey);el.disabled=true;
       try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
-      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund');if(el.isConnected)el.disabled=false;}}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
     }
@@ -2844,11 +2895,11 @@ document.addEventListener('click',async e=>{
       const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
       const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
       const gatewayRef=refInput&&refInput.value.trim();
-      if(!gatewayRef){toast('Paste the PayHere refund reference first');break;}
+      if(!gatewayRef){toast('Paste the PayHere refund reference first','error');break;}
       if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/confirm',{gatewayRef});await reloadRefundDetail(id);toast('Refund confirmed — customer emailed');}
-      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund confirm',err);toast('Could not confirm refund');if(el.isConnected)el.disabled=false;}}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund confirm',err);toast('Could not confirm refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
     }
@@ -2859,10 +2910,13 @@ document.addEventListener('click',async e=>{
       if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
-      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request');if(el.isConnected)el.disabled=false;}}
+      catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
     }
+  }
+  }finally{
+    if(guarded){sheetBusy=false;if(el.isConnected){el.classList.remove('is-pending');el.removeAttribute('aria-busy');}}
   }
 });
 /* Quotes search. Repaints only #view — never the topbar — so the input keeps focus and caret
@@ -2943,7 +2997,7 @@ function bootApp(identity){
   setNav();
   if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics surface immediately — neither needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
-  loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings');}});
+  loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
 
 /* Google Identity Services calls this with the signed ID token credential. */
@@ -3794,7 +3848,7 @@ async function api(path, opts) {
   opts = opts || {};
   const res = await fetch(path, Object.assign({}, opts, { credentials: 'same-origin' }));
   if (res.status === 401) { if (window.opsShowLogin) window.opsShowLogin(); }
-  if (res.status === 403) { showToast('Founder access required'); if (window.opsGoBookings) window.opsGoBookings(); }
+  if (res.status === 403) { showToast('Founder access required', 'error'); if (window.opsGoBookings) window.opsGoBookings(); }
   return res;
 }
 
@@ -3926,13 +3980,50 @@ async function apiGetQuote(id) {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 var _toastTimer = null;
-function showToast(msg) {
+// kind: 'ok' (default) | 'error'. Failures used to arrive under the same teal tick as a save,
+// so "Save failed ✓" was a routine sight — the mark now matches the outcome, and an error
+// stays up longer because it usually needs acting on.
+function showToast(msg, kind) {
   var el = document.getElementById('ch-toast');
   if (!el) return;
+  var bad = kind === 'error';
+  el.classList.toggle('bad', bad);
+  el.querySelector('.tick').textContent = bad ? '!' : '✓';
   el.querySelector('.ch-toast-msg').textContent = msg;
   el.classList.add('show');
   if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(function() { el.classList.remove('show'); }, 3000);
+  _toastTimer = setTimeout(function() { el.classList.remove('show'); }, bad ? 4200 : 3000);
+}
+
+// ── In-flight guard for the lifecycle actions ─────────────────────────────────
+// Save / Submit / Approve / Mark sent / Delete / Payment link all await a network round-trip.
+// They used to give no sign a request was running AND stay clickable throughout: on a cold API
+// that is several seconds of dead-looking console, and a second press sent a second PATCH
+// (double "Mark as sent" = two lifecycle writes). Now one lifecycle action runs at a time, the
+// pressed button wears a spinner, and the rest go inert until it resolves.
+//
+// _busyAction is module state rather than a closure over the button, because these handlers
+// re-render the whole bar on completion — the element that was pressed is usually gone by the
+// time we'd restore it. paintActionBusy() re-applies the state after any render, so a repaint
+// mid-flight (an autosave, an estimate landing) can't drop the spinner.
+var _busyAction = null;
+async function runAction(name, fn) {
+  if (_busyAction) return; // a request is already out; ignore the second press
+  _busyAction = name;
+  paintActionBusy();
+  try { await fn(); }
+  catch (e) { window.opsReportError && window.opsReportError('runAction:' + name, e); }
+  finally { _busyAction = null; paintActionBusy(); }
+}
+function paintActionBusy() {
+  var btns = document.querySelectorAll('#quoteRoot [data-action]');
+  for (var i = 0; i < btns.length; i++) {
+    var b = btns[i], mine = !!_busyAction && b.getAttribute('data-action') === _busyAction;
+    b.classList.toggle('is-pending', mine);
+    // Siblings stay fully legible — dimming them would read as "these are unavailable" rather
+    // than "hold on a second". They just stop responding until the round-trip finishes.
+    if (_busyAction && !mine) b.setAttribute('data-inflight', ''); else b.removeAttribute('data-inflight');
+  }
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────────
@@ -4044,14 +4135,14 @@ function savePayload() {
 async function saveQuote(opts) {
   opts = opts || {};
   if (!state.vehicleType) {
-    showToast('Choose a vehicle type first');
+    showToast('Choose a vehicle type first', 'error');
     return false;
   }
   // Block a chauffeur save the server is guaranteed to reject (an undated leg drops a day rate).
   // render() flags the offending legs' date fields; the toast says what to do — no silent 400.
   var _gaps = chauffeurUndatedLegs();
   if (_gaps.length) {
-    if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing'); }
+    if (!opts.silent) { render(); showToast('Add a date to every leg for chauffeur pricing', 'error'); }
     return false;
   }
   var seq = _openSeq; // a reopen / + New quote that lands mid-flight must win
@@ -4089,11 +4180,11 @@ async function saveQuote(opts) {
   // is still on screen and only they can rescue it, so a quiet "Autosave failed" chip is not
   // enough — this is the one save failure that must always speak.
   if (res && res.error === 'quote_deleted') {
-    showToast('This quote was removed — copy what you need and use "+ New quote" to re-create it');
+    showToast('This quote was removed — copy what you need and use "+ New quote" to re-create it', 'error');
     window.opsReportError && window.opsReportError('saveQuote', 'save rejected: quote_deleted');
     return false;
   }
-  if (!opts.silent) showToast((res && res.error) ? res.error : 'Save failed');
+  if (!opts.silent) showToast((res && res.error) ? res.error : 'Save failed', 'error');
   return false;
 }
 
@@ -4115,12 +4206,12 @@ async function transition(toStatus, opts) {
   if (!res || res.error) {
     // Quote intent (spec 2026-07-17): the server gate can 400 even if a client bypassed the
     // disabled button — give it the same friendly copy as the button hint, not the raw code.
-    if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first'); return; }
+    if (res && res.error === 'requested_service_required') { showToast('Record what the customer asked for first', 'error'); return; }
     // Same gate the blockers panel already names (submitBlockers' "A price — this quote has not
     // been priced yet"); near-unreachable since that panel blocks the button first, but if a
     // client bypasses it the raw code shouldn't leak through.
-    if (res && res.error === 'unpriced_quote') { showToast('This quote needs a price before it can move'); return; }
-    showToast('Could not update — ' + ((res && res.error) || 'unknown error'));
+    if (res && res.error === 'unpriced_quote') { showToast('This quote needs a price before it can move', 'error'); return; }
+    showToast('Could not update — ' + ((res && res.error) || 'unknown error'), 'error');
     return;
   }
   state.status = toStatus;
@@ -4143,7 +4234,7 @@ function submitForReview() {
   var blockers = submitBlockers();
   if (blockers.length) { submitBlockersOpen = true; render(); return; } // the panel names them
   submitBlockersOpen = false;
-  transition('pending_review', { toast: 'Submitted for review', goQueue: true });
+  return transition('pending_review', { toast: 'Submitted for review', goQueue: true });
 }
 /* Self-approval runs the same gate: 'ready' is a customer-facing state, so it can't be reached
    with less than a submission needs. (The server independently enforces requestedService.) */
@@ -4151,9 +4242,9 @@ function approveReady() {
   var blockers = submitBlockers();
   if (blockers.length) { submitBlockersOpen = true; render(); return; }
   submitBlockersOpen = false;
-  transition('ready', { toast: 'Approved — ready to send', goQueue: true });
+  return transition('ready', { toast: 'Approved — ready to send', goQueue: true });
 }
-function markSent()        { transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
+function markSent()        { return transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 
 /* Payment link (spec 2026-07-31). Minting is STATELESS server-side — no booking, no status
    change — so this button is safe to press any number of times: the URL is identical per
@@ -4168,16 +4259,16 @@ async function mintPayLink() {
       var err = await jsonOrNull(r);
       showToast(err && err.error === 'not_linkable'
         ? 'Only an approved (ready or sent) quote can take a payment link'
-        : 'Could not create the payment link');
+        : 'Could not create the payment link', 'error');
       return;
     }
     var body = await jsonOrNull(r);
-    if (!body || !body.url) { showToast('Could not create the payment link'); return; }
+    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return; }
     _payLink = { url: body.url, mode: body.payhereMode || 'off' };
     render();
   } catch (e) {
     window.opsReportError && window.opsReportError('mint pay link', e);
-    showToast('Could not create the payment link');
+    showToast('Could not create the payment link', 'error');
   }
 }
 function copyPayLink() {
@@ -4198,8 +4289,8 @@ function renderPayLinkRow() {
     + sandbox
     + '</div>';
 }
-function markOutcome(s)    { transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
-function reopenToDraft()   { transition('draft', { toast: 'Reopened for editing' }); }
+function markOutcome(s)    { return transition(s, { toast: 'Marked ' + (STATUS_LABELS[s] || s), goQueue: true }); }
+function reopenToDraft()   { return transition('draft', { toast: 'Reopened for editing' }); }
 
 // Delete (spec 2026-07-22): soft delete + back to the queue. The button only shows for the
 // states/roles the server allows, but the server is authoritative — so map its refusals to
@@ -4217,18 +4308,18 @@ async function deleteQuote() {
     return;
   }
   var reason = res && res.reason;
-  if (reason === 'founder_only') showToast('Only a founder can delete a locked quote');
-  else if (reason === 'sent_or_decided') showToast('A quote already sent to the customer can’t be deleted');
-  else showToast('Could not delete — ' + ((res && res.error) || 'unknown error'));
+  if (reason === 'founder_only') showToast('Only a founder can delete a locked quote', 'error');
+  else if (reason === 'sent_or_decided') showToast('A quote already sent to the customer can’t be deleted', 'error');
+  else showToast('Could not delete — ' + ((res && res.error) || 'unknown error'), 'error');
 }
 // Send-back uses an inline note composer (not a native prompt): confirmSendBack reads
 // the textarea and PATCHes the quote to changes_requested with the note attached.
 function confirmSendBack() {
   var ta = document.getElementById('sendBackNote');
   var note = ta ? ta.value.trim() : '';
-  if (!note) { showToast('Add a short note so support knows what to change'); return; }
+  if (!note) { showToast('Add a short note so support knows what to change', 'error'); return; }
   sendBackOpen = false;
-  transition('changes_requested', { note: note, toast: 'Sent back for changes', goQueue: true });
+  return transition('changes_requested', { note: note, toast: 'Sent back for changes', goQueue: true });
 }
 
 // ── "Mark booked" modal (spec 2026-07-18) ─────────────────────────────────────
@@ -4287,13 +4378,13 @@ async function bookQuote() {
   };
   // Client-side required-field guard (server re-validates via Zod).
   if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
-    showToast('Fill in name, email, WhatsApp, country, date and time');
+    showToast('Fill in name, email, WhatsApp, country, date and time', 'error');
     return;
   }
   // <input type="email"> hands back whatever was typed, so "roshen@gmail" passed the
   // emptiness check above and only died server-side as a bare "bad_request".
   if (!isValidEmail(b.customer.email)) {
-    showToast('Check the email address — it does not look valid');
+    showToast('Check the email address — it does not look valid', 'error');
     return;
   }
   // Re-entrancy guard: a double-clicked Confirm booking button fires bookQuote() twice
@@ -4304,7 +4395,7 @@ async function bookQuote() {
   try {
     var res = await apiBook(state.savedId, b);
     if (!res || res.error) {
-      showToast(bookErrorText(res));
+      showToast(bookErrorText(res), 'error');
       window.opsReportError && window.opsReportError('quote_book_rejected', new Error((res && (res.message || res.error)) || 'unknown error'));
       return;
     }
@@ -4341,7 +4432,7 @@ async function reopenQuote(id) {
     var msg = notFound
       ? (isRef ? 'Quote ' + id + ' not found' : 'Quote not found')
       : ('Couldn’t open the quote' + (q && q.error && q.error !== 'not_found' ? ' — ' + q.error : ''));
-    if (window.opsToast) window.opsToast(msg); else showToast(msg);
+    if (window.opsToast) window.opsToast(msg, 'error'); else showToast(msg, 'error');
     if (window.opsGoQuotes) window.opsGoQuotes();
     // This early return still supersedes whatever quote was in flight before it — an autosave
     // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
@@ -4374,7 +4465,7 @@ async function reopenQuote(id) {
   }
   if (!tool) {
     // Legacy row saved before the { tool, engine } shape.
-    showToast('This quote was saved before reopen support — re-create it to edit.');
+    showToast('This quote was saved before reopen support — re-create it to edit.', 'error');
     // This early return still supersedes whatever quote was in flight before it — an autosave
     // for that quote can resolve after we've bailed here and must not leave the chip mid-flight
     // (same rule as resetToNew / the normal reopen path below).
@@ -5011,8 +5102,8 @@ async function hzSubmitZone() {
   var placeName = (placeEl.value || '').trim();
   var boostPct = parseInt(boostEl.value, 10);
   var active = activeEl ? !!activeEl.checked : true;
-  if (!placeName) { showToast('Enter a town name'); return; }
-  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%'); return; }
+  if (!placeName) { showToast('Enter a town name', 'error'); return; }
+  if (isNaN(boostPct) || boostPct < 0 || boostPct > 100) { showToast('Boost must be 0–100%', 'error'); return; }
   if (boostPct > 20 && !window.confirm('A +' + boostPct + '% premium is unusually high. Apply it?')) return;
   hzBusy = true; render();
   try {
@@ -5020,11 +5111,11 @@ async function hzSubmitZone() {
     var method = hzEditId ? 'PATCH' : 'POST';
     var r = await api(path, { method: method, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ placeName: placeName, boostPct: boostPct, active: active }) });
     hzBusy = false;
-    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed')); render(); return; }
+    if (!r.ok) { var e = await errPayload(r); showToast(e.error === 'bad_request' ? 'Check the values' : (e.error || 'Save failed'), 'error'); render(); return; }
     hzEditId = null;
     showToast('Zone saved');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones save', e); hzBusy = false; showToast('Save failed', 'error'); render(); }
 }
 
 async function hzToggleZone(id) {
@@ -5034,9 +5125,9 @@ async function hzToggleZone(id) {
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: !z.active }) });
     hzBusy = false;
-    if (!r.ok) { showToast('Update failed'); render(); return; }
+    if (!r.ok) { showToast('Update failed', 'error'); render(); return; }
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones update', e); hzBusy = false; showToast('Update failed', 'error'); render(); }
 }
 
 async function hzDeleteZone(id) {
@@ -5046,11 +5137,11 @@ async function hzDeleteZone(id) {
   try {
     var r = await api('/admin/quote/zones/' + id, { method: 'DELETE', headers: { 'content-type': 'application/json' } });
     hzBusy = false;
-    if (!r.ok) { showToast('Delete failed'); render(); return; }
+    if (!r.ok) { showToast('Delete failed', 'error'); render(); return; }
     if (hzEditId === id) hzEditId = null;
     showToast('Zone deleted');
     await loadHotZones();
-  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed'); render(); }
+  } catch (e) { window.opsReportError && window.opsReportError('hotZones delete', e); hzBusy = false; showToast('Delete failed', 'error'); render(); }
 }
 
 function renderHotZonesPanel() {
@@ -6061,7 +6152,7 @@ function renderInternalView() {
 function copyOutputText() {
   // Maker-checker hard guard (belt-and-braces behind the disabled button): the customer
   // message can't be copied until the quote is approved.
-  if (!copyUnlocked()) { showToast('Approve the quote first — copy unlocks at “Ready to send”'); return; }
+  if (!copyUnlocked()) { showToast('Approve the quote first — copy unlocks at “Ready to send”', 'error'); return; }
   var text = null;
   if (outputTab === 'whatsapp') {
     text = currentOutputMessage('whatsapp');
@@ -6069,7 +6160,7 @@ function copyOutputText() {
     var body = currentOutputMessage('email');
     if (body) text = 'Subject: Ceylon Hop Transport Quote for Your Sri Lanka Trip\n\n' + body;
   }
-  if (!text) { showToast('Price the trip first'); return; }
+  if (!text) { showToast('Price the trip first', 'error'); return; }
   var done = function() {
     showToast(outputTab === 'whatsapp' ? 'Copied — paste into WhatsApp' : 'Copied — paste into your email');
   };
@@ -6302,7 +6393,7 @@ async function assignQuote(email) {
     return;
   }
   if (!res || res.error) {
-    showToast('Could not assign — ' + ((res && res.error) || 'unknown error'));
+    showToast('Could not assign — ' + ((res && res.error) || 'unknown error'), 'error');
     render();
     return;
   }
@@ -6994,6 +7085,7 @@ function render() {
   syncItinMap(); // move/refresh the persistent route map into this render's slot
   syncRouteModalMap(); // draw both routes in the open route-choice modal (no-op when closed)
   syncCalMini(); // re-point the condensed span bar's observer at this render's strip
+  paintActionBusy(); // re-apply the in-flight spinner: morphdom just rebuilt the action bar
 }
 
 // After a full re-render blows away the open autocomplete menu, rebuild it
@@ -7190,9 +7282,9 @@ function attachEventListeners() {
         else if (dNext < dFloor) {
           showToast(dFloor === fmtISODateLocal(new Date())
             ? "Trip dates can't be in the past."
-            : 'This leg can’t start before the leg above it (' + dFloor + ').');
+            : 'This leg can’t start before the leg above it (' + dFloor + ').', 'error');
         } else if (dCeil && dNext > dCeil) {
-          showToast('The leg below is already on ' + dCeil + ' — move that one first.');
+          showToast('The leg below is already on ' + dCeil + ' — move that one first.', 'error');
         } else {
           updateLeg(legId, { date: dNext });
         }
@@ -7270,11 +7362,11 @@ function attachEventListeners() {
       if (_dirty && !confirm('Leave this quote? Unsaved changes will be lost.')) return;
       if (window.opsGoQuotes) window.opsGoQuotes();
     } else if (action === 'saveDraft') {
-      saveQuote();
+      runAction(action, saveQuote);
     } else if (action === 'submitForReview') {
-      submitForReview();
+      runAction(action, submitForReview);
     } else if (action === 'approveReady') {
-      approveReady();
+      runAction(action, approveReady);
     } else if (action === 'dismissBlockers') {
       submitBlockersOpen = false;
       render();
@@ -7292,31 +7384,31 @@ function attachEventListeners() {
       var ta = document.getElementById('sendBackNote');
       if (ta) ta.focus();
     } else if (action === 'confirmSendBack') {
-      confirmSendBack();
+      runAction(action, confirmSendBack);
     } else if (action === 'cancelSendBack') {
       sendBackOpen = false;
       render();
     } else if (action === 'markSent') {
-      markSent();
+      runAction(action, markSent);
     } else if (action === 'mintPayLink') {
-      mintPayLink();
+      runAction(action, mintPayLink);
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'markWon') {
       bookOpen = true;
       render();
     } else if (action === 'markLost') {
-      markOutcome('lost');
+      runAction(action, function(){ return markOutcome('lost'); });
     } else if (action === 'confirmBook') {
-      bookQuote();
+      runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
   _payLink = null;
       render();
     } else if (action === 'reopenToDraft') {
-      reopenToDraft();
+      runAction(action, reopenToDraft);
     } else if (action === 'deleteQuote') {
-      deleteQuote();
+      runAction(action, deleteQuote);
     } else if (action === 'openRates') {
       if (!viewerCan('margin:view')) return; // founder-only rate card
       ratesOpen = true;
@@ -7446,7 +7538,7 @@ function attachEventListeners() {
         el.value = '';
         showToast(floor === fmtISODateLocal(new Date())
           ? "Trip dates can't be in the past."
-          : 'This leg can’t start before the leg above it (' + floor + ').');
+          : 'This leg can’t start before the leg above it (' + floor + ').', 'error');
         updateLeg(legId, { date: '' });
         return;
       }
@@ -7744,7 +7836,7 @@ async function compareRoutes(legId) {
   if (!current || current.stops.length !== 2) return;
   if (legFrom(current).trim() !== from) return;
   if (legTo(current).trim() !== to) return;
-  if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations'); return; }
+  if (!r || r.km == null) { showToast('Couldn\'t compare routes — check the locations', 'error'); return; }
   if (r.variants) {
     // Show the pills only — NO variant is picked yet. Auto-setting 'fastest' here would put
     // the "via expressway" note into the customer message on a mere comparison (final review
@@ -8492,15 +8584,42 @@ function teardown() {
   _ac.timer = null;
   acClose();
   _inited = false;
+  // Drop the open-veil unconditionally: logging out mid-open leaves openQuote's finally
+  // unreachable for that call, and a stuck veil would greet the next sign-in.
+  _openLoads = 0;
+  var qrEl = document.getElementById('quoteRoot');
+  if (qrEl) qrEl.classList.remove('is-opening');
   var target = document.querySelector('#quoteRoot .ch-app');
   if (target) target.innerHTML = '';
 }
 
 // Open a saved quote by id in the builder — used by the ops-shell Quotes tab. init() is
 // _inited-guarded so calling it here is a no-op when the cockpit is already mounted.
+// Refcounted so overlapping opens can't uncover each other: if a second quote is clicked while
+// the first is still in flight, the veil stays up until the LAST open settles. A plain boolean
+// would let the superseded open (which returns early at the _openSeq check) lower it while the
+// newer one is still fetching — the exact flicker this is here to remove.
+var _openLoads = 0;
+function beginOpenLoad() {
+  _openLoads++;
+  var qr = document.getElementById('quoteRoot');
+  if (qr) qr.classList.add('is-opening');
+}
+function endOpenLoad() {
+  if (--_openLoads > 0) return;
+  _openLoads = 0;
+  var qr = document.getElementById('quoteRoot');
+  if (qr) qr.classList.remove('is-opening');
+}
+
 async function openQuote(id) {
-  await init();
-  await reopenQuote(id);
+  beginOpenLoad();
+  try {
+    await init();          // first open of the session also fetches the roster + rate card
+    await reopenQuote(id);
+  } finally {
+    endOpenLoad();
+  }
 }
 
 // D2: contextual command-palette actions while the builder is mounted (shell merges these).
