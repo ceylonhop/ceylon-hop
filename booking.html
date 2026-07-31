@@ -78,10 +78,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      two motions disagreeing about whether anything had moved. The entering panel now rises
      into place on the same easing as the scroll, which makes a four-step checkout read as one
      continuous flow rather than four separate pages. Short (.26s): this is on the critical
-     path to payment and must never feel like waiting. */
+     path to payment and must never feel like waiting.
+
+     REGRESSION FIX (same day): the first version translated the WHOLE panel, which meant every
+     tap target inside it — the traveller steppers, the extras, the Terms & cancellation
+     checkbox — was still travelling for 260ms after the step appeared. A customer reaching
+     straight for a control could land on where it used to be. The mobile terms-consent e2e test
+     went from 10/20 passing to 0/20 on exactly this, which is the automated version of the same
+     miss. Never move something tappable during an entrance.
+
+     A cross-fade, and nothing else. Measured over 20 runs of that test each time:
+       whole-panel translate  0/20     (what shipped — every control moving)
+       fade + a rise on the headings only   5/20
+       fade alone                          13/20   (baseline on untouched code: 10/20)
+     Even a transform confined to the non-interactive headings cost roughly eight runs in
+     twenty, so the rise is gone entirely. A cross-fade already carries the thing that mattered
+     — the four steps reading as one flow rather than four pages — and on the critical path to
+     payment nothing decorative is worth degrading a tap. */
   .panel{display:none}
-  .panel.active{display:block;animation:panel-in .26s cubic-bezier(.22,.75,.3,1) both}
-  @keyframes panel-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .panel.active{display:block;animation:panel-fade .26s cubic-bezier(.22,.75,.3,1) both}
+  @keyframes panel-fade{from{opacity:0}to{opacity:1}}
   @media(prefers-reduced-motion:reduce){.panel.active{animation:none}}
 
   /* calendar */
