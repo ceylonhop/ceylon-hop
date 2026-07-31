@@ -106,11 +106,20 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sel{border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:9px 12px;font:inherit;font-weight:600;font-size:.84rem;color:var(--ink-soft);box-shadow:var(--shadow-s)}
   .btn{border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;font-weight:700;font-size:.82rem;padding:9px 14px;border-radius:10px;transition:.16s;display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow-s)}
   .btn:hover{border-color:var(--ink-soft);transform:translateY(-1px)}.btn svg{width:14px;height:14px}
-  /* Booking mutation in flight (see the data-act guard). Spinner sits in the button's existing
-     icon gap so the label doesn't shift, and the sheet ignores further presses until it lands. */
-  .btn.is-pending::before{content:"";width:13px;height:13px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;opacity:.75;animation:ops-btn-spin .62s linear infinite}
-  .btn.is-pending{cursor:progress;transform:none}
+  /* Booking mutation in flight (see the data-act guard). Spinner is absolutely centred and the
+     label goes transparent, so the button keeps its exact footprint — an inline spinner would
+     widen it and shove the neighbouring actions sideways mid-press. */
+  .btn.is-pending{position:relative;color:transparent;cursor:progress;transform:none;pointer-events:none}
   .btn.is-pending:hover{transform:none}
+  .btn.is-pending::before{content:"";position:absolute;top:50%;left:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid var(--ink);border-top-color:transparent;opacity:.75;animation:ops-btn-spin .62s linear infinite}
+  /* Filled buttons (go/danger) carry white text, so their spinner is white too. */
+  .btn-go.is-pending::before,.btn-noshow.is-pending::before{border-color:#fff;border-top-color:transparent}
+  .btn.is-pending svg{opacity:0}
+  /* Same reasoning as the cockpit's rule: close the ring rather than leaving a frozen arc. */
+  @media(prefers-reduced-motion:reduce){
+    .btn.is-pending::before{animation:none;border-top-color:var(--ink);opacity:.5}
+    .btn-go.is-pending::before,.btn-noshow.is-pending::before{border-top-color:#fff}
+  }
   @keyframes ops-btn-spin{to{transform:rotate(360deg)}}
   .btn-go{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:var(--teal-deep);color:#fff;box-shadow:0 12px 26px -13px rgba(8,147,143,.85)}
   .btn-go::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .65s ease}
@@ -634,17 +643,26 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* ---------- Buttons ---------- */
 .qv .ch-btn { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: var(--r-sm); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .qv .ch-btn:disabled { opacity: .45; cursor: not-allowed; }
-/* In-flight lifecycle action (see runAction / paintActionBusy). The pressed button grows a
-   spinner in its existing icon gap so the label never reflows — the bar keeps its exact width
-   while the request is out. Siblings stay at full contrast but stop accepting clicks: a second
-   press used to send a second lifecycle write. */
-.qv .ch-btn.is-pending::before { content: ""; width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; opacity: .8; animation: ch-btn-spin .62s linear infinite; }
-.qv .ch-btn.is-pending { cursor: progress; }
+/* In-flight lifecycle action (see runAction / paintActionBusy). The spinner is absolutely
+   centred and the label goes transparent rather than being pushed aside: an inline spinner
+   widens the button, and a button that grows mid-press shoves the rest of the action bar
+   sideways under the operator's cursor. Width and height stay exactly as they were. */
+.qv .ch-btn.is-pending { position: relative; color: transparent; cursor: progress; }
+.qv .ch-btn.is-pending::before { content: ""; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid var(--paper); border-top-color: transparent; opacity: .9; animation: ch-btn-spin .62s linear infinite; }
+/* Light-on-dark buttons carry a white spinner; the outline/ghost ones need an ink one. */
+.qv .ch-btn-outline.is-pending::before, .qv .ch-btn-ghost.is-pending::before,
+.qv .ch-btn-dashed.is-pending::before, .qv .ch-btn-ghostdanger.is-pending::before { border-color: var(--black); border-top-color: transparent; }
 .qv [data-action][data-inflight] { pointer-events: none; }
 @keyframes ch-btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  /* No spin, but the state must still READ as busy — a steady dot beats nothing at all. */
-  .qv .ch-btn.is-pending::before { animation: none; border-top-color: currentColor; opacity: .45; }
+  /* No spin, but the state must still READ as busy. NOT currentColor here: .is-pending sets
+     color:transparent to hide the label, so currentColor would leave the ring's gap invisible
+     and the "closed circle" this is meant to be would still look like a stalled spinner.
+     Inherit the ring's own border-color instead, which the variants above have already set. */
+  .qv .ch-btn.is-pending::before { animation: none; border-top-color: inherit; opacity: .5; }
+  .qv .ch-btn.is-pending::before { border-top-color: var(--paper); }
+  .qv .ch-btn-outline.is-pending::before, .qv .ch-btn-ghost.is-pending::before,
+  .qv .ch-btn-dashed.is-pending::before, .qv .ch-btn-ghostdanger.is-pending::before { border-top-color: var(--black); }
 }
 .qv .ch-btn-icon { font-size: 13px; line-height: 1; }
 .qv .ch-btn-sm { padding: 6px 10px; font-size: 12px; }
@@ -1488,8 +1506,16 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qv .ch-app.mount-rise > *:nth-child(4){animation-delay:.18s}
   .qv .ch-sec.just-unlocked{animation:ch-rise .5s cubic-bezier(.23,.9,.32,1) both}
   @keyframes ch-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  /* Route arrival, same family. The builder rises on mount (above), but Bookings, Quotes and
+     Analytics swapped with a bare [hidden] toggle — a hard cut, and the one place the console
+     read as three separate pages rather than one surface. Shorter and shallower than the
+     builder's entrance: this fires on every tab press, so it has to stay out of the way.
+     Applied to #view only — #quoteRoot holds a position:fixed toast, and a transform on its
+     ancestor would re-anchor it. */
+  #view.route-in{animation:ops-route-in .28s cubic-bezier(.23,.9,.32,1) both}
+  @keyframes ops-route-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion: reduce){
-    .qv .ch-app.mount-rise > *,.qv .ch-sec.just-unlocked{animation:none}
+    .qv .ch-app.mount-rise > *,.qv .ch-sec.just-unlocked,#view.route-in{animation:none}
   }
 
 
@@ -1505,6 +1531,65 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-app.ch-locked .ch-cust-strip, .qv .ch-app.ch-locked .ch-sec, .qv .ch-app.ch-locked .ch-svc-choose { opacity: .68; }
 .qv .ch-app.ch-locked .ch-cust-strip input:disabled, .qv .ch-app.ch-locked .ch-sec input:disabled { cursor: not-allowed; }
 .qv .ch-app.ch-locked .ch-req-chip:disabled, .qv .ch-app.ch-locked .ch-veh-chip:disabled { cursor: not-allowed; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PRESS FEEDBACK
+   The console answered a hover on ~50 components and a press on exactly one. On a
+   pointer that is merely a gap; on the office tablet, where hover does not exist
+   at all, it meant a tap produced nothing until the network came back — the same
+   dead feeling the in-flight spinners above are there to fix, but in the 200ms
+   before the request even leaves.
+
+   Deliberately understated: 1px of travel and a shadow that settles, not a bounce.
+   This is a tool someone drives all day; a springy press gets tiring by mid-morning.
+   Grouped by role rather than per-component so anything added later inherits it.
+   Last in the sheet so it beats the :hover transforms it has to override.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Taps feel immediate rather than "considered": drop the 300ms double-tap-zoom wait,
+   and replace the browser's grey flash with our own quieter one. */
+button, [role="button"], .qrow, .tk { touch-action: manipulation; -webkit-tap-highlight-color: rgba(10,185,182,.13); }
+
+/* Shell chrome. :not(:disabled) so a blocked control stays visibly blocked — moving
+   under the finger is the one thing that would say "that worked". */
+.btn:active:not(:disabled),
+.railbtn:active, .qnew:active, .qfilter:active, .fchip:active,
+.an-agebtn:active, .sheet-h .x:active, .switch:active {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-s);
+  transition-duration: .05s;   /* down fast, back up on the component's own easing */
+}
+/* Rows lift on hover, so a press settles them back level — the gesture reads as
+   pushing the card down onto the page rather than nudging it further. */
+.qrow:active, .tk:active, .card:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-s);
+  transition-duration: .05s;
+}
+
+/* Quote cockpit. One rule for every <button> in the pane — ~40 components, all of
+   which want the same answer, and any new one is covered on the day it's written.
+   Excludes in-flight buttons: they are already saying something. */
+.qv button:active:not(:disabled):not([data-inflight]):not(.is-pending) {
+  transform: translateY(1px);
+  transition-duration: .05s;
+}
+/* Cards and rows in the cockpit lift on hover for the same reason the queue rows do. */
+.qv .ch-rc-card:active, .qv .ch-tl-card:active, .qv .ch-leg:active, .qv .ch-svc-box:active {
+  transform: translateY(0);
+  transition-duration: .05s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The blanket reduced-motion rule earlier kills transitions, which would leave a press
+     with no answer at all. Give it a static one instead — feedback isn't decoration. */
+  .btn:active:not(:disabled), .railbtn:active, .qnew:active, .qfilter:active, .fchip:active,
+  .an-agebtn:active, .sheet-h .x:active,
+  .qv button:active:not(:disabled):not([data-inflight]):not(.is-pending) {
+    transform: none;
+    filter: brightness(.94);
+  }
+}
 </style>
 <script>/* D6: set the theme before first paint — no light flash for dark users */
 try{var _t=localStorage.getItem('ch_ops_theme');
@@ -2650,6 +2735,20 @@ function hideQuoteView(){$('#quoteRoot').hidden=true;$('#view').hidden=false;$('
    while staying on Bookings — re-focusing #q on each of those would steal focus from
    whatever the operator is doing). _lastRenderedRoute tracks the previous paint. */
 let _lastRenderedRoute=null;
+/* One-shot arrival for the shell views. Entry only: render() also runs after toggles, notes and
+   queue refreshes while you're already sitting on a route, and replaying the entrance on those
+   would make the console twitch every time a background poll landed. The reflow read restarts
+   the animation when the same route is re-entered (Quotes → Quote → Quotes). */
+let _routeInTimer=null;
+function playRouteIn(){
+  const v=$('#view');
+  if(!v||v.hidden)return;
+  v.classList.remove('route-in');
+  void v.offsetWidth;
+  v.classList.add('route-in');
+  clearTimeout(_routeInTimer);
+  _routeInTimer=setTimeout(()=>v.classList.remove('route-in'),400);
+}
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
@@ -2671,6 +2770,7 @@ function render(){
     if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
     viewQuotes();
     if(entering){
+      playRouteIn();
       loadOpsQuotes(); /* refresh on every entry so newly-saved quotes show up */
       const navBtn=document.querySelector('#nav [data-route="quotes"]');
       if(navBtn)navBtn.focus();
@@ -2680,12 +2780,14 @@ function render(){
     if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
     viewAnalytics();
     if(entering){
+      playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
       if(navBtn)navBtn.focus();
     }
   }else{
     hideQuoteView();viewTickets();renderSheet();
     if(entering){
+      playRouteIn();
       /* Bookings entry: viewTickets() just rebuilt #topbar, so #q is fresh. */
       const qInput=$('#q');
       if(qInput)qInput.focus({preventScroll:true});
