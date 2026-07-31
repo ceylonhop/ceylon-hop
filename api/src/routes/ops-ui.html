@@ -283,6 +283,22 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
+  /* Queue loading skeleton. The three lists each had their own idea of "waiting": Analytics
+     shimmered, Bookings borrowed the EMPTY state (⏳ inside .qempty — which for a beat reads as
+     "there are no bookings"), and Quotes printed a line of italic text. One idiom now, shaped
+     like the rows it's standing in for, so the list doesn't reflow when the data lands. */
+  .qskel{display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s)}
+  .qskel span{display:block;height:11px;border-radius:6px;background:linear-gradient(100deg,var(--line-soft),var(--cream-deep),var(--line-soft));background-size:200% 100%;animation:anshimmer 1.2s infinite linear}
+  .qskel span:nth-child(1){width:26px;height:26px;border-radius:50%}
+  .qskel span:nth-child(2){width:62%;height:15px}
+  .qskel span:nth-child(3){width:45%}
+  .qskel span:nth-child(4){width:58px;height:15px}
+  .qskel span:nth-child(5){width:84px;height:22px;border-radius:999px}
+  /* Staggered so it reads as a list filling in rather than one block pulsing in lockstep. */
+  .qskel:nth-child(2) span{animation-delay:.09s}
+  .qskel:nth-child(3) span{animation-delay:.18s}
+  .qskel:nth-child(4) span{animation-delay:.27s}
+  @media(prefers-reduced-motion:reduce){.qskel span{animation:none;background:var(--line-soft)}}
   .qempty{text-align:center;padding:56px 20px;color:var(--ink-faint)}
   .qempty-icon{font-size:2.2rem}
   .qempty-title{font-family:var(--display);font-size:1.3rem;color:var(--ink-soft);margin-top:8px}
@@ -1713,6 +1729,11 @@ let _bookingsLoaded=false; // false until the first /bookings fetch resolves —
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
 let sheetBusy=false;        // one booking mutation at a time across the whole detail sheet
+/* The one "we're fetching a list" idiom, shared by the Bookings and Quotes queues. Rows rather
+   than a spinner or a word: it holds the layout so nothing jumps when the data lands, and it
+   can't be misread as "the list is empty" the way the old ⏳-in-an-empty-state could. */
+const queueSkeleton=(n=4)=>Array.from({length:n},()=>
+  '<div class="qskel" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>').join('');
 
 function routeStateFromUrl(canQuote){
   const url=new URL(window.location.href);
@@ -1870,11 +1891,11 @@ function viewTickets(){
     html+=`<div class="sec${g==='Pending'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
   });
   if(!list.length){
-    // Empty state, matched to the Quotes queue's .qempty standard. Three cases: still loading
-    // (don't flash "none" before the fetch lands), a genuinely empty pipeline, or a filter/search
-    // that hides everything.
+    // Three cases: still loading (a skeleton — NOT the empty state, which is what this used to
+    // borrow: "⏳ Loading bookings…" wearing .qempty read as "no bookings" for the first beat),
+    // a genuinely empty pipeline, or a filter/search that hides everything.
     html+=!_bookingsLoaded
-      ? `<div class="qempty"><div class="qempty-icon">⏳</div><div class="qempty-title">Loading bookings…</div></div>`
+      ? `<div aria-busy="true" aria-label="Loading bookings">${queueSkeleton()}</div>`
       : tickets.length
         ? `<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No bookings match</div><div class="qempty-sub">Try a different filter, channel, or search term.</div></div>`
         : `<div class="qempty"><div class="qempty-icon">🚐</div><div class="qempty-title">No bookings yet</div><div class="qempty-sub">Paid &amp; upcoming trips land here — from the website and WhatsApp.</div></div>`;
@@ -2115,7 +2136,7 @@ function viewQuotes(){
       <button class="qnew" data-qnew><span class="qnew-plus">+</span> New quote</button>
     </div>
     <p class="pagesub">${sub}</p>`;
-  if(!opsQuotesLoaded){html+='<p class="muted">Loading quotes…</p>';paintQuotesView(html);return;}
+  if(!opsQuotesLoaded){html+=`<div aria-busy="true" aria-label="Loading quotes">${queueSkeleton()}</div>`;paintQuotesView(html);return;}
   if(!opsQuotes.length){
     html+=`<div class="qempty"><div class="qempty-icon">📝</div><div class="qempty-title">No quotes yet</div><div class="qempty-sub">Start one with <b>+ New quote</b> above.</div></div>`;
     paintQuotesView(html);return;
