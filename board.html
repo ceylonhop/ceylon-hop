@@ -99,6 +99,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .chip:hover{border-color:var(--accent);color:var(--accent-deep)}
 .chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
 .filters .count{font-size:.85rem;color:var(--ink-soft);margin-left:auto;font-weight:600}
+/* Shown instead of a number when the board fetch failed — see renderFilters(). Quieter and
+   italic so it reads as an absence of information rather than a count of zero. */
+.filters .count-unknown{color:var(--ink-faint,#9a968d);font-style:italic;font-weight:500}
 .filters .count b{color:var(--teal-deep)}
 
 /* ---------- the board ---------- */

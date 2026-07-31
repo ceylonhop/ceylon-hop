@@ -73,7 +73,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .stepcard{background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:30px}
   .stepcard h2{font-size:1.55rem;margin-bottom:.3rem}
   .stepcard .sub{color:var(--ink-soft);margin-bottom:22px;font-size:.95rem}
-  .panel{display:none}.panel.active{display:block}
+  /* Steps used to swap on a bare display:none → block while goStep() ran a SMOOTH scroll to
+     the top — so the content hard-cut to the next step and only then did the page glide up,
+     two motions disagreeing about whether anything had moved. The entering panel now rises
+     into place on the same easing as the scroll, which makes a four-step checkout read as one
+     continuous flow rather than four separate pages. Short (.26s): this is on the critical
+     path to payment and must never feel like waiting. */
+  .panel{display:none}
+  .panel.active{display:block;animation:panel-in .26s cubic-bezier(.22,.75,.3,1) both}
+  @keyframes panel-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.panel.active{animation:none}}
 
   /* calendar */
   .cal{border:1px solid var(--line);border-radius:var(--r);padding:16px;width:300px;max-width:100%;background:var(--white)}
