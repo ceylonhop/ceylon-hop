@@ -7,6 +7,7 @@ import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { signSession } from '../lib/opsAuth';
+import { verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
@@ -29,7 +30,7 @@ const FOUNDER_COOKIE = cookie('f@x.com');
 // default. createApp() (no override) is reserved for the explicit "no auth" assertions.
 type App = ReturnType<typeof realCreateApp>;
 function createApp(deps: AppDeps = {}): App {
-  return realCreateApp({ auth: AUTH, adminApiKey: 'k', ...deps });
+  return realCreateApp({ auth: AUTH, adminApiKey: 'k', bookingLinkSecret: 'test-link-secret', ...deps });
 }
 function authedGet(app: App, path: string) {
   return app.request(path, { headers: { cookie: FOUNDER_COOKIE } });
@@ -2138,5 +2139,91 @@ describe('reviving an expired quote', () => {
     const id = await expiredQuote(quotes);
     const res = await patchAs(createApp({ quotes }), `/admin/quote/${id}`, { status: 'sent' });
     expect(res.status).toBe(409);
+  });
+});
+
+describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () => {
+  // Same fixture shape the /book suite uses: a real priced ops quote walked to a status.
+  async function quoteAt(quotes: InMemoryQuoteRepo, status: string) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {}, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: '2026-09-01' }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    const walk: Record<string, string[]> = {
+      draft: [], pending_review: ['pending_review'], changes_requested: ['pending_review', 'changes_requested'],
+      ready: ['pending_review', 'ready'], sent: ['pending_review', 'ready', 'sent'],
+      won: ['pending_review', 'ready', 'sent', 'won'], lost: ['pending_review', 'ready', 'sent', 'lost'],
+      expired: ['pending_review', 'ready', 'sent', 'expired'],
+    };
+    for (const s of walk[status]) await quotes.patch(q.id, { status: s as never });
+    return q.id;
+  }
+  const mint = (app: App, id: string) => app.request(`/admin/quote/${id}/pay-link`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+  });
+
+  it('mints from ready and from sent — same URL both times, quote untouched', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await quoteAt(quotes, 'ready');
+    const app = createApp({ quotes });
+    const r1 = await mint(app, id);
+    expect(r1.status).toBe(200);
+    const { url, payhereMode } = await r1.json();
+    expect(url).toContain('/pay.html?t=');
+    expect(payhereMode).toBeDefined();
+    // Minting is stateless: identical URL on a second click, and the quote is untouched.
+    expect((await (await mint(app, id)).json()).url).toBe(url);
+    const q = await quotes.get(id);
+    expect(q?.status).toBe('ready');
+    expect(q?.sentAt).toBeNull();
+    expect(q?.assignedTo).toBeNull();
+
+    await quotes.patch(id, { status: 'sent' });
+    expect((await mint(app, id)).status).toBe(200);
+    expect((await quotes.get(id))?.status).toBe('sent');
+  });
+
+  it('refuses every other status with 409 not_linkable', async () => {
+    for (const status of ['draft', 'pending_review', 'changes_requested', 'won', 'lost', 'expired']) {
+      const quotes = new InMemoryQuoteRepo();
+      const id = await quoteAt(quotes, status);
+      const res = await mint(createApp({ quotes }), id);
+      expect(res.status, `status ${status}`).toBe(409);
+      expect((await res.json()).error).toBe('not_linkable');
+    }
+  });
+
+  it('refuses an unpriced shell and an engine-less legacy row', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const shell = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 0, currency: 'USD', rateCardVersion: 'v1',
+      request: { shell: true }, result: { shell: true },
+    });
+    // A shell can't leave draft anyway; assert the shape gate fires before the status gate.
+    expect((await mint(createApp({ quotes }), shell.id)).status).toBe(409);
+
+    const legacy = await quotes.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD', rateCardVersion: 'v1',
+      request: {}, result: {},
+    });
+    await quotes.patch(legacy.id, { status: 'pending_review' });
+    await quotes.patch(legacy.id, { status: 'ready' });
+    expect((await mint(createApp({ quotes }), legacy.id)).status).toBe(409);
+  });
+
+  it('404s an unknown quote', async () => {
+    expect((await mint(createApp({ quotes: new InMemoryQuoteRepo() }), 'nope')).status).toBe(404);
+  });
+
+  it('the minted token verifies and pins the current revision', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await quoteAt(quotes, 'ready');
+    const { url } = await (await mint(createApp({ quotes }), id)).json();
+    const token = new URL(url, 'http://x').searchParams.get('t')!;
+    const parsed = verifyQuotePayToken(token, 'test-link-secret');
+    expect(parsed?.quoteId).toBe(id);
+    expect(parsed?.revision).toBe((await quotes.get(id))!.revision);
   });
 });

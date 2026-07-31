@@ -94,6 +94,8 @@ export interface AppDeps {
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
+  payhereMode?: string;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -139,6 +141,11 @@ export function createApp(deps: AppDeps = {}) {
       ? new InMemoryQuoteConversionRepo(quotes, bookings)
       : undefined);
   const bookingLinkSecret = deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET;
+  // Which PayHere the server would hand a customer: 'off' with no merchant creds (the
+  // fake adapter), else the configured mode. Surfaced to ops so a sandbox link is
+  // labelled as one (spec 2026-07-31) — a sandbox payment marks real bookings Paid.
+  const payhereMode = deps.payhereMode
+    ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
 
@@ -323,6 +330,9 @@ export function createApp(deps: AppDeps = {}) {
     allowedOrigins,
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+    payBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    linkSecret: bookingLinkSecret,
+    payhereMode,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay

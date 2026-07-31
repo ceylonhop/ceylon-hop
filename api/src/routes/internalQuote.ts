@@ -20,6 +20,7 @@ import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
+import { signQuotePayToken } from '../lib/bookingToken';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
 const CATEGORIES: Record<string, { drives: boolean }> = {
@@ -458,6 +459,12 @@ export function internalQuoteRoutes(deps: {
   // works — it just goes unannounced, exactly as it did before this feature existed.
   email?: EmailAdapter;
   opsBaseUrl?: string; // origin serving /ops, for the email's deep link (config.OPS_BASE_URL)
+  // Pay links (spec 2026-07-31): the public site origin the link points at, the customer
+  // link secret that signs it, and which PayHere mode the server is running — surfaced so
+  // the ops UI can label a sandbox link instead of letting it pass for a live one.
+  payBaseUrl?: string;
+  linkSecret?: string;
+  payhereMode?: string;
 }) {
   const r = new Hono();
 
@@ -736,6 +743,35 @@ export function internalQuoteRoutes(deps: {
     }
     await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
     return c.json(booking, 201);
+  });
+
+  // Mint a payment link for a ready|sent quote (spec 2026-07-31). STATELESS on purpose:
+  // no booking, no DB row — the URL is a signed capability over {quoteId, revision}, so a
+  // double-click yields the identical URL and generating can never touch the quote (sentAt
+  // anchors the expiry clock and the aging report; → sent auto-assigns; none of that may
+  // fire from a mint). The booking is born later, at the customer's pay-commit
+  // (routes/quotePay.ts). Same shape gate as /book: only a priced, engine-bearing ops
+  // quote can ever be paid, so refuse the rest at generation time rather than letting a
+  // customer discover it.
+  r.post('/:id/pay-link', csrf, async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
+    if (
+      quote.channel !== 'ops' ||
+      (quote.status !== 'ready' && quote.status !== 'sent') ||
+      isUnpricedShell(quote) ||
+      !engine ||
+      engine.product === 'shared'
+    ) {
+      return c.json({ error: 'not_linkable', status: quote.status }, 409);
+    }
+    if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
+    const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret);
+    return c.json({
+      url: `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?t=${token}`,
+      payhereMode: deps.payhereMode ?? 'off',
+    });
   });
 
   // Read-only view of the locked rate card for the tool's Settings card.
