@@ -222,6 +222,63 @@ describe('internal quoting tool route', () => {
     expect(got.totalCents).toBe(3550); // finished engine price, not the bogus client total
   });
 
+  /* The builder prices only the READY legs when one still has no distance (Defect A partial
+     pricing, "Covers the ready legs" banner), but /save sends the FULL itinerary and
+     resolveAndPrice resolves the rest — so the stored total was HIGHER than the number the
+     operator was looking at, with no way for the builder to find out. Echo the resolved
+     distances and the priced total so it can reconcile. */
+  it('POST /save returns the server-resolved leg distances and the priced total', async () => {
+    const app = createApp();
+    const body = {
+      firstName: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [
+        { category: 'transfer', from: 'Colombo City', to: 'Kandy' }, // no km — the server resolves it
+        leg({ distanceKm: 40 }),                                    // the builder already had this one
+      ],
+    };
+    const res = await post(app, '/admin/quote/save', body);
+    expect(res.status).toBe(201);
+    const saved = await res.json();
+    const got = await (await authedGet(app, `/admin/quote/${saved.id}`)).json();
+
+    // The total the builder must now display — the one that was actually stored.
+    expect(saved.totalCents).toBe(got.totalCents);
+    // Per-leg resolved distances, positionally matching the legs that were sent.
+    expect(saved.legs).toHaveLength(2);
+    expect(saved.legs[0].distanceKm).toBeGreaterThan(0);
+    expect(saved.legs[0].distanceKm).toBe(got.request.tool.legs[0].distanceKm);
+    expect(saved.legs[1].distanceKm).toBe(40);
+  });
+
+  it('POST /save echoes resolved per-segment distances for a multi-stop leg', async () => {
+    const app = createApp();
+    const res = await post(app, '/admin/quote/save', {
+      firstName: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      // The builder always sends the legacy from/to mirror alongside the chain (toolLegPayload).
+      legs: [{ category: 'transfer', from: 'Colombo City', to: 'Ella', stops: ['Colombo City', 'Kandy', 'Ella'], segmentKms: [null, null] }],
+    });
+    expect(res.status).toBe(201);
+    const saved = await res.json();
+    expect(saved.legs[0].segmentKms).toHaveLength(2);
+    saved.legs[0].segmentKms.forEach((km: number) => expect(km).toBeGreaterThan(0));
+    expect(saved.legs[0].distanceKm).toBe(saved.legs[0].segmentKms[0] + saved.legs[0].segmentKms[1]);
+  });
+
+  it('POST /save on an existing id echoes the resolved distances too (update path)', async () => {
+    const app = createApp();
+    const first = await (await post(app, '/admin/quote/save', {
+      firstName: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs: [leg({ distanceKm: 80 })],
+    })).json();
+    const res = await post(app, '/admin/quote/save', {
+      id: first.id, firstName: 'Maya', contact: '+34600', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [{ category: 'transfer', from: 'Colombo City', to: 'Kandy' }],
+    });
+    expect(res.status).toBe(200);
+    const saved = await res.json();
+    expect(saved.totalCents).toBeGreaterThan(0);
+    expect(saved.legs[0].distanceKm).toBeGreaterThan(0);
+  });
+
   it('POST /save is 400 for an unpriceable trip (no travel leg)', async () => {
     const res = await post(createApp(), '/admin/quote/save', {
       vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'stay_day', from: 'Kandy', to: '' }],

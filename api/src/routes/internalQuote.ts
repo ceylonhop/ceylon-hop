@@ -635,9 +635,22 @@ export function internalQuoteRoutes(deps: {
         createdBy: c.get('identity').email,
         updatedBy: c.get('identity').email,
       };
+      // What we actually charged, and the distances we had to resolve to get there. The builder
+      // prices only its READY legs while one still lacks a distance ("Covers the ready legs"),
+      // but the save above prices the WHOLE itinerary — so the stored total could be higher than
+      // the number on the operator's screen, and nothing told them. resolveAndPrice mutates the
+      // legs in place, so `body.legs` now carries the resolved values; echo them positionally
+      // (same order the builder sent) so it can adopt them and re-price to match.
+      const priced = {
+        totalCents: result.totalCents,
+        legs: body.legs.map((l) => ({
+          distanceKm: typeof l.distanceKm === 'number' ? l.distanceKm : null,
+          segmentKms: l.segmentKms ?? null,
+        })),
+      };
       if (existingId) {
         const updated = await deps.quotes.update(existingId, content);
-        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status }, 200);
+        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status, ...priced }, 200);
         // update() refuses a soft-deleted (or absent) row. Falling through to the insert would
         // hand the operator a duplicate under a reference nobody has seen — tell them instead so
         // they can re-create the quote from what is still on their screen.
@@ -648,7 +661,7 @@ export function internalQuoteRoutes(deps: {
       const saved = await deps.quotes.save({ ...content, assignedTo: c.get('identity').email });
       // Return assignedTo so the builder reflects the auto-assignment immediately (the update path
       // above omits it — a re-save must not move the assignee client-side either).
-      return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo }, 201);
+      return c.json({ id: saved.id, reference: saved.reference, status: saved.status, assignedTo: saved.assignedTo, ...priced }, 201);
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
       throw e;
