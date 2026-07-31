@@ -298,6 +298,9 @@
     if(opts.breadcrumbs) mountBreadcrumbs(opts.breadcrumbs);
     mountWA();
     initReveal();
+    // Every page gets animated <details> — the FAQ is the only user today, but this is the
+    // right place for it: any page that grows one later is covered without a second thought.
+    if(window.CH && CH.motion) CH.motion.details();
   };
 })();
 
@@ -419,5 +422,27 @@
   }
 
   window.CH = window.CH || {};
-  window.CH.motion = { enter, exit, resize, tweenNumber, reduce, EASE };
+  /* Upgrade native <details> so the panel travels open instead of snapping. The FAQ's summary
+     marker already rotates on a .2s transition — someone intended this to feel like opening —
+     but the panel itself appeared in one frame, so the icon animated and the content did not.
+
+     Intercepting the summary click (rather than listening for `toggle`, which fires after the
+     box has already resized) lets resize() measure both states and travel between them. Under
+     reduced motion we don't preventDefault at all, so the browser's own instant behaviour and
+     all of its keyboard/AT semantics are left completely untouched. */
+  function details(root){
+    (root || document).querySelectorAll('details').forEach(function(d){
+      if(d._chDetails) return;
+      d._chDetails = true;
+      const sum = d.querySelector('summary');
+      if(!sum) return;
+      sum.addEventListener('click', function(e){
+        if(reduce()) return;                       // native open/close, no interception
+        e.preventDefault();                        // we own the state change for this gesture
+        resize(d, function(){ d.open = !d.open; }, { duration: 260 });
+      });
+    });
+  }
+
+  window.CH.motion = { enter, exit, resize, tweenNumber, details, reduce, EASE };
 })();

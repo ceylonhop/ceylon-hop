@@ -224,9 +224,31 @@ body[data-page="home"] .nav:not(.scrolled) .brand{color:#fff}
 .nav.on-dark.scrolled{color:var(--ink)}
 .nav.on-dark.scrolled .brand{color:var(--ink)}
 
-.mobile-menu{display:none;position:fixed;inset:74px 0 0;background:var(--cream);z-index:55;padding:30px 24px;flex-direction:column;gap:6px}
-.mobile-menu.open{display:flex}
-.mobile-menu a{font-family:var(--display);font-size:1.7rem;font-weight:700;padding:.5rem 0;border-bottom:1px solid var(--line)}
+/* The menu used to be display:none → flex, which cannot transition: on a phone — the only place
+   it exists — a full-screen surface replaced the page in a single frame with no sense of where
+   it came from. It is position:fixed and therefore out of flow, so it can stay laid out and be
+   hidden by visibility/opacity instead, which CAN travel. pointer-events guards the closed state
+   so an invisible panel never eats a tap, and the delayed `visibility` keeps it in the
+   accessibility tree only while it is genuinely on screen. */
+.mobile-menu{display:flex;position:fixed;inset:74px 0 0;background:var(--cream);z-index:55;padding:30px 24px;flex-direction:column;gap:6px;
+  opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-10px);
+  transition:opacity .2s ease,transform .28s cubic-bezier(.22,.75,.3,1),visibility 0s linear .28s}
+.mobile-menu.open{opacity:1;visibility:visible;pointer-events:auto;transform:none;
+  transition:opacity .2s ease,transform .28s cubic-bezier(.22,.75,.3,1),visibility 0s}
+/* Links stagger in behind the panel so the menu reads as unfolding rather than cutting. */
+.mobile-menu a{font-family:var(--display);font-size:1.7rem;font-weight:700;padding:.5rem 0;border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .28s cubic-bezier(.22,.75,.3,1)}
+.mobile-menu.open a{opacity:1;transform:none}
+.mobile-menu.open a:nth-child(1){transition-delay:.04s}
+.mobile-menu.open a:nth-child(2){transition-delay:.07s}
+.mobile-menu.open a:nth-child(3){transition-delay:.10s}
+.mobile-menu.open a:nth-child(4){transition-delay:.13s}
+.mobile-menu.open a:nth-child(5){transition-delay:.16s}
+.mobile-menu.open a:nth-child(6){transition-delay:.19s}
+@media(prefers-reduced-motion:reduce){
+  /* Still hidden when closed and shown when open — just without the travel. */
+  .mobile-menu,.mobile-menu a,.mobile-menu.open a{transition:none;transform:none}
+}
 @media(max-width:880px){
   .nav-links{display:none}
   .nav-cta .btn:not(.nav-burger){display:none}
