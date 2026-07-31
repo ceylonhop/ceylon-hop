@@ -18,6 +18,7 @@ import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { opsAnalyticsRoutes } from './routes/opsAnalytics';
 import { opsUiRoutes } from './routes/opsUi';
+import { customerPagesRoutes } from './routes/customerPages';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
@@ -317,6 +318,10 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
+  // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
+  // resolves even where no customer site is deployed (staging). BEFORE the share-card root
+  // mount below, whose /:code route would otherwise match /pay.html and answer 404.
+  app.route('/', customerPagesRoutes());
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
