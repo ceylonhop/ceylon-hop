@@ -19,7 +19,7 @@ import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from 
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
-import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
+import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import { signQuotePayToken } from '../lib/bookingToken';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
@@ -762,7 +762,11 @@ export function internalQuoteRoutes(deps: {
       (quote.status !== 'ready' && quote.status !== 'sent') ||
       isUnpricedShell(quote) ||
       !engine ||
-      engine.product === 'shared'
+      engine.product === 'shared' ||
+      // …and the itinerary must actually map to a booking. Without this the link mints fine
+      // and dies at the customer's Continue tap (owner-caught, 2026-07-31). Fail here, where
+      // ops can see it, not there.
+      !isQuoteBookable(quote)
     ) {
       return c.json({ error: 'not_linkable', status: quote.status }, 409);
     }

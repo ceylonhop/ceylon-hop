@@ -140,7 +140,8 @@ test('continuing shows the PayHere interstitial; a failure restores the typed fo
   await page.locator('#gobtn').click();
 
   // The interstitial: spinner, copy, and the amount — never a silent dead button.
-  await expect(page.locator('.pp-loading h2')).toHaveText('Opening secure payment…');
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('.pp-loading p').first()).toContainText('Complete your payment in the PayHere window');
   await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
 
   // The failure returns to the details step WITH what the customer typed, plus the error.

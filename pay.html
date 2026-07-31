@@ -287,8 +287,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // never reads as a dead button. PayHere's own modal replaces it when ready.
   function renderLoading(){
     app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
-      + '<h2>Opening secure payment…</h2>'
-      + '<p>Taking you to PayHere to pay by card.</p>'
+      + '<h2>Taking you to PayHere…</h2>'
+      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
       + '<div class="amt">' + esc(data.totals.usd) + '</div>'
       + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
   }

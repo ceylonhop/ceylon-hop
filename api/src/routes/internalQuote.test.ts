@@ -2195,6 +2195,28 @@ describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () 
     }
   });
 
+  it('refuses a quote whose itinerary cannot become a booking', async () => {
+    // The gap the owner found by testing (2026-07-31): the engine EXISTS but carries no
+    // itinerary, so the page renders payable and Continue 409s in front of the customer.
+    // Mint must refuse it here, where ops can see it.
+    for (const engine of [
+      { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [] },
+      { product: 'chauffeur', vehicle: 'van_6', pax: 4, bags: 2, firstDate: '2026-09-01', lastDate: '2026-09-06', travelDays: [] },
+    ]) {
+      const quotes = new InMemoryQuoteRepo();
+      const q = await quotes.save({
+        channel: 'ops', product: engine.product, vehicle: engine.vehicle, totalCents: 21900,
+        currency: 'USD', rateCardVersion: 'v1', result: {}, requestedService: 'private',
+        request: { tool: { vehicle: engine.vehicle, passengerCount: 2, luggageCount: 1, legs: [] }, engine },
+      });
+      await quotes.patch(q.id, { status: 'pending_review' as never });
+      await quotes.patch(q.id, { status: 'ready' as never });
+      const res = await mint(createApp({ quotes }), q.id);
+      expect(res.status, `engine ${engine.product}`).toBe(409);
+      expect((await res.json()).error).toBe('not_linkable');
+    }
+  });
+
   it('refuses an unpriced shell and an engine-less legacy row', async () => {
     const quotes = new InMemoryQuoteRepo();
     const shell = await quotes.save({
