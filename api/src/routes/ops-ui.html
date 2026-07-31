@@ -976,6 +976,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    it must be a visible object the operator can check at a glance, not an emergent property
    of N separate date pickers. ── */
 .qv .ch-cal { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 12px 14px 10px; margin-bottom: 14px; }
+/* Warning-only card: the size gate hid the tiles, but not the safety net. */
+.qv .ch-cal-bare { padding: 12px 14px; }
+.qv .ch-cal-bare .ch-cal-warn { margin-bottom: 0; }
 .qv .ch-cal-sum { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-bottom: 9px; }
 .qv .ch-cal-sum b { color: var(--ink); font-weight: 700; }
 .qv .ch-cal-ok { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 3px 9px; }
@@ -6381,11 +6384,52 @@ function runNumberTicks() {
 // there is something to verify — two dated legs, or any date on a chauffeur trip (where the
 // span is priced). Cells are read-only in v1; the steppers on each leg card do the moving.
 var CAL_COLLAPSE_RUN = 4; // idle runs longer than this collapse into one "+N idle days" tile
+// Below this many legs the strip is hidden (owner 2026-07-31) — see renderTripCalendar.
+var CAL_MIN_LEGS = 3;
+
+// The amber warning row. Shared, because it renders in two places: inside the full strip,
+// and on its own for a short itinerary where the tiles are gated away but the safety net
+// must not be. Returns '' when there is nothing wrong.
+function calWarnHtml(m, warn) {
+  if (!warn) return '';
+  var gap = tripCal.biggestGap(m);
+  var legNoOnDay = function (d) {
+    var on = m.byDay[d];
+    return on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
+  };
+  var gapLegNo = gap ? legNoOnDay(tripCal.nextLegDay(m, gap.fromDay)) : null;
+  // "45 empty days before leg 4" beats "from Day 38" — and it is a button that scrolls to
+  // that leg and flashes it, so seeing the problem and reaching it is one click.
+  var gapSentence = '';
+  if (gap && gap.days > 2) {
+    gapSentence = gapLegNo
+      ? ' <button type="button" class="ch-cal-jump" data-action="jumpToLeg" data-leg-no="' + gapLegNo + '">'
+        + gap.days + ' empty days before leg ' + gapLegNo + ' &#8594;</button>'
+      : ' Largest gap: ' + gap.days + ' empty days at the end.';
+  }
+  return '<div class="ch-cal-warn" data-testid="cal-warn"><span>&#9888;</span><span>' + esc(warn)
+    + gapSentence + '</span></div>';
+}
 function renderTripCalendar() {
   var m = _calModel;
   if (!m) return '';
-  var datedLegs = state.legs.length - m.undated;
-  if (datedLegs < 2 && state.service !== 'chauffeur') return '';
+
+  // Size gate (owner, 2026-07-31): the strip only earns its space on a multi-leg itinerary.
+  // On a 1–2 leg quote both dates already sit side by side in the cards a few pixels below,
+  // so the strip was a second, larger copy of what the operator could already see — the
+  // clutter this whole pass exists to remove.
+  //
+  // The WARNING is exempt, and deliberately so: a 2-leg chauffeur trip is exactly where a
+  // fat-fingered month is most expensive (Colombo→Kandy 1 Aug, Kandy→Colombo 5 Sept prices
+  // 36 charged days), and that is the mistake the calendar was built to catch. Below the
+  // threshold the tiles go and the amber line stays — it is never "always-on" clutter,
+  // because it only exists when something is actually wrong.
+  var warnEarly = tripCal.warning(m, state.service === 'chauffeur');
+  if (state.legs.length < CAL_MIN_LEGS) {
+    return warnEarly
+      ? '<div class="ch-cal ch-cal-bare" id="trip-cal">' + calWarnHtml(m, warnEarly) + '</div>'
+      : '';
+  }
 
   var fmtCell = function (dayNo, part) {
     var d = new Date(tripCal.parse(m.start) + (dayNo - 1) * tripCal.DAY);
@@ -6419,22 +6463,7 @@ function renderTripCalendar() {
     return on && on.length ? state.legs.indexOf(on[0]) + 1 : null;
   };
 
-  var warnHtml = '';
-  if (warn) {
-    var gap = tripCal.biggestGap(m);
-    var gapLegNo = gap ? legNoOnDay(tripCal.nextLegDay(m, gap.fromDay)) : null;
-    // "45 empty days before leg 4" beats "from Day 38" — and it is a button that scrolls to
-    // that leg and flashes it, so seeing the problem and reaching it is one click.
-    var gapSentence = '';
-    if (gap && gap.days > 2) {
-      gapSentence = gapLegNo
-        ? ' <button type="button" class="ch-cal-jump" data-action="jumpToLeg" data-leg-no="' + gapLegNo + '">'
-          + gap.days + ' empty days before leg ' + gapLegNo + ' &#8594;</button>'
-        : ' Largest gap: ' + gap.days + ' empty days at the end.';
-    }
-    warnHtml = '<div class="ch-cal-warn" data-testid="cal-warn"><span>&#9888;</span><span>' + esc(warn)
-      + gapSentence + '</span></div>';
-  }
+  var warnHtml = calWarnHtml(m, warn);
 
   // Cells. Chips show the leg's number in the list, so strip and cards cross-reference.
   var cells = [], day = 1;
