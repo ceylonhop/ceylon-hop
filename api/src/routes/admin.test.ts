@@ -8,6 +8,7 @@ import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday } from '../testSupport/dates';
+import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
 import { Hono } from 'hono';
 
 const KEY = 'secret-key';
@@ -205,8 +206,10 @@ describe('POST /admin/jobs/notifications', () => {
         channel: 'ops', product: 'private', totalCents: 4048, currency: 'USD',
         rateCardVersion: '2026-06-28', request: {}, result: {},
       });
-      // stamp sentAt 31 days ago — past the 30-day idle TTL
-      vi.setSystemTime(new Date(NOW.getTime() - 31 * 24 * 3600 * 1000));
+      // Stamp sentAt just past the idle TTL, DERIVED from the constant rather than a literal
+      // "31 days": the TTL moved 30 → 180 once the team began parking real quotes in 'sent',
+      // and a hardcoded age silently stops testing expiry the moment it changes again.
+      vi.setSystemTime(new Date(NOW.getTime() - SENT_QUOTE_TTL_MS - 24 * 3600 * 1000));
       await quotes.patch(q.id, { status: 'sent' });
       vi.setSystemTime(NOW);
 

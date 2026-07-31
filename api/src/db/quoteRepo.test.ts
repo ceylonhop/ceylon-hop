@@ -445,3 +445,70 @@ describe('analytics projections exclude unpriced shells', () => {
     expect(rows.some((r) => r.totalCents === 0)).toBe(true);
   });
 });
+
+describe('expiry is reversible, and reopening un-decides the quote', () => {
+  // The sweep — not a person — applies 'expired'. A terminal 'expired' therefore let a
+  // background clock strand real work with no way back, which is exactly the trap the team
+  // was 12 days from hitting with 44 quotes parked in 'sent'.
+  it('allows expired → draft, and nothing else', () => {
+    expect(canTransition('expired', 'draft')).toBe(true);
+    expect(canTransition('expired', 'sent')).toBe(false);
+    expect(canTransition('expired', 'ready')).toBe(false);
+    expect(canTransition('expired', 'pending_review')).toBe(false);
+    // The outcome flip stays available from any decided state (DECIDED shortcut).
+    expect(canTransition('expired', 'won')).toBe(true);
+    expect(canTransition('expired', 'lost')).toBe(true);
+    // won/lost remain terminal for editing — only expiry became reversible.
+    expect(canTransition('won', 'draft')).toBe(false);
+    expect(canTransition('lost', 'draft')).toBe(false);
+  });
+
+  it('clears decidedAt on reopen, so a revived quote is not still "decided"', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'expired' });
+    const expired = await repo.get(q.id);
+    expect(expired?.decidedAt).toBeInstanceOf(Date);
+
+    await repo.patch(q.id, { status: 'draft' });
+    expect((await repo.get(q.id))?.decidedAt).toBeNull();
+
+    // …and the NEXT decision stamps fresh, rather than reporting the old expiry date.
+    await repo.patch(q.id, { status: 'won' });
+    const won = await repo.get(q.id);
+    expect(won?.decidedAt).toBeInstanceOf(Date);
+    expect(won!.decidedAt!.getTime()).toBeGreaterThanOrEqual(expired!.decidedAt!.getTime());
+  });
+
+  it('an outcome FLIP still keeps its original date — correcting is not re-deciding', async () => {
+    // Guards services/quoteOutcome: won → lost when a booking is cancelled must not move the
+    // row into a different analytics window.
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'won' });
+    const first = (await repo.get(q.id))!.decidedAt;
+    await repo.patch(q.id, { status: 'lost', lostReason: 'Booking cancelled' });
+    expect((await repo.get(q.id))?.decidedAt).toEqual(first);
+  });
+
+  it('a notes-only patch never touches decidedAt', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save({
+      channel: 'ops', product: 'private', totalCents: 5000, currency: 'USD',
+      rateCardVersion: 'v1', request: {}, result: {},
+    });
+    await repo.patch(q.id, { status: 'sent' });
+    await repo.patch(q.id, { status: 'won' });
+    const before = (await repo.get(q.id))!.decidedAt;
+    await repo.patch(q.id, { internalNotes: 'just a note' });
+    expect((await repo.get(q.id))?.decidedAt).toEqual(before);
+  });
+});
