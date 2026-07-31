@@ -31,6 +31,7 @@ const JS = 'text/javascript; charset=utf-8';
 const PAGES = ['manage.html', 'pay.html'];
 const ASSETS: [string, string][] = [
   ['site.css', 'text/css; charset=utf-8'],
+  ['ticket.css', 'text/css; charset=utf-8'], // the shared travel-document design, loaded by BOTH pages
   ['favicon.svg', 'image/svg+xml'],
   ['analytics.js', JS],
   ['consent.js', JS],

@@ -9,6 +9,7 @@
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="ticket.css">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -23,106 +24,161 @@ function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<style>
-  /* On the brand design system — site.css supplies the body font (--body) + tokens. */
-  .mg-top{border-bottom:1px solid var(--line);background:var(--paper)}
-  .mg-brand{display:block;max-width:640px;margin:0 auto;padding:16px 18px;font-family:var(--display);font-weight:800;font-size:1.3rem;color:var(--accent-deep);text-decoration:none;letter-spacing:-.01em}
-  .mg-wrap{max-width:640px;margin:0 auto;padding:28px 18px}
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-top:16px;box-shadow:var(--shadow-s)}
-  .row{display:flex;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--cream-deep)}
-  .row:last-child{border-bottom:0}
-  .ref{font-family:var(--display);font-weight:800;font-size:1.4rem;color:var(--ink);line-height:1.1}
-  .muted{color:var(--ink-soft)}
-  .err{text-align:center;padding:40px 16px}
-  .mg-wrap a,.err a{color:var(--accent-deep)}
-  .mg-foot{max-width:640px;margin:20px auto 44px;padding:0 18px;text-align:center;font-size:.85rem;color:var(--ink-soft)}
-  .mg-foot a{color:var(--accent-deep);text-decoration:none}
-  .pay{margin-top:18px;text-align:center}
-  .pay-btn{display:inline-block;width:100%;border:0;background:var(--accent-deep);color:#fff;font:inherit;font-weight:700;padding:14px 26px;border-radius:11px;cursor:pointer}
-  .pay-btn[disabled]{opacity:.6;cursor:default}
-  .pay-note{margin-top:9px;font-size:.82rem;color:var(--ink-soft)}
-  .pay-err{margin-top:10px;font-size:.87rem;color:#b23214;font-weight:650}
-</style>
+<script src="https://www.payhere.lk/lib/payhere.js"></script>
 </head>
 <body>
-<header class="mg-top"><a href="index.html" class="mg-brand">Ceylon Hop</a></header>
-<div class="mg-wrap"><div id="app"><p class="muted">Loading your booking…</p></div></div>
-<footer class="mg-foot"><a href="https://wa.me/94779669662">WhatsApp us</a> &middot; <a href="index.html">ceylonhop.com</a></footer>
-<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<header class="pp-top"><div class="pp-topin">
+  <a class="pp-brand" href="index.html">
+    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <span class="pp-word">Ceylon Hop</span>
+  </a>
+  <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
+</div></header>
+<div class="pp-wrap"><div id="app"><p style="color:var(--ink-soft)">Loading your booking…</p></div></div>
+
 <script>
 (function(){
+  'use strict';
+  // "Your booking" — the page a customer reaches from a confirmation email or from the ops
+  // booking drawer's payment link. It is the SAME travel document as pay.html (ticket.css):
+  // a customer following either link should not be able to tell they landed on a different
+  // system. Everything here is derived from the booking; nothing is typed on this page.
   var app = document.getElementById('app');
   var t = new URLSearchParams(location.search).get('t');
-  var A = window.CEYLON_HOP_API.replace(/\/$/, '');
+  var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
+
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
-  function money(cents,cur){return (cur||'USD')+' '+ (cents/100).toFixed(2).replace(/\.00$/,'');}
-  function errView(msg){app.innerHTML='<div class="err"><h2>We couldn’t open this booking</h2><p class="muted">'+esc(msg)+'</p><p><a href="https://wa.me/94779669662">Message us on WhatsApp</a> and we’ll pull it up for you.</p></div>';}
-  if(!t){ errView('This link isn’t valid.'); return; }
-  fetch(A+'/bookings/view?t='+encodeURIComponent(t)).then(function(res){
-    if(res.status===401) throw new Error('This link isn’t valid or has changed.');
-    if(res.status===404) throw new Error('We couldn’t find this booking.');
-    if(!res.ok) throw new Error('Something went wrong. Please try again.');
+  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+
+  // Money the way the pay page shows it: USD gets its symbol and both decimals, so $229.00
+  // reads as a price rather than a value out of a database.
+  function money(cents, cur){
+    var n = (Number(cents || 0) / 100).toFixed(2);
+    return (cur || 'USD') === 'USD' ? '$' + n : (cur + ' ' + n);
+  }
+
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  // '2026-07-22' → 'Wednesday 22 July 2026'. Built from UTC parts, never new Date(string),
+  // which lands on the previous day for anyone west of Greenwich.
+  function longDate(iso){
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return iso ? String(iso) : '';
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    return DAYS[d.getUTCDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
+  }
+  function vehicleLabel(v){
+    if (!v) return 'To be confirmed';
+    if (/van/i.test(v)) return 'Van';
+    if (/car/i.test(v)) return 'Private car';
+    return String(v).charAt(0).toUpperCase() + String(v).slice(1);
+  }
+  // The booking's status is a DATABASE enum. A traveller gets told what it means for them —
+  // never "payment_pending", which is what this page used to print at them.
+  function statusChip(status){
+    var s = {
+      draft:            ['wait', 'Awaiting payment'],
+      payment_pending:  ['wait', 'Awaiting payment'],
+      paid:             ['ok',   'Confirmed'],
+      confirmed:        ['ok',   'Confirmed'],
+      completed:        ['ok',   'Completed'],
+      cancelled:        ['off',  'Cancelled'],
+      refunded:         ['off',  'Refunded']
+    }[status];
+    return s ? '<span class="t-stat ' + s[0] + '">' + s[1] + '</span>' : '';
+  }
+
+  function errView(msg){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">!</div>'
+      + '<h1 class="st-title">We couldn’t open this booking</h1>'
+      + '<p class="st-sub">' + esc(msg) + '</p></div>' + waLine();
+  }
+
+  // A booking can only be charged while it is genuinely open and something is owed. Offering
+  // payment on a settled booking is how somebody pays twice; the backend refuses it too.
+  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0; }
+
+  function render(v, errMsg){
+    var due = Number(v.balanceDueCents || 0);
+    var html =
+      '<div class="pp-hello">' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
+      + '<h1 class="pp-title">' + esc(v.from) + ' → ' + esc(v.to) + '</h1>'
+      + '<p class="pp-sub">' + esc(longDate(v.date) || 'Date to be confirmed') + '</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
+      + statusChip(v.status) + '</div>'
+      + '<div class="fact"><span class="k">Pick-up</span><span class="v">'
+      + (v.time ? esc(v.time) : 'Time to confirm') + '</span></div>'
+      + '<div class="fact"><span class="k">Travellers</span><span class="v">' + esc(v.travellers) + '</span></div>'
+      + '<div class="fact"><span class="k">Vehicle</span><span class="v">' + esc(vehicleLabel(v.vehicleType)) + '</span></div>'
+      + '</div><div class="perf"></div><div class="t-stub">'
+      + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
+      // A zero balance is not news — it earns a row only when something is left to pay.
+      + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
+
+    if (payable(v)) {
+      html += '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
+        + '<div class="paysub">Pay securely to confirm. ' + esc(money(v.amountDueNowCents, v.currency)) + ' — no extra fees.</div>'
+        + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
+        + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+        + '<p class="pp-err" id="payerr"' + (errMsg ? '' : ' hidden') + '>' + esc(errMsg || '') + '</p>';
+    }
+    html += '</div></div>' + waLine();
+    app.innerHTML = html;
+    var btn = document.getElementById('paybtn');
+    if (btn) btn.addEventListener('click', function(){ pay(v); });
+  }
+
+  // The same interstitial as the pay page: PayHere's window takes a moment to appear, and a
+  // button that simply goes quiet reads as broken.
+  function renderLoading(v){
+    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+      + '<h2>Taking you to PayHere…</h2>'
+      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
+      + '<div class="amt">' + esc(money(v.amountDueNowCents, v.currency)) + '</div>'
+      + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p></div>';
+  }
+
+  function pay(v){
+    renderLoading(v);
+    // A failure rebuilds the whole booking view with the error named on it — never a dead
+    // screen, and never a button whose label has quietly become the error.
+    function fail(msg){ render(v, msg); }
+    // The link token authorises a checkout token, which authorises the charge. The booking
+    // id comes back with it — the view projection withholds it on purpose.
+    fetch(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
+      .then(function(r){
+        return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
+          throw new Error(x.error === 'not_chargeable'
+            ? 'This booking has already been paid or closed.'
+            : 'We couldn’t start your payment just now.');
+        });
+      })
+      .then(function(x){
+        return fetch(A + '/bookings/' + x.bookingId + '/checkout', { method: 'POST', headers: { authorization: 'Bearer ' + x.checkoutToken } })
+          .then(function(r){ if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.'); return r.json(); });
+      })
+      .then(function(checkout){
+        if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
+        // Anything that isn't real PayHere is the dev/fake gateway: send the browser to
+        // whatever it returned rather than pretending on this page that money moved.
+        if (!/payhere\.lk/.test(checkout.checkoutUrl)) { location.href = checkout.checkoutUrl; return; }
+        if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
+        payhere.onCompleted = function(){ location.reload(); };   // the webhook is the source of truth
+        payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged.'); };
+        payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
+        payhere.startPayment(Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields));
+      })
+      .catch(function(e){ fail(e.message); });
+  }
+
+  if (!t) { errView('This link isn’t valid.'); return; }
+  fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(res){
+    if (res.status === 401) throw new Error('This link isn’t valid or has changed.');
+    if (res.status === 404) throw new Error('We couldn’t find this booking.');
+    if (!res.ok) throw new Error('Something went wrong. Please try again.');
     return res.json();
-  }).then(function(v){
-    var rows = [
-      ['Route', esc(v.from)+' → '+esc(v.to)],
-      ['Date', esc(v.date)], ['Pick-up time', esc(v.time)],
-      ['Travellers', esc(v.travellers)],
-      ['Vehicle', v.vehicleType?esc(v.vehicleType):'—'],
-      ['Total', money(v.totalCents,v.currency)],
-      ['Balance due', money(v.balanceDueCents,v.currency)],
-    ].map(function(x){return '<div class="row"><span class="muted">'+x[0]+'</span><span>'+x[1]+'</span></div>';}).join('');
-    app.innerHTML = '<p class="muted">Hi '+esc(v.firstName)+', here’s your booking.</p>'
-      + '<div class="card"><div class="ref">'+esc(v.reference)+'</div>'
-      + '<p class="muted">Status: '+esc(v.status)+'</p>'+rows+'</div>'
-      + payBlock(v);
-    wirePay(v);
-  }).catch(function(e){ errView(e.message); });
-
-  /* ── Pay by card ──────────────────────────────────────────────────────────────────────
-     This page used to be read-only, which made every "here's your payment link" promise a
-     dead end: an ops-booked trip has no other way to reach a card form. The button only
-     appears while the booking can genuinely be charged — the backend refuses anything else,
-     and offering a payment on a booking that is already paid is how someone pays twice. */
-  function payable(v){ return (v.status==='draft'||v.status==='payment_pending')&&v.amountDueNowCents>0; }
-
-  function payBlock(v){
-    if(!payable(v)) return '';
-    return '<div class="pay">'
-      + '<button class="pay-btn" id="pay">Pay '+money(v.amountDueNowCents,v.currency)+' now</button>'
-      + '<p class="pay-note">🔒 Card payments are processed by PayHere, Sri Lanka’s Central Bank-approved gateway.</p>'
-      + '<p class="pay-err" id="payerr" hidden></p></div>';
-  }
-
-  function wirePay(v){
-    var btn = document.getElementById('pay');
-    if(!btn) return;
-    var err = document.getElementById('payerr');
-    function fail(msg){ err.textContent = msg; err.hidden = false; btn.disabled = false; btn.textContent = 'Try again'; }
-    btn.addEventListener('click', function(){
-      btn.disabled = true; btn.textContent = 'Opening secure payment…'; err.hidden = true;
-      // The link token authorises a checkout token, which authorises the charge. The booking
-      // id comes back with it — the view projection withholds it on purpose.
-      fetch(A+'/bookings/view/checkout-token',{method:'POST',headers:{authorization:'Bearer '+t}})
-        .then(function(r){ return r.ok ? r.json() : r.json().catch(function(){return {};}).then(function(x){ throw new Error(x.error==='not_chargeable' ? 'This booking has already been paid or closed.' : 'We couldn’t start your payment just now.'); }); })
-        .then(function(x){
-          return fetch(A+'/bookings/'+x.bookingId+'/checkout',{method:'POST',headers:{authorization:'Bearer '+x.checkoutToken}})
-            .then(function(r){ if(!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.'); return r.json(); });
-        })
-        .then(function(checkout){
-          if(!checkout||!checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
-          // Anything that isn't real PayHere is the dev/fake gateway: send the browser to
-          // whatever it returned rather than pretending on this page that money moved.
-          if(!/payhere\.lk/.test(checkout.checkoutUrl)){ location.href = checkout.checkoutUrl; return; }
-          if(!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
-          payhere.onCompleted = function(){ location.reload(); };   // the webhook is the source of truth
-          payhere.onDismissed = function(){ btn.disabled = false; btn.textContent = 'Pay '+money(v.amountDueNowCents,v.currency)+' now'; };
-          payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
-          payhere.startPayment(Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields));
-        })
-        .catch(function(e){ fail(e.message); });
-    });
-  }
+  }).then(function(v){ render(v); }).catch(function(e){ errView(e.message); });
 })();
 </script>
 </body>
