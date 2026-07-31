@@ -35,6 +35,7 @@ type TripCal = {
   addDays(iso: string, n: number): string;
   model(legs: Leg[]): CalModel | null;
   biggestGap(m: CalModel): { fromDay: number; days: number } | null;
+  nextLegDay(m: CalModel, day: number): number | null;
   warning(m: CalModel | null, charged?: boolean): string | null;
 };
 let cal: TripCal;
@@ -112,6 +113,15 @@ describe('tripCal.warning — the month-typo net', () => {
   });
 });
 
+describe('tripCal.nextLegDay — gaps are named by the leg they precede', () => {
+  it('finds the first day at or after `day` that carries a leg', () => {
+    const m = cal.model([leg('2026-08-12'), leg('2026-08-13'), leg('2026-09-14')])!;
+    expect(cal.nextLegDay(m, 3)).toBe(34);   // the gap that starts on day 3 ends at leg 3
+    expect(cal.nextLegDay(m, 1)).toBe(1);    // already on a leg day
+    expect(cal.nextLegDay(m, 35)).toBeNull(); // nothing after the last leg
+  });
+});
+
 describe('tripCal.addDays', () => {
   it('crosses month ends and years without drifting', () => {
     expect(cal.addDays('2026-08-31', 1)).toBe('2026-09-01');
@@ -160,5 +170,19 @@ describe('the ops shell wires the calendar up', () => {
   });
   it('the strip states the point-to-point revert instead of leaving it silent', () => {
     expect(body).toContain('priced point-to-point, no chauffeur day rate');
+  });
+  it('gaps are jumps to a named leg, not day numbers to count out', () => {
+    expect(body).toContain('data-action="jumpToLeg"');
+    expect(body).toContain('empty days before leg ');
+  });
+  it('cards are quiet at rest, and the fade is skipped where there is no hover', () => {
+    expect(body).toContain('ch-leg-quiet');
+    expect(body).toContain('@media (hover: hover) and (pointer: fine)');
+    // A row holding a route chip or an active add-on is STATE, not actions — never faded.
+    expect(body).toContain('is-actions-only');
+  });
+  it('a price built on a warned span is flagged, not presented as authoritative', () => {
+    expect(body).toContain('ch-svc-flag');
+    expect(body).toContain('-day span &mdash; check the dates');
   });
 });

@@ -11,14 +11,19 @@ import { test, expect } from '@playwright/test';
 
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 
-// One worker for this file (overrides the config's fullyParallel): each test boots the whole
-// ops SPA and drives a build with constantly re-rendering DOM — five instances contending for
-// CPU is exactly the parallel-load flake mode documented for the other ops specs in
-// docs/known-bugs.md (2026-07-25). Sequential in one worker, this file is deterministic.
-test.describe.configure({ mode: 'default' });
+// SERIAL, not 'default': `mode: 'default'` inherits the project's fullyParallel setting, so
+// it never actually made this file sequential — the tests here were racing each other on CPU
+// the whole time, which is the parallel-load flake mode documented for the other ops specs in
+// docs/known-bugs.md (2026-07-25). Each test boots the whole ops SPA and drives a build over
+// a constantly re-rendering DOM; run them one at a time and the file is deterministic.
+test.describe.configure({ mode: 'serial' });
 
 const iso = (d) => d.toISOString().slice(0, 10);
-const plusDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
+// Anchored ONCE at module load. Reading the clock per call means a slow run can straddle
+// midnight between two dates in the same itinerary and shift the computed span by a day —
+// which showed up as an unreproducible "7 days, expected 6".
+const ANCHOR = new Date();
+const plusDays = (n) => { const d = new Date(ANCHOR); d.setDate(d.getDate() + n); return iso(d); };
 const BASE = 45; // comfortably future, immune to the legDateFloor "today" clamp
 
 async function stubOps(page) {
@@ -63,7 +68,7 @@ async function setLegDate(page, legIndex, value) {
 }
 
 // Build the shared fixture: basics + 4 legs dated +45, +46, +48, +50 (6-day span, 2 idle).
-async function buildTrip(page, { dates = [BASE, BASE + 1, BASE + 3, BASE + 5] } = {}) {
+async function buildTrip(page, { dates = [BASE, BASE + 1, BASE + 3, BASE + 5], legs = 4 } = {}) {
   await stubOps(page);
   await page.goto(OPS_FILE + '#quote');
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
@@ -84,12 +89,12 @@ async function buildTrip(page, { dates = [BASE, BASE + 1, BASE + 3, BASE + 5] } 
   // whole beat until 4 legs exist.
   await expect(async () => {
     const n = await page.locator('.ch-leg').count();
-    if (n >= 4) return;
+    if (n >= legs) return;
     await page.locator('[data-action="addLeg"]').first().dispatchEvent('click');
     await expect(page.locator('.ch-leg')).toHaveCount(n + 1, { timeout: 600 });
-    if (n + 1 < 4) throw new Error('keep adding');
+    if (n + 1 < legs) throw new Error('keep adding');
   }).toPass({ timeout: 20000 });
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < legs; i++) {
     const card = page.locator('.ch-leg').nth(i);
     for (const [si, place] of [[0, stops[i][0]], [1, stops[i][1]]]) {
       const inp = card.locator(`[data-field="stop"][data-stop="${si}"]`);
@@ -97,10 +102,33 @@ async function buildTrip(page, { dates = [BASE, BASE + 1, BASE + 3, BASE + 5] } 
       await inp.dispatchEvent('change');
     }
   }
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < legs; i++) {
     if (dates[i] != null) await setLegDate(page, i, plusDays(dates[i]));
   }
 }
+
+test('a 1–2 leg quote gets no strip at all — the cards already show both dates', async ({ page }) => {
+  test.slow();
+  await buildTrip(page, { legs: 2, dates: [BASE, BASE + 4] });
+  await expect(page.locator('.ch-leg')).toHaveCount(2);
+  await expect(page.locator('#trip-cal')).toHaveCount(0);
+  await expect(page.locator('#trip-cal-mini')).toHaveCount(0);
+});
+
+test('…but a 2-leg quote with a bad date keeps the warning, tiles and all', async ({ page }) => {
+  test.slow();
+  // The size gate hides the tiles, never the safety net: a 2-leg chauffeur trip is exactly
+  // where a fat-fingered month costs the most (36 charged days on a there-and-back).
+  await buildTrip(page, { legs: 2, dates: [BASE, BASE + 35] });
+  const cal = page.locator('#trip-cal');
+  await expect(cal).toHaveClass(/ch-cal-bare/);
+  await expect(cal.locator('[data-testid="cal-warn"]')).toContainText('a date is off');
+  await expect(cal.locator('.ch-cal-cell')).toHaveCount(0); // no tiles — just the warning
+  await expect(page.locator('#trip-cal-mini')).toHaveCount(0);
+  // Fixing the date takes the whole card away again.
+  await setLegDate(page, 1, plusDays(BASE + 4));
+  await expect(page.locator('#trip-cal')).toHaveCount(0);
+});
 
 test('the strip renders the span, one tile per day, and gives the all-clear', async ({ page }) => {
   test.slow();
@@ -110,8 +138,10 @@ test('the strip renders the span, one tile per day, and gives the all-clear', as
   await expect(cal.locator('.ch-cal-sum')).toContainText('6 days');
   await expect(cal.locator('.ch-cal-sum')).toContainText('4 driving legs');
   await expect(cal.locator('.ch-cal-ok')).toContainText('every leg dated'); // goal 2: visibly no mistakes
-  await expect(cal.locator('.ch-cal-cell')).toHaveCount(6);
-  await expect(cal.locator('.ch-cal-cell.idle')).toHaveCount(2);
+  // Calm strip (2026-07-31): only days that CARRY legs get a full tile; short empty runs
+  // are slim ghost columns, so the strip stops repeating "no legs" beside the leg list.
+  await expect(cal.locator('.ch-cal-cell:not(.collapsed)')).toHaveCount(4);
+  await expect(cal.locator('.ch-cal-ghost')).toHaveCount(2);
   // Day tags cross-reference the cards to the strip.
   await expect(page.locator('.ch-leg').nth(0).locator('.ch-day-tag')).toHaveText('Day 1');
   await expect(page.locator('.ch-leg').nth(3).locator('.ch-day-tag')).toHaveText('Day 6');
@@ -149,6 +179,63 @@ test('a fat-fingered month turns the strip amber and names the gap', async ({ pa
   await expect(cal.locator('[data-testid="cal-warn"]')).toBeVisible();
   await expect(cal.locator('[data-testid="cal-warn"]')).toContainText('a date is off');
   await expect(cal.locator('.ch-cal-cell.collapsed')).toBeVisible(); // the "+N empty days" tile
+  // The gap is described by the LEG it precedes — a day number would leave the operator
+  // counting — and both the sentence and the tile jump straight to that leg.
+  await expect(cal.locator('[data-testid="cal-warn"] [data-action="jumpToLeg"]')).toContainText('before leg 3');
+  await expect(cal.locator('.ch-cal-cell.collapsed')).toContainText('before leg 3');
+});
+
+test('clicking a gap jumps to the leg it names, flags the card and focuses its date', async ({ page }) => {
+  test.slow();
+  await buildTrip(page);
+  await setLegDate(page, 2, plusDays(BASE + 33));
+  await page.locator('#trip-cal .ch-cal-cell.collapsed').first().click();
+  const leg3 = page.locator('.ch-leg').nth(2);
+  await expect(leg3).toHaveClass(/is-flagged/);
+  await expect(leg3.locator('[data-field="date"]')).toBeFocused();
+});
+
+test('leg cards are quiet at rest and reveal their tools on hover and focus', async ({ page }) => {
+  test.slow();
+  await buildTrip(page);
+  const leg2 = page.locator('.ch-leg').nth(1);
+  const reorder = leg2.locator('.ch-leg-reorder');
+  const actions = leg2.locator('.ch-leg-actions');
+  // At rest the controls are present (no layout shift when they appear) but invisible.
+  await expect(reorder).toHaveCount(1);
+  await expect(reorder).toHaveCSS('opacity', '0');
+  await expect(actions).toHaveCSS('opacity', '0');
+  // Hovering the card brings them back…
+  await leg2.hover();
+  await expect(reorder).toHaveCSS('opacity', '1');
+  await expect(actions).toHaveCSS('opacity', '1');
+  // …and so does keyboard focus landing anywhere inside it, so tab users are never locked out.
+  await page.locator('.ch-leg').nth(0).hover(); // move the pointer away
+  await expect(reorder).toHaveCSS('opacity', '0');
+  await leg2.locator('[data-field="date"]').focus();
+  await expect(reorder).toHaveCSS('opacity', '1');
+});
+
+test('the condensed span bar appears only once the strip scrolls away', async ({ page }) => {
+  test.slow();
+  // A short viewport guarantees the strip and the last leg can't both be on screen, so the
+  // bar's two states are reachable regardless of the runner's window size.
+  await page.setViewportSize({ width: 1280, height: 620 });
+  await buildTrip(page);
+  const mini = page.locator('#trip-cal-mini');
+
+  // scrollIntoView drives whichever element actually scrolls — the ops shell scrolls an
+  // inner pane, not the document, so setting document.scrollingElement.scrollTop is a no-op.
+  const show = () => page.locator('.ch-leg').nth(3).evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const hide = () => page.locator('#trip-cal').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+
+  await hide();
+  await expect(mini).not.toHaveClass(/show/);
+  await show();
+  await expect(mini).toHaveClass(/show/);
+  await expect(mini).toContainText('every leg dated');
+  await hide();
+  await expect(mini).not.toHaveClass(/show/);
 });
 
 test('an undated leg offers one-tap chips instead of a guessed date', async ({ page }) => {
