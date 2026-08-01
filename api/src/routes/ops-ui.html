@@ -44,47 +44,57 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   body{font-family:var(--body);color:var(--ink);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
   ::selection{background:var(--saffron);color:var(--ink)}
   button{font-family:inherit;cursor:pointer;color:inherit}
-  /* D2: expand/collapse switches the column width instantly. Animating grid-template-columns
-     dragged the rail through in-between widths (~178px) where the logo wrapped, "Bookings"
-     truncated and the footer overlapped — an ugly, sometimes-stuck broken frame. A snap is
-     cleaner than a janky reflow here. */
-  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden}
-  .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2}
+  /* D2 (revised): expand/collapse TRAVELS. The original snap existed because animating
+     grid-template-columns dragged the rail through in-between widths (~178px) where the logo
+     wrapped, "Bookings" truncated and the footer overlapped. That's fixed structurally, not by
+     giving up: every label collapses via max-width (nowrap + overflow:hidden, so nothing ever
+     re-wraps), the collapsed state centres icons with PADDING instead of align-items/justify
+     flips (those snap — padding interpolates), and text fades out fast on collapse / in late on
+     expand so no half-width frame shows readable-but-clipped words. Browsers without grid-track
+     interpolation just get the old snap. */
+  .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden;transition:grid-template-columns .32s cubic-bezier(.2,.7,.3,1)}
+  .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2;overflow:hidden;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
   .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
-  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative;white-space:nowrap;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
+  .brand span{max-width:160px;overflow:hidden;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
   .rail-logo{width:30px;height:30px;object-fit:contain;display:block;flex:0 0 auto}
   .brand small{display:block;font-family:var(--body);font-size:.57rem;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);margin-top:2px}
   .nav{display:flex;flex-direction:column;gap:3px;position:relative}
   .nav-label{font-size:.61rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#897f72;padding:0 10px 7px}
-  .nav button{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:11px;color:#c5bcad;font-weight:600;font-size:.92rem;transition:.18s;text-align:left;position:relative}
+  .nav button{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:11px;color:#c5bcad;font-weight:600;font-size:.92rem;transition:background .18s,color .18s,box-shadow .18s,padding .32s cubic-bezier(.2,.7,.3,1),gap .32s cubic-bezier(.2,.7,.3,1);text-align:left;position:relative}
   .nav button svg{width:18px;height:18px;flex:none;stroke-width:2;opacity:.82}
   .nav button:hover{background:rgba(255,255,255,.055);color:#fff}
   .nav button.active{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;box-shadow:0 12px 28px -14px rgba(10,185,182,.75)}
   .nav button.active svg{opacity:1}
-  .nav button .count{margin-left:auto;font-family:var(--mono);font-size:.68rem;font-weight:700;background:var(--alert);color:#fff;padding:1px 7px;border-radius:999px}
+  /* Always absolutely positioned (it used to be in-flow when expanded, absolute when collapsed
+     — a coordinate-system flip can't interpolate; two absolute positions can). */
+  .nav button .count{position:absolute;top:calc(50% - 9px);right:12px;font-family:var(--mono);font-size:.68rem;font-weight:700;background:var(--alert);color:#fff;padding:1px 7px;border-radius:999px;transition:top .32s cubic-bezier(.2,.7,.3,1),right .32s cubic-bezier(.2,.7,.3,1),font-size .32s cubic-bezier(.2,.7,.3,1),padding .32s cubic-bezier(.2,.7,.3,1)}
   .nav button.active .count{background:rgba(255,255,255,.24)}
-  .rail-foot{margin-top:auto;display:flex;align-items:center;gap:11px;padding:11px 8px;border-top:1px solid rgba(255,255,255,.08);position:relative}
+  .rail-foot{margin-top:auto;display:flex;align-items:center;gap:11px;padding:11px 8px;border-top:1px solid rgba(255,255,255,.08);position:relative;transition:padding .32s cubic-bezier(.2,.7,.3,1),gap .32s cubic-bezier(.2,.7,.3,1)}
   .avatar{width:35px;height:35px;border-radius:12px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:.74rem;flex:none;color:#fff;background:linear-gradient(140deg,var(--teal-deep),#0aa49d)}
-  .rail-user{min-width:0;display:flex;flex-direction:column;gap:2px}
+  .rail-user{min-width:0;display:flex;flex-direction:column;gap:2px;max-width:150px;overflow:hidden;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
   .rail-user b{font-size:.76rem;color:#f2ebdc;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rail-role{font-size:.6rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#897f72}
-  .rail-foot-actions{margin-left:auto;display:flex;gap:6px;flex:none}
+  .rail-foot-actions{margin-left:auto;display:flex;gap:6px;flex:none;max-width:130px;overflow:hidden;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
   .railbtn{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#c5bcad;border-radius:9px;padding:6px 9px;font-size:.72rem;font-weight:700;cursor:pointer;transition:.16s;line-height:1.2}
   .railbtn:hover{background:rgba(255,255,255,.09);color:#fff;border-color:rgba(255,255,255,.22)}
   /* Rail icon-strip state */
   .rail-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-  .nav-txt{flex:1;white-space:nowrap;overflow:hidden}
+  .nav-txt{flex:1;white-space:nowrap;overflow:hidden;max-width:170px;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
+  /* Collapsed = the SAME left-aligned layout, narrower, with labels at max-width:0 — icons are
+     centred by padding arithmetic (rail 12px + offsets below put each icon's centre at 36px),
+     never by align-items/justify-content flips, so every property on this path interpolates.
+     Text fades out FAST here (no delay) so no readable word is ever shown half-clipped; the
+     expanded state's base rules fade it back in late, after the width has mostly arrived. */
   .app.rail-collapsed{grid-template-columns:72px 1fr}
-  .rail-collapsed .rail{padding:22px 12px;align-items:center;cursor:pointer}
-  .rail-collapsed .rail-head{flex-direction:column;gap:14px}
-  .rail-collapsed .brand{padding:0}
-  .rail-collapsed .brand span{display:none}
-  .rail-collapsed .nav{align-self:stretch}
-  .rail-collapsed .nav button{justify-content:center;padding:11px 0}
-  .rail-collapsed .nav .nav-txt{display:none}
-  .rail-collapsed .nav button .count{position:absolute;top:2px;right:8px;margin:0;padding:0 5px;font-size:.58rem;line-height:1.6}
-  .rail-collapsed .rail-foot{justify-content:center;padding:11px 0}
-  .rail-collapsed .rail-foot>div:not(.avatar),.rail-collapsed .rail-foot .rail-foot-actions{display:none}
+  .rail-collapsed .rail{padding:22px 12px;cursor:pointer}
+  .rail-collapsed .brand{padding:2px 0 2px 9px}
+  .rail-collapsed .brand span{max-width:0;opacity:0;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .12s ease}
+  .rail-collapsed .nav button{padding:11px 0 11px 15px;gap:0}
+  .rail-collapsed .nav .nav-txt{max-width:0;opacity:0;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .12s ease}
+  .rail-collapsed .nav button .count{top:2px;right:8px;padding:0 5px;font-size:.58rem;line-height:1.6}
+  .rail-collapsed .rail-foot{padding:11px 0 11px 6px;gap:0}
+  .rail-collapsed .rail-foot .rail-user,.rail-collapsed .rail-foot .rail-foot-actions{max-width:0;opacity:0;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .12s ease}
 
   .main{display:flex;flex-direction:column;overflow:hidden;position:relative;background:
     radial-gradient(110% 55% at 100% 0%,rgba(249,164,41,.07),transparent 55%),
@@ -220,7 +230,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      main-click/idle auto-collapse closes the drawer. */
   @media(max-width:640px){
     .app,.app.rail-collapsed{grid-template-columns:64px 1fr}
-    .app:not(.rail-collapsed) .rail{position:fixed;top:0;bottom:0;left:0;width:254px;z-index:70;box-shadow:var(--shadow-lg)}
+    /* The drawer is position:fixed — the desktop width travel can't carry it, so it slides.
+       Closing is JS-choreographed (collapseRail plays .rail-closing, THEN applies the state);
+       .rail-closing must out-rank the drawer-in rule below, hence the .app prefix. */
+    .app:not(.rail-collapsed) .rail{position:fixed;top:0;bottom:0;left:0;width:254px;z-index:70;box-shadow:var(--shadow-lg);animation:ops-drawer-in .3s cubic-bezier(.22,.71,.25,1)}
+    .app .rail.rail-closing{animation:ops-drawer-out .26s cubic-bezier(.22,.71,.25,1) both}
     .tk{grid-template-columns:32px minmax(0,1fr);gap:12px;padding:13px 14px}
     .tk-side{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between;text-align:left;gap:8px 10px;min-width:0}
     .tk-right{flex:none}
@@ -430,6 +444,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .login-card.shake{animation:shake .42s cubic-bezier(.36,.07,.19,.97)}
 
   @keyframes riseIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes ops-drawer-in{from{transform:translateX(-103%)}to{transform:none}}
+  @keyframes ops-drawer-out{from{transform:none}to{transform:translateX(-103%)}}
   @keyframes nodepulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent)}50%{box-shadow:0 0 0 8px color-mix(in srgb,var(--c) 7%,transparent)}}
   @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
   @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -1884,6 +1900,10 @@ function applyRailState(){
 }
 function expandRail(){
   try{localStorage.setItem('ch_ops_rail','0');}catch(e){}
+  /* An expand mid-close must not leave the phone drawer stranded off-screen until the
+     close timer fires — cancel the slide-out before re-applying state. */
+  const rail=document.querySelector('#approot .rail');
+  if(rail)rail.classList.remove('rail-closing');
   applyRailState();
   armRailAutoCollapse();
 }
@@ -1903,7 +1923,18 @@ function collapseRail(){
   const root=$('#approot');
   if(!root||root.classList.contains('rail-collapsed'))return;
   try{localStorage.setItem('ch_ops_rail','1');}catch(e){}
-  applyRailState();
+  /* Phone drawer: the expanded rail is position:fixed, so the desktop width travel can't carry
+     the close — slide it out first (.rail-closing), then flip the state. Desktop (and
+     reduced-motion) collapse immediately; CSS transitions/none handle the rest. */
+  const rail=root.querySelector('.rail');
+  const drawer=window.matchMedia&&window.matchMedia('(max-width:640px)').matches
+    &&!window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  if(drawer&&rail&&!rail.classList.contains('rail-closing')){
+    rail.classList.add('rail-closing');
+    setTimeout(()=>{rail.classList.remove('rail-closing');applyRailState();},250);
+  }else{
+    applyRailState();
+  }
 }
 
 /* nav is rendered per-capability: Bookings always; Quote for anyone with quote:manage
