@@ -48,6 +48,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
   .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
 
+  /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
+  .de-wrap{text-align:center;padding:18px 0 8px}
+  .de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
+  .de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
+  .de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+  .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
+  .de-cta{margin-top:20px}
+  .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
+  @keyframes de-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @keyframes de-spin{to{transform:rotate(360deg)}}
+  @keyframes de-dash{to{stroke-dashoffset:-30}}
+  @keyframes de-pin{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @keyframes de-sail{0%,100%{transform:translate(0,0) rotate(-2deg)}50%{transform:translate(7px,-5px) rotate(2.5deg)}}
+  .de-art .bob{animation:de-bob 5.5s ease-in-out infinite}
+  .de-art .spin{animation:de-spin 40s linear infinite;transform-box:fill-box;transform-origin:center}
+  .de-art .dash{stroke-dasharray:6 9;animation:de-dash 2.6s linear infinite}
+  .de-art .pin{animation:de-pin 3.4s ease-in-out infinite}
+  .de-art .sail{animation:de-sail 4.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+  @media (prefers-reduced-motion:reduce){.de-art .bob,.de-art .spin,.de-art .dash,.de-art .pin,.de-art .sail{animation:none}}
 </style>
 </head>
 <body>
@@ -74,17 +93,76 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
 
   // ── states ──────────────────────────────────────────────────────────────────────────
-  function renderUnavailable(){
-    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">!</div>'
-      + '<h1 class="st-title">This quote is no longer active</h1>'
-      + '<p class="st-sub">It may have been updated or closed. Message us and we’ll sort it out.</p></div>' + waLine();
+  // One dead-end screen for both states (spec 2026-07-31, owner: "one option for now").
+  // Sibling of 404.html's island scene. Two functions kept so a later revised-specific
+  // screen ("a fresh link is on its way") is a copy change, not a refactor. No quote data
+  // renders here — the API returns a bare {state} for dead ends, on purpose.
+  var SAILED_OFF_ART = `<svg class="de-art" viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A little paper boat sailing away from the shore while the coral map pin watches">
+    <defs>
+      <radialGradient id="deSky" cx="50%" cy="30%" r="80%"><stop offset="0%" stop-color="#fdfbf3"/><stop offset="100%" stop-color="#e7f4f0"/></radialGradient>
+      <linearGradient id="deSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a4ddd7"/><stop offset="100%" stop-color="#54c1ba"/></linearGradient>
+      <linearGradient id="deLand" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4e7c8"/><stop offset="100%" stop-color="#e7d1a1"/></linearGradient>
+    </defs>
+    <rect width="480" height="300" fill="url(#deSky)"/>
+    <g transform="translate(398,54)"><g class="spin">
+      <circle r="19" fill="#f6b44c"/>
+      <g stroke="#f6b44c" stroke-width="3" stroke-linecap="round">
+        <line x1="0" y1="-26" x2="0" y2="-33"/><line x1="0" y1="26" x2="0" y2="33"/>
+        <line x1="-26" y1="0" x2="-33" y2="0"/><line x1="26" y1="0" x2="33" y2="0"/>
+        <line x1="-18.4" y1="-18.4" x2="-23.3" y2="-23.3"/><line x1="18.4" y1="18.4" x2="23.3" y2="23.3"/>
+        <line x1="-18.4" y1="18.4" x2="-23.3" y2="23.3"/><line x1="18.4" y1="-18.4" x2="23.3" y2="-23.3"/>
+      </g>
+    </g></g>
+    <g stroke="#6c6a6b" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".35">
+      <path d="M262 74 q6 -7 12 0 q6 -7 12 0"/>
+      <path d="M306 94 q5 -6 10 0 q5 -6 10 0"/>
+    </g>
+    <ellipse cx="250" cy="244" rx="280" ry="76" fill="url(#deSea)"/>
+    <g stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".55">
+      <path d="M228 234 q9 -6 18 0 t18 0"/>
+      <path d="M330 254 q9 -6 18 0 t18 0"/>
+      <path d="M262 276 q9 -6 18 0"/>
+      <path class="dash" d="M186 244 q10 -7 20 0 t20 0 t20 0" stroke-width="2.6"/>
+    </g>
+    <g class="bob">
+      <path d="M40 216 Q56 182 112 176 Q170 170 196 186 Q216 199 202 216 Q184 236 116 238 Q48 238 40 216 Z" fill="url(#deLand)" stroke="#d8c193" stroke-width="3"/>
+      <ellipse cx="78" cy="220" rx="13" ry="5" fill="#8fce9f"/>
+      <ellipse cx="166" cy="212" rx="11" ry="4.5" fill="#8fce9f"/>
+      <path d="M74 198 q-8 -26 3 -46" stroke="#9a6b3f" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <g fill="#4bb08a">
+        <ellipse cx="63" cy="146" rx="17" ry="6.5" transform="rotate(-24 63 146)"/>
+        <ellipse cx="89" cy="148" rx="17" ry="6.5" transform="rotate(28 89 148)"/>
+        <ellipse cx="72" cy="140" rx="15" ry="6" transform="rotate(-68 72 140)"/>
+        <ellipse cx="84" cy="156" rx="15" ry="6" transform="rotate(60 84 156)"/>
+      </g>
+      <!-- position on the outer g, animation on the inner: the CSS bob animates the
+           transform property, which would override an attribute transform on the same
+           node (the sun and boat already nest for exactly this reason). NOTE: this
+           markup lives in a JS template literal - no backticks in comments. -->
+      <g transform="translate(142,164)"><g class="pin">
+        <path d="M0 26 C-13 8 -15 -4 0 -12 C15 -4 13 8 0 26 Z" fill="#ef6a4a"/>
+        <circle cx="0" cy="-1" r="7.5" fill="#fff"/>
+        <text x="0" y="3" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="11" fill="#ef6a4a">?</text>
+      </g></g>
+    </g>
+    <g transform="translate(312,212)"><g class="sail">
+      <path d="M-22 6 L22 6 L13 18 L-13 18 Z" fill="#fffdf8" stroke="#d8c193" stroke-width="2"/>
+      <path d="M-1 -20 L-1 4 L17 4 Z" fill="#fffdf8" stroke="#d8c193" stroke-width="1.8" stroke-dasharray="3 3"/>
+      <line x1="3" y1="-6" x2="10" y2="-6" stroke="#d8c193" stroke-width="1.6" stroke-linecap="round"/>
+      <line x1="3" y1="-1" x2="12" y2="-1" stroke="#d8c193" stroke-width="1.6" stroke-linecap="round"/>
+    </g></g>
+  </svg>`;
+  function renderSailedOff(){
+    app.innerHTML = '<div class="de-wrap">'
+      + SAILED_OFF_ART
+      + '<p class="de-eyebrow">quote &middot; no longer active</p>'
+      + '<h1 class="de-title">This quote has sailed off somewhere sunny</h1>'
+      + '<p class="de-lead"><strong>Nothing has been charged.</strong> Message us on <strong>WhatsApp</strong> and we&rsquo;ll get you moving again.</p>'
+      + '<div class="de-cta"><a class="btn-wa" href="https://wa.me/94779669662">WhatsApp us</a></div>'
+      + '</div>' + waLine();
   }
-  function renderRevised(){
-    app.innerHTML = '<div class="st-wrap"><div class="st-badge warn">&#8635;</div>'
-      + '<h1 class="st-title">This quote has been updated</h1>'
-      + '<p class="st-sub">This link points at an older version, so nothing has been charged. '
-      + 'We’ll WhatsApp you a fresh link.</p></div>' + waLine();
-  }
+  function renderUnavailable(){ renderSailedOff(); }
+  function renderRevised(){ renderSailedOff(); }
   function renderPaid(p){
     app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
       + '<h1 class="st-title">You’re booked' + (p && p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
