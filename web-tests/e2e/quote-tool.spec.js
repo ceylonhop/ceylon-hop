@@ -306,7 +306,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   const qrow = page.locator('#view .qrow', { hasText: custName });
   await expect(qrow).toBeVisible({ timeout: 8000 });
   await qrow.click();
-  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+  await expect(page.locator('.ch-toast-msg')).toContainText('Opened', { timeout: 8000 });
 
   // Re-priced on reopen — read the summary total from the reopened builder so the WhatsApp
   // total is compared against the same render.
@@ -418,7 +418,7 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   const qrow = page.locator('#view .qrow', { hasText: custName });
   await expect(qrow).toBeVisible({ timeout: 8000 });
   await qrow.click();
-  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+  await expect(page.locator('.ch-toast-msg')).toContainText('Opened', { timeout: 8000 });
 
   const outPanel = page.locator('.ch-out-panel');
   if (!(await outPanel.isVisible().catch(() => false))) {
@@ -500,7 +500,7 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
 
-  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+  await expect(page.locator('.ch-toast-msg')).toContainText('Opened', { timeout: 8000 });
   await expect(page.locator('#f-firstName')).toHaveValue('E2E');
   await expect(page.locator('#f-lastName')).toHaveValue(custName.replace(/^E2E\s+/, ''));
 });
@@ -614,7 +614,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
   const row = page.locator('#view .qrow', { hasText: custName });
   await expect(row).toBeVisible({ timeout: 8000 });
   await row.click();
-  await expect(page.locator('.ch-toast-msg')).toContainText('Reopened', { timeout: 8000 });
+  await expect(page.locator('.ch-toast-msg')).toContainText('Opened', { timeout: 8000 });
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 10000 });
   const totalElla = await totalLineText(page);
 
