@@ -7,6 +7,9 @@ comes up, so launch is a clean, mechanical switch-over.
 
 > Convention: tick a box when done. Keep this in sync as the source of truth.
 
+> **This list is the ONE-TIME cutover to real money.** For the recurring `main → production`
+> deploy, see [promote-checklist.md](promote-checklist.md).
+
 ---
 
 ## 1. Render environment variables (`ceylon-hop-api` service)

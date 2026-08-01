@@ -193,6 +193,40 @@ criterion.
   go-live checklist flips before real customers see them.
 - **Exit:** go-live uses staging as its dry run.
 
+### M6 — (optional) a staging pay domain
+
+**Status: not done, and not required for staging to work.** Written up because it looks like a
+bug every time someone tests a payment link on staging.
+
+Customer pay/manage links are built from `PAY_BASE_URL`, falling back to `APP_BASE_URL`
+(`api/src/app.ts`, one resolution shared by both mints — the quote `pay.html` link and the ops
+drawer's `manage.html` link). Prod sets it to `https://pay.ceylonhop.com`. **Staging sets
+nothing, so staging links correctly read `ops.staging.ceylonhop.com/...` — that is the fallback
+working, not a bug.**
+
+Do NOT "fix" it by pointing staging at `pay.ceylonhop.com`: that host is the **prod** API, on a
+different service with a different `BOOKING_LINK_SECRET`, so a staging-signed token would fail
+signature verification there and render the dead-end screen. The link would be broken, not
+merely ugly.
+
+If you do want staging to mirror prod's shape:
+
+- [ ] Add `pay-staging.ceylonhop.com` as a custom domain on the **`ceylon-hop-staging`** Render
+      service (the same service that already serves `ops.staging.ceylonhop.com` — pay.html is
+      served by the API itself, see `api/src/routes/customerPages.ts`, so this is a second domain
+      on one service, exactly like prod's `pay.ceylonhop.com`).
+- [ ] Cloudflare CNAME → the Render target. **Grey-cloud it** if you use a nested subdomain such
+      as `pay.staging.ceylonhop.com`: Cloudflare's free universal TLS does not cover
+      second-level subdomains, and an orange-clouded one serves a cert error. A flat
+      `pay-staging.ceylonhop.com` avoids the issue entirely — prefer it.
+- [ ] Set `PAY_BASE_URL=https://pay-staging.ceylonhop.com` on `ceylon-hop-staging`.
+- [ ] Verify: mint a link from staging ops and confirm the origin, then open it — it must render
+      the quote, not the "sailed off" dead end (a dead end here means the token failed to verify,
+      i.e. you pointed at the wrong service).
+
+Env vars are **not** promoted (see [promote-checklist.md](promote-checklist.md) §6) — setting
+this on staging has no effect on prod, and vice versa.
+
 ## 10. Realities & open decisions (own these when picking it up)
 
 - **Free-tier reality:** free Render **sleeps** (15-min cold starts) and free Supabase

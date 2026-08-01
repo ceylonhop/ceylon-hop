@@ -2221,6 +2221,55 @@ describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () 
     method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
   });
 
+  // OWNER RULE (2026-07-31): "a new quote ready to send to the customer should auto-expire the
+  // link". It holds today with no dedicated code — reaching `ready` is only possible via
+  // pending_review, which is only reachable from an EDITABLE state, and the ops UI's transition()
+  // flushes a save on the way out (saveQuote has no dirty-check, so it fires even on a clean
+  // quote). That save is POST /save → QuoteRepo.update() → the revision bump from #223.
+  //
+  // So the rule is an emergent property of the transition graph, not a guard anyone wrote. This
+  // test pins it: make transition() skip the save on a clean quote, or make /save conditional,
+  // and a customer's stale link silently starts paying again. That is exactly the shape of the
+  // original defect — the guard existed, nothing proved it ever fired.
+  it('re-approving with NO edit still retires the link already sent', async () => {
+    const app = createApp();
+    // Real routes throughout: this must exercise POST /save, not a repo shortcut.
+    const body = {
+      name: 'Maya', contact: '+94770001111', vehicle: 'car', passengerCount: 2, luggageCount: 1,
+      requestedService: 'private', legs: [leg({ distanceKm: 80, date: '2026-09-01' })],
+    };
+    const saved = await (await post(app, '/admin/quote/save', body)).json();
+    const toStatus = (status: string) =>
+      app.request(`/admin/quote/${saved.id}`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+        body: JSON.stringify({ status }),
+      });
+    await toStatus('pending_review');
+    await toStatus('ready');
+
+    const sent = (await (await mint(app, saved.id)).json()).url; // this URL goes to the customer
+    const revSent = verifyQuotePayToken(new URL(sent).searchParams.get('t')!, 'test-link-secret')!;
+
+    // Reopen and walk it straight back to ready WITHOUT touching a single field — the save below
+    // is the no-op flush transition() performs, carrying the byte-identical body.
+    expect((await toStatus('draft')).status).toBe(200);
+    expect((await post(app, '/admin/quote/save', { id: saved.id, ...body })).status).toBe(200);
+    await toStatus('pending_review');
+    await toStatus('ready');
+
+    const reminted = (await (await mint(app, saved.id)).json()).url;
+    expect(reminted).not.toBe(sent); // ops cannot re-send the old link by accident
+
+    // …and the one in the customer's chat is dead, not merely superseded.
+    const revNow = verifyQuotePayToken(new URL(reminted).searchParams.get('t')!, 'test-link-secret')!;
+    expect(revNow.revision).toBe(revSent.revision + 1);
+    const view = await (await app.request(
+      `/quotes/pay/view?t=${encodeURIComponent(new URL(sent).searchParams.get('t')!)}`,
+    )).json();
+    expect(view.state).toBe('revised');
+    expect(view.totals).toBeUndefined();
+  });
+
   it('mints from ready and from sent — same URL both times, quote untouched', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await quoteAt(quotes, 'ready');
@@ -2304,5 +2353,54 @@ describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () 
     const parsed = verifyQuotePayToken(token, 'test-link-secret');
     expect(parsed?.quoteId).toBe(id);
     expect(parsed?.revision).toBe((await quotes.get(id))!.revision);
+  });
+});
+
+describe('per-leg extras attribution', () => {
+  it('attributes each extra to its own leg', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true },
+      ],
+    });
+    const body = await res.json();
+    expect(body.lineItems.some((li: { label: string }) =>
+      li.label === 'Sightseeing stops (up to 3h) — Kandy → Ella')).toBe(true);
+  });
+
+  it('REGRESSION: a stay day between two legs does not shift attribution', async () => {
+    // The stay day is dropped before pricing, so a raw state.legs index would resolve
+    // driving index 2 ("Ella → Yala") for a charge that actually belongs to driving
+    // index 1 ("Kandy → Ella").
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', distanceKm: 0 },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true },
+        { category: 'transfer', from: 'Ella', to: 'Yala', distanceKm: 100 },
+      ],
+    });
+    const body = await res.json();
+    const labels = body.lineItems.map((li: { label: string }) => li.label);
+    expect(labels).toContain('Sightseeing stops (up to 3h) — Kandy → Ella');
+    expect(labels).not.toContain('Sightseeing stops (up to 3h) — Ella → Yala');
+  });
+
+  it('totals are unchanged by attribution', async () => {
+    const legs = [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true, addWaitingFee: true },
+    ];
+    const withFees = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs,
+    })).json();
+    const without = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: legs.map((l) => ({ ...l, addSightseeingFee: false, addWaitingFee: false })),
+    })).json();
+    expect(withFees.total.cents).toBe(without.total.cents + 1000 + 1000);
   });
 });

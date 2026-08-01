@@ -11,6 +11,17 @@ export interface ChauffeurTravelDay { date: string; from: string; to: string; di
 export interface Ride { stops: string[]; segmentKms: number[] }
 export interface ChauffeurRideDay extends Ride { date: string }
 
+// An extra may arrive as a bare code (website / single-transfer paths, and every stored
+// quote predating attribution) or attributed to the driving leg that carries it (ops tool).
+// legIndex indexes the engine's DRIVING legs — the same list `quotePrivateLegs` prices —
+// never the ops tool's raw `state.legs`, which includes stay days.
+export type ExtraInput = ExtraCode | { code: ExtraCode; legIndex?: number };
+export interface NormalizedExtra { code: ExtraCode; legIndex?: number }
+
+export function normalizeExtra(e: ExtraInput): NormalizedExtra {
+  return typeof e === 'string' ? { code: e } : { code: e.code, legIndex: e.legIndex };
+}
+
 // customPerKmCents (GL-1d): van14/custom have no fixed owner rate — the operator sets the
 // per-km rate at quote time (rate-card values are prefill defaults only). The engine rejects
 // an override when the priced vehicle is any other tier.
@@ -19,10 +30,10 @@ export interface ChauffeurRideDay extends Ride { date: string }
 // at entry, so an old-shape leg and its 2-stop Ride equivalent price identically.
 export type QuoteRequest =
   | { product: 'shared'; legs: SharedLeg[] }
-  | { product: 'private'; vehicle: Vehicle; pax: number; bags: number; legs: (PrivateLeg | Ride)[]; extras?: ExtraCode[]; customPerKmCents?: number }
+  | { product: 'private'; vehicle: Vehicle; pax: number; bags: number; legs: (PrivateLeg | Ride)[]; extras?: ExtraInput[]; customPerKmCents?: number }
   // pax/bags optional: when present, the engine upgrades an undersized vehicle to fit (like
   // private); when absent, no capacity upgrade (back-compat for callers that don't pass them).
-  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: (ChauffeurTravelDay | ChauffeurRideDay)[]; pax?: number; bags?: number; extras?: ExtraCode[]; customPerKmCents?: number };
+  | { product: 'chauffeur'; vehicle: Vehicle; firstDate: string; lastDate: string; travelDays: (ChauffeurTravelDay | ChauffeurRideDay)[]; pax?: number; bags?: number; extras?: ExtraInput[]; customPerKmCents?: number };
 
 // normalizeRide / normalizeChauffeurDay: discriminate old vs. new shape via 'stops' in leg,
 // so a Ride/ChauffeurRideDay passes through unchanged (same array references — no copy drift).
