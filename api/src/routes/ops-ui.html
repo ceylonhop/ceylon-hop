@@ -1986,6 +1986,37 @@ function ticketRow(t,i){
   </div>`;
 }
 
+/* FLIP for the queue lists — the shell's twin of the builder's flipLegs (same measure →
+   mutate → measure → offset approach, same reduced-motion behaviour). A filter/search/data
+   repaint reorders or drops rows; without this the survivors teleport to their new slots.
+   Keyed rows present on both sides slide there instead; fresh rows keep their riseIn
+   entrance; a surviving row's entrance is finish()ed via WAAPI rather than inline
+   style/class suppression, because morphdom diffs attributes on the NEXT paint and would
+   strip an inline override — flipping animation-name none→riseIn and replaying the rise. */
+function flipRows(sel,mutate){
+  let reduce=false;
+  try{reduce=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(e){}
+  if(reduce||typeof Element.prototype.animate!=='function'){mutate();return;}
+  const key=el=>el.getAttribute('data-qopen')||el.getAttribute('data-id');
+  const first={};
+  document.querySelectorAll(sel).forEach(el=>{const k=key(el);if(k)first[k]=el.getBoundingClientRect();});
+  mutate();
+  document.querySelectorAll(sel).forEach(el=>{
+    const k=key(el),from=k&&first[k];
+    if(!from)return; /* fresh row — its riseIn entrance is the right motion */
+    /* An interrupted slide must not pollute the 'to' measurement (gBCR includes transforms). */
+    if(el.getAnimations)el.getAnimations().forEach(a=>{if(a.id==='ops-flip')a.cancel();});
+    const to=el.getBoundingClientRect();
+    /* Survivor: it was already on screen, so don't replay the entrance on top of the slide.
+       finish() jumps the CSS animation to its held end state (opacity 1, no offset). */
+    if(el.getAnimations)el.getAnimations().forEach(a=>{if(a.animationName==='riseIn')a.finish();});
+    const dy=from.top-to.top,dx=from.left-to.left;
+    if(Math.abs(dy)<1&&Math.abs(dx)<1)return;
+    el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],
+      {duration:320,easing:'cubic-bezier(.2,.7,.3,1)',id:'ops-flip'});
+  });
+}
+
 function viewTickets(){
   $('#topbar').innerHTML=`
     <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
@@ -2020,7 +2051,9 @@ function viewTickets(){
         ? `<div class="qempty"><div class="qempty-icon">🔍</div><div class="qempty-title">No bookings match</div><div class="qempty-sub">Try a different filter, channel, or search term.</div></div>`
         : `<div class="qempty"><div class="qempty-icon">🚐</div><div class="qempty-title">No bookings yet</div><div class="qempty-sub">Paid &amp; upcoming trips land here — from the website and WhatsApp.</div></div>`;
   }
-  $('#view').innerHTML=html;
+  /* Full innerHTML swap — flipRows carries surviving rows to their new slots and
+     finish()es their would-be re-entrance (every node is fresh after a swap). */
+  flipRows('#view .tk[data-id]',()=>{$('#view').innerHTML=html;});
 }
 
 /* ── Quotes queue ─────────────────────────────────────────────────────────────
@@ -2222,15 +2255,20 @@ function quoteRowHtml(q,query){
 function paintQuotesView(html){
   const view=$('#view');
   if(!view)return;
-  // childrenOnly keeps the #view element (and its id) intact; a route change (e.g. Bookings →
-  // Quotes) just leaves foreign children for morphdom to diff away on the first paint.
-  morphdom(view,'<div>'+html+'</div>',{
-    childrenOnly:true,
-    getNodeKey:function(node){
-      if(node.nodeType!==1)return undefined;
-      return (node.getAttribute&&node.getAttribute('data-qopen'))||node.id||undefined;
-    },
-    onBeforeElUpdated:function(fromEl,toEl){return !fromEl.isEqualNode(toEl);}, // skip unchanged subtrees
+  // flipRows: a filter/search/data repaint moves keyed rows morphdom keeps alive — slide
+  // them to their new slot instead of teleporting. First paint on route entry is a no-op
+  // (no .qrow on the Bookings leftovers) and rides the route-in fade instead.
+  flipRows('#view .qrow[data-qopen]',()=>{
+    // childrenOnly keeps the #view element (and its id) intact; a route change (e.g. Bookings →
+    // Quotes) just leaves foreign children for morphdom to diff away on the first paint.
+    morphdom(view,'<div>'+html+'</div>',{
+      childrenOnly:true,
+      getNodeKey:function(node){
+        if(node.nodeType!==1)return undefined;
+        return (node.getAttribute&&node.getAttribute('data-qopen'))||node.id||undefined;
+      },
+      onBeforeElUpdated:function(fromEl,toEl){return !fromEl.isEqualNode(toEl);}, // skip unchanged subtrees
+    });
   });
 }
 function viewQuotes(){
