@@ -654,12 +654,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-toggle.on .ch-toggle-knob { transform: translateX(16px); }
 .qv .ch-toggle-label { font-size: 12.5px; font-weight: 600; color: var(--ink); }
 
-/* ---------- Check ---------- */
-.qv .ch-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; font-weight: 500; color: var(--ink); }
-.qv .ch-check input { display: none; }
-.qv .ch-check-box { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--line); display: grid; place-items: center; color: #fff; font-size: 12px; background: var(--surface); transition: all .15s; }
-.qv .ch-check input:checked + .ch-check-box { background: var(--blue); border-color: var(--blue); }
-
 /* ---------- Buttons ---------- */
 .qv .ch-btn { display: inline-flex; align-items: center; gap: 7px; border: none; border-radius: var(--r-sm); padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .qv .ch-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -1130,7 +1124,6 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-leg-price.empty { color: var(--muted-2); font-family: var(--sans); font-size: 12px; font-weight: 500; }
 .qv .ch-leg-actions { display: flex; gap: 4px; flex: none; }
 
-/* second thin line: add-ons chip row (always present on point-to-point driving legs) */
 /* Leg tools — ONE quiet utility row at the card's foot (replaces the two stacked text
    lines). Every control is the same ghost chip: dashed border = "adds something" (the
    same grammar as the + Add leg pill), solidifying on hover. The route chip right-aligns
@@ -1183,16 +1176,21 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-tool-chip.route.picked { border-style: solid; border-color: var(--line); background: var(--surface); color: var(--ink-soft); }
 .qv .ch-tool-chip.route.picked:hover { border-color: var(--blue); color: var(--blue-d); }
 .qv .ch-tool-caret { font-size: 9px; opacity: .6; }
-/* empty state: a quiet inline text action, not an orphaned button */
-/* active add-ons keep the orange pill, sized to sit flush with its sibling tool chips */
-/* active state: a solid pill naming the fees */
-.qv .ch-addon-chip.on { display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; border-radius: 999px; padding: 3.5px 11px; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: border-color .15s ease; }
-.qv .ch-addon-chip.on:hover { border-color: rgba(185,118,15,.4); }
-.qv .ch-addon-chip.on:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+/* Fee toggle chips (2026-08-01, replaced the "+ Fees" popover + checkbox tray): same ghost-
+   chip grammar as the tool chips — dashed = adds something — solidifying to the saffron
+   money pill when the fee is ON (the same saffron the old active-fees pill used, so an
+   active fee still reads as money on the leg at a glance). Price rides on the label. */
+.qv .ch-fee-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px dashed var(--cream-deep); background: transparent; color: var(--muted); border-radius: 999px; padding: 3.5px 11px; font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.35; cursor: pointer; transition: color .15s ease, border-color .15s ease, background-color .15s ease, transform .1s ease; }
+.qv .ch-fee-chip:hover { color: var(--ink); border-color: var(--line); border-style: solid; background: var(--surface); }
+.qv .ch-fee-chip:active { transform: translateY(1px); }
+.qv .ch-fee-chip:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.qv .ch-fee-chip .ch-fee-price { font-size: 10px; font-weight: 700; opacity: .65; margin-left: 4px; }
+.qv .ch-fee-chip .ch-fee-tick { font-size: 10px; }
+.qv .ch-fee-chip.on { border: 1px solid transparent; background: rgba(249,164,41,.13); color: #b9760f; box-shadow: 0 0 0 1px rgba(185,118,15,.22) inset; }
+.qv .ch-fee-chip.on:hover { border-color: rgba(185,118,15,.4); background: rgba(249,164,41,.17); color: #b9760f; }
+:root[data-theme="dark"] .qv .ch-fee-chip.on { color: #e8b45a; }
+:root[data-theme="dark"] .qv .ch-fee-chip.on:hover { color: #e8b45a; }
 .qv .ch-dist-time { color: var(--muted); font-weight: 400; margin-left: 5px; padding-left: 6px; border-left: 1px solid currentColor; opacity: .55; }
-
-/* second thin line: add-on toggles (only when the popover is open) */
-.qv .ch-leg-addons { padding: 8px 12px 10px 44px; border-top: 1px solid var(--line-soft); display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 
 /* Multi-stop rides (Task 8 + route-rail restyle): a 3+-stop leg renders its stop chain
    as a vertical list in a dedicated block BELOW the main row (.ch-leg-stoplist — the main
@@ -3408,8 +3406,6 @@ var _renderSwapping = false; // true during render()'s innerHTML swap — change
 // Output section: tri-state (null = follow layout default: open when two-pane
 // ≥960px, collapsed when stacked; true/false = operator's explicit choice).
 var outputOpen = null;
-// Per-leg add-on line visibility: legId → bool (private legs only)
-var legAddonsOpen = {};
 
 // ── Estimate state ────────────────────────────────────────────────────────────
 var lastEstimate = null;   // last successful /estimate response
@@ -5277,9 +5273,7 @@ function renderLegCard(leg, idx, total) {
   // ride: "+ Stop" inserts a new empty stop BEFORE the last one; "Return to start"
   // appends a copy of stops[0] (pure sugar — rendered only while stops[0] is set and
   // the ride doesn't already end back there); both hidden at the 8-stop wire cap.
-  // "+ Fees" (any non-chauffeur, non-stay leg — multi-stop included, since a stop may be a
-  // pickup rather than sightseeing) opens the add-ons tray — a solid orange pill names
-  // the active ones. The route chip right-aligns as the leg's one stateful readout.
+  // The route chip right-aligns as the leg's one stateful readout.
   var tools = [];
   if (!isStay) {
     var atStopCap = leg.stops.length >= 8;
@@ -5288,36 +5282,47 @@ function renderLegCard(leg, idx, total) {
     if (!atStopCap) tools.push('<button class="ch-tool-chip" data-action="addStop" data-leg="' + esc(leg.id) + '" title="Add a stop along the way">&#43; Stop</button>');
     if (!atStopCap && rideStart && !endsAtStart) tools.push('<button class="ch-tool-chip" data-action="andReturn" data-leg="' + esc(leg.id) + '" title="End the ride back where it starts">&#8617; Return to start</button>');
   }
-  var activeAddonLabels = [];
-  if (leg.addSightseeingFee) activeAddonLabels.push('Sightseeing');
-  if (leg.addWaitingFee) activeAddonLabels.push('Waiting');
-  if (leg.addSafariWait) activeAddonLabels.push('Safari wait');
+  // Fees as inline toggle chips (2026-08-01): the chip IS the control — one click toggles
+  // the fee, and the cost sits on the label at the point of decision. This replaced the
+  // "+ Fees" popover + checkbox tray, which took two clicks, added a third card band that
+  // never closed, and rendered active fees twice (orange pill AND ticked checkbox).
+  // Amounts are display-only, read from the rate card — the engine still prices fees
+  // server-side. Non-chauffeur travel legs only, same gate as the old tray (chauffeur
+  // includes these fees; a stay leg has no ride to fee).
+  var FEE_CHIPS = [
+    { field: 'addSightseeingFee', label: 'Sightseeing', extra: 'sightseeing', hint: 'Sightseeing stops along the way (up to 3h)' },
+    { field: 'addWaitingFee', label: 'Waiting', extra: 'waiting', hint: 'Driver waits and brings you back' },
+    { field: 'addSafariWait', label: 'Safari wait', extra: 'safari-wait', hint: 'Driver waits out a safari' },
+  ];
+  var anyFeeOn = false;
   if (!isChauffeur && !isStay) {
-    tools.push(activeAddonLabels.length
-      ? '<button class="ch-addon-chip on" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Edit fees &amp; add-ons">' + esc(activeAddonLabels.join(' · ')) + '</button>'
-      : '<button class="ch-tool-chip" data-action="toggleAddons" data-leg="' + esc(leg.id) + '" title="Sightseeing, waiting, and safari-wait fees">&#43; Fees</button>');
+    for (var fci = 0; fci < FEE_CHIPS.length; fci++) {
+      var fd = FEE_CHIPS[fci];
+      var feeOn = !!leg[fd.field];
+      if (feeOn) anyFeeOn = true;
+      var feeCents = (rateCard && rateCard.extras) ? rateCard.extras[fd.extra] : null;
+      var feePrice = (typeof feeCents === 'number')
+        ? '$' + (feeCents % 100 === 0 ? String(feeCents / 100) : (feeCents / 100).toFixed(2))
+        : '';
+      tools.push('<button class="ch-fee-chip' + (feeOn ? ' on' : '') + '" data-action="toggleFee"'
+        + ' data-leg="' + esc(leg.id) + '" data-fee-field="' + fd.field + '"'
+        + ' aria-pressed="' + (feeOn ? 'true' : 'false') + '"'
+        + ' title="' + esc(fd.hint + (feePrice ? ' — ' + feePrice : '')) + '">'
+        + (feeOn ? '<span class="ch-fee-tick">&#10003;</span>' : '')
+        + esc(fd.label)
+        + (feePrice ? '<span class="ch-fee-price">' + esc(feePrice) + '</span>' : '')
+        + '</button>');
+    }
   }
   if (routeChipHtml) tools.push(routeChipHtml);
   // Quiet cards (2026-07-31): the tools row only fades out when everything in it is an
-  // ACTION. A route chip is a state readout ("via the toll road") and an active add-on chip
+  // ACTION. A route chip is a state readout ("via the toll road") and an active fee chip
   // names money already on the leg — both must stay legible at rest, or reading the quote
   // would need a hover tour. `is-actions-only` is what the CSS keys the fade on.
-  var toolsAreActionsOnly = !routeChipHtml && !activeAddonLabels.length;
+  var toolsAreActionsOnly = !routeChipHtml && !anyFeeOn;
   var toolsRow = tools.length
     ? '<div class="ch-leg-tools' + (toolsAreActionsOnly ? ' is-actions-only' : '') + '">' + tools.join('') + '</div>'
     : '';
-
-  // Add-on line (thin second line, only when the popover is toggled open; private travel only)
-  var sightChecked = leg.addSightseeingFee ? ' checked' : '';
-  var waitChecked = leg.addWaitingFee ? ' checked' : '';
-  var safariChecked = leg.addSafariWait ? ' checked' : '';
-  var addonLine = (!isChauffeur && !isStay && legAddonsOpen[leg.id]) ? [
-    '<div class="ch-leg-addons">',
-    '  <label class="ch-check"><input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSightseeingFee"' + sightChecked + ' /><span class="ch-check-box">' + (leg.addSightseeingFee ? '&#10003;' : '') + '</span>Sightseeing</label>',
-    '  <label class="ch-check"><input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addWaitingFee"' + waitChecked + ' /><span class="ch-check-box">' + (leg.addWaitingFee ? '&#10003;' : '') + '</span>Waiting</label>',
-    '  <label class="ch-check"><input type="checkbox" data-leg="' + esc(leg.id) + '" data-field="addSafariWait"' + safariChecked + ' /><span class="ch-check-box">' + (leg.addSafariWait ? '&#10003;' : '') + '</span>Safari wait</label>',
-    '</div>',
-  ].join('') : '';
 
   // Multi-stop: the stop chain renders in its own block BELOW the main row, so the main
   // row can act as the leg's header band (see the route-rail CSS). Compact 2-stop legs
@@ -5335,7 +5340,6 @@ function renderLegCard(leg, idx, total) {
     '  </div>',
     (isMulti ? '<div class="ch-leg-stoplist">' + routeHtml + '</div>' : ''),
     toolsRow,
-    addonLine,
     '</div>',
   ].join('');
 }
@@ -7843,9 +7847,17 @@ function attachEventListeners() {
       setRequestedService(el.getAttribute('data-req'));
     } else if (action === 'setVehicle') {
       mutate({ vehicleType: el.getAttribute('data-veh') });
-    } else if (action === 'toggleAddons') {
-      legAddonsOpen[legId] = !legAddonsOpen[legId];
-      render();
+    } else if (action === 'toggleFee') {
+      // Fee chips: one click flips the leg's fee flag. updateLeg handles markDirty +
+      // re-estimate + render, exactly like the old checkbox commit path did. The field is
+      // whitelisted so a stray data attribute can never write arbitrary leg keys.
+      var feeLeg = state.legs.find(function(l) { return l.id === legId; });
+      var feeField = el.getAttribute('data-fee-field');
+      if (feeLeg && (feeField === 'addSightseeingFee' || feeField === 'addWaitingFee' || feeField === 'addSafariWait')) {
+        var feePatch = {};
+        feePatch[feeField] = !feeLeg[feeField];
+        updateLeg(legId, feePatch);
+      }
     } else if (action === 'toggleMap') {
       _mapOpen = !_mapOpen;
       render();
