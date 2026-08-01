@@ -77,6 +77,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
     return DAYS[d.getUTCDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
   }
+  var MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function isoParts(iso){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '')); return m ? { y:+m[1], mo:+m[2], d:+m[3] } : null; }
+  // '22 Jul' — the stamp beside each leg on the rail.
+  function stamp(iso){ var p = isoParts(iso); return p ? p.d + ' ' + MON3[p.mo - 1] : ''; }
+  // '22–26 July 2026', or '30 July – 3 August 2026' across a month boundary.
+  function rangeLabel(a, b){
+    var x = isoParts(a), y = isoParts(b);
+    if (!x || !y) return '';
+    if (x.y === y.y && x.mo === y.mo) return x.d + '\u2013' + y.d + ' ' + MONTHS[x.mo - 1] + ' ' + x.y;
+    return x.d + ' ' + MONTHS[x.mo - 1] + ' \u2013 ' + y.d + ' ' + MONTHS[y.mo - 1] + ' ' + y.y;
+  }
+  var NUMWORD = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
+  function countWord(n){ return NUMWORD[n] || String(n); }
+  // A journey is a LEG — the hop between two stops — so four stops is three journeys.
+  function legsOf(v){
+    var stops = (v && v.stops && v.stops.length >= 2) ? v.stops : [v.from, v.to];
+    var dates = (v && v.legDates) || [];
+    var out = [];
+    for (var i = 0; i < stops.length - 1; i++) out.push({ route: stops[i] + ' \u2192 ' + stops[i + 1], date: dates[i] || null });
+    return out;
+  }
+
   function vehicleLabel(v){
     if (!v) return 'To be confirmed';
     if (/van/i.test(v)) return 'Van';
@@ -118,19 +140,62 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // payment on a settled booking is how somebody pays twice; the backend refuses it too.
   function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0; }
 
+  // The title has to survive a four-stop tour. "first → last" reads exactly like a direct
+  // transfer and hides the middle, so a real trip leads with what it IS — how many journeys, over
+  // which dates — and the rail underneath names every hop.
+  function titleOf(v){
+    var legs = legsOf(v);
+    if (legs.length <= 1) return v.from + ' → ' + v.to;
+    var range = rangeLabel(v.date, v.endDate);
+    var word = countWord(legs.length);
+    return word.charAt(0).toUpperCase() + word.slice(1) + ' journeys' + (range ? ', ' + range : '');
+  }
+  function subtitleOf(v){
+    var legs = legsOf(v);
+    if (legs.length <= 1) return longDate(v.date) || 'Date to be confirmed';
+    return v.from + ' → ' + v.to;
+  }
+  function factsOf(v){
+    var legs = legsOf(v);
+    var stopCount = legs.length + 1;
+    // A one-day trip genuinely starts and ends on the same date; say so rather than printing
+    // the same line twice with no explanation.
+    var sameDay = v.date && v.endDate && v.date === v.endDate;
+    var rows = [
+      { k: 'Trip start', v: longDate(v.date) || 'To be confirmed' },
+      { k: 'Trip end', v: longDate(v.endDate) || 'To be confirmed', sub: sameDay ? 'same day' : '' },
+      { k: 'Pick-up time', v: (v.time && v.time !== 'to confirm') ? v.time : 'To be confirmed' },
+      // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
+      // still answers "is there anything else on this trip?".
+      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
+      { k: 'Travellers', v: String(v.travellers) },
+      { k: 'Vehicle', v: vehicleLabel(v.vehicleType) },
+    ];
+    return rows.map(function(r){
+      return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + esc(r.v)
+        + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span></div>';
+    }).join('');
+  }
+
   function render(v, errMsg){
     var due = Number(v.balanceDueCents || 0);
     var html =
       '<div class="pp-hello">' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
-      + '<h1 class="pp-title">' + esc(v.from) + ' → ' + esc(v.to) + '</h1>'
-      + '<p class="pp-sub">' + esc(longDate(v.date) || 'Date to be confirmed') + '</p>'
+      + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
+      + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
       + '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
       + statusChip(v.status) + '</div>'
-      + '<div class="fact"><span class="k">Pick-up</span><span class="v">'
-      + (v.time ? esc(v.time) : 'Time to confirm') + '</span></div>'
-      + '<div class="fact"><span class="k">Travellers</span><span class="v">' + esc(v.travellers) + '</span></div>'
-      + '<div class="fact"><span class="k">Vehicle</span><span class="v">' + esc(vehicleLabel(v.vehicleType)) + '</span></div>'
+      // A trip with stops in the middle shows every journey; a direct transfer has nothing to
+      // add beyond its title, so it skips the rail rather than drawing a rail of one.
+      + (legsOf(v).length > 1 ? '<div class="hops">' + legsOf(v).map(function(l, i, all){
+          var last = i === all.length - 1;
+          return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
+            + (last ? '' : '<span class="hop-line"></span>') + '</div>'
+            + '<div><div class="hop-t">' + esc(l.route) + '</div>'
+            + '<div class="hop-d">' + (l.date ? esc(stamp(l.date)) : 'date to be confirmed') + '</div></div></div>';
+        }).join('') + '</div>' : '')
+      + factsOf(v)
       + '</div><div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
       // A zero balance is not news — it earns a row only when something is left to pay.

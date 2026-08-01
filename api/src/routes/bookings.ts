@@ -84,8 +84,16 @@ export interface CustomerBookingView {
   firstName: string;
   from: string;
   to: string;
-  date: string; // ISO date or 'to confirm'
+  date: string; // ISO date or 'to confirm' — the trip START
   time: string; // HH:mm or 'to confirm'
+  /* The WHOLE journey. `from`/`to` are the endpoints and stay for back-compat, but a trip
+     collapsed to its endpoints reads exactly like a direct transfer on the customer card —
+     a four-stop tour lost its middle and had no end date to show. `stops` is the full chain
+     (always >= 2, so the card can count stops uniformly) and `legDates[i]` is the date the
+     leg departing `stops[i]` runs, null where it isn't set yet. */
+  stops: string[];
+  legDates: (string | null)[]; // always stops.length - 1 entries
+  endDate: string; // last known leg date, or 'to confirm'
   travellers: number;
   bags: number | null;
   vehicleType: string | null;
@@ -114,6 +122,10 @@ export function projectBooking(b: Booking): CustomerBookingView {
       to: b.input.to,
       date: b.input.date ?? 'to confirm',
       time: b.input.time ?? 'to confirm',
+      // A direct transfer IS a two-stop journey; saying so lets the card use one code path.
+      stops: [b.input.from, b.input.to],
+      legDates: [b.input.date ?? null],
+      endDate: b.input.date ?? 'to confirm',
       travellers: b.input.adults + b.input.children,
       bags: b.input.bags,
       vehicleType: b.input.vehicleType,
@@ -121,12 +133,20 @@ export function projectBooking(b: Booking): CustomerBookingView {
   }
   if (b.mode === 'trip') {
     const stops = b.input.stops;
+    // One entry per LEG, padded with nulls: a partly-dated trip must still line up with the
+    // chain, or the card would silently pair a date with the wrong leg.
+    const legDates = Array.from({ length: Math.max(0, stops.length - 1) },
+      (_, i) => b.input.dates?.[i] ?? null);
+    const known = legDates.filter((d): d is string => !!d);
     return {
       ...base,
       from: stops[0],
       to: stops[stops.length - 1],
       date: b.input.dates?.[0] ?? 'to confirm',
       time: 'to confirm',
+      stops,
+      legDates,
+      endDate: known.length ? known[known.length - 1] : 'to confirm',
       travellers: b.input.pax,
       bags: null,
       vehicleType: b.input.vehicleType,
@@ -142,6 +162,9 @@ export function projectBooking(b: Booking): CustomerBookingView {
     to: 'Drop-off',
     date: b.input.date,
     time: b.input.time,
+    stops: ['Pickup', 'Drop-off'],
+    legDates: [b.input.date ?? null],
+    endDate: b.input.date ?? 'to confirm',
     travellers: b.input.seats,
     bags: null,
     vehicleType: null,
