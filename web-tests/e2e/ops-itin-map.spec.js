@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the
+   suite go red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). */
+const LEG_DATE = futureIsoDate(30);
+
 // Interactive route map at the foot of the itinerary. The real map needs Google Maps JS +
 // a browser key (templated server-side); here we force a key via window.OPS_MAPS_KEY and
 // stub google.maps so the render path is exercised offline without hitting Google.
@@ -121,10 +127,10 @@ test('a failed route does not re-query on unrelated edits — only a stop change
 
   // A date-only change re-renders (twice: immediately + after the estimate) but must
   // NOT re-query — the stops didn't change, so the route would just fail again.
-  await page.$eval('input[type="date"][data-field="date"]', (el) => {
-    el.value = '2026-08-10';
+  await page.$eval('input[type="date"][data-field="date"]', (el, v) => {
+    el.value = v;
     el.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  }, LEG_DATE);
   await page.waitForTimeout(1000);
   const afterDate = await page.evaluate(() => (window.__computeRoutesReqs || []).length);
   expect(afterDate).toBe(before);

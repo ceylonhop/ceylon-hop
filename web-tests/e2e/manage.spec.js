@@ -1,8 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the
+   suite go red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). */
+
+
 const VIEW = {
   reference: 'CH-ABC12', status: 'paid', mode: 'single', firstName: 'Maya',
-  from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2026-08-01', time: '09:00',
+  from: 'Colombo Airport (CMB)', to: 'Kandy', date: futureIsoDate(30), time: '09:00',
   travellers: 2, bags: 1, vehicleType: 'car',
   currency: 'USD', totalCents: 6000, amountDueNowCents: 6000, balanceDueCents: 0,
 };
