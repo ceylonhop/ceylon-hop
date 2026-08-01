@@ -55,10 +55,6 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_va
       },
     },
     {
-      "amountCents": 0,
-      "label": "Sightseeing stops (up to 3h) (included)",
-    },
-    {
       "amountCents": -622,
       "label": "Final price adjustment",
       "meta": {

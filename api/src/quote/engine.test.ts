@@ -95,6 +95,7 @@ describe('quote()', () => {
     expect(withExtras.totalCents).toBe(withoutExtras.totalCents);
     expect(withExtras.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
     expect(withExtras.warnings.some((w) => w.includes('waiting') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(withExtras.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
   });
 
   it('chauffeur: luggage is still charged (not an included extra)', () => {
@@ -120,6 +121,22 @@ describe('quote()', () => {
     const r = quote({ ...base, extras: ['sightseeing', 'luggage'] });
     expect(r.subtotalCents).toBe(withoutExtras.subtotalCents + RATE_CARD.extras.luggage);
     expect(r.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(r.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
+  });
+
+  it('chauffeur: an attributed sightseeing flag produces NO line item and no charge', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const,
+      firstDate: '2026-02-10', lastDate: '2026-02-12',
+      travelDays: [
+        { date: '2026-02-10', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { date: '2026-02-12', from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      ],
+    };
+    const withFlag = quote({ ...base, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    expect(withFlag.totalCents).toBe(quote(base).totalCents);
+    expect(withFlag.lineItems.some((li) => /Sightseeing/.test(li.label))).toBe(false);
+    expect(withFlag.warnings.some((w) => w.includes('sightseeing included in chauffeur day rate'))).toBe(true);
   });
 
   it('chauffeur: safari-wait is included and not charged', () => {
@@ -133,6 +150,7 @@ describe('quote()', () => {
     const r = quote({ ...base, extras: ['safari-wait'] });
     expect(r.totalCents).toBe(withoutExtras.totalCents);
     expect(r.warnings.some((w) => w.includes('safari-wait') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(r.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
   });
 
   it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {
@@ -392,4 +410,52 @@ describe('invariants', () => {
       }
     });
   }
+});
+
+describe('private extras attribution', () => {
+  const threeLegs = {
+    product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 2,
+    legs: [
+      { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      { from: 'Ella', to: 'Yala', distanceKm: 100 },
+    ],
+  };
+
+  it('names the leg each extra belongs to', () => {
+    const r = quote({ ...threeLegs, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    const extra = r.lineItems.find((li) => li.meta && (li.meta as { kind?: string }).kind === 'extra');
+    expect(extra?.label).toBe('Sightseeing stops (up to 3h) — Kandy → Ella');
+    expect(extra?.amountCents).toBe(1000);
+  });
+
+  it('two ticked legs produce two DIFFERENTLY named rows', () => {
+    const r = quote({
+      ...threeLegs,
+      extras: [{ code: 'sightseeing', legIndex: 0 }, { code: 'sightseeing', legIndex: 2 }],
+    });
+    const labels = r.lineItems
+      .filter((li) => li.meta && (li.meta as { kind?: string }).kind === 'extra')
+      .map((li) => li.label);
+    expect(labels).toEqual([
+      'Sightseeing stops (up to 3h) — Colombo → Kandy',
+      'Sightseeing stops (up to 3h) — Ella → Yala',
+    ]);
+  });
+
+  it('attribution does not change the total', () => {
+    const bare = quote({ ...threeLegs, extras: ['sightseeing'] });
+    const attributed = quote({ ...threeLegs, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    expect(attributed.totalCents).toBe(bare.totalCents);
+  });
+
+  it('extras line items come AFTER every travel line item', () => {
+    const r = quote({
+      ...threeLegs,
+      extras: [{ code: 'sightseeing', legIndex: 0 }, { code: 'waiting', legIndex: 1 }],
+    });
+    const firstExtra = r.lineItems.findIndex((li) => (li.meta as { kind?: string } | undefined)?.kind === 'extra');
+    const lastTravel = r.lineItems.map((li) => 'billableKm' in ((li.meta ?? {}) as object)).lastIndexOf(true);
+    expect(firstExtra).toBeGreaterThan(lastTravel);
+  });
 });
