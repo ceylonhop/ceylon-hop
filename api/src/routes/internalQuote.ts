@@ -5,8 +5,8 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
-import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types';
-import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
+import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
+import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
 import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
@@ -242,12 +242,18 @@ function toEngineLeg(l: ToolLeg): PrivateLeg | Ride {
   return { from: l.from, to: l.to, distanceKm: Number(l.distanceKm) };
 }
 
-function collectExtras(legs: ToolLeg[]): ExtraCode[] {
-  const out: ExtraCode[] = [];
+// legIndex must be the DRIVING index — toEngineRequest hands the engine
+// `req.legs.filter(drives)`, so a raw state.legs index drifts by one for every stay day
+// before it and would name the wrong leg. Non-driving legs still contribute their extras,
+// unattributed, exactly as before: dropping them would change a total.
+function collectExtras(legs: ToolLeg[]): ExtraInput[] {
+  const out: ExtraInput[] = [];
+  let drivingIndex = -1;
   for (const l of legs) {
-    if (l.addSightseeingFee) out.push('sightseeing');
-    if (l.addWaitingFee) out.push('waiting');
-    if (l.addSafariWait) out.push('safari-wait');
+    const legIndex = drives(l) ? ++drivingIndex : undefined;
+    if (l.addSightseeingFee) out.push({ code: 'sightseeing', legIndex });
+    if (l.addWaitingFee) out.push({ code: 'waiting', legIndex });
+    if (l.addSafariWait) out.push({ code: 'safari-wait', legIndex });
   }
   return out;
 }

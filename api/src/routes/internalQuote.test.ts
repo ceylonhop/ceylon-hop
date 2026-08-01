@@ -2355,3 +2355,51 @@ describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () 
     expect(parsed?.revision).toBe((await quotes.get(id))!.revision);
   });
 });
+
+describe('per-leg extras attribution', () => {
+  it('attributes each extra to its own leg', async () => {
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true },
+      ],
+    });
+    const body = await res.json();
+    expect(body.lineItems.some((li: { label: string }) =>
+      li.label === 'Sightseeing stops (up to 3h) — Kandy → Ella')).toBe(true);
+  });
+
+  it('REGRESSION: a stay day between two legs does not shift attribution', async () => {
+    // The stay day is dropped before pricing, so a raw state.legs index would name
+    // "Kandy → Ella" for a charge that actually belongs to "Ella → Yala".
+    const res = await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { category: 'stay_day', from: 'Kandy', to: 'Kandy', distanceKm: 0 },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 },
+        { category: 'transfer', from: 'Ella', to: 'Yala', distanceKm: 100, addSightseeingFee: true },
+      ],
+    });
+    const body = await res.json();
+    const labels = body.lineItems.map((li: { label: string }) => li.label);
+    expect(labels).toContain('Sightseeing stops (up to 3h) — Ella → Yala');
+    expect(labels).not.toContain('Sightseeing stops (up to 3h) — Kandy → Ella');
+  });
+
+  it('totals are unchanged by attribution', async () => {
+    const legs = [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true, addWaitingFee: true },
+    ];
+    const withFees = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2, legs,
+    })).json();
+    const without = await (await post(createApp(), '/admin/quote/estimate', {
+      service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      legs: legs.map((l) => ({ ...l, addSightseeingFee: false, addWaitingFee: false })),
+    })).json();
+    expect(withFees.total.cents).toBe(without.total.cents + 1000 + 1000);
+  });
+});
