@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the
+   suite go red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). */
+// Chauffeur pricing needs 2+ DISTINCT leg dates, so these must stay distinct and in order.
+const DAY_1 = futureIsoDate(60);
+const DAY_4 = futureIsoDate(63);
+const DAY_7 = futureIsoDate(66);
+
 // Regression for the reported bug: a chauffeur quote with SOME legs dated and some not
 // (2+ distinct dates, so it isn't downgraded to point-to-point) fired /admin/quote/save,
 // which the server 400s ("chauffeur trips need a date on every leg") into a fleeting toast.
@@ -66,14 +75,14 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
   // 3 legs: date leg 0 (day 1) and leg 2 (day 2) — distinct — but leave leg 1 UNDATED.
   await setLegField(page, 0, 'pickupLocation', 'Colombo, Sri Lanka');
   await setLegField(page, 0, 'dropoffLocation', 'Ella, Sri Lanka');
-  await setLegField(page, 0, 'date', '2026-10-01');
+  await setLegField(page, 0, 'date', DAY_1);
   await page.getByText('Add leg').click(); await page.waitForTimeout(100);
   await setLegField(page, 1, 'pickupLocation', 'Ella, Sri Lanka');
   await setLegField(page, 1, 'dropoffLocation', 'Galle, Sri Lanka'); // no date
   await page.getByText('Add leg').click(); await page.waitForTimeout(100);
   await setLegField(page, 2, 'pickupLocation', 'Galle, Sri Lanka');
   await setLegField(page, 2, 'dropoffLocation', 'Colombo, Sri Lanka');
-  await setLegField(page, 2, 'date', '2026-10-07');
+  await setLegField(page, 2, 'date', DAY_7);
 
   // Give every leg a distance so the ONLY thing missing is a date on leg 1.
   for (let i = 0; i < 3; i++) {
@@ -98,7 +107,7 @@ test('chauffeur save is blocked (not a silent 400) when a leg has no date', asyn
   expect(counters.save, 'save must be blocked client-side, not sent as a doomed 400').toBe(0);
 
   // Fill the missing date → the block clears and a save can go through.
-  await setLegField(page, 1, 'date', '2026-10-04');
+  await setLegField(page, 1, 'date', DAY_4);
   await page.waitForTimeout(300);
   await expect(page.locator('.ch-leg-date.invalid')).toHaveCount(0);
   await page.locator('[data-action="saveDraft"]').click();

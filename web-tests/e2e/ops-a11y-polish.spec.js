@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the
+   suite go red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). */
+
+
 // Drives the REAL ops shell (api/src/routes/ops-ui.html) offline (stubbed API, no DB).
 // Regressions for the 2026-07-21 design review's polish list (committed in
 // docs/design-review-ops-ui-2026-07-21.md): booking cards keyboard-reachable with real
@@ -11,7 +17,7 @@ const OPS_FILE = '/api/src/routes/ops-ui.html';
 const BOOKING = {
   id: 'b-1', reference: 'CH-KBD01', channel: 'website', customerName: 'Maya Silva',
   customerFirstName: 'Maya', mode: 'single', route: 'Colombo Airport → Ella',
-  travelDate: '2027-03-10', travelTime: '08:00', pax: 2, amount: 12300, currency: 'USD',
+  travelDate: futureIsoDate(220), travelTime: '08:00', pax: 2, amount: 12300, currency: 'USD',
   stage: 'paid', paymentStatus: 'paid', vehiclePhotoReceived: false, customerUpdated: false, opsNotes: '',
 };
 

@@ -90,7 +90,7 @@ describe('flagOf(country)', () => {
 
 describe('fmtDate(iso)', () => {
   it('formats a date-only string without timezone drift', () => {
-    expect(RB.fmtDate('2026-08-08')).toBe('Sat 8 Aug');
+    expect(RB.fmtDate('2026-08-08')).toBe('Sat 8 Aug'); // date-bomb-ok: pure formatter input, never checked against today
   });
   it('is graceful with junk / empty input', () => {
     expect(RB.fmtDate('')).toBe('');
@@ -118,9 +118,9 @@ describe('scarcityText(list)', () => {
 describe('normalizeList(publicList) — projection to a card model', () => {
   const pl = {
     code: 'EM-1', corridorId: 'ella-south', from: 'Ella', to: 'Mirissa',
-    date: '2026-08-08', slot: 'morning', lockedTime: null,
+    date: '2026-08-08', slot: 'morning', lockedTime: null, // date-bomb-ok: pure formatter input, never checked against today
     minSeats: 4, capacity: 6, seatPrice: 2400, status: 'gathering',
-    note: 'surfboards welcome', cutoffAt: '2026-08-01T00:00:00Z', committed: 2,
+    note: 'surfboards welcome', cutoffAt: '2026-08-01T00:00:00Z', committed: 2, // date-bomb-ok: pure formatter input, never checked against today
     members: [
       { position: 1, firstName: 'Léa', country: 'FR', photoUrl: null, isStarter: true },
       { position: 2, firstName: 'Tom', country: 'GB', photoUrl: 'https://x/p.jpg', isStarter: false }
@@ -141,7 +141,7 @@ describe('normalizeList(publicList) — projection to a card model', () => {
     expect(L.committed).toBe(2);
     expect(L.confirmed).toBe(false);
     expect(L.status).toBe('gathering');
-    expect(L.cutoffMs).toBe(Date.parse('2026-08-01T00:00:00Z'));
+    expect(L.cutoffMs).toBe(Date.parse('2026-08-01T00:00:00Z')); // date-bomb-ok: pure formatter input, never checked against today
     expect(L.fromId).toBe('ella');
     expect(L.toId).toBe('mirissa');
   });
@@ -169,6 +169,7 @@ describe('normalizeList(publicList) — projection to a card model', () => {
 
 describe('whenLine(list) — the card "when" line', () => {
   it('shows the slot window while gathering', () => {
+    // date-bomb-ok: pure formatter input, never checked against today
     const L = RB.normalizeList({ from: 'Ella', to: 'Mirissa', date: '2026-08-08', slot: 'morning', status: 'gathering' });
     expect(RB.whenLine(L)).toBe('Sat 8 Aug · morning · departs 7–9 am');
   });

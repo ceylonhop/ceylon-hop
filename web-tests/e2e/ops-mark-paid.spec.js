@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { futureIsoDate } from '../dates.js';
 
 // Out-of-band settlement (spec 2026-07-30): a booking converted from an ops quote lands in
 // payment_pending and is paid in cash or by bank transfer — no PayHere webhook is ever coming.
@@ -82,7 +83,7 @@ async function bookedQuoteAwaitingPayment(page) {
       vehicleType: 'car',
       pax: 2,
       bags: 1,
-      date: '2026-09-15',
+      date: futureIsoDate(45), // anchored to now: the booking API rejects a past travel date
       time: '09:00',
     });
     return { id: booking.id, reference: booking.reference, status: booking.status };

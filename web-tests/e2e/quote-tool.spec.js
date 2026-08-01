@@ -1,5 +1,18 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Leg dates anchored to "now", never hard-coded: the ops builder rejects a past date
+   (legDateFloor), so a literal makes this suite go red on its own once the clock passes it
+   (docs/known-bugs.md, 2026-07-25). Only the ORDERING is load-bearing — chauffeur needs
+   distinct dates, and the out-of-order flag needs D10 to fall after D5. */
+const D1  = futureIsoDate(30);
+const D2  = futureIsoDate(31);
+const D3  = futureIsoDate(32);
+const D4  = futureIsoDate(33);
+const D5  = futureIsoDate(34);
+const D10 = futureIsoDate(39);
+
 // The internal quoting tool is a view mounted inside the ops dashboard
 // (api/src/routes/ops-ui.html), not a standalone page — the old /admin/quote
 // shell was retired (it 302s to /ops now). Per spec D-A, quote:manage (and so
@@ -139,7 +152,7 @@ test('timeline autocomplete → priced LKR summary → save reference toast', as
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
   // A date is required — the API rejects an empty-string date on any leg.
-  await fillFirstLegDate(page, '2026-08-01');
+  await fillFirstLegDate(page, D1);
 
   // Wait for auto-distance to resolve and estimate to populate
   // The km hero tile and the quote total line should appear
@@ -247,14 +260,14 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
   await page.waitForTimeout(600);
 
   // Leg 2 (transfer): Ella → Galle, Aug 3 — the Aug-2 gap is the idle/rest day (an idle day
   // derived from the date span, not an explicit stay leg).
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill(D3);
   await page.waitForTimeout(600);
   const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
@@ -263,7 +276,7 @@ test('chauffeur trip spanning a rest day: idle day priced, last leg kept, full-p
   // Leg 3 (transfer): Galle → Mirissa, Aug 4.
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(3);
-  await page.locator('input[type="date"][data-field="date"]').nth(2).fill('2026-08-04');
+  await page.locator('input[type="date"][data-field="date"]').nth(2).fill(D4);
   await page.waitForTimeout(600);
   const thirdTo = page.locator('.ch-tl-item').nth(2).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, thirdTo, 'Miri', 'Mirissa');
@@ -356,10 +369,10 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await page.locator('[data-action="toggleAddons"]').first().click();
 
   // Date both ends across two days → chauffeur becomes enabled and shows a price.
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
   await page.waitForTimeout(600);
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill(D2);
   await page.waitForTimeout(600);
   const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
@@ -388,11 +401,11 @@ test('point-to-point customer output can append the chauffeur option', async ({ 
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
   await page.waitForTimeout(600);
 
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-03');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill(D3);
   await page.waitForTimeout(600);
   const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');
@@ -433,7 +446,7 @@ test('approving a draft syncs status=ready to the queue (V5)', async ({ page }) 
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await fillFirstLegDate(page, '2026-08-01');
+  await fillFirstLegDate(page, D1);
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   // Unique customer name so we can find the row unambiguously
@@ -465,7 +478,7 @@ test('clicking a queue row reopens the saved quote (V19)', async ({ page }) => {
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await fillFirstLegDate(page, '2026-08-01');
+  await fillFirstLegDate(page, D1);
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
 
   const custName = 'E2E Reopen ' + Date.now();
@@ -499,22 +512,22 @@ test('legs can be reordered and out-of-order dates raise a flag', async ({ page 
   const outOfOrderFlag = page.locator('.ch-flag', { hasText: /Dates out of order/i });
 
   // Leg 1, dated first.
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
   await page.waitForTimeout(400);
 
   // Add leg 2, dated LATER — dates are in order, so no flag.
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-05');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill(D5);
   await page.waitForTimeout(400);
   await expect(outOfOrderFlag).toHaveCount(0);
 
   // Swap the dates so leg 1 is LATER than leg 2 → flag appears.
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-10');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D10);
   await page.waitForTimeout(400);
   await expect(outOfOrderFlag.first()).toBeVisible({ timeout: 5000 });
 
-  // Move leg 2 up (now dates read 2026-08-05 then 2026-08-10) → linear again, flag clears.
+  // Move leg 2 up (now dates read D5 then D10) → linear again, flag clears.
   await page.locator('.ch-tl-item').nth(1).locator('[data-action="moveLegUp"]').click();
   await page.waitForTimeout(400);
   await expect(outOfOrderFlag).toHaveCount(0);
@@ -562,7 +575,7 @@ test('queue row shows a fresh age chip for a just-saved quote', async ({ page })
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await fillFirstLegDate(page, '2026-08-01');
+  await fillFirstLegDate(page, D1);
 
   const custName = 'E2E Age ' + Date.now();
   await fillCustomerName(page, custName);
@@ -589,7 +602,7 @@ test('changing a reopened quote destination re-prices it', async ({ page }) => {
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await fillFirstLegDate(page, '2026-08-01');
+  await fillFirstLegDate(page, D1);
   await expect(page.locator('.ch-line.strong .ch-line-val').first()).toContainText('LKR', { timeout: 8000 });
   const custName = 'E2E Reprice ' + Date.now();
   await fillCustomerName(page, custName);
@@ -626,13 +639,13 @@ test('reducing a chauffeur trip to one day reverts to point-to-point (drops the 
   await pickPlace(page, fromInput, 'Kand', 'Kandy');
   const toInput = page.locator('.ch-tl-title[data-field="stop"][data-stop="1"]').first();
   await pickPlace(page, toInput, 'Ella', 'Ella');
-  await page.locator('input[type="date"][data-field="date"]').first().fill('2026-08-01');
+  await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
   await page.waitForTimeout(600);
 
   // Leg 2 on a second date → two distinct dates → chauffeur becomes eligible.
   await page.locator('[data-action="addLeg"][data-cat="transfer"]').click();
   await expect(page.locator('.ch-tl-item')).toHaveCount(2);
-  await page.locator('input[type="date"][data-field="date"]').nth(1).fill('2026-08-02');
+  await page.locator('input[type="date"][data-field="date"]').nth(1).fill(D2);
   await page.waitForTimeout(600);
   const secondTo = page.locator('.ch-tl-item').nth(1).locator('.ch-tl-title[data-field="stop"][data-stop="1"]');
   await pickPlace(page, secondTo, 'Galle', 'Galle');

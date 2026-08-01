@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { fillContact } from './_stubs.js';
+import { futureIsoDate, isoParts, isoToSummary } from '../dates.js';
+
+/* Anchored to "now": a hard-coded trip date makes this spec go red on its own once the clock
+   passes it (docs/known-bugs.md, 2026-07-25). This test is about the LOCAL date surviving the
+   round trip unchanged — the particular day is irrelevant, so the display string is derived from
+   the same ISO value rather than written out again. (The 2020-01-01 below is deliberate: it is a
+   PAST date, and the whole point of that test.) */
+const BOOK_DATE = futureIsoDate(30);
+const PLAN_DATE = futureIsoDate(30);
 
 test.use({ timezoneId: 'Asia/Colombo' });
 
@@ -43,12 +52,13 @@ async function bootBooking(page) {
 test('selected booking date is displayed and submitted as the same local date', async ({ page }) => {
   const api = await bootBooking(page);
 
-  await page.evaluate(() => window.pickDate(2026, 7, 18));
-  await expect(page.locator('#sum-date')).toContainText('18 Aug 2026');
+  const picked = isoParts(BOOK_DATE);
+  await page.evaluate(({ year, monthIndex, day }) => window.pickDate(year, monthIndex, day), picked);
+  await expect(page.locator('#sum-date')).toContainText(isoToSummary(BOOK_DATE));
 
   await fillContact(page);
   await page.click('#pay-btn');
-  await expect.poll(api.capturedSingle).toMatchObject({ date: '2026-08-18' });
+  await expect.poll(api.capturedSingle).toMatchObject({ date: BOOK_DATE });
 });
 
 test('reusable datepicker defaults to tomorrow as the earliest selectable date', async ({ page }) => {
@@ -122,13 +132,14 @@ test('planner date handoff keeps the selected local date in the booking URL', as
 
   await page.$eval(
     '.date-row[data-i="0"] input',
-    (el) => { el.value = '2026-08-08'; el.dispatchEvent(new Event('change', { bubbles: true })); },
+    (el, v) => { el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); },
+    PLAN_DATE,
   );
   await page.click('#dates-continue', { force: true });
 
   await expect(page).toHaveURL(/booking\.html/);
-  expect(new URL(page.url()).searchParams.get('dates')).toBe('2026-08-08');
-  expect(new URL(page.url()).searchParams.get('start')).toBe('2026-08-08');
+  expect(new URL(page.url()).searchParams.get('dates')).toBe(PLAN_DATE);
+  expect(new URL(page.url()).searchParams.get('start')).toBe(PLAN_DATE);
 });
 
 test('a stale/past URL date does not skip the calendar and cannot be pre-selected', async ({ page }) => {
