@@ -566,11 +566,18 @@ export function bookingRoutes(deps: {
       currency: payment.currency,
       items: `Ceylon Hop ${booking.reference}`,
       customer: {
-        firstName: cust.firstName,
-        lastName: cust.lastName,
+        // The gateway's fields are BILLING fields, so the cardholder's name wins when the
+        // payer told us they differ from the lead passenger. Email/phone stay the lead
+        // passenger's: that is who gets the receipt and the driver's details.
+        firstName: booking.billing?.firstName || cust.firstName,
+        lastName: booking.billing?.lastName || cust.lastName,
         email: cust.email,
         phone: cust.whatsapp,
-        country: cust.country,
+        // Billing country when we have one; otherwise the lead passenger's, which is what
+        // this has always been (derived from their phone country code).
+        country: booking.billing?.country || cust.country,
+        address: booking.billing?.address,
+        city: booking.billing?.city,
       },
     });
     if (params.amount !== dueNow) {
