@@ -140,10 +140,12 @@ test('sailed-off screen animation is guarded for reduced motion', async ({ page 
   expect(anim).toBe('none');
 });
 
-test('continuing shows the PayHere interstitial; a failure restores the typed form', async ({ page }) => {
+test('continuing keeps the form on screen with a pending button; a failure restores it', async ({ page }) => {
   await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
-  // /start answers slowly, then with a named-field error — long enough for the
-  // interstitial to be assertable, honest enough to exercise the recovery path.
+  // /start answers slowly, then with a named-field error — long enough for the pending
+  // state to be assertable, honest enough to exercise the recovery path. Owner call
+  // (2026-08-01): the full-screen interstitial must NOT appear during the start/checkout
+  // round-trips — on a cold API that blocked the customer behind a takeover for seconds.
   await page.route('**/quotes/pay/start', async (r) => {
     await new Promise((res) => setTimeout(res, 600));
     await r.fulfill({ status: 400, contentType: 'application/json',
@@ -154,14 +156,40 @@ test('continuing shows the PayHere interstitial; a failure restores the typed fo
   await page.locator('#f-email').fill('nimal@@typo');
   await page.locator('#gobtn').click();
 
-  // The interstitial: spinner, copy, and the amount — never a silent dead button.
-  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
-  await expect(page.locator('.pp-loading p').first()).toContainText('Complete your payment in the PayHere window');
-  await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
+  // While the API works: the FORM stays put, the button carries the wait — no takeover.
+  await expect(page.locator('#gobtn')).toBeDisabled();
+  await expect(page.locator('#gobtn')).toHaveText('Opening secure payment…');
+  await expect(page.locator('#f-email')).toBeVisible();
+  await expect(page.locator('.pp-loading')).toHaveCount(0);
 
-  // The failure returns to the details step WITH what the customer typed, plus the error.
-  await expect(page.locator('#gobtn')).toBeVisible();
+  // The failure re-arms the same form WITH what the customer typed, plus the error.
+  await expect(page.locator('#gobtn')).toBeEnabled();
+  await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
   await expect(page.locator('#f-email')).toHaveValue('nimal@@typo');
   await expect(page.locator('#f-phone')).toHaveValue('770001111'); // the fixture's prefill, kept
   await expect(page.locator('#payerr')).toContainText('email');
+});
+
+test('the interstitial appears only when the PayHere window actually opens', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
+    body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#gobtn').click();
+  // payhere.startPayment is the page-load stub (a no-op): the popup "opened", so the
+  // interstitial must now hold the screen — this is the only moment it may appear.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
+});
+
+test('the payment page shows no cookie banner', async ({ page }) => {
+  // Owner call (2026-08-01): a customer mid-payment is not the audience for a consent
+  // prompt. The GTM consent DEFAULT is denied (set in <head>), so no banner ≠ tracking.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await expect(page.locator('#paybtn')).toBeVisible(); // page fully rendered first
+  await expect(page.locator('#ch-consent')).toHaveCount(0);
 });
