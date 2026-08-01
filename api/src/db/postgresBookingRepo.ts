@@ -69,6 +69,19 @@ export class PostgresBookingRepo implements BookingRepo {
       needsPricing: row.needsPricing, // null on rows predating the column
       currency: row.currency,
       channel: row.channel as BookingChannel,
+      // Billing is all-or-nothing: address/city/country are validated together at /start, so
+      // a row either has the set or has none. Keyed off address to avoid handing checkout a
+      // half-filled object it would send to the gateway.
+      billing: row.billingAddress
+        ? {
+            firstName: row.billingFirstName ?? undefined,
+            lastName: row.billingLastName ?? undefined,
+            address: row.billingAddress,
+            city: row.billingCity ?? '',
+            country: row.billingCountry ?? '',
+          }
+        : null,
+      termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -186,6 +199,12 @@ export class PostgresBookingRepo implements BookingRepo {
           idempotencyKey: opts?.idempotencyKey ?? null,
           channel: b.channel ?? 'website',
           needsPricing: b.needsPricing ?? null,
+          billingFirstName: b.billing?.firstName ?? null,
+          billingLastName: b.billing?.lastName ?? null,
+          billingAddress: b.billing?.address ?? null,
+          billingCity: b.billing?.city ?? null,
+          billingCountry: b.billing?.country ?? null,
+          termsAcceptedAt: b.termsAcceptedAt ?? null,
         })
         .returning();
       if (b.mode === 'trip') {

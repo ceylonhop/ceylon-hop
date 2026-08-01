@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SingleTransferInput } from '../domain/singleTransfer';
+import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
@@ -26,6 +26,8 @@ export type NewBooking =
       durationMin?: number | null;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     }
   | {
       mode: 'trip';
@@ -38,6 +40,8 @@ export type NewBooking =
       durationMin?: number | null;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     }
   | {
       mode: 'shared';
@@ -47,12 +51,21 @@ export type NewBooking =
       currency: string;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt'> & {
+  // Billing details for the card (2026-08-01). Absent on website bookings and on every row
+  // predating the pay page — the checkout adapter then OMITS the fields so PayHere collects
+  // them itself, rather than sending the placeholder it used to.
+  billing?: BillingInput | null;
+  // When they accepted the terms + cancellation policy. Null on website bookings and every
+  // row predating this — absence means "never recorded", never "declined".
+  termsAcceptedAt?: string | null;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -132,6 +145,8 @@ export class InMemoryBookingRepo implements BookingRepo {
       status: 'draft',
       createdAt: new Date().toISOString(),
       channel: b.channel ?? 'website',
+      billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
+      termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
     };
     this.byId.set(booking.id, booking);
     this.refs.add(reference);

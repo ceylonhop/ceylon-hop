@@ -41,6 +41,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
   .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
   .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
+  /* billing block (2026-08-01) */
+  .dt-kick{font-size:.66rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-deep);margin:2px 0 8px}
+  .dt-kick:not(:first-child){margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .dt-kick span{color:var(--ink-faint);font-weight:600;letter-spacing:0;text-transform:none}
+  .dt-chk{display:flex;gap:8px;align-items:flex-start;padding:0 2px 10px;cursor:pointer;font-size:.82rem;color:var(--ink)}
+  .dt-chk input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
+  .dt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dt-2col[hidden]{display:none}
+  .dt-terms{padding-top:12px;margin-top:2px;border-top:1px solid var(--line);align-items:flex-start}
+  .dt-terms a{color:var(--accent-deep);font-weight:700}
+  .dt-terms b{display:block;font-weight:600;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
+  .dt-pol{margin:2px 2px 4px}
+  .dt-pol summary{font-size:.75rem;color:var(--accent-deep);font-weight:700;cursor:pointer;list-style:none}
+  .dt-pol summary::-webkit-details-marker{display:none}
+  .dt-pol summary:after{content:' \25BE'}
+  .dt-pol[open] summary:after{content:' \25B4'}
+  .dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
@@ -224,6 +241,39 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return best;
   }
   // Split a prefilled international number into { country, number } for the widget.
+  // Cancellation policy, per product (terms.html §7). The two ladders are genuinely different
+  // — a chauffeur trip is already capped at 80% ten days out, where a transfer is still fully
+  // refundable up to 24 hours before. Showing the wrong one at the moment of payment would be
+  // worse than showing none, so this switches on the product the server told us about.
+  // The headline rule is ALWAYS visible; the full ladder is one tap away (native <details>,
+  // which works on touch, with a keyboard, and in a screen reader — a tooltip does none).
+  function cancellationPolicy(product){
+    if (product === 'chauffeur') {
+      return {
+        headline: 'Free cancellation until 10 days before your trip starts.',
+        rows: ['10–8 days before: 80% refund',
+               '7–3 days before: 60% refund',
+               '2 days–24 hours before: 40% refund',
+               'Within 24 hours, a no-show, or after the trip begins: no refund'],
+      };
+    }
+    return {
+      headline: 'Free cancellation until 24 hours before departure.',
+      rows: ['More than 24 hours before departure: full refund, unlimited changes',
+             'Within 24 hours, a no-show, or after departure: no refund'],
+    };
+  }
+
+  // Billing country options. Reuses the phone list's country NAMES (not dial codes) so the
+  // two selects can't disagree about spelling, and defaults to the phone country — right far
+  // more often than not, and still editable.
+  function billingCountryOptions(selected){
+    var names = COUNTRIES.map(function(c){ return c[1]; }).sort(function(a, b){ return a.localeCompare(b); });
+    return '<option value="">Choose…</option>' + names.map(function(n){
+      return '<option value="' + esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + esc(n) + '</option>';
+    }).join('');
+  }
+
   function splitPrefill(whatsapp){
     var raw = String(whatsapp || '').trim();
     if (!raw) return { country: 'Sri Lanka', number: '' };
@@ -267,6 +317,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
       split = { country: typed.country, number: typed.phone };
     }
+    var pol = cancellationPolicy(data.copy.product);
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
     var options = ordered.map(function(c){
       return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
@@ -276,11 +327,33 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
       + '<div class="ticket"><div class="t-main">'
+      + '<div class="dt-kick">Lead passenger <span>· who&rsquo;s travelling</span></div>'
       + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
       + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
       + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
       + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
       + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      // Billing (2026-08-01). Address/city/country are ALWAYS asked — we have never held them
+      // for anyone, and the gateway was previously sent a hardcoded 'N/A'/'Colombo'. The
+      // cardholder name is only asked when the payer says it differs from the lead passenger.
+      + '<div class="dt-kick">Billing details <span>· as they appear on the card</span></div>'
+      + '<label class="dt-chk"><input id="f-diffbill" type="checkbox"' + (typed && typed.billDiffers ? ' checked' : '') + ' />'
+      +   '<span>Billing details are different from the lead passenger</span></label>'
+      + '<div id="billnames" class="dt-2col"' + (typed && typed.billDiffers ? '' : ' hidden') + '>'
+      +   '<div class="fld"><label for="f-bfirst">Cardholder first name</label><input id="f-bfirst" type="text" value="' + esc((typed && typed.billFirst) || '') + '" autocomplete="billing given-name" /></div>'
+      +   '<div class="fld"><label for="f-blast">Cardholder last name</label><input id="f-blast" type="text" value="' + esc((typed && typed.billLast) || '') + '" autocomplete="billing family-name" /></div>'
+      + '</div>'
+      + '<div class="fld"><label for="f-addr">Billing address</label><input id="f-addr" type="text" value="' + esc((typed && typed.address) || '') + '" placeholder="Street and number" autocomplete="billing street-address" /></div>'
+      + '<div class="dt-2col">'
+      +   '<div class="fld"><label for="f-city">City</label><input id="f-city" type="text" value="' + esc((typed && typed.city) || '') + '" placeholder="e.g. Amsterdam" autocomplete="billing address-level2" /></div>'
+      +   '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
+      + '</div>'
+      + '<label class="dt-chk dt-terms"><input id="f-terms" type="checkbox"' + (typed && typed.terms ? ' checked' : '') + ' />'
+      +   '<span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a>.'
+      +   '<b>' + esc(pol.headline) + '</b></span></label>'
+      + '<details class="dt-pol"><summary>See the full cancellation policy</summary><ul>'
+      +   pol.rows.map(function(rw){ return '<li>' + esc(rw) + '</li>'; }).join('')
+      + '</ul></details>'
       + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
@@ -288,11 +361,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '</div></div>' + waLine();
     // Focus the first empty box — usually email, or the number for email-contact quotes.
-    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone', 'f-addr'];
     for (var i = 0; i < order.length; i++) {
       var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
     }
+    var diff = document.getElementById('f-diffbill'), names = document.getElementById('billnames');
+    diff.addEventListener('change', function(){
+      names.hidden = !diff.checked;
+      if (diff.checked) document.getElementById('f-bfirst').focus();
+    });
     document.getElementById('gobtn').addEventListener('click', startPayment);
   }
 
@@ -324,8 +402,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       email: (document.getElementById('f-email').value || '').trim(),
       country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
       phone: (document.getElementById('f-phone').value || '').trim(),
+      address: (document.getElementById('f-addr').value || '').trim(),
+      city: (document.getElementById('f-city').value || '').trim(),
+      billCountry: (document.getElementById('f-bcountry').value || '').trim(),
+      billDiffers: document.getElementById('f-diffbill').checked,
+      billFirst: (document.getElementById('f-bfirst').value || '').trim(),
+      billLast: (document.getElementById('f-blast').value || '').trim(),
+      terms: document.getElementById('f-terms').checked,
     };
     if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
+    // placeholder. Name each empty box rather than a generic "check the form".
+    if (!typed.address) { fail('Please enter your billing address.'); return; }
+    if (!typed.city) { fail('Please enter your billing city.'); return; }
+    if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
+    if (!typed.terms) { fail('Please accept the terms & cancellation policy to continue.'); return; }
+    if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
+      fail('Please enter the cardholder’s first and last name.'); return;
+    }
+    var billing = {
+      address: typed.address, city: typed.city, country: typed.billCountry,
+    };
+    if (typed.billDiffers) { billing.firstName = typed.billFirst; billing.lastName = typed.billLast; }
     var customer = {
       firstName: typed.firstName,
       lastName: typed.lastName,
@@ -342,7 +440,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Opening secure payment…'; }
     fetch(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t: t, customer: customer }),
+      body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
     }).then(function(r){
       if (r.ok) return r.json();
       return r.json().catch(function(){ return {}; }).then(function(x){

@@ -38,6 +38,19 @@ export const bookings = pgTable(
     // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
     // payment-link tool will write 'whatsapp'.
     channel: text('channel').notNull().default('website'),
+    // Billing details from the pay page (2026-08-01). On the BOOKING, not the customer:
+    // billing belongs to the transaction — the same traveller may pay with a different card,
+    // and a parent/company may pay for someone else. `customers` stays the lead passenger.
+    // Nullable: pre-existing rows have none, and the website flow doesn't collect them.
+    billingFirstName: text('billing_first_name'),
+    billingLastName: text('billing_last_name'),
+    billingAddress: text('billing_address'),
+    billingCity: text('billing_city'),
+    billingCountry: text('billing_country'),
+    // When the customer accepted the terms + the cancellation policy for their product
+    // (2026-08-01). A timestamp, not a boolean: a refund dispute asks *when*. Null on website
+    // bookings and every pre-existing row — back-filling would be inventing consent.
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     // The engine could not price this booking, so `total` is a placeholder and checkout must
     // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
     needsPricing: boolean('needs_pricing'),

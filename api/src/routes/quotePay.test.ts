@@ -41,10 +41,16 @@ async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private'
 }
 
 const view = (app: App, t: string) => app.request(`/quotes/pay/view?t=${encodeURIComponent(t)}`);
-const start = (app: App, t: string, customer = CUSTOMER) =>
+const start = (app: App, t: string, customer = CUSTOMER, billing?: Record<string, string>) =>
   app.request('/quotes/pay/start', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ t, customer }),
+    body: JSON.stringify(billing ? { t, customer, billing, termsAccepted: true } : { t, customer, termsAccepted: true }),
+  });
+
+// Raw poster for the terms gate — `start` always accepts, which is the point of these.
+const startRaw = (app: App, body: unknown) =>
+  app.request('/quotes/pay/start', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
 
 describe('GET /quotes/pay/view — state derivation and the wire', () => {
@@ -89,6 +95,76 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.copy.product).toBe('chauffeur');
     expect(body.copy.title).toBe('Six days across Sri Lanka');
     expect(body.copy.facts.map((f: { k: string }) => f.k)).toEqual(['Trip', 'Days', 'Travellers', 'Starts']);
+  });
+
+  // Billing details (owner, 2026-08-01). The gateway used to be handed a hardcoded
+  // `address: 'N/A', city: 'Colombo'` — fabricated billing data on a live card charge, and a
+  // plausible AVS decline on foreign-issued cards. These pin the whole path: form → /start →
+  // booking columns → checkout payload.
+  it('start stores the billing details on the booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands',
+    });
+    expect(res.status).toBe(201);
+    const booking = await bookings.get((await res.json()).bookingId);
+    expect(booking?.billing).toEqual({ address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands' });
+  });
+
+  it('start keeps the cardholder name when billing differs from the lead passenger', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      firstName: 'Anja', lastName: 'de Vries', address: 'Keizersgracht 1', city: 'Amsterdam', country: 'Netherlands',
+    });
+    const booking = await bookings.get((await res.json()).bookingId);
+    // The traveller is unchanged — billing is a property of the transaction, not the person.
+    expect(booking?.billing?.firstName).toBe('Anja');
+    expect(booking?.input.customer.firstName).toBe('Nimal');
+  });
+
+  it('start refuses a half-filled billing object rather than passing it to the gateway', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263',
+    } as never);
+    expect(res.status).toBe(400);
+  });
+
+  it('start still works with no billing at all — an older cached page must not break', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).bookingId))?.billing).toBeNull();
+  });
+
+  // Terms + cancellation (owner, 2026-08-01). The pay-link path had NO terms step at all: a
+  // customer could pay for a chauffeur trip without being shown that cancelling 9 days out
+  // caps their refund at 80%. booking.html's checkbox is client-side only and records nothing,
+  // so a refund dispute had no evidence either way — hence a server gate AND a timestamp.
+  it('start refuses without an explicit terms acceptance', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await startRaw(app, { t: token, customer: CUSTOMER })).status).toBe(400);
+    expect((await startRaw(app, { t: token, customer: CUSTOMER, termsAccepted: false })).status).toBe(400);
+  });
+
+  it('start records WHEN the terms were accepted, not merely that they were', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    const booking = await bookings.get((await res.json()).bookingId);
+    expect(booking?.termsAcceptedAt).toBeTruthy();
+    expect(new Date(booking!.termsAcceptedAt!).getTime()).toBeGreaterThan(0);
   });
 
   it('revised: a stale revision renders the safe state, no quote details', async () => {

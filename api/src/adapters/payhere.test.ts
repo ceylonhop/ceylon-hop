@@ -50,6 +50,32 @@ describe('PayHerePaymentAdapter', () => {
     expect(p.fields?.notify_url).toBe('https://example.com/webhooks/payhere');
   });
 
+  // Owner-caught 2026-08-01: these were hardcoded `address: 'N/A'`, `city: 'Colombo'` and went
+  // out on every live charge — fabricated billing data, wrong in the payment record and a
+  // plausible AVS decline on a foreign-issued card. Nothing asserted them, which is how they
+  // survived. An OMITTED field lets PayHere collect the real one; a fake field cannot be.
+  it('omits address/city entirely when the booking captured no billing details', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
+      customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', phone: '+94770001111', country: 'Sri Lanka' },
+    });
+    expect(p.fields?.address).toBeUndefined();
+    expect(p.fields?.city).toBeUndefined();
+    expect(JSON.stringify(p.fields)).not.toContain('N/A');
+    expect(JSON.stringify(p.fields)).not.toContain('Colombo');
+  });
+
+  it('sends the real billing address when one was captured', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
+      customer: { firstName: 'Anja', lastName: 'de Vries', email: 'a@x.com', phone: '+31641256927',
+        country: 'Netherlands', address: 'Prinsengracht 263', city: 'Amsterdam' },
+    });
+    expect(p.fields?.address).toBe('Prinsengracht 263');
+    expect(p.fields?.city).toBe('Amsterdam');
+    expect(p.fields?.country).toBe('Netherlands');
+  });
+
   it('verifies a correctly-signed notify and maps status 2 -> succeeded', () => {
     const a = adapter();
     const body = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });

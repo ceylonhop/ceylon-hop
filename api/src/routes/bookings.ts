@@ -245,6 +245,20 @@ export function bookingRoutes(deps: {
     }
   }
 
+// Terms + cancellation acceptance (2026-08-01). The website checkbox was client-side ONLY and
+// recorded nothing, so a refund dispute had no evidence either way — the same gap the quote
+// pay-link path had. Read off the raw body rather than the domain input schemas, which are
+// shared with the ops/quote-conversion paths that have their own acceptance story.
+// RECORDED, not required. Requiring it here would be a breaking contract change on routes
+// with many existing callers, and the value asked for is the evidence, not the gate: booking.js
+// always sends it and the wizard already blocks submission without the tick. The quote pay
+// path DOES hard-gate — that endpoint was new, so requiring it there cost nothing.
+// Deliberately NOT applied to /shared: terms.html §7 defines no cancellation rule for a
+// shared seat, so there is nothing there for a customer to accept yet (docs/known-bugs.md).
+function termsAcceptedAt(body: unknown): Date | undefined {
+  return (body as { termsAccepted?: unknown } | null)?.termsAccepted === true ? new Date() : undefined;
+}
+
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -291,6 +305,7 @@ export function bookingRoutes(deps: {
         currency: 'USD',
         distanceKm: distance?.km ?? null,
         durationMin: distance?.durationMin ?? null,
+        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
     );
@@ -362,6 +377,7 @@ export function bookingRoutes(deps: {
         currency: 'USD',
         distanceKm: tripKm === null ? null : Math.round(tripKm),
         durationMin: tripMin === null ? null : Math.round(tripMin),
+        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
     );
@@ -566,11 +582,18 @@ export function bookingRoutes(deps: {
       currency: payment.currency,
       items: `Ceylon Hop ${booking.reference}`,
       customer: {
-        firstName: cust.firstName,
-        lastName: cust.lastName,
+        // The gateway's fields are BILLING fields, so the cardholder's name wins when the
+        // payer told us they differ from the lead passenger. Email/phone stay the lead
+        // passenger's: that is who gets the receipt and the driver's details.
+        firstName: booking.billing?.firstName || cust.firstName,
+        lastName: booking.billing?.lastName || cust.lastName,
         email: cust.email,
         phone: cust.whatsapp,
-        country: cust.country,
+        // Billing country when we have one; otherwise the lead passenger's, which is what
+        // this has always been (derived from their phone country code).
+        country: booking.billing?.country || cust.country,
+        address: booking.billing?.address,
+        city: booking.billing?.city,
       },
     });
     if (params.amount !== dueNow) {

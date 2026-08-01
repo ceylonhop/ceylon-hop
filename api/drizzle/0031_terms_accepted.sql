@@ -1,0 +1,11 @@
+-- Terms + cancellation acceptance, recorded at pay-commit (owner, 2026-08-01).
+--
+-- The quote pay-link path had NO terms step at all: a customer could pay $749 for a
+-- chauffeur trip without ever being shown that cancelling 9 days out caps their refund at
+-- 80%. booking.html's checkbox is client-side only — nothing was ever recorded — so a refund
+-- dispute had no evidence either way.
+--
+-- A timestamp, not a boolean: "when did they accept" is the question a dispute actually asks,
+-- and it doubles as the boolean. Nullable — every pre-existing row and every website booking
+-- has no recorded acceptance, and back-filling one would be inventing consent.
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;

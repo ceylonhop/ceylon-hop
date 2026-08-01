@@ -83,11 +83,16 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
       last_name: c?.lastName ?? '-',
       email: c?.email ?? '',
       phone: c?.phone ?? '',
-      address: 'N/A',
-      city: 'Colombo',
       country: c?.country ?? 'Sri Lanka',
       hash,
     };
+    // Billing address: send it ONLY when the booking actually captured one. This used to be
+    // `address: 'N/A', city: 'Colombo'` hardcoded — fabricated billing data on a live card
+    // transaction, wrong in the payment record and a plausible AVS decline on foreign-issued
+    // cards. Omitting the fields makes PayHere collect them in its own step (owner-caught,
+    // 2026-08-01), which is strictly better than asserting something false.
+    if (c?.address) fields.address = c.address;
+    if (c?.city) fields.city = c.city;
     return {
       provider: this.provider,
       orderId: args.orderId,
