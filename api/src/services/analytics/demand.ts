@@ -24,7 +24,8 @@ export interface DemandReport {
 }
 
 const TOP_N = 12;
-// Movers guard: a side needs ≥3 touches and the swing ≥50% before we call it a trend —
+// Movers guard: a place needs a non-empty PRIOR half (else it is new, not rising), a side with
+// ≥3 touches, and a swing of ≥50% before we call it a trend —
 // 1→2 is noise, 3→6 is a signal.
 const MOVER_MIN_TOUCHES = 3;
 const MOVER_MIN_CHANGE_PCT = 50;
@@ -103,6 +104,14 @@ export function computeDemand(rows: DemandQuoteRow[], q: AnalyticsRange): Demand
 
   const movers = [...halves.values()]
     .map((h, i) => ({ place: [...halves.keys()][i], ...h }))
+    // A place with NO prior half is not rising — it is NEW, and there is nothing to compare it
+    // against. Without this it passed both guards: the touches test looks at the LARGER side, and
+    // changePct divides by Math.max(prior, 1), so prior=0 became recent*100% and cleared the
+    // ±50% filter automatically. On a dataset younger than the selected range that is EVERY place
+    // at once, and the card turned into a re-ranked copy of the top destinations wearing green
+    // arrows — noise shaped exactly like signal (owner, 2026-08-01). Better to show the existing
+    // "needs more volume" empty state, which is the honest answer.
+    .filter((h) => h.prior > 0)
     .filter((h) => Math.max(h.recent, h.prior) >= MOVER_MIN_TOUCHES)
     .map((h) => ({
       place: h.place, recent: h.recent, prior: h.prior,
