@@ -95,6 +95,7 @@ describe('quote()', () => {
     expect(withExtras.totalCents).toBe(withoutExtras.totalCents);
     expect(withExtras.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
     expect(withExtras.warnings.some((w) => w.includes('waiting') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(withExtras.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
   });
 
   it('chauffeur: luggage is still charged (not an included extra)', () => {
@@ -120,6 +121,22 @@ describe('quote()', () => {
     const r = quote({ ...base, extras: ['sightseeing', 'luggage'] });
     expect(r.subtotalCents).toBe(withoutExtras.subtotalCents + RATE_CARD.extras.luggage);
     expect(r.warnings.some((w) => w.includes('sightseeing') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(r.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
+  });
+
+  it('chauffeur: an attributed sightseeing flag produces NO line item and no charge', () => {
+    const base = {
+      product: 'chauffeur' as const, vehicle: 'car' as const,
+      firstDate: '2026-02-10', lastDate: '2026-02-12',
+      travelDays: [
+        { date: '2026-02-10', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+        { date: '2026-02-12', from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      ],
+    };
+    const withFlag = quote({ ...base, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    expect(withFlag.totalCents).toBe(quote(base).totalCents);
+    expect(withFlag.lineItems.some((li) => /Sightseeing/.test(li.label))).toBe(false);
+    expect(withFlag.warnings.some((w) => w.includes('sightseeing included in chauffeur day rate'))).toBe(true);
   });
 
   it('chauffeur: safari-wait is included and not charged', () => {

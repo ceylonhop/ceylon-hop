@@ -1,12 +1,12 @@
 // api/src/quote/engine.ts
 import { RATE_CARD, type RateCard, CHAUFFEUR_INCLUDED_EXTRAS } from './rateCard';
 import type { QuoteRequest, QuoteResult, LineItem } from './types';
-import { normalizeRide, normalizeChauffeurDay, rideRawKm, validateRide } from './types';
+import { normalizeRide, normalizeChauffeurDay, rideRawKm, validateRide, normalizeExtra } from './types';
 import { selectVehicle, vehicleRank } from './vehicle';
 import { quotePrivateLegs, billableKm } from './private';
 import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
-import { priceExtras, depositCents, EXTRA_LABELS } from './extrasDeposit';
+import { priceExtras, depositCents } from './extrasDeposit';
 import { finishPrice } from './priceFinish';
 
 // GL-1d: van14/custom are custom-priced per quote (owner decision 2026-07-02) — the operator
@@ -92,14 +92,20 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     costCents += c.meta.days * rateCard.chauffeur.dayRateCostCents + Math.round(c.meta.boostedBillableKm * costPerKm);
     if (req.extras?.length) {
       // Chauffeur trips include the vehicle all day: sightseeing/waiting/safari-wait are
-      // already covered by the day rate and must never be charged again.
-      const included = req.extras.filter((code) => (CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(code));
-      const chargeable = req.extras.filter((code) => !(CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(code));
-      for (const code of included) {
-        warnings.push(`${code} included in chauffeur day rate`);
-        lineItems.push({ label: `${EXTRA_LABELS[code]} (included)`, amountCents: 0 });
+      // already covered by the day rate and must never be charged again. Owner call
+      // (2026-08-01): they are not printed either — a $0 row is noise on a quote where the
+      // car is the traveller's all day. The warning stays: it is the only trace that a flag
+      // arrived and was deliberately ignored, and the toggle is hidden under chauffeur.
+      const normalized = req.extras.map(normalizeExtra);
+      const included = normalized.filter((x) => (CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(x.code));
+      const chargeable = normalized.filter((x) => !(CHAUFFEUR_INCLUDED_EXTRAS as readonly string[]).includes(x.code));
+      for (const x of included) {
+        warnings.push(`${x.code} included in chauffeur day rate`);
       }
       if (chargeable.length) {
+        // No legNames here on purpose: the three attributable extras are all included-and-
+        // dropped above, so anything still chargeable is a trip-level extra (luggage rack,
+        // child seat, flexi) arriving unattributed from the website path.
         const e = priceExtras(chargeable, rateCard);
         lineItems.push(...e.lineItems);
         subtotalCents += e.subtotalCents;
