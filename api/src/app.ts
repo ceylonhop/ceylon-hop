@@ -75,6 +75,8 @@ export interface AppDeps {
   allowLegacyCheckoutWithoutToken?: boolean;
   // Front-end origin used to build those links in emails (defaults to config.APP_BASE_URL).
   bookingBaseUrl?: string;
+  /** Origin the customer pay/manage links are built from; defaults to PAY_BASE_URL, then the site. */
+  payBaseUrl?: string;
   // Public origin share links are built from — the ride domain (e.g. https://ride.ceylonhop.com),
   // which is a second custom domain on this same service. Unset = use the request's own host.
   shareBaseUrl?: string;
@@ -345,7 +347,10 @@ export function createApp(deps: AppDeps = {}) {
     allowedOrigins,
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
-    payBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    // PAY_BASE_URL first: the pay domain when one is configured, else the customer site as
+    // before. Only the pay/manage links move — emails and the PayHere return_url keep
+    // APP_BASE_URL, which is the whole reason this is a separate variable.
+    payBaseUrl: deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: bookingLinkSecret,
     payhereMode,
   }));

@@ -31,6 +31,14 @@ const Env = z.object({
   // (e.g. https://ride.ceylonhop.com), a second custom domain on this same service.
   // Unset: links are built from whichever host the request arrived on.
   SHARE_BASE_URL: z.string().default(''),
+  // Public origin the CUSTOMER pay/manage links are built from — the pay domain
+  // (e.g. https://pay.ceylonhop.com), a second custom domain on this same service, same
+  // pattern as SHARE_BASE_URL above. Deliberately NOT APP_BASE_URL: that one also drives
+  // the site links in three emails and PayHere's return_url/cancel_url, so repointing it to
+  // move a payment link would drag all of that onto the pay domain too. A customer-facing
+  // link reading ops.<domain> is what prompted this (owner, 2026-07-31).
+  // Unset: falls back to APP_BASE_URL, i.e. exactly the behaviour before this existed.
+  PAY_BASE_URL: z.string().default(''),
   // Browser origins allowed to call the API (comma-separated). The live site + local dev.
   ALLOWED_ORIGINS: z
     .string()
