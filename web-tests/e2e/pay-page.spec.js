@@ -112,17 +112,32 @@ test('paid: keepsake with reference, no way to pay again', async ({ page }) => {
   await expect(page.locator('.next')).toContainText('What happens next');
 });
 
-test('revised and unavailable: soft states, no button, nothing charged', async ({ page }) => {
-  await stubView(page, { state: 'revised' });
-  await page.goto(PAGE);
-  await expect(page.locator('.st-title')).toContainText('This quote has been updated');
-  await expect(page.locator('#paybtn')).toHaveCount(0);
+test('revised and unavailable share the sailed-off screen: facts, WhatsApp, no leak', async ({ page }) => {
+  for (const state of ['revised', 'unavailable']) {
+    await page.unrouteAll();
+    await stubView(page, { state });
+    await page.goto(PAGE);
+    // The 404-sibling screen (spec 2026-07-31): eyebrow → pun headline → lead → WhatsApp.
+    await expect(page.locator('.de-eyebrow')).toContainText('no longer active');
+    await expect(page.locator('h1.de-title')).toContainText('This quote has sailed off somewhere sunny');
+    await expect(page.locator('.de-lead')).toContainText('Nothing has been charged');
+    await expect(page.locator('a.btn-wa')).toHaveAttribute('href', 'https://wa.me/94779669662');
+    await expect(page.locator('svg.de-art')).toBeVisible(); // the boat scene
+    await expect(page.locator('#paybtn')).toHaveCount(0);   // never re-offer Pay
+    // Privacy: a dead-end must not leak quote data the API deliberately withholds.
+    const body = await page.locator('body').innerText();
+    expect(body).not.toContain('$');
+    expect(body).not.toContain('LKR');
+  }
+});
 
-  await page.unrouteAll();
+test('sailed-off screen animation is guarded for reduced motion', async ({ page }) => {
   await stubView(page, { state: 'unavailable' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(PAGE);
-  await expect(page.locator('.st-title')).toContainText('no longer active');
-  await expect(page.locator('body')).toContainText('WhatsApp');
+  const anim = await page.locator('svg.de-art .sail').first()
+    .evaluate((el) => getComputedStyle(el).animationName);
+  expect(anim).toBe('none');
 });
 
 test('continuing shows the PayHere interstitial; a failure restores the typed form', async ({ page }) => {
