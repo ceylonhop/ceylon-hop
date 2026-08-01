@@ -1693,6 +1693,11 @@ async function createApiBooking(){
       extras: state.addons.size ? Array.from(state.addons) : undefined
     };
   }
+  // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
+  // client-side only and recorded nothing, so a refund dispute had no evidence either way;
+  // the API now requires this and stamps terms_accepted_at on the booking. The #agree gate
+  // above already blocks submission, so reaching here means it is ticked.
+  payload.termsAccepted = true;
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);
