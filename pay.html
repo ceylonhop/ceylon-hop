@@ -16,7 +16,9 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js"></script>
-<script src="consent.js" defer></script>
+<!-- No consent.js here (owner, 2026-08-01): a customer mid-payment is not the audience
+     for a cookie banner, and it overlaid the CTA. The head's Consent Mode default is
+     'denied' and nothing on this page grants, so no banner ≠ tracking. -->
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
@@ -331,7 +333,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       whatsapp: parts.whatsapp,
       country: parts.country,
     };
-    renderLoading();
+    // Owner call (2026-08-01): the wait for /start + /checkout stays ON THE BUTTON — the
+    // form remains visible and the customer keeps their context. On a cold API the old
+    // full-screen interstitial blocked them behind a takeover for seconds. The takeover
+    // now appears only at the moment the PayHere window actually opens (below), where
+    // "don't close this page" is true and the amount belongs.
+    var goBtn = document.getElementById('gobtn');
+    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Opening secure payment…'; }
     fetch(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ t: t, customer: customer }),
@@ -361,6 +369,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       payhere.onCompleted = function(){ awaitSettle(); };
       payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged. Tap to try again.'); };
       payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
+      // NOW the takeover is honest: the PayHere window is opening this instant.
+      renderLoading();
       payhere.startPayment(payment);
     }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
   }
