@@ -229,6 +229,16 @@ describe('ops bookings endpoints', () => {
     expect((await detail(bid)).payLink).toBeNull();
   });
 
+  // Owner-caught (2026-08-01): with the pay domain configured, the drawer's payment link
+  // still read ops.<domain>/manage.html. PR #234 moved the QUOTE pay link onto PAY_BASE_URL
+  // but opsRoutes' baseUrl stayed on APP_BASE_URL — the two mints must resolve identically.
+  it('the payment link leaves the ops host when a pay origin is configured', async () => {
+    const app2 = createApp({ bookings, rideOps, auth, adminApiKey: 'adminkey', payBaseUrl: 'https://pay.example' });
+    const res = await app2.request(`/admin/ops/bookings/${bid}`, { headers: await hdr() });
+    const { payLink } = await res.json();
+    expect(payLink).toMatch(/^https:\/\/pay\.example\/manage\.html\?t=/);
+  });
+
   it('has no coordinator, manifest, or rides routes', async () => {
     for (const path of ['/admin/ops/coordinators', '/admin/ops/manifest', '/admin/ops/rides']) {
       const res = await app.request(path, { headers: await hdr() });

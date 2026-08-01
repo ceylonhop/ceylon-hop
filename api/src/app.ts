@@ -314,10 +314,18 @@ export function createApp(deps: AppDeps = {}) {
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
   app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
+  // The one pay-origin resolution, shared by BOTH customer-link mints (the ops drawer's
+  // manage.html payment link below, and the quote pay.html link in internalQuoteRoutes).
+  // PAY_BASE_URL first: the pay domain when one is configured, else the customer site as
+  // before. Only the pay/manage links move — emails and the PayHere return_url keep
+  // APP_BASE_URL, which is the whole reason this is a separate variable. Owner-caught
+  // (2026-08-01): #234 moved only the quote link; the drawer's payment link kept reading
+  // ops.<domain>/manage.html — the two must never resolve differently again.
+  const payBaseUrl = deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL;
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
     email, notificationLog, rideLists,
-    baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
@@ -347,10 +355,7 @@ export function createApp(deps: AppDeps = {}) {
     allowedOrigins,
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
-    // PAY_BASE_URL first: the pay domain when one is configured, else the customer site as
-    // before. Only the pay/manage links move — emails and the PayHere return_url keep
-    // APP_BASE_URL, which is the whole reason this is a separate variable.
-    payBaseUrl: deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
     linkSecret: bookingLinkSecret,
     payhereMode,
   }));
