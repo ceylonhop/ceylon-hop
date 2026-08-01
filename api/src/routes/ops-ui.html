@@ -5277,7 +5277,8 @@ function renderLegCard(leg, idx, total) {
   // ride: "+ Stop" inserts a new empty stop BEFORE the last one; "Return to start"
   // appends a copy of stops[0] (pure sugar — rendered only while stops[0] is set and
   // the ride doesn't already end back there); both hidden at the 8-stop wire cap.
-  // "+ Fees" (point-to-point only) opens the add-ons tray — a solid orange pill names
+  // "+ Fees" (any non-chauffeur, non-stay leg — multi-stop included, since a stop may be a
+  // pickup rather than sightseeing) opens the add-ons tray — a solid orange pill names
   // the active ones. The route chip right-aligns as the leg's one stateful readout.
   var tools = [];
   if (!isStay) {
