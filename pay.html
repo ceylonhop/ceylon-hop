@@ -135,11 +135,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <ellipse cx="72" cy="140" rx="15" ry="6" transform="rotate(-68 72 140)"/>
         <ellipse cx="84" cy="156" rx="15" ry="6" transform="rotate(60 84 156)"/>
       </g>
-      <g class="pin" transform="translate(142,164)">
+      <!-- position on the outer g, animation on the inner: the CSS bob animates the
+           transform property, which would override an attribute transform on the same
+           node (the sun and boat already nest for exactly this reason). NOTE: this
+           markup lives in a JS template literal - no backticks in comments. -->
+      <g transform="translate(142,164)"><g class="pin">
         <path d="M0 26 C-13 8 -15 -4 0 -12 C15 -4 13 8 0 26 Z" fill="#ef6a4a"/>
         <circle cx="0" cy="-1" r="7.5" fill="#fff"/>
         <text x="0" y="3" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="11" fill="#ef6a4a">?</text>
-      </g>
+      </g></g>
     </g>
     <g transform="translate(312,212)"><g class="sail">
       <path d="M-22 6 L22 6 L13 18 L-13 18 Z" fill="#fffdf8" stroke="#d8c193" stroke-width="2"/>
