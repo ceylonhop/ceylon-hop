@@ -14,7 +14,7 @@
 
 - **No price changes.** Every total must be identical before and after, in every task. $10 per ticked private leg, $0 on chauffeur. Do not edit `rateCard.ts`; do not run `npm run generate`.
 - **No schema/migration changes.** Leg flags already persist as booleans.
-- **`goldens.test.ts` must stay green without rebaselining.** A moved golden means the normalization is not behaviour-preserving — stop and report, do not update the golden.
+- **Goldens are frozen, with exactly one sanctioned exception.** `chauffeur_van_span_idle` re-pins in Task 3 (both its `quote()` and `quoteBreakdown()` snapshots), because owner decision D2 deliberately removes the `Sightseeing stops (up to 3h) (included)` row it contains. **The only permitted difference is that row's removal** — `subtotalCents` 53522, `totalCents` 52900, `depositCents` 5000, `marginEstimateCents` 6359, `amountDueNowCents` 52900 and the `sightseeing included in chauffeur day rate` warning must all be byte-identical. **Every other golden must not move at all**, including the private `extras: ['sightseeing','waiting']` case — a movement there means the normalization is not behaviour-preserving: stop and report, do not update it.
 - **Extras line items must be pushed after travel line items.** `ops-ui.html` splits `lineItems` into travel-vs-extras by "the first N are the driving legs".
 - **Applies to all three toggles:** `addSightseeingFee`, `addWaitingFee`, `addSafariWait`.
 - **Do not touch** `booking.html`, `booking.js`, `transfers-data.js`, `notifications.ts`, or `rateCard.ts`.
@@ -380,15 +380,34 @@ import { priceExtras, depositCents } from './extrasDeposit';
 - [ ] **Step 4: Run to verify they pass**
 
 ```bash
-cd api && npx vitest run src/quote/engine.test.ts src/quote/goldens.test.ts
+cd api && npx vitest run src/quote/engine.test.ts
 ```
 
 Expected: PASS. If lint flags an unused import, that is Step 3's `EXTRA_LABELS` removal not being applied.
 
+- [ ] **Step 4b: Re-pin the one sanctioned golden**
+
+`goldens.test.ts` now fails on `chauffeur_van_span_idle` — expected, per Global Constraints. Inspect the failure BEFORE updating:
+
+```bash
+cd api && npx vitest run src/quote/goldens.test.ts
+```
+
+The reported diff must be **only** the removal of the `Sightseeing stops (up to 3h) (included)` / `amountCents: 0` entry. If any money field differs, or any other golden fails, **stop and report** — do not update.
+
+Once confirmed, re-pin and verify the committed diff:
+
+```bash
+cd api && npx vitest run src/quote/goldens.test.ts -u
+git diff -- src/quote/__snapshots__/goldens.test.ts.snap
+```
+
+The `git diff` must show only deleted lines for that one row, in the two `chauffeur_van_span_idle` snapshots. No changed numbers anywhere.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/quote/engine.ts api/src/quote/engine.test.ts
+git add api/src/quote/engine.ts api/src/quote/engine.test.ts api/src/quote/__snapshots__/goldens.test.ts.snap
 git commit -m "feat(quote): chauffeur no longer prints \$0 (included) extras rows"
 ```
 
