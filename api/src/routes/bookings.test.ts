@@ -31,6 +31,30 @@ function post(
   });
 }
 
+
+// Terms acceptance is RECORDED on website bookings (2026-08-01). The wizard's checkbox was
+// client-side only and stored nothing, so a refund dispute — especially on a chauffeur trip,
+// where cancelling 9 days out caps the refund at 80% — had no evidence either way.
+describe('terms acceptance is recorded on website bookings', () => {
+  it('stamps when the customer accepted, and leaves it null when they never did', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const post = (body: unknown) =>
+      app.request('/bookings/single', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+
+    const accepted = await (await post({ ...valid, termsAccepted: true })).json();
+    const stamped = await bookings.get(accepted.id);
+    expect(stamped?.termsAcceptedAt).toBeTruthy();
+    expect(new Date(stamped!.termsAcceptedAt!).getTime()).toBeGreaterThan(0);
+
+    // Absence must read as "never recorded" — never as a fabricated acceptance.
+    const silent = await (await post(valid)).json();
+    expect((await bookings.get(silent.id))?.termsAcceptedAt).toBeNull();
+  });
+});
+
 describe('POST /bookings/single', () => {
   it('creates a draft (201) with reference and total', async () => {
     const app = createApp();
