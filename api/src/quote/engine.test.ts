@@ -410,3 +410,51 @@ describe('invariants', () => {
     });
   }
 });
+
+describe('private extras attribution', () => {
+  const threeLegs = {
+    product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 2,
+    legs: [
+      { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      { from: 'Ella', to: 'Yala', distanceKm: 100 },
+    ],
+  };
+
+  it('names the leg each extra belongs to', () => {
+    const r = quote({ ...threeLegs, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    const extra = r.lineItems.find((li) => li.meta && (li.meta as { kind?: string }).kind === 'extra');
+    expect(extra?.label).toBe('Sightseeing stops (up to 3h) — Kandy → Ella');
+    expect(extra?.amountCents).toBe(1000);
+  });
+
+  it('two ticked legs produce two DIFFERENTLY named rows', () => {
+    const r = quote({
+      ...threeLegs,
+      extras: [{ code: 'sightseeing', legIndex: 0 }, { code: 'sightseeing', legIndex: 2 }],
+    });
+    const labels = r.lineItems
+      .filter((li) => li.meta && (li.meta as { kind?: string }).kind === 'extra')
+      .map((li) => li.label);
+    expect(labels).toEqual([
+      'Sightseeing stops (up to 3h) — Colombo → Kandy',
+      'Sightseeing stops (up to 3h) — Ella → Yala',
+    ]);
+  });
+
+  it('attribution does not change the total', () => {
+    const bare = quote({ ...threeLegs, extras: ['sightseeing'] });
+    const attributed = quote({ ...threeLegs, extras: [{ code: 'sightseeing', legIndex: 1 }] });
+    expect(attributed.totalCents).toBe(bare.totalCents);
+  });
+
+  it('extras line items come AFTER every travel line item', () => {
+    const r = quote({
+      ...threeLegs,
+      extras: [{ code: 'sightseeing', legIndex: 0 }, { code: 'waiting', legIndex: 1 }],
+    });
+    const firstExtra = r.lineItems.findIndex((li) => (li.meta as { kind?: string } | undefined)?.kind === 'extra');
+    const lastTravel = r.lineItems.map((li) => 'billableKm' in ((li.meta ?? {}) as object)).lastIndexOf(true);
+    expect(firstExtra).toBeGreaterThan(lastTravel);
+  });
+});

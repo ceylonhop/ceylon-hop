@@ -62,7 +62,11 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     // p.perRideBoost is 1 for every ride at zero zones ⇒ byte-identical to the pre-hot-zones cost.
     costCents += rides.reduce((s, r, i) => s + Math.round(billableKm(rideRawKm(r), rateCard) * costPerKm * p.perRideBoost[i]), 0);
     if (req.extras?.length) {
-      const e = priceExtras(req.extras, rateCard);
+      // Name each attributed extra after the ride it belongs to, using the SAME
+      // stops.join(' → ') that quotePrivateLegs uses for the travel row, so the two
+      // rows read as a matched pair. Pushed after the travel items on purpose —
+      // ops-ui splits lineItems by "the first N are the driving legs".
+      const e = priceExtras(req.extras, rateCard, rides.map((r) => r.stops.join(' → ')));
       lineItems.push(...e.lineItems);
       subtotalCents += e.subtotalCents;
     }
