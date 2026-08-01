@@ -393,6 +393,11 @@ export class PostgresQuoteRepo implements QuoteRepo {
         internalNotes: q.internalNotes ?? null,
         requestedService: q.requestedService ?? null,
         ...(q.updatedBy !== undefined ? { updatedBy: q.updatedBy ?? null } : {}),
+        // Editing someone else's quote takes it over (2026-08-01). Conditional, so an ordinary
+        // content save — which omits the field — leaves the holder exactly as it was.
+        ...(q.assignedTo !== undefined
+          ? { assignedTo: q.assignedTo ?? null, assignedAt: q.assignedTo ? new Date() : null }
+          : {}),
         // A content write is a NEW REVISION, and whatever is holding the old one must be able
         // to tell. Pay links pin {quoteId, revision}; the bump is what lets quotePay.ts refuse a
         // link minted against a price that has since changed. Unconditional on purpose — this is
