@@ -47,6 +47,10 @@ export const bookings = pgTable(
     billingAddress: text('billing_address'),
     billingCity: text('billing_city'),
     billingCountry: text('billing_country'),
+    // When the customer accepted the terms + the cancellation policy for their product
+    // (2026-08-01). A timestamp, not a boolean: a refund dispute asks *when*. Null on website
+    // bookings and every pre-existing row — back-filling would be inventing consent.
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     // The engine could not price this booking, so `total` is a placeholder and checkout must
     // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
     needsPricing: boolean('needs_pricing'),

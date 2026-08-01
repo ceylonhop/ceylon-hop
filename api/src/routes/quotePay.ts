@@ -29,7 +29,16 @@ type PayState = 'paid' | 'revised' | 'payable' | 'unavailable';
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
 // worse at the gateway than none at all.
-const StartSchema = z.object({ t: z.string(), customer: CustomerInput, billing: BillingInput.optional() }).strict();
+// `termsAccepted` must be literally true — the customer is agreeing to a cancellation policy
+// that, for a chauffeur trip, caps their refund the moment they are inside 10 days. A
+// client-side checkbox alone leaves no evidence, which is exactly what a refund dispute asks
+// for; the acceptance timestamp is recorded on the booking.
+const StartSchema = z.object({
+  t: z.string(),
+  customer: CustomerInput,
+  billing: BillingInput.optional(),
+  termsAccepted: z.literal(true),
+}).strict();
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
@@ -161,9 +170,9 @@ export function quotePayRoutes(deps: {
     const newBooking: NewBooking =
       mapped.mode === 'single'
         ? { mode: 'single', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
-            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing }
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() }
         : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
-            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing };
+            currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() };
 
     const created = await deps.bookings.create(newBooking, { idempotencyKey });
     let booking = created;
