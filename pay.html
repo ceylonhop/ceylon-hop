@@ -49,6 +49,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dt-chk input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
   .dt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .dt-2col[hidden]{display:none}
+  .dt-terms{padding-top:12px;margin-top:2px;border-top:1px solid var(--line);align-items:flex-start}
+  .dt-terms a{color:var(--accent-deep);font-weight:700}
+  .dt-terms b{display:block;font-weight:600;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
+  .dt-pol{margin:2px 2px 4px}
+  .dt-pol summary{font-size:.75rem;color:var(--accent-deep);font-weight:700;cursor:pointer;list-style:none}
+  .dt-pol summary::-webkit-details-marker{display:none}
+  .dt-pol summary:after{content:' \25BE'}
+  .dt-pol[open] summary:after{content:' \25B4'}
+  .dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
@@ -232,6 +241,29 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return best;
   }
   // Split a prefilled international number into { country, number } for the widget.
+  // Cancellation policy, per product (terms.html §7). The two ladders are genuinely different
+  // — a chauffeur trip is already capped at 80% ten days out, where a transfer is still fully
+  // refundable up to 24 hours before. Showing the wrong one at the moment of payment would be
+  // worse than showing none, so this switches on the product the server told us about.
+  // The headline rule is ALWAYS visible; the full ladder is one tap away (native <details>,
+  // which works on touch, with a keyboard, and in a screen reader — a tooltip does none).
+  function cancellationPolicy(product){
+    if (product === 'chauffeur') {
+      return {
+        headline: 'Free cancellation until 10 days before your trip starts.',
+        rows: ['10–8 days before: 80% refund',
+               '7–3 days before: 60% refund',
+               '2 days–24 hours before: 40% refund',
+               'Within 24 hours, a no-show, or after the trip begins: no refund'],
+      };
+    }
+    return {
+      headline: 'Free cancellation until 24 hours before departure.',
+      rows: ['More than 24 hours before departure: full refund, unlimited changes',
+             'Within 24 hours, a no-show, or after departure: no refund'],
+    };
+  }
+
   // Billing country options. Reuses the phone list's country NAMES (not dial codes) so the
   // two selects can't disagree about spelling, and defaults to the phone country — right far
   // more often than not, and still editable.
@@ -285,6 +317,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
       split = { country: typed.country, number: typed.phone };
     }
+    var pol = cancellationPolicy(data.copy.product);
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
     var options = ordered.map(function(c){
       return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
@@ -315,6 +348,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +   '<div class="fld"><label for="f-city">City</label><input id="f-city" type="text" value="' + esc((typed && typed.city) || '') + '" placeholder="e.g. Amsterdam" autocomplete="billing address-level2" /></div>'
       +   '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
       + '</div>'
+      + '<label class="dt-chk dt-terms"><input id="f-terms" type="checkbox"' + (typed && typed.terms ? ' checked' : '') + ' />'
+      +   '<span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a>.'
+      +   '<b>' + esc(pol.headline) + '</b></span></label>'
+      + '<details class="dt-pol"><summary>See the full cancellation policy</summary><ul>'
+      +   pol.rows.map(function(rw){ return '<li>' + esc(rw) + '</li>'; }).join('')
+      + '</ul></details>'
       + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
@@ -369,6 +408,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       billDiffers: document.getElementById('f-diffbill').checked,
       billFirst: (document.getElementById('f-bfirst').value || '').trim(),
       billLast: (document.getElementById('f-blast').value || '').trim(),
+      terms: document.getElementById('f-terms').checked,
     };
     if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
     // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
@@ -376,6 +416,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!typed.address) { fail('Please enter your billing address.'); return; }
     if (!typed.city) { fail('Please enter your billing city.'); return; }
     if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
+    if (!typed.terms) { fail('Please accept the terms & cancellation policy to continue.'); return; }
     if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
       fail('Please enter the cardholder’s first and last name.'); return;
     }
@@ -399,7 +440,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Opening secure payment…'; }
     fetch(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t: t, customer: customer, billing: billing }),
+      body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
     }).then(function(r){
       if (r.ok) return r.json();
       return r.json().catch(function(){ return {}; }).then(function(x){

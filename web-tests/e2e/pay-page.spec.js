@@ -159,6 +159,7 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   await page.locator('#f-addr').fill('Prinsengracht 263');
   await page.locator('#f-city').fill('Amsterdam');
   await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
 
   // While the API works: the FORM stays put, the button carries the wait — no takeover.
@@ -186,6 +187,7 @@ test('the interstitial appears only when the PayHere window actually opens', asy
   await page.locator('#f-addr').fill('Prinsengracht 263'); // billing is required since 2026-08-01
   await page.locator('#f-city').fill('Amsterdam');
   await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
   // payhere.startPayment is the page-load stub (a no-op): the popup "opened", so the
   // interstitial must now hold the screen — this is the only moment it may appear.
@@ -218,6 +220,7 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
   await expect(page.locator('#billnames')).toBeVisible();
   await page.locator('#f-bfirst').fill('Anja');
   await page.locator('#f-blast').fill('de Vries');
+  await page.locator('#f-terms').check();
 
   await page.locator('#gobtn').click();
   await expect.poll(() => sent?.billing?.city).toBe('Amsterdam');
@@ -227,6 +230,36 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
   });
   // The lead passenger is untouched — billing belongs to the transaction, not the traveller.
   expect(sent.customer.firstName).toBe('Nimal');
+});
+
+test('the cancellation policy shown matches the product, and terms gate the payment', async ({ page }) => {
+  // The two ladders are genuinely different — a chauffeur trip is capped at 80% ten days out,
+  // where a transfer is fully refundable until 24 hours before. Showing the wrong one at the
+  // moment of payment would be worse than showing none.
+  await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('.dt-terms')).toContainText('Free cancellation until 10 days before');
+  await expect(page.locator('.dt-pol')).toContainText('80% refund');
+  await expect(page.locator('.dt-pol')).toContainText('40% refund');
+  // The headline is visible without interaction; the ladder is one tap away, not a hover.
+  await expect(page.locator('.dt-pol ul')).toBeHidden();
+  await page.locator('.dt-pol summary').click();
+  await expect(page.locator('.dt-pol ul')).toBeVisible();
+
+  // Terms are required — continuing without them names the reason.
+  await page.locator('#f-addr').fill('Prinsengracht 263');
+  await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#gobtn').click();
+  await expect(page.locator('#payerr')).toContainText('terms');
+
+  await page.unrouteAll();
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('.dt-terms')).toContainText('Free cancellation until 24 hours before');
+  await expect(page.locator('.dt-pol')).not.toContainText('80%'); // never the chauffeur ladder
 });
 
 test('the payment page shows no cookie banner', async ({ page }) => {

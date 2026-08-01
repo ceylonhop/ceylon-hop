@@ -81,6 +81,7 @@ export class PostgresBookingRepo implements BookingRepo {
             country: row.billingCountry ?? '',
           }
         : null,
+      termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -203,6 +204,7 @@ export class PostgresBookingRepo implements BookingRepo {
           billingAddress: b.billing?.address ?? null,
           billingCity: b.billing?.city ?? null,
           billingCountry: b.billing?.country ?? null,
+          termsAcceptedAt: b.termsAcceptedAt ?? null,
         })
         .returning();
       if (b.mode === 'trip') {

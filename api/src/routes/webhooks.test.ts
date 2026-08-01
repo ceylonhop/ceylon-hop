@@ -511,7 +511,7 @@ describe('settlement claims the quote (pay links)', () => {
     const t = signQuotePayToken(q.id, (await quotes.get(q.id))!.revision, 'test-link-secret');
     const started = await (await app.request('/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t, customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' } }),
+      body: JSON.stringify({ t, customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' }, termsAccepted: true }),
     })).json();
     await app.request(`/bookings/${started.bookingId}/checkout`, {
       method: 'POST', headers: { authorization: `Bearer ${started.checkoutToken}` },
