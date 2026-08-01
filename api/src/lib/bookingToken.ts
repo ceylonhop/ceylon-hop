@@ -78,3 +78,28 @@ export function verifyCheckoutToken(
     nowMs < (parsed.exp as number) * 1000
   );
 }
+
+// ── Quote pay link token (spec D7, 2026-07-31) ────────────────────────────────────────
+// A bearer capability over ONE quote at ONE revision. Same signing primitive and secret
+// as the booking/checkout tokens, but a disjoint `purpose`, so the three token kinds can
+// never be replayed for each other. Deliberately NO expiry field: the link is payable
+// only while the quote is ready|sent, so quote expiry/loss/deletion kills it — and the
+// pinned revision means a quote edited after sending renders the "quote updated" state
+// rather than silently charging a changed price.
+
+export function signQuotePayToken(quoteId: string, revision: number, secret: string): string {
+  return signedBody({ v: 1, purpose: 'quote-pay', q: quoteId, r: revision }, secret);
+}
+
+export function verifyQuotePayToken(
+  token: string | undefined,
+  secret: string,
+): { quoteId: string; revision: number } | null {
+  const parsed = verifiedPayload(token, secret) as {
+    v?: unknown; purpose?: unknown; q?: unknown; r?: unknown;
+  } | null;
+  if (!parsed || parsed.v !== 1 || parsed.purpose !== 'quote-pay') return null;
+  if (typeof parsed.q !== 'string' || parsed.q.length === 0) return null;
+  if (typeof parsed.r !== 'number' || !Number.isInteger(parsed.r) || parsed.r < 1) return null;
+  return { quoteId: parsed.q, revision: parsed.r };
+}

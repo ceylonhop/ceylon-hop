@@ -23,7 +23,7 @@ import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
-import { releaseWonQuote } from '../services/quoteOutcome';
+import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundRepo } from '../db/refundRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
@@ -312,6 +312,10 @@ export function adminRoutes(deps: {
       // money is recorded either way, so report the booking as it now stands, not a 500.
       paid = (await bookings.get(booking.id)) ?? booking;
     }
+
+    // Cash landing wins the quote exactly like a webhook settle does (pay-link flow) —
+    // an ops agent recording a bank transfer after sending a link is the same money.
+    await claimWonQuote(booking.id, deps);
 
     // Audit trail: who took the money, how, and against what reference. It goes in the ops
     // notes because that is what the booking sheet's activity list renders (one note per line);

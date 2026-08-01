@@ -140,3 +140,31 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
     },
   };
 }
+
+// Would quoteToBooking accept this quote?
+//
+// The mint route needs to know BEFORE handing a link to a customer, because the alternative
+// is what the owner hit while testing (2026-07-31): a page that renders as fully payable and
+// then answers 409 `quote_unavailable` the moment Continue is tapped — a dead end in front of
+// a paying customer, with nothing the ops team can see.
+//
+// Deliberately implemented by running the real mapping against a placeholder booking detail
+// rather than re-checking `legs.length` / `travelDays.length` here. A second copy of the rule
+// is a second thing to drift; this way "mintable" is defined as "pay-commit would succeed",
+// by construction.
+const BOOKABILITY_PROBE: BookingDetails = {
+  customer: { firstName: 'x', lastName: 'x', email: 'x@x.x', whatsapp: 'x', country: 'x' },
+  vehicleType: 'car',
+  pax: 1,
+  bags: 0,
+};
+
+export function isQuoteBookable(quote: SavedQuote): boolean {
+  try {
+    quoteToBooking(quote, BOOKABILITY_PROBE);
+    return true;
+  } catch (e) {
+    if (e instanceof QuoteNotBookableError) return false;
+    throw e; // a real fault — never silently read as "not bookable"
+  }
+}

@@ -224,9 +224,31 @@ body[data-page="home"] .nav:not(.scrolled) .brand{color:#fff}
 .nav.on-dark.scrolled{color:var(--ink)}
 .nav.on-dark.scrolled .brand{color:var(--ink)}
 
-.mobile-menu{display:none;position:fixed;inset:74px 0 0;background:var(--cream);z-index:55;padding:30px 24px;flex-direction:column;gap:6px}
-.mobile-menu.open{display:flex}
-.mobile-menu a{font-family:var(--display);font-size:1.7rem;font-weight:700;padding:.5rem 0;border-bottom:1px solid var(--line)}
+/* The menu used to be display:none → flex, which cannot transition: on a phone — the only place
+   it exists — a full-screen surface replaced the page in a single frame with no sense of where
+   it came from. It is position:fixed and therefore out of flow, so it can stay laid out and be
+   hidden by visibility/opacity instead, which CAN travel. pointer-events guards the closed state
+   so an invisible panel never eats a tap, and the delayed `visibility` keeps it in the
+   accessibility tree only while it is genuinely on screen. */
+.mobile-menu{display:flex;position:fixed;inset:74px 0 0;background:var(--cream);z-index:55;padding:30px 24px;flex-direction:column;gap:6px;
+  opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-10px);
+  transition:opacity .2s ease,transform .28s cubic-bezier(.22,.75,.3,1),visibility 0s linear .28s}
+.mobile-menu.open{opacity:1;visibility:visible;pointer-events:auto;transform:none;
+  transition:opacity .2s ease,transform .28s cubic-bezier(.22,.75,.3,1),visibility 0s}
+/* Links stagger in behind the panel so the menu reads as unfolding rather than cutting. */
+.mobile-menu a{font-family:var(--display);font-size:1.7rem;font-weight:700;padding:.5rem 0;border-bottom:1px solid var(--line);
+  opacity:0;transform:translateY(-6px);transition:opacity .22s ease,transform .28s cubic-bezier(.22,.75,.3,1)}
+.mobile-menu.open a{opacity:1;transform:none}
+.mobile-menu.open a:nth-child(1){transition-delay:.04s}
+.mobile-menu.open a:nth-child(2){transition-delay:.07s}
+.mobile-menu.open a:nth-child(3){transition-delay:.10s}
+.mobile-menu.open a:nth-child(4){transition-delay:.13s}
+.mobile-menu.open a:nth-child(5){transition-delay:.16s}
+.mobile-menu.open a:nth-child(6){transition-delay:.19s}
+@media(prefers-reduced-motion:reduce){
+  /* Still hidden when closed and shown when open — just without the travel. */
+  .mobile-menu,.mobile-menu a,.mobile-menu.open a{transition:none;transform:none}
+}
 @media(max-width:880px){
   .nav-links{display:none}
   .nav-cta .btn:not(.nav-burger){display:none}
@@ -557,3 +579,70 @@ body::after{
   display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:.9rem}
 .ch-consent p{margin:0;flex:1 1 240px}
 .ch-consent-btns{display:flex;gap:8px;margin-left:auto}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   PRESS FEEDBACK
+   The site answered a hover on every control and a press on almost none: the only
+   :active rule was .btn's 1px nudge, which never reached the datepicker days, the
+   place-suggestion rows, the chips, or any of the per-page buttons. booking.html —
+   the whole checkout, Pay button included — had none at all.
+
+   That gap is invisible on a laptop and total on a phone, where hover doesn't
+   exist: most of a booking is made by tapping controls that, until the next paint,
+   gave no sign they had been touched. On a Sri Lankan mobile connection that gap
+   is exactly where a traveller taps twice.
+
+   Small on purpose — 1px and a shadow that settles, matching .btn's existing press
+   rather than inventing a second louder one. Grouped generically so new controls
+   inherit it. Loaded on every page, so this is the one place it's defined.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Immediate taps: no 300ms double-tap-zoom wait, and our own quiet flash instead
+   of the browser's grey box. */
+button, [role="button"], .btn, .chip, .dp-day, .dp-btn, .dp-nav, .place-option,
+.ac-item, .cal-day, .svc, .tpl-chip, .pax-pill, .lcard, .gbtn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(10,185,182,.12);
+}
+
+/* Buttons and button-like controls. :not(:disabled) so a blocked control stays
+   blocked — movement under the finger is the one thing that reads as "that worked". */
+button:active:not(:disabled),
+.btn:active:not(:disabled),
+.dp-btn:active, .dp-nav:active:not(:disabled),
+.chip:active, .tpl-chip:active, .pax-pill:active, .gbtn:active,
+.add-stop-btn:active, .rb-swap:active, .cx-btn:active, .jnav:active {
+  transform: translateY(1px);
+  transition-duration: .05s;
+}
+/* .btn's hover lifts it 2px, so without an explicit rule a press would read as a
+   smaller lift rather than a push. Land it level. */
+.btn-primary:active:not(:disabled), .btn-cta:active:not(:disabled),
+.btn-ghost:active:not(:disabled), .btn-light:active:not(:disabled),
+.btn-wa:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 4px 10px -6px rgba(0,0,0,.35);
+}
+/* List rows — suggestions, calendar days, service options, ride cards. These are
+   choices rather than commands, so they take a background settle instead of travel:
+   a row that moves under the finger while a menu is open feels unstable. */
+.place-option:active, .ac-item:not(.loading):active, .dp-day:active:not(:disabled),
+.cal-day:active:not(.disabled), .svc:active, .lcard:active, .slot:active {
+  filter: brightness(.96);
+  transition-duration: .05s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Feedback isn't decoration — swap the travel for a static tint rather than
+     dropping the response entirely. */
+  button:active:not(:disabled), .btn:active:not(:disabled), .chip:active,
+  .dp-btn:active, .dp-nav:active:not(:disabled), .tpl-chip:active,
+  .pax-pill:active, .gbtn:active, .add-stop-btn:active, .rb-swap:active,
+  .cx-btn:active, .jnav:active,
+  .btn-primary:active:not(:disabled), .btn-cta:active:not(:disabled),
+  .btn-ghost:active:not(:disabled), .btn-light:active:not(:disabled),
+  .btn-wa:active:not(:disabled) {
+    transform: none;
+    filter: brightness(.94);
+  }
+}

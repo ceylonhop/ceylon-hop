@@ -90,6 +90,67 @@ test('a typed-and-blurred leg resolves distance like a pick — no stale "No dis
   await expect(page.locator('.ch-flag', { hasText: 'Check distances' })).toHaveCount(0);
 });
 
+// Clearing a manual km must actually clear it (owner report 2026-07-31). The change handler's
+// anti-flicker guard compared the incoming value against `leg[field]`, but since the multi-stop
+// refactor the km lives in leg.segments[i].km — so `leg.distanceKm` was always undefined → ''.
+// Emptying the box therefore compared '' === '' and returned WITHOUT committing: no re-price,
+// and the leg kept quoting its old distance behind a blank field. Every leg on a reopened quote
+// renders this manual box, so this was the common way to hit it.
+test('clearing a manual km commits the clear and re-prices', async ({ page }) => {
+  await stubOps(page);
+  // Mirror the real server: a driving leg with no distance cannot be priced (resolveAndPrice
+  // 400s), so a committed clear must blank the price rather than leave the old one standing.
+  const estimates = [];
+  await page.route('**/admin/quote/estimate', (r) => {
+    const b = r.request().postDataJSON() || {};
+    estimates.push(b);
+    const km = (b.legs && b.legs[0] && b.legs[0].distanceKm) || 0;
+    if (!km) {
+      return r.fulfill({ status: 400, contentType: 'application/json',
+        body: JSON.stringify({ error: "couldn't find the distance for Colombo → Kandy — enter the km manually" }) });
+    }
+    const priceCents = km * 50;
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      total: { cents: priceCents, lkr: 'Rs 0' },
+      lineItems: [{ label: 'Colombo → Kandy', amountCents: priceCents, lkr: 'Rs 0' }],
+      breakdown: { km: { distanceKm: km, bufferKm: 0, billableKm: km }, legs: [{ priceCents }] },
+      fxUsdToLkr: 320, warnings: [],
+    }) });
+  });
+
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await fillBasics(page);
+
+  const from = '.ch-tl-title[data-field="stop"][data-stop="0"]';
+  const to = '.ch-tl-title[data-field="stop"][data-stop="1"]';
+  await expect(page.locator(from).first()).toBeVisible({ timeout: 10000 });
+  await page.locator(from).first().fill('Colombo');
+  await page.dispatchEvent(from, 'change');
+  await page.locator(to).first().fill('Kandy');
+  await page.dispatchEvent(to, 'change');
+  await expect(page.locator('.ch-dist-pill.auto').first()).toContainText('120 km', { timeout: 5000 });
+
+  // Take the leg to a manual distance of 200 km.
+  await page.locator('[data-action="manualDistance"]').first().click();
+  const kmBox = page.locator('[data-field="distanceKm"]').first();
+  await expect(kmBox).toBeVisible({ timeout: 5000 });
+  await kmBox.fill('200');
+  await page.dispatchEvent('[data-field="distanceKm"]', 'change');
+  await expect(page.locator('.ch-leg-price').first()).toContainText('$100.00', { timeout: 5000 });
+
+  // Now empty the box, exactly as an operator re-doing a distance would.
+  estimates.length = 0;
+  await kmBox.fill('');
+  await page.dispatchEvent('[data-field="distanceKm"]', 'change');
+
+  // The clear must reach state: a re-price fires, and it carries no distance for the leg.
+  await expect.poll(() => estimates.length, { timeout: 5000 }).toBeGreaterThan(0);
+  expect(estimates.at(-1).legs[0].distanceKm).toBe(0);
+  // …and the leg must not still be quoting the distance the operator just deleted.
+  await expect(page.locator('.ch-leg-price').first()).not.toContainText('$100.00', { timeout: 5000 });
+});
+
 test('the "Check distances" warning does not fire on a leg with no locations yet (D4)', async ({ page }) => {
   await stubOps(page);
   await page.goto(OPS_FILE + '#quote');

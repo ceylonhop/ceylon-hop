@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pay for your trip · Ceylon Hop</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0AB9B6">
+<link rel="icon" href="favicon.svg">
+<link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
+<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="ticket.css">
+<script>
+window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
+gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
+</script>
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<script src="analytics.js"></script>
+<script src="consent.js" defer></script>
+<script>
+window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
+window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
+</script>
+<script src="phone-countries.js"></script>
+<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<style>
+  /* pay.html-only. The shared travel-document design lives in ticket.css, which BOTH
+     customer pages load — see the note at the top of that file. */
+
+  /* the multi-leg rail now lives in ticket.css — shared with manage.html */
+
+  /* details step */
+  .dt-h{font-family:var(--display);font-weight:800;font-size:1.15rem;margin:0 0 2px}
+  .dt-sub{font-size:.8rem;color:var(--ink-soft);margin:0 0 12px}
+  .fld{margin-bottom:10px}
+  .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
+  .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
+  .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
+
+  /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
+  .de-wrap{text-align:center;padding:18px 0 8px}
+  .de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
+  .de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
+  .de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+  .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
+  .de-cta{margin-top:20px}
+  .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
+  @keyframes de-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+  @keyframes de-spin{to{transform:rotate(360deg)}}
+  @keyframes de-dash{to{stroke-dashoffset:-30}}
+  @keyframes de-pin{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @keyframes de-sail{0%,100%{transform:translate(0,0) rotate(-2deg)}50%{transform:translate(7px,-5px) rotate(2.5deg)}}
+  .de-art .bob{animation:de-bob 5.5s ease-in-out infinite}
+  .de-art .spin{animation:de-spin 40s linear infinite;transform-box:fill-box;transform-origin:center}
+  .de-art .dash{stroke-dasharray:6 9;animation:de-dash 2.6s linear infinite}
+  .de-art .pin{animation:de-pin 3.4s ease-in-out infinite}
+  .de-art .sail{animation:de-sail 4.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+  @media (prefers-reduced-motion:reduce){.de-art .bob,.de-art .spin,.de-art .dash,.de-art .pin,.de-art .sail{animation:none}}
+</style>
+</head>
+<body>
+<header class="pp-top"><div class="pp-topin">
+  <a class="pp-brand" href="index.html">
+    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <span class="pp-word">Ceylon Hop</span>
+  </a>
+  <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
+</div></header>
+<div class="pp-wrap"><div id="app"><p style="color:var(--ink-soft)">Loading your trip…</p></div></div>
+
+<script>
+(function(){
+  'use strict';
+  var app = document.getElementById('app');
+  var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
+  var t = new URLSearchParams(location.search).get('t');
+  var data = null;         // last /view payload
+  var booking = null;      // { bookingId, checkoutToken } once /start succeeds
+  var typed = null;        // raw form values, so a payment failure restores what they typed
+
+  function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
+  function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
+
+  // ── states ──────────────────────────────────────────────────────────────────────────
+  // One dead-end screen for both states (spec 2026-07-31, owner: "one option for now").
+  // Sibling of 404.html's island scene. Two functions kept so a later revised-specific
+  // screen ("a fresh link is on its way") is a copy change, not a refactor. No quote data
+  // renders here — the API returns a bare {state} for dead ends, on purpose.
+  var SAILED_OFF_ART = `<svg class="de-art" viewBox="0 0 480 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A little paper boat sailing away from the shore while the coral map pin watches">
+    <defs>
+      <radialGradient id="deSky" cx="50%" cy="30%" r="80%"><stop offset="0%" stop-color="#fdfbf3"/><stop offset="100%" stop-color="#e7f4f0"/></radialGradient>
+      <linearGradient id="deSea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a4ddd7"/><stop offset="100%" stop-color="#54c1ba"/></linearGradient>
+      <linearGradient id="deLand" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4e7c8"/><stop offset="100%" stop-color="#e7d1a1"/></linearGradient>
+    </defs>
+    <rect width="480" height="300" fill="url(#deSky)"/>
+    <g transform="translate(398,54)"><g class="spin">
+      <circle r="19" fill="#f6b44c"/>
+      <g stroke="#f6b44c" stroke-width="3" stroke-linecap="round">
+        <line x1="0" y1="-26" x2="0" y2="-33"/><line x1="0" y1="26" x2="0" y2="33"/>
+        <line x1="-26" y1="0" x2="-33" y2="0"/><line x1="26" y1="0" x2="33" y2="0"/>
+        <line x1="-18.4" y1="-18.4" x2="-23.3" y2="-23.3"/><line x1="18.4" y1="18.4" x2="23.3" y2="23.3"/>
+        <line x1="-18.4" y1="18.4" x2="-23.3" y2="23.3"/><line x1="18.4" y1="-18.4" x2="23.3" y2="-23.3"/>
+      </g>
+    </g></g>
+    <g stroke="#6c6a6b" stroke-width="2.4" stroke-linecap="round" fill="none" opacity=".35">
+      <path d="M262 74 q6 -7 12 0 q6 -7 12 0"/>
+      <path d="M306 94 q5 -6 10 0 q5 -6 10 0"/>
+    </g>
+    <ellipse cx="250" cy="244" rx="280" ry="76" fill="url(#deSea)"/>
+    <g stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none" opacity=".55">
+      <path d="M228 234 q9 -6 18 0 t18 0"/>
+      <path d="M330 254 q9 -6 18 0 t18 0"/>
+      <path d="M262 276 q9 -6 18 0"/>
+      <path class="dash" d="M186 244 q10 -7 20 0 t20 0 t20 0" stroke-width="2.6"/>
+    </g>
+    <g class="bob">
+      <path d="M40 216 Q56 182 112 176 Q170 170 196 186 Q216 199 202 216 Q184 236 116 238 Q48 238 40 216 Z" fill="url(#deLand)" stroke="#d8c193" stroke-width="3"/>
+      <ellipse cx="78" cy="220" rx="13" ry="5" fill="#8fce9f"/>
+      <ellipse cx="166" cy="212" rx="11" ry="4.5" fill="#8fce9f"/>
+      <path d="M74 198 q-8 -26 3 -46" stroke="#9a6b3f" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <g fill="#4bb08a">
+        <ellipse cx="63" cy="146" rx="17" ry="6.5" transform="rotate(-24 63 146)"/>
+        <ellipse cx="89" cy="148" rx="17" ry="6.5" transform="rotate(28 89 148)"/>
+        <ellipse cx="72" cy="140" rx="15" ry="6" transform="rotate(-68 72 140)"/>
+        <ellipse cx="84" cy="156" rx="15" ry="6" transform="rotate(60 84 156)"/>
+      </g>
+      <!-- position on the outer g, animation on the inner: the CSS bob animates the
+           transform property, which would override an attribute transform on the same
+           node (the sun and boat already nest for exactly this reason). NOTE: this
+           markup lives in a JS template literal - no backticks in comments. -->
+      <g transform="translate(142,164)"><g class="pin">
+        <path d="M0 26 C-13 8 -15 -4 0 -12 C15 -4 13 8 0 26 Z" fill="#ef6a4a"/>
+        <circle cx="0" cy="-1" r="7.5" fill="#fff"/>
+        <text x="0" y="3" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="11" fill="#ef6a4a">?</text>
+      </g></g>
+    </g>
+    <g transform="translate(312,212)"><g class="sail">
+      <path d="M-22 6 L22 6 L13 18 L-13 18 Z" fill="#fffdf8" stroke="#d8c193" stroke-width="2"/>
+      <path d="M-1 -20 L-1 4 L17 4 Z" fill="#fffdf8" stroke="#d8c193" stroke-width="1.8" stroke-dasharray="3 3"/>
+      <line x1="3" y1="-6" x2="10" y2="-6" stroke="#d8c193" stroke-width="1.6" stroke-linecap="round"/>
+      <line x1="3" y1="-1" x2="12" y2="-1" stroke="#d8c193" stroke-width="1.6" stroke-linecap="round"/>
+    </g></g>
+  </svg>`;
+  function renderSailedOff(){
+    app.innerHTML = '<div class="de-wrap">'
+      + SAILED_OFF_ART
+      + '<p class="de-eyebrow">quote &middot; no longer active</p>'
+      + '<h1 class="de-title">This quote has sailed off somewhere sunny</h1>'
+      + '<p class="de-lead"><strong>Nothing has been charged.</strong> Message us on <strong>WhatsApp</strong> and we&rsquo;ll get you moving again.</p>'
+      + '<div class="de-cta"><a class="btn-wa" href="https://wa.me/94779669662">WhatsApp us</a></div>'
+      + '</div>' + waLine();
+  }
+  function renderUnavailable(){ renderSailedOff(); }
+  function renderRevised(){ renderSailedOff(); }
+  function renderPaid(p){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">You’re booked' + (p && p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
+      + (p && p.title ? '<p class="st-sub">' + esc(p.title) + '</p>' : '')
+      + (p && p.reference ? '<div><span class="refchip">' + esc(p.reference) + '</span></div>' : '')
+      + (p && p.amountUsd ? '<p class="st-sub">Paid ' + esc(p.amountUsd) + ' · confirmation emailed.</p>' : '')
+      + '<div class="next"><b>What happens next</b><ul>'
+      + '<li>We confirm your driver &amp; vehicle and send their details.</li>'
+      + '<li>A reminder arrives 2 days before pick-up.</li>'
+      + '<li>Need anything? Just reply on WhatsApp.</li></ul></div>'
+      + '</div>' + waLine();
+  }
+
+  // ── the ticket ──────────────────────────────────────────────────────────────────────
+  function ticketBody(c){
+    if (c.legs && c.legs.length) {
+      var rows = c.legs.map(function(l, i){
+        var last = i === c.legs.length - 1;
+        return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
+          + (last ? '' : '<span class="hop-line"></span>') + '</div>'
+          + '<div><div class="hop-t">' + esc(l.route) + '</div>'
+          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed') + '</div></div></div>';
+      }).join('');
+      return '<div class="hops">' + rows + '</div>';
+    }
+    return c.facts.map(function(f){
+      return '<div class="fact"><span class="k">' + esc(f.k) + '</span><span class="v">' + esc(f.v)
+        + (f.sub ? '<small>' + esc(f.sub) + '</small>' : '') + '</span></div>';
+    }).join('');
+  }
+
+  function renderPayable(){
+    var c = data.copy, tt = data.totals;
+    app.innerHTML =
+      '<div class="pp-hello">' + (c.greetingName ? 'Hi ' + esc(c.greetingName) + ',' : 'Here’s your trip.') + '</div>'
+      + '<h1 class="pp-title">' + esc(c.title) + '</h1>'
+      + '<p class="pp-sub">' + esc(c.subtitle) + '</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + ticketBody(c)
+      + '<div class="included"><b>Included</b>' + esc(c.includedText) + '</div>'
+      + '</div><div class="perf"></div><div class="t-stub">'
+      + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
+      + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
+      + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
+      + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
+      + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+      + '<p class="pp-err" id="payerr" hidden></p>'
+      + '</div></div>' + waLine();
+    document.getElementById('paybtn').addEventListener('click', renderDetails);
+  }
+
+  // ── details step: only what the quote couldn't already tell us. Country + phone use
+  // the SAME widget as the website checkout (booking.html step 4): a country select
+  // carrying the dial code, a LOCAL-number field, and the wizard's normaliser — so
+  // "+94…", "094…", "77…" and "9477…" all resolve to one honest whatsapp value. ──────
+  var COUNTRIES = window.PHONE_COUNTRIES || [['LK', 'Sri Lanka', '+94']];
+
+  // Longest-dial-code match, verbatim from booking.js matchDialCode.
+  function matchDialCode(digits){
+    var best = '';
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      var d = (COUNTRIES[i][2] || '').replace(/[^\d]/g, '');
+      if (d && digits.indexOf(d) === 0 && d.length > best.length) best = d;
+    }
+    return best;
+  }
+  // Split a prefilled international number into { country, number } for the widget.
+  function splitPrefill(whatsapp){
+    var raw = String(whatsapp || '').trim();
+    if (!raw) return { country: 'Sri Lanka', number: '' };
+    var digits = raw.replace(/[^\d]/g, '');
+    var dc = /^\s*\+/.test(raw) ? matchDialCode(digits) : '';
+    if (!dc) return { country: 'Sri Lanka', number: raw };
+    for (var i = 0; i < COUNTRIES.length; i++) {
+      if ((COUNTRIES[i][2] || '').replace(/[^\d]/g, '') === dc) {
+        return { country: COUNTRIES[i][1], number: digits.slice(dc.length) };
+      }
+    }
+    return { country: 'Sri Lanka', number: digits };
+  }
+  // booking.js phoneParts, ported: the select's dial code + the typed number → one whatsapp.
+  function phoneParts(){
+    var countryEl = document.getElementById('f-country');
+    var phoneEl = document.getElementById('f-phone');
+    var country = (countryEl && countryEl.value ? countryEl.value : 'Sri Lanka').trim();
+    var selCode = '+94';
+    for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][1] === country) { selCode = COUNTRIES[i][2]; break; }
+    var selDigits = selCode.replace(/[^\d]/g, '');
+    var raw = (phoneEl && phoneEl.value ? phoneEl.value : '').trim();
+    var digits = raw.replace(/[^\d]/g, '');
+    if (/^\s*\+/.test(raw)) {
+      var dc = matchDialCode(digits);
+      return { country: country, whatsapp: '+' + digits, empty: !digits, _dc: dc };
+    }
+    var number = digits.replace(/^0+/, '');
+    if (selDigits && number.indexOf(selDigits) === 0 && number.length > selDigits.length) {
+      number = number.slice(selDigits.length); // typed the code too — don't double it
+    }
+    return { country: country, whatsapp: selCode + number, empty: !number };
+  }
+
+  function renderDetails(){
+    var pre = data.prefill || {};
+    var split = splitPrefill(pre.whatsapp);
+    // A failed/dismissed payment returns here — with everything as the customer left it,
+    // never reset to the prefill.
+    if (typed) {
+      pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
+      split = { country: typed.country, number: typed.phone };
+    }
+    var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
+    var options = ordered.map(function(c){
+      return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
+        + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
+    }).join('');
+    app.innerHTML =
+      '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
+      + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
+      + '<div class="ticket"><div class="t-main">'
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
+      + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
+      + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '</div>'
+      + '<div class="perf"></div><div class="t-stub">'
+      + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
+      + '<button class="btn btn-cta pp-cta" id="gobtn">Continue to payment</button>'
+      + '<p class="pp-err" id="payerr" hidden></p>'
+      + '</div></div>' + waLine();
+    // Focus the first empty box — usually email, or the number for email-contact quotes.
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
+    for (var i = 0; i < order.length; i++) {
+      var el = document.getElementById(order[i]);
+      if (el && !el.value) { el.focus(); break; }
+    }
+    document.getElementById('gobtn').addEventListener('click', startPayment);
+  }
+
+  // "We're loading PayHere" — shown the moment the customer commits, so a slow network
+  // never reads as a dead button. PayHere's own modal replaces it when ready.
+  function renderLoading(){
+    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+      + '<h2>Taking you to PayHere…</h2>'
+      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
+      + '<div class="amt">' + esc(data.totals.usd) + '</div>'
+      + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
+  }
+
+  function fail(msg){
+    // If the interstitial (or PayHere) is on screen, rebuild the details step first —
+    // with the customer's typed values — then surface the error on it.
+    if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
+    var e = document.getElementById('payerr');
+    if (e) { e.textContent = msg; e.hidden = false; }
+    var b = document.getElementById('gobtn') || document.getElementById('paybtn');
+    if (b) { b.disabled = false; b.textContent = b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere'; }
+  }
+
+  function startPayment(){
+    var parts = phoneParts();
+    typed = {
+      firstName: (document.getElementById('f-firstName').value || '').trim(),
+      lastName: (document.getElementById('f-lastName').value || '').trim(),
+      email: (document.getElementById('f-email').value || '').trim(),
+      country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
+      phone: (document.getElementById('f-phone').value || '').trim(),
+    };
+    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    var customer = {
+      firstName: typed.firstName,
+      lastName: typed.lastName,
+      email: typed.email,
+      whatsapp: parts.whatsapp,
+      country: parts.country,
+    };
+    renderLoading();
+    fetch(A + '/quotes/pay/start', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ t: t, customer: customer }),
+    }).then(function(r){
+      if (r.ok) return r.json();
+      return r.json().catch(function(){ return {}; }).then(function(x){
+        if (x.error === 'quote_revised') { renderRevised(); throw { handled: true }; }
+        if (x.error === 'already_paid') { load(); throw { handled: true }; }
+        throw new Error(x.message || 'We couldn’t start your payment just now — no charge was made.');
+      });
+    }).then(function(st){
+      booking = st;
+      return fetch(A + '/bookings/' + st.bookingId + '/checkout', {
+        method: 'POST', headers: { authorization: 'Bearer ' + st.checkoutToken },
+      }).then(function(r){
+        if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.');
+        return r.json();
+      });
+    }).then(function(checkout){
+      if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
+      if (!/payhere\.lk/.test(checkout.checkoutUrl)) {
+        // Dev/fake gateway: be honest rather than simulate a payment that never happened.
+        throw new Error('Payments aren’t enabled on this environment yet — nothing was charged.');
+      }
+      if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
+      var payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
+      payhere.onCompleted = function(){ awaitSettle(); };
+      payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged. Tap to try again.'); };
+      payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
+      payhere.startPayment(payment);
+    }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
+  }
+
+  // The webhook is the source of truth: poll until it lands, then show the keepsake.
+  function awaitSettle(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+      + '<h1 class="st-title">Confirming your payment…</h1>'
+      + '<p class="st-sub">This usually takes a few seconds.</p></div>';
+    var tries = 0;
+    (function poll(){
+      tries++;
+      fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){ return r.json(); }).then(function(v){
+        if (v.state === 'paid') { renderPaid(v.paid); return; }
+        if (tries < 30) { setTimeout(poll, 2000); return; }
+        app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+          + '<h1 class="st-title">Payment received?</h1>'
+          + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
+          + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
+      }).catch(function(){ if (tries < 30) setTimeout(poll, 2000); });
+    })();
+  }
+
+  // ── boot ────────────────────────────────────────────────────────────────────────────
+  function load(){
+    fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t || '')).then(function(r){
+      if (!r.ok) throw new Error('view ' + r.status);
+      return r.json();
+    }).then(function(v){
+      data = v;
+      if (v.state === 'paid') return renderPaid(v.paid);
+      if (v.state === 'revised') return renderRevised();
+      if (v.state === 'payable') return renderPayable();
+      return renderUnavailable();
+    }).catch(function(){ renderUnavailable(); });
+  }
+  if (!t) { renderUnavailable(); } else { load(); }
+})();
+</script>
+</body>
+</html>

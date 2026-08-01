@@ -298,5 +298,182 @@
     if(opts.breadcrumbs) mountBreadcrumbs(opts.breadcrumbs);
     mountWA();
     initReveal();
+    // Every page gets animated <details> — the FAQ is the only user today, but this is the
+    // right place for it: any page that grows one later is covered without a second thought.
+    if(window.CH && CH.motion) CH.motion.details();
   };
+})();
+
+/* ============================================================
+   CH.motion — the four ways this site changes shape or value
+   ------------------------------------------------------------
+   Every one of these replaced a snap. Cards appeared at full size mid-list,
+   prices swapped instantly when the vehicle changed, and switching Single →
+   Multi-stop resized the booking card in a single frame. The content was
+   right; it just arrived without ever being on its way, which reads as the
+   page redrawing rather than responding.
+
+   Measured, not guessed: heights come from the real laid-out element, so
+   nothing here needs a hard-coded size and no card can be clipped by one.
+   All four no-op under prefers-reduced-motion — the end state is applied
+   immediately, never skipped.
+   ============================================================ */
+(function(){
+  const reduce = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const EASE = 'cubic-bezier(.22,.75,.3,1)';   // one curve for the whole site: quick out, soft landing
+
+  /* Grow a just-inserted element from nothing to its natural height. The element must
+     already be in the DOM and laid out — we read the height it WANTS, then animate to it,
+     so a two-line card and a six-line card each take their own correct size. */
+  function enter(el, opts){
+    opts = opts || {};
+    if(!el || reduce()) return Promise.resolve();
+    const cs = getComputedStyle(el);
+    const h = el.getBoundingClientRect().height;
+    const mb = cs.marginBottom;
+    const prev = el.style.cssText;
+    el.style.overflow = 'hidden';   // content must not spill while the box is shorter than it
+    const anim = el.animate([
+      { height:'0px', opacity:0, marginBottom:'0px', transform:'translateY(-4px)' },
+      { height:h+'px', opacity:1, marginBottom:mb, transform:'none' },
+    ], { duration: opts.duration || 360, easing: EASE });
+    return anim.finished.catch(()=>{}).then(()=>{ el.style.cssText = prev; });
+  }
+
+  /* Collapse an element away, then hand back so the caller can drop it from state.
+     Mirror of enter() — a card that grows in and then vanishes in one frame is worse
+     than one that never animated at all, because the pair draws attention to the cut. */
+  function exit(el, opts){
+    opts = opts || {};
+    if(!el || reduce()) return Promise.resolve();
+    const cs = getComputedStyle(el);
+    const h = el.getBoundingClientRect().height;
+    el.style.overflow = 'hidden';
+    const anim = el.animate([
+      { height:h+'px', opacity:1, marginBottom:cs.marginBottom, transform:'none' },
+      { height:'0px', opacity:0, marginBottom:'0px', transform:'translateY(-4px)' },
+    ], { duration: opts.duration || 260, easing: EASE });
+    return anim.finished.catch(()=>{});
+  }
+
+  /* Animate a container across a change that alters its height. `mutate` does the real
+     work (swap markup, add a field); we measure before and after and travel between.
+     Used where the change is a RESIZE rather than an arrival — switching the booking card
+     from one transfer to a multi-stop trip, where the card itself persists. */
+  function resize(el, mutate, opts){
+    opts = opts || {};
+    if(!el || reduce()){ mutate(); return Promise.resolve(); }
+    const from = el.getBoundingClientRect().height;
+    mutate();
+    const to = el.getBoundingClientRect().height;
+    if(Math.abs(to-from) < 1) return Promise.resolve();
+    const prev = el.style.cssText;
+    el.style.overflow = 'hidden';
+    const anim = el.animate(
+      [{ height:from+'px' }, { height:to+'px' }],
+      { duration: opts.duration || 320, easing: EASE }
+    );
+    return anim.finished.catch(()=>{}).then(()=>{ el.style.cssText = prev; });
+  }
+
+  /* Count a price from its old value to its new one. Takes the two rendered STRINGS and
+     tweens every number inside them in step, so "$70–$85" moves as a range and "$72.50"
+     keeps its cents — no format rules encoded here, the strings carry them.
+     Falls back to a plain swap when the shapes differ (e.g. "$—" → "$72.50"), because
+     there is no sensible number to count from. */
+  const NUM = /\d[\d,]*\.?\d*/g;
+  function tweenNumber(el, fromText, toText, opts){
+    opts = opts || {};
+    if(!el) return;
+    if(reduce() || fromText == null){ el.textContent = toText; return; }
+    const a = String(fromText).match(NUM), b = String(toText).match(NUM);
+    if(!a || !b || a.length !== b.length){ el.textContent = toText; return; }
+    const av = a.map(n=>parseFloat(n.replace(/,/g,'')));
+    const bv = b.map(n=>parseFloat(n.replace(/,/g,'')));
+    if(av.every((v,i)=>v===bv[i])){ el.textContent = toText; return; }
+    // A stalled tween must never be able to leave a WRONG PRICE on screen. requestAnimationFrame
+    // does not run in a background tab, so a traveller who switches tabs mid-count and comes
+    // back to a re-rendered page could otherwise be looking at the old vehicle's figure. Two
+    // guards: don't start a count we know can't run, and back every count with a timer that
+    // writes the true value regardless of whether a single frame ever fired.
+    if(document.hidden){ el.textContent = toText; return; }
+    const dp = b.map(n=>(n.split('.')[1]||'').length);
+    const dur = opts.duration || 420, t0 = performance.now();
+    if(el._chTween) cancelAnimationFrame(el._chTween);
+    if(el._chTweenT) clearTimeout(el._chTweenT);
+    const land = () => {
+      if(el._chTween) cancelAnimationFrame(el._chTween);
+      el._chTween = null; el._chTweenT = null;
+      el.textContent = toText;                 // the exact string, never a rounded rebuild of it
+    };
+    el._chTweenT = setTimeout(land, dur + 80); // backstop: the figure is correct even with zero frames
+    (function frame(now){
+      const p = Math.min(1, (now-t0)/dur);
+      const e = 1-Math.pow(1-p, 3);            // ease-out cubic — fast start, settles on the figure
+      let i = 0;
+      el.textContent = toText.replace(NUM, () => {
+        const v = av[i] + (bv[i]-av[i])*e, d = dp[i];
+        i++;
+        return v.toFixed(d);
+      });
+      if(p < 1) el._chTween = requestAnimationFrame(frame);
+      else land();
+    })(t0);
+  }
+
+  window.CH = window.CH || {};
+  /* Upgrade native <details> so the panel travels open instead of snapping. The FAQ's summary
+     marker already rotates on a .2s transition — someone intended this to feel like opening —
+     but the panel itself appeared in one frame, so the icon animated and the content did not.
+
+     Intercepting the summary click (rather than listening for `toggle`, which fires after the
+     box has already resized) lets resize() measure both states and travel between them. Under
+     reduced motion we don't preventDefault at all, so the browser's own instant behaviour and
+     all of its keyboard/AT semantics are left completely untouched. */
+  function details(root){
+    (root || document).querySelectorAll('details').forEach(function(d){
+      if(d._chDetails) return;
+      d._chDetails = true;
+      const sum = d.querySelector('summary');
+      if(!sum) return;
+      sum.addEventListener('click', function(e){
+        if(reduce()) return;                       // native open/close, no interception
+        e.preventDefault();                        // we own the state change for this gesture
+        resize(d, function(){ d.open = !d.open; }, { duration: 260 });
+      });
+    });
+  }
+
+  /* FLIP: run `mutate`, then slide every child from where it WAS to where it now is.
+     Reordering a list by dragging used to end with every row teleporting to its new position —
+     the drop confirmed that something changed but not what, so on a five-leg itinerary you had
+     to re-read the whole list to find your own edit. Sliding the rows means the change is
+     legible without reading.
+
+     First (measure) → mutate → Last (measure) → Invert (offset each row back to where it was)
+     → Play (animate the offset away). Rows keyed so the same DOM node is tracked across a
+     re-render; anything unkeyed or newly created is simply left alone. */
+  function flip(container, mutate, opts){
+    opts = opts || {};
+    const key = opts.key || 'data-flip-key';
+    if(!container || reduce()){ mutate(); return; }
+    const first = new Map();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      first.set(el.getAttribute(key), el.getBoundingClientRect());
+    });
+    mutate();
+    container.querySelectorAll('['+key+']').forEach(el=>{
+      const from = first.get(el.getAttribute(key));
+      if(!from || typeof el.animate !== 'function') return;
+      const to = el.getBoundingClientRect();
+      const dx = from.left - to.left, dy = from.top - to.top;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1) return;   // didn't actually move
+      el.animate(
+        [{ transform:`translate(${dx}px, ${dy}px)` }, { transform:'none' }],
+        { duration: opts.duration || 320, easing: EASE }
+      );
+    });
+  }
+
+  window.CH.motion = { enter, exit, resize, tweenNumber, details, flip, reduce, EASE };
 })();

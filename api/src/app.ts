@@ -18,6 +18,7 @@ import { adminRoutes } from './routes/admin';
 import { opsRoutes } from './routes/ops';
 import { opsAnalyticsRoutes } from './routes/opsAnalytics';
 import { opsUiRoutes } from './routes/opsUi';
+import { customerPagesRoutes } from './routes/customerPages';
 import { quoteRoutes } from './routes/quote';
 import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
@@ -43,6 +44,7 @@ import {
   type QuoteConversionRepo,
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
+import { quotePayRoutes } from './routes/quotePay';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
@@ -94,6 +96,8 @@ export interface AppDeps {
   // M17 — alert dedupe ledger + digest recipient (digest only mails when set).
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
+  payhereMode?: string;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -139,6 +143,11 @@ export function createApp(deps: AppDeps = {}) {
       ? new InMemoryQuoteConversionRepo(quotes, bookings)
       : undefined);
   const bookingLinkSecret = deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET;
+  // Which PayHere the server would hand a customer: 'off' with no merchant creds (the
+  // fake adapter), else the configured mode. Surfaced to ops so a sandbox link is
+  // labelled as one (spec 2026-07-31) — a sandbox payment marks real bookings Paid.
+  const payhereMode = deps.payhereMode
+    ?? (config.PAYHERE_MERCHANT_ID && config.PAYHERE_MERCHANT_SECRET ? config.PAYHERE_MODE : 'off');
 
   const app = new Hono();
 
@@ -169,6 +178,9 @@ export function createApp(deps: AppDeps = {}) {
 
   // Per-IP rate limit on booking writes (not webhooks — those come from PayHere).
   app.use('/bookings/*', rateLimit(rl));
+  // Quote pay links (spec 2026-07-31): public bearer-token routes; same per-IP budget as
+  // the other public write surfaces.
+  app.use('/quotes/pay/*', rateLimit(rl));
   // Wildcard, not the bare path: Hono matches '/quote' exactly, which left the unauthenticated
   // POST /quote/lock (one DB row per call, 7-day lock, no expiry sweep for web rows) unthrottled.
   app.use('/quote/*', rateLimit(rl));
@@ -280,6 +292,7 @@ export function createApp(deps: AppDeps = {}) {
     '/webhooks',
     webhookRoutes({
       settlements,
+      quotes,
       adapter,
       email,
       conciergeTasks,
@@ -290,6 +303,11 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     }),
   );
+  app.route('/quotes/pay', quotePayRoutes({
+    quotes, bookings, payments,
+    linkSecret: bookingLinkSecret,
+    checkoutNow: deps.checkoutNow,
+  }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
   // Mounted BEFORE /admin/ops so its own middleware chain handles the sub-path.
@@ -300,6 +318,10 @@ export function createApp(deps: AppDeps = {}) {
     baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
+  // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
+  // resolves even where no customer site is deployed (staging). BEFORE the share-card root
+  // mount below, whose /:code route would otherwise match /pay.html and answer 404.
+  app.route('/', customerPagesRoutes());
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
@@ -323,6 +345,9 @@ export function createApp(deps: AppDeps = {}) {
     allowedOrigins,
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+    payBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    linkSecret: bookingLinkSecret,
+    payhereMode,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay

@@ -5,6 +5,20 @@ import { test, expect } from '@playwright/test';
 // the route as the customer built it and *flags* the offending leg instead
 // (mirroring the ops quote tool's "Dates out of order" flag). plan.js:outOfOrderFlags.
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the suite go
+   red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). Only the ORDERING
+   matters here — the planner flags a leg dated before the one above it, and warns when two legs
+   share a day — so the offsets below preserve exactly those relationships. */
+const D_EARLY  = futureIsoDate(25); // before D_B: the out-of-order case
+const D_A      = futureIsoDate(28);
+const D_A_NEXT = futureIsoDate(29); // the day after D_A
+const D_B      = futureIsoDate(30);
+const D_B_NEXT = futureIsoDate(31); // the day after D_B: splits a too-long drive over two days
+const D_C      = futureIsoDate(40);
+const D_D      = futureIsoDate(45);
+
 const STOPS = 'Colombo Airport (CMB)|Sigiriya|Kandy'; // -> Leg 1: CMB→Sigiriya, Leg 2: Sigiriya→Kandy
 
 // The per-leg date input is turned into a hidden field by the custom datepicker,
@@ -74,13 +88,13 @@ test('out-of-order leg dates raise a flag and never reorder the itinerary', asyn
   await expect(page.locator('#dates-list .date-row .drag')).toHaveCount(0);
 
   // In chronological order → no flag.
-  await setLegDate(page, 0, '2026-08-10');
-  await setLegDate(page, 1, '2026-08-20');
+  await setLegDate(page, 0, D_B);
+  await setLegDate(page, 1, D_C);
   await expect(warn).toHaveCount(0);
 
   // Date Leg 2 BEFORE Leg 1. Old behaviour: Leg 2 slides above Leg 1.
   // New behaviour: order is preserved and Leg 2 is flagged.
-  await setLegDate(page, 1, '2026-08-05');
+  await setLegDate(page, 1, D_EARLY);
   await expect(warn).toHaveCount(1);
   await expect(warn).toBeVisible();
   await expect(warn).toContainText(/out of order/i);
@@ -92,7 +106,7 @@ test('out-of-order leg dates raise a flag and never reorder the itinerary', asyn
   await expect(page.locator('.date-row[data-i="1"] .dr-warn')).toBeVisible();
 
   // Fix the date so the trip runs forward again → flag clears.
-  await setLegDate(page, 1, '2026-08-25');
+  await setLegDate(page, 1, D_D);
   await expect(warn).toHaveCount(0);
 });
 
@@ -104,8 +118,8 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
   const hint = page.locator('#dates-order-hint');
 
   // Put the legs out of chronological order.
-  await setLegDate(page, 0, '2026-08-10');
-  await setLegDate(page, 1, '2026-08-05');
+  await setLegDate(page, 0, D_B);
+  await setLegDate(page, 1, D_EARLY);
 
   // CTA is disabled + a blocking hint shows, and clicking does NOT leave plan.html.
   await expect(cont).toHaveClass(/cta-disabled/);
@@ -116,7 +130,7 @@ test('an out-of-order date blocks "Continue to booking" until it is fixed', asyn
   await expect(page).toHaveURL(/plan\.html/);
 
   // Fix the order → CTA re-enables and now proceeds to booking.
-  await setLegDate(page, 1, '2026-08-20');
+  await setLegDate(page, 1, D_C);
   await expect(cont).not.toHaveClass(/cta-disabled/);
   await expect(hint).toBeHidden();
   await cont.click({ force: true });
@@ -132,8 +146,8 @@ test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
   const hint = page.locator('#dates-drive-hint');
 
   await expect(cont).toContainText('Continue to select service');
-  await setLegDate(page, 0, '2026-08-10');
-  await setLegDate(page, 1, '2026-08-10');
+  await setLegDate(page, 0, D_B);
+  await setLegDate(page, 1, D_B);
 
   await expect(hint).toBeVisible();
   await expect(hint).toContainText(/long travel day/i);
@@ -150,8 +164,8 @@ test('same-day legs over 10 hours block continuing', async ({ page }) => {
   const cont = page.locator('#dates-continue');
   const hint = page.locator('#dates-drive-hint');
 
-  await setLegDate(page, 0, '2026-08-10');
-  await setLegDate(page, 1, '2026-08-10');
+  await setLegDate(page, 0, D_B);
+  await setLegDate(page, 1, D_B);
 
   await expect(hint).toBeVisible();
   // Assert the hint's substance, not its exact marketing phrasing. This was pinned to
@@ -165,7 +179,7 @@ test('same-day legs over 10 hours block continuing', async ({ page }) => {
   await page.waitForTimeout(200);
   await expect(page).toHaveURL(/plan\.html/);
 
-  await setLegDate(page, 1, '2026-08-11');
+  await setLegDate(page, 1, D_B_NEXT);
   await expect(hint).toBeHidden();
   await expect(cont).not.toHaveClass(/cta-disabled/);
 });
@@ -179,15 +193,15 @@ test('added planner legs and dates survive refresh', async ({ page }) => {
   await pickPlannerPlace(page, page.locator('#rail .leg-card').nth(1).locator('.leg-to'), 'Ella', 'Ella');
 
   await page.locator('#request-btn').click();
-  await setLegDate(page, 0, '2026-08-08');
-  await setLegDate(page, 1, '2026-08-09');
+  await setLegDate(page, 0, D_A);
+  await setLegDate(page, 1, D_A_NEXT);
   await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
 
   await page.reload();
 
   await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
-  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-08');
-  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-09');
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue(D_A);
+  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue(D_A_NEXT);
   await expect(page.locator('.date-row[data-i="1"] .dr-route')).toContainText('Ella');
 });
 
@@ -321,17 +335,17 @@ test('planner dates step keeps a durable URL for browser back', async ({ page })
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto(`/plan.html?step=dates&stops=${encodeURIComponent(STOPS)}`);
 
-  await setLegDate(page, 0, '2026-08-10');
-  await setLegDate(page, 1, '2026-08-20');
+  await setLegDate(page, 0, D_B);
+  await setLegDate(page, 1, D_C);
 
   const url = new URL(page.url());
   expect(url.pathname).toContain('plan.html');
   expect(url.searchParams.get('step')).toBe('dates');
-  expect(url.searchParams.get('dates')).toBe('2026-08-10,2026-08-20');
+  expect(url.searchParams.get('dates')).toBe(`${D_B},${D_C}`);
   await expect(page.locator('#dates-wrap')).toBeVisible();
   await expect(page.locator('#dates-list .date-row')).toHaveCount(2);
-  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue('2026-08-10');
-  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue('2026-08-20');
+  await expect(page.locator('.date-row[data-i="0"] input')).toHaveValue(D_B);
+  await expect(page.locator('.date-row[data-i="1"] input')).toHaveValue(D_C);
 });
 
 test('two-digit leg badges do not overflow in planner or booking review', async ({ page }) => {

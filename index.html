@@ -191,6 +191,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .book-go:active{transform:translateY(1px)}
   .book-go:focus-visible{outline:3px solid rgba(236,58,36,.4);outline-offset:2px}
   .book-go[disabled]{opacity:.55;cursor:not-allowed;transform:none;filter:none}
+  /* Not-ready-yet, but still pressable. Reads as "there's a step left" rather than "this control
+     is dead": softer than the live button, but it keeps its pointer and its hover, and pressing
+     it runs goBook()'s validation, which names the missing field and focuses it. */
+  .book-go.needs-input{opacity:.72}
+  .book-go.needs-input:hover{opacity:1}
   .book-go .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;display:inline-block;animation:bspin .7s linear infinite;margin-right:.2rem}
   @keyframes bspin{to{transform:rotate(360deg)}}
   @media(max-width:560px){
@@ -378,7 +383,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <div class="hero-card" id="book">
       <!-- ONE question: where from, where to — add stops if you like -->
-      <form class="booker mode-single" id="form-go" onsubmit="return goBook(event)">
+      <!-- novalidate: the browser's own constraint check fires BEFORE submit, so with the two
+           inputs marked required it swallowed the event entirely — goBook() never ran, and the
+           traveller got the generic "Please fill out this field." tooltip instead of the copy
+           written for this form ("Choose where we're picking you up.", "Pick-up and drop-off
+           are the same…"). goBook() validates both fields and the same-place case itself, and
+           marks the offending field, so nothing is lost by turning the native pass off. The
+           inputs keep `required` for semantics and assistive tech. -->
+      <form class="booker mode-single" id="form-go" novalidate onsubmit="return goBook(event)">
         <div class="bk-tabs" role="tablist" aria-label="Booking type">
           <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
           <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
@@ -643,14 +655,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
     // explicit single-transfer vs multi-stop mode (set by the toggle)
     let bookMode='single';
-    function setMode(m){
+    /* Single ↔ Multi-stop adds or drops the waypoint rows, so the card changes height. It used
+       to do that in one frame: the card was one size, then it was another, with nothing in
+       between — the tab looked like it had swapped in a different card rather than opened up
+       the one already there. CH.motion.resize measures the card before and after the swap and
+       travels between the two, so the growth is the thing you see. Height comes from the real
+       laid-out card, so a seeded stop row can never be clipped. */
+    function applyMode(m){
       bookMode = m==='multi' ? 'multi' : 'single';
       form.classList.toggle('mode-multi', bookMode==='multi');
       form.classList.toggle('mode-single', bookMode==='single');
       tabs.forEach(b=>{ const on=b.dataset.mode===bookMode; b.classList.toggle('active',on); b.setAttribute('aria-selected', on?'true':'false'); });
       if(bookMode==='single'){ mids.innerHTML=''; }       // a single transfer has no waypoints
-      else if(!midCount()){ addMid(); return; }            // multi: seed one stop row (addMid calls relabel+update)
+      else if(!midCount()){ addMid('', { silent:true }); return; } // multi: seed one stop row (addMid calls relabel+update)
       relabel(); update();
+    }
+    function setMode(m){
+      if(m===bookMode) return;                             // re-pressing the active tab shouldn't animate
+      if(window.CH && CH.motion) CH.motion.resize(form, ()=>applyMode(m));
+      else applyMode(m);
     }
     tabs.forEach(b=>b.addEventListener('click',()=>setMode(b.dataset.mode)));
 
@@ -670,7 +693,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if(input) input.placeholder = last ? 'Where to next?' : 'Add a place along the way…';
       });
     }
-    function addMid(val=''){
+    function addMid(val='', opts={}){
       if(midCount()>=8) return;
       const row=document.createElement('div');
       row.className='field mid-stop place-field';
@@ -679,10 +702,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const sel=row.querySelector('input');
       if(val) sel.value=val;
       attachLocalPlaceAutocomplete(sel,{onInput:update});
-      row.querySelector('.rm').addEventListener('click',()=>{ row.remove(); relabel(); update(); });
+      // Stop rows grow in and collapse out for the same reason the card does — a row that
+      // appears fully formed makes the card look like it jumped a size.
+      row.querySelector('.rm').addEventListener('click',()=>{
+        const drop=()=>{ row.remove(); relabel(); update(); };
+        if(window.CH && CH.motion) CH.motion.exit(row).then(drop); else drop();
+      });
       mids.appendChild(row);
       relabel(); update();
-      sel.focus();
+      // Seeding the first row happens inside a CH.motion.resize() that is already measuring the
+      // card, so let that own the growth — animating the row too would double the movement.
+      if(!opts.silent && window.CH && CH.motion) CH.motion.enter(row);
+      sel.focus({ preventScroll:true });
     }
     addStop.addEventListener('click',()=>addMid());
 
@@ -701,8 +732,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const fr=resolvePlaceInput(f), tr=resolvePlaceInput(t);
       const multi=bookMode==='multi';
       goBtn.textContent = multi ? 'Plan this trip' : 'See prices & book';
-      // date & traveller count are collected later in the flow, so all we need up front is from + to
-      goBtn.disabled = !(f && t);
+      /* Date & traveller count are collected later in the flow, so all we need up front is
+         from + to — but the button is NEVER disabled for missing them. It used to be, which
+         made goBook()'s validation below unreachable: it has per-field messages and moves the
+         cursor to the field at fault, and none of that could ever fire because the press that
+         would trigger it was blocked. A dead primary CTA on the homepage is indistinguishable
+         from a broken one — the traveller gets no reason and nowhere to go. Same call the ops
+         tool made for Submit ("pressing it is how the operator LEARNS what's missing"), and it
+         matters more here, where the visitor has no training and no support channel open.
+         `.needs-input` keeps the not-ready-yet signal without taking the press away. */
+      goBtn.disabled = false;
+      goBtn.classList.toggle('needs-input', !(f && t));
       if(multi || !f || !t || f===t){ if(pcPin)pcPin.hidden=true; return; }
       if(pcPin){
         pcPin.innerHTML=`<span class="dot" style="background:var(--saffron)"></span>${fr.name.replace(' (CMB)','')} <span class="pp-ar">→</span> ${tr.name}`;

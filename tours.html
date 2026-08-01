@@ -222,7 +222,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function card(t){
     const hl = t.highlights.map(h=>`<li><span class="ck">${ICON.check}</span><span>${h}</span></li>`).join('');
     const photo = TOUR_PHOTO[t.id] ? ` src="${TOUR_PHOTO[t.id]}"` : '';
-    return `<a class="card tcard" href="tour.html?id=${t.id}" data-theme="${t.theme}" data-days="${t.days}">
+    // reveal: render() already calls initReveal(), but no card carried the class, so the
+    // observer had nothing to watch — the tour grid was the one list on the site that appeared
+    // fully formed while every neighbouring section rose in.
+    return `<a class="card tcard reveal" href="tour.html?id=${t.id}" data-theme="${t.theme}" data-days="${t.days}">
       <div class="top">
         <image-slot id="tour-photo-${t.id}" shape="rect"${photo} placeholder="${String(t.photo).replace(/^PHOTO\s*—\s*/,'Drop a photo — ').replace(/"/g,'&quot;')}"></image-slot>
         <span class="sticker">${t.tag}</span>
@@ -246,20 +249,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </a>`;
   }
 
-  function render(filter){
+  function render(filter, opts){
     let list = TOURS;
     if(filter==='short') list = TOURS.filter(t=>t.days<6);
     else if(filter!=='all') list = TOURS.filter(t=>t.theme===filter);
-    grid.innerHTML = list.map(card).join('');
-    count.textContent = `${list.length} tour${list.length!==1?'s':''}`;
-    initReveal();
+    // Pressing a filter chip used to swap the whole grid in one frame — a different set of
+    // cards simply WAS there, and the page below jumped by however many rows the count
+    // changed. The grid now travels between its two heights while the new cards fade up
+    // inside it, so filtering reads as the list responding rather than the page reloading.
+    const paint = () => {
+      grid.innerHTML = list.map(card).join('');
+      count.textContent = `${list.length} tour${list.length!==1?'s':''}`;
+      initReveal();
+    };
+    if(opts && opts.animate && window.CH && CH.motion) CH.motion.resize(grid, paint, { duration:300 });
+    else paint();
   }
   render('all');
 
   document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
     document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
     c.classList.add('active');
-    render(c.dataset.f);
+    render(c.dataset.f, { animate:true });   // first paint stays instant; only a CHIP animates
   }));
 </script>
 </body>

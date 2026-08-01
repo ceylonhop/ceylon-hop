@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+import { futureIsoDate } from '../dates.js';
+
+/* Trip dates are anchored to "now", never hard-coded: a literal calendar date makes the
+   suite go red on its own once the clock passes it (docs/known-bugs.md, 2026-07-25). */
+
+
 // Route-choice MODAL (plan 2026-07-21). Drives the REAL ops quote view offline — stubbed API +
 // Google, same harness as ops-autocomplete.spec.js — so it runs on the default webServer with no
 // database. Server-side pricing/persistence of the fields is covered by
@@ -185,7 +191,7 @@ test('dismiss keeps the default (no note) and does not re-pop on a re-render', a
   // A re-render (edit the leg date) must NOT re-pop the modal.
   const dateInput = page.locator('#quoteRoot input[type="date"]').first();
   if (await dateInput.count()) {
-    await dateInput.fill('2026-12-31');
+    await dateInput.fill(futureIsoDate(60));
     await dateInput.dispatchEvent('change');
   }
   await expect(page.locator('.ch-rc-modal')).toHaveCount(0);

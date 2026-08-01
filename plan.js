@@ -355,13 +355,25 @@ document.getElementById('add-stop').addEventListener('click',()=>{
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
   state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1 });
   render();
+  // render() rebuilds the whole rail, so the card we just added is the last one. Grow it in
+  // rather than letting it appear at full size — a leg used to arrive between one frame and
+  // the next, which reads as the list redrawing instead of a card being added to it.
+  growLastLeg();
   const inputs=document.querySelectorAll('#rail .leg-card');
   if(inputs.length){
     const last=inputs[inputs.length-1];
     const target = prevTo ? last.querySelector('.leg-to') : last.querySelector('.leg-from');
-    if(target){ target.dataset.suppressMenu='1'; target.focus(); }
+    if(target){ target.dataset.suppressMenu='1'; target.focus({ preventScroll:true }); }
   }
 });
+
+// Entrance for a newly appended leg/stay card. focus({preventScroll}) above keeps the page
+// still while the card is mid-grow; scrolling and resizing at once reads as a jump.
+function growLastLeg(){
+  const cards=document.querySelectorAll('#rail .leg');
+  const el=cards[cards.length-1];
+  if(el && window.CH && CH.motion) CH.motion.enter(el);
+}
 
 // ---- add a stay (no intercity travel; in chauffeur mode the car waits with you) ----
 const addStayBtn=document.getElementById('add-stay');
@@ -371,8 +383,9 @@ if(addStayBtn) addStayBtn.addEventListener('click',()=>{
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
   state.legs.push({ type:'stay', from:prevTo, to:prevTo, date:null, nights:1 });
   render();
+  growLastLeg();
   const cards=document.querySelectorAll('#rail .leg-card');
-  if(cards.length){ const f=cards[cards.length-1].querySelector('.leg-from'); if(f && !f.value){ f.dataset.suppressMenu='1'; f.focus(); } }
+  if(cards.length){ const f=cards[cards.length-1].querySelector('.leg-from'); if(f && !f.value){ f.dataset.suppressMenu='1'; f.focus({ preventScroll:true }); } }
 });
 
 // ---- helpers ----
@@ -599,7 +612,15 @@ function render(){
     }
 
     // remove
-    wrap.querySelector('.leg-rm').addEventListener('click',()=>{ if(state.legs.length>1){ markRouteCustomized(); state.legs.splice(i,1); render(); } });
+    // Collapse the card away BEFORE dropping it from state, so removal mirrors the entrance.
+    // The splice+render is deferred to the animation's end — doing it first would destroy the
+    // element we're animating, and the rest of the list would jump up to fill the gap anyway.
+    wrap.querySelector('.leg-rm').addEventListener('click',()=>{
+      if(state.legs.length<=1) return;
+      markRouteCustomized();
+      const drop=()=>{ state.legs.splice(i,1); render(); };
+      if(window.CH && CH.motion) CH.motion.exit(wrap).then(drop); else drop();
+    });
 
     // drag to reorder
     card.addEventListener('dragstart',e=>{ markRouteCustomized(); dragEl=wrap; card.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
@@ -653,6 +674,22 @@ function render(){
 }
 
 function refreshVehiclePricing(){
+  /* Car ↔ van changes every figure on the page at once. Rewriting the markup swapped them in
+     a single frame, which made the switch look like a page reload rather than a re-price —
+     and gave no sense of WHICH WAY the money moved, the one thing the traveller is watching
+     for. Each figure is now counted from its old value to its new one.
+
+     The old strings have to be captured before the markup is rebuilt, keyed by leg index, so
+     the tween has somewhere to count from. Legs whose price is unknown ("$—", or a leg with
+     no distance yet) simply swap: there is no number to travel from. */
+  const before = new Map();
+  document.querySelectorAll('#rail .leg').forEach(el=>{
+    const b=el.querySelector('[data-dist] .lm-price b');
+    if(b) before.set(el.dataset.i, b.textContent);
+  });
+  const sumEl = document.getElementById('sum-amt');
+  const sumBefore = sumEl ? sumEl.textContent : null;
+
   document.querySelectorAll('#rail .leg').forEach(el=>{
     const i=+el.dataset.i;
     const leg=state.legs[i];
@@ -663,8 +700,12 @@ function refreshVehiclePricing(){
     const price=km!=null?legPrice(km,state.vehicle):null;
     distEl.innerHTML=distHtml(km,price);
     distEl.classList.toggle('on', km!=null);
+    const b=distEl.querySelector('.lm-price b');
+    const from=before.get(el.dataset.i);
+    if(b && from!=null && window.CH && CH.motion) CH.motion.tweenNumber(b, from, b.textContent);
   });
-  updateSummary({ refreshMap:false });
+
+  updateSummary({ refreshMap:false, priceFrom: sumBefore });
   syncVehBtns();
   syncPlanUrl();
 }
@@ -699,6 +740,16 @@ function flagIncompleteLeg(i){
   setTimeout(()=>card.classList.remove('leg-bad'),2200);
 }
 
+// Count a summary stat from whatever is on screen to its new value. Unlike the price (which
+// only counts on a vehicle switch, where the traveller is watching), these are safe to count on
+// every update: they change when the itinerary changes, which is exactly when you want to see
+// them move.
+function setStat(id, next){
+  const el=document.getElementById(id);
+  if(!el) return;
+  if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
+  else el.textContent = next;
+}
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
   let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
@@ -717,11 +768,14 @@ function updateSummary(opts={}){
     ? `${dated[0].toLocaleDateString('en-GB',{day:'numeric',month:'short'})}${dated.length>1?' – '+dated[dated.length-1].toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):', '+dated[0].getFullYear()}${paxText}`
     : `Dates flexible${paxText}`;
 
+  // These four sit directly under a price that now counts, so leaving them to snap made the
+  // panel read as half-alive. Same helper, same rules: it declines when the shape changes
+  // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
-  document.getElementById('st-stops').textContent=seq.length;
-  document.getElementById('st-nights').textContent = stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None';
-  document.getElementById('st-legs').textContent=transferLegs;
-  document.getElementById('st-drive').textContent=totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request';
+  setStat('st-stops', String(seq.length));
+  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None');
+  setStat('st-legs', String(transferLegs));
+  setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
     seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
@@ -730,11 +784,14 @@ function updateSummary(opts={}){
   if(refreshMap) renderMap();
 
   const amt=document.getElementById('sum-amt');
-  if(totalPrice>0 && resolvedLegs>=1){
-    amt.textContent = guidePriceRange(totalPrice, state.vehicle, resolvedLegs);
-  } else {
-    amt.textContent='~$—';
-  }
+  const next = (totalPrice>0 && resolvedLegs>=1)
+    ? guidePriceRange(totalPrice, state.vehicle, resolvedLegs)
+    : '~$—';
+  // opts.priceFrom is passed only by the vehicle switch, which is the one change where the
+  // traveller is watching this number move. Every other caller (a place resolving, a leg
+  // reordering) sets it outright — counting there would animate figures nobody is looking at.
+  if(opts.priceFrom != null && window.CH && CH.motion) CH.motion.tweenNumber(amt, opts.priceFrom, next);
+  else amt.textContent = next;
 
   // gate the “Next” CTA until every leg has a pick-up AND drop-off (we can't price a blank leg)
   const incompleteLeg = firstIncompleteLeg()>=0;
