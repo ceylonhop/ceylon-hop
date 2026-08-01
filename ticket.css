@@ -112,3 +112,16 @@
 .tk-sk .sk-tot-v{width:34%;height:28px}
 @keyframes tksh{to{background-position:-200% 0}}
 @media(prefers-reduced-motion:reduce){.tk-sk i{animation:none}}
+
+/* ── the multi-leg rail ────────────────────────────────────────────────────────
+   One thin row per journey, dot-and-line down the side. Shared by pay.html (the
+   quote) and manage.html (the booking): a trip with stops in the middle must not
+   render as if it were a direct transfer. */
+.hops{margin-top:10px}
+.hop{display:grid;grid-template-columns:16px 1fr;gap:9px}
+.hop-rail{display:flex;flex-direction:column;align-items:center}
+.hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+.hop-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
+.hop-line{width:2px;flex:1;min-height:12px;background:var(--line)}
+.hop-t{font-weight:700;font-size:.88rem;line-height:1.25}
+.hop-d{font-family:var(--mono,ui-monospace,monospace);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}

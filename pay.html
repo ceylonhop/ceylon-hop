@@ -30,15 +30,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* pay.html-only. The shared travel-document design lives in ticket.css, which BOTH
      customer pages load — see the note at the top of that file. */
 
-  /* the multi-leg rail */
-  .hops{margin-top:10px}
-  .hop{display:grid;grid-template-columns:16px 1fr;gap:9px}
-  .hop-rail{display:flex;flex-direction:column;align-items:center}
-  .hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(10,185,182,.14)}
-  .hop-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
-  .hop-line{width:2px;flex:1;min-height:12px;background:var(--line)}
-  .hop-t{font-weight:700;font-size:.88rem;line-height:1.25}
-  .hop-d{font-family:var(--mono,ui-monospace,monospace);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}
+  /* the multi-leg rail now lives in ticket.css — shared with manage.html */
 
   /* details step */
   .dt-h{font-family:var(--display);font-weight:800;font-size:1.15rem;margin:0 0 2px}

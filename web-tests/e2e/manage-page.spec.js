@@ -53,8 +53,13 @@ test('speaks to the customer, never in database values', async ({ page }) => {
   await expect(page.locator('.t-stat')).toHaveText('Awaiting payment');
   await expect(page.locator('.pp-sub')).toHaveText('Wednesday 22 July 2026'); // not 2026-07-22
   await expect(body).not.toContainText('2026-07-22');
-  await expect(page.locator('.fact').nth(2)).toContainText('Private car'); // not lowercase "car"
-  await expect(page.locator('.fact').nth(0)).toContainText('Time to confirm');
+  // Selected by LABEL, not row index: the card grew Trip start / Trip end / Stops rows
+  // (owner, 2026-07-31) and index-pinned assertions broke without the copy being any worse.
+  await expect(page.locator('.fact', { hasText: 'Vehicle' })).toContainText('Private car'); // not lowercase "car"
+  await expect(page.locator('.fact', { hasText: 'Pick-up time' })).toContainText('To be confirmed');
+  // The added rows must speak the same way — human dates, never the raw ISO the API sent.
+  await expect(page.locator('.fact', { hasText: 'Trip start' })).toContainText('22 July 2026');
+  await expect(page.locator('.fact', { hasText: 'Stops' })).toContainText('2 stops');
 });
 
 test('money reads as a price, and a zero balance earns no row', async ({ page }) => {
