@@ -601,7 +601,11 @@ describe('ops UI — unpriced shell lifecycle', () => {
     // price twice, and the "could not be costed" line still comes last — it only speaks up when
     // nothing else already explains the missing price.
     expect(blockers.indexOf('if (state.unpriced && !lastEstimate)'))
-      .toBeLessThan(blockers.indexOf('else if (!out.length && !lastEstimate)'));
+      .toBeLessThan(blockers.indexOf('else if (!out.length && !lastEstimate'));
+    // …and it waits for pricing to SETTLE. While a re-price is in flight `!lastEstimate` cannot
+    // tell "not costed yet" from "could not be costed", which is what silently swallowed the
+    // first press of Approve after a reopen (docs/known-bugs.md, 2026-07-30).
+    expect(blockers).toContain('!lastEstimate && !_estimatePending');
   });
 
   it('a save superseded while in flight is dropped and reported as failure', () => {

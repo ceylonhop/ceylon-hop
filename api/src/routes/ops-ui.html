@@ -3353,6 +3353,13 @@ var _pricedLegMap = [];
 var _estimateTimer = null;
 // V8: monotonic sequence so a slow /estimate response can't overwrite a newer one.
 var _estimateSeq = 0;
+/* True from the moment a re-price is SCHEDULED until it settles, either way. Without it,
+   "we haven't priced yet" and "this trip cannot be costed" are the same state — `!lastEstimate` —
+   and the 350ms debounce plus round trip after a reopen looks exactly like a costing failure.
+   That is why the first press of Approve did nothing: submitBlockers() reported a price blocker,
+   approveReady() opened the panel and returned, and ~100ms later the estimate landed and the
+   panel self-healed, so the press was silently swallowed (docs/known-bugs.md, 2026-07-30). */
+var _estimatePending = false;
 
 // All vehicle tiers have rates — no gating
 var GATED_VEHICLES = {};
@@ -3424,6 +3431,7 @@ function buildEstimatePayload(override) {
 
 function refreshEstimate() {
   clearTimeout(_estimateTimer);
+  _estimatePending = true;
   _estimateTimer = setTimeout(function() {
     _runEstimate();
   }, 350);
@@ -3436,6 +3444,7 @@ async function _runEstimate() {
 
   // Fix 1: no vehicle chosen yet — don't price, prompt the operator to pick one.
   if (!st.vehicleType) {
+    _estimatePending = false;
     lastEstimate = null;
     lastEstimateError = 'Pick a vehicle above to price this trip.';
     render();
@@ -3444,6 +3453,7 @@ async function _runEstimate() {
 
   // Gate: gated vehicle types — skip server call entirely
   if (GATED_VEHICLES[st.vehicleType]) {
+    _estimatePending = false;
     lastEstimate = null;
     var label = VEHICLE_LABELS[st.vehicleType] || st.vehicleType;
     lastEstimateError = 'No rate set for ' + label + ' yet — pick Car or Van 6, or add its rate.';
@@ -3462,6 +3472,7 @@ async function _runEstimate() {
   // Chauffeur with a dated-and-undated mix: the server would 400 ("date on every leg"). Don't
   // fire that doomed request — priceNeeds() surfaces exactly which legs need a date instead.
   if (chauffeurUndatedLegs().length) {
+    _estimatePending = false;
     lastEstimate = null;
     lastEstimateError = null; // priceNeeds() carries the reason (it wins the summary display)
     render();
@@ -3495,9 +3506,11 @@ async function _runEstimate() {
 
   var result = await apiEstimate(payload);
 
-  // V8: a newer estimate started while we awaited — drop this stale result.
+  // V8: a newer estimate started while we awaited — drop this stale result. The pending flag
+  // deliberately stays set: the newer run owns it and has not settled yet.
   if (seq !== _estimateSeq) return;
 
+  _estimatePending = false;
   if (result.error) {
     lastEstimate = null;
     // Friendly version for the common unknown-distance case
@@ -5727,7 +5740,10 @@ function submitBlockers() {
      saves first, which clears the shell server-side before the PATCH, and if that save fails its
      error handling already maps the server's 400 unpriced_quote to human copy. */
   if (state.unpriced && !lastEstimate) add('A price — this quote has not been priced yet', '.ch-money');
-  else if (!out.length && !lastEstimate) add('A price — the trip could not be costed', '.ch-money');
+  // …but only once pricing has actually SETTLED. While a re-price is still in flight this
+  // branch cannot tell "not costed yet" from "could not be costed", and blocking on the
+  // former silently swallowed the operator's first press of Approve after a reopen.
+  else if (!out.length && !lastEstimate && !_estimatePending) add('A price — the trip could not be costed', '.ch-money');
   return out;
 }
 
