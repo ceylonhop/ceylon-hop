@@ -24,6 +24,22 @@ export const CustomerInput = z.object({
 
 export type CustomerInput = z.infer<typeof CustomerInput>;
 
+// Billing details for the card, collected on the pay page (2026-08-01). Distinct from the
+// CustomerInput above, which is the LEAD PASSENGER — who is travelling and who we contact.
+// The cardholder name is optional: it is sent only when the payer ticked "billing details are
+// different from the lead passenger", and otherwise the lead passenger's name is used.
+// address/city/country are required whenever billing is sent at all — the whole point is to
+// stop the adapter fabricating them for the payment gateway.
+export const BillingInput = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  address: z.string().min(1),
+  city: z.string().min(1),
+  country: z.string().min(1),
+});
+
+export type BillingInput = z.infer<typeof BillingInput>;
+
 // The total the customer was quoted on the site, in minor units (cents). The booking
 // records THIS — the price they agreed to — instead of a recomputed server stub, so the
 // confirmation, the DB, and the eventual charge all match. Bounded to reject tampering
