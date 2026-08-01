@@ -1,6 +1,5 @@
 import { RATE_CARD, type RateCard, type ExtraCode } from './rateCard';
-import type { LineItem } from './types';
-import { type ExtraInput, normalizeExtra } from './types';
+import { type ExtraInput, type LineItem, normalizeExtra } from './types';
 
 export const EXTRA_LABELS: Record<ExtraCode, string> = {
   sightseeing: 'Sightseeing stops (up to 3h)',

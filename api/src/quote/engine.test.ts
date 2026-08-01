@@ -150,6 +150,7 @@ describe('quote()', () => {
     const r = quote({ ...base, extras: ['safari-wait'] });
     expect(r.totalCents).toBe(withoutExtras.totalCents);
     expect(r.warnings.some((w) => w.includes('safari-wait') && w.includes('included in chauffeur day rate'))).toBe(true);
+    expect(r.lineItems.some((li) => li.label.includes('(included)'))).toBe(false);
   });
 
   it('private: sightseeing is still charged (included-in-chauffeur rule does not apply to private)', () => {

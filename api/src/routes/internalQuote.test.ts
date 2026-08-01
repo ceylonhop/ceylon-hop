@@ -2371,21 +2371,22 @@ describe('per-leg extras attribution', () => {
   });
 
   it('REGRESSION: a stay day between two legs does not shift attribution', async () => {
-    // The stay day is dropped before pricing, so a raw state.legs index would name
-    // "Kandy → Ella" for a charge that actually belongs to "Ella → Yala".
+    // The stay day is dropped before pricing, so a raw state.legs index would resolve
+    // driving index 2 ("Ella → Yala") for a charge that actually belongs to driving
+    // index 1 ("Kandy → Ella").
     const res = await post(createApp(), '/admin/quote/estimate', {
       service: 'private', vehicle: 'car', passengerCount: 2, luggageCount: 2,
       legs: [
         { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
         { category: 'stay_day', from: 'Kandy', to: 'Kandy', distanceKm: 0 },
-        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 },
-        { category: 'transfer', from: 'Ella', to: 'Yala', distanceKm: 100, addSightseeingFee: true },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, addSightseeingFee: true },
+        { category: 'transfer', from: 'Ella', to: 'Yala', distanceKm: 100 },
       ],
     });
     const body = await res.json();
     const labels = body.lineItems.map((li: { label: string }) => li.label);
-    expect(labels).toContain('Sightseeing stops (up to 3h) — Ella → Yala');
-    expect(labels).not.toContain('Sightseeing stops (up to 3h) — Kandy → Ella');
+    expect(labels).toContain('Sightseeing stops (up to 3h) — Kandy → Ella');
+    expect(labels).not.toContain('Sightseeing stops (up to 3h) — Ella → Yala');
   });
 
   it('totals are unchanged by attribution', async () => {
