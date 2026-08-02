@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
