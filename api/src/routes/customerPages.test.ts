@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
+import { customerPagesRoutes } from './customerPages';
 
 // The staging 404 (owner report, 2026-07-31): a payment link minted against APP_BASE_URL
 // pointed at the API host — ops.staging.ceylonhop.com/manage.html — and the API had no such
@@ -151,5 +152,25 @@ describe('pay links unfurl as a Ceylon Hop card', () => {
     expect(res.headers.get('cache-control')).toContain('max-age=300');
     const bytes = new Uint8Array(await res.arrayBuffer());
     expect(Array.from(bytes.slice(1, 4))).toEqual([0x50, 0x4e, 0x47]); // PNG magic
+  });
+});
+
+// Caught on staging, not by a test (2026-08-02): staging's APP_BASE_URL is scheme-less, so
+// og:image rendered as "ops.staging.ceylonhop.com/pay/card.png" — and Meta requires an
+// ABSOLUTE url. A relative og:image is silently ignored: no picture, which is the entire
+// point of the endpoint. Render also terminates TLS at its edge, so c.req.url inside the
+// container is http:// even when the world reached us over https.
+describe('og:image and og:url are always absolute https', () => {
+  it('repairs a scheme-less configured base url', async () => {
+    const r = customerPagesRoutes({ payBaseUrl: 'ops.staging.ceylonhop.com' });
+    const html = await (await r.request('/pay.html?t=x')).text();
+    expect(html).toContain('content="https://ops.staging.ceylonhop.com/pay/card.png');
+    expect(html).toContain('content="https://ops.staging.ceylonhop.com/pay.html');
+  });
+
+  it('honours x-forwarded-proto when no base url is configured', async () => {
+    const r = customerPagesRoutes();
+    const html = await (await r.request('/pay.html', { headers: { 'x-forwarded-proto': 'https' } })).text();
+    expect(html).toMatch(/og:image" content="https:\/\//);
   });
 });

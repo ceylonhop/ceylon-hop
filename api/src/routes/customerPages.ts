@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'node:fs';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -93,6 +93,24 @@ function ogTags(meta: { title: string; description: string }, pageUrl: string, i
   ].map(([k, v]) => `<meta property="${k}" content="${esc(v)}">`).join('\n');
 }
 
+/**
+ * Absolute origin for og:url / og:image. Meta silently ignores a RELATIVE og:image — no
+ * picture, which is the whole point of the endpoint — and staging's APP_BASE_URL is
+ * scheme-less, so trusting the configured value directly emitted exactly that (caught on
+ * staging, 2026-08-02). Render also terminates TLS at its edge, so `c.req.url` inside the
+ * container is http:// even when the world reached us over https; x-forwarded-proto is the
+ * truth. Same reasoning as shareCard.ts's origin(), which is why they look alike.
+ */
+function absoluteOrigin(configured: string | undefined, c: Context): string {
+  if (configured) {
+    const trimmed = configured.replace(/\/$/, '');
+    return /^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
+  const url = new URL(c.req.url);
+  const proto = (c.req.header('x-forwarded-proto') || url.protocol.replace(':', '')).split(',')[0].trim();
+  return `${proto}://${url.host}`;
+}
+
 const forApiHost = (html: string) =>
   html
     .replace('<head>', '<head>\n<script>window.CEYLON_HOP_API=location.origin;</script>')
@@ -138,7 +156,7 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
       // established (spec: deliberately deferred).
       if (page !== 'pay.html') return c.html(html);
       const token = c.req.query('t');
-      const origin = deps.payBaseUrl?.replace(/\/$/, '') || new URL(c.req.url).origin;
+      const origin = absoluteOrigin(deps.payBaseUrl, c);
       const model = await modelFor(token);
       const image = `${origin}/pay/card.png${token ? `?t=${encodeURIComponent(token)}` : ''}`;
       const page_ = `${origin}/pay.html${token ? `?t=${encodeURIComponent(token)}` : ''}`;
