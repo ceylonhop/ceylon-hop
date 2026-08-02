@@ -145,6 +145,16 @@ describe('pay links unfurl as a Ceylon Hop card', () => {
     expect(previews[0]).toBe(previews[1]); // identical — nothing to diff
   });
 
+  // Owner-reported 2026-08-02: after the first deploy the title and description unfurled
+  // correctly but NO IMAGE appeared. og:image alone is not enough — WhatsApp will not measure
+  // the file, so without declared dimensions it renders a text-only preview.
+  it('declares the image dimensions, or WhatsApp renders no picture at all', async () => {
+    const html = await (await cardApp(new InMemoryQuoteRepo()).request('/pay.html?t=x')).text();
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('property="og:image:height" content="630"');
+    expect(html).toContain('property="og:image:type" content="image/png"');
+  });
+
   it('serves the card image as a real PNG with the chat-app cache header', async () => {
     const res = await cardApp(new InMemoryQuoteRepo()).request('/pay/card.png');
     expect(res.status).toBe(200);

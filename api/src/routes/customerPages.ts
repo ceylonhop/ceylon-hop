@@ -87,7 +87,14 @@ function ogTags(meta: { title: string; description: string }, pageUrl: string, i
   return [
     ['og:type', 'website'], ['og:site_name', 'Ceylon Hop'],
     ['og:title', meta.title], ['og:description', meta.description],
-    ['og:image', imageUrl], ['og:url', pageUrl],
+    ['og:image', imageUrl],
+    // WhatsApp needs EXPLICIT dimensions to render the large card. With og:image alone it
+    // fetched the tags fine — title and description updated — and then fell back to a
+    // text-only preview with no picture (owner-reported, 2026-08-02). The crawler will not
+    // measure the image itself, so declaring 1200x630 up front is what unlocks the card.
+    ['og:image:width', '1200'], ['og:image:height', '630'], ['og:image:type', 'image/png'],
+    ['og:image:alt', 'Ceylon Hop — secure payment'],
+    ['og:url', pageUrl],
     ['twitter:card', 'summary_large_image'], ['twitter:title', meta.title],
     ['twitter:description', meta.description], ['twitter:image', imageUrl],
   ].map(([k, v]) => `<meta property="${k}" content="${esc(v)}">`).join('\n');

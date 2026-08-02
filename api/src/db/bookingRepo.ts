@@ -4,6 +4,19 @@ import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
 
+/**
+ * Groups bookings belonging to one human. MUST match the `person_key` generated column on
+ * customers (migration 0032, `lower(btrim(email))`) — the SQL repo reads the DB's value and
+ * the in-memory repo computes it here, so this is the one definition both agree on.
+ *
+ * Note what this deliberately is NOT: a merge. Every booking keeps its own customers row,
+ * because that row is the traveller snapshot for that booking — reusing one row across
+ * bookings would rewrite the name on the older ones.
+ */
+export function personKeyFor(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
 // payment-link tool will write 'whatsapp'.
 export type BookingChannel = 'website' | 'whatsapp';

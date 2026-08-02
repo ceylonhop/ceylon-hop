@@ -225,6 +225,13 @@
       "when": 1785603600000,
       "tag": "0031_terms_accepted",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0032_customer_person_key",
+      "breakpoints": true
     }
   ]
 }
