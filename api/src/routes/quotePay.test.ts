@@ -97,21 +97,42 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.copy.facts.map((f: { k: string }) => f.k)).toEqual(['Trip', 'Days', 'Travellers', 'Starts']);
   });
 
-  // Billing = the CARDHOLDER NAME only (owner, 2026-08-02). The billing ADDRESS is collected
-  // by PayHere itself: any address we put in front of the acquirer — a hardcoded placeholder,
-  // or one typed into our own form — is not what the cardholder's bank holds, and an AVS
-  // mismatch declines real cards.
+  // Billing details (owner, 2026-08-01). The gateway used to be handed a hardcoded
+  // `address: 'N/A', city: 'Colombo'` — fabricated billing data on a live card charge, and a
+  // plausible AVS decline on foreign-issued cards. These pin the whole path: form → /start →
+  // booking columns → checkout payload.
+  it('start stores the billing details on the booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands',
+    });
+    expect(res.status).toBe(201);
+    const booking = await bookings.get((await res.json()).bookingId);
+    expect(booking?.billing).toEqual({ address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands' });
+  });
+
   it('start keeps the cardholder name when billing differs from the lead passenger', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const q = await readyQuote(quotes);
     const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
-      firstName: 'Anja', lastName: 'de Vries',
+      firstName: 'Anja', lastName: 'de Vries', address: 'Keizersgracht 1', city: 'Amsterdam', country: 'Netherlands',
     });
     const booking = await bookings.get((await res.json()).bookingId);
     // The traveller is unchanged — billing is a property of the transaction, not the person.
     expect(booking?.billing?.firstName).toBe('Anja');
     expect(booking?.input.customer.firstName).toBe('Nimal');
+  });
+
+  it('start refuses a half-filled billing object rather than passing it to the gateway', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263',
+    } as never);
+    expect(res.status).toBe(400);
   });
 
   it('start still works with no billing at all — an older cached page must not break', async () => {

@@ -86,12 +86,13 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
       country: c?.country ?? 'Sri Lanka',
       hash,
     };
-    // NO address/city — deliberately (owner, 2026-08-02). PayHere collects the billing address
-    // in its own step when these are absent, so the acquirer's AVS check sees exactly what the
-    // payer typed against their own card. We sent a hardcoded 'N/A'/'Colombo' until 2026-08-01,
-    // then briefly sent an address typed into OUR form; both put a value in front of AVS that
-    // the cardholder's bank had not agreed to, and cards were being declined. The gateway is
-    // the right place to ask.
+    // Billing address: send it ONLY when the booking actually captured one. This used to be
+    // `address: 'N/A', city: 'Colombo'` hardcoded — fabricated billing data on a live card
+    // transaction, wrong in the payment record and a plausible AVS decline on foreign-issued
+    // cards. Omitting the fields makes PayHere collect them in its own step (owner-caught,
+    // 2026-08-01), which is strictly better than asserting something false.
+    if (c?.address) fields.address = c.address;
+    if (c?.city) fields.city = c.city;
     return {
       provider: this.provider,
       orderId: args.orderId,

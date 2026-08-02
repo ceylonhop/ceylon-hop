@@ -65,19 +65,32 @@ describe('PayHerePaymentAdapter', () => {
     expect(JSON.stringify(p.fields)).not.toContain('Colombo');
   });
 
-  // Owner-caught 2026-08-02: real cards were being DECLINED. Whatever address we put in front
-  // of the acquirer — the old hardcoded placeholder, or one typed into our own form — is not
-  // what the cardholder's bank has on file, and an AVS mismatch declines. PayHere asks for it
-  // itself when we send nothing, so the bank sees exactly what the payer typed against the card.
-  it('never sends an address, even when the caller has one', async () => {
+  it('sends the real billing address when one was captured', async () => {
     const p = await adapter().createCheckout({
       orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
       customer: { firstName: 'Anja', lastName: 'de Vries', email: 'a@x.com', phone: '+31641256927',
-        country: 'Netherlands' },
+        country: 'Netherlands', address: 'Prinsengracht 263', city: 'Amsterdam' },
     });
-    expect(p.fields?.address).toBeUndefined();
-    expect(p.fields?.city).toBeUndefined();
-    expect(p.fields?.country).toBe('Netherlands'); // country is not an AVS field
+    expect(p.fields?.address).toBe('Prinsengracht 263');
+    expect(p.fields?.city).toBe('Amsterdam');
+    expect(p.fields?.country).toBe('Netherlands');
+  });
+
+  // 2026-08-02, PROD INCIDENT: address/city were removed on the theory that PayHere would
+  // prompt for them. It does not — that is the HOSTED PAYMENT LINK product, not this JS SDK.
+  // The SDK lists address/city/country as REQUIRED and fires payhere.onError on invalid
+  // parameters, so the popup never opened at all and no one could pay. Worse than the
+  // declines it was meant to fix. This asserts every field the SDK requires is present.
+  it('sends every field the PayHere JS SDK requires — omitting one kills the popup', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
+      customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', phone: '+94770001111',
+        country: 'Sri Lanka', address: '221B Galle Road', city: 'Colombo' },
+    });
+    for (const f of ['merchant_id', 'order_id', 'items', 'amount', 'currency', 'hash',
+                     'first_name', 'last_name', 'email', 'phone', 'address', 'city', 'country']) {
+      expect(p.fields?.[f], `PayHere requires ${f}`).toBeTruthy();
+    }
   });
 
   it('verifies a correctly-signed notify and maps status 2 -> succeeded', () => {
