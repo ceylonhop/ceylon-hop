@@ -135,6 +135,50 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(res.status).toBe(400);
   });
 
+  // OWNER-HIT IN PROD, 2026-08-02. Q-2J358 pointed at a CANCELLED booking, /start kept handing
+  // that booking back, /bookings/:id/checkout correctly refused it (409 not_chargeable), and the
+  // PayHere window never opened — the customer only saw "we couldn't start your payment".
+  // Permanently: the resume consults convertedBookingId BEFORE the revision-scoped key, so even
+  // a new quote revision returned the same dead booking.
+  it('a CANCELLED booking must not brick the quote — start mints a fresh one', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const first = (await (await start(app, token)).json()).bookingId;
+    await bookings.setStatus(first, 'cancelled');
+
+    const second = (await (await start(app, token)).json()).bookingId;
+    expect(second).not.toBe(first);                                   // not the dead one
+    const fresh = await bookings.get(second);
+    expect(fresh?.status).toBe('payment_pending');                    // chargeable again
+    // …and the quote now points at the live booking, not the corpse.
+    expect((await quotes.get(q.id))?.convertedBookingId).toBe(second);
+  });
+
+  it('a double tap after a cancellation still yields ONE booking, not two', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    await bookings.setStatus((await (await start(app, token)).json()).bookingId, 'cancelled');
+    const [a, b] = await Promise.all([start(app, token), start(app, token)]);
+    expect((await a.json()).bookingId).toBe((await b.json()).bookingId);
+  });
+
+  it('a PAYMENT_PENDING booking is still resumed, not duplicated', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    const first = (await (await start(app, token)).json()).bookingId;
+    expect((await (await start(app, token)).json()).bookingId).toBe(first);
+  });
+
   it('start still works with no billing at all — an older cached page must not break', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
