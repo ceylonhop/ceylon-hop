@@ -49,6 +49,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dt-chk input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
   .dt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .dt-2col[hidden]{display:none}
+  /* "optional" rides in the label so the field reads as skippable at a glance — a postcode
+     the payer cannot supply must never look like a blocker (2026-08-02). */
+  .fld label span{float:right;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-faint);opacity:.8}
   .dt-terms{padding-top:12px;margin-top:2px;border-top:1px solid var(--line);align-items:flex-start}
   .dt-terms a{color:var(--accent-deep);font-weight:700}
   .dt-terms b{display:block;font-weight:600;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
@@ -343,10 +346,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +   '<div class="fld"><label for="f-bfirst">Cardholder first name</label><input id="f-bfirst" type="text" value="' + esc((typed && typed.billFirst) || '') + '" autocomplete="billing given-name" /></div>'
       +   '<div class="fld"><label for="f-blast">Cardholder last name</label><input id="f-blast" type="text" value="' + esc((typed && typed.billLast) || '') + '" autocomplete="billing family-name" /></div>'
       + '</div>'
+      + '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
       + '<div class="fld"><label for="f-addr">Billing address</label><input id="f-addr" type="text" value="' + esc((typed && typed.address) || '') + '" placeholder="Street and number" autocomplete="billing street-address" /></div>'
       + '<div class="dt-2col">'
       +   '<div class="fld"><label for="f-city">City</label><input id="f-city" type="text" value="' + esc((typed && typed.city) || '') + '" placeholder="e.g. Amsterdam" autocomplete="billing address-level2" /></div>'
-      +   '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
+      +   '<div class="fld"><label for="f-postcode" id="f-postcode-label">Postcode / ZIP <span>optional</span></label><input id="f-postcode" type="text" value="' + esc((typed && typed.postcode) || '') + '" autocomplete="billing postal-code" /></div>'
       + '</div>'
       + '<label class="dt-chk dt-terms"><input id="f-terms" type="checkbox"' + (typed && typed.terms ? ' checked' : '') + ' />'
       +   '<span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a>.'
@@ -366,6 +370,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
     }
+    // The billing country was set ONCE from the phone prefill and then never moved, so
+    // changing the dial code to United States left the billing country reading Sri Lanka
+    // (owner-caught, 2026-08-02). It now FOLLOWS the phone country — until the payer picks a
+    // billing country themselves, after which their choice is never overwritten.
+    var phoneSel = document.getElementById('f-country'), billSel = document.getElementById('f-bcountry');
+    var billTouched = false;
+    billSel.addEventListener('change', function(){ billTouched = true; });
+    phoneSel.addEventListener('change', function(){
+      if (billTouched) return;
+      var name = (phoneSel.value || '').trim();
+      // Only if that country exists in the billing list — the two are built from one source,
+      // so this is belt-and-braces rather than an expected miss.
+      for (var i = 0; i < billSel.options.length; i++) {
+        if (billSel.options[i].value === name) { billSel.value = name; return; }
+      }
+    });
+
     var diff = document.getElementById('f-diffbill'), names = document.getElementById('billnames');
     diff.addEventListener('change', function(){
       names.hidden = !diff.checked;
@@ -404,6 +425,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       phone: (document.getElementById('f-phone').value || '').trim(),
       address: (document.getElementById('f-addr').value || '').trim(),
       city: (document.getElementById('f-city').value || '').trim(),
+      postcode: (document.getElementById('f-postcode').value || '').trim(),
       billCountry: (document.getElementById('f-bcountry').value || '').trim(),
       billDiffers: document.getElementById('f-diffbill').checked,
       billFirst: (document.getElementById('f-bfirst').value || '').trim(),
@@ -423,6 +445,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var billing = {
       address: typed.address, city: typed.city, country: typed.billCountry,
     };
+    // OMIT rather than send '': BillingInput requires a non-empty string when the key is
+    // present, so an empty postcode would 400 — the same block on a Hong Kong or UAE payer,
+    // just moved to the server. Caught by the e2e, not by reading the code.
+    if (typed.postcode) billing.postcode = typed.postcode;
     if (typed.billDiffers) { billing.firstName = typed.billFirst; billing.lastName = typed.billLast; }
     var customer = {
       firstName: typed.firstName,

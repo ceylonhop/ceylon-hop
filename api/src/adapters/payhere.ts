@@ -91,7 +91,11 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     // transaction, wrong in the payment record and a plausible AVS decline on foreign-issued
     // cards. Omitting the fields makes PayHere collect them in its own step (owner-caught,
     // 2026-08-01), which is strictly better than asserting something false.
-    if (c?.address) fields.address = c.address;
+    // PayHere has NO postcode parameter, and a postcode is the strongest AVS signal most
+    // issuers check — so it rides on the address line, which their docs define as
+    // "Address Line1 + Line2" (free text). Omitting it entirely would hand the acquirer an
+    // address with the one part the bank actually matches on missing.
+    if (c?.address) fields.address = c.postcode ? `${c.address}, ${c.postcode}` : c.address;
     if (c?.city) fields.city = c.city;
     return {
       provider: this.provider,
