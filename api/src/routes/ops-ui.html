@@ -2628,12 +2628,23 @@ function opsWindowOpen(t, now){
   if(at === null) return false;
   return (now ?? Date.now()) < at - REFUND_CUTOFF_MS;
 }
+/* Bookings frequently arrive INSIDE 24h of travel, so ops may also undo work they just took,
+   whatever the travel date. Mirrors withinGrace() in domain/reversalWindow.ts — without it the
+   button would be hidden on exactly the same-day intake this grace exists to unblock. */
+function opsGraceOpen(d, now){
+  const created = Date.parse((d && d.booking && d.booking.createdAt) || '');
+  if(!Number.isFinite(created)) return false;   // unknown age → no grace, as on the server
+  const age = (now ?? Date.now()) - created;
+  if(age < 0) return false;                     // created in the FUTURE (skew/bad data) is not "fresh"
+  return age < REFUND_CUTOFF_MS;
+}
 
 /* Owner rule 2026-08-02: an ops agent may cancel/refund up to 24 hours before the trip starts
    and must give a reason; a founder may at any time. Mirrors mayReverse() on the server. */
-function mayReverseNow(t){
+function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('payments:reverse')) return true; // founder, unlimited
-  if(state.caps && state.caps.includes('bookings:operate')) return opsWindowOpen(t);
+  const detail = d || state.detailData;
+  if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
   return false;
 }
 function reverseActionsFor(t, d){
@@ -2645,7 +2656,7 @@ function reverseActionsFor(t, d){
   const s = refundSummary(d);
   /* Only ops is time-limited. The old code disabled the refund for EVERYONE past the cutoff,
      which contradicted the rule that a founder is never time-limited. */
-  const blocked = opsAgent && !opsWindowOpen(t);
+  const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);
   const why = tripStartMs(t) === null
     ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
     : 'The trip starts in under 24 hours — only a founder can cancel or refund from here';
@@ -3135,7 +3146,7 @@ document.addEventListener('click',async e=>{
     case 'cancelbooking':{
       /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
          before a session change must not be able to POST what it should no longer offer. */
-      if(!mayReverseNow(t))break;
+      if(!mayReverseNow(t,state.detailData))break;
       const reasonEl=$('#reversereason');
       const cancelReason=((reasonEl&&reasonEl.value)||'').trim();
       if(!cancelReason){toast('Give a reason first — it is saved against the booking','error');if(reasonEl)reasonEl.focus();break;}
@@ -3183,7 +3194,7 @@ document.addEventListener('click',async e=>{
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
-      if(!mayReverseNow(t))break;
+      if(!mayReverseNow(t,state.detailData))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
       /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
          amount box would only invite records the gateway can't honour. */

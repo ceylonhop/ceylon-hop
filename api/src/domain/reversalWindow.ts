@@ -11,6 +11,15 @@ import type { Booking } from '../db/bookingRepo';
 
 export const REVERSAL_WINDOW_HOURS = 24;
 
+// Bookings frequently arrive INSIDE 24 hours of travel (owner, 2026-08-02). With only the
+// trip-proximity rule, ops could never reverse exactly those — the most time-critical intake —
+// and every same-day cancellation would escalate. So a booking is also reversible by ops while
+// it is still fresh: they may undo work they just took, whatever the travel date, but they may
+// not reverse a long-standing booking on the eve of its trip. One constant, deliberately equal
+// to the window above so the rule states in one breath: "more than 24h before the trip, or
+// within 24h of taking the booking".
+export const FRESH_BOOKING_GRACE_HOURS = 24;
+
 // Sri Lanka is a fixed UTC+05:30 with no DST, so a literal offset is exact and keeps this a pure
 // string→instant computation. Same approach as domain/rideList.ts cutoffAt().
 const SLK_OFFSET = '+05:30';
@@ -59,6 +68,11 @@ export function mayReverse(role: OpsRole, booking: Booking, now: Date = new Date
     return { ok: false, code: 'reverse_forbidden', message: 'Cancelling and refunding is not part of this role.' };
   }
 
+  // Fresh intake: ops may undo what they just took, whatever the travel date. This is what
+  // makes same-day bookings workable, and it is why an unknown trip date is not automatically
+  // a dead end for a booking taken minutes ago.
+  if (withinGrace(booking, now)) return { ok: true };
+
   const start = tripStartAt(booking);
   // Fail closed. An unknown start cannot be shown to be OUTSIDE the window, and the whole point
   // of the rule is that the last day before a trip is protected.
@@ -79,4 +93,16 @@ export function mayReverse(role: OpsRole, booking: Booking, now: Date = new Date
     code: 'within_24h_founder_only',
     message: `The trip starts in under ${REVERSAL_WINDOW_HOURS} hours — only a founder can cancel or refund from here.`,
   };
+}
+
+/** Is this booking still fresh enough for whoever took it to undo it? */
+function withinGrace(booking: Booking, now: Date): boolean {
+  const created = Date.parse(booking.createdAt ?? '');
+  if (!Number.isFinite(created)) return false; // unknown age → no grace, same fail-closed stance
+  const age = now.getTime() - created;
+  // A NEGATIVE age means the row claims to have been created in the future — clock skew or bad
+  // data. Without this it would satisfy "< 24 hours old" forever, making the booking permanently
+  // reversible by ops. Nonsense data must not be the most permissive case.
+  if (age < 0) return false;
+  return age < FRESH_BOOKING_GRACE_HOURS * 3600_000;
 }

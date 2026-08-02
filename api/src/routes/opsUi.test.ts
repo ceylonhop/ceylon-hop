@@ -715,7 +715,15 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     const body = await uiBody();
     expect(body).toContain('function mayReverseNow(');
     expect(body).toContain("state.caps.includes('payments:reverse')) return true;");
-    expect(body).toContain('const blocked = opsAgent && !opsWindowOpen(t);');
+    expect(body).toContain('const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);');
+  });
+
+  // Bookings frequently arrive inside 24h of travel, so ops must be able to undo fresh intake.
+  it('gives ops a grace window on a booking they just took', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function opsGraceOpen(');
+    expect(body).toContain("d.booking.createdAt");
+    expect(body).toContain('if(!Number.isFinite(created)) return false;'); // unknown age fails closed
   });
 
   it('requires a typed reason for both cancelling and refunding', async () => {

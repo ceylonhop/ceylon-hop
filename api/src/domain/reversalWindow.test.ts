@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tripStartAt, mayReverse, REVERSAL_WINDOW_HOURS } from './reversalWindow';
+import { tripStartAt, mayReverse, REVERSAL_WINDOW_HOURS, FRESH_BOOKING_GRACE_HOURS } from './reversalWindow';
 import type { Booking } from '../db/bookingRepo';
 
 // Owner rule, 2026-08-02: an ops agent may cancel or refund up to 24 hours before the trip
@@ -107,7 +107,51 @@ describe('mayReverse', () => {
     });
   });
 
-  it('exposes the window so the number is testable rather than buried', () => {
+  // Owner, 2026-08-02: bookings frequently arrive INSIDE 24 hours of travel. Without this,
+  // ops could never reverse exactly those — the most time-critical intake.
+  describe('fresh-booking grace — ops may undo what they just took', () => {
+    const freshSameDay = (createdAt: string, date: string, time: string) =>
+      ({ mode: 'single', createdAt, input: { date, time } }) as unknown as Booking;
+
+    it('lets ops reverse a same-day booking they took an hour ago', () => {
+      // Trip in 6 hours (deep inside the protected window) but booked 1 hour ago.
+      const b = freshSameDay('2026-09-16T02:00:00Z', '2026-09-16', '14:00');
+      expect(mayReverse('ops', b, at('2026-09-16T03:00:00Z')).ok).toBe(true);
+    });
+
+    it('lets ops reverse a fresh booking that has no trip date at all', () => {
+      const b = { mode: 'single', createdAt: '2026-09-16T02:00:00Z', input: {} } as unknown as Booking;
+      expect(mayReverse('ops', b, at('2026-09-16T03:00:00Z')).ok).toBe(true);
+    });
+
+    it('expires: a day-old booking near its trip is founder-only again', () => {
+      const b = freshSameDay('2026-09-15T00:00:00Z', '2026-09-16', '14:00');
+      const out = mayReverse('ops', b, at('2026-09-16T02:00:00Z')); // 26h old, trip in 6h
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.code).toBe('within_24h_founder_only');
+    });
+
+    // Clock skew or bad data must not be the most permissive case: a negative age would satisfy
+    // "less than 24 hours old" forever.
+    it('does not grant grace to a booking created in the FUTURE', () => {
+      const b = freshSameDay('2030-01-01T10:00:00Z', '2026-09-16', '14:00');
+      expect(mayReverse('ops', b, at('2026-09-16T02:00:00Z')).ok).toBe(false);
+    });
+
+    it('does not grant grace when the booking age is unknown — fails closed', () => {
+      const b = { mode: 'single', createdAt: 'nonsense', input: {} } as unknown as Booking;
+      expect(mayReverse('ops', b, at('2026-09-16T03:00:00Z')).ok).toBe(false);
+    });
+
+    it('grace does not widen anything for a role without bookings:operate', () => {
+      const b = freshSameDay('2026-09-16T02:00:00Z', '2026-09-16', '14:00');
+      expect(mayReverse('finance', b, at('2026-09-16T03:00:00Z')).ok).toBe(false);
+    });
+  });
+
+  it('exposes both windows so the numbers are testable rather than buried', () => {
     expect(REVERSAL_WINDOW_HOURS).toBe(24);
+    expect(FRESH_BOOKING_GRACE_HOURS).toBe(24);
   });
 });

@@ -117,18 +117,21 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(403);
   });
 
-  // Ops MAY cancel now (owner rule 2026-08-02) — but only when the trip is more than 24 hours
-  // away, and this fixture booking has no date at all, so the rule cannot be satisfied.
-  it('403 for an ops session on a booking with no trip date — fails closed', async () => {
-    const { app } = makeApp();
+  // Ops MAY cancel now (owner rule 2026-08-02): more than 24h before the trip, OR within 24h of
+  // taking the booking. Every booking created through the API in these tests is seconds old, so
+  // the grace applies and ops is allowed even with no trip date — which is the point of the
+  // grace, since bookings frequently arrive inside 24h of travel. The AGED cases (grace expired,
+  // trip imminent) need a controlled clock and live in domain/reversalWindow.test.ts.
+  it('an ops session may cancel a booking it just took, even with no trip date', async () => {
+    const { app, bookings } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
       method: 'POST',
       headers: { cookie: await cookie('op@x.com'), 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'Customer called it off' }),
     });
-    expect(res.status).toBe(403);
-    expect((await res.json()).error).toBe('trip_start_unknown');
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.cancelledBy).toBe('op@x.com');
   });
 
   it('404 for an unknown booking', async () => {
@@ -166,13 +169,21 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect((await bookings.get(b.id))!.status).toBe('cancelled');
   });
 
-  it('an OPS agent may NOT cancel once the trip is inside 24 hours', async () => {
+  // A trip inside 24h is still reversible by ops HERE only because the booking is fresh. That
+  // combination is exactly the same-day intake case the grace exists for.
+  it('an OPS agent may cancel an imminent trip it just took', async () => {
     const { app, bookings } = makeApp();
-    const b = await bookOn(app, futureIsoDate(1), '00:00'); // today — well inside the window
-    const res = await cancelAs(app, b.id, 'op@x.com');
+    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    expect((await cancelAs(app, b.id, 'op@x.com')).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  it('finance may not cancel at all, however fresh the booking', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'fin@x.com');
     expect(res.status).toBe(403);
-    expect((await res.json()).error).toBe('within_24h_founder_only');
-    expect((await bookings.get(b.id))!.status).not.toBe('cancelled'); // untouched
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled');
   });
 
   it('a FOUNDER may cancel inside 24 hours — never time-limited', async () => {
@@ -222,13 +233,13 @@ describe('POST /admin/bookings/:id/cancel', () => {
         headers: { cookie: ck, 'content-type': 'application/json' },
         body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
       }));
-    // Inside the window: refused by the RULE, before the ledger is consulted at all.
-    const blocked = await refund(near.id, 'op@x.com');
-    expect(blocked.status).toBe(403);
-    expect((await blocked.json()).error).toBe('within_24h_founder_only');
-    // Outside it: the rule lets ops through, and the ledger then applies its own business
-    // check (409 — nothing was ever captured on this unpaid booking). Not 403 is the point.
+    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
+    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
+    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
+    expect((await refund(near.id, 'op@x.com')).status).toBe(409);
     expect((await refund(far.id, 'op@x.com')).status).toBe(409);
+    // finance has no bookings:operate, so it never reaches the ledger at all.
+    expect((await refund(far.id, 'fin@x.com')).status).toBe(403);
   });
 
   it('409 when the booking cannot be cancelled (already cancelled)', async () => {
