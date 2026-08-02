@@ -1411,6 +1411,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .qv .ch-modal-head h2 { font-family: var(--serif); font-size: 19px; font-weight: 700; }
 .qv .ch-modal-body { padding: 18px 20px 22px; overflow-y: auto; }
+.qv .ch-confirm-place { color: var(--wait); font-weight: 700; }
+.qv .ch-cand { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--paper); border-radius: var(--r-md); padding: 11px 13px; margin-bottom: 8px; transition: border-color .16s, transform .16s; }
+.qv .ch-cand:hover:not(:disabled) { border-color: var(--teal); transform: translateY(-1px); }
+.qv .ch-cand:disabled { opacity: .55; cursor: progress; }
+.qv .ch-cand-meta { font-size: 12px; color: var(--ink-soft); }
 /* Route-choice modal (2026-07-21): blue = expressway, amber = local road — deliberately NOT the brand teal. */
 .qv .ch-rc-body { display: flex; gap: 16px; align-items: stretch; }
 .qv .ch-rc-map { flex: 0 0 220px; min-height: 300px; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--surface-warm); }
@@ -3471,6 +3476,13 @@ var _payLinkCopied = false;   // press feedback: the button reads "Link copied" 
 var _payLinkCopiedT = null;
 var _payLinkShowRow = false;  // fallback only — the URL row appears when the clipboard write fails
 var routeModalLegId = null; // legId the route-choice modal is open for, or null
+// Positive location identification (spec 2026-08-02). Names the server could not identify —
+// it will not guess, because for "Yala, Sri Lanka" Google returns one confident, wrong result.
+// canonical name -> the string as typed. Cleared for a name once it has been confirmed.
+var unresolvedPlaces = {};
+var confirmPlace = null;      // { name } while the Confirm location panel is open
+var confirmCandidates = null; // loaded candidate list, or null while loading
+var confirmBusy = false;
 var _rcSel = null;        // route-choice modal: display-only highlighted variant before "Use"
 var _rcPrices = {};       // legId → { sig, fastest:<cents|null>, no_tolls:<cents|null>, loading:bool }
 var bookSubmitting = false; // true while a book POST is in flight — guards a double-click
@@ -4229,8 +4241,66 @@ async function apiDistance(from, to, compare) {
       body: JSON.stringify(compare ? { from: from, to: to, compare: true } : { from: from, to: to }),
     });
     if (!r.ok) return null;
-    return await r.json();
+    var body = await r.json();
+    noteUnresolved(body);
+    return body;
   } catch (e) { window.opsReportError && window.opsReportError('apiDistance', e); return null; }
+}
+
+// canonPlace(), mirrored from api/src/adapters/maps.ts so a name confirmed under one spelling
+// clears the warning shown for another. Keep the two in step.
+function canonPlaceKey(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/\s*,\s*sri lanka\s*$/, '').trim();
+}
+// The server priced this leg by NAME because it could not identify an endpoint (stage 1 is
+// non-blocking). Record it so the leg can offer "Confirm location".
+function noteUnresolved(body) {
+  if (!body || !body.unresolved || !body.unresolved.length) return;
+  var added = false;
+  body.unresolved.forEach(function (n) {
+    var k = canonPlaceKey(n);
+    if (!unresolvedPlaces[k]) { unresolvedPlaces[k] = n; added = true; }
+  });
+  // Redraw ourselves, but OUT OF BAND. Two separate reasons:
+  //  - the caller's render is not guaranteed: runAutoDistanceSingle and resolveSegmentDistance
+  //    both bail out early (stops changed mid-flight, segment went manual, leg reordered) and
+  //    return without rendering, leaving the warning in state and invisible;
+  //  - this runs inside apiDistance's try/catch, so a render that throws for ANY unrelated
+  //    reason would be swallowed as "no distance" and turn a good lookup into a failed one.
+  // Deferring and catching keeps a display concern from ever breaking a pricing lookup.
+  if (!added) return;
+  setTimeout(function () {
+    try { if (typeof render === 'function') render(); }
+    catch (e) { window.opsReportError && window.opsReportError('unresolved render', e); }
+  }, 0);
+}
+function unresolvedStopFor(leg, si) {
+  var pair = [leg.stops[si], leg.stops[si + 1]];
+  for (var i = 0; i < pair.length; i++) {
+    var hit = unresolvedPlaces[canonPlaceKey(pair[i])];
+    if (hit) return pair[i];
+  }
+  return null;
+}
+
+async function apiPlaceCandidates(name, near) {
+  var qs = '/admin/quote/place-candidates?q=' + encodeURIComponent(name) + (near ? '&near=' + encodeURIComponent(near) : '');
+  try {
+    var r = await api(qs);
+    if (!r.ok) return null;
+    var b = await jsonOrNull(r);
+    return (b && b.candidates) || [];
+  } catch (e) { window.opsReportError && window.opsReportError('placeCandidates', e); return null; }
+}
+async function apiPlaceConfirm(name, cand) {
+  try {
+    var r = await api('/admin/quote/place-confirm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: name, displayName: cand.displayName, lat: cand.lat, lng: cand.lng }),
+    });
+    return r.ok;
+  } catch (e) { window.opsReportError && window.opsReportError('placeConfirm', e); return false; }
 }
 
 async function apiEstimate(payload) {
@@ -4843,6 +4913,59 @@ async function bookQuote() {
   }
 }
 
+// ── Confirm location (spec 2026-08-02) ───────────────────────────────────────
+// Bias the candidate list toward the trip: `near` is the previous stop's coordinate when we
+// already hold one, which is what turns two identically-labelled Yalas into an obvious choice.
+function nearestKnownCoord(name) {
+  for (var i = 0; i < state.legs.length; i++) {
+    var stops = state.legs[i].stops || [];
+    var at = stops.indexOf(name);
+    if (at > 0) {
+      var prev = _confirmedCoords[canonPlaceKey(stops[at - 1])];
+      if (prev) return prev.lat + ',' + prev.lng;
+    }
+  }
+  return '';
+}
+// Coordinates we have seen the server confirm this session — enough to bias the next lookup.
+var _confirmedCoords = {};
+
+async function openConfirmPlace(name) {
+  if (!name) return;
+  confirmPlace = { name: name };
+  confirmCandidates = null;
+  confirmBusy = false;
+  render();
+  var list = await apiPlaceCandidates(name, nearestKnownCoord(name));
+  if (!confirmPlace || confirmPlace.name !== name) return; // superseded/closed while in flight
+  confirmCandidates = list || [];
+  render();
+}
+
+async function pickConfirmPlace(idx) {
+  if (confirmBusy || !confirmPlace || !confirmCandidates) return;
+  var cand = confirmCandidates[idx];
+  if (!cand) return;
+  var name = confirmPlace.name;
+  confirmBusy = true; render();
+  var ok = await apiPlaceConfirm(name, cand);
+  confirmBusy = false;
+  if (!ok) { showToast('Could not save that location', 'error'); render(); return; }
+  _confirmedCoords[canonPlaceKey(name)] = { lat: cand.lat, lng: cand.lng };
+  delete unresolvedPlaces[canonPlaceKey(name)];
+  confirmPlace = null; confirmCandidates = null;
+  // The cached distance was measured from the NAME. Drop it and re-resolve every leg touching
+  // this place, so the leg immediately shows the price it should always have had.
+  state.legs.forEach(function (l) {
+    if ((l.stops || []).some(function (st) { return canonPlaceKey(st) === canonPlaceKey(name); })) {
+      delete _distCache[l.id];
+      scheduleAutoDistance(l.id);
+    }
+  });
+  showToast('Location confirmed — re-pricing');
+  render();
+}
+
 // ── Reopen a saved quote (V19) ────────────────────────────────────────────────
 async function reopenQuote(id) {
   if (!id) return;
@@ -5203,6 +5326,13 @@ function renderLegCard(leg, idx, total) {
   function segmentHtml(si) {
     var s = leg.segments[si];
     if (!s) return '';
+    // An endpoint the server would not identify. The km beside it came from a name lookup, which
+    // is exactly how Q-CEVGM priced a leg at 78 km instead of 286 — so say so, and offer the fix.
+    var unconfirmed = unresolvedStopFor(leg, si);
+    var confirmChip = unconfirmed
+      ? '<button class="ch-link ch-confirm-place" data-action="confirmPlace" data-name="' + esc(unconfirmed) + '"'
+        + ' title="This distance was measured from a name, not a confirmed place">Confirm location</button>'
+      : '';
     if (s.manual) {
       return [
         '<div class="ch-leg-dist ch-dist-manual">',
@@ -5212,6 +5342,7 @@ function renderLegCard(leg, idx, total) {
         '    <span class="ch-input-suffix">km</span>',
         '  </div>',
         '  <button class="ch-link" data-action="autoDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '">auto</button>',
+        confirmChip,
         '</div>',
       ].join('');
     }
@@ -5221,6 +5352,7 @@ function renderLegCard(leg, idx, total) {
         '<div class="ch-leg-dist">',
         '  <span class="ch-dist-pill auto"><b>' + esc(s.km) + ' km</b>' + (segDur ? '<span class="ch-dist-time">' + esc(segDur) + '</span>' : '') + '</span>',
         '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '" title="Edit distance">&#9998;</button>',
+        confirmChip,
         '</div>',
       ].join('');
     }
@@ -5228,6 +5360,7 @@ function renderLegCard(leg, idx, total) {
       '<div class="ch-leg-dist">',
       '  <span class="ch-dist-pill warn">No distance</span>',
       '  <button class="ch-link" data-action="manualDistance" data-leg="' + esc(leg.id) + '" data-seg="' + si + '">set</button>',
+      confirmChip,
       '</div>',
     ].join('');
   }
@@ -7551,6 +7684,43 @@ function render() {
       '</div>',
     ].join('') : ''),
 
+    // ══ Confirm location panel (spec 2026-08-02) ══
+    // Google labels BOTH Yalas as plain "Sri Lanka", so its own text cannot separate them. The
+    // administrative area and the distance from the previous stop can, which is why each
+    // candidate leads with those rather than with the name.
+    (confirmPlace ? (function () {
+      var rows;
+      if (confirmCandidates === null) {
+        rows = '<p class="ch-muted">Looking up “' + esc(confirmPlace.name) + '”…</p>';
+      } else if (!confirmCandidates.length) {
+        rows = '<p class="ch-muted">No candidates came back. Check the spelling, or set the distance manually on the leg.</p>';
+      } else {
+        rows = confirmCandidates.map(function (c, i) {
+          var meta = [c.area || 'Sri Lanka'];
+          if (c.kmFromPrevious != null) meta.push(c.kmFromPrevious + ' km from the previous stop');
+          return '<button class="ch-cand" data-action="confirmPlacePick" data-idx="' + i + '"' + (confirmBusy ? ' disabled' : '') + '>'
+            + '<b>' + esc(c.displayName) + '</b>'
+            + '<span class="ch-cand-meta">' + esc(meta.join(' · ')) + '</span>'
+            + '</button>';
+        }).join('');
+      }
+      return [
+        '<div class="ch-scrim show" data-action="confirmPlaceClose"></div>',
+        '<div class="ch-modal">',
+        '  <div class="ch-modal-card">',
+        '    <div class="ch-modal-head">',
+        '      <h2>Which place is “' + esc(confirmPlace.name) + '”?</h2>',
+        '      <button class="ch-mini-btn" data-action="confirmPlaceClose" title="Close">&times;</button>',
+        '    </div>',
+        '    <div class="ch-modal-body">',
+        '      <p class="ch-muted" style="margin-bottom:12px">This distance was measured from the name alone. Pick the real place once and every future quote using it prices from the same point.</p>',
+        rows,
+        '    </div>',
+        '  </div>',
+        '</div>',
+      ].join('');
+    })() : ''),
+
     // ══ Route-choice modal (2026-07-21) ══
     (routeModalLegId ? (function () {
       var d = getRouteModalData(routeModalLegId); if (!d) return '';
@@ -7975,6 +8145,13 @@ function attachEventListeners() {
       runAction(action, payLinkPress);
     } else if (action === 'copyPayLink') {
       copyPayLink();
+    } else if (action === 'confirmPlace') {
+      openConfirmPlace(el.getAttribute('data-name') || '');
+    } else if (action === 'confirmPlaceClose') {
+      confirmPlace = null; confirmCandidates = null; confirmBusy = false;
+      render();
+    } else if (action === 'confirmPlacePick') {
+      pickConfirmPlace(parseInt(el.getAttribute('data-idx'), 10));
     } else if (action === 'markWon') {
       bookOpen = true;
       render();

@@ -188,9 +188,22 @@ const FAKE_VARIANT_PAIRS: [string, string, DistanceResult, DistanceResult][] = [
   ['colombo airport (cmb)', 'galle', { km: 148, durationMin: 120 }, { km: 130, durationMin: 205 }],
 ];
 
+// A catalog place now reaches the adapters as its exact "lat,lng" (the place resolver hands
+// over coordinates, never a re-geocodable name). The dev/e2e variant table is keyed on names,
+// so map an exact catalog coordinate back to its key — otherwise keyless dev silently loses the
+// scripted route-choice pairs the moment resolution is switched on.
+function coordKey(s: string): string {
+  const p = parseLatLng(s);
+  if (!p) return canonPlace(s);
+  for (const [key, c] of Object.entries(COORDS)) {
+    if (c[0] === p[0] && c[1] === p[1]) return key;
+  }
+  return canonPlace(s);
+}
+
 function fakeVariantPair(from: string, to: string): RouteVariants | null {
-  const a = norm(from);
-  const b = norm(to);
+  const a = coordKey(from);
+  const b = coordKey(to);
   for (const [x, y, fastest, noTolls] of FAKE_VARIANT_PAIRS) {
     if ((a === x && b === y) || (a === y && b === x)) {
       // Same gate as the real adapter, so keyless dev never shows a fork prod would suppress.

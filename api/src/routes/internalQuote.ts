@@ -211,6 +211,18 @@ async function distanceVia(
   return { d: await maps.distance(from, to), unresolved };
 }
 
+// Both endpoints identified → their coordinate strings; otherwise null, meaning "fall back to
+// the names" (stage 1 is non-blocking).
+async function resolvePairForMaps(
+  resolver: PlaceResolver,
+  from: string,
+  to: string,
+): Promise<{ from: string; to: string } | null> {
+  const [rf, rt] = await Promise.all([resolver.resolve(from), resolver.resolve(to)]);
+  if (rf.kind !== 'resolved' || rt.kind !== 'resolved') return null;
+  return { from: asLatLng(rf), to: asLatLng(rt) };
+}
+
 // Resolve a driving leg's km via the maps adapter (a single from→to lookup).
 // Unresolvable → 400 naming the failing leg.
 async function resolveLegKm(l: ToolLeg, maps: MapsAdapter, resolver?: PlaceResolver): Promise<number> {
@@ -627,7 +639,10 @@ export function internalQuoteRoutes(deps: {
     const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string; compare?: boolean } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
     if (b.compare) {
-      const v = await deps.maps.distanceVariants(b.from, b.to);
+      // Same reasoning as below: resolve first so a compared variant is measured between the
+      // same identified points the quote is priced from.
+      const pair = resolver ? await resolvePairForMaps(resolver, b.from, b.to) : null;
+      const v = await deps.maps.distanceVariants(pair?.from ?? b.from, pair?.to ?? b.to);
       if (!v) return c.json({ error: 'unknown route' }, 404);
       return c.json({
         ...v.fastest,
@@ -635,8 +650,14 @@ export function internalQuoteRoutes(deps: {
         ...(v.hasChoice && v.noTolls ? { variants: { fastest: v.fastest, noTolls: v.noTolls } } : {}),
       });
     }
-    const d = await deps.maps.distance(b.from, b.to);
-    return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
+    // This is the path the ops builder's auto-distance actually uses, so it must resolve
+    // through the same identity check as server-side pricing — otherwise the km the operator
+    // sees (and saves onto the leg) is still a name-geocode, and stage 1 protects nothing they
+    // can see. `unresolved` names the endpoints nobody has identified yet, which is what the
+    // leg's "Confirm location" affordance keys off.
+    const { d, unresolved } = await distanceVia(deps.maps, resolver, b.from, b.to);
+    if (!d) return c.json({ error: 'unknown route' }, 404);
+    return c.json(unresolved.length ? { ...d, unresolved } : d);
   });
 
   r.post('/estimate', csrf, async (c) => {

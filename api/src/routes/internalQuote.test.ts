@@ -2533,6 +2533,26 @@ describe('positive location identification', () => {
     expect(res.status).toBe(400);
   });
 
+  // The gap that stage 1 shipped with: /distance is what the ops builder's auto-distance calls,
+  // so if it resolved by name the operator's visible km was still a name-geocode.
+  it('POST /distance resolves identified endpoints to coordinates', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const res = await post(app, '/admin/quote/distance', { from: 'Yala, Sri Lanka', to: 'Kandy' });
+    expect(res.ok).toBe(true);
+    expect(spy.calls[0]).toEqual(['6.37,81.52', '7.29,80.63']);
+    expect(await res.json()).not.toHaveProperty('unresolved');
+  });
+
+  it('POST /distance names what is unidentified so the leg can offer Confirm location', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const res = await post(app, '/admin/quote/distance', { from: 'Amanwella Hotel', to: 'Kandy' });
+    const body = await res.json();
+    expect(body.unresolved).toEqual(['Amanwella Hotel']);
+    expect(body.km).toBe(120); // still priced — stage 1 is non-blocking
+  });
+
   it('place-confirm is closed to a caller without quote:manage', async () => {
     const a = new Hono();
     a.route('/admin/quote', internalQuoteRoutes({
