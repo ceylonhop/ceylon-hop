@@ -65,15 +65,19 @@ describe('PayHerePaymentAdapter', () => {
     expect(JSON.stringify(p.fields)).not.toContain('Colombo');
   });
 
-  it('sends the real billing address when one was captured', async () => {
+  // Owner-caught 2026-08-02: real cards were being DECLINED. Whatever address we put in front
+  // of the acquirer — the old hardcoded placeholder, or one typed into our own form — is not
+  // what the cardholder's bank has on file, and an AVS mismatch declines. PayHere asks for it
+  // itself when we send nothing, so the bank sees exactly what the payer typed against the card.
+  it('never sends an address, even when the caller has one', async () => {
     const p = await adapter().createCheckout({
       orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
       customer: { firstName: 'Anja', lastName: 'de Vries', email: 'a@x.com', phone: '+31641256927',
-        country: 'Netherlands', address: 'Prinsengracht 263', city: 'Amsterdam' },
+        country: 'Netherlands' },
     });
-    expect(p.fields?.address).toBe('Prinsengracht 263');
-    expect(p.fields?.city).toBe('Amsterdam');
-    expect(p.fields?.country).toBe('Netherlands');
+    expect(p.fields?.address).toBeUndefined();
+    expect(p.fields?.city).toBeUndefined();
+    expect(p.fields?.country).toBe('Netherlands'); // country is not an AVS field
   });
 
   it('verifies a correctly-signed notify and maps status 2 -> succeeded', () => {

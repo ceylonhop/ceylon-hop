@@ -27,11 +27,6 @@ export interface CreateCheckoutArgs {
     email: string;
     phone: string;
     country: string;
-    // Billing address, when the booking captured one (pay page, 2026-08-01). Absent on
-    // website bookings — the adapter then omits the fields entirely so the gateway collects
-    // them, instead of sending the placeholder it used to.
-    address?: string;
-    city?: string;
   };
 }
 
