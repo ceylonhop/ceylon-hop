@@ -11,6 +11,12 @@ export const customers = pgTable('customers', {
   whatsapp: text('whatsapp').notNull(),
   country: text('country').notNull(),
   marketingOptIn: boolean('marketing_opt_in'),
+  // Groups the rows belonging to one human WITHOUT merging them (2026-08-02). Every booking
+  // inserts its own customers row — deliberately, because that row IS the traveller snapshot
+  // for that booking, and merging would rewrite the name on older ones. GENERATED ALWAYS in
+  // Postgres from lower(btrim(email)), so it can never drift and no insert path can forget it.
+  // NEVER write this column: the database owns it.
+  personKey: text('person_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
