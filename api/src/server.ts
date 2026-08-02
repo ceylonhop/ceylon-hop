@@ -18,6 +18,7 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
 import { initTracking } from './observability/track';
@@ -109,6 +110,7 @@ const app = createApp({
   quotes,
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
+  placeResolutions: new PostgresPlaceResolutionRepo(db),
   adapter,
   maps,
   email,

@@ -8,7 +8,9 @@ import { rateCardFor } from '../quote/rateLock';
 import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
 import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
-import { KNOWN_PLACES, canonPlace, type MapsAdapter } from '../adapters/maps';
+import { KNOWN_PLACES, canonPlace, haversineKm, type MapsAdapter } from '../adapters/maps';
+import { PlaceResolver, asLatLng } from '../services/placeResolver';
+import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
@@ -160,6 +162,7 @@ async function resolveAndPrice(
   maps: MapsAdapter,
   serviceOverride?: 'private' | 'chauffeur',
   rateCard: RateCard = RATE_CARD,
+  resolver?: PlaceResolver,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
@@ -168,10 +171,10 @@ async function resolveAndPrice(
   for (const l of driving) {
     if (l.stops) {
       // Multi-stop leg: resolve each null/≤0 segment; mirror distanceKm = segment sum.
-      await resolveRideSegments(l, maps);
+      await resolveRideSegments(l, maps, resolver);
     } else if (!l.distanceKm || Number(l.distanceKm) <= 0) {
       // Old point-to-point path — untouched.
-      l.distanceKm = await resolveLegKm(l, maps);
+      l.distanceKm = await resolveLegKm(l, maps, resolver);
     }
   }
   try {
@@ -183,10 +186,35 @@ async function resolveAndPrice(
   }
 }
 
+// Positive location identification (spec 2026-08-02), STAGE 1 — non-blocking.
+//
+// When both endpoints are identified we hand the Distance Matrix exact coordinates rather than
+// names, which is what stops a string like "Yala, Sri Lanka" from being re-geocoded to the wrong
+// town, and what lets the implausibly-short floor guard apply to EVERY leg rather than only to
+// catalog pairs.
+//
+// When an endpoint is not yet identified we still price it the old way and report it as
+// unresolved, so ops can confirm it without being blocked mid-quote. Stage 2 turns that report
+// into a refusal; this stage exists so the backlog can be cleared first.
+async function distanceVia(
+  maps: MapsAdapter,
+  resolver: PlaceResolver | undefined,
+  from: string,
+  to: string,
+): Promise<{ d: Awaited<ReturnType<MapsAdapter['distance']>>; unresolved: string[] }> {
+  if (!resolver) return { d: await maps.distance(from, to), unresolved: [] };
+  const [rf, rt] = await Promise.all([resolver.resolve(from), resolver.resolve(to)]);
+  if (rf.kind === 'resolved' && rt.kind === 'resolved') {
+    return { d: await maps.distance(asLatLng(rf), asLatLng(rt)), unresolved: [] };
+  }
+  const unresolved = [rf, rt].flatMap((r) => (r.kind === 'needs_confirmation' ? [r.name] : []));
+  return { d: await maps.distance(from, to), unresolved };
+}
+
 // Resolve a driving leg's km via the maps adapter (a single from→to lookup).
 // Unresolvable → 400 naming the failing leg.
-async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
-  const d = await maps.distance(l.from, l.to);
+async function resolveLegKm(l: ToolLeg, maps: MapsAdapter, resolver?: PlaceResolver): Promise<number> {
+  const { d } = await distanceVia(maps, resolver, l.from, l.to);
   if (!d) {
     throw new PriceError(`couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually`, 400);
   }
@@ -197,7 +225,7 @@ async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
 // sequential — mirrors resolveLegKm's per-PAIR error message, naming the failing stop pair).
 // A missing segmentKms array is treated as all-null. Mutates the leg: segmentKms → resolved
 // numbers, and distanceKm → the segment sum (legacy mirror, updated even when all were manual).
-async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void> {
+async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter, resolver?: PlaceResolver): Promise<void> {
   const stops = l.stops as string[];
   const segs: (number | null)[] = l.segmentKms ? [...l.segmentKms] : new Array<null>(stops.length - 1).fill(null);
   for (let i = 0; i < stops.length - 1; i++) {
@@ -205,7 +233,7 @@ async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void>
     if (km == null || km <= 0) {
       const from = stops[i];
       const to = stops[i + 1];
-      const d = await maps.distance(from, to);
+      const { d } = await distanceVia(maps, resolver, from, to);
       if (!d) {
         throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
       }
@@ -430,6 +458,26 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
 }
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
 
+// Body of POST /place-confirm. Coordinates are bounded to real values; the string itself is
+// canonicalised repo-side, so "Yala, Sri Lanka" and "yala" confirm the same row.
+const PlaceConfirmSchema = z
+  .object({
+    name: z.string().trim().min(1).max(300),
+    displayName: z.string().trim().min(1).max(300),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  })
+  .strict();
+
+// "6.37,81.52" → the point, for measuring candidates against the previous stop. null on anything else.
+function parseNear(raw: string | undefined): [number, number] | null {
+  if (!raw) return null;
+  const [a, b] = raw.split(',').map((n) => Number(n.trim()));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (a < -90 || a > 90 || b < -180 || b > 180) return null;
+  return [a, b];
+}
+
 // Dedupe key for the suggestion list. Uses the SAME canonical form the coords lookup uses,
 // so a Google description ("Yala, Sri Lanka") collides with the catalog entry it duplicates
 // ("Yala") and is dropped. Before this the two spellings were distinct keys, so the dropdown
@@ -475,8 +523,15 @@ export function internalQuoteRoutes(deps: {
   payBaseUrl?: string;
   linkSecret?: string;
   payhereMode?: string;
+  // Positive location identification (spec 2026-08-02). Optional: with no repo injected there
+  // is no resolver, and every distance takes the legacy name path exactly as before — so this
+  // router keeps working unchanged in tests and keyless dev.
+  placeResolutions?: PlaceResolutionRepo;
 }) {
   const r = new Hono();
+  const resolver = deps.placeResolutions
+    ? new PlaceResolver(deps.placeResolutions, deps.maps)
+    : undefined;
 
   // The live rate card composed with the currently-active hot zones (spec D5). Built per request so
   // a zone edit is reflected on the next quote; frozen into the snapshot at approval (C2). Zero
@@ -525,6 +580,45 @@ export function internalQuoteRoutes(deps: {
     return c.json({ places: suggestions.map((p) => p.label), suggestions });
   });
 
+  // ── Positive location identification (spec 2026-08-02) ──────────────────────────────────
+  // Candidates for the ops "Confirm location" panel. Each carries its administrative area and,
+  // when `near` (the previous stop) is supplied, the straight-line distance from it — because
+  // Google's own labels do NOT distinguish the two Yalas: both render as plain "Sri Lanka",
+  // which is exactly how the wrong one got picked.
+  r.get('/place-candidates', requireCap('quote:manage'), async (c) => {
+    const q = (c.req.query('q') || '').trim();
+    if (q.length < 2) return c.json({ candidates: [] });
+    const near = parseNear(c.req.query('near'));
+    const raw = (await deps.maps.placeCandidates?.(q)) ?? [];
+    const candidates = raw.slice(0, 6).map((p) => ({
+      displayName: p.displayName,
+      lat: p.lat,
+      lng: p.lng,
+      area: p.area,
+      kmFromPrevious: near ? Math.round(haversineKm(near, [p.lat, p.lng])) : null,
+    }));
+    return c.json({ candidates });
+  });
+
+  // Record a human's identification of a string. Capability is quote:manage, not founder:
+  // identifying a place is not a pricing decision (a hot-zone surcharge on that place still is,
+  // and stays founder-only), and whoever is building the quote must be able to unblock it.
+  r.post('/place-confirm', csrf, requireCap('quote:manage'), async (c) => {
+    if (!deps.placeResolutions) return c.json({ error: 'not_configured' }, 503);
+    const parsed = PlaceConfirmSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', details: parsed.error.flatten() }, 400);
+    const { name, displayName, lat, lng } = parsed.data;
+    const saved = await deps.placeResolutions.upsert({
+      canonKey: name,
+      displayName,
+      lat,
+      lng,
+      source: 'confirmed',
+      confirmedBy: c.get('identity').email,
+    });
+    return c.json(saved, 201);
+  });
+
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
   // With compare:true (the ops "Compare routes" button) the response also carries the
   // expressway-vs-local-road variants when a materially different toll-free route exists;
@@ -555,7 +649,7 @@ export function internalQuoteRoutes(deps: {
       // ops quotes here; the website is a separate release — see the hot-zones spec §8).
       const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
@@ -621,7 +715,7 @@ export function internalQuoteRoutes(deps: {
       const body = parseToolRequest(raw);
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard());
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver);
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,

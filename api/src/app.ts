@@ -28,6 +28,7 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
@@ -66,6 +67,7 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   zones?: ZonesRepo;
+  placeResolutions?: PlaceResolutionRepo;
   quoteV2Enabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
@@ -126,6 +128,9 @@ export function createApp(deps: AppDeps = {}) {
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
+  // starts from the same identified set production does.
+  const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -352,7 +357,7 @@ export function createApp(deps: AppDeps = {}) {
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, bookings,
+    maps, quotes, zones, bookings, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
