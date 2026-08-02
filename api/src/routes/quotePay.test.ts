@@ -203,6 +203,30 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(b?.input.customer).toMatchObject({ firstName: 'Roshen', lastName: 'Weliwatta', email: 'roshen@x.com' });
   });
 
+  // The acceptance must belong to whoever is actually paying. This bit REAL MONEY on 2026-08-02:
+  // a stray /start created the booking, the owner then paid the link, and the row kept the first
+  // submitter's identity AND their terms timestamp — so the one field whose entire purpose is
+  // evidence of who agreed described a different person than the one who was charged.
+  it('resuming re-records the terms acceptance, not just the payer', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const id = (await (await start(app, token)).json()).bookingId;
+    const firstAccepted = (await bookings.get(id))?.termsAcceptedAt;
+    expect(firstAccepted).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 5)); // so a NEW timestamp is distinguishable
+    await start(app, token, { ...CUSTOMER, email: 'someone-else@x.com' });
+
+    const after = await bookings.get(id);
+    expect(after?.input.customer.email).toBe('someone-else@x.com');
+    expect(after?.termsAcceptedAt).not.toBe(firstAccepted);
+    expect(Date.parse(String(after?.termsAcceptedAt))).toBeGreaterThan(Date.parse(String(firstAccepted)));
+  });
+
   it('a resume with no billing keeps what was already captured rather than blanking it', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();

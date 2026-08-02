@@ -164,6 +164,10 @@ export function quotePayRoutes(deps: {
       const refreshed = await deps.bookings.refreshPayerDetails(found.id, {
         customer: body.data.customer,
         billing: body.data.billing,
+        // /start requires termsAccepted:true on every call, so the resuming payer has just
+        // agreed. Keeping the earlier submitter's timestamp would leave a refund dispute
+        // holding evidence about a different person.
+        termsAcceptedAt: new Date(),
       });
       return c.json(
         { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()) },
