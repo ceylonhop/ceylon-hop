@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { PaymentAdapter } from '../adapters/payments';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { PaymentAdapter, WebhookRejection } from '../adapters/payments';
 import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
@@ -14,6 +14,45 @@ import { money as fmtMoney } from '../services/opsEmail';
 import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
+
+const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+// What the on-call reader needs in order to act: is this ours or a stranger's, and if it is
+// ours, which order. The body hash is here so two alerts can be compared (or matched against a
+// server log line) without the body itself — it can carry the payer's name and card number.
+function describeRejection(
+  reason: string,
+  isSignature: boolean,
+  rejection: WebhookRejection | null,
+): string {
+  if (isSignature) {
+    return [
+      'A payment notification arrived correctly shaped but with a signature we could not verify.',
+      'Either PAYHERE_MERCHANT_SECRET is wrong, or someone is probing the endpoint. If other',
+      'payments are settling normally the secret is fine and this is a probe.',
+      rejection?.orderId ? `\nClaimed order: ${rejection.orderId}` : '',
+      rejection ? `\nBody sha256: ${rejection.bodySha256}` : '',
+    ].join(' ').trim();
+  }
+  const facts = rejection
+    ? [
+        ['order', rejection.orderId],
+        ['status_code', rejection.statusCode],
+        ['amount', rejection.amount],
+        ['currency', rejection.currency],
+      ]
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}: ${v}`)
+    : [];
+  return [
+    `A payment notification was refused before verification: ${reason}.`,
+    'The signature was never reached, so this does NOT implicate the merchant secret — either a',
+    'stranger posted to the endpoint, or PayHere sent something our field rules do not accept.',
+    'If the fields below name a real order, treat it as the latter and reconcile that booking by hand.',
+    facts.length ? `\n${facts.join(' · ')}` : '\nNo recognisable PayHere fields in the body.',
+    rejection ? `\nBody sha256: ${rejection.bodySha256}` : '',
+  ].join(' ').trim();
+}
 
 // Plain-text body for the team's paid notification. Deliberately the few facts an operator
 // acts on — who, where, how much, which channel — and nothing that would make this email a
@@ -56,14 +95,30 @@ export function webhookRoutes(deps: {
   r.post('/payments', async (c) => {
     const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     const isExpectedContentType = adapter.provider !== 'payhere' || contentType === 'application/x-www-form-urlencoded';
-    const event = isExpectedContentType ? adapter.parseWebhook(await c.req.text()) : null;
+    const rawBody = await c.req.text();
+    const event = isExpectedContentType ? adapter.parseWebhook(rawBody) : null;
     if (!event) {
+      // This alert used to say "invalid signature — misconfigured merchant secret or someone
+      // probing", for all eleven-odd ways a body can be refused. On 2026-08-02 it fired while a
+      // customer's card was being declined, and the owner had no way to tell whether PayHere's
+      // notify had been thrown away or a bot had poked the URL. Only `signature_mismatch` means
+      // what the old copy claimed; the rest mean we refused a body the gateway may have meant.
+      const rejection: WebhookRejection | null = isExpectedContentType
+        ? adapter.describeWebhookRejection?.(rawBody) ?? null
+        : { reason: 'content_type_unexpected', bodySha256: sha256(rawBody) };
+      const reason = rejection?.reason ?? 'unknown';
+      const isSignature = reason === 'signature_mismatch';
       void alerts.send({
         severity: 'critical',
-        kind: 'payhere_signature',
-        title: 'PayHere webhook signature failed',
-        body: 'A payment notification arrived with an invalid signature — misconfigured merchant secret or someone probing the endpoint.',
-        dedupeKey: new Date().toISOString().slice(0, 10), // one alert per day is enough signal
+        kind: isSignature ? 'payhere_signature' : 'payhere_webhook_rejected',
+        title: isSignature
+          ? 'PayHere webhook signature failed'
+          : `PayHere webhook rejected (${reason})`,
+        body: describeRejection(reason, isSignature, rejection),
+        // Was the bare date — one alert per DAY, so a real rejected notify and a scanner probe
+        // collapsed into each other and the second one was never seen. Per reason per day keeps
+        // distinct failures distinct while still capping a storm.
+        dedupeKey: `${new Date().toISOString().slice(0, 10)}:${reason}`,
       });
       return c.json({ error: 'invalid_signature' }, 401);
     }
