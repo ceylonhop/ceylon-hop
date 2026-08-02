@@ -138,7 +138,7 @@ function factRows(booking: Booking): [string, string][] {
   return rows;
 }
 
-function routeText(booking: Booking): string {
+export function routeText(booking: Booking): string {
   if (booking.mode === 'trip') return booking.input.stops.join(' → ');
   if (booking.mode === 'shared') {
     const ends = corridorRouteEnds(booking.input.corridorId);

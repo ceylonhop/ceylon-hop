@@ -286,6 +286,42 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(alerts.sent[0].dedupeKey).toBe(b.reference);
   });
 
+  // Owner-reported 2026-08-02: a real $39 payment settled and nobody on the team was told.
+  // Nothing notified on a paid booking — no email, no Slack, no Sentry event. The only signals
+  // were a once-daily aggregate digest and a watchdog whose 15-minute cron was never set up.
+  // Money arriving is the one event the team must not learn about by accident.
+  it('tells the team when a booking is paid', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+
+    const paid = alerts.sent.find((a) => a.kind === 'booking_paid');
+    expect(paid).toBeTruthy();
+    expect(paid?.severity).toBe('info'); // good news, not a failure — must not read as an incident
+    expect(paid?.title).toContain(b.reference);
+    expect(paid?.dedupeKey).toBe(b.reference); // a PayHere retry must not re-notify
+  });
+
+  it('the team notification never costs the customer their confirmation', async () => {
+    // The customer's email comes first and the team's is best-effort behind it: a failure in
+    // ours must not cost them theirs, and must not fail the webhook (PayHere would retry).
+    const adapter = new FakePaymentAdapter();
+    const alerts = { send: async () => { throw new Error('alert channel down'); } };
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, alerts, email, bookings });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    expect(email.sent.length).toBeGreaterThan(0);
+  });
+
   it('alerts when the booking is paid but the confirmation email fails', async () => {
     const adapter = new FakePaymentAdapter();
     const alerts = new FakeAlertAdapter();
