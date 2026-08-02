@@ -30,6 +30,22 @@ function getExactlyOne(params: URLSearchParams, name: string): string | null {
   return values.length === 1 ? (values[0] ?? null) : null;
 }
 
+const MAX_DIAGNOSTIC_CHARS = 200;
+
+// The two non-PII fields PayHere sends that actually explain a decline. Everything else on a card
+// notify — card_holder_name, card_no, card_expiry — is PII and is deliberately NOT copied into
+// this table, which is the sanitized log.
+function diagnostic(params: URLSearchParams): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of ['status_message', 'method'] as const) {
+    const value = getExactlyOne(params, name);
+    // Absent is the normal case on a clean success; an empty string carries nothing either.
+    if (value === null || value.length === 0) continue;
+    out[name] = value.slice(0, MAX_DIAGNOSTIC_CHARS);
+  }
+  return out;
+}
+
 function parseAmountCents(value: string): number | null {
   if (!/^[0-9]{1,9}\.[0-9]{2}$/.test(value)) return null;
   const [majorText, minorText] = value.split('.');
@@ -188,6 +204,14 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
         payhere_amount: payhereAmount,
         payhere_currency: payhereCurrency,
         status_code: statusCode,
+        // PayHere sends these on every notify and we were dropping both. A real production
+        // decline (CH-4KU9Z, status -2) left us with nothing but "-2" and the reason living
+        // only in PayHere's dashboard. Neither is PII.
+        //
+        // NOT covered by md5sig — the signature spans merchant_id, order_id, amount, currency
+        // and status_code only. So these are diagnostic breadcrumbs, never control flow: nothing
+        // may branch on them. Truncated because their length is PayHere's to choose, not ours.
+        ...diagnostic(p),
       },
     };
   }

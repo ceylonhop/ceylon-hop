@@ -135,6 +135,39 @@ describe('PayHerePaymentAdapter', () => {
     expect(event?.sanitizedPayload).not.toHaveProperty('md5sig');
   });
 
+  it('keeps the decline reason and payment method PayHere sends alongside a failure', () => {
+    // A production decline (order CH-4KU9Z, status -2) told us nothing beyond "-2": PayHere sends
+    // status_message and method on every notify and we were dropping both, so the only place the
+    // reason existed was their dashboard. Both are non-PII.
+    const a = adapter();
+    const signed = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD', statusCode: '-2' });
+    const body = `${signed}&status_message=${encodeURIComponent('Do not honor')}&method=VISA`;
+    const event = a.parseWebhook(body);
+    expect(event?.status).toBe('failed');
+    expect(event?.sanitizedPayload).toMatchObject({ status_message: 'Do not honor', method: 'VISA' });
+  });
+
+  it('omits the diagnostic fields when PayHere does not send them, and never card PII', () => {
+    const a = adapter();
+    const signed = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    // card_holder_name / card_no / card_expiry ride along on real card payments. They are PII and
+    // this table is the sanitized log — they must not be stored here.
+    const body = `${signed}&card_holder_name=${encodeURIComponent('Roshen Weliwatta')}&card_no=************4564&card_expiry=0122`;
+    const event = a.parseWebhook(body);
+    expect(event?.sanitizedPayload).not.toHaveProperty('status_message');
+    expect(event?.sanitizedPayload).not.toHaveProperty('method');
+    expect(event?.sanitizedPayload).not.toHaveProperty('card_holder_name');
+    expect(event?.sanitizedPayload).not.toHaveProperty('card_no');
+    expect(event?.sanitizedPayload).not.toHaveProperty('card_expiry');
+  });
+
+  it('truncates a long status_message rather than storing it unbounded', () => {
+    const a = adapter();
+    const signed = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD', statusCode: '-2' });
+    const event = a.parseWebhook(`${signed}&status_message=${'x'.repeat(500)}`);
+    expect(event?.sanitizedPayload.status_message).toHaveLength(200);
+  });
+
   it('rejects a tampered notify (bad md5sig)', () => {
     const a = adapter();
     const body = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
