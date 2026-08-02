@@ -693,3 +693,41 @@ describe('the ops builder can identify a place the server would not guess', () =
     expect(body).toContain('ch-cand');
   });
 });
+
+// ── Cancel & refund window (owner rule 2026-08-02) ───────────────────────────
+describe('the drawer mirrors the 24-hour reversal rule', () => {
+  const uiBody = async () => await (await createApp().request('/ops')).text();
+
+  it('computes the trip start in Asia/Colombo, matching the server', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function tripStartMs(');
+    expect(body).toContain(":00+05:30`"); // NOT Z — parsing as UTC was 5.5 hours out
+    expect(body).not.toContain("T${hhmm}:00Z");
+  });
+
+  it('fails closed when the trip start is unknown', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function opsWindowOpen(');
+    expect(body).toContain('if(at === null) return false;');
+  });
+
+  it('time-limits ops but never a founder', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function mayReverseNow(');
+    expect(body).toContain("state.caps.includes('payments:reverse')) return true;");
+    expect(body).toContain('const blocked = opsAgent && !opsWindowOpen(t);');
+  });
+
+  it('requires a typed reason for both cancelling and refunding', async () => {
+    const body = await uiBody();
+    expect(body).toContain("id=\"reversereason\"");
+    expect(body).toContain('it is saved against the booking');
+    expect(body).toContain('it is saved against the refund');
+  });
+
+  it('translates the server refusal codes instead of saying "could not cancel"', async () => {
+    const body = await uiBody();
+    expect(body).toContain("err.message==='within_24h_founder_only'");
+    expect(body).toContain("err.message==='trip_start_unknown'");
+  });
+});
