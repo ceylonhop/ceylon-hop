@@ -8,7 +8,7 @@ import { rateCardFor } from '../quote/rateLock';
 import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
 import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
-import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
+import { KNOWN_PLACES, canonPlace, type MapsAdapter } from '../adapters/maps';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
@@ -430,8 +430,12 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
 }
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
 
+// Dedupe key for the suggestion list. Uses the SAME canonical form the coords lookup uses,
+// so a Google description ("Yala, Sri Lanka") collides with the catalog entry it duplicates
+// ("Yala") and is dropped. Before this the two spellings were distinct keys, so the dropdown
+// offered both and picking the Google twin bypassed the coords pin — see canonPlace().
 function normPlace(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return canonPlace(s);
 }
 
 // Place suggestions via local known places first, then the maps adapter (Google/offline fallback lives there).

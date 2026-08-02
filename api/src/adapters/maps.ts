@@ -96,6 +96,29 @@ export const KNOWN_PLACES: string[] = [
 
 const norm = (s: string): string => s.trim().toLowerCase();
 
+// Place identity for catalog lookups. Google's autocomplete hands back descriptions
+// ("Yala, Sri Lanka"), while the catalog is keyed on the bare name ("Yala") — an exact
+// match therefore MISSED, the coords pin below never applied, and the bare string went to
+// Google's geocoder, which resolved "Yala" to a village near Horana instead of the national
+// park. That priced a leg at 78 km instead of ~286 and sent a quote out $90 under
+// (incident 2026-08-02). Strip the country suffix so both spellings are the same place.
+export function canonPlace(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*sri lanka\s*$/, '')
+    .trim();
+}
+
+// A road can never be shorter than the straight line between its endpoints, so for a pair of
+// KNOWN places we hold an independent lower bound on any answer Google gives. This is the
+// guard MAX_SL_ROAD_KM cannot be: that one rejects a geocode that landed in another country
+// (too long), while a geocode that lands in the wrong Sri Lankan town comes back too SHORT —
+// and short is the direction that silently undercharges. 0.95 absorbs the imprecision of the
+// single-point coordinates below; it is not a tuning knob for "roughly right" answers.
+const MIN_ROAD_TO_CROW = 0.95;
+
 function haversineKm(a: [number, number], b: [number, number]): number {
   const R = 6371;
   const toRad = (d: number): number => (d * Math.PI) / 180;
@@ -109,7 +132,7 @@ function haversineKm(a: [number, number], b: [number, number]): number {
 
 // A place name → its exact SL coordinates, when it's one of our known places.
 function knownCoords(name: string): [number, number] | null {
-  return COORDS[norm(name)] ?? null;
+  return COORDS[canonPlace(name)] ?? null;
 }
 // Offline road-distance estimate (crow-flies × 1.35, ~42 km/h) — only when BOTH endpoints
 // are known places. Used by the fake adapter, and as the real adapter's fallback so a known
@@ -246,6 +269,19 @@ export class GoogleMapsAdapter implements MapsAdapter {
     if (km > MAX_SL_ROAD_KM) {
       console.error(`[maps] implausible distance ${km} km for "${from}" → "${to}" — treating as unresolved (likely a bad geocode outside Sri Lanka)`);
       return null;
+    }
+    // Too SHORT to be real (see MIN_ROAD_TO_CROW). Only checkable when both endpoints are
+    // known places, because only then do we have coordinates Google didn't give us. Returning
+    // null hands the caller the offline estimate flagged `estimated`, so pricing declines to
+    // charge on it rather than quietly billing a wrong-town distance.
+    if (o && d) {
+      const crowKm = haversineKm(o, d);
+      if (km < crowKm * MIN_ROAD_TO_CROW) {
+        console.error(
+          `[maps] implausibly short distance ${km} km for "${from}" → "${to}" — below the ${Math.round(crowKm)} km straight line between them; treating as unresolved (likely a bad geocode inside Sri Lanka)`,
+        );
+        return null;
+      }
     }
     return { km, durationMin: Math.round(el.duration.value / 60) };
   }
