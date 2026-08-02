@@ -179,6 +179,66 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect((await (await start(app, token)).json()).bookingId).toBe(first);
   });
 
+  // A resumed booking used to keep the payer captured on the FIRST attempt forever. Everything
+  // the gateway sees is read from the booking row, so a payer who mistyped their address, was
+  // declined, and corrected it was re-sent the bad address — and since those fields feed the
+  // issuer's 3DS risk decision, the retry was arguably worse off than the original attempt.
+  it('resuming re-records the payer, so a corrected address is the one that gets charged', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const typo = { address: '1 A St', city: 'Colombo', country: 'Sri Lanka' };
+    const first = (await (await start(app, token, CUSTOMER, typo)).json()).bookingId;
+
+    const fixed = { address: '31 River Court, Apt 105', city: 'Jersey City', country: 'United States', postcode: '07310' };
+    const corrected = { ...CUSTOMER, firstName: 'Roshen', lastName: 'Weliwatta', email: 'roshen@x.com' };
+    const again = (await (await start(app, token, corrected, fixed)).json()).bookingId;
+
+    expect(again).toBe(first); // still one booking — this is a resume, not a duplicate
+    const b = await bookings.get(first);
+    expect(b?.billing).toMatchObject(fixed);
+    expect(b?.input.customer).toMatchObject({ firstName: 'Roshen', lastName: 'Weliwatta', email: 'roshen@x.com' });
+  });
+
+  // The acceptance must belong to whoever is actually paying. This bit REAL MONEY on 2026-08-02:
+  // a stray /start created the booking, the owner then paid the link, and the row kept the first
+  // submitter's identity AND their terms timestamp — so the one field whose entire purpose is
+  // evidence of who agreed described a different person than the one who was charged.
+  it('resuming re-records the terms acceptance, not just the payer', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const id = (await (await start(app, token)).json()).bookingId;
+    const firstAccepted = (await bookings.get(id))?.termsAcceptedAt;
+    expect(firstAccepted).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 5)); // so a NEW timestamp is distinguishable
+    await start(app, token, { ...CUSTOMER, email: 'someone-else@x.com' });
+
+    const after = await bookings.get(id);
+    expect(after?.input.customer.email).toBe('someone-else@x.com');
+    expect(after?.termsAcceptedAt).not.toBe(firstAccepted);
+    expect(Date.parse(String(after?.termsAcceptedAt))).toBeGreaterThan(Date.parse(String(firstAccepted)));
+  });
+
+  it('a resume with no billing keeps what was already captured rather than blanking it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    const billing = { address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands' };
+    const id = (await (await start(app, token, CUSTOMER, billing)).json()).bookingId;
+    await start(app, token); // no billing this time
+    expect((await bookings.get(id))?.billing).toMatchObject(billing);
+  });
+
   it('start still works with no billing at all — an older cached page must not break', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();

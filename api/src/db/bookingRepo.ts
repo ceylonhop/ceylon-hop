@@ -119,7 +119,25 @@ export interface BookingRepo {
   findByIdempotencyKey(key: string): Promise<Booking | null>;
   setStatus(id: string, to: BookingStatus): Promise<Booking>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
+  // Re-record who is paying, for a booking that has not been paid yet.
+  //
+  // Every identity field we hand PayHere — name, email, phone, billing address — is read from
+  // the booking row, never from the request that opened the payment. So a payer who mistyped
+  // their address, was declined, and corrected it was still charged against the old details:
+  // the correction was validated and dropped. Since that data feeds the issuer's 3DS risk
+  // decision, the retry was arguably less likely to succeed than the first attempt.
+  //
+  // Implementations MUST make the not-yet-paid check part of the write itself, so a settlement
+  // landing concurrently cannot have its payer overwritten. Returns the booking unchanged when
+  // it is no longer chargeable.
+  refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+  ): Promise<Booking>;
 }
+
+// A booking's payer may only be rewritten while it is still awaiting money.
+export const PAYER_EDITABLE_STATUSES = ['draft', 'payment_pending'] as const;
 
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -181,6 +199,28 @@ export class InMemoryBookingRepo implements BookingRepo {
     if (!current) throw new BookingNotFoundError(id);
     assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
     const updated: Booking = { ...current, status: to };
+    this.byId.set(id, updated);
+    return updated;
+  }
+
+  async refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+  ): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return current;
+    const updated: Booking = {
+      ...current,
+      input: { ...current.input, customer: { ...details.customer } },
+      // Absent billing leaves what was captured before: a payer who filled the address on the
+      // first attempt and left it blank on a retry should not lose it.
+      billing: details.billing ? { ...details.billing } : current.billing,
+      // The acceptance belongs to whoever is actually paying. /start requires termsAccepted:true
+      // on EVERY call, so a resuming payer has just agreed — recording the earlier submitter's
+      // timestamp would leave a refund dispute holding evidence about the wrong person.
+      termsAcceptedAt: details.termsAcceptedAt.toISOString(),
+    } as Booking;
     this.byId.set(id, updated);
     return updated;
   }

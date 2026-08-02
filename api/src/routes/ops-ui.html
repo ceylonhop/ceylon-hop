@@ -1878,7 +1878,16 @@ function applyRouteFromUrl(mode){
   if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);
 }
 
+let _queueInFlight=null;
 async function loadQueue(){
+  /* Share one request between overlapping callers. Boot fires this, and so does entering the
+     Bookings route; deep-linking straight to Bookings would otherwise fetch the same list twice
+     in the same tick. Callers still each get a promise that settles when the data has landed. */
+  if(_queueInFlight)return _queueInFlight;
+  _queueInFlight=_loadQueue().finally(()=>{_queueInFlight=null;});
+  return _queueInFlight;
+}
+async function _loadQueue(){
   const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);_bookingsLoaded=true;
   // Booking data only feeds the Bookings surface + the nav attention count. Re-rendering the
   // whole app here re-painted the quote/quotes surfaces too (which don't use it) — the visible
@@ -2859,6 +2868,13 @@ function render(){
     hideQuoteView();viewTickets();renderSheet();
     if(entering){
       playRouteIn();
+      /* Refresh on every entry, exactly as Quotes does above. loadQueue() used to run ONCE at
+         boot, so a booking that appeared after the tab was opened stayed invisible until a hard
+         reload. Owner hit this on a real payment (2026-08-02): the booking was created at 13:51
+         and settled at 15:03, and because the Quotes route DOES refetch, the quote flipped to a
+         green "Booked" chip while the bookings list was still the copy fetched before that
+         booking existed — reading as a lost booking on a live payment. */
+      loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
       /* Bookings entry: viewTickets() just rebuilt #topbar, so #q is fresh. */
       const qInput=$('#q');
       if(qInput)qInput.focus({preventScroll:true});

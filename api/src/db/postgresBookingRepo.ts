@@ -8,8 +8,10 @@ import {
   type BookingChannel,
   BookingNotFoundError,
   generateReference,
+  PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
+import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 
 type BookingRow = typeof bookings.$inferSelect;
 
@@ -259,6 +261,59 @@ export class PostgresBookingRepo implements BookingRepo {
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
     const [row] = await this.db.select().from(bookings).where(eq(bookings.idempotencyKey, key));
     return row ? this.assemble(row) : null;
+  }
+
+  async refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+  ): Promise<Booking> {
+    const c = details.customer;
+    const b = details.billing;
+    await this.db.transaction(async (tx) => {
+      // The status check is part of the UPDATE, not a read-then-write: a settlement landing
+      // between the two would otherwise let us rewrite the payer of a booking that has already
+      // been charged. No row returned → paid (or beyond) → touch nothing, not even the customer.
+      //
+      // Absent billing leaves what was captured before, matching the in-memory repo: a payer who
+      // filled the address on their first attempt and left it blank on a retry keeps it.
+      const [bk] = await tx
+        .update(bookings)
+        .set(
+          b
+            ? {
+                billingFirstName: b.firstName ?? null,
+                billingLastName: b.lastName ?? null,
+                billingAddress: b.address,
+                billingCity: b.city,
+                billingCountry: b.country,
+                billingPostcode: b.postcode ?? null,
+                termsAcceptedAt: details.termsAcceptedAt,
+              }
+            : // No billing in this submission — but the terms acceptance still belongs to
+              // whoever is paying now, and writing it also gives the UPDATE something real to
+              // set, keeping the status guard and the customerId read in one atomic statement.
+              { termsAcceptedAt: details.termsAcceptedAt },
+        )
+        .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])))
+        .returning();
+      if (!bk) return;
+      await tx
+        .update(customers)
+        .set({
+          firstName: c.firstName,
+          lastName: c.lastName,
+          email: c.email,
+          phoneCountryCode: c.phoneCountryCode ?? null,
+          phoneNumber: c.phoneNumber ?? null,
+          whatsapp: c.whatsapp,
+          country: c.country,
+          marketingOptIn: c.marketingOptIn ?? null,
+        })
+        .where(eq(customers.id, bk.customerId));
+    });
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
   }
 
   async setStatus(id: string, to: BookingStatus): Promise<Booking> {

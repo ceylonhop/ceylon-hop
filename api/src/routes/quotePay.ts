@@ -155,8 +155,22 @@ export function quotePayRoutes(deps: {
       : await deps.bookings.findByIdempotencyKey(baseKey);
     const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
     if (found && chargeable) {
+      // Re-record the payer before handing back the booking. Everything the gateway sees — name,
+      // email, phone, billing address — is read from this row, never from the request that opened
+      // the payment, so resuming used to charge against whatever was typed on the FIRST attempt
+      // and silently discard the corrections. A payer who mistyped their address, was declined,
+      // and fixed it was re-sent the bad address; and because those fields feed the issuer's 3DS
+      // risk decision, the retry was arguably worse off than the original attempt.
+      const refreshed = await deps.bookings.refreshPayerDetails(found.id, {
+        customer: body.data.customer,
+        billing: body.data.billing,
+        // /start requires termsAccepted:true on every call, so the resuming payer has just
+        // agreed. Keeping the earlier submitter's timestamp would leave a refund dispute
+        // holding evidence about a different person.
+        termsAcceptedAt: new Date(),
+      });
       return c.json(
-        { bookingId: found.id, checkoutToken: signCheckoutToken(found.id, deps.linkSecret, checkoutNow()) },
+        { bookingId: refreshed.id, checkoutToken: signCheckoutToken(refreshed.id, deps.linkSecret, checkoutNow()) },
         200,
       );
     }

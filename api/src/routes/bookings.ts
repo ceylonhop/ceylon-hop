@@ -580,7 +580,14 @@ function termsAcceptedAt(body: unknown): Date | undefined {
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
-      items: `Ceylon Hop ${booking.reference}`,
+      // What the payer sees named on the PayHere receipt. "Ceylon Hop Travel" rather than
+      // "Ceylon Hop" so an unfamiliar line is self-explaining, and the reference so a query
+      // about a charge arrives with the booking already identified.
+      //
+      // This is NOT the bank-statement descriptor, however much it looks like one. PayHere's
+      // Checkout API has no descriptor parameter at all — the statement text comes from the
+      // acquirer/merchant account and can only be changed by asking PayHere.
+      items: `Ceylon Hop Travel - ${booking.reference}`,
       customer: {
         // The gateway's fields are BILLING fields, so the cardholder's name wins when the
         // payer told us they differ from the lead passenger. Email/phone stay the lead
