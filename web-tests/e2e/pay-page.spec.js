@@ -295,13 +295,42 @@ test('the postcode is required and travels with the billing details', async ({ p
   await page.locator('#paybtn').click();
   await page.locator('#f-addr').fill('31 River Court, Apt 105');
   await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-postcode').fill('07310');
   await page.locator('#f-terms').check();
   await page.locator('#gobtn').click();
-  await expect(page.locator('#payerr')).toContainText('postcode');   // named, not a generic error
-
-  await page.locator('#f-postcode').fill('07310');
-  await page.locator('#gobtn').click();
   await expect.poll(() => sent?.billing?.postcode).toBe('07310');
+});
+
+// Optimising for AUTHORISATION RATE, not address completeness (owner, 2026-08-02). Hong Kong,
+// the UAE and ~60 other countries have no postcode, so requiring one is a guaranteed
+// non-payment for those customers — strictly worse than a blank field, because the payment
+// never reaches PayHere at all. PayHere's own list of common declines (insufficient funds,
+// 3DS/OTP failure, expired card, do not honor) does not mention address or AVS.
+test('a payer with no postcode can still pay — the field never blocks', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('Flat 12, 8 Queen\'s Road Central');
+  await page.locator('#f-city').fill('Hong Kong');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();                 // postcode left EMPTY, on purpose
+  await expect.poll(() => sent?.billing?.city).toBe('Hong Kong');
+  expect(sent.billing.postcode).toBeUndefined();
+  await expect(page.locator('#payerr')).not.toContainText('postcode');
+});
+
+test('country is the FIRST billing field, since it gives the others meaning', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  const order = await page.locator('#f-bcountry, #f-addr, #f-city, #f-postcode')
+    .evaluateAll((els) => els.map((e) => e.id));
+  expect(order[0]).toBe('f-bcountry');
 });
 
 test('the payment page shows no cookie banner', async ({ page }) => {
