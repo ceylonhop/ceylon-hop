@@ -331,7 +331,9 @@ export function createApp(deps: AppDeps = {}) {
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
   // mount below, whose /:code route would otherwise match /pay.html and answer 404.
-  app.route('/', customerPagesRoutes());
+  // `quotes` + the link secret enable the per-token WhatsApp share card on pay.html; without
+  // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
+  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
