@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import {
   CHECKOUT_TOKEN_TTL_MS,
   signBookingToken,
@@ -111,5 +112,50 @@ describe('quote pay token', () => {
     // The caller compares against quote.revision; a non-integer revision never verifies.
     const forged = signQuotePayToken('q-1', 1.5 as unknown as number, S);
     expect(verifyQuotePayToken(forged, S)).toBeNull();
+  });
+});
+
+// Short pay links (owner, 2026-08-02). The v1 JSON token made a 208-character URL — a base64
+// blob arriving right before a request for money, which is the visual grammar of phishing.
+describe('quote pay token v2 — compact, and back-compatible', () => {
+  const SECRET = 'test-link-secret';
+  const QUOTE = '48ebe678-8b5c-49c1-a7f8-5dc5005e347b';
+
+  it('is dramatically shorter than the v1 form it replaces', () => {
+    const v2 = signQuotePayToken(QUOTE, 13, SECRET);
+    const v1 = `${Buffer.from(JSON.stringify({ v: 1, purpose: 'quote-pay', q: QUOTE, r: 13 })).toString('base64url')}.${'a'.repeat(64)}`;
+    expect(v2.length).toBeLessThan(v1.length / 2);
+    expect(v2.length).toBeLessThan(55);
+  });
+
+  it('round-trips the quote id and revision exactly', () => {
+    for (const rev of [1, 13, 255, 256, 65535]) {
+      expect(verifyQuotePayToken(signQuotePayToken(QUOTE, rev, SECRET), SECRET))
+        .toEqual({ quoteId: QUOTE, revision: rev });
+    }
+  });
+
+  // THE back-compat guard: links already sitting in customers' WhatsApp threads were minted
+  // in the v1 format. Breaking them would strand real people mid-payment.
+  it('still verifies a v1 token, so links already sent keep working', () => {
+    const body = Buffer.from(JSON.stringify({ v: 1, purpose: 'quote-pay', q: QUOTE, r: 13 })).toString('base64url');
+    const sig = createHmac('sha256', SECRET).update(body).digest('hex');
+    expect(verifyQuotePayToken(`${body}.${sig}`, SECRET)).toEqual({ quoteId: QUOTE, revision: 13 });
+  });
+
+  it('refuses a tampered v2 token and one signed with another secret', () => {
+    const t = signQuotePayToken(QUOTE, 13, SECRET);
+    const [body, sig] = t.split('.');
+    // flip a byte of the payload — the revision or quote id would change
+    const bad = Buffer.from(body, 'base64url'); bad.writeUInt16BE(99, 18);
+    expect(verifyQuotePayToken(`${bad.toString('base64url')}.${sig}`, SECRET)).toBeNull();
+    expect(verifyQuotePayToken(t, 'another-secret')).toBeNull();
+    expect(verifyQuotePayToken('garbage', SECRET)).toBeNull();
+  });
+
+  // The other two token kinds share the signing secret; a disjoint purpose byte is what stops
+  // a booking token being replayed as a pay token.
+  it('cannot be crossed with the booking token kind', () => {
+    expect(verifyQuotePayToken(signBookingToken('some-booking-id', SECRET), SECRET)).toBeNull();
   });
 });
