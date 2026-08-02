@@ -24,19 +24,18 @@ export const CustomerInput = z.object({
 
 export type CustomerInput = z.infer<typeof CustomerInput>;
 
-// Who is paying, when that differs from the LEAD PASSENGER above (2026-08-01).
-//
-// The billing ADDRESS is deliberately not here (owner, 2026-08-02). We collected it briefly,
-// which meant the address the acquirer saw for AVS was whatever the customer typed into our
-// form rather than what their bank holds — a mismatch declines the card. PayHere collects it
-// in its own step when we omit the fields, so the acquirer sees exactly what the payer entered
-// against their card. One place to type it, and the best possible AVS match.
-//
-// The NAME still earns its place: it records who paid as distinct from who travelled, which
-// our own records want and PayHere does not report back.
+// Billing details for the card, collected on the pay page (2026-08-01). Distinct from the
+// CustomerInput above, which is the LEAD PASSENGER — who is travelling and who we contact.
+// The cardholder name is optional: it is sent only when the payer ticked "billing details are
+// different from the lead passenger", and otherwise the lead passenger's name is used.
+// address/city/country are required whenever billing is sent at all — the whole point is to
+// stop the adapter fabricating them for the payment gateway.
 export const BillingInput = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  address: z.string().min(1),
+  city: z.string().min(1),
+  country: z.string().min(1),
 });
 
 export type BillingInput = z.infer<typeof BillingInput>;

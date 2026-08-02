@@ -155,18 +155,21 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
     });
   });
 
-  for (const page of PAGES) {
+  // `/p` is the SHORT alias for pay.html (2026-08-02) — the path shed 8 characters of a URL
+  // that was 208 long. Same handler, same OG injection: it is an alias, not a second page.
+  for (const page of [...PAGES, 'p']) {
+    const file = page === 'p' ? 'pay.html' : page;
     r.get(`/${page}`, async (c) => {
-      const html = read(page, forApiHost) as string | null;
+      const html = read(file, forApiHost) as string | null;
       if (html === null) return c.notFound();
-      // Only pay.html unfurls today — manage.html is sent after payment, when trust is already
-      // established (spec: deliberately deferred).
-      if (page !== 'pay.html') return c.html(html);
+      // Only the pay page unfurls today — manage.html is sent after payment, when trust is
+      // already established (spec: deliberately deferred).
+      if (file !== 'pay.html') return c.html(html);
       const token = c.req.query('t');
       const origin = absoluteOrigin(deps.payBaseUrl, c);
       const model = await modelFor(token);
       const image = `${origin}/pay/card.png${token ? `?t=${encodeURIComponent(token)}` : ''}`;
-      const page_ = `${origin}/pay.html${token ? `?t=${encodeURIComponent(token)}` : ''}`;
+      const page_ = `${origin}/${page}${token ? `?t=${encodeURIComponent(token)}` : ''}`;
       return c.html(html.replace('<head>', `<head>\n${ogTags(payCardMeta(model), page_, image)}`));
     });
   }

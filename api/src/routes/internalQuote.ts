@@ -792,7 +792,9 @@ export function internalQuoteRoutes(deps: {
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
     const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret);
     return c.json({
-      url: `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?t=${token}`,
+      // `/p`, not `/pay.html` — see customerPages.ts. Eight characters off a link that a
+      // customer reads immediately before being asked for money.
+      url: `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${token}`,
       payhereMode: deps.payhereMode ?? 'off',
     });
   });
