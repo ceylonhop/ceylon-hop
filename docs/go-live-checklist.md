@@ -19,7 +19,7 @@ comes up, so launch is a clean, mechanical switch-over.
 | `APP_BASE_URL` | `http://localhost:4173` | `https://ceylonhop.com` |
 | `PAYHERE_MODE` | `sandbox` | `live` |
 | `PAYHERE_MERCHANT_ID` / `_SECRET` / `_NOTIFY_URL` (+ return/cancel) | sandbox creds | **live** merchant creds for the `ceylonhop.com` account |
-| `EMAIL_FROM` | `Ceylon Hop <onboarding@resend.dev>` (test sender) | `Ceylon Hop <hello@send.ceylonhop.com>` |
+| `EMAIL_FROM` | ✅ `Ceylon Hop <hello@send.ceylonhop.com>` — verified domain, live since before 2026-08-02 | (already fine) |
 | `ALLOWED_ORIGINS` | dev origins | include `https://ceylonhop.com` |
 | `DATABASE_URL` | dev password (leaked in-session) | **rotated** password |
 | `GOOGLE_MAPS_API_KEY` | unset → fake/haversine distances | **real server key (required)** — the quote tool's live distances/autocomplete and server-side repricing of typed addresses depend on it. Restrict to Distance Matrix + Places, no referrer restriction (server-side) |
@@ -36,7 +36,7 @@ comes up, so launch is a clean, mechanical switch-over.
 
 - [ ] `APP_BASE_URL` → apex
 - [ ] PayHere → live mode + live credentials
-- [ ] `EMAIL_FROM` → verified domain sender
+- [x] `EMAIL_FROM` → verified domain sender — confirmed 2026-08-02 from a received email
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] real server `GOOGLE_MAPS_API_KEY` (required — quote tool + server repricing)

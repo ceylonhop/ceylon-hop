@@ -56,23 +56,6 @@ function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; e
   };
 }
 
-// The pass's A → B rail wants two endpoints, and payPageCopy only ever states a route in one
-// place per product: the title for a single transfer ("Colombo Airport (CMB) → Galle"), and the
-// "Trip" fact for a chauffeur tour (whose title is a day-count, not a route). A multi-journey
-// quote genuinely has no single pair, so it returns null and the pass shows the title whole
-// rather than picking two stops out of six and implying the rest do not exist.
-function passStops(copy: { title: string; facts: { k: string; v: string }[] }): { from: string; to: string } | null {
-  const ARROW = ' \u2192 ';
-  const split = (s: string): { from: string; to: string } | null => {
-    const parts = s.split(ARROW);
-    // Exactly two: a multi-stop string like "A → B → C" has no single pair either.
-    return parts.length === 2 && parts[0].trim() && parts[1].trim()
-      ? { from: parts[0].trim(), to: parts[1].trim() }
-      : null;
-  };
-  return split(copy.title) ?? split(copy.facts.find((f) => f.k === 'Trip')?.v ?? '');
-}
-
 export function quotePayRoutes(deps: {
   quotes: QuoteRepo;
   bookings: BookingRepo;
@@ -117,27 +100,13 @@ export function quotePayRoutes(deps: {
       const payment = paidVia
         ? (await deps.payments.findByBookingId(paidVia.bookingId)).find((p) => p.status === 'succeeded')
         : undefined;
-      // The keepsake is a boarding pass (owner, 2026-08-02), matching booking.html's — so it
-      // needs the endpoints split and the trip facts, not just a title string. All of it comes
-      // from payPageCopy, which this handler already computed and was throwing away bar `.title`.
-      const copy = payPageCopy(quote);
-      const stops = passStops(copy);
       return c.json({
         state,
         paid: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
           amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
-          title: copy.title,
-          // Endpoints for the pass's A → B rail. Null when the quote's shape doesn't name two
-          // (a chauffeur tour titled "Six days across Sri Lanka"), and the pass falls back to
-          // the title rather than inventing a route.
-          from: stops?.from ?? null,
-          to: stops?.to ?? null,
-          leadName: quote.customerName || null,
-          // Date / Travellers / Vehicle, already derived for the payable screen. Rendered as
-          // given: whatever the operator entered, never re-formatted here.
-          facts: copy.facts.map((f) => ({ k: f.k, v: f.v })),
+          title: payPageCopy(quote).title,
         },
       });
     }
