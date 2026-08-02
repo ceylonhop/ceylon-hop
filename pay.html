@@ -348,38 +348,44 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }).join('');
   }
 
+  // Returns country '' when the prefill doesn't SAY what the country is. Falling back to
+  // Sri Lanka guessed on the payer's behalf: most of them are not Sri Lankan, and a wrong
+  // dial code silently rewrites the number we'd reach them on — and rides along to the
+  // gateway, where payer data feeds the issuer's 3DS decision (owner-caught, 2026-08-02).
   function splitPrefill(whatsapp){
     var raw = String(whatsapp || '').trim();
-    if (!raw) return { country: 'Sri Lanka', number: '' };
+    if (!raw) return { country: '', number: '' };
     var digits = raw.replace(/[^\d]/g, '');
     var dc = /^\s*\+/.test(raw) ? matchDialCode(digits) : '';
-    if (!dc) return { country: 'Sri Lanka', number: raw };
+    if (!dc) return { country: '', number: raw };
     for (var i = 0; i < COUNTRIES.length; i++) {
       if ((COUNTRIES[i][2] || '').replace(/[^\d]/g, '') === dc) {
         return { country: COUNTRIES[i][1], number: digits.slice(dc.length) };
       }
     }
-    return { country: 'Sri Lanka', number: digits };
+    return { country: '', number: digits };
   }
   // booking.js phoneParts, ported: the select's dial code + the typed number → one whatsapp.
+  // No country selected means no dial code to prefix — startPayment blocks on `noCountry`
+  // rather than inventing one.
   function phoneParts(){
     var countryEl = document.getElementById('f-country');
     var phoneEl = document.getElementById('f-phone');
-    var country = (countryEl && countryEl.value ? countryEl.value : 'Sri Lanka').trim();
-    var selCode = '+94';
+    var country = (countryEl && countryEl.value ? countryEl.value : '').trim();
+    var selCode = '';
     for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][1] === country) { selCode = COUNTRIES[i][2]; break; }
     var selDigits = selCode.replace(/[^\d]/g, '');
     var raw = (phoneEl && phoneEl.value ? phoneEl.value : '').trim();
     var digits = raw.replace(/[^\d]/g, '');
     if (/^\s*\+/.test(raw)) {
       var dc = matchDialCode(digits);
-      return { country: country, whatsapp: '+' + digits, empty: !digits, _dc: dc };
+      return { country: country, whatsapp: '+' + digits, empty: !digits, noCountry: !country, _dc: dc };
     }
     var number = digits.replace(/^0+/, '');
     if (selDigits && number.indexOf(selDigits) === 0 && number.length > selDigits.length) {
       number = number.slice(selDigits.length); // typed the code too — don't double it
     }
-    return { country: country, whatsapp: selCode + number, empty: !number };
+    return { country: country, whatsapp: selCode + number, empty: !number, noCountry: !country };
   }
 
   function renderDetails(){
@@ -393,13 +399,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
     var pol = cancellationPolicy(data.copy.product);
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
-    var options = ordered.map(function(c){
-      // Dial code FIRST: the select shares a row with the number, so a long country ("United
-      // Arab Emirates +971") clips — and the one thing this field exists to show is the code.
-      // Name-first ("Sri Lanka +94", as in booking.html) clipped the +971 away (2026-08-02).
-      return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
-        + esc(c[2]) + ' ' + esc(c[1]) + '</option>';
-    }).join('');
+    // "Choose…" first, and selected unless the prefill actually told us the country — the
+    // same contract as the billing select. Sri Lanka stays pinned above the alphabet as a
+    // convenience for the payers who need it, but it is no longer anybody's default.
+    var options = '<option value=""' + (split.country ? '' : ' selected') + '>Choose…</option>'
+      + ordered.map(function(c){
+        // Dial code FIRST: the select shares a row with the number, so a long country ("United
+        // Arab Emirates +971") clips — and the one thing this field exists to show is the code.
+        // Name-first ("Sri Lanka +94", as in booking.html) clipped the +971 away (2026-08-02).
+        return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
+          + esc(c[2]) + ' ' + esc(c[1]) + '</option>';
+      }).join('');
     app.innerHTML =
       '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
@@ -441,7 +451,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '</div></div>' + waLine();
     // Focus the first empty box — usually email, or the number for email-contact quotes.
-    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone', 'f-addr'];
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-country', 'f-phone', 'f-addr'];
     for (var i = 0; i < order.length; i++) {
       var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
@@ -508,7 +518,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       firstName: (document.getElementById('f-firstName').value || '').trim(),
       lastName: (document.getElementById('f-lastName').value || '').trim(),
       email: (document.getElementById('f-email').value || '').trim(),
-      country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
+      country: (document.getElementById('f-country').value || '').trim(),
       phone: (document.getElementById('f-phone').value || '').trim(),
       address: (document.getElementById('f-addr').value || '').trim(),
       city: (document.getElementById('f-city').value || '').trim(),
@@ -519,6 +529,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       billLast: (document.getElementById('f-blast').value || '').trim(),
       terms: document.getElementById('f-terms').checked,
     };
+    // The country is asked, never assumed — and the server requires it (customer.country is
+    // min(1)), so a blank one would 400 at the gateway door instead of here.
+    if (parts.noCountry) { fail('Please choose your country code.'); return; }
     if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
     // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
     // placeholder. Name each empty box rather than a generic "check the form".
