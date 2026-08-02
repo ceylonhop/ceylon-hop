@@ -65,7 +65,7 @@ const requestRefund = async (
   app: ReturnType<typeof createApp>,
   bookingId: string,
   amountCents: number,
-  actor = 'finance@test',
+  actor = 'founder@test',
 ) =>
   app.request(`/admin/bookings/${bookingId}/refunds`, {
     method: 'POST',
@@ -74,11 +74,25 @@ const requestRefund = async (
   });
 
 describe('manual refund ledger API', () => {
-  it('allows founder/finance and denies ops, system, and anonymous callers', async () => {
-    for (const actor of ['founder@test', 'finance@test']) {
-      const { app, booking } = await fixture();
-      expect((await requestRefund(app, booking.id, 100, actor)).status).toBe(201);
-    }
+  // payments:reverse (owner, 2026-08-02): giving money back is the founder's alone. Finance
+  // keeps payments:act — it still records money and reads refund history — but can no longer
+  // start a refund. The finance assertion below is the one that matters: it used to be 201.
+  it('allows only the founder, and denies finance, ops, system and anonymous callers', async () => {
+    const founder = await fixture();
+    expect((await requestRefund(founder.app, founder.booking.id, 100, 'founder@test')).status).toBe(201);
+
+    const fin = await fixture();
+    expect((await requestRefund(fin.app, fin.booking.id, 100, 'finance@test')).status).toBe(403);
+
+    // …but finance can still READ the ledger, or it could not reconcile the books.
+    expect(
+      (
+        await fin.app.request(`/admin/bookings/${fin.booking.id}/refunds`, {
+          headers: { cookie: await cookie('founder@test') },
+        })
+      ).status,
+    ).toBe(200);
+
     const { app, booking } = await fixture();
     expect((await requestRefund(app, booking.id, 100, 'ops@test')).status).toBe(403);
     expect(
@@ -106,7 +120,7 @@ describe('manual refund ledger API', () => {
     expect((await requestRefund(app, booking.id, 0)).status).toBe(400);
     const mismatch = await app.request(`/admin/bookings/${booking.id}/refunds`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', cookie: await cookie('finance@test') },
+      headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
       body: JSON.stringify({ amountCents: 100, currency: 'EUR', reason: 'x' }),
     });
     expect(mismatch.status).toBe(409);
@@ -119,7 +133,7 @@ describe('manual refund ledger API', () => {
     const refund = await response.json();
     expect(refund).toMatchObject({
       status: 'manual_pending',
-      requestedBy: 'finance@test',
+      requestedBy: 'founder@test',
       amountCents: 100,
     });
     expect((await bookings.get(booking.id))?.status).toBe('paid');
@@ -155,7 +169,7 @@ describe('manual refund ledger API', () => {
     const url = `/admin/bookings/${booking.id}/refunds/${refund.id}/confirm`;
     const options = {
       method: 'POST',
-      headers: { 'content-type': 'application/json', cookie: await cookie('finance@test') },
+      headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
       body: JSON.stringify({ gatewayRef: 'PAYHERE-FULL-1' }),
     };
     expect((await app.request(url, options)).status).toBe(200);
@@ -181,14 +195,14 @@ describe('manual refund ledger API', () => {
       `/admin/bookings/${booking.id}/refunds/${refund.id}/confirm`,
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json', cookie: await cookie('finance@test') },
+        headers: { 'content-type': 'application/json', cookie: await cookie('founder@test') },
         body: JSON.stringify({ gatewayRef: 'NO-LONGER-CAPTURED' }),
       },
     );
     expect(response.status).toBe(409);
     expect((await response.json()).error).toBe('refund_exceeds_captured');
     const history = await app.request(`/admin/bookings/${booking.id}/refunds`, {
-      headers: { cookie: await cookie('finance@test') },
+      headers: { cookie: await cookie('founder@test') },
     });
     expect((await history.json())[0]).toMatchObject({
       status: 'manual_pending',
@@ -202,7 +216,7 @@ describe('manual refund ledger API', () => {
     const second = await (await requestRefund(app, booking.id, 100)).json();
     const headers = {
       'content-type': 'application/json',
-      cookie: await cookie('finance@test'),
+      cookie: await cookie('founder@test'),
     };
     expect(
       (
@@ -228,7 +242,7 @@ describe('manual refund ledger API', () => {
       ).status,
     ).toBe(200);
     const history = await app.request(`/admin/bookings/${booking.id}/refunds`, {
-      headers: { cookie: await cookie('finance@test') },
+      headers: { cookie: await cookie('founder@test') },
     });
     expect((await history.json()).map((row: { status: string }) => row.status)).toEqual([
       'manual_confirmed',
