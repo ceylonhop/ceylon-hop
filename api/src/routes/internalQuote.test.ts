@@ -930,6 +930,28 @@ describe('quoting tool — fail-closed with no auth', () => {
 });
 
 describe('quoting tool — /places delegates to the maps adapter', () => {
+  // Incident 2026-08-02: Google's description for a catalog place ("Yala, Sri Lanka") was a
+  // DIFFERENT dedupe key from the catalog's own "Yala", so the dropdown offered both. Picking
+  // the Google twin stored a string the coords pin could not match, and the leg priced at a
+  // wrong-town distance. The ambiguous twin must never reach the operator.
+  it('drops a Google suggestion that is just a catalog place with a country suffix', async () => {
+    const a = new Hono();
+    const stubMaps = {
+      provider: 'stub',
+      places: async () => ['Yala, Sri Lanka', 'Yalagiriya, Sri Lanka'],
+      distance: async () => null,
+      distanceVariants: async () => null,
+    };
+    a.route('/admin/quote', internalQuoteRoutes({ maps: stubMaps, quotes: new InMemoryQuoteRepo(), bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG }));
+    const res = await a.request('/admin/quote/places?q=yala', { headers: { cookie: await cookie('op@x.com') } });
+    const body = await res.json();
+    // The catalog entry survives; its suffixed duplicate is gone.
+    expect(body.places).toContain('Yala');
+    expect(body.places).not.toContain('Yala, Sri Lanka');
+    // A genuinely different place that merely starts with the same letters is untouched.
+    expect(body.places).toContain('Yalagiriya, Sri Lanka');
+  });
+
   it('returns local known places before adapter-backed Google suggestions', async () => {
     const a = new Hono();
     const stubMaps = { provider: 'stub', places: async (q: string) => [`Stubbed`, q].slice(0, 1), distance: async () => null, distanceVariants: async () => null };
