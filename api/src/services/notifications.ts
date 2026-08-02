@@ -652,9 +652,13 @@ export async function sendPaymentFailed(
       ticketCard(booking, BADGE_FAILED) +
       totalBlock('Amount due', due) +
       (links.resume ? ctaRow(links.resume, 'Try payment again') : '') +
+      // Was one sentence telling them to have "a quick note to your bank". The common case is
+      // an issuer blocking a first charge from a Sri Lankan merchant, which the cardholder can
+      // clear themselves in a minute — so name the steps in the order that actually works,
+      // same wording as the guidance on pay.html (2026-08-02).
       infoBox(
-        'Trouble paying?',
-        'Some cards block international payments by default — a quick note to your bank usually clears it. Or message us on WhatsApp and we’ll send another way to pay.',
+        'If your card was declined',
+        'Most declined cards are a foreign-payment block, not a problem with your booking. Check your banking app first — a blocked charge usually shows up with an “approve” prompt, and paying again straight after works. Failing that, call the number on the back of your card and say you’re authorising a payment to a travel company in Sri Lanka, or try a different card. You can also message us on WhatsApp and we’ll send another way to pay.',
       ) +
       footer(),
   );

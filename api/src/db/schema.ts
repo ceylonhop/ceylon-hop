@@ -56,6 +56,10 @@ export const bookings = pgTable(
     // Strongest AVS signal most issuers check. PayHere has no postcode parameter, so it also
     // rides on the address line — see the adapter (2026-08-02).
     billingPostcode: text('billing_postcode'),
+    // US/CA payers were typing this into the city box ("Jersey City, NJ") because the form had
+    // nowhere else to put it. PayHere has no state parameter either — it joins the postcode on
+    // the address line (2026-08-02).
+    billingState: text('billing_state'),
     // When the customer accepted the terms + the cancellation policy for their product
     // (2026-08-01). A timestamp, not a boolean: a refund dispute asks *when*. Null on website
     // bookings and every pre-existing row — back-filling would be inventing consent.

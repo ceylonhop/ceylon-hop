@@ -81,6 +81,7 @@ export class PostgresBookingRepo implements BookingRepo {
             address: row.billingAddress,
             city: row.billingCity ?? '',
             postcode: row.billingPostcode ?? undefined,
+            state: row.billingState ?? undefined,
             country: row.billingCountry ?? '',
           }
         : null,
@@ -208,6 +209,7 @@ export class PostgresBookingRepo implements BookingRepo {
           billingCity: b.billing?.city ?? null,
           billingCountry: b.billing?.country ?? null,
           billingPostcode: b.billing?.postcode ?? null,
+          billingState: b.billing?.state ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
         })
         .returning();
@@ -287,6 +289,7 @@ export class PostgresBookingRepo implements BookingRepo {
                 billingCity: b.city,
                 billingCountry: b.country,
                 billingPostcode: b.postcode ?? null,
+                billingState: b.state ?? null,
                 termsAcceptedAt: details.termsAcceptedAt,
               }
             : // No billing in this submission — but the terms acceptance still belongs to

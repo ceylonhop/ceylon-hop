@@ -107,6 +107,30 @@ describe('PayHerePaymentAdapter', () => {
     expect(p.fields?.city).toBe('Jersey City');
   });
 
+  // US/CA payers were writing the state into the city box, because the form had no field for
+  // it and `city` is what the gateway forwards as the city. It now joins the postcode on the
+  // address line, in the order a US address is actually written.
+  it('writes state and postcode onto the address line the way an address reads', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 2900, currency: 'USD',
+      customer: { firstName: 'R', lastName: 'W', email: 'r@x.com', phone: '+13396540511',
+        country: 'United States', address: '31 River Court, Apt 105', city: 'Jersey City',
+        state: 'NJ', postcode: '07310' },
+    });
+    expect(p.fields?.address).toBe('31 River Court, Apt 105, NJ 07310');
+    expect(p.fields?.city).toBe('Jersey City'); // and NOT 'Jersey City, NJ'
+  });
+
+  it('carries a state with no postcode, and a postcode with no state', async () => {
+    const base = { orderId: 'CH-ABC12', amount: 2900, currency: 'USD' } as const;
+    const c = { firstName: 'R', lastName: 'W', email: 'r@x.com', phone: '+1', country: 'United States',
+      address: '31 River Court', city: 'Jersey City' };
+    expect((await adapter().createCheckout({ ...base, customer: { ...c, state: 'NJ' } })).fields?.address)
+      .toBe('31 River Court, NJ');
+    expect((await adapter().createCheckout({ ...base, customer: { ...c, postcode: '07310' } })).fields?.address)
+      .toBe('31 River Court, 07310');
+  });
+
   it('leaves the address untouched when no postcode was given', async () => {
     const p = await adapter().createCheckout({
       orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
