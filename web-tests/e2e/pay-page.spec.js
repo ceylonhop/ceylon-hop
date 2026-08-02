@@ -100,7 +100,42 @@ test('the details step uses the wizard widget: country code select + local numbe
   await expect(page.locator('#f-email')).toBeFocused(); // first empty field
   await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
   // The select shows dial codes the way the wizard does.
-  await expect(page.locator('#f-country option').first()).toContainText('+94');
+  await expect(page.locator('#f-country option').nth(1)).toContainText('+94'); // after "Choose…"
+});
+
+test('a quote that never said the country asks for one — it is never assumed', async ({ page }) => {
+  // Owner call (2026-08-02): the select used to open on Sri Lanka whether or not anything
+  // said so, and the billing country followed it. Most payers are not Sri Lankan, and a
+  // wrong dial code rewrites the number we'd reach them on.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS,
+    prefill: { ...PREFILL, email: 'nimal@example.com', whatsapp: '' } });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json',
+      body: JSON.stringify({ error: 'bad_request', message: 'stop here' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('#f-country')).toHaveValue('');
+  await expect(page.locator('#f-country option').first()).toHaveText('Choose…');
+  await expect(page.locator('#f-bcountry')).toHaveValue(''); // the billing default followed it
+
+  // Everything else complete: the missing country stops the payment and says which box.
+  await page.locator('#f-phone').fill('770001111');
+  await page.locator('#f-addr').fill('Prinsengracht 263');
+  await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect(page.locator('#payerr')).toContainText('country code');
+  expect(sent).toBeNull(); // never sent a guessed country to the gateway
+
+  // Picking one lets it through, with the dial code the payer actually chose.
+  await page.locator('#f-country').selectOption('Netherlands');
+  await page.locator('#gobtn').click();
+  await expect.poll(() => sent?.customer?.country).toBe('Netherlands');
+  expect(sent.customer.whatsapp).toBe('+31770001111');
 });
 
 test('paid: keepsake with reference, no way to pay again', async ({ page }) => {
@@ -404,6 +439,20 @@ test('country is the FIRST billing field, since it gives the others meaning', as
   const order = await page.locator('#f-bcountry, #f-addr, #f-city, #f-postcode')
     .evaluateAll((els) => els.map((e) => e.id));
   expect(order[0]).toBe('f-bcountry');
+});
+
+test('the dial code and the number share one row, code first so it survives the narrow column', async ({ page }) => {
+  // Two halves of one answer, so they read as one field (2026-08-02). Halving the select's
+  // width clips a long country, so the OPTION leads with the dial code — the part that matters.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.setViewportSize({ width: 390, height: 900 }); // the tightest case
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  const country = await page.locator('#f-country').boundingBox();
+  const phone = await page.locator('#f-phone').boundingBox();
+  expect(Math.abs(country.y - phone.y)).toBeLessThan(2);   // same row
+  expect(country.x + country.width).toBeLessThanOrEqual(phone.x + 1); // code on the left
+  await expect(page.locator('#f-country option').nth(1)).toHaveText('+94 Sri Lanka');
 });
 
 test('the payment page shows no cookie banner', async ({ page }) => {
