@@ -104,12 +104,51 @@ test('the details step uses the wizard widget: country code select + local numbe
 });
 
 test('paid: keepsake with reference, no way to pay again', async ({ page }) => {
-  await stubView(page, { state: 'paid', paid: { reference: 'CH-4J2QP', firstName: 'Nimal', amountUsd: '$498.85', title: 'Six days across Sri Lanka' } });
+  // The keepsake is booking.html's boarding pass (owner, 2026-08-02) — same CSS, now shared
+  // from site.css, same markup rebuilt as a template string.
+  await stubView(page, { state: 'paid', paid: {
+    reference: 'CH-4J2QP', firstName: 'Nimal', amountUsd: '$498.85',
+    title: 'Six days across Sri Lanka', from: null, to: null, leadName: 'Nimal Perera',
+    facts: [{ k: 'Days', v: '6 with your driver' }, { k: 'Travellers', v: '4 · Van' }, { k: 'Starts', v: 'Wed 12 Aug' }],
+  } });
   await page.goto(PAGE);
   await expect(page.locator('.st-title')).toContainText('You’re booked, Nimal');
-  await expect(page.locator('.refchip')).toHaveText('CH-4J2QP');
+  await expect(page.locator('.pass-stub .ref')).toHaveText('CH-4J2QP');
   await expect(page.locator('#paybtn')).toHaveCount(0);
   await expect(page.locator('.next')).toContainText('What happens next');
+  // The pass is a real pass, not a styled div: the tear-off stub and barcode are what make it
+  // read as one, and they come from site.css — proving the shared stylesheet actually applies.
+  await expect(page.locator('.pass .barcode')).toBeVisible();
+  await expect(page.locator('.pass-info')).toContainText('Nimal Perera');
+  await expect(page.locator('.pass-info')).toContainText('$498.85');
+  await expect(page.locator('.pass-info')).toContainText('4 · Van');
+});
+
+test('paid: a named route renders as two endpoints; a multi-journey trip does not', async ({ page }) => {
+  await stubView(page, { state: 'paid', paid: {
+    reference: 'CH-0001', firstName: 'Emma', amountUsd: '$39.00',
+    title: 'Colombo Airport (CMB) → Galle', from: 'Colombo Airport (CMB)', to: 'Galle',
+    leadName: 'Emma Stone', facts: [{ k: 'Travellers', v: '2' }],
+  } });
+  await page.goto(PAGE);
+  await expect(page.locator('.pass-route .pt').first()).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('.pass-route .pt').last()).toContainText('Galle');
+  await expect(page.locator('.pass-route .dash')).toHaveCount(1);
+});
+
+test('paid: cells the quote never stated are omitted, not filled with "To confirm"', async ({ page }) => {
+  // A pay link records no departure time (start passes `time: undefined`), and booking.html's
+  // pass has a "Departs" cell. Printing "To confirm" into a keepsake is worse than not having
+  // the row — so the row is not there.
+  await stubView(page, { state: 'paid', paid: {
+    reference: 'CH-0002', firstName: 'Sam', amountUsd: '$39.00', title: 'A → B',
+    from: 'A', to: 'B', leadName: null, facts: [],
+  } });
+  await page.goto(PAGE);
+  await expect(page.locator('.pass-info')).not.toContainText('Departs');
+  await expect(page.locator('.pass-info')).not.toContainText('To confirm');
+  await expect(page.locator('.pass-info')).not.toContainText('Lead guest');
+  await expect(page.locator('.pass-info')).toContainText('Paid'); // the ones we DO have still show
 });
 
 test('revised and unavailable share the sailed-off screen: facts, WhatsApp, no leak', async ({ page }) => {
