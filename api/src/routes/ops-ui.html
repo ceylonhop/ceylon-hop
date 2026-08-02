@@ -376,6 +376,15 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
   .switch.on{background:var(--ok)}.switch.on::after{left:22px}
   .sheet-actions{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  /* Cancel + Refund, side by side at the foot of the sheet (owner, 2026-08-02). Its own class
+     rather than .sheet-actions, which is a column, and its own button treatment because
+     .btn-noshow is deliberately a borderless text button — fine for a tertiary "Mark no-show",
+     wrong for the two actions that end a sale. Outlined, equal width, and they wrap on a
+     narrow phone rather than squeezing. */
+  .reverse-actions{display:flex;flex-direction:row;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .reverse-actions .btn{flex:1 1 150px;align-self:auto;justify-content:center;background:var(--paper);border:1px solid #e6bcb0;box-shadow:none;font-size:.82rem;padding:10px 12px}
+  .reverse-actions .btn:hover:not(:disabled){background:#fbe7e2}
+  .reverse-actions .btn:disabled{opacity:.45;cursor:not-allowed}
   .followup{background:var(--wait-bg);border:1px solid #f0dcae;border-radius:12px;padding:13px 15px;font-size:.9rem;color:var(--ink);display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
   .followup::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--wait);flex:none;margin-top:5px}
   .followup b{font-weight:700}
@@ -2578,6 +2587,51 @@ function refundSummary(d){
   return {captured,confirmed,pending,remaining:Math.max(0,captured-confirmed-pending),currency:payment?.currency||d?.booking?.currency||'USD'};
 }
 
+/* ── the two irreversible actions ───────────────────────────────────────────────────────────
+   Cancel and Refund, side by side at the foot of the sheet (owner, 2026-08-02). Both are
+   founder-only via payments:reverse — finance can still record money and read refund history,
+   but calling a customer's trip off and giving their money back are the two things nobody else
+   can undo.
+
+   REFUND CUT-OFF: allowed only up to 24 hours before travel. A booking with no travel date yet
+   ("Flexible") is refundable — the trip hasn't been scheduled, so there is nothing to be late
+   for, and blocking it would strand exactly the bookings most likely to be called off.
+
+   The cut-off is a DASHBOARD rule, not a server one: a genuinely late refund still has to be
+   recordable, or a manual PayHere refund could never be reconciled into the books. Same
+   principle as the amount field — the API stays capable, the dashboard stays opinionated. */
+const REFUND_CUTOFF_MS = 24 * 60 * 60 * 1000;
+
+function refundCutoffPassed(t, now){
+  if(!t || !t.date) return false;            // no travel date → nothing to be late for
+  const at = Date.parse(`${t.date}T${t.time && /^\d{2}:\d{2}/.test(t.time) ? t.time : '00:00'}:00Z`);
+  if(!Number.isFinite(at)) return false;     // unparseable → don't block on a formatting quirk
+  return (now ?? Date.now()) > at - REFUND_CUTOFF_MS;
+}
+
+function reverseActionsFor(t, d){
+  if(!state.caps || !state.caps.includes('payments:reverse')) return '';
+  if(isBoard(t)) return '';                  // ride-board vans are read-only projections
+  const canCancel = CANCELLABLE.includes(t.stage);
+  const s = refundSummary(d);
+  const late = refundCutoffPassed(t);
+  const btns = [];
+  if(canCancel){
+    btns.push(`<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`);
+  }
+  if(s.remaining > 0){
+    btns.push(late
+      ? `<button class="btn btn-noshow" disabled title="Refunds close 24 hours before travel — refund in PayHere and record it there">Refund ${money({amount:s.remaining,currency:s.currency})}</button>`
+      : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Requests a FULL refund; you still confirm it with the PayHere reference">Refund ${money({amount:s.remaining,currency:s.currency})} in full</button>`);
+  }
+  if(!btns.length) return '';
+  const note = (s.remaining > 0 && late)
+    ? `<p class="muted" style="margin:8px 0 0">Refunds close 24 hours before travel. Refund in PayHere and record it manually.</p>`
+    : '';
+  return `<div class="block"><h4>Cancel &amp; refund</h4>
+    <div class="reverse-actions">${btns.join('')}</div>${note}</div>`;
+}
+
 function refundHtmlFor(t,d){
   if(!state.caps||!state.caps.includes('payments:act'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
@@ -2597,11 +2651,12 @@ function refundHtmlFor(t,d){
       <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
       ${pendingActions}</div>`;
   }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
-  const request=s.remaining>0?`<div class="refund-form">
-    <label>Refund amount (${esc(s.currency)})<input id="refundamount" inputmode="decimal" placeholder="0.00"></label>
-    <label>Reason<input id="refundreason" maxlength="500" placeholder="Customer request"></label>
-    <button class="btn btn-go" data-act="refundrequest" data-id="${esc(t.id)}">Request refund</button>
-  </div>`:'';
+  /* No amount box: our PayHere setup cannot do partial refunds, so offering a field that
+     invites one only creates records the gateway can't honour (owner, 2026-08-02). The refund
+     BUTTON now lives in the action row at the foot of the sheet, next to Cancel, and always
+     requests the full refundable remainder. The API still accepts a partial amount — a manual
+     part-refund can be recorded there — the dashboard is simply opinionated. */
+  const request='';
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
     <div class="kv"><span class="k">Previously refunded</span><span class="v">${money({amount:s.confirmed,currency:s.currency})}</span></div>
@@ -2709,12 +2764,9 @@ function renderSheet(){
       +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button>`
       +`</div>`;
   }else{pipeAction='';}
-  /* Cancelling is a payments:act action and only legal while the trip hasn't started — the
-     booking machine has no in_progress → cancelled edge, so offering it there would just 409.
-     Before this the tool had no cancel at all: a customer who called off their trip left ops
-     either refunding a booking nobody had paid for, or leaving it live forever. */
-  const canCancel=state.caps&&state.caps.includes('payments:act')&&CANCELLABLE.includes(t.stage);
-  if(canCancel)pipeAction+=`<div class="sheet-actions" style="margin-top:10px"><button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button></div>`;
+  /* Cancel and Refund now live together at the FOOT of the sheet (owner, 2026-08-02) — the two
+     irreversible actions, side by side, below everything you'd want to read before pressing
+     either. See reverseActionsFor(). */
   sh.innerHTML=`
     <div class="sheet-h"><button class="x" data-act="close">✕</button>
       <div class="ey"><span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}</div>
@@ -2748,6 +2800,7 @@ function renderSheet(){
       <div class="block"><h4>Activity</h4>${acts}
         <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div>
       </div>
+      ${reverseActionsFor(t,d)}
     </div>`;
   sc.classList.add('show');sh.classList.add('show');
 }
@@ -3040,9 +3093,9 @@ document.addEventListener('click',async e=>{
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
-      /* payments:act, re-checked here for the same reason markpaid does: a sheet rendered
+      /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
          before a session change must not be able to POST what it should no longer offer. */
-      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!state.caps||!state.caps.includes('payments:reverse'))break;
       if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
       el.disabled=true;
       try{await adminApi.post(`/bookings/${id}/cancel`);toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
@@ -3084,15 +3137,20 @@ document.addEventListener('click',async e=>{
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
-      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!state.caps||!state.caps.includes('payments:reverse'))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
-      const amountInput=$('#refundamount'),reasonInput=$('#refundreason');
-      const amountText=amountInput&&amountInput.value.trim();
-      const amountCents=/^\d+(?:\.\d{1,2})?$/.test(amountText||'')?Math.round(Number(amountText)*100):0;
-      const reason=reasonInput&&reasonInput.value.trim();
+      /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
+         amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
-      if(!amountCents||amountCents>s.remaining){toast('Enter an amount within the refundable balance','error');break;}
-      if(!reason){toast('Add a refund reason','error');break;}
+      const amountCents=s.remaining;
+      const reason='Full refund (ops)';
+      if(!amountCents){toast('Nothing left to refund','error');break;}
+      /* Re-checked here as well as in the render: a sheet left open across the cut-off would
+         still be showing a live button. */
+      if(refundCutoffPassed(state.detailData&&tickets.find(x=>x.id===id))){
+        toast('Refunds close 24 hours before travel — do it in PayHere','error');break;
+      }
+      if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request. You still have to make the refund in PayHere and confirm it with the reference.`))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
@@ -3100,7 +3158,7 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'refundconfirm':{
-      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!state.caps||!state.caps.includes('payments:reverse'))break;
       const refundId=el.dataset.refundId;
       const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
       const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
@@ -3114,7 +3172,7 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'refundcancel':{
-      if(!state.caps||!state.caps.includes('payments:act'))break;
+      if(!state.caps||!state.caps.includes('payments:reverse'))break;
       const refundId=el.dataset.refundId;
       const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
       if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;

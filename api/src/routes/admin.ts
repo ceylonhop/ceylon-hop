@@ -120,7 +120,7 @@ export function adminRoutes(deps: {
     return c.json(updated, 200);
   }
 
-  r.post('/bookings/:id/cancel', requireCap('payments:act'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
+  r.post('/bookings/:id/cancel', requireCap('payments:reverse'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
   const RefundRequest = z
     .object({
       amountCents: z.number().int().positive(),
@@ -138,12 +138,14 @@ export function adminRoutes(deps: {
     return c.json({ error: error.code }, 409);
   };
 
+  // Reading refund history stays on payments:act — finance must be able to reconcile the books
+  // without being able to move money. Only the four REVERSAL routes below are founder-only.
   r.get('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
     if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
     return c.json(await deps.refunds.list(c.req.param('id')), 200);
   });
 
-  r.post('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+  r.post('/bookings/:id/refunds', requireCap('payments:reverse'), async (c) => {
     const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
     try {
@@ -159,7 +161,7 @@ export function adminRoutes(deps: {
     }
   });
 
-  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:act'), async (c) => {
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:reverse'), async (c) => {
     const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
     const before = await bookings.get(c.req.param('id'));
@@ -204,7 +206,7 @@ export function adminRoutes(deps: {
     }
   });
 
-  r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('payments:act'), async (c) => {
+  r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('payments:reverse'), async (c) => {
     try {
       return c.json(
         await deps.refunds.cancel({

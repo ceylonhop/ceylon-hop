@@ -27,6 +27,18 @@ describe('can() capability matrix', () => {
     expect(can('founder', 'analytics:view')).toBe(true);
     for (const r of ['finance', 'ops', 'system'] as const) expect(can(r, 'analytics:view')).toBe(false);
   });
+
+  // payments:reverse — undoing a sale (owner, 2026-08-02). Split out of payments:act so finance
+  // keeps recording money and reading refund history, while cancelling a trip and giving the
+  // money back stay with the founder. The pairing below is the whole point: finance still holds
+  // payments:act, and must NOT hold payments:reverse.
+  it('only the founder may cancel a booking or refund money', () => {
+    expect(can('founder', 'payments:reverse')).toBe(true);
+    for (const r of ['finance', 'ops', 'system'] as const) {
+      expect(can(r, 'payments:reverse')).toBe(false);
+    }
+    expect(can('finance', 'payments:act')).toBe(true); // unchanged — mark-paid still works
+  });
 });
 
 // The assign picker and the queue's assignee chip both label staff by person, not by inbox.

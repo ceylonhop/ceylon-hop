@@ -76,11 +76,13 @@ function makeApp() {
 }
 
 describe('POST /admin/bookings/:id/cancel', () => {
-  it('cancels the booking for a founder/finance session, transitions it to cancelled, and emails the customer', async () => {
+  // Cancelling moved to payments:reverse — founder only (owner, 2026-08-02). Calling a
+  // customer's trip off is not something finance should be able to do alone.
+  it('cancels the booking for a FOUNDER session, transitions it to cancelled, and emails the customer', async () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+      method: 'POST', headers: { cookie: await cookie('f@x.com') },
     });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('cancelled');
@@ -88,6 +90,16 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const sent = email.sent.filter((m) => /cancel/i.test(m.subject));
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe('maya@example.com');
+  });
+
+  it('refuses a finance session — cancelling is founder-only', async () => {
+    const { app, bookings } = makeApp();
+    const b = await book(app);
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(403);
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled'); // untouched
   });
 
   it('401 without any identity', async () => {
