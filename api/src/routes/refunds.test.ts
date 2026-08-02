@@ -77,7 +77,10 @@ describe('manual refund ledger API', () => {
   // payments:reverse (owner, 2026-08-02): giving money back is the founder's alone. Finance
   // keeps payments:act — it still records money and reads refund history — but can no longer
   // start a refund. The finance assertion below is the one that matters: it used to be 201.
-  it('allows only the founder, and denies finance, ops, system and anonymous callers', async () => {
+  // Owner rule 2026-08-02: ops may reverse within 24h of taking the booking (or while the trip
+  // is >24h out). These fixture bookings are seconds old, so ops IS allowed — finance never is,
+  // because it has no bookings:operate.
+  it('allows the founder and a fresh-booking ops agent, and denies finance, system and anonymous', async () => {
     const founder = await fixture();
     expect((await requestRefund(founder.app, founder.booking.id, 100, 'founder@test')).status).toBe(201);
 
@@ -94,7 +97,7 @@ describe('manual refund ledger API', () => {
     ).toBe(200);
 
     const { app, booking } = await fixture();
-    expect((await requestRefund(app, booking.id, 100, 'ops@test')).status).toBe(403);
+    expect((await requestRefund(app, booking.id, 100, 'ops@test')).status).toBe(201);
     expect(
       (
         await app.request(`/admin/bookings/${booking.id}/refunds`, {

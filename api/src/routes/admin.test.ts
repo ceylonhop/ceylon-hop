@@ -7,7 +7,7 @@ import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { issueSessionCookie } from '../lib/opsMiddleware';
-import { nextIsoWeekday } from '../testSupport/dates';
+import { nextIsoWeekday, futureIsoDate } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
 import { Hono } from 'hono';
 
@@ -82,7 +82,9 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('cancelled');
@@ -115,21 +117,129 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(403);
   });
 
-  it('403 for an ops session (no payments:act)', async () => {
-    const { app } = makeApp();
+  // Ops MAY cancel now (owner rule 2026-08-02): more than 24h before the trip, OR within 24h of
+  // taking the booking. Every booking created through the API in these tests is seconds old, so
+  // the grace applies and ops is allowed even with no trip date — which is the point of the
+  // grace, since bookings frequently arrive inside 24h of travel. The AGED cases (grace expired,
+  // trip imminent) need a controlled clock and live in domain/reversalWindow.test.ts.
+  it('an ops session may cancel a booking it just took, even with no trip date', async () => {
+    const { app, bookings } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('op@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.cancelledBy).toBe('op@x.com');
   });
 
   it('404 for an unknown booking', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/bookings/no-such/cancel', {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(404);
+  });
+
+  // ── Owner rule, 2026-08-02: ops may reverse up to 24h before the trip ───────────────────
+  // Dates come from futureIsoDate(), never a literal — see docs/known-bugs.md on date bombs.
+  const bookOn = async (app: ReturnType<typeof createApp>, date: string, time = '09:00') => {
+    const res = await app.request('/bookings/single', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...valid, date, time }),
+    });
+    return res.json();
+  };
+  const cancelAs = async (app: ReturnType<typeof createApp>, id: string, who: string, reason = 'Customer called it off') =>
+    app.request(`/admin/bookings/${id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie(who), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+
+  it('an OPS agent may cancel a trip that is more than 24 hours away', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'op@x.com');
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  // A trip inside 24h is still reversible by ops HERE only because the booking is fresh. That
+  // combination is exactly the same-day intake case the grace exists for.
+  it('an OPS agent may cancel an imminent trip it just took', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    expect((await cancelAs(app, b.id, 'op@x.com')).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  it('finance may not cancel at all, however fresh the booking', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'fin@x.com');
+    expect(res.status).toBe(403);
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled');
+  });
+
+  it('a FOUNDER may cancel inside 24 hours — never time-limited', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    expect((await cancelAs(app, b.id, 'f@x.com')).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  it('stores the reason and who gave it', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    await cancelAs(app, b.id, 'op@x.com', 'Flight cancelled by the airline');
+    const saved = (await bookings.get(b.id))!;
+    expect(saved.cancellationReason).toBe('Flight cancelled by the airline');
+    expect(saved.cancelledBy).toBe('op@x.com');
+    expect(saved.cancelledAt).toBeTruthy();
+  });
+
+  it('refuses a cancellation with no reason, and changes nothing', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('cancellation_reason_required');
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled');
+  });
+
+  it('refuses a blank reason — whitespace is not an explanation', async () => {
+    const { app } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'f@x.com', '   ');
+    expect(res.status).toBe(400);
+  });
+
+  it('the ops time window applies to refunds too, not just cancellation', async () => {
+    const { app } = makeApp();
+    const near = await bookOn(app, futureIsoDate(1), '00:00');
+    const far = await bookOn(app, futureIsoDate(30));
+    const refund = (id: string, who: string) => cookie(who).then((ck) =>
+      app.request(`/admin/bookings/${id}/refunds`, {
+        method: 'POST',
+        headers: { cookie: ck, 'content-type': 'application/json' },
+        body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
+      }));
+    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
+    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
+    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
+    expect((await refund(near.id, 'op@x.com')).status).toBe(409);
+    expect((await refund(far.id, 'op@x.com')).status).toBe(409);
+    // finance has no bookings:operate, so it never reaches the ledger at all.
+    expect((await refund(far.id, 'fin@x.com')).status).toBe(403);
   });
 
   it('409 when the booking cannot be cancelled (already cancelled)', async () => {
@@ -137,7 +247,9 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const b = await book(app);
     await bookings.setStatus(b.id, 'cancelled');
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(409);
   });
@@ -178,7 +290,9 @@ describe('POST /admin/jobs/notifications', () => {
   it('200 for a founder session (founder also has admin:jobs)', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/jobs/notifications', {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(200);
   });
@@ -315,7 +429,11 @@ describe('shared seat release on cancel/refund', () => {
     const { app } = makeSharedApp();
     const b = await (await bookShared(app)).json();
     expect((await bookShared(app)).status).toBe(409); // full while held
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     expect((await bookShared(app)).status).toBe(201); // freed by the cancel
   });
 
@@ -341,7 +459,11 @@ describe('shared seat release on cancel/refund', () => {
     await bookings.setStatus(b.id, 'paid');
     const refund = await captureAndRequestFullRefund(app, payments, b);
     // another traveller takes 3 of the freed seats between the cancel and the refund
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     const other = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 3 });
     expect(other?.seatsBooked).toBe(3);
     const confirmed = await app.request(`/admin/bookings/${b.id}/refunds/${refund.id}/confirm`, {
@@ -359,7 +481,11 @@ describe('shared seat release on cancel/refund', () => {
     const { app, departures } = makeSharedApp();
     const b = await book(app); // a single transfer
     const spy = vi.spyOn(departures, 'releaseSeats');
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     expect(spy).not.toHaveBeenCalled();
   });
 });
@@ -417,7 +543,9 @@ describe('POST /admin/bookings/:id/confirm', () => {
     const { app } = makeApp();
     const b = await book(app); // still draft
     const res = await app.request(`/admin/bookings/${b.id}/confirm`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(409);
   });

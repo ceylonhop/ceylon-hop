@@ -406,7 +406,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .refund-confirm{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end;margin-top:10px}
   .refund-confirm label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
   .refund-confirm input{min-width:0;border:1px solid #e4c984;background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit}
-  .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
+  .reverse-reason{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft);margin-bottom:10px}
+.reverse-reason .req{font-weight:600;color:var(--alert);text-transform:none;letter-spacing:0}
+.reverse-reason input{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+.reverse-reason input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+.refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
   @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
   /* activity */
   .act{position:relative;padding-left:23px;margin-bottom:15px}
@@ -2607,34 +2611,76 @@ function refundSummary(d){
    principle as the amount field — the API stays capable, the dashboard stays opinionated. */
 const REFUND_CUTOFF_MS = 24 * 60 * 60 * 1000;
 
-function refundCutoffPassed(t, now){
-  if(!t || !t.date) return false;            // no travel date → nothing to be late for
-  const at = Date.parse(`${t.date}T${t.time && /^\d{2}:\d{2}/.test(t.time) ? t.time : '00:00'}:00Z`);
-  if(!Number.isFinite(at)) return false;     // unparseable → don't block on a formatting quirk
-  return (now ?? Date.now()) > at - REFUND_CUTOFF_MS;
+/* The trip's start instant. Sri Lanka is a fixed UTC+05:30 with no DST, so a literal offset is
+   exact — this MUST agree with domain/reversalWindow.ts on the server, or ops sees an enabled
+   button and gets a 403 (parsing as Z was 5.5 hours out). null when nobody set a date. */
+function tripStartMs(t){
+  if(!t || !t.date || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return null;
+  const hhmm = t.time && /^\d{2}:\d{2}$/.test(t.time) ? t.time : '00:00';
+  const at = Date.parse(`${t.date}T${hhmm}:00+05:30`);
+  return Number.isFinite(at) ? at : null;
+}
+/* Owner rule 2026-08-02: ops may reverse only while more than 24h remain. Fails CLOSED on an
+   unknown date — an unknown start cannot be shown to be outside the window, and the server
+   refuses it too (trip_start_unknown), so offering the button would only produce a 403. */
+function opsWindowOpen(t, now){
+  const at = tripStartMs(t);
+  if(at === null) return false;
+  return (now ?? Date.now()) < at - REFUND_CUTOFF_MS;
+}
+/* Bookings frequently arrive INSIDE 24h of travel, so ops may also undo work they just took,
+   whatever the travel date. Mirrors withinGrace() in domain/reversalWindow.ts — without it the
+   button would be hidden on exactly the same-day intake this grace exists to unblock. */
+function opsGraceOpen(d, now){
+  const created = Date.parse((d && d.booking && d.booking.createdAt) || '');
+  if(!Number.isFinite(created)) return false;   // unknown age → no grace, as on the server
+  const age = (now ?? Date.now()) - created;
+  if(age < 0) return false;                     // created in the FUTURE (skew/bad data) is not "fresh"
+  return age < REFUND_CUTOFF_MS;
 }
 
+/* Owner rule 2026-08-02: an ops agent may cancel/refund up to 24 hours before the trip starts
+   and must give a reason; a founder may at any time. Mirrors mayReverse() on the server. */
+function mayReverseNow(t, d){
+  if(state.caps && state.caps.includes('payments:reverse')) return true; // founder, unlimited
+  const detail = d || state.detailData;
+  if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
+  return false;
+}
 function reverseActionsFor(t, d){
-  if(!state.caps || !state.caps.includes('payments:reverse')) return '';
+  const founder = !!(state.caps && state.caps.includes('payments:reverse'));
+  const opsAgent = !founder && !!(state.caps && state.caps.includes('bookings:operate'));
+  if(!founder && !opsAgent) return '';
   if(isBoard(t)) return '';                  // ride-board vans are read-only projections
   const canCancel = CANCELLABLE.includes(t.stage);
   const s = refundSummary(d);
-  const late = refundCutoffPassed(t);
+  /* Only ops is time-limited. The old code disabled the refund for EVERYONE past the cutoff,
+     which contradicted the rule that a founder is never time-limited. */
+  const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);
+  const why = tripStartMs(t) === null
+    ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
+    : 'The trip starts in under 24 hours — only a founder can cancel or refund from here';
   const btns = [];
   if(canCancel){
-    btns.push(`<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`);
+    btns.push(blocked
+      ? `<button class="btn btn-noshow" disabled title="${esc(why)}">Cancel booking</button>`
+      : `<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`);
   }
   if(s.remaining > 0){
-    btns.push(late
-      ? `<button class="btn btn-noshow" disabled title="Refunds close 24 hours before travel — refund in PayHere and record it there">Refund ${money({amount:s.remaining,currency:s.currency})}</button>`
+    btns.push(blocked
+      ? `<button class="btn btn-noshow" disabled title="${esc(why)}">Refund ${money({amount:s.remaining,currency:s.currency})}</button>`
       : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Requests a FULL refund; you still confirm it with the PayHere reference">Refund ${money({amount:s.remaining,currency:s.currency})} in full</button>`);
   }
   if(!btns.length) return '';
-  const note = (s.remaining > 0 && late)
-    ? `<p class="muted" style="margin:8px 0 0">Refunds close 24 hours before travel. Refund in PayHere and record it manually.</p>`
-    : '';
+  const note = blocked ? `<p class="muted" style="margin:8px 0 0">${esc(why)}.</p>` : '';
+  /* One reason field for both actions. Required by the owner rule and stored against the
+     booking — a time-bounded grant is only auditable if the reason and the actor are written
+     down. An inline field, not a browser dialog — this file is asserted to contain none. */
+  const reasonBox = blocked ? '' : `<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="reversereason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
+    </label>`;
   return `<div class="block"><h4>Cancel &amp; refund</h4>
-    <div class="reverse-actions">${btns.join('')}</div>${note}</div>`;
+    ${reasonBox}<div class="reverse-actions">${btns.join('')}</div>${note}</div>`;
 }
 
 function refundHtmlFor(t,d){
@@ -3100,16 +3146,22 @@ document.addEventListener('click',async e=>{
     case 'cancelbooking':{
       /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
          before a session change must not be able to POST what it should no longer offer. */
-      if(!state.caps||!state.caps.includes('payments:reverse'))break;
+      if(!mayReverseNow(t,state.detailData))break;
+      const reasonEl=$('#reversereason');
+      const cancelReason=((reasonEl&&reasonEl.value)||'').trim();
+      if(!cancelReason){toast('Give a reason first — it is saved against the booking','error');if(reasonEl)reasonEl.focus();break;}
       if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
       el.disabled=true;
-      try{await adminApi.post(`/bookings/${id}/cancel`);toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      try{await adminApi.post(`/bookings/${id}/cancel`,{reason:cancelReason});toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
       catch(err){
         if(err.message==='auth')break;
         if(el.isConnected)el.disabled=false;
         /* illegal_transition means someone else moved it (or the trip already started) —
            a state, not a fault, so say what happened rather than "something went wrong". */
         if(err.message==='illegal_transition'){toast('Too late to cancel — the booking has already moved on','error');await refreshRow(id);break;}
+        if(err.message==='within_24h_founder_only'){toast('The trip starts in under 24 hours — a founder has to cancel this','error');await refreshRow(id);break;}
+        if(err.message==='trip_start_unknown'){toast('This booking has no trip date — a founder has to cancel this','error');break;}
+        if(err.message==='cancellation_reason_required'){toast('A reason is required to cancel','error');break;}
         window.opsReportError&&window.opsReportError('booking cancel',err);
         toast('Could not cancel','error');
       }
@@ -3142,19 +3194,16 @@ document.addEventListener('click',async e=>{
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
     case 'refundrequest':{
-      if(!state.caps||!state.caps.includes('payments:reverse'))break;
+      if(!mayReverseNow(t,state.detailData))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
       /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
          amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
       const amountCents=s.remaining;
-      const reason='Full refund (ops)';
+      const reasonEl=$('#reversereason');
+      const reason=((reasonEl&&reasonEl.value)||'').trim();
       if(!amountCents){toast('Nothing left to refund','error');break;}
-      /* Re-checked here as well as in the render: a sheet left open across the cut-off would
-         still be showing a live button. */
-      if(refundCutoffPassed(state.detailData&&tickets.find(x=>x.id===id))){
-        toast('Refunds close 24 hours before travel — do it in PayHere','error');break;
-      }
+      if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
       if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request. You still have to make the refund in PayHere and confirm it with the reference.`))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}

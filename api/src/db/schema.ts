@@ -48,6 +48,11 @@ export const bookings = pgTable(
     // billing belongs to the transaction — the same traveller may pay with a different card,
     // and a parent/company may pay for someone else. `customers` stays the lead passenger.
     // Nullable: pre-existing rows have none, and the website flow doesn't collect them.
+    // Why this booking was cancelled, and by whom (owner rule 2026-08-02). Nullable: only a
+    // cancelled booking has them, and pre-existing cancellations have none.
+    cancellationReason: text('cancellation_reason'),
+    cancelledBy: text('cancelled_by'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     billingFirstName: text('billing_first_name'),
     billingLastName: text('billing_last_name'),
     billingAddress: text('billing_address'),

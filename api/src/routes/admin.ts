@@ -25,6 +25,8 @@ import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddlewar
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundRepo } from '../db/refundRepo';
+import { mayReverse } from '../domain/reversalWindow';
+import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 
@@ -80,6 +82,7 @@ export function adminRoutes(deps: {
     c: Context,
     to: BookingStatus,
     notify: (b: Booking, e: EmailAdapter) => Promise<void>,
+    audit?: StatusAudit,
   ) {
     const id = c.req.param('id');
     if (!id) return c.json({ error: 'not_found' }, 404);
@@ -87,7 +90,7 @@ export function adminRoutes(deps: {
     if (!booking) return c.json({ error: 'not_found' }, 404);
     let updated: Booking;
     try {
-      updated = await bookings.setStatus(id, to);
+      updated = await bookings.setStatus(id, to, audit);
     } catch (err) {
       if (err instanceof IllegalTransitionError) {
         return c.json({ error: 'illegal_transition', from: err.from, to: err.to }, 409);
@@ -120,7 +123,34 @@ export function adminRoutes(deps: {
     return c.json(updated, 200);
   }
 
-  r.post('/bookings/:id/cancel', requireCap('payments:reverse'), (c) => transitionAndNotify(c, 'cancelled', sendCancellationConfirmation));
+  // Owner rule (2026-08-02): an ops agent may cancel up to 24 hours before the trip starts and
+  // must say why; inside that last day only a founder may. Capability is 'bookings:operate' —
+  // the narrower 'payments:reverse' is founder-only and stays that way, with the time-bounded
+  // grant applied by reversalGate() below so the rule is readable in one place.
+  const CancelRequest = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
+
+  // Shared by all four reversal routes. Returns a Response to send, or null to proceed.
+  const reversalGate = async (c: Context, bookingId: string): Promise<Response | null> => {
+    const booking = await bookings.get(bookingId);
+    if (!booking) return c.json({ error: 'booking_not_found' }, 404);
+    const verdict = mayReverse(c.get('identity').role, booking);
+    if (verdict.ok) return null;
+    return c.json({ error: verdict.code, message: verdict.message }, 403);
+  };
+
+  r.post('/bookings/:id/cancel', requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    const blocked = await reversalGate(c, id);
+    if (blocked) return blocked;
+    const parsed = CancelRequest.safeParse(await c.req.json().catch(() => null));
+    // A reason is required, not encouraged: a time-bounded grant is only auditable if the
+    // reason and the actor are actually written down.
+    if (!parsed.success) return c.json({ error: 'cancellation_reason_required' }, 400);
+    return transitionAndNotify(c, 'cancelled', sendCancellationConfirmation, {
+      reason: parsed.data.reason,
+      by: c.get('identity').email,
+    });
+  });
   const RefundRequest = z
     .object({
       amountCents: z.number().int().positive(),
@@ -145,7 +175,9 @@ export function adminRoutes(deps: {
     return c.json(await deps.refunds.list(c.req.param('id')), 200);
   });
 
-  r.post('/bookings/:id/refunds', requireCap('payments:reverse'), async (c) => {
+  r.post('/bookings/:id/refunds', requireCap('bookings:operate'), async (c) => {
+    const blocked = await reversalGate(c, c.req.param('id'));
+    if (blocked) return blocked;
     const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
     try {
@@ -161,7 +193,12 @@ export function adminRoutes(deps: {
     }
   });
 
-  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:reverse'), async (c) => {
+  // Confirm and cancel-request carry the SAME gate as the request. The money actually moves at
+  // confirm, so the protected last day has to be protected there too; if ops runs out of window
+  // mid-flow a founder finishes it, and nothing is stranded.
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('bookings:operate'), async (c) => {
+    const blocked = await reversalGate(c, c.req.param('id'));
+    if (blocked) return blocked;
     const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
     const before = await bookings.get(c.req.param('id'));
@@ -206,7 +243,9 @@ export function adminRoutes(deps: {
     }
   });
 
-  r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('payments:reverse'), async (c) => {
+  r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('bookings:operate'), async (c) => {
+    const blocked = await reversalGate(c, c.req.param('id'));
+    if (blocked) return blocked;
     try {
       return c.json(
         await deps.refunds.cancel({

@@ -246,6 +246,13 @@
       "when": 1785826400000,
       "tag": "0034_place_resolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785912800000,
+      "tag": "0035_cancellation_reason",
+      "breakpoints": true
     }
   ]
 }
