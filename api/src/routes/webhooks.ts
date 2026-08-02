@@ -9,9 +9,24 @@ import {
   PaymentSettlementError,
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText } from '../services/notifications';
+import { money as fmtMoney } from '../services/opsEmail';
+import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
+
+// Plain-text body for the team's paid notification. Deliberately the few facts an operator
+// acts on — who, where, how much, which channel — and nothing that would make this email a
+// place anyone has to go looking for the rest.
+function teamPaidBody(b: Booking): string {
+  const c = b.input.customer;
+  return [
+    `${routeText(b)}`,
+    `${c.firstName} ${c.lastName} · ${c.email} · ${c.whatsapp}`,
+    `${fmtMoney(b.total, b.currency)} · booked via ${b.channel}`,
+    `Reference ${b.reference}`,
+  ].join('\n');
+}
 
 export function webhookRoutes(deps: {
   settlements: PaymentSettlementRepo;
@@ -169,6 +184,26 @@ export function webhookRoutes(deps: {
           body: `Booking ${paid.reference} is PAID but the customer got no confirmation. Error: ${err instanceof Error ? err.message : String(err)}`,
           dedupeKey: paid.reference,
         });
+      }
+      // Tell the team money landed. Until now NOTHING did: no email, no Slack, no Sentry event
+      // — the only signals were a once-daily aggregate digest and a watchdog whose 15-minute
+      // cron was never scheduled. A real $39 payment settled on 2026-08-02 and the team found
+      // out because the owner went looking.
+      //
+      // Deliberately LAST and best-effort: the customer's confirmation comes first, and a
+      // failure here must cost neither their email nor the webhook (PayHere would retry, hit
+      // the idempotent return, and skip everything downstream forever). Severity 'info', so it
+      // does not read as an incident; dedupeKey is the reference, so a retry cannot re-notify.
+      try {
+        await alerts.send({
+          severity: 'info',
+          kind: 'booking_paid',
+          title: `Paid: ${paid.reference} — ${fmtMoney(paid.total, paid.currency)}`,
+          body: teamPaidBody(paid),
+          dedupeKey: paid.reference,
+        });
+      } catch (err) {
+        console.error(`team paid-notification failed for ${paid.reference}:`, err);
       }
     } else {
       // Money captured, but the booking is NOT awaiting payment (cancelled while the customer
