@@ -253,7 +253,7 @@ test('the cancellation policy shown matches the product, and terms gate the paym
   // Terms are required — continuing without them names the reason.
   await page.locator('#f-addr').fill('Prinsengracht 263');
   await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
+  await page.locator('#f-postcode').fill('1016 GV'); // optional since 2026-08-02, filled here anyway
   await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#gobtn').click();
   await expect(page.locator('#payerr')).toContainText('terms');
@@ -264,6 +264,40 @@ test('the cancellation policy shown matches the product, and terms gate the paym
   await page.locator('#paybtn').click();
   await expect(page.locator('.dt-terms')).toContainText('Free cancellation until 24 hours before');
   await expect(page.locator('.dt-pol')).not.toContainText('80%'); // never the chauffeur ladder
+});
+
+test('the CTA reads as unavailable until the terms are ticked — but still says why', async ({ page }) => {
+  // Owner-caught 2026-08-02: "Continue to payment" looked live before the box was ticked, so the
+  // only thing telling a payer consent was required was an error AFTER they committed.
+  //
+  // Dimmed only — NOT disabled, and not aria-disabled either (Playwright refuses to click an
+  // aria-disabled button, which is exactly the point: ARIA would announce it as disabled). Both
+  // make the button inert, and an inert CTA with nothing explaining it reads as a broken page on
+  // the last screen before the money. Press it and it names the reason, like every other required
+  // field here.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+
+  const cta = page.locator('#gobtn');
+  await expect(cta).toHaveClass(/is-off/);
+  await expect(cta).toBeEnabled(); // reachable by keyboard and by click, never inert
+
+  // Clicking while it reads unavailable is not a no-op — it names the reason and puts the
+  // payer ON the checkbox, one keystroke from fixing it. (Address first: it validates ahead of
+  // the terms, so an empty form would answer with the address message instead.)
+  await page.locator('#f-addr').fill('Prinsengracht 263');
+  await page.locator('#f-city').fill('Amsterdam');
+  await cta.click();
+  await expect(page.locator('#payerr')).toContainText('terms');
+  await expect(page.locator('#f-terms')).toBeFocused();
+
+  await page.locator('#f-terms').check();
+  await expect(cta).not.toHaveClass(/is-off/);
+
+  // …and it goes back if they change their mind.
+  await page.locator('#f-terms').uncheck();
+  await expect(cta).toHaveClass(/is-off/);
 });
 
 test('the billing country follows the phone country code, until the payer picks one', async ({ page }) => {
