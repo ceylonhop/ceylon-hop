@@ -83,8 +83,14 @@ function makeRefund(store, amountCents, reason) {
 
 async function boot(page, { role = 'finance', store, mobile = false } = {}) {
   if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+  // payments:act reads the ledger (founder + finance); payments:reverse starts/confirms a
+  // refund and is FOUNDER ONLY since 2026-08-02.
   const paymentsAct = role === 'founder' || role === 'finance';
-  const caps = ['bookings:read', 'bookings:operate', ...(paymentsAct ? ['payments:act'] : [])];
+  const caps = [
+    'bookings:read', 'bookings:operate',
+    ...(paymentsAct ? ['payments:act'] : []),
+    ...(role === 'founder' ? ['payments:reverse'] : []),
+  ];
   store.email = `${role}@e2e.test`;
   store.requestPosts = store.requestPosts || 0;
   store.refundReads = store.refundReads || 0;
@@ -134,32 +140,36 @@ async function boot(page, { role = 'finance', store, mobile = false } = {}) {
   await expect(page.locator('#sheet')).toHaveClass(/show/);
 }
 
-test('finance requests, reloads, and confirms a refund exactly once with PayHere evidence', async ({ page }) => {
+test('the founder requests, reloads, and confirms a refund exactly once with PayHere evidence', async ({ page }) => {
   const store = { refunds: [] };
-  await boot(page, { role: 'finance', store });
+  await boot(page, { role: 'founder', store });
 
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
-  await page.locator('#refundamount').fill('25.00');
-  await page.locator('#refundreason').fill('Customer changed plans');
+  // No amount box: the refund is always the FULL remainder, because our PayHere setup cannot
+  // do partials (owner, 2026-08-02). Double-press still yields exactly one POST.
+  await expect(page.locator('#refundamount')).toHaveCount(0);
   const request = page.locator('[data-act="refundrequest"]');
+  await expect(request).toContainText('$100');
+  page.once('dialog', (dialog) => dialog.accept());
   await request.dispatchEvent('click');
   await request.dispatchEvent('click');
 
-  await expect(page.locator('.refund-status-manual_pending')).toContainText('$25');
+  await expect(page.locator('.refund-status-manual_pending')).toContainText('$100');
   expect(store.requestPosts).toBe(1);
-  await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$75');
+  await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$0');
 
   await page.reload();
   await page.locator('[data-act="open"][data-id="booking-1"]').click();
-  await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer changed plans');
+  // The reason is fixed now that there is no reason box — the button IS the intent.
+  await expect(page.locator('.refund-status-manual_pending')).toContainText('Full refund (ops)');
   await expect(page.getByText('Complete the refund in the PayHere dashboard first')).toBeVisible();
 
   await page.locator('[data-refund-ref="refund-1"]').fill('PAYHERE-R-1001');
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-act="refundconfirm"]').click();
   await expect(page.locator('.refund-status-manual_confirmed')).toContainText('PAYHERE-R-1001');
-  await expect(page.locator('.refund-status-manual_confirmed')).toContainText('finance@e2e.test');
-  await expect(page.locator('.block', { hasText: 'Activity' })).toContainText('Refund confirmed · $25');
+  await expect(page.locator('.refund-status-manual_confirmed')).toContainText('founder@e2e.test');
+  await expect(page.locator('.block', { hasText: 'Activity' })).toContainText('Refund confirmed · $100');
 });
 
 test('founder can cancel a pending request and the balance becomes available again on mobile', async ({ page }) => {
@@ -172,7 +182,17 @@ test('founder can cancel a pending request and the balance becomes available aga
   await page.locator('[data-act="refundcancel"]').click();
   await expect(page.locator('.refund-status-cancelled')).toContainText('Duplicate charge');
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
-  await expect(page.locator('#refundamount')).toBeVisible();
+  // The balance is available again, so the full-amount button comes back — no amount box.
+  await expect(page.locator('[data-act="refundrequest"]')).toContainText('$100');
+  await expect(page.locator('#refundamount')).toHaveCount(0);
+});
+
+test('finance can read the refund ledger but cannot start or confirm a refund', async ({ page }) => {
+  const store = { refunds: [] };
+  await boot(page, { role: 'finance', store });
+  await expect(page.getByText('Refundable remaining')).toBeVisible(); // reconciliation still works
+  await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
+  await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
 });
 
 test('ops can read the booking but cannot load or see money actions', async ({ page }) => {
