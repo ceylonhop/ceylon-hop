@@ -61,6 +61,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dt-pol summary:after{content:' \25BE'}
   .dt-pol[open] summary:after{content:' \25B4'}
   .dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
+  /* The CTA reads as not-yet until the terms are ticked (owner-caught 2026-08-02). Dimmed via a
+     class rather than [disabled], so the button stays clickable and can name its own reason —
+     see the aria-disabled note in startPayment. It fades between the two states rather than
+     snapping, per the motion standard. */
+  .pp-cta.is-off{opacity:.45;box-shadow:none}
+  .pp-cta.is-off:hover{background:var(--btn-cta);transform:none}
+  .pp-cta{transition:opacity .22s ease,background .22s ease,box-shadow .22s ease,transform .18s ease}
+  @media (prefers-reduced-motion:reduce){ .pp-cta{transition:none} }
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
@@ -361,7 +369,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
-      + '<button class="btn btn-cta pp-cta" id="gobtn">Continue to payment</button>'
+      + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '</div></div>' + waLine();
     // Focus the first empty box — usually email, or the number for email-contact quotes.
@@ -392,7 +400,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       names.hidden = !diff.checked;
       if (diff.checked) document.getElementById('f-bfirst').focus();
     });
-    document.getElementById('gobtn').addEventListener('click', startPayment);
+    // The CTA is dimmed until the terms are ticked, so consent reads as a precondition instead of
+    // an error you discover after committing (owner-caught 2026-08-02).
+    //
+    // Dimmed only — NOT disabled, and deliberately not aria-disabled either. Both make the button
+    // inert: the click is swallowed and nothing explains why, so a payer who hasn't spotted the
+    // checkbox two rows up reads a dead button as a broken page and leaves, on the last screen
+    // before the money. Every other requirement on this form (address, city, email) is enforced
+    // the same way — press, and it tells you what's missing — and the terms are no different.
+    // Pressing also drops focus on the checkbox, so the fix is one keystroke away.
+    var terms = document.getElementById('f-terms'), go = document.getElementById('gobtn');
+    terms.addEventListener('change', function(){ go.classList.toggle('is-off', !terms.checked); });
+    go.addEventListener('click', startPayment);
   }
 
   // "We're loading PayHere" — shown the moment the customer commits, so a slow network
@@ -438,7 +457,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!typed.address) { fail('Please enter your billing address.'); return; }
     if (!typed.city) { fail('Please enter your billing city.'); return; }
     if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
-    if (!typed.terms) { fail('Please accept the terms & cancellation policy to continue.'); return; }
+    if (!typed.terms) {
+      fail('Please accept the terms & cancellation policy to continue.');
+      // fail() rebuilds the step, so re-find the box; focus is what turns "you must" into "here".
+      var box = document.getElementById('f-terms');
+      if (box) { box.focus(); }
+      return;
+    }
     if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
       fail('Please enter the cardholder’s first and last name.'); return;
     }
