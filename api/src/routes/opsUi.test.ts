@@ -658,3 +658,38 @@ describe('ops UI — unpriced shell lifecycle', () => {
     expect(body).toContain('esc(basicsMissingText())');
   });
 });
+
+// ── Confirm location (spec 2026-08-02) ───────────────────────────────────────
+describe('the ops builder can identify a place the server would not guess', () => {
+  const uiBody = async () => await (await createApp().request('/ops')).text();
+
+  it('offers Confirm location on a segment whose endpoint is unresolved', async () => {
+    const body = await uiBody();
+    expect(body).toContain('data-action="confirmPlace"');
+    expect(body).toContain('function unresolvedStopFor(');
+  });
+
+  it('records what the server reported as unidentified rather than inferring it', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function noteUnresolved(');
+    expect(body).toContain('body.unresolved');
+  });
+
+  it('mirrors canonPlace so a name confirmed one way clears the warning shown another way', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function canonPlaceKey(');
+    expect(body).toMatch(/sri lanka/);
+  });
+
+  it('re-prices every leg touching a place the moment it is confirmed', async () => {
+    const body = await uiBody();
+    expect(body).toContain('scheduleAutoDistance(l.id)');
+    expect(body).toContain('delete unresolvedPlaces[canonPlaceKey(name)]');
+  });
+
+  it('distinguishes candidates by area and distance, since Google labels both Yalas the same', async () => {
+    const body = await uiBody();
+    expect(body).toContain('km from the previous stop');
+    expect(body).toContain('ch-cand');
+  });
+});

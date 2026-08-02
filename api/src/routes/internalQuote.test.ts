@@ -2431,3 +2431,140 @@ describe('per-leg extras attribution', () => {
     expect(withFees.total.cents).toBe(without.total.cents + 1000 + 1000);
   });
 });
+
+// ── Positive location identification (spec 2026-08-02) ────────────────────────────────────
+describe('positive location identification', () => {
+  // Records what the maps adapter was actually asked for. The whole point of the design is
+  // that an identified place reaches Google as COORDINATES, never as a re-geocodable name.
+  const spyMaps = () => {
+    const calls: [string, string][] = [];
+    return {
+      calls,
+      adapter: {
+        provider: 'spy',
+        distance: async (from: string, to: string) => {
+          calls.push([from, to]);
+          return { km: 120, durationMin: 150 };
+        },
+        distanceVariants: async () => null,
+        places: async () => [],
+        geocode: async () => null,
+        placeCandidates: async () => [
+          { lat: 6.664, lng: 80.0706, displayName: 'Yala, Sri Lanka', area: 'Western Province' },
+          { lat: 6.464, lng: 81.4719, displayName: 'Yala National Park', area: 'Southern Province' },
+        ],
+      },
+    };
+  };
+
+  const legOf = (from: string, to: string) => ({ category: 'transfer', from, to });
+
+  it('sends an identified pair to the maps adapter as coordinates, not names', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const res = await post(app, '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [legOf('Kandy', 'Ella')],
+    });
+    expect(res.ok).toBe(true);
+    // 7.29,80.63 -> 6.87,81.05, the seeded catalog coordinates for Kandy and Ella.
+    expect(spy.calls[0]).toEqual(['7.29,80.63', '6.87,81.05']);
+  });
+
+  it('resolves the suffixed label to the SAME coordinates as the bare name', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    await post(app, '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [legOf('Yala, Sri Lanka', 'Kandy')],
+    });
+    // NOT the Horana village Google returns for that string — the catalog's Yala.
+    expect(spy.calls[0][0]).toBe('6.37,81.52');
+  });
+
+  it('falls back to the name for an unidentified place (stage 1 is non-blocking)', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    await post(app, '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [legOf('Amanwella Hotel', 'Kandy')],
+    });
+    expect(spy.calls[0]).toEqual(['Amanwella Hotel', 'Kandy']);
+  });
+
+  it('place-candidates distinguishes same-named places by area and distance from the previous stop', async () => {
+    const app = createApp({ maps: spyMaps().adapter });
+    const res = await authedGet(app, '/admin/quote/place-candidates?q=yala&near=6.84,81.84'); // near Arugam Bay
+    expect(res.status).toBe(200);
+    const { candidates } = await res.json();
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0].area).toBe('Western Province');
+    expect(candidates[1].area).toBe('Southern Province');
+    // The wrong Yala is far from Arugam Bay; the park is near it. That contrast is the whole
+    // point of the panel, since Google labels both as plain "Sri Lanka".
+    expect(candidates[0].kmFromPrevious).toBeGreaterThan(candidates[1].kmFromPrevious);
+  });
+
+  it('confirming a place makes it resolve to coordinates from then on', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const confirm = await post(app, '/admin/quote/place-confirm', {
+      name: 'Amanwella Hotel', displayName: 'Amanwella, Tangalle', lat: 6.0217, lng: 80.7936,
+    });
+    expect(confirm.status).toBe(201);
+    await post(app, '/admin/quote/estimate', {
+      vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [legOf('Amanwella Hotel', 'Kandy')],
+    });
+    expect(spy.calls[0][0]).toBe('6.0217,80.7936');
+  });
+
+  it('confirming is idempotent on the canonical key', async () => {
+    const app = createApp({ maps: spyMaps().adapter });
+    const body = { name: 'Hiriketiya Beach', displayName: 'Hiriketiya', lat: 5.9573, lng: 80.6989 };
+    expect((await post(app, '/admin/quote/place-confirm', body)).status).toBe(201);
+    const again = await post(app, '/admin/quote/place-confirm', { ...body, name: 'hiriketiya  beach' });
+    expect(again.status).toBe(201);
+    const saved = await again.json();
+    expect(saved.canonKey).toBe('hiriketiya beach');
+  });
+
+  it('rejects a confirmation with out-of-range coordinates', async () => {
+    const app = createApp({ maps: spyMaps().adapter });
+    const res = await post(app, '/admin/quote/place-confirm', {
+      name: 'Nowhere', displayName: 'Nowhere', lat: 999, lng: 0,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  // The gap that stage 1 shipped with: /distance is what the ops builder's auto-distance calls,
+  // so if it resolved by name the operator's visible km was still a name-geocode.
+  it('POST /distance resolves identified endpoints to coordinates', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const res = await post(app, '/admin/quote/distance', { from: 'Yala, Sri Lanka', to: 'Kandy' });
+    expect(res.ok).toBe(true);
+    expect(spy.calls[0]).toEqual(['6.37,81.52', '7.29,80.63']);
+    expect(await res.json()).not.toHaveProperty('unresolved');
+  });
+
+  it('POST /distance names what is unidentified so the leg can offer Confirm location', async () => {
+    const spy = spyMaps();
+    const app = createApp({ maps: spy.adapter });
+    const res = await post(app, '/admin/quote/distance', { from: 'Amanwella Hotel', to: 'Kandy' });
+    const body = await res.json();
+    expect(body.unresolved).toEqual(['Amanwella Hotel']);
+    expect(body.km).toBe(120); // still priced — stage 1 is non-blocking
+  });
+
+  it('place-confirm is closed to a caller without quote:manage', async () => {
+    const a = new Hono();
+    a.route('/admin/quote', internalQuoteRoutes({
+      maps: new FakeMapsAdapter(), quotes: new InMemoryQuoteRepo(),
+      bookings: new InMemoryBookingRepo(), auth: OPS_AUTH_CFG,
+    }));
+    // x-admin-key resolves to `system`, which lacks quote:manage.
+    const res = await a.request('/admin/quote/place-confirm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-key': 'k' },
+      body: JSON.stringify({ name: 'X', displayName: 'X', lat: 6, lng: 80 }),
+    });
+    expect(res.status).toBe(403);
+  });
+});
