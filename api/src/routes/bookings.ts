@@ -589,11 +589,8 @@ function termsAcceptedAt(body: unknown): Date | undefined {
         lastName: booking.billing?.lastName || cust.lastName,
         email: cust.email,
         phone: cust.whatsapp,
-        // Billing country when we have one; otherwise the lead passenger's, which is what
-        // this has always been (derived from their phone country code).
-        country: booking.billing?.country || cust.country,
-        address: booking.billing?.address,
-        city: booking.billing?.city,
+        // The billing ADDRESS is collected by PayHere itself (2026-08-02) — see the adapter.
+        country: cust.country,
       },
     });
     if (params.amount !== dueNow) {

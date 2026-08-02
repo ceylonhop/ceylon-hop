@@ -156,9 +156,6 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   await page.locator('#f-email').fill('nimal@@typo');
   // Billing is required since 2026-08-01 — fill it so this reaches the /start round-trip,
   // which is what this test is actually about.
-  await page.locator('#f-addr').fill('Prinsengracht 263');
-  await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
 
@@ -184,9 +181,6 @@ test('the interstitial appears only when the PayHere window actually opens', asy
     body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
-  await page.locator('#f-addr').fill('Prinsengracht 263'); // billing is required since 2026-08-01
-  await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
   // payhere.startPayment is the page-load stub (a no-op): the popup "opened", so the
@@ -195,7 +189,10 @@ test('the interstitial appears only when the PayHere window actually opens', asy
   await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
 });
 
-test('billing details are collected and sent — never the old N/A / Colombo placeholder', async ({ page }) => {
+test('the page asks for no billing address — PayHere collects it, so AVS matches the card', async ({ page }) => {
+  // Owner-caught 2026-08-02: real cards were being DECLINED. Any address we put in front of
+  // the acquirer — the old hardcoded 'N/A'/'Colombo', or one typed into OUR form — is not what
+  // the cardholder's bank holds, and an AVS mismatch declines. PayHere asks in its own step.
   await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
   let sent = null;
   await page.route('**/quotes/pay/start', async (r) => {
@@ -206,15 +203,12 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
 
-  // Billing is required: continuing without it names the empty box rather than failing silently.
-  await page.locator('#gobtn').click();
-  await expect(page.locator('#payerr')).toContainText('billing address');
+  // The address inputs are gone from the form entirely.
+  await expect(page.locator('#f-addr')).toHaveCount(0);
+  await expect(page.locator('#f-city')).toHaveCount(0);
+  await expect(page.locator('#f-bcountry')).toHaveCount(0);
 
-  await page.locator('#f-addr').fill('Prinsengracht 263');
-  await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-bcountry').selectOption('Netherlands');
-
-  // The cardholder row is hidden until the payer says billing differs.
+  // The cardholder NAME is still asked for, and still only when it differs.
   await expect(page.locator('#billnames')).toBeHidden();
   await page.locator('#f-diffbill').check();
   await expect(page.locator('#billnames')).toBeVisible();
@@ -223,13 +217,10 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
   await page.locator('#f-terms').check();
 
   await page.locator('#gobtn').click();
-  await expect.poll(() => sent?.billing?.city).toBe('Amsterdam');
-  expect(sent.billing).toEqual({
-    address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands',
-    firstName: 'Anja', lastName: 'de Vries',
-  });
-  // The lead passenger is untouched — billing belongs to the transaction, not the traveller.
-  expect(sent.customer.firstName).toBe('Nimal');
+  await expect.poll(() => sent?.billing?.firstName).toBe('Anja');
+  // Name only — no address of any kind travels with the booking.
+  expect(sent.billing).toEqual({ firstName: 'Anja', lastName: 'de Vries' });
+  expect(sent.customer.firstName).toBe('Nimal'); // the lead passenger is untouched
 });
 
 test('the cancellation policy shown matches the product, and terms gate the payment', async ({ page }) => {
@@ -248,9 +239,6 @@ test('the cancellation policy shown matches the product, and terms gate the paym
   await expect(page.locator('.dt-pol ul')).toBeVisible();
 
   // Terms are required — continuing without them names the reason.
-  await page.locator('#f-addr').fill('Prinsengracht 263');
-  await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#gobtn').click();
   await expect(page.locator('#payerr')).toContainText('terms');
 
