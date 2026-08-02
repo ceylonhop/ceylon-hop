@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
 import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
 import {
@@ -265,7 +265,7 @@ export class PostgresBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
   ): Promise<Booking> {
     const c = details.customer;
     const b = details.billing;
@@ -287,11 +287,12 @@ export class PostgresBookingRepo implements BookingRepo {
                 billingCity: b.city,
                 billingCountry: b.country,
                 billingPostcode: b.postcode ?? null,
+                termsAcceptedAt: details.termsAcceptedAt,
               }
-            : // No billing in this submission: still run the UPDATE, so the status guard and the
-              // customerId read stay inside one atomic statement. Assigning status to itself is
-              // the no-op that lets us do that — `.set({})` is not a legal Drizzle update.
-              { status: sql`${bookings.status}` },
+            : // No billing in this submission — but the terms acceptance still belongs to
+              // whoever is paying now, and writing it also gives the UPDATE something real to
+              // set, keeping the status guard and the customerId read in one atomic statement.
+              { termsAcceptedAt: details.termsAcceptedAt },
         )
         .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])))
         .returning();

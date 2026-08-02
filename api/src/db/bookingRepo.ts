@@ -132,7 +132,7 @@ export interface BookingRepo {
   // it is no longer chargeable.
   refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
   ): Promise<Booking>;
 }
 
@@ -205,7 +205,7 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
@@ -216,6 +216,10 @@ export class InMemoryBookingRepo implements BookingRepo {
       // Absent billing leaves what was captured before: a payer who filled the address on the
       // first attempt and left it blank on a retry should not lose it.
       billing: details.billing ? { ...details.billing } : current.billing,
+      // The acceptance belongs to whoever is actually paying. /start requires termsAccepted:true
+      // on EVERY call, so a resuming payer has just agreed — recording the earlier submitter's
+      // timestamp would leave a refund dispute holding evidence about the wrong person.
+      termsAcceptedAt: details.termsAcceptedAt.toISOString(),
     } as Booking;
     this.byId.set(id, updated);
     return updated;
