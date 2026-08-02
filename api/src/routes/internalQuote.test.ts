@@ -2277,7 +2277,12 @@ describe('POST /admin/quote/:id/pay-link — mint a stateless payment link', () 
     const r1 = await mint(app, id);
     expect(r1.status).toBe(200);
     const { url, payhereMode } = await r1.json();
-    expect(url).toContain('/pay.html?t=');
+    // Short form since 2026-08-02: `/p`, a byte-packed payload and a 128-bit signature took
+    // the whole URL from 208 characters to ~80. A shorter link reads less like phishing at
+    // the moment a customer is asked for money.
+    expect(url).toContain('/p?t=');
+    expect(url).not.toContain('/pay.html');
+    expect(url.length).toBeLessThan(100);
     expect(payhereMode).toBeDefined();
     // Minting is stateless: identical URL on a second click, and the quote is untouched.
     expect((await (await mint(app, id)).json()).url).toBe(url);

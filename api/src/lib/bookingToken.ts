@@ -87,14 +87,69 @@ export function verifyCheckoutToken(
 // pinned revision means a quote edited after sending renders the "quote updated" state
 // rather than silently charging a changed price.
 
+// v2, compact (2026-08-02). The v1 JSON form produced a 208-character URL — a base64 blob
+// arriving right before a request for money, which reads like phishing. Three sources of waste,
+// all removed here:
+//   • `"purpose":"quote-pay"` cost 21 characters of JSON to say one byte
+//   • the uuid travelled as 36 characters of hex-with-dashes for 16 bytes of data
+//   • the HMAC was 64 hex characters; hex wastes half, and 256 bits is far past what a
+//     capability token needs — 128 is the standard truncation and is infeasible to forge
+// Packed as bytes: 1 version + 1 purpose + 16 uuid + 2 revision = 20 bytes → 27 base64url
+// chars, plus a 22-char truncated signature. ~80 characters all in.
+const PURPOSE_QUOTE_PAY = 0x01;
+const SIG_BYTES = 16; // 128-bit truncated HMAC
+const MAX_REVISION = 0xffff;
+
+const b64url = (b: Buffer): string => b.toString('base64url');
+
+function macBytes(body: string, secret: string): Buffer {
+  return createHmac('sha256', secret).update(body).digest().subarray(0, SIG_BYTES);
+}
+
 export function signQuotePayToken(quoteId: string, revision: number, secret: string): string {
-  return signedBody({ v: 1, purpose: 'quote-pay', q: quoteId, r: revision }, secret);
+  // A revision beyond 65535 would silently wrap, so fall back to v1 rather than mint a token
+  // pointing at the wrong revision. Unreachable in practice; cheap to be certain.
+  const hex = quoteId.replace(/-/g, '');
+  if (hex.length !== 32 || !/^[0-9a-f]+$/i.test(hex) || revision < 1 || revision > MAX_REVISION) {
+    return signedBody({ v: 1, purpose: 'quote-pay', q: quoteId, r: revision }, secret);
+  }
+  const buf = Buffer.alloc(20);
+  buf.writeUInt8(2, 0);                       // version
+  buf.writeUInt8(PURPOSE_QUOTE_PAY, 1);       // disjoint from the other token kinds
+  Buffer.from(hex, 'hex').copy(buf, 2);       // uuid, raw
+  buf.writeUInt16BE(revision, 18);
+  const body = b64url(buf);
+  return `${body}.${b64url(macBytes(body, secret))}`;
+}
+
+/** v2 only; returns null for anything else so the caller can fall back to v1. */
+function verifyV2(token: string, secret: string): { quoteId: string; revision: number } | null {
+  const [body, sig] = token.split('.');
+  if (!body || !sig) return null;
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(body, 'base64url');
+  } catch {
+    return null;
+  }
+  if (buf.length !== 20 || buf.readUInt8(0) !== 2 || buf.readUInt8(1) !== PURPOSE_QUOTE_PAY) return null;
+  const expected = b64url(macBytes(body, secret));
+  if (sig.length !== expected.length) return null;
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  const hex = buf.subarray(2, 18).toString('hex');
+  const quoteId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  const revision = buf.readUInt16BE(18);
+  return revision >= 1 ? { quoteId, revision } : null;
 }
 
 export function verifyQuotePayToken(
   token: string | undefined,
   secret: string,
 ): { quoteId: string; revision: number } | null {
+  if (!token) return null;
+  // v2 first, then v1 — links already sitting in customers' WhatsApp threads must keep working.
+  const v2 = verifyV2(token, secret);
+  if (v2) return v2;
   const parsed = verifiedPayload(token, secret) as {
     v?: unknown; purpose?: unknown; q?: unknown; r?: unknown;
   } | null;
