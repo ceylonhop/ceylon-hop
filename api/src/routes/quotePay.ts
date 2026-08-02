@@ -137,16 +137,32 @@ export function quotePayRoutes(deps: {
     if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
 
     // Resume an earlier tap: the booking already exists, hand back a fresh checkout token.
-    const idempotencyKey = `pay:quote:${quote.id}:r${parsed.revision}`;
-    const prior = quote.convertedBookingId
+    //
+    // ONLY if it can still be charged. Resuming unconditionally BRICKED THE QUOTE (owner-hit,
+    // 2026-08-02): ops cancelled a booking, /start kept handing the cancelled row back, and
+    // /bookings/:id/checkout correctly refused it — 409 not_chargeable — so the PayHere window
+    // never opened and the customer just saw "we couldn't start your payment". Permanently:
+    // the lookup consults convertedBookingId BEFORE the revision-scoped key, so even a new
+    // quote revision returned the same dead booking. That quote could never be paid again.
+    //
+    // A cancelled booking is an ABANDONED ATTEMPT, not a closed door: the quote is still
+    // ready/sent, which is the business's own statement that it is payable. The lever for
+    // "stop taking money" is moving the quote out of those statuses, which already renders the
+    // sailed-off screen. So a dead prior is ignored and a fresh booking is minted.
+    const baseKey = `pay:quote:${quote.id}:r${parsed.revision}`;
+    const found = quote.convertedBookingId
       ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
-    if (prior) {
+      : await deps.bookings.findByIdempotencyKey(baseKey);
+    const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
+    if (found && chargeable) {
       return c.json(
-        { bookingId: prior.id, checkoutToken: signCheckoutToken(prior.id, deps.linkSecret, checkoutNow()) },
+        { bookingId: found.id, checkoutToken: signCheckoutToken(found.id, deps.linkSecret, checkoutNow()) },
         200,
       );
     }
+    // Derived from the dead booking, so it stays deterministic: a double-tap after the same
+    // cancellation still yields ONE new booking rather than two.
+    const idempotencyKey = found ? `${baseKey}:after:${found.id}` : baseKey;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
