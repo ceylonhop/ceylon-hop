@@ -264,16 +264,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     };
   }
 
-  // Billing country options. Reuses the phone list's country NAMES (not dial codes) so the
-  // two selects can't disagree about spelling, and defaults to the phone country — right far
-  // more often than not, and still editable.
-  function billingCountryOptions(selected){
-    var names = COUNTRIES.map(function(c){ return c[1]; }).sort(function(a, b){ return a.localeCompare(b); });
-    return '<option value="">Choose…</option>' + names.map(function(n){
-      return '<option value="' + esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + esc(n) + '</option>';
-    }).join('');
-  }
-
   function splitPrefill(whatsapp){
     var raw = String(whatsapp || '').trim();
     if (!raw) return { country: 'Sri Lanka', number: '' };
@@ -336,18 +326,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // Billing (2026-08-01). Address/city/country are ALWAYS asked — we have never held them
       // for anyone, and the gateway was previously sent a hardcoded 'N/A'/'Colombo'. The
       // cardholder name is only asked when the payer says it differs from the lead passenger.
-      + '<div class="dt-kick">Billing details <span>· as they appear on the card</span></div>'
+      + '<div class="dt-kick">Paying <span>· your card details come next, on PayHere</span></div>'
       + '<label class="dt-chk"><input id="f-diffbill" type="checkbox"' + (typed && typed.billDiffers ? ' checked' : '') + ' />'
       +   '<span>Billing details are different from the lead passenger</span></label>'
       + '<div id="billnames" class="dt-2col"' + (typed && typed.billDiffers ? '' : ' hidden') + '>'
       +   '<div class="fld"><label for="f-bfirst">Cardholder first name</label><input id="f-bfirst" type="text" value="' + esc((typed && typed.billFirst) || '') + '" autocomplete="billing given-name" /></div>'
       +   '<div class="fld"><label for="f-blast">Cardholder last name</label><input id="f-blast" type="text" value="' + esc((typed && typed.billLast) || '') + '" autocomplete="billing family-name" /></div>'
       + '</div>'
-      + '<div class="fld"><label for="f-addr">Billing address</label><input id="f-addr" type="text" value="' + esc((typed && typed.address) || '') + '" placeholder="Street and number" autocomplete="billing street-address" /></div>'
-      + '<div class="dt-2col">'
-      +   '<div class="fld"><label for="f-city">City</label><input id="f-city" type="text" value="' + esc((typed && typed.city) || '') + '" placeholder="e.g. Amsterdam" autocomplete="billing address-level2" /></div>'
-      +   '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
-      + '</div>'
+      // No billing ADDRESS here (owner, 2026-08-02): PayHere asks for it in its own step, so
+      // the acquirer's AVS check sees exactly what the payer typed against their card. We
+      // collected it briefly and real cards were declined.
       + '<label class="dt-chk dt-terms"><input id="f-terms" type="checkbox"' + (typed && typed.terms ? ' checked' : '') + ' />'
       +   '<span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a>.'
       +   '<b>' + esc(pol.headline) + '</b></span></label>'
@@ -361,7 +349,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '</div></div>' + waLine();
     // Focus the first empty box — usually email, or the number for email-contact quotes.
-    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone', 'f-addr'];
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
     for (var i = 0; i < order.length; i++) {
       var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
@@ -402,28 +390,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       email: (document.getElementById('f-email').value || '').trim(),
       country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
       phone: (document.getElementById('f-phone').value || '').trim(),
-      address: (document.getElementById('f-addr').value || '').trim(),
-      city: (document.getElementById('f-city').value || '').trim(),
-      billCountry: (document.getElementById('f-bcountry').value || '').trim(),
       billDiffers: document.getElementById('f-diffbill').checked,
       billFirst: (document.getElementById('f-bfirst').value || '').trim(),
       billLast: (document.getElementById('f-blast').value || '').trim(),
       terms: document.getElementById('f-terms').checked,
     };
     if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
-    // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
-    // placeholder. Name each empty box rather than a generic "check the form".
-    if (!typed.address) { fail('Please enter your billing address.'); return; }
-    if (!typed.city) { fail('Please enter your billing city.'); return; }
-    if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
+    // No billing-address checks: PayHere collects it (2026-08-02). Name each empty box rather
+    // than a generic "check the form".
     if (!typed.terms) { fail('Please accept the terms & cancellation policy to continue.'); return; }
     if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
       fail('Please enter the cardholder’s first and last name.'); return;
     }
-    var billing = {
-      address: typed.address, city: typed.city, country: typed.billCountry,
-    };
-    if (typed.billDiffers) { billing.firstName = typed.billFirst; billing.lastName = typed.billLast; }
+    // Cardholder name only — the address belongs to PayHere's own step (2026-08-02).
+    var billing = typed.billDiffers ? { firstName: typed.billFirst, lastName: typed.billLast } : undefined;
     var customer = {
       firstName: typed.firstName,
       lastName: typed.lastName,
