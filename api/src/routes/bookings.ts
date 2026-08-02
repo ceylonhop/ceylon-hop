@@ -594,6 +594,7 @@ function termsAcceptedAt(body: unknown): Date | undefined {
         country: booking.billing?.country || cust.country,
         address: booking.billing?.address,
         city: booking.billing?.city,
+        postcode: booking.billing?.postcode,
       },
     });
     if (params.amount !== dueNow) {

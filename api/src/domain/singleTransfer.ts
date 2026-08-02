@@ -35,6 +35,8 @@ export const BillingInput = z.object({
   lastName: z.string().min(1).optional(),
   address: z.string().min(1),
   city: z.string().min(1),
+  // Optional so a cached older page keeps working; the form requires it client-side.
+  postcode: z.string().min(1).optional(),
   country: z.string().min(1),
 });
 

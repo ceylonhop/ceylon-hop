@@ -78,6 +78,7 @@ export class PostgresBookingRepo implements BookingRepo {
             lastName: row.billingLastName ?? undefined,
             address: row.billingAddress,
             city: row.billingCity ?? '',
+            postcode: row.billingPostcode ?? undefined,
             country: row.billingCountry ?? '',
           }
         : null,
@@ -204,6 +205,7 @@ export class PostgresBookingRepo implements BookingRepo {
           billingAddress: b.billing?.address ?? null,
           billingCity: b.billing?.city ?? null,
           billingCountry: b.billing?.country ?? null,
+          billingPostcode: b.billing?.postcode ?? null,
           termsAcceptedAt: b.termsAcceptedAt ?? null,
         })
         .returning();

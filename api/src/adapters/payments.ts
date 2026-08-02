@@ -32,6 +32,8 @@ export interface CreateCheckoutArgs {
     // them, instead of sending the placeholder it used to.
     address?: string;
     city?: string;
+    /** Appended to the address line — PayHere has no postcode parameter of its own. */
+    postcode?: string;
   };
 }
 

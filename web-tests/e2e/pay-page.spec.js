@@ -158,6 +158,7 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   // which is what this test is actually about.
   await page.locator('#f-addr').fill('Prinsengracht 263');
   await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
   await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
@@ -186,6 +187,7 @@ test('the interstitial appears only when the PayHere window actually opens', asy
   await page.locator('#paybtn').click();
   await page.locator('#f-addr').fill('Prinsengracht 263'); // billing is required since 2026-08-01
   await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
   await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
@@ -212,6 +214,7 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
 
   await page.locator('#f-addr').fill('Prinsengracht 263');
   await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
   await page.locator('#f-bcountry').selectOption('Netherlands');
 
   // The cardholder row is hidden until the payer says billing differs.
@@ -225,7 +228,7 @@ test('billing details are collected and sent — never the old N/A / Colombo pla
   await page.locator('#gobtn').click();
   await expect.poll(() => sent?.billing?.city).toBe('Amsterdam');
   expect(sent.billing).toEqual({
-    address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands',
+    address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV', country: 'Netherlands',
     firstName: 'Anja', lastName: 'de Vries',
   });
   // The lead passenger is untouched — billing belongs to the transaction, not the traveller.
@@ -250,6 +253,7 @@ test('the cancellation policy shown matches the product, and terms gate the paym
   // Terms are required — continuing without them names the reason.
   await page.locator('#f-addr').fill('Prinsengracht 263');
   await page.locator('#f-city').fill('Amsterdam');
+  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
   await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#gobtn').click();
   await expect(page.locator('#payerr')).toContainText('terms');
@@ -260,6 +264,73 @@ test('the cancellation policy shown matches the product, and terms gate the paym
   await page.locator('#paybtn').click();
   await expect(page.locator('.dt-terms')).toContainText('Free cancellation until 24 hours before');
   await expect(page.locator('.dt-pol')).not.toContainText('80%'); // never the chauffeur ladder
+});
+
+test('the billing country follows the phone country code, until the payer picks one', async ({ page }) => {
+  // Owner-caught 2026-08-02: the billing country was set ONCE from the phone prefill and never
+  // moved, so switching the dial code to United States left billing reading Sri Lanka.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('#f-country')).toHaveValue('Sri Lanka');
+  await expect(page.locator('#f-bcountry')).toHaveValue('Sri Lanka');
+
+  await page.locator('#f-country').selectOption('United States');
+  await expect(page.locator('#f-bcountry')).toHaveValue('United States'); // followed
+
+  // …but an explicit billing choice is never overwritten afterwards.
+  await page.locator('#f-bcountry').selectOption('Netherlands');
+  await page.locator('#f-country').selectOption('Sri Lanka');
+  await expect(page.locator('#f-bcountry')).toHaveValue('Netherlands');
+});
+
+test('the postcode is required and travels with the billing details', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court, Apt 105');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-postcode').fill('07310');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect.poll(() => sent?.billing?.postcode).toBe('07310');
+});
+
+// Optimising for AUTHORISATION RATE, not address completeness (owner, 2026-08-02). Hong Kong,
+// the UAE and ~60 other countries have no postcode, so requiring one is a guaranteed
+// non-payment for those customers — strictly worse than a blank field, because the payment
+// never reaches PayHere at all. PayHere's own list of common declines (insufficient funds,
+// 3DS/OTP failure, expired card, do not honor) does not mention address or AVS.
+test('a payer with no postcode can still pay — the field never blocks', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('Flat 12, 8 Queen\'s Road Central');
+  await page.locator('#f-city').fill('Hong Kong');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();                 // postcode left EMPTY, on purpose
+  await expect.poll(() => sent?.billing?.city).toBe('Hong Kong');
+  expect(sent.billing.postcode).toBeUndefined();
+  await expect(page.locator('#payerr')).not.toContainText('postcode');
+});
+
+test('country is the FIRST billing field, since it gives the others meaning', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  const order = await page.locator('#f-bcountry, #f-addr, #f-city, #f-postcode')
+    .evaluateAll((els) => els.map((e) => e.id));
+  expect(order[0]).toBe('f-bcountry');
 });
 
 test('the payment page shows no cookie banner', async ({ page }) => {

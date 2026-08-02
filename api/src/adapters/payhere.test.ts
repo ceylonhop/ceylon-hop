@@ -93,6 +93,29 @@ describe('PayHerePaymentAdapter', () => {
     }
   });
 
+  // A postcode is the strongest AVS signal most issuers check, and PayHere has no parameter
+  // for one — so it rides on the address line, which their docs define as "Address Line1 +
+  // Line2" (free text). Dropping it would hand the acquirer the one part banks actually match
+  // on, missing (owner, 2026-08-02).
+  it('carries the postcode on the address line, since PayHere has no field for it', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
+      customer: { firstName: 'R', lastName: 'W', email: 'r@x.com', phone: '+19176008055',
+        country: 'United States', address: '31 River Court, Apt 105', city: 'Jersey City', postcode: '07310' },
+    });
+    expect(p.fields?.address).toBe('31 River Court, Apt 105, 07310');
+    expect(p.fields?.city).toBe('Jersey City');
+  });
+
+  it('leaves the address untouched when no postcode was given', async () => {
+    const p = await adapter().createCheckout({
+      orderId: 'CH-ABC12', amount: 4000, currency: 'USD',
+      customer: { firstName: 'N', lastName: 'P', email: 'n@x.com', phone: '+94770001111',
+        country: 'Sri Lanka', address: '221B Galle Road', city: 'Colombo' },
+    });
+    expect(p.fields?.address).toBe('221B Galle Road');
+  });
+
   it('verifies a correctly-signed notify and maps status 2 -> succeeded', () => {
     const a = adapter();
     const body = a.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
