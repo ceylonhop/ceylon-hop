@@ -406,6 +406,20 @@ test('country is the FIRST billing field, since it gives the others meaning', as
   expect(order[0]).toBe('f-bcountry');
 });
 
+test('the dial code and the number share one row, code first so it survives the narrow column', async ({ page }) => {
+  // Two halves of one answer, so they read as one field (2026-08-02). Halving the select's
+  // width clips a long country, so the OPTION leads with the dial code — the part that matters.
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.setViewportSize({ width: 390, height: 900 }); // the tightest case
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  const country = await page.locator('#f-country').boundingBox();
+  const phone = await page.locator('#f-phone').boundingBox();
+  expect(Math.abs(country.y - phone.y)).toBeLessThan(2);   // same row
+  expect(country.x + country.width).toBeLessThanOrEqual(phone.x + 1); // code on the left
+  await expect(page.locator('#f-country option').first()).toHaveText('+94 Sri Lanka');
+});
+
 test('the payment page shows no cookie banner', async ({ page }) => {
   // Owner call (2026-08-01): a customer mid-payment is not the audience for a consent
   // prompt. The GTM consent DEFAULT is denied (set in <head>), so no banner ≠ tracking.

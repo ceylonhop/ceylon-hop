@@ -49,6 +49,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dt-chk input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
   .dt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .dt-2col[hidden]{display:none}
+  /* a grid child's default min-width:auto lets a long <option> ("United Arab Emirates +971")
+     push the column wider than its share — pin it so the select truncates instead. */
+  .dt-2col>.fld{min-width:0}
+  /* dial code + number read as one field, so they share a row (2026-08-02). */
+  .dt-phone{grid-template-columns:1.15fr 1fr}
   /* "optional" rides in the label so the field reads as skippable at a glance — a postcode
      the payer cannot supply must never look like a blocker (2026-08-02). */
   .fld label span{float:right;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-faint);opacity:.8}
@@ -389,8 +394,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var pol = cancellationPolicy(data.copy.product);
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
     var options = ordered.map(function(c){
+      // Dial code FIRST: the select shares a row with the number, so a long country ("United
+      // Arab Emirates +971") clips — and the one thing this field exists to show is the code.
+      // Name-first ("Sri Lanka +94", as in booking.html) clipped the +971 away (2026-08-02).
       return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
-        + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
+        + esc(c[2]) + ' ' + esc(c[1]) + '</option>';
     }).join('');
     app.innerHTML =
       '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
@@ -400,8 +408,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
       + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
       + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
-      + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
-      + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '<div class="dt-2col dt-phone">'
+      +   '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
+      +   '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '</div>'
       // Billing (2026-08-01). Address/city/country are ALWAYS asked — we have never held them
       // for anyone, and the gateway was previously sent a hardcoded 'N/A'/'Colombo'. The
       // cardholder name is only asked when the payer says it differs from the lead passenger.
