@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { isoToday } from '../domain/dateRules';
 import { signCheckoutToken } from '../lib/bookingToken';
+import { FakePaymentAdapter, type PaymentAdapter, type CreateCheckoutArgs } from '../adapters/payments';
 
 const SECRET = 'dev-booking-link-secret-change-me';
 
@@ -48,6 +49,24 @@ describe('POST /bookings/:id/checkout', () => {
     expect(params.orderId).toBe(b.reference);
     const after = await bookings.get(b.id);
     expect(after!.status).toBe('payment_pending');
+  });
+
+  // What the payer sees named on their PayHere receipt. Owner, 2026-08-02: an unfamiliar line
+  // on a card statement is a chargeback waiting to happen, so the charge should say who we are
+  // and which booking it is. (The statement descriptor itself is PayHere's to set — their
+  // Checkout API has no parameter for it — but this is the half we control.)
+  it('names the business and the booking on the charge', async () => {
+    const inner = new FakePaymentAdapter();
+    let seen: CreateCheckoutArgs | null = null;
+    const adapter: PaymentAdapter = {
+      provider: inner.provider,
+      createCheckout: (args) => { seen = args; return inner.createCheckout(args); },
+      parseWebhook: (raw) => inner.parseWebhook(raw),
+    };
+    const app = createApp({ adapter });
+    const b = await book(app);
+    await checkout(app, b);
+    expect(seen!.items).toBe(`Ceylon Hop Travel - ${b.reference}`);
   });
 
   it('404 for an unknown booking', async () => {
