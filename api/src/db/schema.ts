@@ -495,6 +495,22 @@ export const quotes = pgTable('quotes', {
 // place_name is a KNOWN_PLACES town (the match key). The optional lat/lng/radius_km trio is a geo
 // fallback for GPS pickups the names miss. created_by/updated_by are staff emails (pricing changes
 // are never anonymous), matching the audit pattern quotes gained in migration 0015.
+// Positive location identification (spec 2026-08-02). The identity record a distance is
+// allowed to be priced from: canon_key is canonPlace(name) — see adapters/maps.ts. Keyed on the
+// string rather than the leg because a stop is authored in five front-end paths that all
+// converge on one server-side distance call.
+export const placeResolutions = pgTable('place_resolutions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  canonKey: text('canon_key').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
+  source: text('source').notNull().default('confirmed'),
+  confirmedBy: text('confirmed_by'),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const pricingZones = pgTable('pricing_zones', {
   id: uuid('id').primaryKey().defaultRandom(),
   placeName: text('place_name').notNull(),

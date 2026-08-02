@@ -239,6 +239,13 @@
       "when": 1785740000000,
       "tag": "0033_billing_postcode",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785826400000,
+      "tag": "0034_place_resolutions",
+      "breakpoints": true
     }
   ]
 }
