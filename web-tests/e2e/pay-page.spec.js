@@ -463,3 +463,78 @@ test('the payment page shows no cookie banner', async ({ page }) => {
   await expect(page.locator('#paybtn')).toBeVisible(); // page fully rendered first
   await expect(page.locator('#ch-consent')).toHaveCount(0);
 });
+
+// Owner-reported 2026-08-02: the checkout payload for CH-MCF8D carried `city: "Jersey City, NJ"`
+// because the form had nowhere else for a US payer to put the state — and `city` is the field
+// forwarded to the gateway as the city.
+test('the state has its own field, so it never ends up inside the city', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court, Apt 105');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-state').fill('NJ');
+  await page.locator('#f-postcode').fill('07310');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect.poll(() => sent?.billing?.state).toBe('NJ');
+  expect(sent.billing.city).toBe('Jersey City');
+});
+
+// Same rule as the postcode: most of the world has no state, so it can never block a payment.
+test('a payer with no state can still pay', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let sent = null;
+  await page.route('**/quotes/pay/start', async (r) => {
+    sent = JSON.parse(r.request().postData());
+    await r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'bad_request', message: 'stop' }) });
+  });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('221B Galle Road');
+  await page.locator('#f-city').fill('Colombo');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect.poll(() => sent?.billing?.city).toBe('Colombo');
+  expect(sent.billing.state).toBeUndefined();
+});
+
+// A declined card is the one failure the payer can usually fix themselves — and PayHere's modal
+// tells them only "try a different payment method". Before this they came back to a single line
+// with no next step (owner, 2026-08-02, Chase Visa declined while Amex succeeded).
+test('coming back from PayHere gets the decline steps; a form typo does not', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
+    body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+
+  // First: the payer's own typo (no billing city). Four paragraphs about phoning a bank would
+  // be noise here, and would train them to ignore the panel when it finally matters.
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect(page.locator('#payerr')).toContainText('city');
+  await expect(page.locator('#payhelp')).toBeHidden();
+
+  // Now the real thing: PayHere opened, the issuer said no, the payer hit "Back to Site".
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+  await expect(page.locator('.pp-loading h2')).toBeVisible();
+  await page.evaluate(() => window.payhere.onDismissed());
+
+  await expect(page.locator('#payhelp')).toBeVisible();
+  await expect(page.locator('#payhelp')).toContainText('banking app');
+  await expect(page.locator('#payhelp')).toContainText('Sri Lanka');
+  await expect(page.locator('#payhelp li')).toHaveCount(4);
+  // and the typed billing details survive, so "try again" is one tap and not a re-type
+  await expect(page.locator('#f-city')).toHaveValue('Jersey City');
+});

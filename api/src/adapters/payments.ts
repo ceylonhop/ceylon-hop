@@ -34,6 +34,8 @@ export interface CreateCheckoutArgs {
     city?: string;
     /** Appended to the address line — PayHere has no postcode parameter of its own. */
     postcode?: string;
+    /** Likewise: no state parameter exists, so it joins the postcode on the address line. */
+    state?: string;
   };
 }
 

@@ -37,6 +37,8 @@ export const BillingInput = z.object({
   city: z.string().min(1),
   // Optional so a cached older page keeps working; the form requires it client-side.
   postcode: z.string().min(1).optional(),
+  // Optional in every sense: most countries have no state, and no payer is blocked on it.
+  state: z.string().min(1).optional(),
   country: z.string().min(1),
 });
 

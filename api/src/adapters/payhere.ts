@@ -135,7 +135,13 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     // issuers check — so it rides on the address line, which their docs define as
     // "Address Line1 + Line2" (free text). Omitting it entirely would hand the acquirer an
     // address with the one part the bank actually matches on missing.
-    if (c?.address) fields.address = c.postcode ? `${c.address}, ${c.postcode}` : c.address;
+    // "31 River Court, Apt 105, NJ 07310" — a US address written the way a US address is
+    // written, because the acquirer's only chance of picking either part out is if it looks
+    // like one. State added 2026-08-02: the form had no field for it, so payers were putting
+    // it in `city`, which is the one place it definitely does not belong.
+    if (c?.address) fields.address = [c.address, [c.state, c.postcode].filter(Boolean).join(' ')]
+      .filter(Boolean)
+      .join(', ');
     if (c?.city) fields.city = c.city;
     return {
       provider: this.provider,

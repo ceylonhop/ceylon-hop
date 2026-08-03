@@ -602,6 +602,7 @@ function termsAcceptedAt(body: unknown): Date | undefined {
         address: booking.billing?.address,
         city: booking.billing?.city,
         postcode: booking.billing?.postcode,
+        state: booking.billing?.state,
       },
     });
     if (params.amount !== dueNow) {
