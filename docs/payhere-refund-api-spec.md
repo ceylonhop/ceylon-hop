@@ -98,12 +98,23 @@ not use.
 | `status` | meaning | our handling |
 |---|---|---|
 | `1` | success | `data` is the refund number → store as `gateway_ref` |
-| `0` | error initiating the refund | did **not** happen → safe to retry |
+| `0` | error initiating the refund | did **not** happen → a *human* may re-request; see §5 |
 | `-1` | refund failed | did **not** happen → surface `msg`, fall back to manual |
 | `-2` | authentication error (domain/IP not allowed) | config problem, never a money problem |
 
 Token errors come back in a *different shape* — `{"error": "invalid_token", …}`, no `status`
 field. Parse defensively: a response with no `status` is not a success.
+
+Two more parsing traps in the same doc:
+
+- **The docs call the field `status_code` in prose and `status` in every JSON example.** Read
+  `status`, but treat a body carrying only `status_code` as the same thing rather than as an
+  unparseable response — and never infer success from the absence of either.
+- **`data` is `null` on a successful *authorization* refund.** We never refund authorizations,
+  so on our path `status: 1` with a null or non-numeric `data` is an anomaly, not a success:
+  we would have no `gateway_ref`, which `refunds_confirmation_evidence_valid` requires for
+  `api_confirmed`. Treat it as `outcome: 'unknown'` and let §5 handle it — the money may well
+  have moved, and that is exactly the case a human must reconcile rather than a retry.
 
 ### 2.3 The `payment_id` we send
 
@@ -214,8 +225,17 @@ This is the whole reason the design is what it is:
 4. **On any indefinite answer — timeout, abort, network error, unparseable body — leave the row
    in `api_processing` and stop.**
 
-> **Never automatically retry a refund.** There is no idempotency key in this API. A retry
-> against an unknown outcome is how you refund a customer twice.
+> **Never automatically retry a refund against an unknown outcome.** There is no idempotency key
+> in this API, so a blind retry is how you refund a customer twice.
+
+The distinction that governs everything here is **definite vs indefinite**, not success vs
+failure:
+
+- **Definite** (`status` is `1`, `0`, `-1` or `-2`): PayHere told us what happened. `0` and `-1`
+  mean the money did not move, so a fresh attempt is safe — but make it a *human* pressing the
+  button again, not an automatic retry loop, so a systemic failure cannot hammer the endpoint.
+- **Indefinite** (timeout, abort, socket error, unparseable body, `status: 1` with no usable
+  `data`): we do not know. Never call again. Escalate to a person.
 
 A row in `api_processing` older than a few minutes is an operational alarm, not a bug: someone
 must open the PayHere dashboard, look, and resolve it by hand — either confirming with the
