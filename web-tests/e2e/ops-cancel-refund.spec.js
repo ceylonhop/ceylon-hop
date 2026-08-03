@@ -5,7 +5,12 @@ import { test, expect } from '@playwright/test';
 // Owner, 2026-08-02: Cancel and Refund are the two irreversible actions, so they now sit
 // together at the FOOT of the sheet, they are founder-only (payments:reverse), and the refund
 // is always the full remainder — our PayHere setup cannot do partials, so an amount box would
-// only invite records the gateway can't honour. Refunds close 24 hours before travel.
+// only invite records the gateway can't honour.
+//
+// Owner rule, later the same day: an OPS agent may also cancel/refund, but only while more than
+// 24 hours remain before the trip starts, and a reason is required and stored. A FOUNDER is
+// never time-limited — which reverses the earlier "refunds close 24 hours before travel" rule
+// as it applied to founders.
 
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 const json = (o) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -50,7 +55,9 @@ async function boot(page, { caps, travelDate }) {
 }
 
 const FOUNDER = ['bookings:read', 'bookings:operate', 'payments:act', 'payments:reverse'];
-const FINANCE = ['bookings:read', 'payments:act']; // no payments:reverse
+const FINANCE = ['bookings:read', 'payments:act']; // no payments:reverse, and no bookings:operate
+// Owner rule 2026-08-02: an ops agent may cancel/refund up to 24h before the trip, with a reason.
+const OPS = ['bookings:read', 'bookings:operate'];
 
 test('a founder sees Cancel and a full-amount Refund together, at the foot of the sheet', async ({ page }) => {
   await boot(page, { caps: FOUNDER, travelDate: iso(Date.now() + 10 * DAY) });
@@ -82,19 +89,37 @@ test('finance sees neither button — reversing a sale is founder-only', async (
   await expect(page.locator('#sheet')).toContainText('Refundable remaining');
 });
 
-test('refunds close 24 hours before travel', async ({ page }) => {
-  // 12 hours out — inside the cut-off.
+test('a FOUNDER is never time-limited — 12 hours out, both actions stay live', async ({ page }) => {
   await boot(page, { caps: FOUNDER, travelDate: iso(Date.now() + 0.5 * DAY) });
-  await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
-  await expect(page.locator('button[disabled]', { hasText: 'Refund' })).toBeVisible();
-  await expect(page.locator('#sheet')).toContainText('Refunds close 24 hours before travel');
-  // Cancel is NOT bound by the refund cut-off — a late trip can still be called off.
+  await expect(page.locator('[data-act="refundrequest"]')).toBeVisible();
   await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
+  await expect(page.locator('#reversereason')).toBeVisible(); // a reason is required of everyone
 });
 
-test('a booking with no travel date stays refundable', async ({ page }) => {
-  // "Flexible" bookings have no date. Blocking them would strand exactly the ones most likely
-  // to be called off — there is no departure to be late for yet.
+test('an OPS agent may reverse while more than 24 hours remain', async ({ page }) => {
+  await boot(page, { caps: OPS, travelDate: iso(Date.now() + 10 * DAY) });
+  await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
+  await expect(page.locator('#reversereason')).toBeVisible();
+});
+
+test('an OPS agent is locked out inside the last 24 hours, and told why', async ({ page }) => {
+  await boot(page, { caps: OPS, travelDate: iso(Date.now() + 0.5 * DAY) });
+  await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
+  await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
+  await expect(page.locator('#sheet')).toContainText('only a founder can cancel or refund');
+  // No reason box either — there is nothing here they can do.
+  await expect(page.locator('#reversereason')).toHaveCount(0);
+});
+
+test('an OPS agent cannot reverse a booking with no trip date — fails closed', async ({ page }) => {
+  await boot(page, { caps: OPS, travelDate: null });
+  await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
+  await expect(page.locator('#sheet')).toContainText('no trip date');
+});
+
+test('a FOUNDER can still reverse a booking with no travel date', async ({ page }) => {
+  // "Flexible" bookings have no date. Ops fails closed on these (above); a founder does not,
+  // or the ones most likely to be called off would be stranded.
   await boot(page, { caps: FOUNDER, travelDate: null });
   await expect(page.locator('[data-act="refundrequest"]')).toBeVisible();
 });

@@ -5,7 +5,12 @@ import type {
   CreateCheckoutArgs,
   ProviderPaymentStatus,
   VerifiedPaymentEvent,
+  WebhookRejection,
 } from './payments';
+
+type ParseResult =
+  | { ok: true; event: VerifiedPaymentEvent }
+  | { ok: false; rejection: WebhookRejection };
 
 const md5Upper = (s: string): string => createHash('md5').update(s).digest('hex').toUpperCase();
 const MAX_WEBHOOK_BYTES = 8_192;
@@ -44,6 +49,25 @@ function diagnostic(params: URLSearchParams): Record<string, string> {
     out[name] = value.slice(0, MAX_DIAGNOSTIC_CHARS);
   }
   return out;
+}
+
+// Enough of a refused body to name the order it was about, read WITHOUT verifying anything —
+// a rejected notify is untrusted by definition, so these are for the alert's prose and nothing
+// else. Length-capped: an attacker chooses these strings, and they end up in an ops email.
+const MAX_BREADCRUMB_CHARS = 64;
+
+function breadcrumbs(p?: URLSearchParams): Omit<WebhookRejection, 'reason' | 'bodySha256'> {
+  if (!p) return {};
+  const first = (name: string): string | undefined => {
+    const v = p.get(name);
+    return v === null || v.length === 0 ? undefined : v.slice(0, MAX_BREADCRUMB_CHARS);
+  };
+  return {
+    orderId: first('order_id'),
+    statusCode: first('status_code'),
+    amount: first('payhere_amount'),
+    currency: first('payhere_currency'),
+  };
 }
 
 function parseAmountCents(value: string): number | null {
@@ -111,7 +135,13 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     // issuers check — so it rides on the address line, which their docs define as
     // "Address Line1 + Line2" (free text). Omitting it entirely would hand the acquirer an
     // address with the one part the bank actually matches on missing.
-    if (c?.address) fields.address = c.postcode ? `${c.address}, ${c.postcode}` : c.address;
+    // "31 River Court, Apt 105, NJ 07310" — a US address written the way a US address is
+    // written, because the acquirer's only chance of picking either part out is if it looks
+    // like one. State added 2026-08-02: the form had no field for it, so payers were putting
+    // it in `city`, which is the one place it definitely does not belong.
+    if (c?.address) fields.address = [c.address, [c.state, c.postcode].filter(Boolean).join(' ')]
+      .filter(Boolean)
+      .join(', ');
     if (c?.city) fields.city = c.city;
     return {
       provider: this.provider,
@@ -147,8 +177,19 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     }).toString();
   }
 
-  parseWebhook(rawBody: string): VerifiedPaymentEvent | null {
-    if (Buffer.byteLength(rawBody, 'utf8') > MAX_WEBHOOK_BYTES) return null;
+  // One parser, two callers. `parseWebhook` throws the reason away (its contract is
+  // event-or-null and the settlement path never wanted more); `describeWebhookRejection` keeps
+  // it for the alert. Splitting the rules into two functions instead would let the diagnosis
+  // drift out of step with the decision, which is the failure mode that makes this kind of
+  // logging worse than none.
+  private parse(rawBody: string): ParseResult {
+    const bodySha256 = createHash('sha256').update(rawBody).digest('hex');
+    const reject = (reason: string, p?: URLSearchParams): ParseResult => ({
+      ok: false,
+      rejection: { reason, bodySha256, ...breadcrumbs(p) },
+    });
+    // Checked before parsing, so there is deliberately nothing to report but the size.
+    if (Buffer.byteLength(rawBody, 'utf8') > MAX_WEBHOOK_BYTES) return reject('body_too_large');
     const p = new URLSearchParams(rawBody);
     const merchantId = getExactlyOne(p, 'merchant_id');
     const orderId = getExactlyOne(p, 'order_id');
@@ -157,6 +198,19 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     const payhereCurrency = getExactlyOne(p, 'payhere_currency');
     const statusCode = getExactlyOne(p, 'status_code');
     const md5sig = getExactlyOne(p, 'md5sig');
+    // Named individually: "which field" is the whole diagnosis when a real notify is refused,
+    // and a scanner posting nothing at all reads as merchant_id rather than as a bad secret.
+    for (const [name, value] of [
+      ['merchant_id', merchantId],
+      ['order_id', orderId],
+      ['payment_id', providerTxnId],
+      ['payhere_amount', payhereAmount],
+      ['payhere_currency', payhereCurrency],
+      ['status_code', statusCode],
+      ['md5sig', md5sig],
+    ] as const) {
+      if (value === null) return reject(`missing_or_duplicate_field:${name}`, p);
+    }
     if (
       merchantId === null ||
       orderId === null ||
@@ -166,53 +220,64 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
       statusCode === null ||
       md5sig === null
     ) {
-      return null;
+      return reject('missing_or_duplicate_field', p); // unreachable; narrows for the compiler
     }
-    if (
-      merchantId !== this.merchantId ||
-      orderId.length === 0 ||
-      orderId.length > 128 ||
-      providerTxnId.length === 0 ||
-      providerTxnId.length > 128 ||
-      !/^[A-Z]{3}$/.test(payhereCurrency) ||
-      !/^[A-F0-9]{32}$/.test(md5sig)
-    ) {
-      return null;
-    }
+    if (merchantId !== this.merchantId) return reject('merchant_mismatch', p);
+    if (orderId.length === 0 || orderId.length > 128) return reject('order_id_invalid', p);
+    if (providerTxnId.length === 0 || providerTxnId.length > 128) return reject('payment_id_invalid', p);
+    if (!/^[A-Z]{3}$/.test(payhereCurrency)) return reject('currency_malformed', p);
+    if (!/^[A-F0-9]{32}$/.test(md5sig)) return reject('md5sig_malformed', p);
     const amountCents = parseAmountCents(payhereAmount);
     const status = statusByCode[statusCode];
-    if (amountCents === null || status === undefined) return null;
+    // The two rules most likely to refuse a notify PayHere genuinely sent: our amount regex
+    // admits no thousands separator, and our status map knows only PayHere's documented five.
+    if (amountCents === null) return reject('amount_malformed', p);
+    if (status === undefined) return reject('status_code_unknown', p);
     const local = md5Upper(
       merchantId + orderId + payhereAmount + payhereCurrency + statusCode + md5Upper(this.merchantSecret),
     );
-    if (!safeEqual(local, md5sig)) return null;
+    // The only reason that implicates the merchant secret.
+    if (!safeEqual(local, md5sig)) return reject('signature_mismatch', p);
     return {
-      provider: this.provider,
-      merchantId,
-      orderId,
-      providerTxnId,
-      amountCents,
-      currency: payhereCurrency,
-      status,
-      providerStatusCode: statusCode,
-      receivedAt: new Date(),
-      payloadSha256: createHash('sha256').update(rawBody).digest('hex'),
-      sanitizedPayload: {
-        merchant_id: merchantId,
-        order_id: orderId,
-        payment_id: providerTxnId,
-        payhere_amount: payhereAmount,
-        payhere_currency: payhereCurrency,
-        status_code: statusCode,
-        // PayHere sends these on every notify and we were dropping both. A real production
-        // decline (CH-4KU9Z, status -2) left us with nothing but "-2" and the reason living
-        // only in PayHere's dashboard. Neither is PII.
-        //
-        // NOT covered by md5sig — the signature spans merchant_id, order_id, amount, currency
-        // and status_code only. So these are diagnostic breadcrumbs, never control flow: nothing
-        // may branch on them. Truncated because their length is PayHere's to choose, not ours.
-        ...diagnostic(p),
+      ok: true,
+      event: {
+        provider: this.provider,
+        merchantId,
+        orderId,
+        providerTxnId,
+        amountCents,
+        currency: payhereCurrency,
+        status,
+        providerStatusCode: statusCode,
+        receivedAt: new Date(),
+        payloadSha256: bodySha256,
+        sanitizedPayload: {
+          merchant_id: merchantId,
+          order_id: orderId,
+          payment_id: providerTxnId,
+          payhere_amount: payhereAmount,
+          payhere_currency: payhereCurrency,
+          status_code: statusCode,
+          // PayHere sends these on every notify and we were dropping both. A real production
+          // decline (CH-4KU9Z, status -2) left us with nothing but "-2" and the reason living
+          // only in PayHere's dashboard. Neither is PII.
+          //
+          // NOT covered by md5sig — the signature spans merchant_id, order_id, amount, currency
+          // and status_code only. So these are diagnostic breadcrumbs, never control flow: nothing
+          // may branch on them. Truncated because their length is PayHere's to choose, not ours.
+          ...diagnostic(p),
+        },
       },
     };
+  }
+
+  parseWebhook(rawBody: string): VerifiedPaymentEvent | null {
+    const result = this.parse(rawBody);
+    return result.ok ? result.event : null;
+  }
+
+  describeWebhookRejection(rawBody: string): WebhookRejection | null {
+    const result = this.parse(rawBody);
+    return result.ok ? null : result.rejection;
   }
 }

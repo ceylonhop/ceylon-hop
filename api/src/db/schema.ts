@@ -48,6 +48,11 @@ export const bookings = pgTable(
     // billing belongs to the transaction — the same traveller may pay with a different card,
     // and a parent/company may pay for someone else. `customers` stays the lead passenger.
     // Nullable: pre-existing rows have none, and the website flow doesn't collect them.
+    // Why this booking was cancelled, and by whom (owner rule 2026-08-02). Nullable: only a
+    // cancelled booking has them, and pre-existing cancellations have none.
+    cancellationReason: text('cancellation_reason'),
+    cancelledBy: text('cancelled_by'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     billingFirstName: text('billing_first_name'),
     billingLastName: text('billing_last_name'),
     billingAddress: text('billing_address'),
@@ -56,6 +61,10 @@ export const bookings = pgTable(
     // Strongest AVS signal most issuers check. PayHere has no postcode parameter, so it also
     // rides on the address line — see the adapter (2026-08-02).
     billingPostcode: text('billing_postcode'),
+    // US/CA payers were typing this into the city box ("Jersey City, NJ") because the form had
+    // nowhere else to put it. PayHere has no state parameter either — it joins the postcode on
+    // the address line (2026-08-02).
+    billingState: text('billing_state'),
     // When the customer accepted the terms + the cancellation policy for their product
     // (2026-08-01). A timestamp, not a boolean: a refund dispute asks *when*. Null on website
     // bookings and every pre-existing row — back-filling would be inventing consent.
