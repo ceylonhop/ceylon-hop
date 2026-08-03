@@ -88,7 +88,19 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   channel: BookingChannel;
   // Null/absent on rows created before this existed — those are priced.
   needsPricing?: boolean | null;
+  // Why this booking was cancelled and by whom (owner rule 2026-08-02). Only a cancelled
+  // booking has them, and cancellations predating the rule have none.
+  cancellationReason?: string | null;
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
 };
+
+/** Who reversed a booking and why. Written only on a cancellation. */
+export interface StatusAudit {
+  reason: string;
+  by: string;
+  at?: Date;
+}
 
 export interface BookingPricingSnapshot {
   version: 1;
@@ -117,7 +129,9 @@ export interface BookingRepo {
   create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
-  setStatus(id: string, to: BookingStatus): Promise<Booking>;
+  // `audit` records WHY, for the transitions where that matters. Optional so the many
+  // non-cancelling callers are untouched; the cancel route always supplies it.
+  setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
   // Re-record who is paying, for a booking that has not been paid yet.
   //
@@ -194,11 +208,17 @@ export class InMemoryBookingRepo implements BookingRepo {
     return id ? (this.byId.get(id) ?? null) : null;
   }
 
-  async setStatus(id: string, to: BookingStatus): Promise<Booking> {
+  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
-    const updated: Booking = { ...current, status: to };
+    const updated: Booking = {
+      ...current,
+      status: to,
+      ...(to === 'cancelled' && audit
+        ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: (audit.at ?? new Date()).toISOString() }
+        : {}),
+    };
     this.byId.set(id, updated);
     return updated;
   }
