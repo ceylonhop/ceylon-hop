@@ -81,13 +81,16 @@ function makeRefund(store, amountCents, reason) {
   };
 }
 
-async function boot(page, { role = 'finance', store, mobile = false } = {}) {
+async function boot(page, { role = 'finance', store, mobile = false, travelDate } = {}) {
   if (mobile) await page.setViewportSize({ width: 390, height: 844 });
   // payments:act reads the ledger (founder + finance); payments:reverse starts/confirms a
   // refund and is FOUNDER ONLY since 2026-08-02.
   const paymentsAct = role === 'founder' || role === 'finance';
+  // Mirrors lib/opsAuth.ts exactly. finance has NO bookings:operate — it records money, it
+  // does not run bookings — so the 24-hour reversal grant never reaches it.
   const caps = [
-    'bookings:read', 'bookings:operate',
+    'bookings:read',
+    ...(role === 'finance' ? [] : ['bookings:operate']),
     ...(paymentsAct ? ['payments:act'] : []),
     ...(role === 'founder' ? ['payments:reverse'] : []),
   ];
@@ -104,7 +107,8 @@ async function boot(page, { role = 'finance', store, mobile = false } = {}) {
   await page.route('**/admin/**', (route) => route.fulfill(json({})));
   await page.route('**/admin/ops/whoami', (route) =>
     route.fulfill(json({ email: store.email, role, caps })));
-  await page.route('**/admin/ops/bookings', (route) => route.fulfill(json([row])));
+  const theRow = travelDate ? { ...row, travelDate } : row;
+  await page.route('**/admin/ops/bookings', (route) => route.fulfill(json([theRow])));
   await page.route('**/admin/ops/bookings/booking-1', (route) =>
     route.fulfill(json(bookingDetail)));
   await page.route('**/admin/bookings/booking-1/refunds', async (route) => {
@@ -142,6 +146,11 @@ async function boot(page, { role = 'finance', store, mobile = false } = {}) {
 
 test('the founder requests, reloads, and confirms a refund exactly once with PayHere evidence', async ({ page }) => {
   const store = { refunds: [] };
+  // One handler for the whole test. Every confirm() here is meant to be accepted, and `once`
+  // left the double-press's SECOND dialog unhandled — Playwright auto-dismissed it, and on a
+  // slow pass that landed before the first request had rendered its row. The single-POST
+  // guarantee is refundBusy's job; store.requestPosts below is what actually proves it.
+  page.on('dialog', (dialog) => dialog.accept());
   await boot(page, { role: 'founder', store });
 
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
@@ -150,7 +159,9 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   await expect(page.locator('#refundamount')).toHaveCount(0);
   const request = page.locator('[data-act="refundrequest"]');
   await expect(request).toContainText('$100');
-  page.once('dialog', (dialog) => dialog.accept());
+  // A reason is required for both reversal actions now (owner rule 2026-08-02) and is stored
+  // against the refund — without it the request is refused client-side and never POSTs.
+  await page.locator('#reversereason').fill('Customer cancelled — airline strike');
   await request.dispatchEvent('click');
   await request.dispatchEvent('click');
 
@@ -160,12 +171,12 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
 
   await page.reload();
   await page.locator('[data-act="open"][data-id="booking-1"]').click();
-  // The reason is fixed now that there is no reason box — the button IS the intent.
-  await expect(page.locator('.refund-status-manual_pending')).toContainText('Full refund (ops)');
+  // The reason is the operator's own words now, and it survives a reload because it is stored
+  // on the refund rather than being a label the button supplied.
+  await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer cancelled — airline strike');
   await expect(page.getByText('Complete the refund in the PayHere dashboard first')).toBeVisible();
 
   await page.locator('[data-refund-ref="refund-1"]').fill('PAYHERE-R-1001');
-  page.once('dialog', (dialog) => dialog.accept());
   await page.locator('[data-act="refundconfirm"]').click();
   await expect(page.locator('.refund-status-manual_confirmed')).toContainText('PAYHERE-R-1001');
   await expect(page.locator('.refund-status-manual_confirmed')).toContainText('founder@e2e.test');
@@ -195,11 +206,26 @@ test('finance can read the refund ledger but cannot start or confirm a refund', 
   await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
 });
 
-test('ops can read the booking but cannot load or see money actions', async ({ page }) => {
+// Owner rule 2026-08-02: ops MAY cancel/refund up to 24h before the trip. This fixture travels
+// in 2030, so ops is well outside the window and the actions are live for them.
+test('ops may reverse a far-off trip, but still cannot read the refund ledger', async ({ page }) => {
   const store = { refunds: [] };
   await boot(page, { role: 'ops', store });
 
+  await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
+  // The LEDGER is payments:act — reading refund history is a finance/founder concern, and ops
+  // must not even fetch it.
   await expect(page.getByText('Refundable remaining')).toHaveCount(0);
-  await expect(page.locator('[data-act^="refund"]')).toHaveCount(0);
   expect(store.refundReads).toBe(0);
+});
+
+test('ops is locked out once the trip is inside 24 hours', async ({ page }) => {
+  const store = { refunds: [] };
+  const today = new Date().toISOString().slice(0, 10);
+  await boot(page, { role: 'ops', store, travelDate: today });
+
+  // The button is shown but inert, with the reason why — not silently absent.
+  await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
+  await expect(page.getByText('only a founder can cancel or refund')).toBeVisible();
+  await expect(page.locator('#reversereason')).toHaveCount(0);
 });

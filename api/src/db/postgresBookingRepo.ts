@@ -6,6 +6,7 @@ import {
   type NewBooking,
   type Booking,
   type BookingChannel,
+  type StatusAudit,
   BookingNotFoundError,
   generateReference,
   PAYER_EDITABLE_STATUSES,
@@ -69,6 +70,11 @@ export class PostgresBookingRepo implements BookingRepo {
       total: row.total,
       amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
       needsPricing: row.needsPricing, // null on rows predating the column
+      // Cancellation audit (owner rule 2026-08-02); null on anything not cancelled, and on
+      // cancellations that predate the rule.
+      cancellationReason: row.cancellationReason,
+      cancelledBy: row.cancelledBy,
+      cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
       currency: row.currency,
       channel: row.channel as BookingChannel,
       // Billing is all-or-nothing: address/city/country are validated together at /start, so
@@ -319,7 +325,7 @@ export class PostgresBookingRepo implements BookingRepo {
     return fresh;
   }
 
-  async setStatus(id: string, to: BookingStatus): Promise<Booking> {
+  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
     const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
     if (!row) throw new BookingNotFoundError(id);
     const from = row.status as BookingStatus;
@@ -328,7 +334,13 @@ export class PostgresBookingRepo implements BookingRepo {
     // transitions (e.g. a double-cancel) can't both win and double-release seats.
     const [updated] = await this.db
       .update(bookings)
-      .set({ status: to })
+      .set({
+        status: to,
+        // Only a cancellation carries a reason; every other transition leaves these untouched.
+        ...(to === 'cancelled' && audit
+          ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
+          : {}),
+      })
       .where(and(eq(bookings.id, id), eq(bookings.status, from)))
       .returning();
     if (!updated) {
