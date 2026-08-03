@@ -334,7 +334,27 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
       signal: AbortSignal.timeout(REFUND_TIMEOUT_MS),
     });
     // A token failure is safe to surface loudly — no money has been asked for yet.
-    if (!res.ok) throw new Error(`payhere_token_http_${res.status}`);
+    //
+    // WHICH failure matters more than the status code. A 403 here is either Cloudflare blocking
+    // us at the edge (our server IP is not whitelisted with PayHere) or PayHere itself rejecting
+    // the key. Those need completely different fixes, and `payhere_token_http_403` alone cannot
+    // tell them apart — which cost a round trip on 2026-08-03. Cloudflare answers in HTML;
+    // PayHere answers in JSON. So say which arrived.
+    if (!res.ok) {
+      const contentType = res.headers?.get?.('content-type') ?? '';
+      if (contentType.includes('text/html')) {
+        throw new Error(
+          `payhere_token_http_${res.status}_blocked_at_edge — an HTML page, not PayHere's API. ` +
+            'Our server IP is most likely not whitelisted with PayHere.',
+        );
+      }
+      // PayHere's own rejection. Their message is short and non-sensitive; the credentials are
+      // never echoed back, so this is safe to surface.
+      const detail = await res.text().catch(() => '');
+      throw new Error(
+        `payhere_token_http_${res.status}_rejected_by_payhere${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+      );
+    }
     const body = (await res.json()) as { access_token?: unknown; expires_in?: unknown };
     if (typeof body.access_token !== 'string' || body.access_token.length === 0) {
       throw new Error('payhere_token_malformed');
