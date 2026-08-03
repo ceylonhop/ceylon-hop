@@ -6,6 +6,8 @@ import type {
   ProviderPaymentStatus,
   VerifiedPaymentEvent,
   WebhookRejection,
+  RefundArgs,
+  RefundResult,
 } from './payments';
 
 type ParseResult =
@@ -80,6 +82,25 @@ function parseAmountCents(value: string): number | null {
   return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
 }
 
+// Refund API credentials (PayHere Settings -> API Keys, permission "Automated Charging API").
+// Absent => the adapter exposes no refund(), and the ops UI offers the manual flow only.
+export interface PayHereApiCredentials {
+  appId: string;
+  appSecret: string;
+}
+
+// PayHere's tokens live 599 seconds. Refresh with a minute to spare so a slow refund call can
+// never straddle the expiry: the token is checked before the request, used during it.
+const TOKEN_SAFETY_MARGIN_MS = 60_000;
+const REFUND_TIMEOUT_MS = 10_000;
+// payhere.lk sits behind Cloudflare, which blocks clients it cannot identify — a plain `curl`
+// to the token endpoint is served a "Sorry, you have been blocked" page rather than an API
+// response (observed 2026-08-02). Node's fetch sends no User-Agent at all, which is the same
+// shape. So identify ourselves honestly: this is our own server-to-server client saying who it
+// is, not a browser impersonation. Also ask for JSON explicitly, so a WAF interstitial is at
+// least more likely to come back as an error than as HTML we would fail to parse.
+const API_USER_AGENT = 'CeylonHop-API/1.0 (+https://ceylonhop.com)';
+
 export interface PayHereOptions {
   mode: 'sandbox' | 'live';
   notifyUrl: string;
@@ -94,14 +115,26 @@ export interface PayHereOptions {
 export class PayHerePaymentAdapter implements PaymentAdapter {
   readonly provider = 'payhere';
   private readonly checkoutUrl: string;
+  private readonly apiBase: string;
+  private token: { value: string; expiresAt: number } | null = null;
 
   constructor(
     private readonly merchantId: string,
     private readonly merchantSecret: string,
     private readonly opts: PayHereOptions,
+    // Optional: without these the class simply has no refund() to call.
+    private readonly api?: PayHereApiCredentials,
+    // Seam for tests. Never stubbed in production.
+    private readonly fetchImpl: typeof fetch = fetch,
   ) {
     this.checkoutUrl =
       opts.mode === 'live' ? 'https://www.payhere.lk/pay/checkout' : 'https://sandbox.payhere.lk/pay/checkout';
+    this.apiBase = opts.mode === 'live' ? 'https://www.payhere.lk' : 'https://sandbox.payhere.lk';
+  }
+
+  /** True when refund() will do anything. The ops UI asks this before offering the API route. */
+  get canRefundViaApi(): boolean {
+    return Boolean(this.api?.appId && this.api?.appSecret);
   }
 
   async createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams> {
@@ -279,5 +312,121 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
   describeWebhookRejection(rawBody: string): WebhookRejection | null {
     const result = this.parse(rawBody);
     return result.ok ? null : result.rejection;
+  }
+
+  // ── Refund API ────────────────────────────────────────────────────────────────────────────
+  // OAuth client-credentials, then POST /merchant/v1/payment/refund.
+  // Docs: support.payhere.lk/api-&-mobile-sdk/refund-api (read 2026-08-02).
+
+  private async accessToken(now: number): Promise<string> {
+    if (!this.api) throw new Error('payhere_refund_api_not_configured');
+    if (this.token && this.token.expiresAt - TOKEN_SAFETY_MARGIN_MS > now) return this.token.value;
+    const basic = Buffer.from(`${this.api.appId}:${this.api.appSecret}`).toString('base64');
+    const res = await this.fetchImpl(`${this.apiBase}/merchant/v1/oauth/token`, {
+      method: 'POST',
+      headers: {
+        authorization: `Basic ${basic}`,
+        'content-type': 'application/x-www-form-urlencoded',
+        accept: 'application/json',
+        'user-agent': API_USER_AGENT,
+      },
+      body: 'grant_type=client_credentials',
+      signal: AbortSignal.timeout(REFUND_TIMEOUT_MS),
+    });
+    // A token failure is safe to surface loudly — no money has been asked for yet.
+    if (!res.ok) throw new Error(`payhere_token_http_${res.status}`);
+    const body = (await res.json()) as { access_token?: unknown; expires_in?: unknown };
+    if (typeof body.access_token !== 'string' || body.access_token.length === 0) {
+      throw new Error('payhere_token_malformed');
+    }
+    const ttlSeconds = typeof body.expires_in === 'number' && body.expires_in > 0 ? body.expires_in : 599;
+    this.token = { value: body.access_token, expiresAt: now + ttlSeconds * 1000 };
+    return this.token.value;
+  }
+
+  async refund(args: RefundArgs): Promise<RefundResult> {
+    // The token call is the only part that is safe to retry, because it moves no money. It sits
+    // outside the try below on purpose: a token failure is 'failed' (we never asked for the
+    // refund), never 'unknown'.
+    let token: string;
+    try {
+      token = await this.accessToken(Date.now());
+    } catch (error) {
+      return { outcome: 'failed', providerMessage: `token: ${(error as Error).message}` };
+    }
+
+    // Full refunds omit `amount` entirely, per PayHere's docs; a partial sends major units.
+    const body: Record<string, string> = {
+      payment_id: args.gatewayPaymentId,
+      description: args.description.slice(0, 200),
+    };
+    if (!args.isFullRefund) body.amount = (args.amountCents / 100).toFixed(2);
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.apiBase}/merchant/v1/payment/refund`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'user-agent': API_USER_AGENT,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REFUND_TIMEOUT_MS),
+      });
+    } catch (error) {
+      // Timeout, abort, socket error. PayHere may well have refunded the customer and we will
+      // never know from here. This is the case the whole api_processing design exists for:
+      // 'unknown' must never be downgraded to 'failed', which would free the money to be
+      // refunded a second time.
+      return { outcome: 'unknown', providerMessage: `transport: ${(error as Error).message}` };
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = (await res.json()) as Record<string, unknown>;
+    } catch {
+      // A WAF interstitial is HTML, and it means the request never reached PayHere's API at all
+      // — so the refund definitely did not happen and must not strand the row in api_processing.
+      // Anything else unreadable stays unknown: we cannot prove it was not processed.
+      const contentType = res.headers?.get?.('content-type') ?? '';
+      if (contentType.includes('text/html')) {
+        return { outcome: 'failed', providerMessage: `blocked before reaching the API (HTTP ${res.status})` };
+      }
+      return { outcome: 'unknown', providerMessage: `unparseable body (HTTP ${res.status})` };
+    }
+
+    // Token errors come back in a DIFFERENT shape — {error, error_description}, no status field.
+    if (typeof parsed.error === 'string') {
+      return { outcome: 'failed', providerMessage: `${parsed.error}: ${String(parsed.error_description ?? '')}`.slice(0, 200) };
+    }
+
+    // Their docs name this field `status_code` in prose and `status` in every JSON example.
+    // Read both; treat neither-present as unknown rather than inventing an answer.
+    const raw = parsed.status ?? parsed.status_code;
+    const status = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+    const providerMessage = typeof parsed.msg === 'string' ? parsed.msg.slice(0, 200) : undefined;
+    if (!Number.isFinite(status)) {
+      return { outcome: 'unknown', providerMessage: providerMessage ?? `no status (HTTP ${res.status})` };
+    }
+
+    if (status === 1) {
+      // `data` carries PayHere's refund number. It is null on an AUTHORIZATION refund, which we
+      // never issue — so a null here means we cannot identify what just happened, and the
+      // evidence constraint would reject the row anyway. Treat it as unknown: the money may
+      // have moved, and that is a human's problem, not a retry's.
+      const ref = parsed.data;
+      const gatewayRef =
+        typeof ref === 'number' || (typeof ref === 'string' && ref.length > 0) ? String(ref) : null;
+      if (!gatewayRef) {
+        return { outcome: 'unknown', providerMessage: providerMessage ?? 'success with no refund reference' };
+      }
+      return { outcome: 'succeeded', gatewayRef, providerMessage };
+    }
+
+    // 0 = error initiating, -1 = refund failed, -2 = auth/IP/domain not allowed. All definite:
+    // PayHere is telling us the money did not move.
+    return { outcome: 'failed', providerMessage: providerMessage ?? `status ${status}` };
   }
 }
