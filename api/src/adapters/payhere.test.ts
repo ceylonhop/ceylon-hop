@@ -358,7 +358,7 @@ describe('PayHere Refund API', () => {
   const CREDS = { appId: 'app-1', appSecret: 'secret-1' };
   const TOKEN_OK = { access_token: 'tok-1', token_type: 'bearer', expires_in: 599, scope: 'SANDBOX' };
 
-  function stub(responses: Array<{ status?: number; body?: unknown; throws?: Error }>) {
+  function stub(responses: Array<{ status?: number; body?: unknown; throws?: Error; contentType?: string }>) {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const impl = (async (url: string | URL | Request, init: RequestInit = {}) => {
       calls.push({ url: String(url), init });
@@ -368,6 +368,7 @@ describe('PayHere Refund API', () => {
       return {
         ok: (next.status ?? 200) < 400,
         status: next.status ?? 200,
+        headers: new Headers(next.contentType ? { 'content-type': next.contentType } : {}),
         json: async () => {
           if (next.body === undefined) throw new SyntaxError('Unexpected end of JSON input');
           return next.body;
@@ -454,6 +455,27 @@ describe('PayHere Refund API', () => {
   it('calls an unreadable body unknown', async () => {
     const { impl } = stub([{ body: TOKEN_OK }, { status: 502 }]);
     expect((await withApi(impl).refund(args)).outcome).toBe('unknown');
+  });
+
+  // payhere.lk is behind Cloudflare, which serves a "you have been blocked" HTML page to
+  // clients it cannot identify (seen with plain curl, 2026-08-02). That page means the request
+  // never reached the Refund API, so the money definitely did not move — stranding the row in
+  // api_processing for a human would be wrong, and would block a re-request for no reason.
+  it('treats a WAF HTML interstitial as failed — it never reached the API', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { status: 403, contentType: 'text/html; charset=UTF-8' }]);
+    const result = await withApi(impl).refund(args);
+    expect(result.outcome).toBe('failed');
+    expect(result.providerMessage).toContain('blocked before reaching the API');
+  });
+
+  it('identifies itself, since an unnamed client is what the WAF blocks', async () => {
+    const { impl, calls } = stub([{ body: TOKEN_OK }, { body: { status: 1, data: 1 } }]);
+    await withApi(impl).refund(args);
+    for (const call of calls) {
+      const headers = call.init.headers as Record<string, string>;
+      expect(headers['user-agent']).toContain('CeylonHop');
+      expect(headers.accept).toBe('application/json');
+    }
   });
 
   it('calls a response with no status field unknown rather than inventing one', async () => {

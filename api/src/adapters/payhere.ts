@@ -93,6 +93,13 @@ export interface PayHereApiCredentials {
 // never straddle the expiry: the token is checked before the request, used during it.
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
 const REFUND_TIMEOUT_MS = 10_000;
+// payhere.lk sits behind Cloudflare, which blocks clients it cannot identify — a plain `curl`
+// to the token endpoint is served a "Sorry, you have been blocked" page rather than an API
+// response (observed 2026-08-02). Node's fetch sends no User-Agent at all, which is the same
+// shape. So identify ourselves honestly: this is our own server-to-server client saying who it
+// is, not a browser impersonation. Also ask for JSON explicitly, so a WAF interstitial is at
+// least more likely to come back as an error than as HTML we would fail to parse.
+const API_USER_AGENT = 'CeylonHop-API/1.0 (+https://ceylonhop.com)';
 
 export interface PayHereOptions {
   mode: 'sandbox' | 'live';
@@ -317,7 +324,12 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     const basic = Buffer.from(`${this.api.appId}:${this.api.appSecret}`).toString('base64');
     const res = await this.fetchImpl(`${this.apiBase}/merchant/v1/oauth/token`, {
       method: 'POST',
-      headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
+      headers: {
+        authorization: `Basic ${basic}`,
+        'content-type': 'application/x-www-form-urlencoded',
+        accept: 'application/json',
+        'user-agent': API_USER_AGENT,
+      },
       body: 'grant_type=client_credentials',
       signal: AbortSignal.timeout(REFUND_TIMEOUT_MS),
     });
@@ -354,7 +366,12 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     try {
       res = await this.fetchImpl(`${this.apiBase}/merchant/v1/payment/refund`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+          'user-agent': API_USER_AGENT,
+        },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(REFUND_TIMEOUT_MS),
       });
@@ -370,7 +387,13 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     try {
       parsed = (await res.json()) as Record<string, unknown>;
     } catch {
-      // A response we cannot read is not a response we can act on.
+      // A WAF interstitial is HTML, and it means the request never reached PayHere's API at all
+      // — so the refund definitely did not happen and must not strand the row in api_processing.
+      // Anything else unreadable stays unknown: we cannot prove it was not processed.
+      const contentType = res.headers?.get?.('content-type') ?? '';
+      if (contentType.includes('text/html')) {
+        return { outcome: 'failed', providerMessage: `blocked before reaching the API (HTTP ${res.status})` };
+      }
       return { outcome: 'unknown', providerMessage: `unparseable body (HTTP ${res.status})` };
     }
 
