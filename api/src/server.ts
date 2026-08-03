@@ -51,7 +51,10 @@ const adapter =
         notifyUrl: config.PAYHERE_NOTIFY_URL ?? '',
         returnUrl: `${config.APP_BASE_URL}/booking.html`,
         cancelUrl: `${config.APP_BASE_URL}/booking.html`,
-      })
+      },
+      config.PAYHERE_APP_ID && config.PAYHERE_APP_SECRET
+        ? { appId: config.PAYHERE_APP_ID, appSecret: config.PAYHERE_APP_SECRET }
+        : undefined)
     : new FakePaymentAdapter();
 
 const maps = config.GOOGLE_MAPS_API_KEY

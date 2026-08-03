@@ -350,3 +350,144 @@ describe('PayHere webhook rejection diagnosis', () => {
     expect(r?.orderId).toHaveLength(64);
   });
 });
+
+// PayHere's Refund API. The cases below are ranked by what they cost when wrong: an outcome
+// misread as 'failed' frees the money to be refunded a second time, so anything short of a
+// definite answer must come back 'unknown'.
+describe('PayHere Refund API', () => {
+  const CREDS = { appId: 'app-1', appSecret: 'secret-1' };
+  const TOKEN_OK = { access_token: 'tok-1', token_type: 'bearer', expires_in: 599, scope: 'SANDBOX' };
+
+  function stub(responses: Array<{ status?: number; body?: unknown; throws?: Error }>) {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const impl = (async (url: string | URL | Request, init: RequestInit = {}) => {
+      calls.push({ url: String(url), init });
+      const next = responses.shift();
+      if (!next) throw new Error('unexpected extra fetch');
+      if (next.throws) throw next.throws;
+      return {
+        ok: (next.status ?? 200) < 400,
+        status: next.status ?? 200,
+        json: async () => {
+          if (next.body === undefined) throw new SyntaxError('Unexpected end of JSON input');
+          return next.body;
+        },
+      } as Response;
+    }) as unknown as typeof fetch;
+    return { impl, calls };
+  }
+
+  const withApi = (impl: typeof fetch) =>
+    new PayHerePaymentAdapter(MID, SECRET, {
+      mode: 'sandbox', notifyUrl: 'https://example.com/w', returnUrl: 'https://s/r', cancelUrl: 'https://s/c',
+    }, CREDS, impl);
+
+  const args = {
+    gatewayPaymentId: '320048263209', amountCents: 2900, currency: 'USD',
+    description: 'Customer cancelled', isFullRefund: true,
+  };
+
+  it('has no refund route at all without API credentials', () => {
+    const a = adapter();
+    expect(a.canRefundViaApi).toBe(false);
+    expect(withApi(stub([]).impl).canRefundViaApi).toBe(true);
+  });
+
+  it('authenticates, then refunds, and returns PayHere’s refund number', async () => {
+    const { impl, calls } = stub([
+      { body: TOKEN_OK },
+      { body: { status: 1, msg: 'Successfully processed the refund', data: 560034010257 } },
+    ]);
+    const result = await withApi(impl).refund(args);
+    expect(result).toMatchObject({ outcome: 'succeeded', gatewayRef: '560034010257' });
+    expect(calls[0].url).toContain('/merchant/v1/oauth/token');
+    expect(calls[0].init.body).toBe('grant_type=client_credentials');
+    expect(String((calls[0].init.headers as Record<string, string>).authorization)).toBe(
+      `Basic ${Buffer.from('app-1:secret-1').toString('base64')}`,
+    );
+    expect(calls[1].url).toContain('/merchant/v1/payment/refund');
+    expect((calls[1].init.headers as Record<string, string>).authorization).toBe('Bearer tok-1');
+  });
+
+  // Their docs are explicit: omit `amount` for a full refund, send major units for a partial.
+  it('omits the amount on a full refund and sends major units on a partial', async () => {
+    const full = stub([{ body: TOKEN_OK }, { body: { status: 1, data: 1 } }]);
+    await withApi(full.impl).refund(args);
+    expect(JSON.parse(String(full.calls[1].init.body))).toEqual({
+      payment_id: '320048263209', description: 'Customer cancelled',
+    });
+    const partial = stub([{ body: TOKEN_OK }, { body: { status: 1, data: 2 } }]);
+    await withApi(partial.impl).refund({ ...args, amountCents: 1050, isFullRefund: false });
+    expect(JSON.parse(String(partial.calls[1].init.body)).amount).toBe('10.50');
+  });
+
+  it('reuses a live token instead of authenticating per refund', async () => {
+    const { impl, calls } = stub([
+      { body: TOKEN_OK },
+      { body: { status: 1, data: 1 } },
+      { body: { status: 1, data: 2 } },
+    ]);
+    const a = withApi(impl);
+    await a.refund(args);
+    await a.refund(args);
+    expect(calls.filter((call) => call.url.includes('oauth/token'))).toHaveLength(1);
+  });
+
+  it.each([
+    [0, 'error initiating the refund'],
+    [-1, 'Error processing refund'],
+    [-2, 'Authentication error'],
+  ])('treats status %i as a definite failure — the money did not move', async (status, msg) => {
+    const { impl } = stub([{ body: TOKEN_OK }, { body: { status, msg, data: null } }]);
+    const result = await withApi(impl).refund(args);
+    expect(result.outcome).toBe('failed');
+    expect(result.providerMessage).toBe(msg);
+  });
+
+  // ── everything below must NOT read as 'failed' ────────────────────────────────────────────
+
+  it('calls a timeout unknown, never failed — the refund may already have happened', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { throws: new Error('The operation was aborted') }]);
+    expect((await withApi(impl).refund(args)).outcome).toBe('unknown');
+  });
+
+  it('calls an unreadable body unknown', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { status: 502 }]);
+    expect((await withApi(impl).refund(args)).outcome).toBe('unknown');
+  });
+
+  it('calls a response with no status field unknown rather than inventing one', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { body: { msg: 'who knows' } }]);
+    expect((await withApi(impl).refund(args)).outcome).toBe('unknown');
+  });
+
+  // `data` is null on a successful AUTHORIZATION refund. We never issue those, so a null here
+  // means we cannot identify what happened — and the ledger's evidence CHECK would reject it.
+  it('calls success-with-no-reference unknown', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { body: { status: 1, msg: 'ok', data: null } }]);
+    expect((await withApi(impl).refund(args)).outcome).toBe('unknown');
+  });
+
+  // Their docs name the field `status_code` in prose and `status` in every example.
+  it('accepts status_code as a synonym for status', async () => {
+    const { impl } = stub([{ body: TOKEN_OK }, { body: { status_code: 1, data: '99' } }]);
+    expect(await withApi(impl).refund(args)).toMatchObject({ outcome: 'succeeded', gatewayRef: '99' });
+  });
+
+  // Token problems arrive in a DIFFERENT shape — {error, error_description}, no status. They are
+  // safe to call failed: an unusable token means the refund was never asked for.
+  it('treats an invalid-token body as failed, since nothing was ever requested', async () => {
+    const { impl } = stub([
+      { body: TOKEN_OK },
+      { body: { error: 'invalid_token', error_description: 'Access token expired: tok-1' } },
+    ]);
+    const result = await withApi(impl).refund(args);
+    expect(result.outcome).toBe('failed');
+    expect(result.providerMessage).toContain('invalid_token');
+  });
+
+  it('treats a token endpoint failure as failed, not unknown', async () => {
+    const { impl } = stub([{ status: 401, body: {} }]);
+    expect((await withApi(impl).refund(args)).outcome).toBe('failed');
+  });
+});

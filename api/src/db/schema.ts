@@ -171,6 +171,11 @@ export const refunds = pgTable(
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
     confirmedBy: text('confirmed_by'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    // PayHere's `msg` on an API refund, so "-1" in the ledger explains itself.
+    providerMessage: text('provider_message'),
+    // When we called the Refund API. A row still in api_processing well past this is the
+    // watchdog's signal that a human must reconcile it against PayHere's dashboard.
+    apiAttemptedAt: timestamp('api_attempted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -181,11 +186,13 @@ export const refunds = pgTable(
     check('refunds_currency_supported', sql`${t.currency} in ('USD')`),
     check(
       'refunds_status_valid',
-      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled')`,
+      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled', 'api_processing', 'api_confirmed', 'api_failed')`,
     ),
+    // api_confirmed carries the same proof manual_confirmed does. api_processing carries none:
+    // we do not yet know PayHere's refund number, which is exactly what makes it dangerous.
     check(
       'refunds_confirmation_evidence_valid',
-      sql`(${t.status} = 'manual_confirmed' and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} <> 'manual_confirmed' and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
+      sql`(${t.status} in ('manual_confirmed', 'api_confirmed') and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} not in ('manual_confirmed', 'api_confirmed') and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
     ),
   ],
 );
