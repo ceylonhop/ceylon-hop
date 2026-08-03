@@ -513,3 +513,38 @@ describe('PayHere Refund API', () => {
     expect((await withApi(impl).refund(args)).outcome).toBe('failed');
   });
 });
+
+// 2026-08-03: the first live attempt returned `token: payhere_token_http_403` and there was no
+// way to tell whether Cloudflare had blocked our server at the edge (IP not whitelisted) or
+// PayHere had rejected the key. Those have opposite fixes, so the status code alone is not a
+// diagnosis. Cloudflare answers in HTML; PayHere answers in JSON.
+describe('PayHere token failures name their cause', () => {
+  const CREDS = { appId: 'app-1', appSecret: 'secret-1' };
+  const args = {
+    gatewayPaymentId: '320048263209', amountCents: 2900, currency: 'USD',
+    description: 'x', isFullRefund: true,
+  };
+  const build = (status: number, contentType: string, text = '') =>
+    new PayHerePaymentAdapter(MID, SECRET, {
+      mode: 'sandbox', notifyUrl: 'https://e/w', returnUrl: 'https://s/r', cancelUrl: 'https://s/c',
+    }, CREDS, (async () => ({
+      ok: false,
+      status,
+      headers: new Headers({ 'content-type': contentType }),
+      text: async () => text,
+      json: async () => ({}),
+    })) as unknown as typeof fetch);
+
+  it('calls an HTML 403 a block at the edge, not a credential problem', async () => {
+    const result = await build(403, 'text/html; charset=UTF-8', '<!DOCTYPE html>').refund(args);
+    expect(result.outcome).toBe('failed');       // nothing was requested, so no money moved
+    expect(result.providerMessage).toContain('blocked_at_edge');
+    expect(result.providerMessage).toContain('not whitelisted');
+  });
+
+  it('calls a JSON 403 a rejection by PayHere, and passes their message through', async () => {
+    const result = await build(403, 'application/json', '{"error":"invalid_client"}').refund(args);
+    expect(result.providerMessage).toContain('rejected_by_payhere');
+    expect(result.providerMessage).toContain('invalid_client');
+  });
+});
