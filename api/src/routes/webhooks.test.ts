@@ -262,7 +262,10 @@ describe('POST /webhooks/payments', () => {
 });
 
 describe('payment webhook ops alerts (M17)', () => {
-  it('alerts on an invalid signature', async () => {
+  // The fake adapter cannot diagnose itself, so the alert declines to guess rather than
+  // asserting a signature failure it has no evidence for — that guess is exactly what sent the
+  // owner looking at the merchant secret on 2026-08-02 while a customer's card was declining.
+  it('alerts without blaming the signature when the adapter cannot say why', async () => {
     const alerts = new FakeAlertAdapter();
     const app = createApp({ alerts });
     await app.request('/webhooks/payments', {
@@ -270,7 +273,7 @@ describe('payment webhook ops alerts (M17)', () => {
       body: '{"orderId":"x","amount":1,"currency":"USD","status":"succeeded","providerTxnId":"t","signature":"bad"}',
     });
     expect(alerts.sent).toHaveLength(1);
-    expect(alerts.sent[0].kind).toBe('payhere_signature');
+    expect(alerts.sent[0].kind).toBe('payhere_webhook_rejected');
     expect(alerts.sent[0].severity).toBe('critical');
   });
 
@@ -579,5 +582,90 @@ describe('settlement claims the quote (pay links)', () => {
       body: adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: 'USD' }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// 2026-08-02: a [CRITICAL] "PayHere webhook signature failed — misconfigured merchant secret or
+// someone probing" landed in the owner's inbox at the same moment a Chase Visa was being
+// declined. The secret was fine (Amex settled all day). The alert could not distinguish a real
+// notify we refused on a field rule from a bot poking a public URL, and it kept none of the body.
+describe('payment webhook rejection alerts', () => {
+  const payhere = () =>
+    new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+  const post = (app: ReturnType<typeof createApp>, body: string) =>
+    app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+
+  it('still calls a genuine signature failure what it is', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await post(createApp({ adapter, alerts }), signed.replace(/md5sig=[A-F0-9]{32}/, `md5sig=${'A'.repeat(32)}`));
+    expect(alerts.sent[0]).toMatchObject({ kind: 'payhere_signature', severity: 'critical' });
+    expect(alerts.sent[0].body).toContain('PAYHERE_MERCHANT_SECRET');
+  });
+
+  it('does not blame the secret for a body refused before the signature was reached', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD', statusCode: '-2' });
+    await post(createApp({ adapter, alerts }), signed.replace('status_code=-2', 'status_code=-9'));
+    expect(alerts.sent[0].kind).toBe('payhere_webhook_rejected');
+    expect(alerts.sent[0].title).toContain('status_code_unknown');
+    expect(alerts.sent[0].body).not.toContain('PAYHERE_MERCHANT_SECRET');
+  });
+
+  // The one fact that turns the alert into an action: go and reconcile THIS booking.
+  it('names the order the refused notify was about', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD', statusCode: '-2' });
+    await post(createApp({ adapter, alerts }), signed.replace('status_code=-2', 'status_code=-9'));
+    expect(alerts.sent[0].body).toContain('CH-MCF8D');
+  });
+
+  it('never puts the raw body in the alert — a notify carries the payer name and card number', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD' });
+    await post(createApp({ adapter, alerts }), `${signed}&card_holder_name=Roshen+Weliwatta&card_no=************2478&status_code=-9`);
+    const alert = alerts.sent[0];
+    expect(alert.body).not.toContain('Roshen');
+    expect(alert.body).not.toContain('2478');
+    expect(alert.body).toMatch(/Body sha256: [0-9a-f]{64}/);
+  });
+
+  // Was `new Date().toISOString().slice(0,10)` — one alert per DAY across every cause, so a
+  // rejected notify and a scanner probe on the same day collapsed and the second was never seen.
+  it('dedupes per reason per day, not per day', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await post(app, signed.replace('status_code=2', 'status_code=9'));
+    await post(app, signed.replace(/md5sig=[A-F0-9]{32}/, `md5sig=${'A'.repeat(32)}`));
+    const keys = alerts.sent.map((a) => a.dedupeKey);
+    expect(new Set(keys).size).toBe(2);
+    expect(keys.every((k) => k?.startsWith(new Date().toISOString().slice(0, 10)))).toBe(true);
+  });
+
+  it('reports an unexpected content type as itself', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await createApp({ adapter, alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: signed,
+    });
+    expect(alerts.sent[0].title).toContain('content_type_unexpected');
   });
 });

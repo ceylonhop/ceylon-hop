@@ -68,11 +68,36 @@ interface WebhookBody extends FakeWebhookEvent {
 // The swappable payment seam. The real PayHere adapter implements the same interface
 // later (Phase 1.5); until then the fake drives the whole flow with a signed webhook,
 // so no real gateway is ever called.
+// Why a webhook body was refused. `parseWebhook` returns a bare null, which is enough to reject
+// the request and nowhere near enough to debug one: a genuine PayHere notify that trips a field
+// rule and a bot probing the public endpoint raised the identical "invalid signature —
+// misconfigured merchant secret or someone probing" alert (owner-reported, 2026-08-02). Only
+// `signature_mismatch` implicates the secret; every other reason means we refused something the
+// gateway may well have meant.
+//
+// The breadcrumbs are best-effort — a rejected body is by definition untrusted, so they are read
+// without verifying anything and must never drive control flow. They exist so the alert can say
+// WHICH order this was about. All non-PII: the notify's card_holder_name/card_no/card_expiry are
+// never read here, same stance as `sanitizedPayload`.
+export interface WebhookRejection {
+  /** Stable machine name, e.g. 'signature_mismatch', 'amount_malformed'. Safe as a dedupe key. */
+  reason: string;
+  /** Of the raw body, so two alerts can be told apart (or matched) without logging the body. */
+  bodySha256: string;
+  orderId?: string;
+  statusCode?: string;
+  amount?: string;
+  currency?: string;
+}
+
 export interface PaymentAdapter {
   readonly provider: string;
   createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
   // Verify + parse a raw webhook body. Returns null when the signature is invalid.
   parseWebhook(rawBody: string): VerifiedPaymentEvent | null;
+  // Optional: explain a body parseWebhook refused. Adapters that omit it stay opaque, and the
+  // caller falls back to the old undifferentiated alert.
+  describeWebhookRejection?(rawBody: string): WebhookRejection | null;
 }
 
 const DEFAULT_SECRET = process.env.FAKE_PAYMENT_SECRET ?? 'fake-secret';

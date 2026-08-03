@@ -270,3 +270,59 @@ describe('PayHerePaymentAdapter', () => {
     expect(adapter().parseWebhook(body)).toBeNull();
   });
 });
+
+// A rejected notify used to be indistinguishable from a bot probing the public endpoint: both
+// produced `parseWebhook -> null` and an alert blaming the merchant secret. These pin the reason
+// to the rule that actually fired, so the alert can tell the owner which of the two happened.
+describe('PayHere webhook rejection diagnosis', () => {
+  it('says nothing when the body is in fact valid', () => {
+    expect(adapter().describeWebhookRejection(signedNotify())).toBeNull();
+  });
+
+  it('names a bad signature as the one reason that implicates the secret', () => {
+    const forged = signedNotify().replace(/md5sig=[A-F0-9]{32}/, `md5sig=${'A'.repeat(32)}`);
+    expect(adapter().describeWebhookRejection(forged)?.reason).toBe('signature_mismatch');
+  });
+
+  it.each([
+    ['payhere_amount', '8,700.00', 'amount_malformed'],
+    ['status_code', '9', 'status_code_unknown'],
+    ['payhere_currency', 'usd', 'currency_malformed'],
+    ['merchant_id', '7654321', 'merchant_mismatch'],
+    ['payment_id', '', 'payment_id_invalid'],
+  ])('blames %s=%s on %s, not the signature', (field, value, reason) => {
+    const r = adapter().describeWebhookRejection(signedNotify({ [field]: value }));
+    expect(r?.reason).toBe(reason);
+  });
+
+  it('names the missing field so an empty probe does not read as a bad secret', () => {
+    expect(adapter().describeWebhookRejection('')?.reason).toBe('missing_or_duplicate_field:merchant_id');
+    const noSig = signedNotify().replace(/&md5sig=[A-F0-9]{32}/, '');
+    expect(adapter().describeWebhookRejection(noSig)?.reason).toBe('missing_or_duplicate_field:md5sig');
+  });
+
+  it('reports the size refusal without pretending to have read the body', () => {
+    const r = adapter().describeWebhookRejection(`${signedNotify()}&padding=${'x'.repeat(9_000)}`);
+    expect(r?.reason).toBe('body_too_large');
+    expect(r?.orderId).toBeUndefined();
+  });
+
+  // The single fact that makes a rejection actionable: WHICH booking to go reconcile by hand.
+  it('carries the order id and status code off a body it refused', () => {
+    const r = adapter().describeWebhookRejection(
+      signedNotify({ order_id: 'CH-MCF8D', status_code: '9' }),
+    );
+    expect(r).toMatchObject({ orderId: 'CH-MCF8D', statusCode: '9', amount: '40.00', currency: 'USD' });
+  });
+
+  it('hashes the body instead of keeping it — a notify carries the payer name and card number', () => {
+    const body = signedNotify({ status_code: '9' });
+    const r = adapter().describeWebhookRejection(body);
+    expect(r?.bodySha256).toBe(createHash('sha256').update(body).digest('hex'));
+  });
+
+  it('caps breadcrumbs, since a stranger chooses these strings and they land in an ops email', () => {
+    const r = adapter().describeWebhookRejection(signedNotify({ order_id: 'C'.repeat(200) }));
+    expect(r?.orderId).toHaveLength(64);
+  });
+});
