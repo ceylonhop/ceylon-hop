@@ -36,9 +36,20 @@ export function isoParts(iso) {
 }
 
 /** The way the booking summary renders a date: "18 Aug 2026". Derived from the ISO string so a
- *  display assertion can't drift from the date the test actually picked. */
+ *  display assertion can't drift from the date the test actually picked.
+ *
+ *  Asks the SAME formatter the page asks (booking.js: `toLocaleDateString('en-GB', …)`) rather
+ *  than mirroring it in a local table. The table used to say 'Sep'; CLDR abbreviates September
+ *  in en-GB as 'Sept', and every current browser follows it — so on 2026-08-02 the page rendered
+ *  "2 Sept 2026", the helper demanded "2 Sep 2026", and `date-correctness.spec.js:52` went red
+ *  with nothing wrong on the page at all.
+ *
+ *  It was a date-bomb one level up from the usual kind: the DATE was properly dynamic
+ *  (`futureIsoDate(30)`), the FORMAT was hardcoded. September is the only month whose en-GB
+ *  short form is not three letters, so the failure arrived when that 30-day window first
+ *  reached September and would have healed itself in October — then returned every August. */
 export function isoToSummary(iso) {
   const { year, monthIndex, day } = isoParts(iso);
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${day} ${MONTHS[monthIndex]} ${year}`;
+  return new Date(year, monthIndex, day)
+    .toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
