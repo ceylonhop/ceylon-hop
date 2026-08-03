@@ -98,6 +98,15 @@ export function webhookRoutes(deps: {
     const rawBody = await c.req.text();
     const event = isExpectedContentType ? adapter.parseWebhook(rawBody) : null;
     if (!event) {
+      // An EMPTY body is not a lost payment notification, and alerting on one is a false
+      // positive by construction: PayHere never sends an empty notify, and the promote
+      // checklist's own §5 liveness probe is literally `curl -X POST -d ''` against this route.
+      // Every "PayHere webhook rejected" CRITICAL email on 2026-08-02/03 was that probe — the
+      // checklist and the alerting were manufacturing pages for each other, which is exactly
+      // how a team learns to skim past a CRITICAL subject line.
+      //
+      // Still a 401: the request is refused as firmly as before. Only the page is dropped.
+      if (rawBody.length === 0) return c.json({ error: 'invalid_signature' }, 401);
       // This alert used to say "invalid signature — misconfigured merchant secret or someone
       // probing", for all eleven-odd ways a body can be refused. On 2026-08-02 it fired while a
       // customer's card was being declined, and the owner had no way to tell whether PayHere's

@@ -87,6 +87,11 @@ A merged branch is not a running service. Check the deployed thing.
       → **401** (exists, rejects unsigned). A **404** means the route moved and PayHere has
       nowhere to report a payment — money taken, booking stuck at `payment_pending`, no error.
 
+      This probe used to raise a CRITICAL "PayHere webhook rejected" email every time it ran;
+      four of them on 2026-08-02/03 were traced to this line and to nothing else. An empty body
+      is now refused without alerting, so the check is free to run. If you ever see that alert
+      again it is a real body, not this.
+
 ## 6. Environment variables are NOT promoted
 
 Code ships; config does not. A variable the new code reads has to exist on the Render service
