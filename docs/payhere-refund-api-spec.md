@@ -25,17 +25,42 @@ should not be built yet.**
 > whitelisting mechanism for Merchant APIs… please send an email to support@payhere.lk
 > including the IP address of the server from which API requests will originate."
 
-Our API runs on Render. **Render does not give every service a stable outbound IP** — it
-depends on the instance type. So, in order:
+**Resolved 2026-08-02 — Render reports our outbound ranges as:**
 
-1. Confirm the prod service has static outbound IPs (Render dashboard → service → Connect →
-   Outbound). If it does not, this feature is blocked until the service is on a plan that does.
-2. Email `support@payhere.lk` with those IPs and wait for confirmation.
+```
+74.220.52.0/24
+74.220.60.0/24
+```
+
+Both verified as Render's own (`whois` → `OrgName: Render`, within `74.220.48.0/20`). So egress
+is predictable and whitelisting is possible. Two things follow that are not obvious:
+
+**These are Render's SHARED platform ranges, not a dedicated IP for our service.** 512 addresses
+across Render's tenants. Whitelisting them means PayHere will accept a call from *any* Render
+customer's service, not only ours. That is a real weakening of what PayHere intends the control
+to be — so treat the IP allowlist as defence in depth and **`PAYHERE_APP_SECRET` as the actual
+credential**: never log it, never put it in an error message, rotate it if a deploy log is ever
+shared. If PayHere pushes back, or we later want the control to mean what it says, Render offers
+dedicated outbound IPs on some plans — a cost decision, not a code one.
+
+**PayHere's docs ask for "the IP address", singular.** Whether they accept two CIDR ranges is
+unknown and must be asked explicitly — a whitelist that silently took only `74.220.52.0` would
+work about half the time, which is the worst possible failure shape for a refund. Get the
+accepted form confirmed in writing.
+
+Remaining steps, in order:
+
+1. ~~Confirm the prod service has stable outbound IPs.~~ Done, above.
+2. Email `support@payhere.lk` with both ranges; confirm **in writing** that CIDR notation was
+   accepted and both ranges are active.
 3. Only then does a live refund call have any chance of succeeding.
 
 Until (2) is confirmed, every live call returns `status: -2, msg: "Authentication error"` —
 which is indistinguishable from a credentials mistake. **Don't debug this in prod; get the
 whitelist confirmed in writing first.**
+
+None of this blocks sandbox work: sandbox needs no IP whitelisting, and every behaviour worth
+proving (§8 step 4) is provable there.
 
 ### 1.2 Domain whitelisting
 
@@ -301,7 +326,8 @@ proven.
 
 ## 9. Open questions for the owner
 
-1. **Static outbound IP** — does the prod Render service have one? This gates everything.
+1. ~~**Static outbound IP**~~ — resolved: `74.220.52.0/24`, `74.220.60.0/24` (§1.1). Now gated
+   on PayHere confirming **in writing** that both CIDR ranges are whitelisted.
 2. **Threshold for a stronger confirmation** — typed amount above some figure, or same treatment
    for every refund?
 3. **Partial refunds via API too, or full-only first?** Full-only is a smaller surface for the
