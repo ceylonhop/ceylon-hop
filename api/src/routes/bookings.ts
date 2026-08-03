@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { SingleTransferInput } from '../domain/singleTransfer';
+import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
 import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from '../domain/dateRules';
@@ -259,6 +259,23 @@ function termsAcceptedAt(body: unknown): Date | undefined {
   return (body as { termsAccepted?: unknown } | null)?.termsAccepted === true ? new Date() : undefined;
 }
 
+// Billing details for the card, read off the raw body for the same reason as the terms above.
+// Optional — an older cached booking.js sends none, and PayHere then collects them in its own
+// step. But a billing object that IS sent must be complete: `BillingInput` requires
+// address/city/country together, because a half-filled one is how the adapter ends up
+// forwarding a city with no street, which is worse for the issuer's risk check than sending
+// nothing at all. Invalid => 400 at the door rather than a partial address banked on the row.
+type BillingParse =
+  | { ok: true; billing: BillingInput | undefined }
+  | { ok: false };
+
+function billingFrom(body: unknown): BillingParse {
+  const raw = (body as { billing?: unknown } | null)?.billing;
+  if (raw === undefined || raw === null) return { ok: true, billing: undefined };
+  const parsed = BillingInput.safeParse(raw);
+  return parsed.success ? { ok: true, billing: parsed.data } : { ok: false };
+}
+
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -266,6 +283,8 @@ function termsAcceptedAt(body: unknown): Date | undefined {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     // No past dates — a trip can't be booked for a day that has already passed (Asia/Colombo).
     if (isPastIsoDate(parsed.data.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -305,6 +324,7 @@ function termsAcceptedAt(body: unknown): Date | undefined {
         currency: 'USD',
         distanceKm: distance?.km ?? null,
         durationMin: distance?.durationMin ?? null,
+        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
         termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
@@ -321,6 +341,8 @@ function termsAcceptedAt(body: unknown): Date | undefined {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -377,6 +399,7 @@ function termsAcceptedAt(body: unknown): Date | undefined {
         currency: 'USD',
         distanceKm: tripKm === null ? null : Math.round(tripKm),
         durationMin: tripMin === null ? null : Math.round(tripMin),
+        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
         termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
@@ -393,6 +416,8 @@ function termsAcceptedAt(body: unknown): Date | undefined {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     const req = parsed.data;
     // No past dates — a seat can't be booked for a departure that has already passed.
     if (isPastIsoDate(req.date, isoToday())) {
@@ -467,7 +492,7 @@ function termsAcceptedAt(body: unknown): Date | undefined {
     let booking;
     try {
       booking = await bookings.create(
-        { mode: 'shared', input, total, amountDueNow, currency },
+        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing },
         { idempotencyKey: key },
       );
     } catch (err) {

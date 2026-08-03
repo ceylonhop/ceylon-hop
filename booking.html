@@ -401,6 +401,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ph-ico svg{width:30px;height:30px}
   .ph-ico.err{background:#fdeee9;color:#c0392b}
   .ph-ico.warn{background:#fef6e7;color:#b9770e}
+  /* Decline steps inside the overlay. Left-aligned on purpose — the card is centred copy,
+     but a numbered list of things to go and do is read, not glanced at. */
+  .ph-help{margin:16px 0 0;padding:12px 14px;border:1px solid #e6e2dc;border-radius:12px;background:#faf8f5;text-align:left}
+  .ph-help[hidden]{display:none}
+  .ph-help h3{margin:0 0 8px;font-size:.7rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep,#0a9d9a)}
+  .ph-help ol{margin:0;padding-left:18px;font-size:.8rem;line-height:1.55;color:#444}
+  .ph-help li+li{margin-top:6px}
   .ph-actions{display:flex;flex-direction:column;gap:9px;margin-top:22px}
   .ph-btn{border:none;border-radius:11px;padding:12px 16px;font-weight:600;font-size:.9rem;cursor:pointer;font-family:inherit;transition:background .15s}
   .ph-btn-primary{background:var(--accent,#0AB9B6);color:#fff}
@@ -522,6 +529,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-divider{height:0;border-top:2px dashed var(--line);margin:28px 0 22px}
   .form-error{display:flex;align-items:center;gap:.45rem;margin:14px 0 0;color:#b13b22;background:#fdeee9;border:1px solid #f4c9bb;border-radius:10px;padding:.6rem .8rem;font-size:.86rem;font-weight:600}
   .form-error[hidden]{display:none}
+  /* Billing block. `#billnames` is a .grid2, and .grid2 sets `display:grid` — which beats the
+     browser's own `[hidden]{display:none}`, so the cardholder boxes would sit there visible
+     with the attribute set. Every hidden-by-attribute element on this page needs its own
+     pair; this is that pair. */
+  .bill-h{font-size:1.05rem;margin:22px 0 12px;display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}
+  .grid2#billnames[hidden]{display:none}
   .form-error::before{content:"!";display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#ec3a24;color:#fff;font-size:.74rem;font-weight:800;flex:none}
   .inp-bad{border-color:#ec3a24!important;box-shadow:0 0 0 3px rgba(236,58,36,.14)!important}
   .pstep.clickable{cursor:pointer}
@@ -773,6 +786,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="field"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="77 123 4567"></div>
       </div>
       <div class="field"><label for="f-notes">Anything we should know? <span class="muted" style="font-weight:400">(optional)</span></label><textarea id="f-notes" rows="2" placeholder="Hotel name, dietary needs, surf gear…"></textarea></div>
+
+      <!-- Billing details (2026-08-03). These go to the card gateway, and until now this page
+           collected none of them: PayHere asked for the address in its own popup a step later,
+           where we could neither see it, store it as evidence for a dispute, nor attach the
+           postcode — the strongest AVS signal an issuer checks. The pay page (pay.html) has
+           asked for exactly these since 2026-08-01; same fields, same ids, same rules, so the
+           two front doors to the same gateway can't drift apart. -->
+      <h3 class="bill-h">Billing details <span class="muted" style="font-weight:400;font-size:.85rem">as they appear on the card</span></h3>
+      <label class="addon terms-consent"><input type="checkbox" id="f-diffbill"><span>The billing details are different from the lead traveller</span></label>
+      <div class="grid2" id="billnames" hidden>
+        <div class="field"><label for="f-bfirst">Cardholder first name</label><input id="f-bfirst" autocomplete="billing given-name" placeholder="Jordan"></div>
+        <div class="field"><label for="f-blast">Cardholder last name</label><input id="f-blast" autocomplete="billing family-name" placeholder="Reyes"></div>
+      </div>
+      <div class="field"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country"></select></div>
+      <div class="field"><label for="f-addr">Billing address</label><input id="f-addr" autocomplete="billing street-address" placeholder="Street and number"></div>
+      <div class="grid2">
+        <div class="field"><label for="f-city">City</label><input id="f-city" autocomplete="billing address-level2" placeholder="e.g. Amsterdam"></div>
+        <div class="field"><label for="f-state">State / Province <span class="muted" style="font-weight:400">(optional)</span></label><input id="f-state" autocomplete="billing address-level1" placeholder="e.g. NJ"></div>
+      </div>
+      <div class="field"><label for="f-postcode">Postcode / ZIP <span class="muted" style="font-weight:400">(optional)</span></label><input id="f-postcode" autocomplete="billing postal-code"></div>
       <p class="form-error" id="details-error" role="alert" hidden></p>
 
       <div class="pay-divider"></div>
@@ -907,6 +940,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="ph-ico" id="ph-ico" hidden></div>
     <div class="ph-amt" id="ph-amt">$0</div>
     <div class="ph-msg" id="ph-msg">Redirecting you to PayHere&hellip;</div>
+    <!-- What to actually DO about a decline. A card the issuer refused is the one failure the
+         payer can usually fix themselves, and almost never by re-typing anything here — but
+         PayHere's modal says "Declined · try a different payment method" and stops. Shown only
+         after a real attempt at the gateway: a booking that never reached a card must not hand
+         anyone four paragraphs about phoning their bank. Copy lives in decline-help.js, shared
+         with pay.html. -->
+    <div class="ph-help" id="ph-help" hidden></div>
     <div class="ph-actions" id="ph-actions" hidden>
       <button type="button" class="ph-btn ph-btn-primary" id="ph-retry">Try again</button>
       <button type="button" class="ph-btn ph-btn-ghost" id="ph-close">Close</button>
@@ -921,6 +961,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- PayHere hosted-checkout JS SDK (popup + onCompleted/onError callbacks). booking.js uses
      it only when the API returns real PayHere checkout params; otherwise the demo flow runs. -->
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
+<script src="decline-help.js"></script>
 <script src="ch-map.js"></script>
 <script src="booking.js"></script>
 </body>

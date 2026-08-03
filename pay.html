@@ -27,6 +27,7 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="phone-countries.js"></script>
+<script src="decline-help.js"></script>
 <script src="https://www.payhere.lk/lib/payhere.js"></script>
 <style>
   /* pay.html-only. The shared travel-document design lives in ticket.css, which BOTH
@@ -518,18 +519,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
   }
 
-  // A card the issuer refused is the one failure the payer can usually fix themselves, and
-  // almost never by re-typing anything on this page. PayHere's own modal says "Payment
-  // Declined · try a different payment method" and stops there; by the time they are back
-  // here they have decided to pay and been told no, with nothing to act on. Ordered by what
-  // actually clears it: US and EU issuers routinely block a first charge from a Sri Lankan
-  // merchant, and the block lifts the moment the cardholder approves it (2026-08-02).
-  var DECLINE_HELP = [
-    'Check your banking app — a blocked foreign payment usually appears there with an “approve” or “was this you?” prompt. Approving it and paying again is the quickest fix.',
-    'Or call the number on the back of your card and say you’re authorising a payment to a travel company in Sri Lanka.',
-    'Trying a different card can also work — Visa, Mastercard and Amex are assessed separately, so one may go through where another didn’t.',
-    'Still stuck? Message us on WhatsApp and we’ll send you another way to pay. Nothing has been charged.',
-  ];
+  // Shared with booking.html — see decline-help.js for why this copy says what it says.
+  var DECLINE_HELP = window.CH_DECLINE_HELP || [];
 
   function fail(msg, help){
     // If the interstitial (or PayHere) is on screen, rebuild the details step first —
