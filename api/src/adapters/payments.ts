@@ -92,6 +92,30 @@ export interface WebhookRejection {
   currency?: string;
 }
 
+// The outcome of asking the gateway to refund. `unknown` is the whole reason this type exists:
+// PayHere's Refund API has no idempotency key, so a call that times out CANNOT be retried — the
+// refund may already have happened. `unknown` means "a human must look", never "try again".
+export type RefundOutcome = 'succeeded' | 'failed' | 'unknown';
+
+export interface RefundResult {
+  outcome: RefundOutcome;
+  /** PayHere's refund number (`data`). Present only on 'succeeded'. */
+  gatewayRef?: string;
+  /** PayHere's `msg`, or our own description of an indefinite failure. Diagnostic only. */
+  providerMessage?: string;
+}
+
+export interface RefundArgs {
+  /** The GATEWAY's payment id (PayHere `payment_id`), not our payments.id. */
+  gatewayPaymentId: string;
+  amountCents: number;
+  currency: string;
+  /** Sent as `description`; the ops agent's reason, which is also our audit trail. */
+  description: string;
+  /** Full refunds omit `amount` entirely, per PayHere's docs. */
+  isFullRefund: boolean;
+}
+
 export interface PaymentAdapter {
   readonly provider: string;
   createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
@@ -100,6 +124,9 @@ export interface PaymentAdapter {
   // Optional: explain a body parseWebhook refused. Adapters that omit it stay opaque, and the
   // caller falls back to the old undifferentiated alert.
   describeWebhookRejection?(rawBody: string): WebhookRejection | null;
+  // Optional: refund through the gateway's API. An adapter without it means the ops UI offers
+  // the manual dashboard flow only, which is a supported state, not a degraded one.
+  refund?(args: RefundArgs): Promise<RefundResult>;
 }
 
 const DEFAULT_SECRET = process.env.FAKE_PAYMENT_SECRET ?? 'fake-secret';

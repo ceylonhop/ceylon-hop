@@ -24,7 +24,8 @@ import type { AlertLogRepo } from '../db/alertLogRepo';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
-import { RefundError, type RefundRepo } from '../db/refundRepo';
+import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
+import type { PaymentAdapter } from '../adapters/payments';
 import { mayReverse } from '../domain/reversalWindow';
 import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
@@ -57,6 +58,10 @@ export function adminRoutes(deps: {
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
   refunds: RefundRepo;
+  // The gateway itself, for API refunds. Optional: without it (or without an adapter that
+  // implements refund()) the execute route 409s and ops uses the manual dashboard flow, which
+  // is a supported state rather than a degraded one.
+  paymentAdapter?: PaymentAdapter;
   // Manual settlement (mark-paid) needs the payment ledger to record the money and the ride-ops
   // row to write the audit note the booking sheet's activity list renders.
   payments: PaymentRepo;
@@ -193,6 +198,39 @@ export function adminRoutes(deps: {
     }
   });
 
+  // Everything that must happen once money has actually gone back, whoever moved it — the
+  // manual dashboard flow or the Refund API. Shared so the two paths cannot drift: a refund
+  // confirmed by API must release the same seats and send the same email as one confirmed by
+  // hand. Every side effect is best-effort; none may fail the refund that already happened.
+  const afterRefundConfirmed = async (
+    bookingId: string,
+    statusBefore: string,
+    outcome: RefundConfirmation,
+  ): Promise<void> => {
+    const after = await bookings.get(bookingId);
+    if (!after) throw new Error(`booking_not_found_after_refund: ${bookingId}`);
+    // Money fully returned ⇒ the quote behind it was not won after all. A PARTIAL refund
+    // leaves it won: we kept part of the fare, so the business did happen.
+    if (outcome.bookingFullyRefunded) await releaseWonQuote(after.id, 'Booking refunded', deps);
+    if (outcome.bookingFullyRefunded && after.mode === 'shared' && statusBefore !== 'cancelled') {
+      try {
+        await departures.releaseSeats({
+          corridorId: after.input.corridorId,
+          date: after.input.date,
+          time: after.input.time,
+          seats: after.input.seats,
+        });
+      } catch (error) {
+        console.error(`seat release failed for ${after.reference}:`, error);
+      }
+    }
+    try {
+      await sendRefundConfirmation(after, email, outcome.refund.amountCents, outcome.refund.currency);
+    } catch (error) {
+      console.error(`refund email failed for ${after.reference}:`, error);
+    }
+  };
+
   // Confirm and cancel-request carry the SAME gate as the request. The money actually moves at
   // confirm, so the protected last day has to be protected there too; if ops runs out of window
   // mid-flow a founder finishes it, and nothing is stranded.
@@ -210,35 +248,104 @@ export function adminRoutes(deps: {
         gatewayRef: parsed.data.gatewayRef,
         confirmedBy: c.get('identity').email,
       });
-      const after = await bookings.get(c.req.param('id'));
-      if (!after) throw new Error(`booking_not_found_after_refund: ${c.req.param('id')}`);
-      // Money fully returned ⇒ the quote behind it was not won after all. A PARTIAL refund
-      // leaves it won: we kept part of the fare, so the business did happen.
-      if (outcome.bookingFullyRefunded) await releaseWonQuote(after.id, 'Booking refunded', deps);
-      if (outcome.bookingFullyRefunded && after.mode === 'shared' && before.status !== 'cancelled') {
-        try {
-          await departures.releaseSeats({
-            corridorId: after.input.corridorId,
-            date: after.input.date,
-            time: after.input.time,
-            seats: after.input.seats,
-          });
-        } catch (error) {
-          console.error(`seat release failed for ${after.reference}:`, error);
-        }
-      }
-      try {
-        await sendRefundConfirmation(
-          after,
-          email,
-          outcome.refund.amountCents,
-          outcome.refund.currency,
-        );
-      } catch (error) {
-        console.error(`refund email failed for ${after.reference}:`, error);
-      }
+      await afterRefundConfirmed(c.req.param('id'), before.status, outcome);
       return c.json(outcome, 200);
     } catch (error) {
+      return refundError(c, error);
+    }
+  });
+
+  // Refund through PayHere's API instead of by hand. Same gate as confirm — this is the moment
+  // money moves, so the protected last day is protected here too.
+  //
+  // The order below is the entire safety design and must not be rearranged:
+  //   1. beginApi() claims the row as api_processing and commits, BEFORE any HTTP call
+  //   2. the gateway is called
+  //   3. only a DEFINITE answer settles the row
+  // An indefinite answer leaves it in api_processing on purpose. PayHere's Refund API has no
+  // idempotency key, so a retry against an unknown outcome is how a customer is refunded twice.
+  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('bookings:operate'), async (c) => {
+    const blocked = await reversalGate(c, c.req.param('id'));
+    if (blocked) return blocked;
+    const adapter = deps.paymentAdapter;
+    if (!adapter?.refund) return c.json({ error: 'refund_api_unavailable' }, 409);
+    const before = await bookings.get(c.req.param('id'));
+    if (!before) return c.json({ error: 'booking_not_found' }, 404);
+
+    let started;
+    try {
+      started = await deps.refunds.beginApi({
+        bookingId: c.req.param('id'),
+        refundId: c.req.param('refundId'),
+      });
+    } catch (error) {
+      return refundError(c, error);
+    }
+
+    // From here the row is api_processing and the money is in play. Nothing below may throw
+    // its way past the settle step without leaving the row for a human.
+    let result;
+    try {
+      result = await adapter.refund({
+        gatewayPaymentId: started.gatewayPaymentId,
+        amountCents: started.refund.amountCents,
+        currency: started.refund.currency,
+        description: started.refund.reason,
+        isFullRefund: started.isFullRefund,
+      });
+    } catch (error) {
+      // An adapter that threw rather than returning told us nothing about the money.
+      result = { outcome: 'unknown' as const, providerMessage: `threw: ${(error as Error).message}` };
+    }
+
+    if (result.outcome === 'unknown') {
+      void alerts.send({
+        severity: 'critical',
+        kind: 'refund_api_indeterminate',
+        title: `Refund outcome unknown for ${before.reference}`,
+        body:
+          `A refund of ${started.refund.amountCents / 100} ${started.refund.currency} was sent to PayHere ` +
+          `for booking ${before.reference} and we never learned the outcome ` +
+          `(${result.providerMessage ?? 'no detail'}). The money MAY have moved.\n\n` +
+          `Do NOT retry. Open PayHere > Payments, find payment ${started.gatewayPaymentId}, and either ` +
+          `confirm this refund with its reference or, if no refund exists, cancel and re-request.`,
+        dedupeKey: started.refund.id,
+      });
+      return c.json(
+        { error: 'refund_outcome_unknown', refundId: started.refund.id, providerMessage: result.providerMessage },
+        202,
+      );
+    }
+
+    try {
+      const outcome = await deps.refunds.settleApi({
+        bookingId: c.req.param('id'),
+        refundId: c.req.param('refundId'),
+        outcome:
+          result.outcome === 'succeeded'
+            ? { kind: 'succeeded', gatewayRef: result.gatewayRef!, providerMessage: result.providerMessage }
+            : { kind: 'failed', providerMessage: result.providerMessage ?? 'refund declined by gateway' },
+        confirmedBy: c.get('identity').email,
+      });
+      if (result.outcome === 'failed') {
+        return c.json({ error: 'refund_declined', refund: outcome.refund }, 409);
+      }
+      await afterRefundConfirmed(c.req.param('id'), before.status, outcome);
+      return c.json(outcome, 200);
+    } catch (error) {
+      // PayHere said the refund happened and we could not write it down — the worst possible
+      // place to fail, and precisely why it alerts rather than 500s silently.
+      void alerts.send({
+        severity: 'critical',
+        kind: 'refund_api_unrecorded',
+        title: `Refund made but NOT recorded for ${before.reference}`,
+        body:
+          `PayHere reported outcome "${result.outcome}"` +
+          (result.gatewayRef ? ` (ref ${result.gatewayRef})` : '') +
+          ` for booking ${before.reference}, and writing it to the ledger failed: ` +
+          `${(error as Error).message}. Reconcile by hand.`,
+        dedupeKey: started.refund.id,
+      });
       return refundError(c, error);
     }
   });
@@ -442,7 +549,7 @@ export function adminRoutes(deps: {
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
-    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments });
+    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds });
     return c.json(result, 200);
   });
 

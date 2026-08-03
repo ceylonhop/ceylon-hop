@@ -104,4 +104,23 @@ describe('dates.js helpers', () => {
     expect(isoToSummary('2026-08-18')).toBe('18 Aug 2026'); // date-bomb-ok: pure formatter input
     expect(isoToSummary('2027-01-01')).toBe('1 Jan 2027'); // date-bomb-ok: pure formatter input
   });
+
+  // September is the one month whose en-GB short form is not three letters, and the helper used
+  // to hardcode 'Sep'. That drift only shows up when a test's rolling window lands in September,
+  // which is once a year — long enough for the red to read as folklore rather than a bug.
+  it('abbreviates September the way the page does, not the way a hardcoded table would', () => {
+    expect(isoToSummary('2026-09-02')).toBe( // date-bomb-ok: pure formatter input
+      new Date(2026, 8, 2).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+    );
+  });
+
+  // The real contract: whatever the runtime's CLDR says, helper and page say the same thing.
+  it('agrees with the page formatter for every month', () => {
+    for (let m = 0; m < 12; m += 1) {
+      const iso = `2026-${String(m + 1).padStart(2, '0')}-02`; // date-bomb-ok: pure formatter input
+      expect(isoToSummary(iso)).toBe(
+        new Date(2026, m, 2).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      );
+    }
+  });
 });

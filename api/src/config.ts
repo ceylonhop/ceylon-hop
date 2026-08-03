@@ -18,6 +18,11 @@ const Env = z.object({
   PAYHERE_MERCHANT_SECRET: z.string().optional(),
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
+  // Refund API (PayHere Settings -> API Keys, permission "Automated Charging API"). Optional
+  // and deliberately NOT required in production: without them the ops UI simply offers the
+  // manual dashboard refund, which is a supported flow rather than a degraded one.
+  PAYHERE_APP_ID: z.string().optional(),
+  PAYHERE_APP_SECRET: z.string().optional(),
   // Escape hatch for a NON-PRODUCTION deployment that still runs with NODE_ENV=production —
   // staging on Render is exactly that, and it deliberately uses the fake payment adapter.
   // Must be set deliberately: unset (the default) means real production fails closed.

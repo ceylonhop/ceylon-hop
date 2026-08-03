@@ -387,6 +387,8 @@ export function createApp(deps: AppDeps = {}) {
       rideLists,
       ridePaygw: paygw,
       refunds,
+      // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.
+      paymentAdapter: adapter,
       // Manual settlement (mark-paid) records the money in the payment ledger and its audit
       // note on the ride-ops row.
       payments,
