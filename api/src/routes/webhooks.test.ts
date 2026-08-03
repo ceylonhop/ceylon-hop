@@ -669,3 +669,39 @@ describe('payment webhook rejection alerts', () => {
     expect(alerts.sent[0].title).toContain('content_type_unexpected');
   });
 });
+
+// The promote checklist (§5) verifies this route is alive with `curl -X POST -d ''`, expecting
+// 401 — proof the route exists and refuses unsigned callers. Before this, that probe raised a
+// CRITICAL "webhook rejected" email every single promote, and all four alerts on 2026-08-02/03
+// turned out to be exactly that. A monitoring check must not page on itself.
+describe('the promote checklist’s own liveness probe', () => {
+  const payhere = () =>
+    new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox', notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return', cancelUrl: 'https://example.com/cancel',
+    });
+
+  it('still refuses an empty body, but no longer pages anyone about it', async () => {
+    const alerts = new FakeAlertAdapter();
+    const res = await createApp({ adapter: payhere(), alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: '',
+    });
+    expect(res.status).toBe(401);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  // The exemption is for EMPTINESS, not for being unparseable — a body that claims to be a
+  // notify and fails is still the thing worth waking someone for.
+  it('still pages on a non-empty body that cannot be verified', async () => {
+    const alerts = new FakeAlertAdapter();
+    await createApp({ adapter: payhere(), alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'merchant_id=1234567&order_id=CH-ABC12',
+    });
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].severity).toBe('critical');
+  });
+});
