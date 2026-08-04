@@ -20,6 +20,7 @@ import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
+import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import { signQuotePayToken } from '../lib/bookingToken';
@@ -806,15 +807,14 @@ export function internalQuoteRoutes(deps: {
     }
 
     const idempotencyKey = `book:quote:${id}`;
-    // Already booked → return the existing booking; never create a second.
-    const prior = quote.convertedBookingId
-      ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
-    if (prior) {
-      if (!quote.convertedBookingId) await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
-      return c.json(prior, 200);
-    }
 
+    // Read the form FIRST. This used to sit below the already-booked branch, so a re-book
+    // returned the existing booking without the submitted details ever being parsed — the
+    // operator's entry was discarded by a code path that then answered 200, which the ops UI
+    // cannot tell from a real save. On prod (2026-08-04) that left a live booking carrying a
+    // test's name and a staff email address, which is where the customer's mail would have
+    // gone. Same failure as #274/#279 on the pay side: the resume branch dropped the
+    // submission it had just been handed.
     const parsed = BookingDetailsSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       // `details` (flatten) keys only by the TOP-level field, so a bad customer.email
@@ -825,6 +825,36 @@ export function internalQuoteRoutes(deps: {
         .map((i) => `${i.path.join('.') || 'body'}: ${i.message}`)
         .join('; ');
       return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
+    }
+
+    // A quote is welded to at most one booking (idempotency key + a unique constraint on
+    // converted_booking_id), because a double-clicked Confirm must never bill one trip twice.
+    // So a re-book UPDATES that booking rather than making another.
+    const prior = quote.convertedBookingId
+      ? await deps.bookings.get(quote.convertedBookingId)
+      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
+    if (prior) {
+      // Once money has moved the payer on the row is evidence, not a draft. Refuse, and NAME
+      // the booking — "already booked" with nothing to go on is how an operator ends up
+      // pressing the button again.
+      if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
+        return c.json(
+          {
+            error: 'already_booked',
+            reference: prior.reference,
+            status: prior.status,
+            // `message` is what the ops toast shows. Name the booking and say what to do with
+            // it, or the operator's only move is to press Confirm again.
+            message: `This quote is already booked as ${prior.reference}, and that booking is ${prior.status.replace(/_/g, ' ')} — its details can no longer be changed here. Open it from the Bookings queue.`,
+          },
+          409,
+        );
+      }
+      const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
+      // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
+      // booking attached because this only ran on the first pass.
+      await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      return c.json(updated, 200);
     }
 
     let mapped;
