@@ -3,7 +3,7 @@ import type { TripInput } from '../domain/trip';
 import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import type { QuoteRequest, ChauffeurTravelDay } from '../quote/types';
+import type { QuoteRequest, ChauffeurRideDay } from '../quote/types';
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
 // 2026-07-02). Distances come from the maps adapter; anything unresolvable comes back as
@@ -87,18 +87,24 @@ function addDays(ymd: string, days: number): string {
 // The engine only uses chauffeur dates for the day-span + idle-day count, so when the
 // customer left the trip flexible we synthesize a span: `days` long (default one day per
 // leg), legs on consecutive days, extra legs sharing the last day.
-function chauffeurDates(input: TripInput, legs: { from: string; to: string; distanceKm: number }[]): {
+function chauffeurDates(input: TripInput, legs: PricedRide[]): {
   firstDate: string;
   lastDate: string;
-  travelDays: ChauffeurTravelDay[];
+  travelDays: ChauffeurRideDay[];
 } {
-  const real = input.dates?.slice(0, legs.length);
-  if (real && real.length === legs.length && real.every(isUsableDate)) {
-    const sorted = [...real].sort();
+  // `dates` is indexed by the STOP CHAIN (dates[i] = the day you depart stops[i]), so a ride
+  // takes the date of the stop it sets off from. For the flat chain startIndex === i and this
+  // is the old `dates[i]` exactly; for a grouped ride the hops it passes through mid-day
+  // simply don't contribute a date of their own.
+  const ride = (leg: PricedRide) => ({ stops: leg.stops, segmentKms: leg.segmentKms });
+  const real = legs.map((leg) => input.dates?.[leg.startIndex]);
+  if (real.every(isUsableDate)) {
+    const dates = real as string[];
+    const sorted = [...dates].sort();
     return {
       firstDate: sorted[0],
       lastDate: sorted[sorted.length - 1],
-      travelDays: legs.map((leg, i) => ({ date: real[i], ...leg })),
+      travelDays: legs.map((leg, i) => ({ date: dates[i], ...ride(leg) })),
     };
   }
   const days = input.days ?? legs.length;
@@ -106,24 +112,55 @@ function chauffeurDates(input: TripInput, legs: { from: string; to: string; dist
   return {
     firstDate: SYNTHETIC_FIRST_DATE,
     lastDate,
-    travelDays: legs.map((leg, i) => ({ date: i < days ? addDays(SYNTHETIC_FIRST_DATE, i) : lastDate, ...leg })),
+    travelDays: legs.map((leg, i) => ({ date: i < days ? addDays(SYNTHETIC_FIRST_DATE, i) : lastDate, ...ride(leg) })),
   };
 }
 
-export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
-  const legs: { from: string; to: string; distanceKm: number }[] = [];
-  for (let i = 0; i < input.stops.length - 1; i++) {
-    const from = input.stops[i];
-    const to = input.stops[i + 1];
-    let leg = null;
-    try {
-      leg = await maps.distance(from, to);
-    } catch {
-      leg = null;
+/**
+ * The trip as a list of rides, in the order they are travelled.
+ *
+ * Without `legs` that is one ride per consecutive stop pair — the flat chain, unchanged.
+ * With `legs` it is the operator-style grouping: a ride may span several hops and is priced
+ * once (one buffer, one floor), which is the whole reason the field exists.
+ *
+ * `startIndex` is where the ride begins in the stop chain, so a chauffeur travel day can find
+ * its date without `dates` having to be re-indexed per leg.
+ */
+type TripRide = { stops: string[]; startIndex: number };
+// A ride with its segment distances resolved, ready for the engine.
+type PricedRide = { stops: string[]; segmentKms: number[]; startIndex: number };
+
+function tripRides(input: TripInput): TripRide[] {
+  if (input.legs) {
+    const rides: TripRide[] = [];
+    let at = 0;
+    for (const leg of input.legs) {
+      rides.push({ stops: leg.stops, startIndex: at });
+      at += leg.stops.length - 1; // consecutive rides share an endpoint
     }
-    if (!leg) return unpriced(`distance unresolved: ${from} → ${to}`);
-    if (leg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
-    legs.push({ from, to, distanceKm: leg.km });
+    return rides;
+  }
+  return input.stops.slice(0, -1).map((_, i) => ({ stops: [input.stops[i], input.stops[i + 1]], startIndex: i }));
+}
+
+export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: RateCard = RATE_CARD): Promise<PriceOutcome> {
+  const legs: PricedRide[] = [];
+  for (const ride of tripRides(input)) {
+    const segmentKms: number[] = [];
+    for (let s = 0; s < ride.stops.length - 1; s++) {
+      const from = ride.stops[s];
+      const to = ride.stops[s + 1];
+      let seg = null;
+      try {
+        seg = await maps.distance(from, to);
+      } catch {
+        seg = null;
+      }
+      if (!seg) return unpriced(`distance unresolved: ${from} → ${to}`);
+      if (seg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
+      segmentKms.push(seg.km);
+    }
+    legs.push({ stops: ride.stops, segmentKms, startIndex: ride.startIndex });
   }
 
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
@@ -132,7 +169,10 @@ export async function priceTrip(input: TripInput, maps: MapsAdapter, rateCard: R
     return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) }, rateCard);
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
-  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, rateCard);
+  return runEngine(
+    { product: 'private', vehicle, pax: input.pax, bags: 0, legs: legs.map(({ stops, segmentKms }) => ({ stops, segmentKms })) },
+    rateCard,
+  );
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —

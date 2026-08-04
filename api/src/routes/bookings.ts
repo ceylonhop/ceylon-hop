@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
-import { TripInput } from '../domain/trip';
+import { TripInput, ridesMatchChain } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
 import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from '../domain/dateRules';
 import {
@@ -343,6 +343,11 @@ function billingFrom(body: unknown): BillingParse {
     }
     const billing = billingFrom(body);
     if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
+    // Rides must flatten back to the stop chain, or the trip we show and the trip we price
+    // are two different trips (see ridesMatchChain).
+    if (parsed.data.legs && !ridesMatchChain(parsed.data.legs, parsed.data.stops)) {
+      return c.json({ error: 'legs_stops_mismatch' }, 400);
+    }
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
