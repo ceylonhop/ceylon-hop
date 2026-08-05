@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { quote as priceQuote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import { payLines, selectionAmountCents } from '../quote/paySelection';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
@@ -443,5 +446,81 @@ describe('mint → view round trip', () => {
     const { url } = await mint.json();
     const t = new URL(url, 'http://x').searchParams.get('t')!;
     expect((await (await view(app, t)).json()).state).toBe('payable');
+  });
+});
+
+// ── Partial-leg links (spec 2026-08-04) ────────────────────────────────────────────────
+const ENGINE3 = {
+  product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
+  legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 },
+  ],
+};
+
+// A REAL priced 3-leg quote plus a stored selection, minted through the repo the way the mint
+// route does. payLines reads result.lineItems, so a hand-written result would test nothing.
+async function partialQuote(
+  quotes: InMemoryQuoteRepo,
+  sel: { legIndexes: number[]; extraIndexes: number[] },
+  seq = 1,
+) {
+  const result = priceQuote(ENGINE3, RATE_CARD);
+  const q = await quotes.save({
+    channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+    customerContact: 'nimal@x.com', totalCents: result.totalCents, currency: 'USD',
+    rateCardVersion: RATE_CARD.version, result,
+    request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine: ENGINE3 },
+  });
+  await quotes.patch(q.id, { status: 'pending_review' });
+  await quotes.patch(q.id, { status: 'ready' });
+  const soldCents = selectionAmountCents(payLines(q), sel);
+  const saved = (await quotes.patch(q.id, { payLinkSelection: sel, soldCents, payLinkSeq: seq }))!;
+  return { quote: saved, soldCents, token: signQuotePayToken(saved.id, saved.revision, SECRET, seq) };
+}
+
+describe('GET /quotes/pay/view for a partial link', () => {
+  it('shows the picked lines, the coverage and the sold total', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, soldCents, quote: q } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const body = await (await view(createApp({ quotes }), token)).json();
+    expect(body.state).toBe('payable');
+    expect(body.totals.cents).toBe(soldCents);
+    expect(body.totals.cents).toBeLessThan(q.totalCents);
+    expect(body.coverage).toEqual({ soldLegs: 2, totalLegs: 3 });
+    expect(body.lines).toHaveLength(2);
+    expect(body.lines[0].label).toContain('Colombo');
+    // Hand-picked projection: label + amount only, never the internal kind/index.
+    expect(Object.keys(body.lines[0]).sort()).toEqual(['amountCents', 'label']);
+  });
+
+  it('leaks no margin, hot-zone or rate-card data', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const raw = await (await view(createApp({ quotes }), token)).text();
+    expect(raw).not.toMatch(/margin|hotZone|rateCardJson/i);
+  });
+
+  it('a link whose seq is stale renders revised, and cannot be started', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, quote: q } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] }, 1);
+    const app = createApp({ quotes, bookings: new InMemoryBookingRepo() });
+    // Ops re-picks: seq moves to 2, the customer is still holding the seq-1 link.
+    await quotes.patch(q.id, { payLinkSelection: { legIndexes: [1], extraIndexes: [] }, soldCents: 1000, payLinkSeq: 2 });
+    expect((await (await view(app, token)).json()).state).toBe('revised');
+    const res = await start(app, token);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_revised');
+  });
+
+  it('a full-quote link is unchanged — no lines, no coverage', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.state).toBe('payable');
+    expect(body.lines).toBeUndefined();
+    expect(body.coverage).toBeUndefined();
+    expect(body.totals.cents).toBe(q.totalCents);
   });
 });
