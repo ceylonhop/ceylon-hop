@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import type { PaySelection } from '../quote/paySelection';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -91,6 +92,11 @@ export interface SavedQuote {
   intent: unknown;
   intentFingerprint: string | null;
   revision: number;
+  // Partial-leg pay links (spec 2026-08-04). null selection = the outstanding link is for the
+  // full quote; soldCents is the frozen amount a partial link charges; payLinkSeq is monotonic.
+  payLinkSelection: PaySelection | null;
+  soldCents: number | null;
+  payLinkSeq: number;
   accessTokenDigest: string | null;
   convertedBookingId: string | null;
   notes: string | null;
@@ -159,6 +165,12 @@ export interface QuotePatch {
   // Back-link to the booking a won quote became. System-set only — POST /admin/quote/:id/book
   // writes it; the ops PATCH route's zod schema deliberately does not accept it.
   convertedBookingId?: string;
+  // Partial-leg pay links (spec 2026-08-04). Tri-state like rateLock: `undefined` = leave alone,
+  // an object = store, `null` = clear. payLinkSeq is set explicitly by the mint; it is monotonic
+  // and the repo never resets it.
+  payLinkSelection?: PaySelection | null;
+  soldCents?: number | null;
+  payLinkSeq?: number;
 }
 
 // Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
@@ -319,6 +331,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       intent: q.intent ?? null,
       intentFingerprint: q.intentFingerprint ?? null,
       revision: q.revision ?? 1,
+      payLinkSelection: null,
+      soldCents: null,
+      payLinkSeq: 0,
       accessTokenDigest: q.accessTokenDigest ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
@@ -438,6 +453,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.updatedBy !== undefined) row.updatedBy = patch.updatedBy;
     if (patch.convertedBookingId !== undefined) row.convertedBookingId = patch.convertedBookingId;
+    if (patch.payLinkSelection !== undefined) row.payLinkSelection = patch.payLinkSelection;
+    if (patch.soldCents !== undefined) row.soldCents = patch.soldCents;
+    if (patch.payLinkSeq !== undefined) row.payLinkSeq = patch.payLinkSeq;
     row.updatedAt = now;
     return { ...row };
   }
@@ -464,6 +482,12 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.notes = q.notes ?? null;
     row.internalNotes = q.internalNotes ?? null;
     row.requestedService = q.requestedService ?? null;
+    // The stored pay-link selection dies with the content it described. legIndexes are POSITIONAL,
+    // so an edit that reorders or deletes a leg leaves them pointing at legs nobody chose — the
+    // revision bump already retires the token, this stops the stale selection driving the ops
+    // display or a re-mint. payLinkSeq is monotonic and deliberately NOT reset (spec §6).
+    row.payLinkSelection = null;
+    row.soldCents = null;
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;

@@ -528,3 +528,44 @@ describe('expiry is reversible, and reopening un-decides the quote', () => {
     expect((await repo.get(q.id))?.decidedAt).toEqual(before);
   });
 });
+
+describe('pay-link selection (spec 2026-08-04)', () => {
+  it('defaults to no selection and seq 0', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    expect(q.payLinkSelection).toBeNull();
+    expect(q.soldCents).toBeNull();
+    expect(q.payLinkSeq).toBe(0);
+  });
+
+  it('round-trips a selection, amount and seq through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const patched = await repo.patch(q.id, {
+      payLinkSelection: { legIndexes: [0, 2], extraIndexes: [1] },
+      soldCents: 31000,
+      payLinkSeq: 1,
+    });
+    expect(patched!.payLinkSelection).toEqual({ legIndexes: [0, 2], extraIndexes: [1] });
+    expect(patched!.soldCents).toBe(31000);
+    expect(patched!.payLinkSeq).toBe(1);
+  });
+
+  // legIndexes are POSITIONAL, so an edit that reorders or deletes a leg leaves them pointing at
+  // legs nobody chose. The token retires on the revision mismatch, but the stored selection would
+  // still drive the ops display and a re-mint. See spec §6.
+  it('clears the selection on update(), leaving seq monotonic', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    await repo.patch(q.id, {
+      payLinkSelection: { legIndexes: [0], extraIndexes: [] },
+      soldCents: 12000,
+      payLinkSeq: 3,
+    });
+    const updated = await repo.update(q.id, sample({ totalCents: 5000 }));
+    expect(updated!.revision).toBe(q.revision + 1);
+    expect(updated!.payLinkSelection).toBeNull();
+    expect(updated!.soldCents).toBeNull();
+    expect(updated!.payLinkSeq).toBe(3);
+  });
+});

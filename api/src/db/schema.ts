@@ -462,6 +462,12 @@ export const quotes = pgTable('quotes', {
   intentJson: jsonb('intent_json'),
   intentFingerprint: text('intent_fingerprint'),
   revision: integer('revision').notNull().default(1),
+  // Partial-leg pay links (spec 2026-08-04). A NULL selection = the outstanding link is for the
+  // full quote. sold_cents is the FROZEN amount a partial link charges. pay_link_seq is
+  // monotonic per quote and never reset, so a retired link's seq is never reused.
+  payLinkSelection: jsonb('pay_link_selection'),
+  soldCents: integer('sold_cents'),
+  payLinkSeq: integer('pay_link_seq').notNull().default(0),
   accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),

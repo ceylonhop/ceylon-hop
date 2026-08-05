@@ -54,6 +54,9 @@ export function quoteRowToSaved(r: Row): SavedQuote {
     intent: r.intentJson,
     intentFingerprint: r.intentFingerprint,
     revision: r.revision,
+    payLinkSelection: (r.payLinkSelection ?? null) as SavedQuote['payLinkSelection'],
+    soldCents: r.soldCents ?? null,
+    payLinkSeq: r.payLinkSeq ?? 0,
     accessTokenDigest: r.accessTokenDigest,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
@@ -346,6 +349,11 @@ export class PostgresQuoteRepo implements QuoteRepo {
           : {}),
         ...(patch.updatedBy !== undefined ? { updatedBy: patch.updatedBy } : {}),
         ...(patch.convertedBookingId !== undefined ? { convertedBookingId: patch.convertedBookingId } : {}),
+        ...(patch.payLinkSelection !== undefined
+          ? { payLinkSelection: (patch.payLinkSelection ?? null) as object | null }
+          : {}),
+        ...(patch.soldCents !== undefined ? { soldCents: patch.soldCents } : {}),
+        ...(patch.payLinkSeq !== undefined ? { payLinkSeq: patch.payLinkSeq } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
@@ -400,6 +408,13 @@ export class PostgresQuoteRepo implements QuoteRepo {
         // should be asking. Saves happen only while draft/changes_requested, so autosave churn
         // costs nothing: the counter simply climbs while the quote is being worked on.
         revision: sql`${quotes.revision} + 1`,
+        // The stored pay-link selection dies with the content it described: legIndexes are
+        // POSITIONAL, so an edited itinerary leaves them pointing at legs nobody chose. The
+        // revision bump above already retires the token; this stops the stale selection driving
+        // the ops display or a re-mint. payLinkSeq is monotonic and deliberately NOT reset,
+        // so a seq is never reused by a later selection (spec §6).
+        payLinkSelection: null,
+        soldCents: null,
         updatedAt: new Date(),
       })
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
