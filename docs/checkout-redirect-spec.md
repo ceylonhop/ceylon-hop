@@ -1,8 +1,10 @@
 # Replacing the PayHere iframe checkout with a top-level redirect
 
-**Status:** server side built (see the commits on `spec/redirect-checkout`); client side not started.
-**§2.1 is a hard blocker before this SHIPS.** §2.2 was downgraded from a blocker on 2026-08-05 —
-see the owner note in §1.2, which retracts this spec's original reading of the pending payments.
+**Status:** **BUILT** — server and client, on branch `spec/redirect-checkout`. Not merged, not shipped.
+**Both §2 prerequisites are now resolved** (§2.1 answered from the dashboard, §2.2 downgraded —
+see the owner note in §1.2, which retracts this spec's original reading of the pending payments).
+What remains before shipping is §7 verification: sandbox, the decline-redirect question, and real
+devices.
 **Written:** 2026-08-05. **Trigger:** a real customer could not pay quote CH-XKZL3 on 2026-08-05.
 **Scope:** `pay.html` (WhatsApp pay links) only. `booking.html` runs the same SDK and has the same
 defect — see §10; it is deliberately NOT in this spec's scope.
@@ -176,21 +178,29 @@ and itemised `item_name_N` / `amount_N` / `quantity_N` parameters. Both are rele
 
 ## 2. Prerequisites — none of these are code
 
-### 2.1 ⚠️ Confirm which domain(s) the merchant secret is registered for
+### 2.1 ~~Confirm which domain(s) the merchant secret is registered for~~ RESOLVED
 
-PayHere issues the merchant secret **per approved domain**, and approval "will take up to 24 hours".
-Our checkout is served from `pay.ceylonhop.com` today and the SDK path works there, which is
-evidence the current domain arrangement is approved for the current flow — but it is **not** proof
-that a top-level form POST from the same origin is accepted identically, and it says nothing about
-which host `return_url` may point at.
+**Answered 2026-08-05 from the PayHere dashboard (Integrations).** Merchant `243025` has exactly
+**one** registration:
 
-**Action:** open PayHere Side Menu → Integrations and record verbatim which domains are listed
-against merchant `243025`, and which secret belongs to which. Do not infer this from the fact that
-payments currently work.
+```
+TYPE     DOMAIN/APP      GATEWAY CUSTOMIZATION    STATUS
+web      ceylonhop.com   Ceylon Hop (PVT) LTD     Active
+```
 
-**Why this is a blocker:** if the redirect is built against an unapproved origin, every live
-payment fails at the gateway door — and it will fail *identically* to a wrong-secret bug, which is
-the single most expensive thing to debug in production.
+`pay.ceylonhop.com` is **not** separately registered, and does not need to be. PayHere's own
+instruction is to "Enter your **top level** domain", and the arrangement is already proven in
+production: the live pay links have been served from `pay.ceylonhop.com` and signed with this
+secret since 2026-08-02, and real USD charges have settled through them.
+
+**Do NOT add `pay.ceylonhop.com` as a second domain.** Each registration issues its OWN merchant
+secret, and the server holds one. A second secret is how you get a `hash` signed with the wrong
+key — which fails identically to every other credentials mistake, and is the exact confusion this
+section existed to prevent.
+
+Nothing about the redirect changes this: the form is served from the same origin, with the same
+merchant id, secret and hash as the iframe flow. Only `return_url` moves, and no documented
+domain validation applies to it.
 
 ### 2.2 Confirm CH-XKZL3 in the PayHere dashboard
 
