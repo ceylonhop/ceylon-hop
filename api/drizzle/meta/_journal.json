@@ -274,6 +274,13 @@
       "when": 1786172000000,
       "tag": "0038_pay_link_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786258400000,
+      "tag": "0039_customer_total_baseline",
+      "breakpoints": true
     }
   ]
 }

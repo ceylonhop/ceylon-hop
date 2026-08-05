@@ -468,6 +468,11 @@ export const quotes = pgTable('quotes', {
   payLinkSelection: jsonb('pay_link_selection'),
   soldCents: integer('sold_cents'),
   payLinkSeq: integer('pay_link_seq').notNull().default(0),
+  // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
+  // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
+  customerTotalCents: integer('customer_total_cents'),
+  customerTotalAt: timestamp('customer_total_at', { withTimezone: true }),
+  customerTotalVia: text('customer_total_via'),
   accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
