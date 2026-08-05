@@ -21,6 +21,13 @@ export interface CreateCheckoutArgs {
   amount: number; // minor units
   currency: string;
   items?: string;
+  /**
+   * Where the gateway sends the customer afterwards, for THIS checkout. Omitted, the adapter's
+   * constructor URLs apply — which are the website checkout's pages, and the wrong destination
+   * for a pay-link customer. Never part of the payment hash.
+   */
+  returnUrl?: string;
+  cancelUrl?: string;
   customer?: {
     firstName: string;
     lastName: string;

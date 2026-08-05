@@ -145,8 +145,11 @@ export class PayHerePaymentAdapter implements PaymentAdapter {
     const c = args.customer;
     const fields: Record<string, string> = {
       merchant_id: this.merchantId,
-      return_url: this.opts.returnUrl,
-      cancel_url: this.opts.cancelUrl,
+      // Per-checkout when the caller names one (a pay link comes back to the pay page, not to
+      // booking.html); otherwise the constructor's, which is what every website checkout uses.
+      // Outside the hash by PayHere's definition — asserted by payhere.test.ts.
+      return_url: args.returnUrl ?? this.opts.returnUrl,
+      cancel_url: args.cancelUrl ?? this.opts.cancelUrl,
       notify_url: this.opts.notifyUrl,
       order_id: args.orderId,
       items: args.items ?? 'Ceylon Hop booking',

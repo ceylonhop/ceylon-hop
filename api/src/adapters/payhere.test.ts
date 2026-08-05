@@ -548,3 +548,34 @@ describe('PayHere token failures name their cause', () => {
     expect(result.providerMessage).toContain('invalid_client');
   });
 });
+
+// Per-checkout return/cancel URLs (spec: docs/checkout-redirect-spec.md §D3). The adapter's
+// constructor URLs are the WEBSITE checkout's pages; a pay-link customer must come back to the
+// pay page instead. Absent args keep the constructor values, so the website flow is untouched.
+describe('PayHerePaymentAdapter — per-checkout return/cancel URLs', () => {
+  const base = { orderId: 'CH-ABC12', amount: 4000, currency: 'USD' } as const;
+
+  it('falls back to the constructor URLs when the caller names none', async () => {
+    const p = await adapter().createCheckout({ ...base });
+    expect(p.fields?.return_url).toBe('https://site/return');
+    expect(p.fields?.cancel_url).toBe('https://site/cancel');
+  });
+
+  it('uses the caller\'s URLs when given', async () => {
+    const p = await adapter().createCheckout({
+      ...base,
+      returnUrl: 'https://pay.example.com/pay.html?rt=TOKEN',
+      cancelUrl: 'https://pay.example.com/pay.html?rt=TOKEN&cancelled=1',
+    });
+    expect(p.fields?.return_url).toBe('https://pay.example.com/pay.html?rt=TOKEN');
+    expect(p.fields?.cancel_url).toBe('https://pay.example.com/pay.html?rt=TOKEN&cancelled=1');
+  });
+
+  // The hash covers merchant_id + order_id + amount + currency ONLY. If overriding the URLs ever
+  // changed it, every live payment would be refused at the gateway door.
+  it('does not change the hash', async () => {
+    const withUrls = await adapter().createCheckout({ ...base, returnUrl: 'https://a/x', cancelUrl: 'https://a/y' });
+    const without = await adapter().createCheckout({ ...base });
+    expect(withUrls.fields?.hash).toBe(without.fields?.hash);
+  });
+});
