@@ -595,6 +595,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-paypicker-warn { margin: 8px 0 0; padding: 7px 10px; font-size: 12px; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 8px; }
 .qv .ch-paypicker-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .qv .ch-paypicker-sum { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.legs-coverage { margin: 0 0 8px; padding: 6px 10px; font-size: .84rem; color: var(--ink-faint); background: var(--cream, #faf6ee); border: 1px dashed var(--line, #e8e0d2); border-radius: 8px; }
 .qv .ch-paypartial-chip { margin: 0 0 10px; padding: 6px 10px; font-size: 12px; color: var(--muted-2); background: var(--cream); border: 1px dashed var(--line); border-radius: 8px; }
 .qv .ch-review-banner { display: flex; align-items: baseline; gap: 8px; padding: 7px 12px; border-radius: 999px; margin-bottom: 10px; border: 1px solid transparent; width: fit-content; max-width: 100%; }
 .qv .ch-review-banner b { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
@@ -2587,6 +2588,11 @@ function buildActivity(t,d){
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
+  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. The leg rows
+     below render every consecutive stop pair as driven — this line is what contradicts a gap. */
+  const cov=d?.coverage
+    ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
+    : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
     const stops=b.input.stops,dates=b.input.dates||[];
     let rows='';
@@ -2594,9 +2600,9 @@ function legsHtmlFor(d){
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
       rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}</span></div>`;
     }
-    return `<div class="legs">${rows}</div>`;
+    return cov+`<div class="legs">${rows}</div>`;
   }
-  return '<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
+  return cov+'<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
 }
 
 function refundSummary(d){
