@@ -338,37 +338,90 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sec .ln{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)} .sec .tag{font-family:var(--mono);font-size:.74rem;color:var(--ink-faint);font-weight:700}
   .muted{color:var(--ink-faint);font-style:italic;padding:8px 2px}
 
-  /* slide-over */
-  .scrim{position:fixed;inset:0;background:rgba(27,23,20,.44);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:.28s;z-index:40}
+  /* slide-over — the booking reads as a boarding pass: stage-tinted ticket header,
+     vitals stub, perforated tear line, working body, sticky action foot (redesign 2026-08).
+     Class names are contracts (e2e + handlers) — restyled, never renamed. */
+  .scrim{position:fixed;inset:0;background:rgba(20,16,13,.38);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:.28s;z-index:40}
   .scrim.show{opacity:1;pointer-events:auto}
-  .sheet{position:fixed;top:0;right:0;height:100vh;height:100dvh;width:548px;max-width:96vw;background:var(--cream);box-shadow:var(--shadow-lg);transform:translateX(103%);transition:transform .36s cubic-bezier(.22,.71,.25,1);z-index:50;display:flex;flex-direction:column}
+  .sheet{position:fixed;top:10px;right:10px;bottom:10px;width:500px;max-width:calc(100vw - 20px);background:var(--paper);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);transform:translateX(calc(100% + 30px));transition:transform .4s cubic-bezier(.22,.9,.28,1);z-index:50;display:flex;flex-direction:column;overflow:hidden}
   .sheet.show{transform:none}
-  .sheet-h{padding:24px 28px 19px;border-bottom:1px solid var(--line);background:linear-gradient(162deg,color-mix(in srgb,var(--cbg) 72%,var(--paper)),var(--paper) 78%);position:relative}
-  .sheet-h::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--c);opacity:.55}
-  .sheet-h .x{float:right;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:7px 10px;font-weight:700;color:var(--ink-soft);transition:.15s}
-  .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft)}
-  .sheet-h .ey{font-size:.67rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:9px}
-  .sheet-h h2{font-family:var(--display);font-size:1.78rem;font-weight:600;margin:9px 0 0;line-height:1.04;letter-spacing:-.02em}
-  .sheet-h .rf{font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);font-weight:600;margin-top:6px;display:inline-block}
-  .sheet-b{overflow-y:auto;padding:6px 28px 36px;flex:1}
+  @media(max-width:700px){.sheet{top:0;right:0;bottom:0;max-width:100vw;border-radius:0;border:0}}
+  .sheet-h{padding:18px 22px 15px;background:linear-gradient(165deg,color-mix(in srgb,var(--c) 13%,var(--paper)),var(--paper) 82%);position:relative;flex:none}
+  .sheet-h::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 18%,transparent))}
+  .sh-top{display:flex;align-items:center;gap:9px}
+  .sheet-h .x{margin-left:auto;flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:0;font-weight:700;color:var(--ink-soft);transition:.15s}
+  .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft);transform:translateY(-1px)}
+  .sheet-h .ey{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sheet-h h2{font-family:var(--display);font-size:1.55rem;font-weight:600;margin:9px 0 0;line-height:1.08;letter-spacing:-.02em;overflow-wrap:anywhere}
+  .sheet-h h2.sm{font-size:1.22rem}  /* long Google-profile names: wrap smaller, don't shout */
+  .idrow{display:flex;align-items:center;gap:9px;margin-top:7px}
+  .sheet-h .rf{font-family:var(--mono);font-size:.74rem;color:var(--ink-soft);font-weight:600;display:inline-flex;align-items:center;gap:5px;border:0;background:none;padding:3px 7px;margin-left:-7px;border-radius:7px;transition:.15s;cursor:pointer}
+  .sheet-h .rf:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+  .sheet-h .rf svg{width:11px;height:11px;opacity:.55}
+  .idrow .pill{flex:none}
+  .sheet-b{overflow-y:auto;padding:2px 22px 24px;flex:1;overscroll-behavior:contain}
   .sheet-b::-webkit-scrollbar{width:8px}.sheet-b::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
-  .block{padding:18px 0;border-bottom:1px solid var(--line)}
+  .block{padding:15px 0 17px;border-bottom:1px solid var(--line-soft)}
   .block:last-child{border-bottom:0}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-  .block h4{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}
+  .block h4{font-size:.63rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 11px;display:flex;justify-content:space-between;align-items:center}
   .block h4 .lnk{font-size:.75rem;color:var(--teal-deep);font-weight:700;text-transform:none;letter-spacing:0;cursor:pointer}
-  .kv{display:flex;justify-content:space-between;gap:14px;padding:5px 0;font-size:.92rem}.kv .k{color:var(--ink-soft)}.kv .v{font-weight:600;text-align:right}
-  /* pipeline — connected stepper, current node glows */
-  .pipe{display:flex;align-items:flex-start;margin:4px 0 18px}
-  .pstep{flex:1;position:relative;text-align:center;font-size:.58rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-faint);padding-top:21px;line-height:1.2}
-  .pstep::before{content:"";position:absolute;top:5px;left:50%;width:12px;height:12px;border-radius:50%;background:var(--cream-deep);transform:translateX(-50%);border:2px solid var(--cream);z-index:2;transition:.2s}
-  .pstep::after{content:"";position:absolute;top:11px;left:-50%;width:100%;height:2px;background:var(--cream-deep);z-index:1}
+  /* key · dotted leader · value — the leader is a flex-ordered pseudo, zero extra markup */
+  .kv{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:.9rem}
+  .kv .k{color:var(--ink-soft);flex:none;order:1}
+  .kv::before{content:"";order:2;flex:1;min-width:14px;border-bottom:2px dotted var(--line);transform:translateY(-4px)}
+  .kv .v{font-weight:600;text-align:right;order:3;min-width:0;overflow-wrap:anywhere}
+  /* pipeline — journey rail in the ticket header: stops on a line, current stop pulses */
+  .pipe{display:flex;align-items:flex-start;margin:14px 0 2px}
+  .pstep{flex:1;position:relative;text-align:center;font-size:.55rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);padding-top:20px;line-height:1.2;transition:color .3s}
+  .pstep::before{content:"";position:absolute;top:4px;left:50%;width:11px;height:11px;border-radius:50%;background:var(--cream-deep);transform:translateX(-50%);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--line);z-index:2;transition:.3s}
+  .pstep::after{content:"";position:absolute;top:9px;left:-50%;width:100%;height:2px;background:var(--line);z-index:1;transition:background .3s}
   .pstep:first-child::after{display:none}
-  .pstep.done{color:var(--ink-soft)}.pstep.done::before{background:var(--c)}.pstep.done::after{background:var(--c)}
+  .pstep.done{color:var(--ink-soft)}.pstep.done::before{background:var(--c);box-shadow:0 0 0 1px var(--c)}.pstep.done::after{background:var(--c)}
   .pstep.cur{color:var(--c)}
-  .pstep.cur::before{background:var(--c);box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 24%,transparent);animation:nodepulse 2.1s ease-in-out infinite}
-  .pstep.cur::after{background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 35%,var(--cream-deep)))}
+  .pstep.cur::before{background:var(--c);box-shadow:0 0 0 1px var(--c),0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent);animation:nodepulse 2.1s ease-in-out infinite}
+  .pstep.cur::after{background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 35%,var(--line)))}
+  /* ticket stub — the vitals, readable before any scrolling */
+  .sheet-stub{display:grid;grid-template-columns:1.02fr 1.08fr .62fr .95fr;flex:none;background:color-mix(in srgb,var(--c) 5%,var(--paper));border-top:1px solid var(--line-soft)}
+  @media(max-width:700px){.sheet-stub{grid-template-columns:1.3fr 1fr}.stub:nth-child(3),.stub:nth-child(4){display:none}}
+  .stub{padding:10px 12px;border-left:1px dashed var(--line);min-width:0}
+  .stub:first-child{border-left:0;padding-left:22px}
+  .stub .sl{font-size:.55rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .stub .sv{font-family:var(--mono);font-weight:700;font-size:.84rem;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+  .stub .sv .paych{font-family:var(--body);font-size:.6rem;font-weight:800;border-radius:999px;padding:2px 6px;letter-spacing:.02em;flex:none}
+  .stub .sv .paych.ok{color:var(--ok);background:var(--ok-bg)}
+  .stub .sv .paych.due{color:var(--wait);background:var(--wait-bg)}
+  /* perforation — the tear line between stub and working body */
+  .perf{position:relative;height:20px;flex:none;background:var(--paper)}
+  .perf::before{content:"";position:absolute;left:18px;right:18px;top:50%;border-top:2px dashed var(--line)}
+  .perf i{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;background:var(--cream);border:1px solid var(--line);transform:translateY(-50%)}
+  .perf i:first-child{left:-11px}.perf i:last-child{right:-11px}
+  /* sticky action foot — the primary action is reachable from any scroll depth */
+  .sheet-foot{flex:none;display:flex;gap:9px;align-items:center;padding:12px 18px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(12px)}
+  .sheet-foot .btn-go{flex:1;justify-content:center}
+  /* detail-loading skeleton — never show confident zeros while the fetch is in flight */
+  .sheet-b.skel .sk{border-radius:8px;height:13px;background:linear-gradient(100deg,var(--line-soft),var(--cream-deep),var(--line-soft));background-size:200% 100%;animation:anshimmer 1.2s infinite linear}
+  .sheet-b.skel .sk.big{height:22px}
+  @media(prefers-reduced-motion:reduce){.sheet-b.skel .sk{animation:none;background:var(--line-soft)}}
+  /* ride-board: threshold ring + manifest rows */
+  .threshold{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:color-mix(in srgb,var(--cream) 45%,var(--paper))}
+  .threshold .ring{--p:0;width:44px;height:44px;border-radius:50%;flex:none;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--cream-deep) 0);display:grid;place-items:center;position:relative}
+  .threshold .ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--paper)}
+  .threshold .ring b{position:relative;font-family:var(--mono);font-size:.66rem}
+  .threshold .tt{flex:1;min-width:0}
+  .threshold .tt b{display:block;font-size:.9rem}
+  .threshold .tt span{font-size:.75rem;color:var(--ink-soft)}
+  .mrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line-soft);font-size:.88rem}
+  .mrow:first-of-type{border-top:0}
+  .mrow .mn{width:23px;height:23px;border-radius:8px;background:var(--cream-deep);display:grid;place-items:center;font-family:var(--mono);font-size:.64rem;font-weight:700;color:var(--ink-soft);flex:none}
+  .mrow .who{flex:1;min-width:0;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mrow .who small{font-weight:500;color:var(--ink-faint);margin-left:6px}
+  .mrow .mseats{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);flex:none}
+  .mrow .mst{font-size:.64rem;font-weight:800;padding:3px 8px;border-radius:999px;flex:none;color:var(--wait);background:var(--wait-bg)}
+  .mrow .mst.charged{color:var(--ok);background:var(--ok-bg)}
+  .mrow .mst.charge_failed{color:var(--alert);background:var(--alert-bg)}
+  .mrow .mst.scratched{color:var(--idle);background:var(--idle-bg)}
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
@@ -2725,28 +2778,87 @@ function refundHtmlFor(t,d){
    and when the names stop being collected. Actions land when the board gets an
    ops-side confirm/cancel API. ── */
 const MEMBER_STATE={held:'Held',charged:'Paid',charge_failed:'Card failed',scratched:'Scratched'};
+/* booking extras are stored as machine slugs; the sheet prints them for humans */
+const EXTRA_LBL={sightseeing:'Sightseeing stops',luggage:'Extra luggage',front:'Front seat',flex:'Flexible timing',waiting:'Waiting time','safari-wait':'Safari wait'};
+/* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
+function sheetHeadHtml(t,o){
+  const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
+  return `<div class="sheet-h">
+      <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
+      <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
+      <div class="idrow">
+        <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
+        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>
+      </div>${pipe}
+    </div>
+    <div class="sheet-stub">${o.stub}</div>
+    <div class="perf"><i></i><i></i></div>`;
+}
+function bookingStubHtml(t){
+  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
+    +`<div class="stub"><div class="sl">Travel</div><div class="sv">${t.date?esc(fmtDate(t.date)):'Flexible'}${t.time?' · '+esc(t.time):''}</div></div>`
+    +`<div class="stub"><div class="sl">Guests</div><div class="sv">${t.guests==null?'—':esc(String(t.guests))}</div></div>`
+    +`<div class="stub"><div class="sl">Type</div><div class="sv">${esc(MODE[t.mode]||t.mode)}</div></div>`;
+}
+function boardStubHtml(t){
+  const b=t.board||{};
+  return `<div class="stub"><div class="sl">Held</div><div class="sv">${money(t)}</div></div>`
+    +`<div class="stub"><div class="sl">Travel</div><div class="sv">${t.date?esc(fmtDate(t.date)):'—'}${t.time?' · '+esc(t.time):''}</div></div>`
+    +`<div class="stub"><div class="sl">Seats</div><div class="sv">${b.seatsCommitted??0} / ${b.minSeats??0}</div></div>`
+    +`<div class="stub"><div class="sl">Capacity</div><div class="sv">${b.capacity??'—'}</div></div>`;
+}
+/* skeleton body — shown while the /bookings/:id fetch is in flight. The header above it is
+   honest (it comes from the queue row already on screen); what must NOT render yet are the
+   money and refund numbers, which would otherwise flash confident $0.00s. */
+function sheetSkelHtml(){
+  const block=(a,b,c)=>`<div class="block" aria-hidden="true"><div class="sk" style="width:${a}%;margin-bottom:14px"></div><div class="sk big" style="width:${b}%;margin-bottom:10px"></div><div class="sk" style="width:${c}%"></div></div>`;
+  return `<div class="sheet-b skel" aria-busy="true" aria-label="Loading booking details">${block(30,72,55)}${block(26,60,80)}${block(34,66,48)}</div>`;
+}
+/* sticky action foot — one primary action, always reachable. Irreversible actions
+   (cancel/refund) deliberately stay at the BOTTOM of the scrolling body, not here. */
+function sheetFootHtml(t,nx){
+  if(t.stage==='awaiting_payment')return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
+  if(!nx)return '';
+  return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
+    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button></div>`;
+}
+/* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
+   note must not throw the scroll position away or eat text the operator is mid-typing.
+   (Same morphdom already diff-rendering the quotes list.) */
+function morphSheet(sh,html){
+  morphdom(sh,'<aside>'+html+'</aside>',{
+    childrenOnly:true,
+    /* key by id ONLY — ids are unique in the sheet. data-refund-id looked tempting but a
+       pending refund renders TWO buttons carrying the same value (confirm + cancel), and
+       duplicate keys corrupt morphdom's matching, splicing stale subtrees into the new render. */
+    getNodeKey:function(n){if(n.nodeType!==1)return undefined;return n.id||undefined;},
+    onBeforeElUpdated:function(fromEl,toEl){
+      if((fromEl.tagName==='INPUT'||fromEl.tagName==='SELECT')&&(fromEl===document.activeElement||fromEl.value))return false;
+      return !fromEl.isEqualNode(toEl);
+    },
+  });
+}
 function boardSheetHtml(t,st){
   const b=t.board||{seatsCommitted:0,minSeats:0,capacity:0,members:[],seatPrice:0};
   const runs=b.seatsCommitted>=b.minSeats;
   const spare=Math.max(0,(b.capacity||0)-(b.seatsCommitted||0));
-  const rows=(b.members||[]).map(m=>{
-    const bad=m.status==='charge_failed';
-    return `<div class="kv"><span class="k">${m.position}. ${esc(m.firstName)}${m.country?' · '+esc(m.country):''}</span>`
-      +`<span class="v">${m.seats} seat${m.seats===1?'':'s'} · <b style="color:${bad?'var(--alert)':'inherit'}">${esc(MEMBER_STATE[m.status]||m.status)}</b></span></div>`;
-  }).join('')||'<p class="muted" style="padding:0">Nobody on this van yet.</p>';
+  const pct=b.minSeats?Math.min(100,Math.round(b.seatsCommitted/b.minSeats*100)):0;
+  const rows=(b.members||[]).map(m=>
+    `<div class="mrow"><span class="mn">${esc(String(m.position))}</span>`
+    +`<span class="who">${esc(m.firstName)}${m.country?`<small>${esc(m.country)}</small>`:''}</span>`
+    +`<span class="mseats">${m.seats} seat${m.seats===1?'':'s'}</span>`
+    +`<span class="mst ${esc(m.status)}">${esc(MEMBER_STATE[m.status]||m.status)}</span></div>`
+  ).join('')||'<p class="muted" style="padding:0">Nobody on this van yet.</p>';
   const cutoff=b.cutoffAt?fmtDateTime(b.cutoffAt):'—';
-  return `
-    <div class="sheet-h"><button class="x" data-act="close">✕</button>
-      <div class="ey"><span class="chan board" style="width:22px;height:22px;border-radius:6px">${ICON.van}</span> Ride board van</div>
-      <h2>${esc(t.route)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${esc(stageLabel(t))}</span>
-    </div>
+  const head=sheetHeadHtml(t,{
+    ey:`<span class="chan board" style="width:22px;height:22px;border-radius:6px">${ICON.van}</span> Ride board van`,
+    title:t.route,pill:stageLabel(t),stub:boardStubHtml(t),pipe:false});
+  return head+`
     <div class="sheet-b">
       <div class="block"><h4>Will it run?</h4>
-        <div class="kv"><span class="k">Seats</span><span class="v"><b>${b.seatsCommitted} of ${b.minSeats}</b> needed${runs?` · ${spare} spare of ${b.capacity}`:''}</span></div>
-        <div class="kv"><span class="k">Status</span><span class="v">${runs
-          ?'<span style="color:var(--ok);font-weight:700">Threshold met — the van runs</span>'
-          :'<span style="color:var(--wait);font-weight:700">Still gathering names</span>'}</span></div>
-        <div class="kv"><span class="k">Names close</span><span class="v">${esc(cutoff)}</span></div>
+        <div class="threshold"><div class="ring" style="--p:${pct}"><b>${b.seatsCommitted}/${b.minSeats}</b></div>
+          <div class="tt"><b>${runs?'Threshold met — the van runs':'Still gathering names'}</b>
+          <span>${runs?`${spare} spare of ${b.capacity}`:`${Math.max(0,b.minSeats-b.seatsCommitted)} more needed`} · names close ${esc(cutoff)}</span></div></div>
       </div>
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
@@ -2777,8 +2889,16 @@ function renderSheet(){
   /* Ride-board vans get their own read-only sheet: no pipeline, no flags, no
      notes — none of those exist for a list. Just the manifest ops needs to run it. */
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
-  const pipe=STAGES.map((s,i)=>`<span class="pstep ${i<idx?'done':i===idx?'cur':''}" style="${stVars(s)}">${STAGE[s].short}</span>`).join('');
-  const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">Loading activity…</p>';
+  const head=sheetHeadHtml(t,{
+    ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
+    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx});
+  /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
+     print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
+  if(!d){
+    morphSheet(sh,head+sheetSkelHtml()+sheetFootHtml(t,nx));
+    sc.classList.add('show');sh.classList.add('show');return;
+  }
+  const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
@@ -2790,41 +2910,32 @@ function renderSheet(){
      payments:act holder can keep. An ops agent told a stranded booking can be settled here
      hunts for a button they will never see — so name who can instead. */
   const recordedBy=canSettle?'recorded here':'recorded by a founder or finance';
-  let pipeAction;
+  /* Pending bookings get a "Next up" block: the situation, the payment link (once the
+     backend has actually issued one) and the manual settle row. The reminder button itself
+     is the sheet-foot primary — one copy of each action, never two. */
+  let pendingBlock='';
   if(isPending){
     const settle=canSettle?`<div class="settle">
         <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
         <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
       </div>`:'';
-    /* The old copy said payment "lands automatically via the webhook". That is false for the
-       bookings that actually sit here: a WhatsApp quote converted to a booking is settled by
-       cash or bank transfer, and no webhook is ever coming for it. This wording holds either
-       way — link or hand-collected. */
     const link=d&&d.payLink;
-    /* Only offer the link once the backend has actually issued one. It used to be advertised
-       unconditionally, in copy alone, for a booking that had no payable link anywhere. */
     const linkBtn=link?`<button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy payment link</button>`:'';
     /* Both halves of the sentence have to be true for whoever is reading it: the link half
        only when one exists, and `recordedBy` names who can settle when the reader can't. */
     const arrive=link?`It can still arrive through the payment link, or be ${recordedBy}`:`It can be ${recordedBy}`;
-    pipeAction=`<div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
-      <div class="sheet-actions"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button>${linkBtn}${settle}</div>`;
-  }else if(nx){
-    pipeAction=`<div class="sheet-actions" style="margin-top:12px">`
-      +`<button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
-      +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button>`
-      +`</div>`;
-  }else{pipeAction='';}
-  /* Cancel and Refund now live together at the FOOT of the sheet (owner, 2026-08-02) — the two
-     irreversible actions, side by side, below everything you'd want to read before pressing
-     either. See reverseActionsFor(). */
-  sh.innerHTML=`
-    <div class="sheet-h"><button class="x" data-act="close">✕</button>
-      <div class="ey"><span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}</div>
-      <h2>${esc(t.cust)}</h2><span class="rf">${esc(t.ref)}</span> <span class="pill" style="margin-left:8px"><span class="pd"></span>${st.label}</span>
-    </div>
+    pendingBlock=`<div class="block"><h4>Next up</h4>
+      <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
+  }
+  const extras=Array.isArray(d?.booking?.input?.extras)?d.booking.input.extras:[];
+  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(EXTRA_LBL[x]||x)).join(' · ')}</span></div>`:'';
+  /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
+     two irreversible actions, side by side, below everything you'd want to read before
+     pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
+  morphSheet(sh,head+`
     <div class="sheet-b">
-      <div class="block"><h4>Pipeline</h4><div class="pipe">${pipe}</div>${pipeAction}</div>
+      ${pendingBlock}
       <div class="block"><h4>Customer</h4>
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
@@ -2834,6 +2945,7 @@ function renderSheet(){
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
+        ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
       <div class="block"><h4>Payment</h4>
@@ -2852,12 +2964,14 @@ function renderSheet(){
         <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div>
       </div>
       ${reverseActionsFor(t,d)}
-    </div>`;
+    </div>`+sheetFootHtml(t,nx));
   sc.classList.add('show');sh.classList.add('show');
 }
 
 async function openDetail(id){
   state.detail=id;state.detailData=null;renderSheet();
+  /* fresh booking → fresh scroll; morphdom otherwise preserves the previous booking's position */
+  const _sb=document.querySelector('#sheet .sheet-b');if(_sb)_sb.scrollTop=0;
   /* A ride-board van has no booking row — GET /bookings/board:XX-1234 would 404.
      Everything its sheet shows already arrived on the queue row. */
   if(String(id).indexOf('board:')===0)return;
@@ -2877,6 +2991,13 @@ async function openDetail(id){
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details','error');}}
 }
 
+/* Post-mutation refetch, guarded: by the time a slow response lands the operator may have
+   opened a DIFFERENT booking — writing the stale payload into state.detailData unguarded
+   painted booking A's customer inside booking B's sheet (race found 2026-08-04). */
+async function refreshDetail(id){
+  const d=await api.get('/bookings/'+id).catch(()=>null);
+  if(d&&state.detail===id)state.detailData=d;
+}
 async function reloadRefundDetail(id){
   const detail=await api.get('/bookings/'+id);
   detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
@@ -3138,10 +3259,10 @@ document.addEventListener('click',async e=>{
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
-    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
-    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
-    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
       /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
@@ -3152,7 +3273,7 @@ document.addEventListener('click',async e=>{
       if(!cancelReason){toast('Give a reason first — it is saved against the booking','error');if(reasonEl)reasonEl.focus();break;}
       if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
       el.disabled=true;
-      try{await adminApi.post(`/bookings/${id}/cancel`,{reason:cancelReason});toast('Booking cancelled — customer emailed');state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      try{await adminApi.post(`/bookings/${id}/cancel`,{reason:cancelReason});toast('Booking cancelled — customer emailed');await refreshDetail(id);await refreshRow(id);}
       catch(err){
         if(err.message==='auth')break;
         if(el.isConnected)el.disabled=false;
@@ -3178,7 +3299,7 @@ document.addEventListener('click',async e=>{
          reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
       if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
       el.disabled=true;
-      try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);state.detailData=await api.get('/bookings/'+id).catch(()=>state.detailData);await refreshRow(id);}
+      try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);await refreshDetail(id);await refreshRow(id);}
       catch(err){
         if(err.message==='auth')break;
         if(el.isConnected)el.disabled=false;
@@ -3193,6 +3314,7 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'payreminder':{const text=payreminder(t,state.detailData&&state.detailData.payLink);navigator.clipboard&&navigator.clipboard.writeText(text).catch(()=>{});toast('Payment reminder copied');break;}
+    case 'copyref':{if(t){navigator.clipboard&&navigator.clipboard.writeText(t.ref).catch(()=>{});toast(`${t.ref} copied`);}break;}
     case 'refundrequest':{
       if(!mayReverseNow(t,state.detailData))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
