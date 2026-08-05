@@ -180,3 +180,27 @@ export function verifyQuotePayToken(
   const seq = typeof parsed.s === 'number' && Number.isInteger(parsed.s) && parsed.s >= 0 ? parsed.s : 0;
   return { quoteId: parsed.q, revision: parsed.r, seq };
 }
+
+// ── the return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D4) ──────────
+// `return_url` is handed to PayHere, stored in their systems, and travels through a redirect
+// chain that we do not control. So it must NOT carry the quote pay token: that one is a bearer
+// credential for the whole quote. This token authorises exactly one thing — reading the
+// settlement status of ONE booking — and carries a `purpose` disjoint from every other kind, so
+// none of them can be spent as another.
+//
+// Deliberately NO expiry. A customer who pays and then loses signal for ten minutes must still
+// land on their confirmation, and the token grants no more than the page it returns to.
+//
+// The field is `b`, not `id`: `verifyBookingToken` reads `id`, and reusing the name would let a
+// pay-return token be spent as a booking view token.
+export function signPayReturnToken(bookingId: string, secret: string): string {
+  return signedBody({ v: 1, purpose: 'pay-return', b: bookingId }, secret);
+}
+
+export function verifyPayReturnToken(token: string | undefined, secret: string): string | null {
+  const parsed = verifiedPayload(token, secret) as
+    | { v?: unknown; purpose?: unknown; b?: unknown }
+    | null;
+  if (!parsed || parsed.v !== 1 || parsed.purpose !== 'pay-return') return null;
+  return typeof parsed.b === 'string' && parsed.b.length > 0 ? parsed.b : null;
+}

@@ -8,6 +8,8 @@ import {
   verifyCheckoutToken,
   signQuotePayToken,
   verifyQuotePayToken,
+  signPayReturnToken,
+  verifyPayReturnToken,
 } from './bookingToken';
 
 const S = 'test-secret';
@@ -201,5 +203,54 @@ describe('quote pay token v3 (selection seq, spec 2026-08-04)', () => {
     const t = signQuotePayToken(id, 4, S3, 7);
     const last = t.slice(-1);
     expect(verifyQuotePayToken(t.slice(0, -1) + (last === 'A' ? 'B' : 'A'), S3)).toBeNull();
+  });
+});
+
+// The return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D4). PayHere is
+// handed this URL, so it must NOT carry the quote pay token — that one is a bearer credential for
+// the whole quote. This token authorises exactly one thing: reading the settlement status of one
+// booking.
+describe('pay-return token', () => {
+  const B = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+  it('round-trips a booking id', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(B, S), S)).toBe(B);
+  });
+
+  it('rejects a token signed with a different secret', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(B, S), 'other-secret')).toBeNull();
+  });
+
+  it('rejects a tampered signature', () => {
+    const t = signPayReturnToken(B, S);
+    const last = t.slice(-1);
+    expect(verifyPayReturnToken(t.slice(0, -1) + (last === 'A' ? 'B' : 'A'), S)).toBeNull();
+  });
+
+  it('rejects a missing or malformed token', () => {
+    expect(verifyPayReturnToken(undefined, S)).toBeNull();
+    expect(verifyPayReturnToken('', S)).toBeNull();
+    expect(verifyPayReturnToken('not-a-token', S)).toBeNull();
+  });
+
+  // The whole point of a disjoint purpose: no other token kind may be spent as a pay-return, and
+  // a pay-return may not be spent as any of them.
+  it('does not accept a checkout token', () => {
+    expect(verifyPayReturnToken(signCheckoutToken(B, S, Date.now()), S)).toBeNull();
+  });
+
+  it('does not accept a booking token', () => {
+    expect(verifyPayReturnToken(signBookingToken(B, S), S)).toBeNull();
+  });
+
+  it('does not accept a quote-pay token', () => {
+    expect(verifyPayReturnToken(signQuotePayToken(B, 1, S, 0), S)).toBeNull();
+  });
+
+  it('is not itself accepted as a checkout, booking, or quote-pay token', () => {
+    const t = signPayReturnToken(B, S);
+    expect(verifyCheckoutToken(t, B, S, Date.now())).toBe(false);
+    expect(verifyBookingToken(t, S)).toBeNull();
+    expect(verifyQuotePayToken(t, S)).toBeNull();
   });
 });

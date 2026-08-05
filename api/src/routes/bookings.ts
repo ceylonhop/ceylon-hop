@@ -24,6 +24,7 @@ import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import {
   signCheckoutToken,
+  signPayReturnToken,
   verifyBookingToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
@@ -182,6 +183,11 @@ export function bookingRoutes(deps: {
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
+  /**
+   * Origin the customer pay page is served from. Only used to build the redirect checkout's
+   * return leg; unset simply means a pay-link checkout keeps the adapter's default URLs.
+   */
+  payBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const r = new Hono();
@@ -600,11 +606,34 @@ function billingFrom(body: unknown): BillingParse {
       if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
     }
 
+    // Where the gateway sends the customer back to (spec: docs/checkout-redirect-spec.md §D3).
+    // A pay-link customer must land on the PAY page; the adapter's constructor URLs point at
+    // booking.html, which is the website checkout's own page and pure confusion for this payer.
+    //
+    // The client states INTENT ONLY — it never supplies a URL. A gateway that will redirect the
+    // customer wherever the request body says is a phishing primitive, and the request that
+    // reaches here has already crossed the network. So the origin comes from our own config and
+    // the token is minted here, over the booking this checkout is actually for.
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown } | null;
+    const returnUrls =
+      body?.returnTo === 'pay-link' && deps.payBaseUrl
+        ? (() => {
+            const rt = signPayReturnToken(booking.id, deps.linkSecret);
+            const base = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=${encodeURIComponent(rt)}`;
+            // Both legs land on the SAME page. PayHere documents return_url for an approved
+            // payment and cancel_url for a customer-cancelled one, but says nothing about where
+            // a DECLINED payment goes — so neither URL may be the only one that works. The page
+            // polls our own settlement state either way; `c=1` is a display hint, never truth.
+            return { returnUrl: base, cancelUrl: `${base}&c=1` };
+          })()
+        : {};
+
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
+      ...returnUrls,
       // What the payer sees named on the PayHere receipt. "Ceylon Hop Travel" rather than
       // "Ceylon Hop" so an unfamiliar line is self-explaining, and the reference so a query
       // about a charge arrives with the booking already identified.

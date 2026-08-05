@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { isoToday } from '../domain/dateRules';
-import { signCheckoutToken } from '../lib/bookingToken';
+import { signCheckoutToken, verifyPayReturnToken } from '../lib/bookingToken';
 import { FakePaymentAdapter, type PaymentAdapter, type CreateCheckoutArgs } from '../adapters/payments';
 
 const SECRET = 'dev-booking-link-secret-change-me';
@@ -136,5 +136,77 @@ describe('POST /bookings/:id/checkout — status gate', () => {
     await bookings.setStatus(b.id, 'paid'); // settled
     const res = await checkout(app, b);
     expect(res.status).toBe(409);
+  });
+});
+
+// The redirect checkout's return leg (spec: docs/checkout-redirect-spec.md §D3/§D4/§5.4).
+// A pay-link customer leaves for PayHere and must come back to the PAY page — not to
+// booking.html, which is where the adapter's constructor URLs point.
+describe('POST /bookings/:id/checkout — return URLs for a pay-link checkout', () => {
+  function spy() {
+    const inner = new FakePaymentAdapter();
+    const box: { seen: CreateCheckoutArgs | null } = { seen: null };
+    const adapter: PaymentAdapter = {
+      provider: inner.provider,
+      createCheckout: (args) => { box.seen = args; return inner.createCheckout(args); },
+      parseWebhook: (raw) => inner.parseWebhook(raw),
+    };
+    return { adapter, box };
+  }
+
+  function checkoutWith(app: ReturnType<typeof createApp>, b: { id: string; checkoutToken: string }, body: unknown) {
+    return app.request(`/bookings/${b.id}/checkout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('names no return URLs at all for a website checkout, keeping the adapter default', async () => {
+    const { adapter, box } = spy();
+    const app = createApp({ adapter, payBaseUrl: 'https://pay.example.com' });
+    const b = await book(app);
+    await checkout(app, b);
+    expect(box.seen!.returnUrl).toBeUndefined();
+    expect(box.seen!.cancelUrl).toBeUndefined();
+  });
+
+  it('sends the customer back to the pay page when the checkout says it came from a pay link', async () => {
+    const { adapter, box } = spy();
+    const app = createApp({ adapter, payBaseUrl: 'https://pay.example.com' });
+    const b = await book(app);
+    await checkoutWith(app, b, { returnTo: 'pay-link' });
+    expect(box.seen!.returnUrl).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=/);
+    expect(box.seen!.cancelUrl).toMatch(/^https:\/\/pay\.example\.com\/pay\.html\?rt=/);
+  });
+
+  // The token in the return URL must be the purpose-scoped one, verifiable back to THIS booking.
+  it('carries a pay-return token that resolves to this booking and nothing else', async () => {
+    const { adapter, box } = spy();
+    const app = createApp({ adapter, payBaseUrl: 'https://pay.example.com' });
+    const b = await book(app);
+    await checkoutWith(app, b, { returnTo: 'pay-link' });
+    const rt = new URL(box.seen!.returnUrl!).searchParams.get('rt');
+    expect(verifyPayReturnToken(rt ?? undefined, SECRET)).toBe(b.id);
+  });
+
+  // An attacker-supplied return URL on a payment page is a phishing primitive: the customer
+  // would be sent somewhere hostile by the payment gateway itself, mid-transaction.
+  it('ignores a client-supplied URL — the server builds it, the client only states intent', async () => {
+    const { adapter, box } = spy();
+    const app = createApp({ adapter, payBaseUrl: 'https://pay.example.com' });
+    const b = await book(app);
+    await checkoutWith(app, b, { returnTo: 'pay-link', returnUrl: 'https://evil.example/steal' });
+    expect(box.seen!.returnUrl).toMatch(/^https:\/\/pay\.example\.com\//);
+    expect(box.seen!.cancelUrl).toMatch(/^https:\/\/pay\.example\.com\//);
+  });
+
+  // A body-less POST is exactly what booking.html sends today; it must keep working untouched.
+  it('still works with no body at all', async () => {
+    const { adapter } = spy();
+    const app = createApp({ adapter, payBaseUrl: 'https://pay.example.com' });
+    const b = await book(app);
+    const res = await checkout(app, b);
+    expect(res.status).toBe(200);
   });
 });
