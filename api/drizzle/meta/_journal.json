@@ -281,6 +281,13 @@
       "when": 1786258400000,
       "tag": "0039_customer_total_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786344800000,
+      "tag": "0040_quote_revisions",
+      "breakpoints": true
     }
   ]
 }

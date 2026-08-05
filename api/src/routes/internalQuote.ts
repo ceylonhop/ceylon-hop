@@ -30,6 +30,7 @@ import {
   NotLineablePriceError,
   type PaySelection,
 } from '../quote/paySelection';
+import { changedFields } from '../quote/quoteDiff';
 import { signQuotePayToken } from '../lib/bookingToken';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
@@ -1050,6 +1051,38 @@ export function internalQuoteRoutes(deps: {
       payhereMode: deps.payhereMode ?? 'off',
       amountCents,
       coverage,
+    });
+  });
+
+  // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as
+  // editing the quote, deliberately NOT founder-only: this response carries no margin, and ops
+  // are the people making the edits, so ops are the people who need to see what an edit did.
+  r.get('/:id/revisions', async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const history = await deps.quotes.listRevisions(id); // newest first
+
+    // Each entry is compared against the version that SUPERSEDED it. For the newest entry that
+    // successor is the CURRENT quote row — history holds only superseded states, so without this
+    // cross-table read the top (and most interesting) entry would come back with nothing changed.
+    const successors = [
+      { request: quote.request, totalCents: quote.totalCents },
+      ...history.map((h) => ({ request: h.request, totalCents: h.totalCents })),
+    ];
+
+    return c.json({
+      // Hand-picked projection: request/result never reach the wire — they carry margin and
+      // hot-zone annotations, exactly as the stored quote does.
+      revisions: history.map((h, i) => ({
+        revision: h.revision,
+        totalCents: h.totalCents,
+        currency: h.currency,
+        status: h.status,
+        updatedBy: h.updatedBy,
+        createdAt: h.createdAt,
+        changed: changedFields({ request: h.request, totalCents: h.totalCents }, successors[i]),
+      })),
     });
   });
 

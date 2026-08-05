@@ -1437,6 +1437,18 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    matches the total's own colour transition so the pane never snaps. */
 .qv .ch-drift { margin-top: 6px; font-size: 12px; color: var(--muted-2); animation: chDriftIn .35s cubic-bezier(.23,.9,.32,1) both; }
 .qv .ch-drift b { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Version history panel (2026-08-05) — a dense, quiet list; it is read after the fact, not watched. */
+.qv .ch-hist { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.qv .ch-hist-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); }
+.qv .ch-hist-body { margin-top: 8px; max-height: 240px; overflow-y: auto; }
+.qv .ch-hist-row { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px dashed var(--line); }
+.qv .ch-hist-rev { color: var(--muted-2); font-variant-numeric: tabular-nums; min-width: 26px; }
+.qv .ch-hist-total { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.qv .ch-hist-meta { color: var(--muted-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qv .ch-hist-chips { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.qv .ch-hist-chip { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--cream); border: 1px solid var(--line); color: var(--ink); }
+.qv .ch-hist-chip.is-quiet { color: var(--muted-2); font-weight: 400; }
+.qv .ch-hist-empty { font-size: 12px; color: var(--muted-2); }
 @keyframes chDriftIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 
 /* due-now highlighted chip row (chauffeur) */
@@ -3677,6 +3689,8 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
+var _histOpen = false;    // version-history disclosure
+var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
 var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
 var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
@@ -4689,7 +4703,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -4824,6 +4838,9 @@ async function saveQuote(opts) {
     state.savedId = res.id;
     state.reference = res.reference || res.id;
     if (res.status) state.status = res.status; // the server is the source of truth for status
+    // A save may have just recorded a version — drop the cache so an open panel refetches.
+    _hist = null;
+    if (_histOpen) loadHistory();
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
@@ -5269,7 +5286,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -5473,7 +5490,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -6399,6 +6416,61 @@ function submitBlockers() {
   return out;
 }
 
+async function loadHistory() {
+  if (!state.savedId) return;
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/revisions');
+    if (!r.ok) { showToast('Could not load history', 'error'); return; }
+    var body = await jsonOrNull(r);
+    _hist = { forId: state.savedId, rows: (body && body.revisions) || [] };
+    render();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('load quote history', e);
+    showToast('Could not load history', 'error');
+  }
+}
+
+/* The disclosure. Collapsed by default and fetched on first open — history is read when something
+   looks wrong, not watched, so it must cost nothing on every quote open. */
+function renderHistoryPanel() {
+  if (!state.savedId) return '';
+  var fresh = _hist && _hist.forId === state.savedId;
+  var body = _histOpen
+    ? '<div class="ch-hist-body">' + (fresh ? historyRowsHtml(_hist.rows) : '<div class="ch-hist-empty">Loading…</div>') + '</div>'
+    : '';
+  return '<div class="ch-hist">'
+    + '<div class="ch-hist-head" data-action="toggleHistory">'
+    + '<span>History</span><span>' + (_histOpen ? '&minus;' : '&plus;') + '</span>'
+    + '</div>' + body + '</div>';
+}
+
+/* Quote version history (spec 2026-08-05 §6). Pure — extracted by
+   web-tests/unit/ops-quote-history.test.js, so no DOM and no module state in here.
+
+   Rows arrive newest-first from the server and are rendered in that order. Each names the fields
+   that moved, not their values: that is the whole point — "extras, total" is the sentence that
+   answers "why did this price change", without putting margin-bearing content on the wire. */
+function historyRowsHtml(revisions) {
+  if (!revisions || !revisions.length) {
+    return '<div class="ch-hist-empty">No edits recorded yet. History starts at the next save.</div>';
+  }
+  return revisions.map(function (r) {
+    // Local-part only: the ops table is three people, and the domain is noise in a dense list.
+    var who = String(r.updatedBy || '').split('@')[0] || 'unknown';
+    var when = String(r.createdAt || '').slice(0, 10);
+    var chips = (r.changed && r.changed.length)
+      ? r.changed.map(function (f) { return '<span class="ch-hist-chip">' + esc(f) + '</span>'; }).join('')
+      // The counter can move without the content moving; say so rather than render a blank row.
+      : '<span class="ch-hist-chip is-quiet">no visible change</span>';
+    return '<div class="ch-hist-row">'
+      + '<span class="ch-hist-rev">r' + esc(String(r.revision)) + '</span>'
+      + '<span class="ch-hist-total">' + esc(fmtUsd(r.totalCents)) + '</span>'
+      + '<span class="ch-hist-meta">' + esc(who) + ' &middot; ' + esc(when) + '</span>'
+      + '<span class="ch-hist-chips">' + chips + '</span>'
+      + '</div>';
+  }).join('');
+}
+
 /* Price drift (spec 2026-08-05 §9). One quiet line beside the total: what the customer was last
    quoted, against what the quote says now. Owner call — an indicator, NOT a toast and NOT a
    confirmation gate.
@@ -6475,6 +6547,8 @@ function renderSummaryCardBody() {
 
   // What the customer was last quoted, when that differs from the number above it.
   lines.push(priceDriftHtml(state.customerTotalCents, state.customerTotalVia, est.total.cents));
+  // Version history sits below the money, where you look when a number surprises you.
+  lines.push(renderHistoryPanel());
 
   // Defect A: when the total covers only the ready legs, say so — the number is real but partial.
   if (lastEstimatePartial > 0) {
@@ -8544,6 +8618,10 @@ function attachEventListeners() {
       runAction(action, payLinkPress);
     } else if (action === 'copyPayLink') {
       copyPayLink();
+    } else if (action === 'toggleHistory') {
+      _histOpen = !_histOpen;
+      render();
+      if (_histOpen && !(_hist && _hist.forId === state.savedId)) loadHistory();
     } else if (action === 'openPayPart') {
       runAction(action, openPayPartPicker);
     } else if (action === 'togglePayLine') {
@@ -8573,7 +8651,7 @@ function attachEventListeners() {
       runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null; _hist = null; _histOpen = false;
       render();
     } else if (action === 'reopenToDraft') {
       runAction(action, reopenToDraft);

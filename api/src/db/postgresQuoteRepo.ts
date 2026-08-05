@@ -1,10 +1,11 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { quotes } from './schema';
-import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell } from './quoteRepo';
+import { quotes, quoteRevisions } from './schema';
+import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell, sameQuoteContent } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import type {
   QuoteRepo,
+  QuoteRevision,
   NewQuote,
   SavedQuote,
   QuoteSummary,
@@ -151,7 +152,13 @@ export class PostgresQuoteRepo implements QuoteRepo {
     | { kind: 'updated'; quote: SavedQuote }
     | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
   > {
-    const [updated] = await this.db
+    // One transaction (spec 2026-08-05 §5), and the guarded UPDATE below stays the sole gate:
+    // we read the prior state first, then snapshot it ONLY if the update actually landed. A
+    // refused edit changed nothing, so it must leave no version behind.
+    return this.db.transaction(async (tx) => {
+    const [before] = await tx.select().from(quotes).where(eq(quotes.id, args.id)).for('update');
+
+    const [updated] = await tx
       .update(quotes)
       .set({
         product: args.quote.product,
@@ -179,9 +186,24 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ),
       )
       .returning();
-    if (updated) return { kind: 'updated', quote: quoteRowToSaved(updated) };
+    if (updated) {
+      if (before && !sameQuoteContent(before.requestJson, args.quote.request)) {
+        await tx.insert(quoteRevisions).values({
+          quoteId: args.id,
+          revision: before.revision,
+          requestJson: before.requestJson as object | null,
+          resultJson: before.resultJson as object | null,
+          totalCents: before.totalCents,
+          currency: before.currency,
+          rateCardVersion: before.rateCardVersion,
+          status: before.status,
+          updatedBy: before.updatedBy ?? before.createdBy,
+        });
+      }
+      return { kind: 'updated' as const, quote: quoteRowToSaved(updated) };
+    }
 
-    const [current] = await this.db.select().from(quotes).where(eq(quotes.id, args.id));
+    const [current] = await tx.select().from(quotes).where(eq(quotes.id, args.id));
     if (
       !current ||
       current.deletedAt ||
@@ -189,11 +211,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
       !current.accessTokenDigest ||
       current.accessTokenDigest !== args.accessTokenDigest
     ) {
-      return { kind: 'access_denied' };
+      return { kind: 'access_denied' as const };
     }
-    if (current.convertedBookingId) return { kind: 'converted' };
-    if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' };
-    return { kind: 'stale_revision' };
+    if (current.convertedBookingId) return { kind: 'converted' as const };
+    if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' as const };
+    return { kind: 'stale_revision' as const };
+    });
   }
 
   // Shared channel arm for the analytics projections ('all' = no channel condition).
@@ -393,7 +416,37 @@ export class PostgresQuoteRepo implements QuoteRepo {
     // Soft-delete guard (same as softDelete's): a deleted row is off-limits. The shell sweep can
     // delete a shell an operator still has open, and their next autosave would otherwise write
     // the real priced quote into the deleted row — a 200 for work that is invisible forever.
-    const [row] = await this.db
+    //
+    // One transaction (spec 2026-08-05 §5): the version snapshot and the content write land
+    // together or not at all. A snapshot missing for a write that landed is a hole in the audit
+    // trail; a snapshot for a write that didn't is a lie about what the quote once was.
+    return this.db.transaction(async (tx) => {
+    // FOR UPDATE: two concurrent saves must not both snapshot the same revision — the unique
+    // (quote_id, revision) constraint would fail the loser and take a legitimate content write
+    // down with it.
+    const [before] = await tx
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
+      .for('update');
+    if (!before) return null;
+
+    if (!sameQuoteContent(before.requestJson, q.request)) {
+      await tx.insert(quoteRevisions).values({
+        quoteId: id,
+        revision: before.revision,
+        requestJson: before.requestJson as object | null,
+        resultJson: before.resultJson as object | null,
+        totalCents: before.totalCents,
+        currency: before.currency,
+        rateCardVersion: before.rateCardVersion,
+        status: before.status,
+        // An unedited revision 1 has no updatedBy — fall back to its author.
+        updatedBy: before.updatedBy ?? before.createdBy,
+      });
+    }
+
+    const [row] = await tx
       .update(quotes)
       .set({
         product: q.product,
@@ -430,7 +483,27 @@ export class PostgresQuoteRepo implements QuoteRepo {
       })
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
-    return row ? quoteRowToSaved(row) : null;
+      return row ? quoteRowToSaved(row) : null;
+    });
+  }
+
+  async listRevisions(quoteId: string): Promise<QuoteRevision[]> {
+    const rows = await this.db
+      .select()
+      .from(quoteRevisions)
+      .where(eq(quoteRevisions.quoteId, quoteId))
+      .orderBy(desc(quoteRevisions.revision));
+    return rows.map((r) => ({
+      revision: r.revision,
+      totalCents: r.totalCents,
+      currency: r.currency,
+      rateCardVersion: r.rateCardVersion,
+      status: r.status,
+      updatedBy: r.updatedBy,
+      createdAt: r.createdAt,
+      request: r.requestJson,
+      result: r.resultJson,
+    }));
   }
 
   async softDelete(id: string, deletedBy: string): Promise<SavedQuote | null> {

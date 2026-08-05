@@ -222,6 +222,38 @@ export interface DemandQuoteRow {
 // set regardless of age, so listFunnelRows includes them outside the time window too.
 export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 'changes_requested', 'ready'];
 
+// Quote version history (spec 2026-08-05 §4). One superseded state.
+export interface QuoteRevision {
+  revision: number;
+  totalCents: number;
+  currency: string;
+  rateCardVersion: string | null;
+  status: string | null;
+  updatedBy: string | null;
+  createdAt: Date;
+  // Raw content, for the route's field-level diff. NEVER echoed to the wire — it carries margin.
+  request: unknown;
+  result: unknown;
+}
+
+// Key-order-stable, so re-serialising identical content can't fake a change.
+function stableStringify(v: unknown): string {
+  return JSON.stringify(v, (_k, val) =>
+    val && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(
+          Object.entries(val as Record<string, unknown>).sort(([x], [y]) => x.localeCompare(y)),
+        )
+      : val,
+  );
+}
+
+// Did a save actually change the quote? Compares REQUEST only: `result` is re-priced server-side
+// on every save, so a rate-card move would look like an operator edit and record phantom history.
+// A wrong answer here must fail benignly — an extra revision row, never a missing one.
+export function sameQuoteContent(a: unknown, b: unknown): boolean {
+  return stableStringify(a) === stableStringify(b);
+}
+
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
   get(id: string): Promise<SavedQuote | null>;
@@ -235,6 +267,8 @@ export interface QuoteRepo {
   // Rows created in [from, to]. Ordered createdAt desc so a truncation keeps the most recent.
   listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
+  // Superseded versions, newest first. Empty for a quote never edited.
+  listRevisions(quoteId: string): Promise<QuoteRevision[]>;
   // Rewrite an existing quote's priced CONTENT in place (re-priced server-side on save).
   // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
@@ -311,6 +345,8 @@ function toSummary(q: SavedQuote): QuoteSummary {
 
 export class InMemoryQuoteRepo implements QuoteRepo {
   private rows = new Map<string, SavedQuote>();
+  // Superseded versions, oldest-first per quote (listRevisions reverses).
+  private revisions = new Map<string, QuoteRevision[]>();
   private usedReferences = new Set<string>();
 
   private nextReference(): string {
@@ -437,6 +473,10 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     return { rows, truncated: all.length > limit };
   }
 
+  async listRevisions(quoteId: string): Promise<QuoteRevision[]> {
+    return [...(this.revisions.get(quoteId) ?? [])].reverse().map((r) => ({ ...r }));
+  }
+
   async patch(id: string, patch: QuotePatch): Promise<SavedQuote | null> {
     const row = this.rows.get(id);
     if (!row) return null;
@@ -488,6 +528,26 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     // can delete a shell an operator still has open, and their next autosave would otherwise
     // write the real priced quote into the deleted row — invisible in the queue forever.
     if (!row || row.deletedAt) return null; // unknown or deleted
+    // Snapshot the state being SUPERSEDED (spec 2026-08-05 §4) — before a single field moves, and
+    // only when the content really changed. A no-op flush (transition() saves even a clean quote)
+    // would otherwise fill the timeline with rows carrying no information.
+    if (!sameQuoteContent(row.request, q.request)) {
+      const list = this.revisions.get(id) ?? [];
+      list.push({
+        revision: row.revision,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        rateCardVersion: row.rateCardVersion,
+        status: row.status,
+        // An unedited revision 1 has no updatedBy — fall back to its author rather than showing
+        // a version nobody wrote.
+        updatedBy: row.updatedBy ?? row.createdBy,
+        createdAt: new Date(),
+        request: row.request,
+        result: row.result,
+      });
+      this.revisions.set(id, list);
+    }
     // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
     row.product = q.product;
     row.vehicle = q.vehicle ?? null;
@@ -553,6 +613,24 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (row.convertedBookingId) return { kind: 'converted' };
     if (!row.rateLockedUntil || row.rateLockedUntil <= args.now) return { kind: 'expired' };
     if (row.revision !== args.expectedRevision) return { kind: 'stale_revision' };
+
+    // Snapshot the superseded state (spec 2026-08-05 §5). AFTER every guard above: a refused edit
+    // changed nothing, so recording a version for it would claim history that never happened.
+    if (!sameQuoteContent(row.request, args.quote.request)) {
+      const list = this.revisions.get(args.id) ?? [];
+      list.push({
+        revision: row.revision,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        rateCardVersion: row.rateCardVersion,
+        status: row.status,
+        updatedBy: row.updatedBy ?? row.createdBy,
+        createdAt: new Date(),
+        request: row.request,
+        result: row.result,
+      });
+      this.revisions.set(args.id, list);
+    }
 
     row.product = args.quote.product;
     row.vehicle = args.quote.vehicle ?? null;
