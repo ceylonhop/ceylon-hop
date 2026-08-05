@@ -32,8 +32,57 @@ function populateCountryFields(){
     country.innerHTML=ordered.map(([,name,code])=>`<option value="${optionText(name)}">${optionText(name)} ${optionText(code)}</option>`).join('');
     country.value=[...country.options].some(o=>o.value===current) ? current : 'Sri Lanka';
   }
+  // The billing country reads from the SAME list — a second hand-kept list of countries is
+  // how the two selects end up disagreeing about how to spell one. Names only: this is an
+  // address field, so a dial code beside it would be noise.
+  const bcountry=document.getElementById('f-bcountry');
+  if(bcountry){
+    const names=PHONE_COUNTRIES.map(c=>c[1]).sort((a,b)=>a.localeCompare(b));
+    const keep=bcountry.value;
+    bcountry.innerHTML='<option value="">Choose…</option>'
+      + names.map(n=>`<option value="${optionText(n)}">${optionText(n)}</option>`).join('');
+    // Deliberately NOT seeded from the phone select. That one defaults to Sri Lanka as a
+    // convenience, which says nothing about where a traveller banks — and a wrong billing
+    // country is a weaker AVS check, the very thing this block exists to strengthen. It
+    // starts unanswered and follows the dial code the moment the payer sets one.
+    bcountry.value=[...bcountry.options].some(o=>o.value===keep) ? keep : '';
+  }
 }
 populateCountryFields();
+
+/* Billing block wiring (2026-08-03), mirroring pay.html.
+
+   The billing country FOLLOWS the phone country until the payer touches it — a traveller who
+   sets their dial code to United States and then finds "Sri Lanka" sitting in the billing
+   country has been handed a wrong answer to correct, and the pay page shipped exactly that
+   bug on 2026-08-02. After they choose for themselves, their choice is never overwritten. */
+(function(){
+  const phone=document.getElementById('f-country'), bill=document.getElementById('f-bcountry');
+  if(phone && bill){
+    let touched=false;
+    bill.addEventListener('change',()=>{ touched=true; });
+    phone.addEventListener('change',()=>{
+      if(touched) return;
+      const name=(phone.value||'').trim();
+      if([...bill.options].some(o=>o.value===name)) bill.value=name;
+    });
+  }
+  // Cardholder name: asked only when the payer says it differs from the lead traveller, and
+  // it travels in rather than appearing fully-formed (CH.motion — nothing on this site snaps).
+  const diff=document.getElementById('f-diffbill'), names=document.getElementById('billnames');
+  if(diff && names){
+    diff.addEventListener('change',()=>{
+      if(diff.checked){
+        names.hidden=false;
+        if(window.CH && CH.motion) CH.motion.enter(names);
+        const f=document.getElementById('f-bfirst'); if(f) f.focus();
+      } else {
+        const done=()=>{ names.hidden=true; };
+        if(window.CH && CH.motion) CH.motion.exit(names).then(done); else done();
+      }
+    });
+  }
+})();
 
 // ---- params + state ----
 const params=new URLSearchParams(location.search);
@@ -1433,6 +1482,25 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
   if(!emailRe.test(email.value.trim())) return fail(email,'Enter a valid email so we can send your confirmation.');
   if(phoneParts().number.length<7) return fail(phone,'Enter a valid WhatsApp number.');
+
+  // Billing goes to the card gateway, so it is required in the same way the email is —
+  // named box by named box, never a generic "check the form". Postcode and state are
+  // deliberately absent from this list: most of the world has no state, and a field nobody
+  // can fill must never block a payment.
+  const addr=document.getElementById('f-addr'), city=document.getElementById('f-city'),
+        bcountry=document.getElementById('f-bcountry');
+  [addr,city,bcountry].forEach(el=>el && el.classList.remove('inp-bad'));
+  if(!addr.value.trim()) return fail(addr,'Please enter your billing address — the one on your card statement.');
+  if(!city.value.trim()) return fail(city,'Please enter your billing city.');
+  if(!bcountry.value.trim()) return fail(bcountry,'Please choose your billing country.');
+  const diffbill=document.getElementById('f-diffbill');
+  if(diffbill && diffbill.checked){
+    const bfirst=document.getElementById('f-bfirst'), blast=document.getElementById('f-blast');
+    [bfirst,blast].forEach(el=>el && el.classList.remove('inp-bad'));
+    if(!bfirst.value.trim()) return fail(bfirst,'Please enter the cardholder’s first name.');
+    if(!blast.value.trim()) return fail(blast,'Please enter the cardholder’s last name.');
+  }
+
   const agree=document.getElementById('agree');
   if(!agree.checked){
     // Was a red border and nothing else: colour-only, no message, and it never reset.
@@ -1474,7 +1542,14 @@ async function runPayment(){
   const _amt=document.getElementById('ph-amt'); if(_amt) _amt.textContent=money(amountDueNow());
 
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
-  let checkout=null;
+  //
+  // A refusal here is a 409 that SAYS why — awaiting_price (ops is pricing this by hand),
+  // already_paid, not_chargeable — and each needs different words. Reading only res.ok
+  // collapsed all three into "try again in a moment", which for every one of them is advice
+  // that cannot work: the price isn't coming back in a moment, and a paid booking will never
+  // become unpaid. So read the body, and only fall back to the generic line when the server
+  // didn't explain itself.
+  let checkout=null, refusal=null;
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken }
@@ -1484,12 +1559,13 @@ async function runPayment(){
       {method:'POST',headers:checkoutHeaders}
     );
     if(res.ok) checkout = await res.json();
+    else refusal = await res.json().catch(()=>null);
   }catch(e){}
 
-  // No checkout params (network error, 5xx, or the backend's amount-mismatch guard)
-  // → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
+  // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
+  // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
   if(!checkout || !checkout.checkoutUrl){
-    return phShowEnd('error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.');
+    return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway.
   if(/payhere\.lk/.test(checkout.checkoutUrl)){
@@ -1505,6 +1581,28 @@ async function runPayment(){
   return simulatePayThenConfirm(booking);
 }
 
+/* Turn a refused POST /bookings/:id/checkout into words + an honest retry button.
+   Returns the phShowEnd(kind, msg, opts) argument list.
+
+   `awaiting_price` carries the server's own customer-facing copy, written where the rule
+   lives; repeating it here is how the two drift. The others are named because their message
+   is about THIS page's state, not the pricing rule. */
+function checkoutRefusal(body){
+  const err = body && body.error;
+  if(err==='awaiting_price'){
+    return ['error', body.message
+      || 'We’re confirming the price for this trip by hand — we’ll message you shortly with the final amount.',
+      {retry:false}];
+  }
+  if(err==='already_paid'){
+    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false}];
+  }
+  if(err==='not_chargeable'){
+    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false}];
+  }
+  return ['error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.'];
+}
+
 // ---- payment overlay states (loading / problem) ----
 function phShowLoading(msg){
   const amt=document.getElementById('ph-amt'); if(amt){ amt.style.display=''; amt.textContent=money(amountDueNow()); }
@@ -1513,11 +1611,18 @@ function phShowLoading(msg){
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='';
   const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='';
   const m=document.getElementById('ph-msg'); m.className='ph-msg'; m.textContent=msg||'Processing your payment securely…';
+  // Clear the previous attempt's end-state, or a second try inherits the first's decline
+  // steps and its suppressed retry button.
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=false;
   document.getElementById('ph-actions').hidden=true;
   document.getElementById('ph-overlay').classList.add('show');
 }
 // kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
-function phShowEnd(kind, msg){
+// opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
+//              gateway; a booking that never reached a card gets no bank advice.
+// opts.retry — false when trying again cannot possibly work (an already-paid booking).
+function phShowEnd(kind, msg, opts){
   document.getElementById('ph-spin').style.display='none';
   const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
@@ -1530,6 +1635,17 @@ function phShowEnd(kind, msg){
       : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
   }
   const m=document.getElementById('ph-msg'); m.className='ph-msg ph-msg-big'; m.textContent=msg;
+  const o=opts||{};
+  const help=document.getElementById('ph-help');
+  if(help){
+    if(o.help && o.help.length){
+      help.innerHTML='<h3>If your card was declined</h3><ol>'
+        + o.help.map(t=>`<li>${optionText(t)}</li>`).join('') + '</ol>';
+      help.hidden=false;
+    } else { help.innerHTML=''; help.hidden=true; }
+  }
+  const retry=document.getElementById('ph-retry');
+  if(retry) retry.hidden = o.retry === false;
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }
@@ -1559,15 +1675,21 @@ function startPayHere(checkout, booking){
   payhere.startPayment(payment);
 }
 
+// PayHere's SDK reports a decline and a plain "I closed the window" through two different
+// callbacks, but neither one says WHICH — a declined card also closes the window. So both
+// outcomes carry the decline steps, and the heading asks rather than asserts ("if your card
+// was declined"). Guessing wrong in either direction is worse than letting the payer pick.
+function declineHelp(){ return window.CH_DECLINE_HELP || []; }
+
 function showPayFailed(){
   // Same dimensions as payment_initiated, so a failure can be compared against
   // its own initiation — otherwise GA4 shows a count with nothing to divide by.
   if(typeof window.chTrack==='function') window.chTrack('payment_failed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('error','Your payment didn’t go through — no charge was made. Please try again.');
+  phShowEnd('error','Your payment didn’t go through — no charge was made.',{help:declineHelp()});
 }
 function showPayDismissed(){
   if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
+  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.',{help:declineHelp()});
 }
 
 // Rate-lock (spec 2026-07-11 §5): mint — or reuse — a 7-day locked quote for the current
@@ -1698,6 +1820,24 @@ async function createApiBooking(){
   // the API now requires this and stamps terms_accepted_at on the booking. The #agree gate
   // above already blocks submission, so reaching here means it is ticked.
   payload.termsAccepted = true;
+  // Billing details for the card (2026-08-03). Sent for every mode, because every mode goes
+  // through the same PayHere checkout. The empty optionals are OMITTED rather than sent as
+  // '': BillingInput requires a non-empty string when the key is present, so a blank postcode
+  // would 400 — the same block on a Hong Kong or UAE payer, just moved to the server.
+  const bill = {
+    address: document.getElementById('f-addr').value.trim(),
+    city: document.getElementById('f-city').value.trim(),
+    country: document.getElementById('f-bcountry').value.trim(),
+  };
+  const bpost = document.getElementById('f-postcode').value.trim();
+  const bstate = document.getElementById('f-state').value.trim();
+  if(bpost) bill.postcode = bpost;
+  if(bstate) bill.state = bstate;
+  if(document.getElementById('f-diffbill').checked){
+    bill.firstName = document.getElementById('f-bfirst').value.trim();
+    bill.lastName  = document.getElementById('f-blast').value.trim();
+  }
+  payload.billing = bill;
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);

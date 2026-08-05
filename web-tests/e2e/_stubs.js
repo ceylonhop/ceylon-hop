@@ -112,6 +112,7 @@ export async function gotoBooking(page, opts = {}) {
     bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
     googleDelay = 0,
     pickGeo = null,                  // {lat,lng}: pin Google picks inside a drop-off area
+    checkoutError = null,            // {status, body}: make POST /bookings/:id/checkout refuse
   } = opts;
 
   await page.addInitScript(installStubs);
@@ -156,6 +157,15 @@ export async function gotoBooking(page, opts = {}) {
 
   // checkout params
   await page.route('**/bookings/*/checkout', (r) => {
+    // The API refuses a checkout with a 409 and a reason (awaiting_price, already_paid,
+    // not_chargeable). Tests pass the body they want so the page's handling of each is real.
+    if (checkoutError) {
+      return r.fulfill({
+        status: checkoutError.status || 409,
+        contentType: 'application/json',
+        body: JSON.stringify(checkoutError.body || {}),
+      });
+    }
     if (checkout === 'payhere') {
       return r.fulfill(json({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { merchant_id: 'TEST', order_id: 'CH-E2E01', amount: '121.00', currency: 'USD', hash: 'X' } }));
     }
@@ -165,7 +175,10 @@ export async function gotoBooking(page, opts = {}) {
   await page.goto(`${path}?${query}`);
 }
 
-// Fill the lead-traveller form and accept terms (so payment can proceed).
+// Fill the lead-traveller form, the billing block and the terms tick — everything the page
+// requires before it will start a payment. Billing joined this list on 2026-08-03: the
+// gateway needs a real address, so an unfilled one now blocks submission exactly as an
+// unfilled email does.
 export async function fillContact(page) {
   await page.evaluate(() => window.goStep && window.goStep(4));
   await page.fill('#f-first', 'Roshen');
@@ -173,7 +186,18 @@ export async function fillContact(page) {
   await page.fill('#f-email', 'roshenw@gmail.com');
   await page.selectOption('#f-country', 'United States');
   await page.fill('#f-phone', '9176005055');
+  await fillBilling(page);
   await page.check('#agree');
+}
+
+// The billing block on its own, for tests that want to vary it.
+export async function fillBilling(page, opts = {}) {
+  const { address = '31 River Court, Apt 105', city = 'Jersey City', state = 'NJ', postcode = '07310', country = 'United States' } = opts;
+  await page.fill('#f-addr', address);
+  await page.fill('#f-city', city);
+  await page.fill('#f-state', state);
+  await page.fill('#f-postcode', postcode);
+  if (country) await page.selectOption('#f-bcountry', country);
 }
 
 // Pick a place from the live autocomplete dropdown for a given input id.

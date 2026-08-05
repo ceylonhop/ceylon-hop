@@ -1683,6 +1683,82 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     expect((await bookings.list()).length).toBe(1);
   });
 
+  // Re-booking a quote that is already converted (2026-08-04). The guard that stops a second
+  // booking used to return the existing one BEFORE the submitted form was ever parsed, so an
+  // operator correcting the customer had their entry read by nobody and got a success toast.
+  // Found on prod: Q-UD8A9 was test-booked on 1 Aug, then re-booked with the real customer's
+  // details — the booking kept the test's name and the test's email address, which is where
+  // that customer's mail would have gone. Same failure as #274/#279 on the pay side.
+  const CORRECTED = {
+    ...BODY,
+    customer: { firstName: 'Philippa', lastName: 'Stacey', email: 'philippa.stacey@example.com', whatsapp: '+447557760348', country: 'United Kingdom' },
+  };
+
+  it('a re-book re-records the corrected customer onto the existing booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const first = await (await book(app, id, BODY)).json();
+
+    const res = await book(app, id, CORRECTED);
+    expect(res.status).toBe(200);
+    const b = await res.json();
+
+    expect(b.id).toBe(first.id); // still exactly one booking for this quote
+    expect(b.input.customer.lastName).toBe('Stacey');
+    expect(b.input.customer.email).toBe('philippa.stacey@example.com');
+    expect((await bookings.list()).length).toBe(1);
+    // and it is the stored row that changed, not just the response
+    expect((await bookings.get(first.id))?.input.customer.lastName).toBe('Stacey');
+  });
+
+  it('a re-book stamps the quote won even when it was already linked', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    await book(app, id, BODY);
+    // The prod symptom: the quote sat in `sent` with a booking attached, because the
+    // won-stamp only ran when convertedBookingId was still unset.
+    await quotes.patch(id, { status: 'sent' });
+
+    await book(app, id, CORRECTED);
+    expect((await quotes.get(id))?.status).toBe('won');
+  });
+
+  it('refuses to re-book once the booking is paid, and names it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const first = await (await book(app, id, BODY)).json();
+    await bookings.setStatus(first.id, 'paid');
+
+    const res = await book(app, id, CORRECTED);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe('already_booked');
+    expect(body.reference).toBe(first.reference); // so the operator can go and find it
+    // The ops toast renders `message` — an error naming no booking is how someone ends up
+    // pressing Confirm again to see what happens.
+    expect(body.message).toContain(first.reference);
+    // Money has moved; the payer on the row must not be rewritten underneath it.
+    expect((await bookings.get(first.id))?.input.customer.lastName).toBe('B');
+  });
+
+  it('validates the form on a re-book instead of discarding it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await sentQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    await book(app, id, BODY);
+
+    const res = await book(app, id, { ...BODY, customer: { ...BODY.customer, email: 'nope@' } });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toContain('customer.email');
+  });
+
   it('requires bookings:operate — finance is 403', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await sentQuote(quotes);
