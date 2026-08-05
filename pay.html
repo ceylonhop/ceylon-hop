@@ -743,11 +743,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // documents return_url for an approved payment and cancel_url for a cancelled one, and says
   // nothing at all about where a DECLINED payment lands — so both legs poll identically.
   var RETURN_TRIES = 30;
+  // A customer who pressed "Back to Site" on PayHere's page never attempted a payment, so no
+  // notify is coming and polling a full minute would strand them on "confirming…" — then tell
+  // them "Payment received?", which is nonsense for someone who deliberately backed out.
+  // So the cancel leg waits only long enough to catch a genuine race (they paid, then hit back
+  // before the webhook landed). The DB still decides: this shortens the WAIT, never the verdict.
+  var CANCEL_TRIES = 3;
   function renderReturn(){
     app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
       + '<h1 class="st-title">' + (cameFromCancel ? 'Checking where that left things…' : 'Confirming your payment…') + '</h1>'
       + '<p class="st-sub">This usually takes a few seconds.</p></div>';
     var tries = 0;
+    var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
     (function poll(){
       tries++;
       fetchJson(A + '/bookings/pay-return?rt=' + encodeURIComponent(rt)).then(function(r){
@@ -757,11 +764,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if (v.status === 'paid') { forget(); return t ? load() : renderPaidMinimal(v.reference); }
         // A refusal must never read as an endless "confirming" — that is the whole point of
         // asking our own server rather than trusting the redirect.
-        if (v.status === 'failed') return resumeAfterFailure();
-        if (tries < RETURN_TRIES) { setTimeout(poll, 2000); return; }
+        if (v.status === 'failed') {
+          return resumeAfterFailure('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
+        }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        // Still nothing. On the cancel leg that is the expected answer, not a slow webhook.
+        // No decline help: nothing was declined, and four paragraphs about phoning a bank would
+        // be noise to someone who simply changed their mind.
+        if (cameFromCancel) {
+          return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', null);
+        }
         renderStillWaiting();
       }).catch(function(){
-        if (tries < RETURN_TRIES) { setTimeout(poll, 2000); return; }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
         renderStillWaiting();
       });
     })();
@@ -784,8 +799,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
   }
 
-  // Put them back on the form they left, with what they typed and what to do about a decline.
-  function resumeAfterFailure(){
+  // Put them back on the form they left, with what they typed. The caller says WHY they are back
+  // — a refusal (with the decline steps) or their own change of mind (without) — because the two
+  // deserve different words and the wrong one is worse than none.
+  function resumeAfterFailure(message, help){
     if (!t) return renderCannotResume();
     fetchJson(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){
       if (!r.ok) throw new Error('view ' + r.status);
@@ -796,7 +813,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (v.state === 'revised') return renderRevised();
       if (v.state !== 'payable') return renderUnavailable();
       renderDetails();
-      fail('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
+      fail(message, help);
     }).catch(function(){ renderCannotResume(); });
   }
 

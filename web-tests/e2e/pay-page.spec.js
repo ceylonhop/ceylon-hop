@@ -614,3 +614,43 @@ test('a webhook that has not landed yet keeps confirming rather than claiming an
   await expect(page.locator('.st-title')).toHaveText('Confirming your payment…');
   await expect(page.locator('#payhelp')).toHaveCount(0);
 });
+
+// "Back to Site" on PayHere's page. Nothing was attempted, so no notify is coming and the payment
+// sits at `pending` forever — polling the full budget would strand a customer who simply changed
+// their mind, then tell them "Payment received?", which is nonsense.
+test('coming back from Back to Site resumes the form instead of confirming forever', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 15000 });
+  await expect(page.locator('#payerr')).toContainText('nothing was charged');
+  // NOT a decline — the bank-call steps would be noise to someone who changed their mind.
+  await expect(page.locator('#payhelp')).toBeHidden();
+  // Their details survived, so retrying is one tap.
+  await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
+  await expect(page.locator('#gobtn')).toBeVisible();
+});
+
+// The race the short budget must still catch: they paid, then hit Back to Site before the webhook
+// landed. The cancel flag must not talk them out of a payment that actually succeeded.
+test('a cancel leg still reports a payment that really succeeded', async ({ page }) => {
+  await stubView(page, { state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+  await expect(page.locator('.st-title')).toContainText('booked');
+  await expect(page.locator('.ref')).toHaveText('CH-TEST1');
+});
