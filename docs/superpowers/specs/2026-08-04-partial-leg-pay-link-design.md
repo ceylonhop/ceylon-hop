@@ -22,7 +22,7 @@ expected to pay for them later.
   (`2026-07-23-deposits-balance-payments-design.md`). Nothing here introduces a part-paid booking.
 - **A chauffeur feature.** Chauffeur quotes keep today's full-total link — see §3.
 - **A second sale against one quote.** One quote produces at most one booking, as today. Top-ups
-  are explicitly out of scope; §10 records what would be needed.
+  are explicitly out of scope; §12 records what would be needed.
 
 ## 3. Scope: private transfers only
 
@@ -64,10 +64,26 @@ Next to it, a secondary affordance — **Part of trip…** — opens a picker:
   extra on its own.
 - Trip-wide extras (no `legIndex`) sit in the same list and stay ticked until ops removes them.
   This errs toward charging what was quoted rather than silently dropping revenue; the customer
-  sees the line on the pay page either way.
+  sees the line on the pay page either way. (Floor-safety: §11.)
 - A running total under the list, and a one-line summary: *"Covers 2 of 4 legs — $310.00"*.
 - Confirm mints the link and copies it, with the same SANDBOX toast rules as today.
 - **Blocked:** a selection with no legs. Extras alone are not a sale.
+
+### Non-contiguous selections are allowed, and warned about (owner call, 2026-08-04)
+
+Ops may drop a leg out of the **middle**, not only off the ends. When the selection is not a
+contiguous run, the picker shows a warning before Confirm:
+
+> *Leaves a gap after Kandy → Ella. The vehicle's repositioning isn't priced into these legs, and
+> the customer's itinerary will show the gap as a leg.*
+
+It warns, it does not block — the operator decides. Both halves of that sentence are real:
+
+- **Cost.** Leg prices assume a chained trip. A gapped subset strands the vehicle, and the
+  repositioning is unpriced. The summed-lines amount stays above the *pricing* floor but can sit
+  below true cost here (§11). Deliberately accepted, exactly as chauffeur idle days are.
+- **Itinerary.** See §8 — the booking cannot express a gap, so the confirmation email renders one
+  as a driven leg.
 
 After minting, the quote's builder shows what the outstanding link covers (leg count + amount), so
 ops does not have to remember what was sent.
@@ -91,6 +107,14 @@ read. The cost is that minting is no longer purely stateless.
 `patch()` does not. Add `payLinkSelection`, `soldCents` and `payLinkSeq` to `QuotePatch`.
 
 Minting still never touches `status`, `sentAt` or the assignee.
+
+**A revision bump clears the selection.** `legIndexes` are positional — the same convention extras
+already use for `legIndex` — so a reopen-and-edit that reorders or deletes a leg leaves a stored
+selection pointing at legs nobody chose. The token retires on the revision mismatch, so no customer
+can pay against it, but the ops UI would still display it and a re-mint could reuse it. So
+`QuoteRepo.update()` must null `pay_link_selection` and `sold_cents` alongside its revision bump
+(`pay_link_seq` is monotonic and is NOT reset). Editing a quote therefore retires its partial link
+and ops re-picks — the same fail-safe trade-off the owner already accepted for revisions.
 
 ### Token: v3 pins the selection
 
@@ -150,13 +174,88 @@ Changes:
   and the same reason, as the original pay-link gate.
 - `booking.total` and `amountDueNow` = the frozen `soldCents`, not `quote.totalCents`.
 - The chained-stops rule (`chainStops`) is unchanged and still applies to the filtered rides: a
-  dropped middle leg leaves a gap between two rides, which is exactly what a gap stop already
-  models.
+  dropped middle leg produces a gap stop, exactly as a disconnected quote does today.
 
-The confirmation email and driver itinerary need no separate change — they read the booking, and
-the booking now carries only what was sold.
+### The gap is a known, unfixed defect — and this feature makes it common
 
-## 9. Money and analytics
+`docs/known-bugs.md` (2026-07-30): `TripInput`'s flat `stops` array **cannot express a gap**, so
+the ops drawer (`legsHtmlFor`) and the customer itinerary email (`api/src/services/notifications.ts`)
+render every consecutive pair as a leg we drive. A per-segment `driven` flag was tried and
+cancelled — `trip_request` is a normalised table, not jsonb, so the flag was computed and thrown
+away on write. The real fix is the itinerary/leg/stay model in `docs/backend-spec.md` §5.2.
+
+Today that bug needs a disconnected quote to fire, which is rare. With middle-leg drops allowed
+(§5), **every gapped partial sale fires it**, and it fires in the customer's confirmation email.
+Rebuilding §5.2 is far larger than this feature, so the mitigation here is at the booking level
+rather than the segment level:
+
+- The confirmation email for a booking converted from a partial link states its coverage in words —
+  *"This booking covers 2 of the 4 legs in your itinerary; travel between them is your own
+  arrangement."* — resolved by looking the quote up through `findByConvertedBookingId` and reading
+  its stored selection.
+- The ops drawer shows the same coverage line, so ops sees what the customer sees.
+
+**Residual risk, accepted:** the itinerary list itself still renders the gap pair as a driven leg.
+The sentence contradicts it rather than removing it. This stays open in `docs/known-bugs.md` until
+§5.2 lands.
+
+Beyond the gap, the driver itinerary and confirmation email need no separate change — they read
+the booking, and the booking now carries only what was sold.
+
+## 9. Pay-commit: the resume path must not cross selections
+
+Today `/start` resumes an unfinished attempt:
+
+```
+found = quote.convertedBookingId ? bookings.get(convertedBookingId)
+                                 : bookings.findByIdempotencyKey(`pay:quote:{id}:r{rev}`)
+```
+
+Both halves are **selection-blind**, and `convertedBookingId` takes precedence. So without a change:
+mint selection A → the customer taps Continue but doesn't pay (booking exists, `payment_pending`,
+`convertedBookingId` stamped) → ops re-picks and mints selection B → the customer opens the new
+link and `/start` **resumes A's booking and charges A's amount**. The seq check retires the token,
+not this lookup, so retiring alone does not save it.
+
+Required:
+
+- The idempotency key carries the seq: `pay:quote:{id}:r{rev}:s{seq}`.
+- A `found` booking whose seq does not match the token's is **not resumable**. Treat it exactly as
+  the existing dead-booking case: ignore it and mint a fresh booking under a derived key
+  (`…:after:{id}`), which already keeps a double-tap to one booking.
+- The booking records the seq it was created under, so that comparison is possible. Reuse the
+  idempotency key it already carries rather than adding a column.
+
+The cancelled-booking rule from 2026-08-02 is unchanged and composes: a dead prior is ignored, a
+live prior for the *same* selection still resumes and re-records payer details.
+
+## 10. Ops "Mark booked" (`/book`)
+
+`POST /admin/quote/:id/book` creates a booking at `quote.totalCents` and is selection-blind. Left
+alone, it is a second path to a booking that quietly sells the whole trip while a partial link is
+outstanding.
+
+`/book` stays **full-quote only** — it is the "customer paid me another way for the trip" lever —
+but when `pay_link_selection` is non-NULL it must warn in the modal (*"A partial payment link for 2
+of 4 legs is outstanding; booking here charges the full quote and retires that link"*) and, on
+confirm, clear the selection and bump `pay_link_seq`.
+
+## 11. Money and analytics
+
+### Pricing floors hold; the operational floor does not
+
+Summing the lines can never produce a sub-floor sale. Every private leg line is already
+`Math.max(floorCents[vehicle], raw)` (`api/src/quote/breakdown.ts`), so any subset of `n` legs sums
+to at least `n × floorCents[vehicle]` — precisely the `protectedMinimumCents` the engine defends.
+And because a subset skips finishing, it never moves *down* toward that minimum the way the full
+quote's charm adjustment can. The vehicle tier is whatever `pricedVehicle()` chose for the whole
+quote, including a capacity upgrade, so a subset is if anything priced on a richer vehicle than it
+needs — an over-charge direction, never an under-charge.
+
+What the floors do **not** cover is the chain assumption: leg prices are built for a vehicle moving
+continuously through the itinerary. A gapped selection strands it, and the repositioning is
+unpriced. That is the operational floor, it is not defended by any number in the rate card, and the
+owner has accepted it as a warned-about risk (§5) in the same spirit as chauffeur idle days.
 
 - Settlement is unchanged: the webhook (and ops mark-paid) flips the quote to `won` via
   `claimWonQuote`. A partial sale is still a won quote.
@@ -171,7 +270,7 @@ the booking now carries only what was sold.
   booking and the payment record what was bought. That gap is intentional and is the same shape as
   the existing recorded-vs-priced mismatch signal on quote intent.
 
-## 10. Deferred: top-ups
+## 12. Deferred: top-ups
 
 Letting a later payment add legs to the same booking is a coherent next step and the stored
 selection is shaped for it. It is not in this build because it changes things that are live and
@@ -189,7 +288,7 @@ If ops instead needs to sell the remaining legs later, today's answer is a new q
 legs with its own link. If that proves tedious, **"Duplicate quote"** is the feature to build —
 smaller, and more generally useful, than top-up plumbing.
 
-## 11. Guards
+## 13. Guards
 
 | condition | result |
 | --- | --- |
@@ -200,8 +299,12 @@ smaller, and more generally useful, than top-up plumbing.
 | quote not `ready`/`sent`, unpriced shell, no engine | `409 not_linkable` (unchanged) |
 | token seq ≠ stored seq | `revised` state — sailed-off screen, `/start` refuses |
 | every line ticked | full-total link, `pay_link_selection` cleared to `NULL` |
+| selection is non-contiguous | **allowed**, with the picker warning of §5 |
+| quote edited (`update()` → revision bump) | selection and `sold_cents` cleared; ops re-picks |
+| `/start` finds a booking from a different seq | not resumable — fresh booking under `…:after:{id}` |
+| `/book` used while a selection is outstanding | allowed, warns, charges the full quote, retires the selection |
 
-## 12. Testing
+## 14. Testing
 
 - **Amount:** subset sums the ticked lines; all-ticked returns `totalCents` including finishing;
   a leg's extra follows its leg; a trip-wide extra can be dropped.
@@ -210,7 +313,13 @@ smaller, and more generally useful, than top-up plumbing.
   full-quote link while `pay_link_seq = 0` and is `revised` once a selection has been stored.
 - **Mapping:** a subset booking carries only the sold legs' stops and their km; a one-leg subset of
   a multi-leg quote maps to `single`; a subset with a gap keeps the gap stop.
-- **Guards:** every row of §11.
+- **Guards:** every row of §13.
+- **Resume across selections (the money bug of §9):** a `payment_pending` booking from selection A,
+  then a selection-B link — `/start` must mint a NEW booking at B's amount, not resume A's. Assert
+  the charged total, not just that a booking came back.
+- **Edit clears:** `update()` nulls the selection while leaving `pay_link_seq` monotonic; the next
+  mint does not reuse the old selection.
+- **Floors:** a subset's amount is ≥ `n × floorCents[vehicle]` for the priced tier.
 - **Wire:** `/view` for a partial link carries `lines` and `coverage` and still no margin, hot-zone
   or rate-card data.
 - **Analytics:** `wonValue` for a partial won quote is `soldCents`, while `sentValue` stays
@@ -218,7 +327,7 @@ smaller, and more generally useful, than top-up plumbing.
 - **Chain:** extend `web-tests/e2e/pay-link-chain.spec.js` with a partial mint → view → start →
   settle pass, asserting the booking's leg count and total.
 
-## 13. Rollout
+## 15. Rollout
 
 Additive migration, additive columns, additive token version; a quote with no selection behaves
 exactly as it does today. `main` → staging automatically; prod via the promote PR. Migrations apply
