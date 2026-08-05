@@ -2825,6 +2825,9 @@ function sheetFootHtml(t,nx){
 /* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
    note must not throw the scroll position away or eat text the operator is mid-typing.
    (Same morphdom already diff-rendering the quotes list.) */
+/* Empty a field whose value has just been consumed, and drop focus so the next diff-render
+   is free to patch it (morphSheet skips a focused or non-empty input on purpose). */
+function clearInput(el){if(!el)return;el.value='';if(el===document.activeElement)el.blur();}
 function morphSheet(sh,html){
   morphdom(sh,'<aside>'+html+'</aside>',{
     childrenOnly:true,
@@ -2986,7 +2989,11 @@ async function openDetail(id){
         toast('Booking loaded, but refund history is unavailable','error');
       }
     }
-    state.detailData=detail;if(state.detail===id)renderSheet();
+    /* Guard the ASSIGNMENT, not just the render: writing a late payload for a booking the
+       operator has already navigated away from leaves state.detailData describing a
+       different booking than state.detail, and the next render — a queue poll, a toggle —
+       paints those details into the open sheet. */
+    if(state.detail===id){state.detailData=detail;renderSheet();}
   }
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('openDetail',e);toast('Could not load details','error');}}
 }
@@ -3262,7 +3269,11 @@ document.addEventListener('click',async e=>{
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
-    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
+    /* clearInput on SUCCESS is load-bearing since the sheet became a diff-render: morphdom
+       deliberately preserves a field the operator is still filling in, so a CONSUMED field
+       has to be emptied by the code that consumed it. Without it the note stays in the box
+       after being saved and reads as "not saved" — an invitation to add it twice. */
+    case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
       /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
@@ -3328,7 +3339,7 @@ document.addEventListener('click',async e=>{
       if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
       if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request. You still have to make the refund in PayHere and confirm it with the reference.`))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
+      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
