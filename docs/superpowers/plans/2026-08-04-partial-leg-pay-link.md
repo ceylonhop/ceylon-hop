@@ -55,21 +55,30 @@ only.
 
 ### Task 1: Selection maths (pure module)
 
-The heart of the feature, and the only place the amount is decided. Pure so it can be tested
-without a DB, a route, or a rate card fixture beyond the real one.
+The heart of the feature, and the only place the amount is decided.
+
+**It reads the quote's STORED `result.lineItems` — it does not re-price anything.** Those line
+items are the engine's own output, re-priced on every save, and they are literally the prices the
+customer was quoted. Recomputing them (e.g. via `quoteBreakdown`) would introduce a second pricing
+implementation kept in parity by hand, and would drag in the rate card — where an expired
+`rateLockedUntil` makes `rateCardFor()` hand back the *live* card, pricing lines off today's
+numbers against yesterday's total. Reading the stored result removes both hazards.
+
+Line order in `result.lineItems` is fixed by `engine.ts`: the first `engine.legs.length` items are
+the driving legs, then the extras in request order, then an optional `price_adjustment` (the charm
+finishing, which by rule never applies to a subset — spec §4).
 
 **Files:**
 - Create: `api/src/quote/paySelection.ts`
 - Test: `api/src/quote/paySelection.test.ts`
 
 **Interfaces:**
-- Consumes: `quoteBreakdown` from `api/src/quote/breakdown.ts`; `normalizeExtra`, `QuoteRequest`
-  from `api/src/quote/types.ts`; `EXTRA_LABELS` from `api/src/quote/extrasDeposit.ts`;
-  `RATE_CARD`, `RateCard` from `api/src/quote/rateCard.ts`.
+- Consumes: `SavedQuote` from `api/src/db/quoteRepo.ts`; `QuoteRequest`, `LineItem` from
+  `api/src/quote/types.ts`.
 - Produces:
   - `interface PaySelection { legIndexes: number[]; extraIndexes: number[] }`
   - `interface PayLine { kind: 'leg' | 'extra'; index: number; label: string; amountCents: number; legIndex?: number }`
-  - `payLines(req: QuoteRequest, rateCard?: RateCard): PayLine[]`
+  - `payLines(quote: SavedQuote): PayLine[]`
   - `selectionAmountCents(lines: PayLine[], sel: PaySelection): number`
   - `isFullSelection(lines: PayLine[], sel: PaySelection): boolean`
   - `isContiguous(legIndexes: number[]): boolean`
@@ -82,7 +91,7 @@ Create `api/src/quote/paySelection.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest';
 import { payLines, selectionAmountCents, isFullSelection, isContiguous, gapAfterLeg } from './paySelection';
-import { quoteBreakdown } from './breakdown';
+import { quote } from './engine';
 import { RATE_CARD } from './rateCard';
 import type { QuoteRequest } from './types';
 
@@ -99,9 +108,16 @@ const req: QuoteRequest = {
   extras: [{ code: 'luggage', legIndex: 1 }, 'flex'],
 };
 
+// A stored quote is `request: { engine, tool }` + `result`. Build it through the REAL engine, so
+// the fixture carries the same line items a saved quote does rather than a hand-written shape.
+function savedQuote(request: QuoteRequest = req) {
+  const result = quote(request, RATE_CARD);
+  return { request: { engine: request }, result, totalCents: result.totalCents } as never;
+}
+
 describe('payLines', () => {
   it('emits one line per leg then one per extra, in request order', () => {
-    const lines = payLines(req, RATE_CARD);
+    const lines = payLines(savedQuote());
     expect(lines.map((l) => `${l.kind}:${l.index}`)).toEqual([
       'leg:0', 'leg:1', 'leg:2', 'extra:0', 'extra:1',
     ]);
@@ -111,16 +127,22 @@ describe('payLines', () => {
     expect(lines[4].legIndex).toBeUndefined();
   });
 
-  it('prices legs exactly as the quote breakdown does', () => {
-    const lines = payLines(req, RATE_CARD);
-    expect(lines[0].amountCents).toBe(quoteBreakdown(req, RATE_CARD).legs[0].priceCents);
-    expect(lines[3].amountCents).toBe(RATE_CARD.extras.luggage);
+  it('excludes the charm-finishing adjustment row', () => {
+    expect(payLines(savedQuote())).toHaveLength(5); // 3 legs + 2 extras, never price_adjustment
+  });
+
+  // THE invariant of this feature: the lines a partial link charges from are the same numbers
+  // the quote itself was built from. If this drifts, every partial sale charges a fiction.
+  it('sums with the adjustment to the quote total', () => {
+    const q = savedQuote() as never as { result: { priceAdjustmentCents: number }; totalCents: number };
+    const sum = payLines(q as never).reduce((a, l) => a + l.amountCents, 0);
+    expect(sum + q.result.priceAdjustmentCents).toBe(q.totalCents);
   });
 });
 
 describe('selectionAmountCents', () => {
   it('sums only the ticked lines', () => {
-    const lines = payLines(req, RATE_CARD);
+    const lines = payLines(savedQuote());
     const sel = { legIndexes: [0, 1], extraIndexes: [0] };
     expect(selectionAmountCents(lines, sel)).toBe(
       lines[0].amountCents + lines[1].amountCents + lines[3].amountCents,
@@ -128,8 +150,7 @@ describe('selectionAmountCents', () => {
   });
 
   it('never falls below the per-leg floor for the priced tier', () => {
-    const shortReq: QuoteRequest = { ...req, legs: [{ from: 'A', to: 'B', distanceKm: 1 }], extras: [] };
-    const lines = payLines(shortReq, RATE_CARD);
+    const lines = payLines(savedQuote({ ...req, legs: [{ from: 'A', to: 'B', distanceKm: 1 }], extras: [] }));
     expect(selectionAmountCents(lines, { legIndexes: [0], extraIndexes: [] }))
       .toBeGreaterThanOrEqual(RATE_CARD.floorCents.car);
   });
@@ -137,7 +158,7 @@ describe('selectionAmountCents', () => {
 
 describe('isFullSelection', () => {
   it('is true only when every line is ticked', () => {
-    const lines = payLines(req, RATE_CARD);
+    const lines = payLines(savedQuote());
     expect(isFullSelection(lines, { legIndexes: [0, 1, 2], extraIndexes: [0, 1] })).toBe(true);
     expect(isFullSelection(lines, { legIndexes: [0, 1, 2], extraIndexes: [0] })).toBe(false);
     expect(isFullSelection(lines, { legIndexes: [0, 2], extraIndexes: [0, 1] })).toBe(false);
@@ -156,7 +177,7 @@ describe('isContiguous', () => {
 
 describe('gapAfterLeg', () => {
   it('names the leg the gap opens after, for the ops warning', () => {
-    const lines = payLines(req, RATE_CARD);
+    const lines = payLines(savedQuote());
     expect(gapAfterLeg(lines, { legIndexes: [0, 2], extraIndexes: [] })).toBe('Colombo → Kandy');
     expect(gapAfterLeg(lines, { legIndexes: [0, 1], extraIndexes: [] })).toBeNull();
   });
@@ -174,22 +195,25 @@ Expected: FAIL — `Failed to resolve import "./paySelection"`.
 Create `api/src/quote/paySelection.ts`:
 
 ```ts
-import { quoteBreakdown } from './breakdown';
-import { EXTRA_LABELS } from './extrasDeposit';
-import { RATE_CARD, type RateCard } from './rateCard';
-import { normalizeExtra, normalizeRide, type QuoteRequest } from './types';
+import type { SavedQuote } from '../db/quoteRepo';
+import type { LineItem, QuoteRequest } from './types';
 
 // Partial-leg pay links (spec 2026-08-04). The ONE place a partial link's amount is decided.
 //
 // The rule is the owner's: a partial link charges the line prices the quote ALREADY shows,
-// added up. No re-pricing, no re-finishing. That is why this module reads `quoteBreakdown`
-// (the same per-leg prices the builder and the customer's quote render) rather than calling
-// the engine over a subset — an engine re-run would apply charm finishing to the subset and
-// quote a number the customer never saw.
+// added up. So this module READS `quote.result.lineItems` — the engine's own output, re-priced
+// on every save — and never recomputes a price. Two hazards that buys us out of:
+//   • a second pricing implementation (quoteBreakdown) kept in parity with the engine by hand;
+//   • the rate card, where an expired `rateLockedUntil` makes rateCardFor() return the LIVE
+//     card, which would price these lines off today's numbers against yesterday's total.
 //
-// Floors come for free: `quoteBreakdown` already applies `max(floorCents[vehicle], raw)` per
-// private leg, so any subset of n legs clears n × floor — exactly the `protectedMinimumCents`
-// the engine defends. See §11 of the spec.
+// Line order is fixed by engine.ts: the first `engine.legs.length` items are the driving legs,
+// then the extras in request order, then an optional price_adjustment (the charm finishing).
+// The adjustment is excluded — by rule it never applies to a subset (spec §4).
+//
+// Floors come for free: the engine already applies max(floorCents[vehicle], raw) per private
+// leg, so any subset of n legs clears n × floor — exactly the `protectedMinimumCents` the
+// engine defends. See §11 of the spec.
 
 export interface PaySelection {
   legIndexes: number[];
@@ -206,38 +230,48 @@ export interface PayLine {
   legIndex?: number;
 }
 
-const legName = (stops: string[]): string => `${stops[0]} → ${stops[stops.length - 1]}`;
+/** Thrown when a quote can't produce charge lines — chauffeur, shell, or a legacy row. */
+export class NotLineablePriceError extends Error {}
 
 /**
- * Every charge line of a private quote, legs first then extras, each in request order.
- * Throws for a non-private request: chauffeur legs carry only their km share, so a subset of
- * them sums to a meaningless number (spec §3).
+ * Every charge line of a private quote, read from its stored result: legs first (in `engine.legs`
+ * order), then extras (in `engine.extras` order). Throws for anything that isn't a priced private
+ * quote — a chauffeur leg carries only its km share, so a subset of them sums to a meaningless
+ * number (spec §3).
  */
-export function payLines(req: QuoteRequest, rateCard: RateCard = RATE_CARD): PayLine[] {
-  if (req.product !== 'private') throw new Error('PAY_SELECTION_PRIVATE_ONLY');
-  const breakdown = quoteBreakdown(req, rateCard);
-  const names = req.legs.map((leg) => legName(normalizeRide(leg).stops));
+export function payLines(quote: SavedQuote): PayLine[] {
+  const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
+  if (!engine || engine.product !== 'private') throw new NotLineablePriceError('not a private quote');
+  const items = (quote.result as { lineItems?: LineItem[] } | null)?.lineItems;
+  if (!Array.isArray(items)) throw new NotLineablePriceError('quote has no priced line items');
 
-  const legLines: PayLine[] = breakdown.legs.map((leg, i) => ({
+  const legCount = engine.legs.length;
+  // A shell or a half-saved row would slice legs out of thin air; refuse rather than invent.
+  if (items.length < legCount) throw new NotLineablePriceError('fewer line items than legs');
+
+  const legLines: PayLine[] = items.slice(0, legCount).map((item, i) => ({
     kind: 'leg',
     index: i,
-    label: names[i],
-    amountCents: leg.priceCents,
+    label: item.label,
+    amountCents: item.amountCents,
   }));
 
-  const extraLines: PayLine[] = (req.extras ?? []).map((raw, i) => {
-    const { code, legIndex } = normalizeExtra(raw);
-    const amountCents = (rateCard.extras as Record<string, number>)[code];
-    if (amountCents === undefined) throw new Error('UNKNOWN_EXTRA');
-    const attributedTo = legIndex != null ? names[legIndex] : undefined;
-    return {
-      kind: 'extra',
-      index: i,
-      label: attributedTo ? `${EXTRA_LABELS[code]} — ${attributedTo}` : EXTRA_LABELS[code],
-      amountCents,
-      ...(legIndex != null ? { legIndex } : {}),
-    };
-  });
+  // Everything after the legs is an extra, except the finishing adjustment the engine appends
+  // last. An UNATTRIBUTED extra carries no meta at all, so extras cannot be identified by meta —
+  // position is the contract, and it matches `engine.extras` one-for-one.
+  const extraLines: PayLine[] = items
+    .slice(legCount)
+    .filter((item) => (item.meta as { kind?: string } | undefined)?.kind !== 'price_adjustment')
+    .map((item, i) => {
+      const legIndex = (item.meta as { legIndex?: number } | undefined)?.legIndex;
+      return {
+        kind: 'extra' as const,
+        index: i,
+        label: item.label,
+        amountCents: item.amountCents,
+        ...(typeof legIndex === 'number' ? { legIndex } : {}),
+      };
+    });
 
   return [...legLines, ...extraLines];
 }
@@ -368,6 +402,10 @@ ALTER TABLE "quotes" ADD COLUMN "pay_link_selection" jsonb;
 ALTER TABLE "quotes" ADD COLUMN "sold_cents" integer;
 ALTER TABLE "quotes" ADD COLUMN "pay_link_seq" integer DEFAULT 0 NOT NULL;
 ```
+
+Hand-written, matching the file's neighbours. `drizzle/meta/` gains no snapshot for it — the same
+gap already recorded for 0013/0023/0029 in `docs/known-bugs.md`. Harmless until someone runs
+`npm run db:generate`; if a redundant migration appears there later, delete it.
 
 - [ ] **Step 4: Add the Drizzle columns**
 
@@ -829,8 +867,7 @@ Expected: FAIL — the route ignores the body; `coverage` is undefined.
 In `api/src/routes/internalQuote.ts`, add the imports:
 
 ```ts
-import { payLines, selectionAmountCents, isFullSelection, type PaySelection } from '../quote/paySelection';
-import { rateCardFor } from '../quote/rateLock';
+import { payLines, selectionAmountCents, isFullSelection, NotLineablePriceError, type PaySelection } from '../quote/paySelection';
 ```
 
 and a body schema next to the file's other zod schemas:
@@ -857,14 +894,14 @@ Replace the body of `r.post('/:id/pay-link', csrf, …)` after the existing `not
     let coverage: { soldLegs: number; totalLegs: number } | null = null;
 
     if (selection) {
-      // Private only: a chauffeur leg is a km share, so a subset of them sums to nothing
-      // meaningful (spec §3).
-      if (engine.product !== 'private') return c.json({ error: 'not_linkable' }, 409);
-      const { rateCard } = rateCardFor(
-        { rateCardJson: quote.rateCardJson as never, rateLockedUntil: quote.rateLockedUntil },
-        new Date(),
-      );
-      const lines = payLines(engine, rateCard);
+      // Private only, and priced — payLines throws otherwise (chauffeur, shell, legacy row).
+      let lines;
+      try {
+        lines = payLines(quote);
+      } catch (e) {
+        if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+        throw e;
+      }
       if (isFullSelection(lines, selection)) {
         // Nothing was unticked — use the stored total so charm finishing survives (spec §4).
         selection = null;
@@ -928,17 +965,16 @@ literal path is registered before any `/:id` param route):
   r.get('/:id/pay-lines', async (c) => {
     const quote = await deps.quotes.get(c.req.param('id'));
     if (!quote) return c.json({ error: 'not_found' }, 404);
-    const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
-    if (!engine || engine.product !== 'private') return c.json({ error: 'not_linkable' }, 409);
-    const { rateCard } = rateCardFor(
-      { rateCardJson: quote.rateCardJson as never, rateLockedUntil: quote.rateLockedUntil },
-      new Date(),
-    );
-    return c.json({
-      lines: payLines(engine, rateCard),
-      totalCents: quote.totalCents,
-      selection: quote.payLinkSelection,
-    });
+    try {
+      return c.json({
+        lines: payLines(quote),
+        totalCents: quote.totalCents,
+        selection: quote.payLinkSelection,
+      });
+    } catch (e) {
+      if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+      throw e;
+    }
   });
 ```
 
@@ -1044,11 +1080,7 @@ Update both call sites to pass `parsed`. In the `payable` response, add the part
     const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
     const partial = sel && engine && engine.product === 'private'
       ? (() => {
-          const { rateCard } = rateCardFor(
-            { rateCardJson: quote.rateCardJson as never, rateLockedUntil: quote.rateLockedUntil },
-            new Date(),
-          );
-          const all = payLines(engine, rateCard);
+          const all = payLines(quote);
           const ticked = all.filter((l) =>
             l.kind === 'leg' ? sel.legIndexes.includes(l.index) : sel.extraIndexes.includes(l.index),
           );
@@ -1150,24 +1182,31 @@ In `/start`, after the state checks:
 
 ```ts
     // Seq-scoped, so a booking minted under one selection can never be resumed by a link minted
-    // under another (spec §9). The convertedBookingId shortcut below is selection-blind, so the
-    // key alone is not enough — the found booking's own key must match.
+    // under another (spec §9).
+    //
+    // Resumability is decided by the KEY LOOKUP ALONE, never by convertedBookingId. The key
+    // carries revision AND seq, so findByIdempotencyKey can only ever return a booking from this
+    // exact selection — no comparison needed, and none is possible: `Booking` does not expose its
+    // idempotency key. Consulting convertedBookingId first (today's behaviour) is precisely what
+    // would hand back the previous selection's booking, at the previous selection's amount.
     const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
-    const candidate = quote.convertedBookingId
-      ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(baseKey);
-    const sameSelection = !!candidate?.idempotencyKey?.startsWith(baseKey);
-    const found = sameSelection ? candidate : null;
+    const found = await deps.bookings.findByIdempotencyKey(baseKey);
     const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
 ```
 
 Leave the resume branch that follows exactly as it is. For the fresh-booking path, derive the key
-from whatever was found (dead prior *or* another selection's booking) so a double tap still yields
-one booking:
+from whatever booking already exists — this selection's dead one, or the previous selection's via
+`convertedBookingId` — so a double tap still yields exactly one booking:
 
 ```ts
-    const idempotencyKey = candidate ? `${baseKey}:after:${candidate.id}` : baseKey;
+    const prior = found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
+    const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
 ```
+
+Note this deliberately changes behaviour for FULL links too: they now key on `:s0` and stop
+consulting `convertedBookingId` for resumption. The existing cancelled-booking tests
+(2026-08-02) must still pass — a cancelled prior is ignored and a fresh booking is minted, which
+is exactly what this shape does.
 
 Then map and price against the selection:
 
@@ -1180,8 +1219,7 @@ Then map and price against the selection:
 
 and replace both `total`/`amountDueNow` occurrences in the `newBooking` literal with `soldCents`.
 
-If `BookingRepo.get()` does not expose `idempotencyKey`, add it to the returned row (it is stored
-already — `bookings.findByIdempotencyKey` looks it up); do not add a second column.
+No change to `BookingRepo` is needed — the key lookup is the only thing consulted.
 
 - [ ] **Step 4: Run the tests**
 
@@ -1191,7 +1229,7 @@ Expected: PASS, including the existing cancelled-booking resume tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/routes/quotePay.ts api/src/routes/quotePay.test.ts api/src/db/bookingRepo.ts
+git add api/src/routes/quotePay.ts api/src/routes/quotePay.test.ts
 git commit -m "fix(pay): never resume a booking across pay-link selections"
 ```
 
@@ -1579,16 +1617,24 @@ this sentence is what stops the email reading as a promise to drive it.
 
 - [ ] **Step 1: Write the failing test**
 
+Spiked before writing this: `sendBookingConfirmation(booking, email, links)` is **pure over its
+arguments** — it has no repo access, and every other sender in that file follows the same rule.
+So the coverage is passed IN, by the caller that already resolves the quote. Follow the existing
+test style in `notifications.test.ts` (a fake `EmailAdapter` capturing `send`):
+
 ```ts
 it('tells the customer which legs a partial booking covers', async () => {
-  const { html } = await renderBookingConfirmation(bookingFromPartialQuote({ soldLegs: 2, totalLegs: 4 }));
-  expect(html).toContain('covers 2 of the 4 legs in your itinerary');
-  expect(html).toContain('your own arrangement');
+  const email = fakeEmail();
+  await sendBookingConfirmation(trip, email, { coverage: { soldLegs: 2, totalLegs: 4 } });
+  expect(email.sent[0].html).toContain('covers 2 of the 4 legs in your itinerary');
+  expect(email.sent[0].html).toContain('your own arrangement');
+  expect(email.sent[0].text).toContain('covers 2 of the 4 legs');
 });
 
 it('says nothing extra for a whole-trip booking', async () => {
-  const { html } = await renderBookingConfirmation(bookingFromFullQuote());
-  expect(html).not.toContain('covers');
+  const email = fakeEmail();
+  await sendBookingConfirmation(trip, email);
+  expect(email.sent[0].html).not.toContain('covers');
 });
 ```
 
@@ -1599,13 +1645,38 @@ Expected: FAIL — no such sentence.
 
 - [ ] **Step 3: Implement**
 
-Resolve the quote via `quotes.findByConvertedBookingId(booking.id)`; when it has a
-`payLinkSelection`, render one sentence above the itinerary:
+Widen the third argument of `sendBookingConfirmation` (it already carries `{ manage? }`):
+
+```ts
+export async function sendBookingConfirmation(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
+): Promise<void> {
+```
+
+and render one sentence above the itinerary in both `renderHtml` and `renderText` when
+`coverage` is present:
 
 > This booking covers 2 of the 4 legs in your itinerary; travel between them is your own
 > arrangement.
 
-Add the same line to the ops drawer's `legsHtmlFor` output. Then append a row to
+Then supply it from the one caller that settles a payment,
+`api/src/routes/webhooks.ts:229` — it already resolves the quote there for `claimWonQuote`:
+
+```ts
+          const q = await quotes.findByConvertedBookingId(paid.id);
+          const sel = q?.payLinkSelection;
+          const legs = ((q?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          await sendBookingConfirmation(paid, email, {
+            manage: manageUrl(paid, baseUrl, linkSecret),
+            ...(sel && legs ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legs } } : {}),
+          });
+```
+
+Give `api/src/routes/devEmails.ts`'s `confirmation` entry a fixture coverage so the
+`/dev/emails` preview shows the partial variant. Add the same line to the ops drawer's
+`legsHtmlFor` output. Then append a row to
 `docs/known-bugs.md` recording the residual risk: *a gapped partial booking still renders the gap
 pair as a driven leg in the itinerary list; the coverage sentence contradicts it. Closes when
 `docs/backend-spec.md` §5.2 lands.*
@@ -1618,7 +1689,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add api/src/services/notifications.ts api/src/routes/ops-ui.html api/src/services/notifications.test.ts docs/known-bugs.md
+git add api/src/services/notifications.ts api/src/routes/webhooks.ts api/src/routes/devEmails.ts api/src/routes/ops-ui.html api/src/services/notifications.test.ts docs/known-bugs.md
 git commit -m "feat(email): state what a partial booking covers"
 ```
 
