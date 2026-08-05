@@ -569,3 +569,44 @@ describe('pay-link selection (spec 2026-08-04)', () => {
     expect(updated!.payLinkSeq).toBe(3);
   });
 });
+
+describe('customer-facing price baseline (spec 2026-08-05)', () => {
+  it('defaults to no baseline', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    expect(q.customerTotalCents).toBeNull();
+    expect(q.customerTotalAt).toBeNull();
+    expect(q.customerTotalVia).toBeNull();
+  });
+
+  it('round-trips a baseline through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const at = new Date('2026-08-05T10:00:00.000Z');
+    const patched = await repo.patch(q.id, { customerTotal: { cents: 10900, at, via: 'sent' } });
+    expect(patched!.customerTotalCents).toBe(10900);
+    expect(patched!.customerTotalAt).toEqual(at);
+    expect(patched!.customerTotalVia).toBe('sent');
+  });
+
+  // The three fields move as ONE unit, like rateLock — a baseline amount with no date, or a date
+  // with no amount, would render an indicator that can't say when.
+  it('leaves the baseline alone when the patch does not mention it', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    await repo.patch(q.id, { customerTotal: { cents: 10900, at: new Date(), via: 'sent' } });
+    await repo.patch(q.id, { status: 'pending_review' });
+    expect((await repo.get(q.id))!.customerTotalCents).toBe(10900);
+  });
+
+  // An edit must NEVER move the baseline: the whole point is that it records what the customer
+  // saw, not what the quote currently says.
+  it('survives a content update', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    await repo.patch(q.id, { customerTotal: { cents: 10900, at: new Date(), via: 'sent' } });
+    const updated = await repo.update(q.id, sample({ totalCents: 9900 }));
+    expect(updated!.customerTotalCents).toBe(10900);
+    expect(updated!.totalCents).toBe(9900);
+  });
+});
