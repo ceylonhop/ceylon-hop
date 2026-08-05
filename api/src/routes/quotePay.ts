@@ -187,10 +187,16 @@ export function quotePayRoutes(deps: {
     // ready/sent, which is the business's own statement that it is payable. The lever for
     // "stop taking money" is moving the quote out of those statuses, which already renders the
     // sailed-off screen. So a dead prior is ignored and a fresh booking is minted.
-    const baseKey = `pay:quote:${quote.id}:r${parsed.revision}`;
-    const found = quote.convertedBookingId
-      ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(baseKey);
+    // Seq-scoped since partial links (spec §9): the key carries the revision AND the selection
+    // seq, so a lookup can only ever return a booking minted for THIS selection.
+    //
+    // Resumability is decided by the key lookup ALONE — deliberately not by convertedBookingId,
+    // which is selection-blind. Consulting it first is exactly what would hand back the previous
+    // selection's booking, at the previous selection's amount, to a customer holding a link for
+    // a different set of legs. (`Booking` does not expose its own idempotency key, so comparing
+    // after the fact is not an option either.)
+    const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
+    const found = await deps.bookings.findByIdempotencyKey(baseKey);
     const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
     if (found && chargeable) {
       // Re-record the payer before handing back the booking. Everything the gateway sees — name,
@@ -212,12 +218,19 @@ export function quotePayRoutes(deps: {
         200,
       );
     }
-    // Derived from the dead booking, so it stays deterministic: a double-tap after the same
-    // cancellation still yields ONE new booking rather than two.
-    const idempotencyKey = found ? `${baseKey}:after:${found.id}` : baseKey;
+    // Derived from whatever booking already exists — this selection's dead one, or the previous
+    // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
+    // cancellation (or the same re-pick) still yields ONE new booking rather than two.
+    const prior =
+      found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
+    const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
+    // The booking must carry ONLY the legs that were sold — otherwise the driver's itinerary and
+    // the confirmation email promise legs nobody paid for (spec §8).
+    const legIndexes = quote.payLinkSelection?.legIndexes;
+    const soldCents = quote.soldCents ?? quote.totalCents;
     const tool = (quote.request as { tool?: { passengerCount?: number; luggageCount?: number; legs?: { date?: string }[] } } | null)?.tool;
     const firstDate = (tool?.legs ?? []).map((l) => l.date).find((d) => !!d);
     let mapped;
@@ -229,7 +242,7 @@ export function quotePayRoutes(deps: {
         bags: typeof tool?.luggageCount === 'number' ? tool.luggageCount : 0,
         date: firstDate,
         time: undefined,
-      });
+      }, legIndexes ? { legIndexes } : undefined);
     } catch (e) {
       if (e instanceof QuoteNotBookableError) return c.json({ error: 'quote_unavailable' }, 409);
       throw e;
@@ -237,9 +250,9 @@ export function quotePayRoutes(deps: {
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
-        ? { mode: 'single', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: soldCents,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() }
-        : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: soldCents,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() };
 
     const created = await deps.bookings.create(newBooking, { idempotencyKey });

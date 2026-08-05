@@ -524,3 +524,53 @@ describe('GET /quotes/pay/view for a partial link', () => {
     expect(body.totals.cents).toBe(q.totalCents);
   });
 });
+
+describe('POST /quotes/pay/start for a partial link', () => {
+  it('creates a booking over the sold legs, at the sold amount', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const { token, soldCents } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const res = await start(createApp({ quotes, bookings }), token);
+    expect(res.status).toBe(201);
+    const booking = (await bookings.get((await res.json()).bookingId))!;
+    expect(booking.total).toBe(soldCents);
+    expect(booking.amountDueNow).toBe(soldCents);
+    expect(booking.mode).toBe('trip');
+    if (booking.mode === 'trip') expect(booking.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+  });
+
+  // THE bug this task exists to prevent (spec §9). Selection A leaves a payment_pending booking
+  // AND stamps convertedBookingId; ops re-picks; the new link must not resume A's booking and
+  // charge A's amount.
+  it('does not resume a booking minted under a different selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const a = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    const first = await (await start(app, a.token)).json();
+
+    // Ops re-picks — one cheaper leg — and sends the new link.
+    const q = (await quotes.get(a.quote.id))!;
+    const selB = { legIndexes: [2], extraIndexes: [] };
+    const soldB = selectionAmountCents(payLines(q), selB);
+    await quotes.patch(q.id, { payLinkSelection: selB, soldCents: soldB, payLinkSeq: 2 });
+    const tokenB = signQuotePayToken(q.id, q.revision, SECRET, 2);
+
+    const second = await (await start(app, tokenB)).json();
+    expect(second.bookingId).not.toBe(first.bookingId);
+    const b = (await bookings.get(second.bookingId))!;
+    expect(b.total).toBe(soldB);
+    expect(b.total).not.toBe(a.soldCents);
+    if (b.mode === 'single') expect(b.input.from).toBe('Ella');
+  });
+
+  it('a double tap on the SAME link still yields one booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const a = await (await start(app, token)).json();
+    const b = await (await start(app, token)).json();
+    expect(b.bookingId).toBe(a.bookingId);
+  });
+});
