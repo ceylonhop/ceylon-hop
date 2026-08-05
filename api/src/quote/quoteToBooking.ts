@@ -61,18 +61,42 @@ function daySpan(firstDate: string, lastDate: string): number {
   return Math.max(1, Math.round(ms / 86_400_000) + 1);
 }
 
+// Partial-leg pay links (spec 2026-08-04). `legIndexes` says which of `engine.legs` this booking
+// covers — the legs the customer actually paid for. Absent = the whole itinerary, which is every
+// pre-existing caller. Private only; a chauffeur quote never carries a selection.
+export interface MapOptions {
+  legIndexes?: number[];
+}
+
+// Deduped and sorted, so a selection is a SET of legs in itinerary order however ops clicked it.
+// Out-of-range indexes are dropped rather than throwing: the caller's own guard (an empty result
+// is not bookable) is the one that should speak, and it does so below.
+function selectRides<T>(rides: T[], legIndexes?: number[]): T[] {
+  if (!legIndexes) return rides;
+  return [...new Set(legIndexes)]
+    .sort((a, b) => a - b)
+    .filter((i) => i >= 0 && i < rides.length)
+    .map((i) => rides[i]);
+}
+
 // Map a stored ops quote's engine request + the modal details into a bookable input.
 // Private single-leg → single; private multi-leg or chauffeur → trip. Shared / engine-less
 // quotes throw (ops quotes are private/chauffeur; nothing else reaches this path).
-export function quoteToBooking(quote: SavedQuote, details: BookingDetails): MappedBooking {
+export function quoteToBooking(
+  quote: SavedQuote,
+  details: BookingDetails,
+  opts?: MapOptions,
+): MappedBooking {
   const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engine || engine.product === 'shared') {
     throw new QuoteNotBookableError('quote has no bookable itinerary');
   }
 
   if (engine.product === 'private') {
-    if (!engine.legs.length) throw new QuoteNotBookableError('private quote has no legs');
-    const rides = engine.legs.map(normalizeRide);
+    // AFTER the filter, so an empty selection is refused by the same guard that refuses a
+    // legless quote — one rule, one error, no second copy to drift.
+    const rides = selectRides(engine.legs.map(normalizeRide), opts?.legIndexes);
+    if (!rides.length) throw new QuoteNotBookableError('private quote has no legs');
     const distanceKm = sumKm(rides);
     // A single 2-stop ride is a point-to-point transfer (today's behavior); a single 3+-stop
     // ride, or any multi-ride itinerary, is a trip.
@@ -159,9 +183,9 @@ const BOOKABILITY_PROBE: BookingDetails = {
   bags: 0,
 };
 
-export function isQuoteBookable(quote: SavedQuote): boolean {
+export function isQuoteBookable(quote: SavedQuote, opts?: MapOptions): boolean {
   try {
-    quoteToBooking(quote, BOOKABILITY_PROBE);
+    quoteToBooking(quote, BOOKABILITY_PROBE, opts);
     return true;
   } catch (e) {
     if (e instanceof QuoteNotBookableError) return false;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteToBooking, QuoteNotBookableError, type BookingDetails } from './quoteToBooking';
+import { quoteToBooking, isQuoteBookable, QuoteNotBookableError, type BookingDetails } from './quoteToBooking';
 import type { SavedQuote } from '../db/quoteRepo';
 
 const CUST = { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' };
@@ -216,5 +216,59 @@ describe('a quote whose legs do not connect', () => {
     expect(m.mode).toBe('trip');
     if (m.mode !== 'trip') return;
     expect(m.input.dates).toBeUndefined();
+  });
+});
+
+describe('partial mapping (legIndexes, spec 2026-08-04)', () => {
+  const threeLegs = () => q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 }] });
+
+  it('maps only the selected legs and sums only their km', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [0, 1] });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+    expect(m.distanceKm).toBe(260);
+  });
+
+  it('a one-leg subset of a multi-leg quote is a single transfer', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [1] });
+    expect(m.mode).toBe('single');
+    if (m.mode === 'single') {
+      expect(m.input.from).toBe('Kandy');
+      expect(m.input.to).toBe('Ella');
+    }
+    expect(m.distanceKm).toBe(140);
+  });
+
+  // A dropped middle leg leaves two rides that do not chain — the same gap a disconnected quote
+  // produces today. The gap stop is kept, never silently dropped (GC-13).
+  it('keeps the gap stop when a middle leg is dropped', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [0, 2] });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
+    expect(m.distanceKm).toBe(320);
+  });
+
+  it('is order- and duplicate-insensitive', () => {
+    const a = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [1, 0, 1] });
+    expect(a.mode).toBe('trip');
+    if (a.mode === 'trip') expect(a.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+  });
+
+  it('refuses an empty selection', () => {
+    expect(() => quoteToBooking(threeLegs(), DETAILS, { legIndexes: [] })).toThrow(QuoteNotBookableError);
+  });
+
+  it('leaves every existing caller alone when no option is passed', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS);
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
+    expect(m.distanceKm).toBe(460);
+  });
+
+  it('isQuoteBookable answers for the subset', () => {
+    expect(isQuoteBookable(threeLegs(), { legIndexes: [2] })).toBe(true);
+    expect(isQuoteBookable(threeLegs(), { legIndexes: [] })).toBe(false);
   });
 });

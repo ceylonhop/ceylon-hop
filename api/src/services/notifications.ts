@@ -400,7 +400,12 @@ function paidRows(booking: Booking): [string, string][] {
   return [['Total paid', money(booking.total, booking.currency)]];
 }
 
-function renderHtml(booking: Booking, manageLink?: string): string {
+function coverageLine(coverage?: { soldLegs: number; totalLegs: number }): string {
+  if (!coverage) return '';
+  return `This booking covers ${coverage.soldLegs} of the ${coverage.totalLegs} legs in your itinerary; travel between them is your own arrangement.`;
+}
+
+function renderHtml(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
   const first = esc(booking.input.customer.firstName);
   return page(
     brandHeader() +
@@ -410,6 +415,9 @@ function renderHtml(booking: Booking, manageLink?: string): string {
         `You&rsquo;re all set, ${first}!`,
         'Your trip is booked. Keep this email for your records &mdash; we&rsquo;ll take it from here.',
       ) +
+      (coverage
+        ? `<p style="margin:0 0 14px;font-size:13px;color:#6b6353;">${esc(coverageLine(coverage))}</p>`
+        : '') +
       ticketCard(booking, BADGE_PAID) +
       paidRows(booking).map(([label, amount]) => totalBlock(label, amount)).join('') +
       (manageLink ? manageButton(manageLink) : '') +
@@ -422,8 +430,9 @@ function renderHtml(booking: Booking, manageLink?: string): string {
   );
 }
 
-function renderText(booking: Booking, manageLink?: string): string {
+function renderText(booking: Booking, manageLink?: string, coverage?: { soldLegs: number; totalLegs: number }): string {
   return textShell("your booking is confirmed", "You're all set! Your trip details:", booking, [
+    ...(coverage ? [coverageLine(coverage), ''] : []),
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     ...paidRows(booking).map(([label, amount]) => `${label}: ${amount}`),
     '',
@@ -433,16 +442,20 @@ function renderText(booking: Booking, manageLink?: string): string {
   ]);
 }
 
+// `coverage` (spec 2026-08-04): set when the booking was sold through a PARTIAL pay link —
+// only some of the quoted legs. The itinerary below renders only the sold legs, but the flat
+// stop list cannot mark a gap (docs/known-bugs.md 2026-07-30), so this sentence is what stops
+// a gapped booking's email reading as a promise to drive every consecutive pair.
 export async function sendBookingConfirmation(
   booking: Booking,
   email: EmailAdapter,
-  links: { manage?: string } = {},
+  links: { manage?: string; coverage?: { soldLegs: number; totalLegs: number } } = {},
 ): Promise<void> {
   await email.send({
     to: booking.input.customer.email,
     subject: `Your Ceylon Hop booking is confirmed — ${booking.reference}`,
-    html: renderHtml(booking, links.manage),
-    text: renderText(booking, links.manage),
+    html: renderHtml(booking, links.manage, links.coverage),
+    text: renderText(booking, links.manage, links.coverage),
   });
 }
 
