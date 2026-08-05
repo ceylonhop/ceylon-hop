@@ -6,6 +6,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
+import { payLines } from '../quote/paySelection';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -56,6 +57,34 @@ function prefillFor(quote: SavedQuote): { firstName: string; lastName: string; e
   };
 }
 
+// The customer-facing half of a partial link: the ticked lines, and how much of the itinerary
+// they cover. HAND-PICKED on purpose — PayLine's kind/index/legIndex are internal, and `result`
+// itself carries margin and hot-zone annotations that must never reach the wire (invariant 1).
+// Returns null for anything that can't produce lines, so a partial link on an odd quote degrades
+// to today's single-total page rather than erroring in front of a paying customer.
+function partialView(
+  quote: SavedQuote,
+  sel: { legIndexes: number[]; extraIndexes: number[] },
+): { lines: { label: string; amountCents: number }[]; coverage: { soldLegs: number; totalLegs: number } } | null {
+  let all;
+  try {
+    all = payLines(quote);
+  } catch {
+    return null;
+  }
+  const ticked = all.filter((l) =>
+    l.kind === 'leg' ? sel.legIndexes.includes(l.index) : sel.extraIndexes.includes(l.index),
+  );
+  if (!ticked.length) return null;
+  return {
+    lines: ticked.map((l) => ({ label: l.label, amountCents: l.amountCents })),
+    coverage: {
+      soldLegs: sel.legIndexes.length,
+      totalLegs: all.filter((l) => l.kind === 'leg').length,
+    },
+  };
+}
+
 export function quotePayRoutes(deps: {
   quotes: QuoteRepo;
   bookings: BookingRepo;
@@ -71,7 +100,7 @@ export function quotePayRoutes(deps: {
   // won quote must never read as a dead end, and a settled booking must never re-offer Pay.
   async function stateFor(
     quote: SavedQuote | null,
-    revision: number,
+    parsed: { revision: number; seq: number },
   ): Promise<{ state: PayState; paidVia?: { bookingId: string } }> {
     if (!quote) return { state: 'unavailable' };
     if (quote.convertedBookingId) {
@@ -84,7 +113,10 @@ export function quotePayRoutes(deps: {
     } else if (quote.status === 'won') {
       return { state: 'paid' };
     }
-    if (quote.revision !== revision) return { state: 'revised' };
+    if (quote.revision !== parsed.revision) return { state: 'revised' };
+    // A re-pick retires the outstanding link exactly as an edit does — same screen, same reason:
+    // the number this link was minted for is no longer the number ops is asking for (spec §6).
+    if (quote.payLinkSeq !== parsed.seq) return { state: 'revised' };
     if (quote.status === 'ready' || quote.status === 'sent') return { state: 'payable' };
     return { state: 'unavailable' };
   }
@@ -93,7 +125,7 @@ export function quotePayRoutes(deps: {
     const parsed = verifyQuotePayToken(c.req.query('t'), deps.linkSecret);
     if (!parsed) return c.json({ state: 'unavailable' as const }, 200); // soft — no detail leak
     const quote = await deps.quotes.get(parsed.quoteId);
-    const { state, paidVia } = await stateFor(quote, parsed.revision);
+    const { state, paidVia } = await stateFor(quote, parsed);
 
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
@@ -112,11 +144,17 @@ export function quotePayRoutes(deps: {
     }
     if (state !== 'payable' || !quote) return c.json({ state });
 
+    // A partial link charges the frozen soldCents, not the quote total (spec §4).
+    const soldCents = quote.soldCents ?? quote.totalCents;
+    const sel = quote.payLinkSelection;
+    const partial = sel ? partialView(quote, sel) : null;
+
     return c.json({
       state,
       copy: payPageCopy(quote),
-      totals: { cents: quote.totalCents, usd: usd(quote.totalCents) },
+      totals: { cents: soldCents, usd: usd(soldCents) },
       prefill: prefillFor(quote),
+      ...(partial ?? {}),
     });
   });
 
@@ -131,7 +169,7 @@ export function quotePayRoutes(deps: {
     const parsed = verifyQuotePayToken(body.data.t, deps.linkSecret);
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
     const quote = await deps.quotes.get(parsed.quoteId);
-    const { state } = await stateFor(quote, parsed.revision);
+    const { state } = await stateFor(quote, parsed);
     if (state === 'paid') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !quote) return c.json({ error: 'quote_unavailable' }, 409);
@@ -149,10 +187,16 @@ export function quotePayRoutes(deps: {
     // ready/sent, which is the business's own statement that it is payable. The lever for
     // "stop taking money" is moving the quote out of those statuses, which already renders the
     // sailed-off screen. So a dead prior is ignored and a fresh booking is minted.
-    const baseKey = `pay:quote:${quote.id}:r${parsed.revision}`;
-    const found = quote.convertedBookingId
-      ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(baseKey);
+    // Seq-scoped since partial links (spec §9): the key carries the revision AND the selection
+    // seq, so a lookup can only ever return a booking minted for THIS selection.
+    //
+    // Resumability is decided by the key lookup ALONE — deliberately not by convertedBookingId,
+    // which is selection-blind. Consulting it first is exactly what would hand back the previous
+    // selection's booking, at the previous selection's amount, to a customer holding a link for
+    // a different set of legs. (`Booking` does not expose its own idempotency key, so comparing
+    // after the fact is not an option either.)
+    const baseKey = `pay:quote:${quote.id}:r${parsed.revision}:s${parsed.seq}`;
+    const found = await deps.bookings.findByIdempotencyKey(baseKey);
     const chargeable = found && (found.status === 'draft' || found.status === 'payment_pending');
     if (found && chargeable) {
       // Re-record the payer before handing back the booking. Everything the gateway sees — name,
@@ -174,12 +218,19 @@ export function quotePayRoutes(deps: {
         200,
       );
     }
-    // Derived from the dead booking, so it stays deterministic: a double-tap after the same
-    // cancellation still yields ONE new booking rather than two.
-    const idempotencyKey = found ? `${baseKey}:after:${found.id}` : baseKey;
+    // Derived from whatever booking already exists — this selection's dead one, or the previous
+    // selection's via convertedBookingId — so it stays deterministic: a double tap after the same
+    // cancellation (or the same re-pick) still yields ONE new booking rather than two.
+    const prior =
+      found ?? (quote.convertedBookingId ? await deps.bookings.get(quote.convertedBookingId) : null);
+    const idempotencyKey = prior ? `${baseKey}:after:${prior.id}` : baseKey;
 
     // Map the quote + the customer's details into a bookable input — the same translation
     // the ops "Mark booked" modal drives, with the modal's fields derived from the quote.
+    // The booking must carry ONLY the legs that were sold — otherwise the driver's itinerary and
+    // the confirmation email promise legs nobody paid for (spec §8).
+    const legIndexes = quote.payLinkSelection?.legIndexes;
+    const soldCents = quote.soldCents ?? quote.totalCents;
     const tool = (quote.request as { tool?: { passengerCount?: number; luggageCount?: number; legs?: { date?: string }[] } } | null)?.tool;
     const firstDate = (tool?.legs ?? []).map((l) => l.date).find((d) => !!d);
     let mapped;
@@ -191,7 +242,7 @@ export function quotePayRoutes(deps: {
         bags: typeof tool?.luggageCount === 'number' ? tool.luggageCount : 0,
         date: firstDate,
         time: undefined,
-      });
+      }, legIndexes ? { legIndexes } : undefined);
     } catch (e) {
       if (e instanceof QuoteNotBookableError) return c.json({ error: 'quote_unavailable' }, 409);
       throw e;
@@ -199,9 +250,9 @@ export function quotePayRoutes(deps: {
 
     const newBooking: NewBooking =
       mapped.mode === 'single'
-        ? { mode: 'single', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+        ? { mode: 'single', input: mapped.input, total: soldCents, amountDueNow: soldCents,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() }
-        : { mode: 'trip', input: mapped.input, total: quote.totalCents, amountDueNow: quote.totalCents,
+        : { mode: 'trip', input: mapped.input, total: soldCents, amountDueNow: soldCents,
             currency: quote.currency, distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp', billing: body.data.billing, termsAcceptedAt: new Date() };
 
     const created = await deps.bookings.create(newBooking, { idempotencyKey });

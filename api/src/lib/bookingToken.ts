@@ -99,6 +99,7 @@ export function verifyCheckoutToken(
 const PURPOSE_QUOTE_PAY = 0x01;
 const SIG_BYTES = 16; // 128-bit truncated HMAC
 const MAX_REVISION = 0xffff;
+const MAX_SEQ = 0xffff;
 
 const b64url = (b: Buffer): string => b.toString('base64url');
 
@@ -106,24 +107,41 @@ function macBytes(body: string, secret: string): Buffer {
   return createHmac('sha256', secret).update(body).digest().subarray(0, SIG_BYTES);
 }
 
-export function signQuotePayToken(quoteId: string, revision: number, secret: string): string {
-  // A revision beyond 65535 would silently wrap, so fall back to v1 rather than mint a token
-  // pointing at the wrong revision. Unreachable in practice; cheap to be certain.
+// v3 (2026-08-04) adds a 2-byte SELECTION SEQ, so a partial link can be retired when ops re-picks
+// which legs it covers — without editing the quote, which is what the revision already covers.
+// seq 0 = "the full quote", which is what every pre-v3 link means.
+// Packed: 1 version + 1 purpose + 16 uuid + 2 revision + 2 seq = 22 bytes.
+export function signQuotePayToken(
+  quoteId: string,
+  revision: number,
+  secret: string,
+  seq = 0,
+): string {
+  // A revision or seq beyond 65535 would silently wrap, so fall back to v1 rather than mint a
+  // token pointing at the wrong one. Unreachable in practice; cheap to be certain.
   const hex = quoteId.replace(/-/g, '');
-  if (hex.length !== 32 || !/^[0-9a-f]+$/i.test(hex) || revision < 1 || revision > MAX_REVISION) {
-    return signedBody({ v: 1, purpose: 'quote-pay', q: quoteId, r: revision }, secret);
+  if (
+    hex.length !== 32 || !/^[0-9a-f]+$/i.test(hex) ||
+    revision < 1 || revision > MAX_REVISION ||
+    seq < 0 || seq > MAX_SEQ
+  ) {
+    return signedBody({ v: 1, purpose: 'quote-pay', q: quoteId, r: revision, s: seq }, secret);
   }
-  const buf = Buffer.alloc(20);
-  buf.writeUInt8(2, 0);                       // version
+  const buf = Buffer.alloc(22);
+  buf.writeUInt8(3, 0);                       // version
   buf.writeUInt8(PURPOSE_QUOTE_PAY, 1);       // disjoint from the other token kinds
   Buffer.from(hex, 'hex').copy(buf, 2);       // uuid, raw
   buf.writeUInt16BE(revision, 18);
+  buf.writeUInt16BE(seq, 20);
   const body = b64url(buf);
   return `${body}.${b64url(macBytes(body, secret))}`;
 }
 
-/** v2 only; returns null for anything else so the caller can fall back to v1. */
-function verifyV2(token: string, secret: string): { quoteId: string; revision: number } | null {
+/** v2 (20 bytes, no seq) and v3 (22 bytes, seq). Returns null for anything else. */
+function verifyPacked(
+  token: string,
+  secret: string,
+): { quoteId: string; revision: number; seq: number } | null {
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
   let buf: Buffer;
@@ -132,29 +150,33 @@ function verifyV2(token: string, secret: string): { quoteId: string; revision: n
   } catch {
     return null;
   }
-  if (buf.length !== 20 || buf.readUInt8(0) !== 2 || buf.readUInt8(1) !== PURPOSE_QUOTE_PAY) return null;
+  const version = buf.length === 20 ? 2 : buf.length === 22 ? 3 : 0;
+  if (!version || buf.readUInt8(0) !== version || buf.readUInt8(1) !== PURPOSE_QUOTE_PAY) return null;
   const expected = b64url(macBytes(body, secret));
   if (sig.length !== expected.length) return null;
   if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   const hex = buf.subarray(2, 18).toString('hex');
   const quoteId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   const revision = buf.readUInt16BE(18);
-  return revision >= 1 ? { quoteId, revision } : null;
+  if (revision < 1) return null;
+  // A v2 token predates selections entirely, so it can only mean the full quote: seq 0.
+  return { quoteId, revision, seq: version === 3 ? buf.readUInt16BE(20) : 0 };
 }
 
 export function verifyQuotePayToken(
   token: string | undefined,
   secret: string,
-): { quoteId: string; revision: number } | null {
+): { quoteId: string; revision: number; seq: number } | null {
   if (!token) return null;
-  // v2 first, then v1 — links already sitting in customers' WhatsApp threads must keep working.
-  const v2 = verifyV2(token, secret);
-  if (v2) return v2;
+  // v3/v2 first, then v1 — links already sitting in customers' WhatsApp threads must keep working.
+  const packed = verifyPacked(token, secret);
+  if (packed) return packed;
   const parsed = verifiedPayload(token, secret) as {
-    v?: unknown; purpose?: unknown; q?: unknown; r?: unknown;
+    v?: unknown; purpose?: unknown; q?: unknown; r?: unknown; s?: unknown;
   } | null;
   if (!parsed || parsed.v !== 1 || parsed.purpose !== 'quote-pay') return null;
   if (typeof parsed.q !== 'string' || parsed.q.length === 0) return null;
   if (typeof parsed.r !== 'number' || !Number.isInteger(parsed.r) || parsed.r < 1) return null;
-  return { quoteId: parsed.q, revision: parsed.r };
+  const seq = typeof parsed.s === 'number' && Number.isInteger(parsed.s) && parsed.s >= 0 ? parsed.s : 0;
+  return { quoteId: parsed.q, revision: parsed.r, seq };
 }

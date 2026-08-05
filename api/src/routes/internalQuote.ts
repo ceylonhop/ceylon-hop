@@ -23,6 +23,13 @@ import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
+import {
+  payLines,
+  selectionAmountCents,
+  isFullSelection,
+  NotLineablePriceError,
+  type PaySelection,
+} from '../quote/paySelection';
 import { signQuotePayToken } from '../lib/bookingToken';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
@@ -517,6 +524,16 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
   return local.concat(remote).slice(0, 6);
 }
 
+// Canonical form of a selection: deduped and sorted, so [1,0] and [0,1] are ONE selection and
+// re-minting the same picks can't look like a change (which would retire the link ops just sent).
+function normalizeSel(sel: PaySelection | null | undefined): PaySelection | null {
+  if (!sel) return null;
+  return {
+    legIndexes: [...new Set(sel.legIndexes)].sort((a, b) => a - b),
+    extraIndexes: [...new Set(sel.extraIndexes)].sort((a, b) => a - b),
+  };
+}
+
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
@@ -909,9 +926,23 @@ export function internalQuoteRoutes(deps: {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }
     }
-    await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
+    await deps.quotes.patch(id, {
+      convertedBookingId: booking.id,
+      status: 'won',
+      // A full-quote booking contradicts any outstanding partial link, so retire it rather than
+      // leaving a live link that could mint a SECOND booking for the same quote (spec §10).
+      ...(quote.payLinkSelection
+        ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
+        : {}),
+    });
     return c.json(booking, 201);
   });
+
+  // Partial-leg pay links (spec 2026-08-04). Indexes into engine.legs / engine.extras.
+  const PayLinkSelectionSchema = z.object({
+    legIndexes: z.array(z.number().int().min(0)),
+    extraIndexes: z.array(z.number().int().min(0)),
+  }).strict();
 
   // Mint a payment link for a ready|sent quote (spec 2026-07-31). STATELESS on purpose:
   // no booking, no DB row — the URL is a signed capability over {quoteId, revision}, so a
@@ -939,13 +970,87 @@ export function internalQuoteRoutes(deps: {
       return c.json({ error: 'not_linkable', status: quote.status }, 409);
     }
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
-    const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret);
+
+    // No body — or a body that says nothing about a selection (e.g. `{}`) — is the full-total
+    // link, exactly as before this feature existed (spec §4). Only a body that ATTEMPTS a
+    // selection is validated: half a selection charging the wrong amount is the failure mode.
+    const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const attemptsSelection = raw != null && ('legIndexes' in raw || 'extraIndexes' in raw);
+    const parsedSel = attemptsSelection ? PayLinkSelectionSchema.safeParse(raw) : null;
+    if (parsedSel && !parsedSel.success) return c.json({ error: 'bad_request' }, 400);
+    let selection: PaySelection | null = parsedSel ? normalizeSel(parsedSel.data) : null;
+
+    let amountCents = quote.totalCents;
+    let coverage: { soldLegs: number; totalLegs: number } | null = null;
+
+    if (selection) {
+      // Private and priced, or nothing — payLines throws for chauffeur, shells and legacy rows.
+      let lines;
+      try {
+        lines = payLines(quote);
+      } catch (e) {
+        if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+        throw e;
+      }
+      if (isFullSelection(lines, selection)) {
+        // Nothing was unticked. Fall through to the STORED total so charm finishing survives —
+        // the leg lines alone sum to the subtotal, a few dollars under (spec §4).
+        selection = null;
+      } else {
+        if (!selection.legIndexes.length) return c.json({ error: 'not_linkable' }, 409);
+        if (!isQuoteBookable(quote, { legIndexes: selection.legIndexes })) {
+          return c.json({ error: 'not_linkable' }, 409);
+        }
+        amountCents = selectionAmountCents(lines, selection);
+        if (amountCents <= 0) return c.json({ error: 'not_linkable' }, 409);
+        // From the lines, not engine.legs: payLines has already established this is a private
+        // quote, and one source for "how many legs" is one fewer thing to disagree.
+        coverage = {
+          soldLegs: selection.legIndexes.length,
+          totalLegs: lines.filter((l) => l.kind === 'leg').length,
+        };
+      }
+    }
+
+    // The seq moves ONLY when the selection actually changes, so pressing the button twice still
+    // yields a byte-identical URL — the property ops relies on to re-copy a link it already sent.
+    const changed =
+      JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection);
+    const seq = changed ? quote.payLinkSeq + 1 : quote.payLinkSeq;
+    if (changed) {
+      await deps.quotes.patch(quote.id, {
+        payLinkSelection: selection,
+        soldCents: selection ? amountCents : null,
+        payLinkSeq: seq,
+      });
+    }
+
+    const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret, seq);
     return c.json({
       // `/p`, not `/pay.html` — see customerPages.ts. Eight characters off a link that a
       // customer reads immediately before being asked for money.
       url: `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${token}`,
       payhereMode: deps.payhereMode ?? 'off',
+      amountCents,
+      coverage,
     });
+  });
+
+  // The charge lines of a quote, for the ops "Part of trip…" picker. Read-only: looking stores
+  // nothing. Registered next to the mint so the two can never disagree about what a line is.
+  r.get('/:id/pay-lines', async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    try {
+      return c.json({
+        lines: payLines(quote),
+        totalCents: quote.totalCents,
+        selection: quote.payLinkSelection,
+      });
+    } catch (e) {
+      if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+      throw e;
+    }
   });
 
   // Read-only view of the locked rate card for the tool's Settings card.

@@ -54,6 +54,12 @@
 .perf:before,.perf:after{content:'';position:absolute;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--cream);border:1px solid var(--line)}
 .perf:before{left:-10px}.perf:after{right:-10px}
 .t-stub{padding:13px 18px 18px}
+/* Partial pay links (2026-08-04): the receipt of paid lines above the total. */
+.paid-lines{list-style:none;margin:0 0 10px;padding:0 0 10px;border-bottom:1px dashed var(--line,#e8e0d2)}
+.paid-lines li{display:flex;justify-content:space-between;gap:12px;font-size:.82rem;padding:3px 0}
+.paid-lines .l{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.paid-lines .v{font-variant-numeric:tabular-nums;white-space:nowrap}
+.coverage{margin:0 0 10px;font-size:.74rem;color:var(--ink-faint,#8a8272)}
 .tot{display:flex;justify-content:space-between;align-items:baseline}
 .tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
 .tot .v{font-family:var(--display);font-weight:800;font-size:2rem;letter-spacing:-.02em}

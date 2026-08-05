@@ -84,7 +84,7 @@ describe('quote pay token', () => {
 
   it('round-trips quote id and revision', () => {
     const t = signQuotePayToken('q-1', 3, S);
-    expect(verifyQuotePayToken(t, S)).toEqual({ quoteId: 'q-1', revision: 3 });
+    expect(verifyQuotePayToken(t, S)).toEqual({ quoteId: 'q-1', revision: 3, seq: 0 });
   });
 
   it('rejects a wrong secret, tampering, and garbage', () => {
@@ -131,7 +131,7 @@ describe('quote pay token v2 — compact, and back-compatible', () => {
   it('round-trips the quote id and revision exactly', () => {
     for (const rev of [1, 13, 255, 256, 65535]) {
       expect(verifyQuotePayToken(signQuotePayToken(QUOTE, rev, SECRET), SECRET))
-        .toEqual({ quoteId: QUOTE, revision: rev });
+        .toEqual({ quoteId: QUOTE, revision: rev, seq: 0 });
     }
   });
 
@@ -140,7 +140,7 @@ describe('quote pay token v2 — compact, and back-compatible', () => {
   it('still verifies a v1 token, so links already sent keep working', () => {
     const body = Buffer.from(JSON.stringify({ v: 1, purpose: 'quote-pay', q: QUOTE, r: 13 })).toString('base64url');
     const sig = createHmac('sha256', SECRET).update(body).digest('hex');
-    expect(verifyQuotePayToken(`${body}.${sig}`, SECRET)).toEqual({ quoteId: QUOTE, revision: 13 });
+    expect(verifyQuotePayToken(`${body}.${sig}`, SECRET)).toEqual({ quoteId: QUOTE, revision: 13, seq: 0 });
   });
 
   it('refuses a tampered v2 token and one signed with another secret', () => {
@@ -157,5 +157,49 @@ describe('quote pay token v2 — compact, and back-compatible', () => {
   // a booking token being replayed as a pay token.
   it('cannot be crossed with the booking token kind', () => {
     expect(verifyQuotePayToken(signBookingToken('some-booking-id', SECRET), SECRET)).toBeNull();
+  });
+});
+
+describe('quote pay token v3 (selection seq, spec 2026-08-04)', () => {
+  const S3 = 'test-secret-v3';
+  const id = '11111111-2222-3333-4444-555555555555';
+
+  // Packs the OLD 20-byte v2 body, so the back-compat case is exercised against a real v2
+  // token rather than a hand-copied string.
+  function signV2(quoteId: string, revision: number, secret: string): string {
+    const buf = Buffer.alloc(20);
+    buf.writeUInt8(2, 0);
+    buf.writeUInt8(0x01, 1);
+    Buffer.from(quoteId.replace(/-/g, ''), 'hex').copy(buf, 2);
+    buf.writeUInt16BE(revision, 18);
+    const body = buf.toString('base64url');
+    const sig = createHmac('sha256', secret).update(body).digest().subarray(0, 16).toString('base64url');
+    return `${body}.${sig}`;
+  }
+
+  it('round-trips a seq', () => {
+    expect(verifyQuotePayToken(signQuotePayToken(id, 4, S3, 7), S3)).toEqual({ quoteId: id, revision: 4, seq: 7 });
+  });
+
+  it('is deterministic — the same inputs give a byte-identical URL', () => {
+    expect(signQuotePayToken(id, 4, S3, 7)).toBe(signQuotePayToken(id, 4, S3, 7));
+  });
+
+  it('a different seq is a different token', () => {
+    expect(signQuotePayToken(id, 4, S3, 7)).not.toBe(signQuotePayToken(id, 4, S3, 8));
+  });
+
+  it('defaults to seq 0 when the caller passes none', () => {
+    expect(verifyQuotePayToken(signQuotePayToken(id, 4, S3), S3)).toEqual({ quoteId: id, revision: 4, seq: 0 });
+  });
+
+  it('reads a legacy v2 token as seq 0 — links already in WhatsApp keep working', () => {
+    expect(verifyQuotePayToken(signV2(id, 4, S3), S3)).toEqual({ quoteId: id, revision: 4, seq: 0 });
+  });
+
+  it('rejects a tampered signature', () => {
+    const t = signQuotePayToken(id, 4, S3, 7);
+    const last = t.slice(-1);
+    expect(verifyQuotePayToken(t.slice(0, -1) + (last === 'A' ? 'B' : 'A'), S3)).toBeNull();
   });
 });

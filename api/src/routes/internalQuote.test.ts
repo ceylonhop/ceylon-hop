@@ -6,6 +6,8 @@ import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
+import { quote } from '../quote/engine';
+import type { QuoteRequest } from '../quote/types';
 import { signSession } from '../lib/opsAuth';
 import { verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -2642,5 +2644,180 @@ describe('positive location identification', () => {
       body: JSON.stringify({ name: 'X', displayName: 'X', lat: 6, lng: 80 }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', () => {
+  const ENGINE3 = {
+    product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
+    legs: [
+      { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+      { from: 'Ella', to: 'Galle', distanceKm: 200 },
+    ],
+    extras: [{ code: 'luggage' as const, legIndex: 1 }],
+  };
+
+  // A REAL priced quote: payLines reads result.lineItems, so a fixture with `result: {}` would
+  // be testing nothing but the guard.
+  async function priced(quotes: InMemoryQuoteRepo, engine: QuoteRequest = ENGINE3) {
+    const result = quote(engine, RATE_CARD);
+    const q = await quotes.save({
+      channel: 'ops', product: engine.product, vehicle: 'car', totalCents: result.totalCents,
+      currency: 'USD', rateCardVersion: RATE_CARD.version, result, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine },
+    });
+    for (const s of ['pending_review', 'ready']) await quotes.patch(q.id, { status: s as never });
+    return q.id;
+  }
+  const mintSel = (app: App, id: string, body?: unknown) =>
+    app.request(`/admin/quote/${id}/pay-link`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  it('mints for the picked legs and freezes the summed amount', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const before = await quotes.get(id);
+    const app = createApp({ quotes });
+
+    const res = await mintSel(app, id, { legIndexes: [0, 1], extraIndexes: [0] });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.coverage).toEqual({ soldLegs: 2, totalLegs: 3 });
+
+    const after = await quotes.get(id);
+    expect(after!.payLinkSelection).toEqual({ legIndexes: [0, 1], extraIndexes: [0] });
+    expect(after!.soldCents).toBe(body.amountCents);
+    expect(after!.payLinkSeq).toBe(1);
+    // Under the full total, and not merely a fraction of it — the dropped leg is real money.
+    expect(body.amountCents).toBeLessThan(before!.totalCents);
+    // Minting must never move the lifecycle.
+    expect(after!.status).toBe('ready');
+    expect(after!.sentAt).toBeNull();
+    expect(after!.revision).toBe(before!.revision);
+  });
+
+  it('re-minting the same selection returns the identical URL and leaves seq alone', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const sel = { legIndexes: [0], extraIndexes: [] };
+    const a = await (await mintSel(app, id, sel)).json();
+    const b = await (await mintSel(app, id, sel)).json();
+    expect(b.url).toBe(a.url);
+    expect((await quotes.get(id))!.payLinkSeq).toBe(1);
+  });
+
+  it('the same selection in a different click order is the same selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const a = await (await mintSel(app, id, { legIndexes: [0, 1], extraIndexes: [] })).json();
+    const b = await (await mintSel(app, id, { legIndexes: [1, 0], extraIndexes: [] })).json();
+    expect(b.url).toBe(a.url);
+    expect((await quotes.get(id))!.payLinkSeq).toBe(1);
+  });
+
+  it('a different selection bumps seq, retiring the link already sent', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const a = await (await mintSel(app, id, { legIndexes: [0], extraIndexes: [] })).json();
+    const b = await (await mintSel(app, id, { legIndexes: [1], extraIndexes: [] })).json();
+    expect(b.url).not.toBe(a.url);
+    expect((await quotes.get(id))!.payLinkSeq).toBe(2);
+  });
+
+  it('a full selection charges the stored total and clears the selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const total = (await quotes.get(id))!.totalCents;
+    const app = createApp({ quotes });
+    await mintSel(app, id, { legIndexes: [0], extraIndexes: [] });
+
+    const body = await (await mintSel(app, id, { legIndexes: [0, 1, 2], extraIndexes: [0] })).json();
+    // Charm finishing survives BECAUSE this falls through to the stored total (spec §4).
+    expect(body.amountCents).toBe(total);
+    expect(body.coverage).toBeNull();
+    const after = await quotes.get(id);
+    expect(after!.payLinkSelection).toBeNull();
+    expect(after!.soldCents).toBeNull();
+    expect(after!.payLinkSeq).toBe(2); // monotonic — never reset
+  });
+
+  it('a bodyless mint still produces the full-total link', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const body = await (await mintSel(app, id)).json();
+    expect(body.amountCents).toBe((await quotes.get(id))!.totalCents);
+    expect(body.coverage).toBeNull();
+    expect((await quotes.get(id))!.payLinkSeq).toBe(0);
+  });
+
+  it('refuses a selection with no legs — extras alone are not a sale', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const res = await mintSel(app, id, { legIndexes: [], extraIndexes: [0] });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_linkable');
+    expect((await quotes.get(id))!.payLinkSeq).toBe(0);
+  });
+
+  it('refuses a selection on a chauffeur quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes, {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-09-01', lastDate: '2026-09-02',
+      travelDays: [{ date: '2026-09-01', from: 'Colombo', to: 'Kandy', distanceKm: 120 }],
+    });
+    const app = createApp({ quotes });
+    expect((await mintSel(app, id, { legIndexes: [0], extraIndexes: [] })).status).toBe(409);
+  });
+
+  it('GET /pay-lines lists the charge lines the picker ticks', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const body = await (await authedGet(app, `/admin/quote/${id}/pay-lines`)).json();
+    expect(body.lines).toHaveLength(4); // 3 legs + 1 extra, never the adjustment
+    expect(body.lines.filter((l: { kind: string }) => l.kind === 'leg')).toHaveLength(3);
+    expect(body.selection).toBeNull();
+    expect(body.totalCents).toBe((await quotes.get(id))!.totalCents);
+  });
+
+  it('mark-booked charges the full quote and retires an outstanding partial link', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes, bookings });
+    await mintSel(app, id, { legIndexes: [0], extraIndexes: [] });
+    expect((await quotes.get(id))!.payLinkSeq).toBe(1);
+    await quotes.patch(id, { status: 'sent' }); // /book accepts sent|won only
+
+    const res = await post(app, `/admin/quote/${id}/book`, {
+      customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+      vehicleType: 'car', pax: 2, bags: 1, date: '2026-09-01', time: '09:00',
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).total).toBe((await quotes.get(id))!.totalCents);
+
+    // The partial link is dead, not merely superseded — otherwise it could mint a SECOND booking.
+    const after = await quotes.get(id);
+    expect(after!.payLinkSelection).toBeNull();
+    expect(after!.soldCents).toBeNull();
+    expect(after!.payLinkSeq).toBe(2);
+  });
+
+  it('GET /pay-lines refuses a chauffeur quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes, {
+      product: 'chauffeur', vehicle: 'car', firstDate: '2026-09-01', lastDate: '2026-09-02',
+      travelDays: [{ date: '2026-09-01', from: 'Colombo', to: 'Kandy', distanceKm: 120 }],
+    });
+    const app = createApp({ quotes });
+    expect((await authedGet(app, `/admin/quote/${id}/pay-lines`)).status).toBe(409);
   });
 });

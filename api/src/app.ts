@@ -329,7 +329,7 @@ export function createApp(deps: AppDeps = {}) {
   const payBaseUrl = deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL;
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists,
+    email, notificationLog, rideLists, quotes,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
