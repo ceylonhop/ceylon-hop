@@ -206,7 +206,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .select({
         id: quotes.id, status: quotes.status, product: quotes.product,
         totalCents: quotes.totalCents, currency: quotes.currency,
-        marginCents: quotes.marginCents, lostReason: quotes.lostReason,
+        marginCents: quotes.marginCents, soldCents: quotes.soldCents, lostReason: quotes.lostReason,
         createdAt: quotes.createdAt, sentAt: quotes.sentAt, decidedAt: quotes.decidedAt,
       })
       .from(quotes)

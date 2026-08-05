@@ -186,6 +186,10 @@ export interface FunnelQuoteRow {
   status: QuoteStatus;
   product: string;
   totalCents: number;
+  // Partial-leg pay links (spec 2026-08-04): the amount actually sold when only some legs were
+  // bought, else null. wonValue uses it; sent/pipeline/aging keep using totalCents, because what
+  // was OFFERED is still the whole quote.
+  soldCents: number | null;
   currency: string;
   marginCents: number | null;
   lostReason: string | null;
@@ -399,7 +403,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
         !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
-      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
+      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents, soldCents: r.soldCents,
       currency: r.currency, marginCents: r.marginCents, lostReason: r.lostReason,
       createdAt: r.createdAt, sentAt: r.sentAt, decidedAt: r.decidedAt,
     }));
