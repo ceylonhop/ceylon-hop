@@ -12,7 +12,9 @@ export interface PayPageCopy {
   title: string;
   subtitle: string;
   facts: { k: string; v: string; sub?: string }[]; // ticket rows (single + chauffeur shapes)
-  legs: { route: string; date: string | null }[] | null; // multi only — one thin row per journey
+  // multi only — one thin row per journey. `covered` is set ONLY on a partial link: true = this
+  // payment buys it, false = it is in the itinerary but not in this payment.
+  legs: { route: string; date: string | null; covered?: boolean }[] | null;
   includedText: string;
   totalLabel: string;
 }
@@ -78,12 +80,20 @@ function legRoute(l: ToolLegLite): string {
   return `${stops[0]} → ${stops[stops.length - 1]}`;
 }
 
+// `selection` (spec 2026-08-04 partial links) — the legs THIS payment covers, by index into the
+// engine's driving legs. Omit it, or pass one covering everything, and every word below is
+// byte-identical to the whole-trip page.
+//
+// It exists because a partial payment page cannot be built by bolting a receipt onto whole-trip
+// copy: the owner caught a live page whose total read "all 4 journeys" over a two-leg payment
+// (2026-08-05). One quiet "covers 2 of 4" line cannot outvote a headline saying otherwise, so the
+// copy itself has to know.
 export function payPageCopy(quote: {
   customerName: string | null;
   vehicle: string | null;
   request: unknown;
   totalCents: number;
-}): PayPageCopy {
+}, selection?: { legIndexes: number[]; extraIndexes?: number[] } | null): PayPageCopy {
   const req = (quote.request ?? {}) as { tool?: { legs?: ToolLegLite[]; passengerCount?: number }; engine?: { product?: string; firstDate?: string; lastDate?: string } | null };
   const toolLegs: ToolLegLite[] = Array.isArray(req.tool?.legs) ? req.tool!.legs! : [];
   const driving = toolLegs.filter((l) => (l.category || 'transfer') !== 'stay_day');
@@ -153,21 +163,37 @@ export function payPageCopy(quote: {
     const first = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
     const last = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null;
     const count = driving.length;
-    const title = first && last && dates.length === count
-      ? `${countWord(count)} journeys, ${rangeLabel(first, last)}`
-      : `${countWord(count)} journeys`;
+    // A selection covering every journey is not a partial payment — say nothing different.
+    const sold = selection ? [...new Set(selection.legIndexes)].filter((i) => i >= 0 && i < count) : null;
+    const partial = sold && sold.length > 0 && sold.length < count;
+
+    const title = partial
+      ? `${countWord(sold!.length)} of your ${countWord(count).toLowerCase()} journeys`
+      : first && last && dates.length === count
+        ? `${countWord(count)} journeys, ${rangeLabel(first, last)}`
+        : `${countWord(count)} journeys`;
     return {
       product: 'multi',
       greetingName,
       title,
       subtitle: [`Private ${veh.toLowerCase()}`, paxLabel ? `${paxLabel} travellers` : null].filter(Boolean).join(' · '),
       facts: [],
-      legs: driving.map((l) => {
+      // Every journey is still listed on a partial link — the customer keeps sight of the whole
+      // trip — but each one says whether this payment buys it.
+      legs: driving.map((l, i) => {
         const d = parseUtc(l.date);
-        return { route: legRoute(l), date: d ? legStamp(d) : null };
+        const row: { route: string; date: string | null; covered?: boolean } = {
+          route: legRoute(l), date: d ? legStamp(d) : null,
+        };
+        if (partial) row.covered = sold!.includes(i);
+        return row;
       }),
-      includedText: 'Driver, fuel and tolls on every journey. Between trips, your time is your own.',
-      totalLabel: `Total · all ${count} journeys`,
+      includedText: partial
+        ? 'Driver, fuel and tolls on the journeys this payment covers. Between trips, your time is your own.'
+        : 'Driver, fuel and tolls on every journey. Between trips, your time is your own.',
+      // NEVER "all N journeys" on a partial payment — that is the sentence that misled a paying
+      // customer in prod.
+      totalLabel: partial ? `Total · ${sold!.length} of your ${count} journeys` : `Total · all ${count} journeys`,
     };
   }
 
