@@ -662,3 +662,49 @@ describe('quote revision history (spec 2026-08-05)', () => {
     expect((await repo.listRevisions(q.id)).map((r) => r.totalCents)).toEqual([200, 100]);
   });
 });
+
+describe('quote revision history — customer web-edit path', () => {
+  it('snapshots updateWebV2 too', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', totalCents: 100, request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    const res = await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'dig', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', totalCents: 200, request: { v: 2 } }),
+    });
+    expect(res.kind).toBe('updated');
+    const revs = await repo.listRevisions(q.id);
+    expect(revs).toHaveLength(1);
+    expect(revs[0].totalCents).toBe(100);
+  });
+
+  it('records nothing when the customer saves an identical quote', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'dig', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', request: { v: 1 } }),
+    });
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  // A rejected edit must not leave a snapshot behind — the quote never changed.
+  it('records nothing when the edit is refused', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    const res = await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'WRONG', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', request: { v: 2 } }),
+    });
+    expect(res.kind).toBe('access_denied');
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+});

@@ -614,6 +614,24 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (!row.rateLockedUntil || row.rateLockedUntil <= args.now) return { kind: 'expired' };
     if (row.revision !== args.expectedRevision) return { kind: 'stale_revision' };
 
+    // Snapshot the superseded state (spec 2026-08-05 §5). AFTER every guard above: a refused edit
+    // changed nothing, so recording a version for it would claim history that never happened.
+    if (!sameQuoteContent(row.request, args.quote.request)) {
+      const list = this.revisions.get(args.id) ?? [];
+      list.push({
+        revision: row.revision,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        rateCardVersion: row.rateCardVersion,
+        status: row.status,
+        updatedBy: row.updatedBy ?? row.createdBy,
+        createdAt: new Date(),
+        request: row.request,
+        result: row.result,
+      });
+      this.revisions.set(args.id, list);
+    }
+
     row.product = args.quote.product;
     row.vehicle = args.quote.vehicle ?? null;
     row.totalCents = args.quote.totalCents;

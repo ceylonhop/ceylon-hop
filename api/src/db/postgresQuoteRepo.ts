@@ -152,7 +152,13 @@ export class PostgresQuoteRepo implements QuoteRepo {
     | { kind: 'updated'; quote: SavedQuote }
     | { kind: 'access_denied' | 'expired' | 'stale_revision' | 'converted' }
   > {
-    const [updated] = await this.db
+    // One transaction (spec 2026-08-05 §5), and the guarded UPDATE below stays the sole gate:
+    // we read the prior state first, then snapshot it ONLY if the update actually landed. A
+    // refused edit changed nothing, so it must leave no version behind.
+    return this.db.transaction(async (tx) => {
+    const [before] = await tx.select().from(quotes).where(eq(quotes.id, args.id)).for('update');
+
+    const [updated] = await tx
       .update(quotes)
       .set({
         product: args.quote.product,
@@ -180,9 +186,24 @@ export class PostgresQuoteRepo implements QuoteRepo {
         ),
       )
       .returning();
-    if (updated) return { kind: 'updated', quote: quoteRowToSaved(updated) };
+    if (updated) {
+      if (before && !sameQuoteContent(before.requestJson, args.quote.request)) {
+        await tx.insert(quoteRevisions).values({
+          quoteId: args.id,
+          revision: before.revision,
+          requestJson: before.requestJson as object | null,
+          resultJson: before.resultJson as object | null,
+          totalCents: before.totalCents,
+          currency: before.currency,
+          rateCardVersion: before.rateCardVersion,
+          status: before.status,
+          updatedBy: before.updatedBy ?? before.createdBy,
+        });
+      }
+      return { kind: 'updated' as const, quote: quoteRowToSaved(updated) };
+    }
 
-    const [current] = await this.db.select().from(quotes).where(eq(quotes.id, args.id));
+    const [current] = await tx.select().from(quotes).where(eq(quotes.id, args.id));
     if (
       !current ||
       current.deletedAt ||
@@ -190,11 +211,12 @@ export class PostgresQuoteRepo implements QuoteRepo {
       !current.accessTokenDigest ||
       current.accessTokenDigest !== args.accessTokenDigest
     ) {
-      return { kind: 'access_denied' };
+      return { kind: 'access_denied' as const };
     }
-    if (current.convertedBookingId) return { kind: 'converted' };
-    if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' };
-    return { kind: 'stale_revision' };
+    if (current.convertedBookingId) return { kind: 'converted' as const };
+    if (!current.rateLockedUntil || current.rateLockedUntil <= args.now) return { kind: 'expired' as const };
+    return { kind: 'stale_revision' as const };
+    });
   }
 
   // Shared channel arm for the analytics projections ('all' = no channel condition).
