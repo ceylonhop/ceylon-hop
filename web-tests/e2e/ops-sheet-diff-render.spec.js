@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { futureIsoDate } from '../dates.js';
 
 // Drives the REAL ops shell (api/src/routes/ops-ui.html) offline (stubbed API, no DB).
 //
@@ -25,12 +26,12 @@ let opsNotes = { b1: '', b2: '' };
 const rows = () => ([
   { id: 'b1', reference: 'CH-0001', channel: 'website', customerName: 'Alpha Customer',
     customerFirstName: 'Alpha', mode: 'single', route: 'Colombo → Kandy',
-    travelDate: '2026-09-20', travelTime: '09:00', pax: 2, amount: 3900, currency: 'USD',
+    travelDate: futureIsoDate(30), travelTime: '09:00', pax: 2, amount: 3900, currency: 'USD',
     stage: 'awaiting_payment', paymentStatus: 'pending', vehiclePhotoReceived: false, customerUpdated: false,
     opsNotes: opsNotes.b1, source: 'booking', board: null },
   { id: 'b2', reference: 'CH-0002', channel: 'whatsapp', customerName: 'Bravo Customer',
     customerFirstName: 'Bravo', mode: 'single', route: 'Galle → Mirissa',
-    travelDate: '2026-09-21', travelTime: '10:00', pax: 1, amount: 2500, currency: 'USD',
+    travelDate: futureIsoDate(31), travelTime: '10:00', pax: 1, amount: 2500, currency: 'USD',
     stage: 'awaiting_payment', paymentStatus: 'pending', vehiclePhotoReceived: false, customerUpdated: false,
     opsNotes: opsNotes.b2, source: 'booking', board: null },
 ]);
