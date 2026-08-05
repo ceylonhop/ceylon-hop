@@ -2904,3 +2904,55 @@ describe('price-drift baseline (spec 2026-08-05)', () => {
     expect((await quotes.get(id))!.payLinkSeq).toBe(0);
   });
 });
+
+describe('GET /admin/quote/:id/revisions (spec 2026-08-05)', () => {
+  // Re-save a priced quote with one field moved, through the repo, so history records it.
+  async function editTo(quotes: InMemoryQuoteRepo, id: string, engine: unknown, totalCents: number) {
+    const cur = (await quotes.get(id))!;
+    await quotes.update(id, {
+      product: cur.product, vehicle: cur.vehicle, totalCents, currency: cur.currency,
+      rateCardVersion: cur.rateCardVersion, result: cur.result,
+      request: { ...(cur.request as object), engine },
+    } as never);
+  }
+
+  it('returns the timeline newest-first, naming what changed', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const before = (await quotes.get(id))!;
+    // Drop the attributed extra — the Q-DMKNW move.
+    await editTo(quotes, id, { ...ENGINE3, extras: [] }, before.totalCents - 1000);
+
+    const app = createApp({ quotes });
+    const body = await (await authedGet(app, `/admin/quote/${id}/revisions`)).json();
+
+    expect(body.revisions).toHaveLength(1);
+    expect(body.revisions[0].revision).toBe(before.revision);
+    expect(body.revisions[0].totalCents).toBe(before.totalCents);
+    // The HEAD entry compares the newest snapshot against the CURRENT row — the cross-table read.
+    expect(body.revisions[0].changed.sort()).toEqual(['extras', 'total']);
+  });
+
+  it('carries no margin, hot-zone or rate-card data', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    await editTo(quotes, id, { ...ENGINE3, extras: [] }, 1);
+    const app = createApp({ quotes });
+    const raw = await (await authedGet(app, `/admin/quote/${id}/revisions`)).text();
+    expect(raw).not.toMatch(/margin|hotZone|rateCardJson|requestJson|resultJson/i);
+  });
+
+  it('is 404 for an unknown quote', async () => {
+    const app = createApp({ quotes: new InMemoryQuoteRepo() });
+    const res = await authedGet(app, '/admin/quote/00000000-0000-0000-0000-000000000000/revisions');
+    expect(res.status).toBe(404);
+  });
+
+  it('is empty, not an error, for a quote never edited', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const body = await (await authedGet(app, `/admin/quote/${id}/revisions`)).json();
+    expect(body.revisions).toEqual([]);
+  });
+});
