@@ -333,6 +333,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // worse than showing none, so this switches on the product the server told us about.
   // The headline rule is ALWAYS visible; the full ladder is one tap away (native <details>,
   // which works on touch, with a keyboard, and in a screen reader — a tooltip does none).
+  /* Partial pay links (spec 2026-08-04). The page becomes a RECEIPT: the customer sees the
+     lines they are paying for, and the total is visibly their sum. Excluded legs are
+     deliberately not listed — the coverage sentence prevents "I thought this was the whole
+     trip" without reading as an inventory of what they didn't buy. Both are no-ops on a
+     full-quote link, which sends neither field. Extracted by web-tests/unit/pay-page-lines.test.js. */
+  function linesHtml(lines) {
+    if (!lines || !lines.length) return '';
+    return '<ul class="paid-lines">' + lines.map(function (l) {
+      return '<li><span class="l">' + esc(l.label) + '</span>'
+        + '<span class="v">$' + (l.amountCents / 100).toFixed(2) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+  function coverageSentence(coverage) {
+    if (!coverage) return '';
+    return 'This covers ' + coverage.soldLegs + ' of the ' + coverage.totalLegs
+      + ' legs in your itinerary.';
+  }
+
   function cancellationPolicy(product){
     if (product === 'chauffeur') {
       return {
@@ -462,6 +480,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</ul></details>'
       + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
+      + linesHtml(data.lines)
+      + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
       + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
