@@ -319,10 +319,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (c.legs && c.legs.length) {
       var rows = c.legs.map(function(l, i){
         var last = i === c.legs.length - 1;
-        return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
+        /* Partial links (2026-08-05): `covered` is present ONLY when this payment buys some but
+           not all journeys. The uncovered ones stay listed — the customer keeps sight of the whole
+           trip — but must READ as not bought, or the itinerary silently implies the payment covers
+           everything. That is exactly what went wrong in prod. */
+        var uncovered = l.covered === false;
+        return '<div class="hop' + (uncovered ? ' is-uncovered' : '') + '">'
+          + '<div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
           + (last ? '' : '<span class="hop-line"></span>') + '</div>'
           + '<div><div class="hop-t">' + esc(l.route) + '</div>'
-          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed') + '</div></div></div>';
+          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed')
+          + (uncovered ? '<span class="hop-x">not in this payment</span>' : '')
+          + '</div></div></div>';
       }).join('');
       return '<div class="hops">' + rows + '</div>';
     }
