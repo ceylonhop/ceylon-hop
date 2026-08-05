@@ -52,6 +52,7 @@ const ASSETS: [string, string][] = [
   ['analytics.js', JS],
   ['consent.js', JS],
   ['phone-countries.js', JS],
+  ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
   ['img/ceylon-hop-c.png', 'image/png'], // the header logo glyph — same file site.js's cmark() uses
 ];

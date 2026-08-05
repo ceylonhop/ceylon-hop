@@ -22,6 +22,28 @@ describe('customer pay pages are served by the API host', () => {
     }
   });
 
+  // The asset allow-list is the one thing about these pages the e2e suite CANNOT catch: the
+  // Playwright static server hands out the whole repo, so a page can load a file the API has
+  // never heard of and every test still passes. That happened on 2026-08-04 — pay.html was
+  // changed to load a shared `decline-help.js`, the file was not added here, and production
+  // 404'd it. The page still rendered, so nothing looked broken; it just silently lost the
+  // "if your card was declined" steps, on the one screen where a payer has been told no.
+  //
+  // So assert the RULE, not the file: everything these pages ask for, this host serves.
+  it('serves every local script and stylesheet the customer pages reference', async () => {
+    for (const page of ['/pay.html', '/manage.html']) {
+      const html = await (await get(page)).text();
+      const refs = [...html.matchAll(/<(?:script[^>]+src|link[^>]+href)="([^"]+)"/g)]
+        .map((m) => m[1])
+        .filter((src) => !/^(https?:)?\/\//.test(src) && !src.startsWith('data:'));
+      expect(refs.length, `${page} should reference at least one local asset`).toBeGreaterThan(0);
+      for (const ref of refs) {
+        const res = await get('/' + ref.replace(/^\.?\//, ''));
+        expect(res.status, `${page} loads ${ref}, but this host does not serve it`).toBe(200);
+      }
+    }
+  });
+
   it('points the page at the SERVING origin, not the hard-coded prod API', async () => {
     // pay.html defaults to `window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com'`.
     // Left alone, a page served by staging would talk to PROD. The injected line must come
