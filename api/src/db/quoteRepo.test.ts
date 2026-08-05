@@ -610,3 +610,55 @@ describe('customer-facing price baseline (spec 2026-08-05)', () => {
     expect(updated!.totalCents).toBe(9900);
   });
 });
+
+describe('quote revision history (spec 2026-08-05)', () => {
+  it('snapshots the PREVIOUS content, leaving the live row current', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 10900 }));
+    await repo.update(q.id, sample({ totalCents: 9900, request: { changed: true } }));
+
+    const revs = await repo.listRevisions(q.id);
+    expect(revs).toHaveLength(1);
+    expect(revs[0].revision).toBe(q.revision); // the superseded revision
+    expect(revs[0].totalCents).toBe(10900);    // …holding the OLD money
+    expect((await repo.get(q.id))!.totalCents).toBe(9900);
+  });
+
+  it('records nothing for a save that changes nothing, but still bumps revision', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const after = await repo.update(q.id, sample());
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+    expect(after!.revision).toBe(q.revision + 1); // load-bearing: it retires pay links
+  });
+
+  it('is not fooled by JSON key order', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ request: { a: 1, b: { c: 2, d: 3 } } }));
+    await repo.update(q.id, sample({ request: { b: { d: 3, c: 2 }, a: 1 } }));
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  // result_json re-prices on every save, so comparing it would record phantom history.
+  it('is not fooled by a re-priced result', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ result: { totalCents: 1 } }));
+    await repo.update(q.id, sample({ result: { totalCents: 2 } }));
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  it('attributes an unedited first version to its creator', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ createdBy: 'maker@x.com' }));
+    await repo.update(q.id, sample({ request: { v: 2 } }));
+    expect((await repo.listRevisions(q.id))[0].updatedBy).toBe('maker@x.com');
+  });
+
+  it('returns newest first', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 100, request: { v: 1 } }));
+    await repo.update(q.id, sample({ totalCents: 200, request: { v: 2 } }));
+    await repo.update(q.id, sample({ totalCents: 300, request: { v: 3 } }));
+    expect((await repo.listRevisions(q.id)).map((r) => r.totalCents)).toEqual([200, 100]);
+  });
+});

@@ -517,6 +517,25 @@ export const quotes = pgTable('quotes', {
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
 ]);
 
+// Quote version history (spec 2026-08-05 §4). One row per SUPERSEDED state — see migration 0040.
+// The live state is never duplicated here: it lives in `quotes`.
+export const quoteRevisions = pgTable('quote_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id),
+  revision: integer('revision').notNull(),
+  requestJson: jsonb('request_json'),
+  resultJson: jsonb('result_json'),
+  totalCents: integer('total_cents').notNull(),
+  currency: text('currency').notNull(),
+  rateCardVersion: text('rate_card_version'),
+  status: text('status'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique('quote_revisions_quote_revision_unique').on(t.quoteId, t.revision),
+  index('idx_quote_revisions_quote').on(t.quoteId, t.revision),
+]);
+
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced
 // trip touches one (by name, per the D3 matching rules), its per-km rate is boosted by boost_pct.
 // place_name is a KNOWN_PLACES town (the match key). The optional lat/lng/radius_km trio is a geo
