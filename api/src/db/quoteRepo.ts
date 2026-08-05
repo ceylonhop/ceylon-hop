@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import { quoteTravelDate } from './quoteTravelDate';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -130,6 +131,11 @@ export interface QuoteSummary {
   // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
   // a $0 total is a symptom, the marker is the fact.
   unpriced: boolean;
+  // Last day of travel (spec 2026-08-01), derived per request from request_json.legs[].date —
+  // NOT a stored column. Null when no leg carries a usable date. The queue uses it to tell a
+  // live sent quote from one whose trip has already happened, which send age cannot do (see
+  // the sweep's note in api/src/services/quoteExpiry.ts).
+  travelDate: string | null;
   createdAt: Date;
 }
 
@@ -281,6 +287,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
     unpriced: isUnpricedShell(q),
+    travelDate: quoteTravelDate(requestLegs(q.request)),
     createdAt: q.createdAt,
   };
 }
