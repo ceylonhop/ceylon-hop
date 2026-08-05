@@ -584,6 +584,18 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-paylink-lbl { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); white-space: nowrap; }
 .qv .ch-paylink-url { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--cream); border-radius: 8px; padding: 7px 9px; font-family: var(--mono); font-size: 11px; color: var(--ink); }
 .qv .ch-paylink-sandbox { flex: none; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 6px; padding: 4px 7px; white-space: nowrap; }
+/* Part of trip… picker (partial pay links, spec 2026-08-04) — same card language as the
+   paylink row above: paper on cream, 11px radius, quiet until it matters. */
+.qv .ch-paypicker { margin: 0 0 10px; padding: 10px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; }
+.qv .ch-paypicker-title { font-size: 10px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 8px; }
+.qv .ch-payline { display: flex; align-items: center; gap: 8px; padding: 5px 2px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.qv .ch-payline.is-extra { padding-left: 22px; font-size: 12px; color: var(--muted-2); }
+.qv .ch-payline .l { flex: 1; min-width: 0; }
+.qv .ch-payline .v { font-variant-numeric: tabular-nums; }
+.qv .ch-paypicker-warn { margin: 8px 0 0; padding: 7px 10px; font-size: 12px; color: #80560f; background: var(--wait-bg, #fbf0d8); border: 1px solid #eeda9e; border-radius: 8px; }
+.qv .ch-paypicker-foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.qv .ch-paypicker-sum { flex: 1; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+.qv .ch-paypartial-chip { margin: 0 0 10px; padding: 6px 10px; font-size: 12px; color: var(--muted-2); background: var(--cream); border: 1px dashed var(--line); border-radius: 8px; }
 .qv .ch-review-banner { display: flex; align-items: baseline; gap: 8px; padding: 7px 12px; border-radius: 999px; margin-bottom: 10px; border: 1px solid transparent; width: fit-content; max-width: 100%; }
 .qv .ch-review-banner b { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
 .qv .ch-assign { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -3521,6 +3533,8 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
+var _payPicker = null;    // { lines, sel, busy } while the "Part of trip…" picker is open
+var _payPartial = null;   // { soldLegs, totalLegs, amountCents } — the outstanding partial link
 var _payLinkCopied = false;   // press feedback: the button reads "Link copied" and goes inert briefly
 var _payLinkCopiedT = null;
 var _payLinkShowRow = false;  // fallback only — the URL row appears when the clipboard write fails
@@ -4529,7 +4543,7 @@ function resetToNew() {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
   _mapOpen = true;
   _dirty = false; // fresh quote — nothing to lose (GL-1b)
   // The save chip belongs to the quote, not the session: without this a fresh row inherited the
@@ -4775,6 +4789,7 @@ async function mintPayLink() {
     var body = await jsonOrNull(r);
     if (!body || !body.url) { showToast('Could not create the payment link', 'error'); return; }
     _payLink = { url: body.url, mode: body.payhereMode || 'off' };
+    _payPartial = null; // a bodyless mint is the FULL link — the server just retired any selection
     render();
   } catch (e) {
     window.opsReportError && window.opsReportError('mint pay link', e);
@@ -4814,6 +4829,149 @@ function copyPayLink() {
   return true;
 }
 
+/* ── Part of trip… (partial pay links, spec 2026-08-04) ─────────────────────────────────
+   The picker OPENS with every line ticked, so its untouched state is exactly today's
+   full-total link — ops only ever unticks. The three functions below are PURE and are
+   extracted verbatim by web-tests/unit/ops-pay-selection.test.js; keep them free of DOM
+   and module state. */
+function paySelectionState(lines) {
+  return {
+    legIndexes: lines.filter(function (l) { return l.kind === 'leg'; }).map(function (l) { return l.index; }),
+    extraIndexes: lines.filter(function (l) { return l.kind === 'extra'; }).map(function (l) { return l.index; }),
+  };
+}
+/* Unticking a leg takes its attributed extras with it — charging for a child seat on a leg
+   nobody bought is the kind of line that turns a payment page into an argument. An extra can
+   still be dropped on its own. */
+function togglePayLine(state, lines, line) {
+  var without = function (arr, n) { return arr.filter(function (x) { return x !== n; }); };
+  var asc = function (a, b) { return a - b; };
+  var legs = state.legIndexes.slice();
+  var extras = state.extraIndexes.slice();
+  if (line.kind === 'leg') {
+    var attributed = lines.filter(function (l) { return l.kind === 'extra' && l.legIndex === line.index; })
+                          .map(function (l) { return l.index; });
+    if (legs.indexOf(line.index) >= 0) {
+      legs = without(legs, line.index);
+      attributed.forEach(function (i) { extras = without(extras, i); });
+    } else {
+      legs = legs.concat(line.index).sort(asc);
+      attributed.forEach(function (i) { if (extras.indexOf(i) < 0) extras.push(i); });
+      extras = extras.sort(asc);
+    }
+  } else {
+    extras = extras.indexOf(line.index) >= 0 ? without(extras, line.index) : extras.concat(line.index).sort(asc);
+  }
+  return { legIndexes: legs, extraIndexes: extras };
+}
+/* Mirrors selectionAmountCents/gapAfterLeg in api/src/quote/paySelection.ts — the server is
+   authoritative for the charged amount; this is the running total the operator watches. */
+function paySelectionSummary(state, lines) {
+  var ticked = function (l) {
+    return l.kind === 'leg' ? state.legIndexes.indexOf(l.index) >= 0 : state.extraIndexes.indexOf(l.index) >= 0;
+  };
+  var sorted = state.legIndexes.slice().sort(function (a, b) { return a - b; });
+  var gapAfter = null;
+  for (var i = 1; i < sorted.length; i++) {
+    if (sorted[i] !== sorted[i - 1] + 1) {
+      var prev = sorted[i - 1];
+      var row = lines.filter(function (l) { return l.kind === 'leg' && l.index === prev; })[0];
+      gapAfter = row ? row.label : null;
+      break;
+    }
+  }
+  return {
+    soldLegs: state.legIndexes.length,
+    totalLegs: lines.filter(function (l) { return l.kind === 'leg'; }).length,
+    amountCents: lines.filter(ticked).reduce(function (sum, l) { return sum + l.amountCents; }, 0),
+    gapAfter: gapAfter,
+  };
+}
+
+async function openPayPartPicker() {
+  if (!state.savedId) return;
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-lines');
+    if (!r.ok) { showToast('Only a private transfer quote can sell part of a trip', 'error'); return; }
+    var body = await jsonOrNull(r);
+    if (!body || !body.lines) { showToast('Could not load the quote lines', 'error'); return; }
+    var sel = body.selection
+      ? { legIndexes: body.selection.legIndexes.slice(), extraIndexes: body.selection.extraIndexes.slice() }
+      : paySelectionState(body.lines);
+    _payPicker = { lines: body.lines, sel: sel, busy: false };
+    render();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('open pay picker', e);
+    showToast('Could not load the quote lines', 'error');
+  }
+}
+
+async function confirmPayPart() {
+  if (!_payPicker || _payPicker.busy) return;
+  _payPicker.busy = true; render();
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(_payPicker.sel),
+    });
+    if (!r.ok) {
+      var err = await jsonOrNull(r);
+      showToast(err && err.error === 'not_linkable'
+        ? 'That selection can\u2019t be sold on its own'
+        : 'Could not create the payment link', 'error');
+      _payPicker.busy = false; render();
+      return;
+    }
+    var body = await jsonOrNull(r);
+    if (!body || !body.url) { showToast('Could not create the payment link', 'error'); _payPicker.busy = false; render(); return; }
+    _payLink = { url: body.url, mode: body.payhereMode || 'off' };
+    _payPartial = body.coverage
+      ? { soldLegs: body.coverage.soldLegs, totalLegs: body.coverage.totalLegs, amountCents: body.amountCents }
+      : null;
+    _payPicker = null;
+    copyPayLink();
+  } catch (e) {
+    window.opsReportError && window.opsReportError('mint partial pay link', e);
+    showToast('Could not create the payment link', 'error');
+    if (_payPicker) { _payPicker.busy = false; render(); }
+  }
+}
+
+function renderPayPicker() {
+  if (!_payPicker) return '';
+  var sum = paySelectionSummary(_payPicker.sel, _payPicker.lines);
+  var rows = _payPicker.lines.map(function (l) {
+    var on = l.kind === 'leg'
+      ? _payPicker.sel.legIndexes.indexOf(l.index) >= 0
+      : _payPicker.sel.extraIndexes.indexOf(l.index) >= 0;
+    return '<label class="ch-payline' + (l.kind === 'extra' ? ' is-extra' : '') + '">'
+      + '<input type="checkbox"' + (on ? ' checked' : '') + ' data-action="togglePayLine" data-kind="' + l.kind + '" data-index="' + l.index + '" />'
+      + '<span class="l">' + esc(l.label) + '</span>'
+      + '<span class="v">' + fmtUsd(l.amountCents) + '</span>'
+      + '</label>';
+  }).join('');
+  /* The warning warns, it does not block — the operator decides (owner call 2026-08-04). Both
+     halves are true: the repositioning between the sold runs is unpriced, and the booking's flat
+     stop list renders the gap as a leg we drive (docs/known-bugs.md 2026-07-30). */
+  var warn = sum.gapAfter
+    ? '<div class="ch-paypicker-warn">Leaves a gap after <b>' + esc(sum.gapAfter) + '</b>. The vehicle\u2019s repositioning isn\u2019t priced into these legs, and the customer\u2019s itinerary will show the gap as a leg.</div>'
+    : '';
+  var summary = sum.soldLegs
+    ? 'Covers ' + sum.soldLegs + ' of ' + sum.totalLegs + ' legs \u2014 ' + fmtUsd(sum.amountCents)
+    : 'Pick at least one leg';
+  return '<div class="ch-paypicker" id="pay-picker">'
+    + '<div class="ch-paypicker-title">Payment link for part of the trip</div>'
+    + rows
+    + warn
+    + '<div class="ch-paypicker-foot">'
+    + '<span class="ch-paypicker-sum">' + summary + '</span>'
+    + '<button class="ch-btn ch-btn-ghost ch-btn-sm" data-action="cancelPayPart">Cancel</button>'
+    + '<button class="ch-btn ch-btn-teal ch-btn-sm"' + (sum.soldLegs && !_payPicker.busy ? '' : ' disabled') + ' data-action="confirmPayPart">'
+    + (_payPicker.busy ? 'Creating\u2026' : 'Create link & copy') + '</button>'
+    + '</div>'
+    + '</div>';
+}
+
 /* The action bar's "Payment link" press. Two paths, and the difference matters:
    - Already minted (the common case): copy SYNCHRONOUSLY. clipboard.writeText needs the click's
      transient user activation, and awaiting a network round-trip first can spend it — Safari in
@@ -4826,6 +4984,14 @@ async function payLinkPress() {
   if (_payLink) copyPayLink();
 }
 
+/* What the outstanding partial link covers — so ops doesn't have to remember what was sent,
+   and knows that pressing the plain "Payment link" button will retire it. */
+function renderPayPartialChip() {
+  if (!_payPartial || _payPicker) return '';
+  return '<div class="ch-paypartial-chip">Link sent for ' + _payPartial.soldLegs + ' of '
+    + _payPartial.totalLegs + ' legs \u2014 ' + fmtUsd(_payPartial.amountCents)
+    + ' \u00b7 sending a full payment link will replace it</div>';
+}
 function renderPayLinkRow() {
   // Only when copying failed. The happy path never shows this — the link goes straight to the
   // clipboard and the toast says so.
@@ -4951,7 +5117,7 @@ async function bookQuote() {
       return;
     }
     bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast('Booked · ' + res.reference);
@@ -5151,7 +5317,7 @@ async function reopenQuote(id) {
   sendBackOpen = false;
   submitBlockersOpen = false;
   bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
   _mapOpen = true;
   _dirty = false; // freshly loaded from the server — nothing unsaved (GL-1b)
   // The save chip belongs to the quote, not the session (same rule as resetToNew): without this,
@@ -6908,20 +7074,25 @@ function renderActionBar() {
   var PAYLINK = _payLinkCopied
     ? B('mintPayLink', 'Link copied ✓', 'ch-btn-outline ch-btn-copied', true)
     : B('mintPayLink', 'Payment link', 'ch-btn-outline', false, 'Copies the customer payment link to your clipboard');
+  /* Part of trip… (spec 2026-08-04): private quotes only — a chauffeur leg is a km share, so a
+     subset of chauffeur legs sums to nothing meaningful; the server refuses it too. */
+  var PAYPART = state.service !== 'chauffeur'
+    ? B('openPayPart', 'Part of trip\u2026', 'ch-btn-ghost', false, 'Send a payment link for only some legs')
+    : null;
   if (approver) {
     // Lifecycle is enforced for everyone, founders included: a quote must be Submitted for review
     // before it can be Approved (no self-approve straight from a draft). Approve appears only in
     // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), PAYLINK, B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK, B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), PAYLINK); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK, B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
@@ -7514,6 +7685,8 @@ function render() {
     '    </div>',
     '  </div>',
     renderPayLinkRow(),
+    renderPayPicker(),
+    renderPayPartialChip(),
     '</header>',
 
     '<div class="ch-container">',
@@ -8194,6 +8367,19 @@ function attachEventListeners() {
       runAction(action, payLinkPress);
     } else if (action === 'copyPayLink') {
       copyPayLink();
+    } else if (action === 'openPayPart') {
+      runAction(action, openPayPartPicker);
+    } else if (action === 'togglePayLine') {
+      if (_payPicker) {
+        _payPicker.sel = togglePayLine(_payPicker.sel, _payPicker.lines,
+          { kind: el.getAttribute('data-kind'), index: Number(el.getAttribute('data-index')) });
+        render();
+      }
+    } else if (action === 'cancelPayPart') {
+      _payPicker = null;
+      render();
+    } else if (action === 'confirmPayPart') {
+      runAction(action, confirmPayPart);
     } else if (action === 'confirmPlace') {
       openConfirmPlace(el.getAttribute('data-name') || '');
     } else if (action === 'confirmPlaceClose') {
@@ -8210,7 +8396,7 @@ function attachEventListeners() {
       runAction(action, bookQuote);
     } else if (action === 'cancelBook') {
       bookOpen = false;
-  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT);
+  _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payPartial = null;
       render();
     } else if (action === 'reopenToDraft') {
       runAction(action, reopenToDraft);
