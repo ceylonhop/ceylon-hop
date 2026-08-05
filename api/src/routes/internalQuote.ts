@@ -971,9 +971,12 @@ export function internalQuoteRoutes(deps: {
     }
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
 
-    // No body = the full-total link, exactly as before this feature existed (spec §4).
-    const raw = await c.req.json().catch(() => null);
-    const parsedSel = raw == null ? null : PayLinkSelectionSchema.safeParse(raw);
+    // No body — or a body that says nothing about a selection (e.g. `{}`) — is the full-total
+    // link, exactly as before this feature existed (spec §4). Only a body that ATTEMPTS a
+    // selection is validated: half a selection charging the wrong amount is the failure mode.
+    const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const attemptsSelection = raw != null && ('legIndexes' in raw || 'extraIndexes' in raw);
+    const parsedSel = attemptsSelection ? PayLinkSelectionSchema.safeParse(raw) : null;
     if (parsedSel && !parsedSel.success) return c.json({ error: 'bad_request' }, 400);
     let selection: PaySelection | null = parsedSel ? normalizeSel(parsedSel.data) : null;
 

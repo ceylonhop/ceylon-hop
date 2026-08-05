@@ -300,6 +300,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + ticketBody(c)
       + '<div class="included"><b>Included</b>' + esc(c.includedText) + '</div>'
       + '</div><div class="perf"></div><div class="t-stub">'
+      + linesHtml(data.lines)
+      + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
       + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
       + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
