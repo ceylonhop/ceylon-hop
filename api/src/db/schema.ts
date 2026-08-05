@@ -462,6 +462,17 @@ export const quotes = pgTable('quotes', {
   intentJson: jsonb('intent_json'),
   intentFingerprint: text('intent_fingerprint'),
   revision: integer('revision').notNull().default(1),
+  // Partial-leg pay links (spec 2026-08-04). A NULL selection = the outstanding link is for the
+  // full quote. sold_cents is the FROZEN amount a partial link charges. pay_link_seq is
+  // monotonic per quote and never reset, so a retired link's seq is never reused.
+  payLinkSelection: jsonb('pay_link_selection'),
+  soldCents: integer('sold_cents'),
+  payLinkSeq: integer('pay_link_seq').notNull().default(0),
+  // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
+  // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
+  customerTotalCents: integer('customer_total_cents'),
+  customerTotalAt: timestamp('customer_total_at', { withTimezone: true }),
+  customerTotalVia: text('customer_total_via'),
   accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
@@ -504,6 +515,25 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
+]);
+
+// Quote version history (spec 2026-08-05 §4). One row per SUPERSEDED state — see migration 0040.
+// The live state is never duplicated here: it lives in `quotes`.
+export const quoteRevisions = pgTable('quote_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id),
+  revision: integer('revision').notNull(),
+  requestJson: jsonb('request_json'),
+  resultJson: jsonb('result_json'),
+  totalCents: integer('total_cents').notNull(),
+  currency: text('currency').notNull(),
+  rateCardVersion: text('rate_card_version'),
+  status: text('status'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique('quote_revisions_quote_revision_unique').on(t.quoteId, t.revision),
+  index('idx_quote_revisions_quote').on(t.quoteId, t.revision),
 ]);
 
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced

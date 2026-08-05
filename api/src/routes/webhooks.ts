@@ -226,7 +226,16 @@ export function webhookRoutes(deps: {
           await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
           await notificationLog?.markSent(paid.id, 'deposit_received');
         } else {
-          await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          // Partial pay link (spec 2026-08-04): if this booking was sold as part of a quote,
+          // say so in the email — the itinerary alone can't (its flat stop list renders a gap
+          // as a driven leg, docs/known-bugs.md 2026-07-30). Best-effort like everything here.
+          const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
+          const sel = srcQuote?.payLinkSelection;
+          const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          await sendBookingConfirmation(paid, email, {
+            manage: manageUrl(paid, baseUrl, linkSecret),
+            ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
+          });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
           await notificationLog?.markSent(paid.id, 'confirmation');
         }

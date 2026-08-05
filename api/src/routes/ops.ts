@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { BookingRepo } from '../db/bookingRepo';
+import type { QuoteRepo } from '../db/quoteRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
@@ -38,6 +39,9 @@ export interface OpsDeps {
   // queue is exactly the booking rows it always was.
   rideLists?: RideListRepo;
   currency?: string;
+  // Partial pay links (spec 2026-08-04): lets the booking drawer say "covers 2 of 4 legs" for a
+  // booking sold through a partial link. Optional so every existing ops test keeps working.
+  quotes?: QuoteRepo;
 }
 
 // Every action the capability matrix knows about — used only to compute whoami's `caps`
@@ -253,7 +257,13 @@ export function opsRoutes(deps: OpsDeps) {
     const payLink = chargeable && deps.baseUrl && deps.linkSecret
       ? manageUrl(b, deps.baseUrl, deps.linkSecret)
       : null;
-    return c.json({ booking: b, ops, payments, payLink });
+    // Partial pay link coverage (spec 2026-08-04) — ops must see what the customer sees: a
+    // booking sold as 2-of-4 legs says so, because the flat stop list can't show the gap.
+    const srcQuote = deps.quotes ? await deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null;
+    const sel = srcQuote?.payLinkSelection;
+    const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+    const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
+    return c.json({ booking: b, ops, payments, payLink, coverage });
   });
 
   r.post('/bookings/:id/status', requireCap('bookings:operate'), async (c) => {

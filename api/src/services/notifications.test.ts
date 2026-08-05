@@ -478,3 +478,30 @@ describe('sendCustomerQuote', () => {
     expect(m.text).not.toContain('<');
   });
 });
+
+describe('partial-booking coverage (spec 2026-08-04)', () => {
+  // Local fixture — the `trip` above is scoped to its own describe.
+  const trip: Booking = {
+    mode: 'trip', id: 'id-part', reference: 'CH-PART1', status: 'paid',
+    createdAt: new Date().toISOString(), total: 31000, currency: 'USD', channel: 'whatsapp',
+    input: {
+      stops: ['Colombo', 'Kandy', 'Ella'], nights: [0, 0], dates: ['2026-09-01'],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer,
+    },
+  };
+
+  it('tells the customer which legs a partial booking covers', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(trip, email, { coverage: { soldLegs: 2, totalLegs: 4 } });
+    expect(email.sent[0].html).toContain('covers 2 of the 4 legs in your itinerary');
+    expect(email.sent[0].html).toContain('your own arrangement');
+    expect(email.sent[0].text).toContain('covers 2 of the 4 legs');
+  });
+
+  it('says nothing extra for a whole-trip booking', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(trip, email);
+    expect(email.sent[0].html).not.toContain('of the');
+    expect(email.sent[0].text).not.toContain('your own arrangement');
+  });
+});

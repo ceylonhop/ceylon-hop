@@ -57,7 +57,9 @@ export function computeFunnel(rows: FunnelQuoteRow[], q: AnalyticsRange): Funnel
   const sentValue: CurrencyMap = {};
   const sentCount: Record<string, number> = {};
   for (const r of rows) {
-    if (r.status === 'won' && decidedIn(r, from, to)) addCurrency(wonValue, r.currency, r.totalCents);
+    // A partial sale wins the quote at the amount actually charged; totalCents here would book
+    // the whole quote and overstate revenue by the legs the customer didn't buy (spec §11).
+    if (r.status === 'won' && decidedIn(r, from, to)) addCurrency(wonValue, r.currency, r.soldCents ?? r.totalCents);
     if (inRange(r.sentAt, from, to)) {
       addCurrency(sentValue, r.currency, r.totalCents);
       sentCount[r.currency] = (sentCount[r.currency] ?? 0) + 1;

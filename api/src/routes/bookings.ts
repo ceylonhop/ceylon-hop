@@ -24,7 +24,9 @@ import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import {
   signCheckoutToken,
+  signPayReturnToken,
   verifyBookingToken,
+  verifyPayReturnToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
 
@@ -182,6 +184,11 @@ export function bookingRoutes(deps: {
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
+  /**
+   * Origin the customer pay page is served from. Only used to build the redirect checkout's
+   * return leg; unset simply means a pay-link checkout keeps the adapter's default URLs.
+   */
+  payBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const r = new Hono();
@@ -510,6 +517,38 @@ function billingFrom(body: unknown): BillingParse {
     return c.json(withCheckoutToken(booking), 201);
   });
 
+  // The return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D5/§D6).
+  //
+  // PayHere documents that NO payment status is passed back on the redirect — "You need to
+  // update your database upon fetching payment status by your script on notify_url & then show
+  // the payment status to your customer in the page on return_url by fetching the status from
+  // your database." So this answers from OUR settlement state, which the webhook owns, and the
+  // returning page polls it. Nothing the browser arrives holding is trusted as a status.
+  //
+  // Three outcomes, because a decline must never read as an endless "confirming…": `paid` once
+  // the money is in, `failed` when the attempt reached a terminal refusal, `pending` while the
+  // webhook has not landed yet — which is also, correctly, the answer before any attempt.
+  //
+  // Deliberately returns TWO fields. The token authorises reading a settlement status, so that
+  // is all it may read: no customer details, no itinerary, no amounts. The reference is included
+  // because the page shows it and the customer already has it in their email and their link.
+  r.get('/pay-return', async (c) => {
+    const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const rows = await payments.findByBookingId(booking.id);
+    // A settled payment is the answer whatever else is on the booking — including the ops
+    // lifecycle mirror having moved it on. Only then a terminal failure; anything else is
+    // still in flight.
+    const status = rows.some((p) => p.status === 'succeeded')
+      ? 'paid'
+      : rows.some((p) => p.status === 'failed')
+        ? 'failed'
+        : 'pending';
+    return c.json({ status, reference: booking.reference }, 200);
+  });
+
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
   // old unauthenticated GET /:id (nothing calls it: the site uses POST /:id/checkout and
   // internal callers use the repo). Returns only a customer-safe projection.
@@ -600,11 +639,34 @@ function billingFrom(body: unknown): BillingParse {
       if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
     }
 
+    // Where the gateway sends the customer back to (spec: docs/checkout-redirect-spec.md §D3).
+    // A pay-link customer must land on the PAY page; the adapter's constructor URLs point at
+    // booking.html, which is the website checkout's own page and pure confusion for this payer.
+    //
+    // The client states INTENT ONLY — it never supplies a URL. A gateway that will redirect the
+    // customer wherever the request body says is a phishing primitive, and the request that
+    // reaches here has already crossed the network. So the origin comes from our own config and
+    // the token is minted here, over the booking this checkout is actually for.
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown } | null;
+    const returnUrls =
+      body?.returnTo === 'pay-link' && deps.payBaseUrl
+        ? (() => {
+            const rt = signPayReturnToken(booking.id, deps.linkSecret);
+            const base = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=${encodeURIComponent(rt)}`;
+            // Both legs land on the SAME page. PayHere documents return_url for an approved
+            // payment and cancel_url for a customer-cancelled one, but says nothing about where
+            // a DECLINED payment goes — so neither URL may be the only one that works. The page
+            // polls our own settlement state either way; `c=1` is a display hint, never truth.
+            return { returnUrl: base, cancelUrl: `${base}&c=1` };
+          })()
+        : {};
+
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
+      ...returnUrls,
       // What the payer sees named on the PayHere receipt. "Ceylon Hop Travel" rather than
       // "Ceylon Hop" so an unfamiliar line is self-explaining, and the reference so a query
       // about a charge arrives with the booking already identified.
