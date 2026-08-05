@@ -614,3 +614,109 @@ test('a webhook that has not landed yet keeps confirming rather than claiming an
   await expect(page.locator('.st-title')).toHaveText('Confirming your payment…');
   await expect(page.locator('#payhelp')).toHaveCount(0);
 });
+
+// "Back to Site" on PayHere's page. Nothing was attempted, so no notify is coming and the payment
+// sits at `pending` forever — polling the full budget would strand a customer who simply changed
+// their mind, then tell them "Payment received?", which is nonsense.
+test('coming back from Back to Site resumes the form instead of confirming forever', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 15000 });
+  await expect(page.locator('#payerr')).toContainText('nothing was charged');
+  // NOT a decline — the bank-call steps would be noise to someone who changed their mind.
+  await expect(page.locator('#payhelp')).toBeHidden();
+  // Their details survived, so retrying is one tap.
+  await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
+  await expect(page.locator('#gobtn')).toBeVisible();
+});
+
+// The race the short budget must still catch: they paid, then hit Back to Site before the webhook
+// landed. The cancel flag must not talk them out of a payment that actually succeeded.
+test('a cancel leg still reports a payment that really succeeded', async ({ page }) => {
+  await stubView(page, { state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+  await expect(page.locator('.st-title')).toContainText('booked');
+  await expect(page.locator('.ref')).toHaveText('CH-TEST1');
+});
+
+// Owner-reported 2026-08-05: payers pressed "Continue to payment" repeatedly because the wait for
+// /start + /checkout showed almost nothing. Two presses must never mean two checkouts.
+test('pressing Continue twice starts exactly one checkout', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let starts = 0;
+  await page.route('**/quotes/pay/start', async (r) => {
+    starts++;
+    // Deliberately slow — this is the cold-API window the double-press happens in.
+    await new Promise((res) => setTimeout(res, 1200));
+    await r.fulfill({ status: 201, contentType: 'application/json',
+      body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) });
+  });
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  await page.route('https://sandbox.payhere.lk/**', (r) => r.fulfill({
+    status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-bcountry').selectOption('United States');
+  await page.locator('#f-terms').check();
+
+  const go = page.locator('#gobtn');
+  await go.click();
+  // The press must LOOK like it is working, or the payer presses again — which is how this bug
+  // was reported in the first place.
+  await expect(go).toBeDisabled();
+  await expect(go).toHaveAttribute('aria-busy', 'true');
+  await expect(page.locator('#gobtn .cta-spin')).toBeVisible();
+
+  await go.click({ force: true }).catch(() => {});
+  await go.click({ force: true }).catch(() => {});
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+  expect(starts).toBe(1);
+});
+
+// The hand-off screen should tell the payer where they are going and what they will find, so
+// PayHere's very different-looking page reads as expected rather than alarming.
+test('the interstitial names PayHere, the amount, and the merchant line they will see', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
+    body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  // Neutralise the hand-off itself so the page stays put and the interstitial can be read.
+  // (A hanging route does not work: Playwright blocks locator queries while a navigation is
+  // pending.) This also quietly asserts the code really does call form.submit().
+  await page.addInitScript(() => { HTMLFormElement.prototype.submit = function () {}; });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-bcountry').selectOption('United States');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('.pp-loading .lead')).toContainText('never see your card details');
+  // The amount appears exactly once, in the preview card — not twice on one short screen.
+  await expect(page.locator('.pp-loading .amt')).toHaveCount(0);
+  // The merchant line as PayHere actually prints it — the anti-surprise cue.
+  await expect(page.locator('.pp-expect .who')).toHaveText('Ceylon Hop (PVT) LTD');
+  await expect(page.locator('.pp-expect .amt2')).toHaveText('$498.85');
+});

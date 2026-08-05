@@ -61,13 +61,24 @@ describe('pay page return leg', () => {
   });
 
   // PayHere documents return_url for an approved payment and cancel_url for a cancellation, but
-  // says nothing about where a DECLINED payment lands — so the `c=1` hint must never be read as
-  // an outcome, and both legs must poll the same way.
-  it('treats the cancel flag as a display hint, never as a payment status', () => {
-    const hintUses = js.match(/cameFromCancel/g) || [];
-    // Set once from the URL, read once for copy. Any more and it is probably driving logic.
-    expect(hintUses.length).toBeLessThanOrEqual(2);
-    expect(js).not.toMatch(/cameFromCancel\s*\)\s*\{[\s\S]{0,200}?(renderPaid|status\s*=)/);
+  // says nothing about where a DECLINED payment lands. So `c=1` may shorten how long we WAIT and
+  // change the words — it must never decide the OUTCOME. Only the server's status does that.
+  it('never concludes an outcome from the cancel flag', () => {
+    // No branch on the hint may render a paid/failed conclusion. The three terminal renderers
+    // are reached from the polled status alone.
+    expect(js).not.toMatch(/cameFromCancel[\s\S]{0,160}?(renderPaid|renderPaidMinimal)\s*\(/);
+    expect(js).not.toMatch(/if\s*\(\s*cameFromCancel\s*\)[\s\S]{0,120}?status\s*=/);
+  });
+
+  // Polling a full minute at someone who pressed "Back to Site" — then telling them "Payment
+  // received?" — is nonsense. The cancel leg gets a short budget, long enough only to catch a
+  // genuine race where they paid and backed out before the webhook landed.
+  it('does not make a customer who backed out wait out the full poll budget', () => {
+    expect(js).toMatch(/CANCEL_TRIES/);
+    const cancel = Number((js.match(/CANCEL_TRIES\s*=\s*(\d+)/) || [])[1]);
+    const full = Number((js.match(/RETURN_TRIES\s*=\s*(\d+)/) || [])[1]);
+    expect(cancel).toBeGreaterThan(0);
+    expect(cancel).toBeLessThan(full);
   });
 
   it('distinguishes a decline from a slow webhook', () => {

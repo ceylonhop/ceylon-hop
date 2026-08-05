@@ -98,6 +98,29 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pp-cta.is-off:hover{background:var(--btn-cta);transform:none}
   .pp-cta{transition:opacity .22s ease,background .22s ease,box-shadow .22s ease,transform .18s ease}
   @media (prefers-reduced-motion:reduce){ .pp-cta{transition:none} }
+  /* The BUSY state (2026-08-05). The owner's 2026-08-01 call keeps the wait for /start +
+     /checkout on the button rather than behind a full-screen takeover — right, but ticket.css's
+     `[disabled]{opacity:.6}` alone was too quiet to read as "working", so payers pressed again.
+     A moving spinner inside the button is the difference between "dimmed" and "busy". Full
+     opacity deliberately: this control is ACTIVE, not unavailable. */
+  .pp-cta.is-busy{opacity:1;cursor:progress}
+  .pp-cta.is-busy:hover{background:var(--btn-cta);transform:none}
+  .cta-spin{display:inline-block;width:15px;height:15px;margin-right:9px;vertical-align:-2px;
+    border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;
+    animation:ppspin .7s linear infinite}
+  @media (prefers-reduced-motion:reduce){ .cta-spin{animation:none} }
+
+  /* What the payer is about to see. The single biggest wobble at a gateway hand-off is "is this
+     page even mine?" — PayHere's checkout is teal, branded PayHere, and looks nothing like us.
+     Naming the merchant line they will actually find there turns a surprise into a confirmation. */
+  .pp-expect{margin:22px auto 0;max-width:340px;border:1px solid var(--line);border-radius:12px;
+    background:var(--wash,#faf8f5);padding:12px 14px;text-align:left}
+  .pp-expect b{display:block;font-size:.63rem;font-weight:800;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+  .pp-expect .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
+  .pp-expect .amt2{font-family:var(--display);font-weight:800;font-size:1.3rem;color:var(--ink)}
+  .pp-loading .lead{font-size:.88rem;color:var(--ink-soft);max-width:34ch;margin:6px auto 0}
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
@@ -144,6 +167,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var data = null;         // last /view payload
   var booking = null;      // { bookingId, checkoutToken } once /start succeeds
   var typed = null;        // raw form values, so a payment failure restores what they typed
+  var submitting = false;  // one checkout per press — see startPayment
+
+  // A press that is WORKING, not a control that is unavailable. Spinner + text, so the wait for
+  // /start + /checkout reads as progress on the button itself (the owner's 2026-08-01 call: no
+  // full-screen takeover until the gateway window is genuinely opening).
+  function setBusy(btn, busy, label){
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.classList.toggle('is-busy', busy);
+    if (busy) {
+      btn.innerHTML = '<span class="cta-spin" aria-hidden="true"></span>' + esc(label);
+      // Screen readers get the change announced rather than silently re-labelled mid-press.
+      btn.setAttribute('aria-busy', 'true');
+    } else {
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
+    }
+  }
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
 
@@ -590,9 +631,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderLoading(){
     app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
       + '<h2>Taking you to PayHere…</h2>'
-      + '<p>You’ll pay on PayHere’s secure page, then come straight back here.</p>'
-      + '<div class="amt">' + esc(data.totals.usd) + '</div>'
-      + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
+      + '<p class="lead">You’ll finish paying on PayHere’s own secure page. '
+      +   'We never see your card details.</p>'
+      // The amount lives ONLY in the preview card. It was above this as a big standalone figure
+      // too, and the same number twice on one short screen reads as a bug rather than emphasis.
+      //
+      // The merchant line is quoted as PayHere actually prints it — verified against the live
+      // checkout 2026-08-05. If the gateway customization name is ever changed in the PayHere
+      // dashboard, change it here too: a reassurance that does not match what they land on is
+      // worse than no reassurance at all.
+      + '<div class="pp-expect"><b>On the next screen you should see</b>'
+      +   '<div class="row"><span class="who">Ceylon Hop (PVT) LTD</span>'
+      +   '<span class="amt2">' + esc(data.totals.usd) + '</span></div></div>'
+      + '<p>🔒 Central Bank approved · no extra fees · you’ll come straight back here</p></div>';
   }
 
   // Shared with booking.html — see decline-help.js for why this copy says what it says.
@@ -618,8 +669,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         h.hidden = true;
       }
     }
+    // Release the latch. Without this a refused card, a validation miss or a timeout would leave
+    // the button locked and the payer with no way to retry at all — strictly worse than the
+    // double-click it guards against.
+    submitting = false;
     var b = document.getElementById('gobtn') || document.getElementById('paybtn');
-    if (b) { b.disabled = false; b.textContent = b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere'; }
+    if (b) setBusy(b, false, b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere');
   }
 
   function startPayment(){
@@ -680,8 +735,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // full-screen interstitial blocked them behind a takeover for seconds. The takeover
     // now appears only at the moment the PayHere window actually opens (below), where
     // "don't close this page" is true and the amount belongs.
-    var goBtn = document.getElementById('gobtn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Opening secure payment…'; }
+    // Belt AND braces against a second checkout. `disabled` alone is not enough: fail() re-enables
+    // the button, a stray re-render would hand back a fresh one, and a double-tap on mobile can
+    // land two clicks before the first repaint. `submitting` is the one that cannot be undone by
+    // the DOM — and two checkouts means two PayHere hand-offs for one booking.
+    if (submitting) return;
+    submitting = true;
+    setBusy(document.getElementById('gobtn'), true, 'Opening secure payment…');
     fetchJson(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
@@ -751,11 +811,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // documents return_url for an approved payment and cancel_url for a cancelled one, and says
   // nothing at all about where a DECLINED payment lands — so both legs poll identically.
   var RETURN_TRIES = 30;
+  // A customer who pressed "Back to Site" on PayHere's page never attempted a payment, so no
+  // notify is coming and polling a full minute would strand them on "confirming…" — then tell
+  // them "Payment received?", which is nonsense for someone who deliberately backed out.
+  // So the cancel leg waits only long enough to catch a genuine race (they paid, then hit back
+  // before the webhook landed). The DB still decides: this shortens the WAIT, never the verdict.
+  var CANCEL_TRIES = 3;
   function renderReturn(){
     app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
       + '<h1 class="st-title">' + (cameFromCancel ? 'Checking where that left things…' : 'Confirming your payment…') + '</h1>'
       + '<p class="st-sub">This usually takes a few seconds.</p></div>';
     var tries = 0;
+    var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
     (function poll(){
       tries++;
       fetchJson(A + '/bookings/pay-return?rt=' + encodeURIComponent(rt)).then(function(r){
@@ -765,11 +832,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if (v.status === 'paid') { forget(); return t ? load() : renderPaidMinimal(v.reference); }
         // A refusal must never read as an endless "confirming" — that is the whole point of
         // asking our own server rather than trusting the redirect.
-        if (v.status === 'failed') return resumeAfterFailure();
-        if (tries < RETURN_TRIES) { setTimeout(poll, 2000); return; }
+        if (v.status === 'failed') {
+          return resumeAfterFailure('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
+        }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        // Still nothing. On the cancel leg that is the expected answer, not a slow webhook.
+        // No decline help: nothing was declined, and four paragraphs about phoning a bank would
+        // be noise to someone who simply changed their mind.
+        if (cameFromCancel) {
+          return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', null);
+        }
         renderStillWaiting();
       }).catch(function(){
-        if (tries < RETURN_TRIES) { setTimeout(poll, 2000); return; }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
         renderStillWaiting();
       });
     })();
@@ -792,8 +867,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
   }
 
-  // Put them back on the form they left, with what they typed and what to do about a decline.
-  function resumeAfterFailure(){
+  // Put them back on the form they left, with what they typed. The caller says WHY they are back
+  // — a refusal (with the decline steps) or their own change of mind (without) — because the two
+  // deserve different words and the wrong one is worse than none.
+  function resumeAfterFailure(message, help){
     if (!t) return renderCannotResume();
     fetchJson(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){
       if (!r.ok) throw new Error('view ' + r.status);
@@ -804,7 +881,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (v.state === 'revised') return renderRevised();
       if (v.state !== 'payable') return renderUnavailable();
       renderDetails();
-      fail('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
+      fail(message, help);
     }).catch(function(){ renderCannotResume(); });
   }
 
