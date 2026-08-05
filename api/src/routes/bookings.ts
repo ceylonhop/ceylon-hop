@@ -26,6 +26,7 @@ import {
   signCheckoutToken,
   signPayReturnToken,
   verifyBookingToken,
+  verifyPayReturnToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
 
@@ -514,6 +515,38 @@ function billingFrom(body: unknown): BillingParse {
       );
     }
     return c.json(withCheckoutToken(booking), 201);
+  });
+
+  // The return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D5/§D6).
+  //
+  // PayHere documents that NO payment status is passed back on the redirect — "You need to
+  // update your database upon fetching payment status by your script on notify_url & then show
+  // the payment status to your customer in the page on return_url by fetching the status from
+  // your database." So this answers from OUR settlement state, which the webhook owns, and the
+  // returning page polls it. Nothing the browser arrives holding is trusted as a status.
+  //
+  // Three outcomes, because a decline must never read as an endless "confirming…": `paid` once
+  // the money is in, `failed` when the attempt reached a terminal refusal, `pending` while the
+  // webhook has not landed yet — which is also, correctly, the answer before any attempt.
+  //
+  // Deliberately returns TWO fields. The token authorises reading a settlement status, so that
+  // is all it may read: no customer details, no itinerary, no amounts. The reference is included
+  // because the page shows it and the customer already has it in their email and their link.
+  r.get('/pay-return', async (c) => {
+    const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const rows = await payments.findByBookingId(booking.id);
+    // A settled payment is the answer whatever else is on the booking — including the ops
+    // lifecycle mirror having moved it on. Only then a terminal failure; anything else is
+    // still in flight.
+    const status = rows.some((p) => p.status === 'succeeded')
+      ? 'paid'
+      : rows.some((p) => p.status === 'failed')
+        ? 'failed'
+        : 'pending';
+    return c.json({ status, reference: booking.reference }, 200);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
