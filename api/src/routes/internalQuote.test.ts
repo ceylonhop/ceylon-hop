@@ -2788,6 +2788,29 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     expect(body.totalCents).toBe((await quotes.get(id))!.totalCents);
   });
 
+  it('mark-booked charges the full quote and retires an outstanding partial link', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes, bookings });
+    await mintSel(app, id, { legIndexes: [0], extraIndexes: [] });
+    expect((await quotes.get(id))!.payLinkSeq).toBe(1);
+    await quotes.patch(id, { status: 'sent' }); // /book accepts sent|won only
+
+    const res = await post(app, `/admin/quote/${id}/book`, {
+      customer: { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' },
+      vehicleType: 'car', pax: 2, bags: 1, date: '2026-09-01', time: '09:00',
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).total).toBe((await quotes.get(id))!.totalCents);
+
+    // The partial link is dead, not merely superseded — otherwise it could mint a SECOND booking.
+    const after = await quotes.get(id);
+    expect(after!.payLinkSelection).toBeNull();
+    expect(after!.soldCents).toBeNull();
+    expect(after!.payLinkSeq).toBe(2);
+  });
+
   it('GET /pay-lines refuses a chauffeur quote', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await priced(quotes, {

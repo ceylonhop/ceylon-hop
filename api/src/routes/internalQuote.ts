@@ -926,7 +926,15 @@ export function internalQuoteRoutes(deps: {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }
     }
-    await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
+    await deps.quotes.patch(id, {
+      convertedBookingId: booking.id,
+      status: 'won',
+      // A full-quote booking contradicts any outstanding partial link, so retire it rather than
+      // leaving a live link that could mint a SECOND booking for the same quote (spec §10).
+      ...(quote.payLinkSelection
+        ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
+        : {}),
+    });
     return c.json(booking, 201);
   });
 
