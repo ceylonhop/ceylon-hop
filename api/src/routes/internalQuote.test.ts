@@ -2647,35 +2647,37 @@ describe('positive location identification', () => {
   });
 });
 
+// Shared priced-quote fixtures. Module scope on purpose: the pay-link, baseline and drift suites
+// below all build on them, and a describe-scoped copy is invisible to its siblings.
+const ENGINE3 = {
+  product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
+  legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 },
+  ],
+  extras: [{ code: 'luggage' as const, legIndex: 1 }],
+};
+
+// A REAL priced quote: payLines reads result.lineItems, so a fixture with `result: {}` would
+// be testing nothing but the guard. Walked to 'ready'.
+async function priced(quotes: InMemoryQuoteRepo, engine: QuoteRequest = ENGINE3) {
+  const result = quote(engine, RATE_CARD);
+  const q = await quotes.save({
+    channel: 'ops', product: engine.product, vehicle: 'car', totalCents: result.totalCents,
+    currency: 'USD', rateCardVersion: RATE_CARD.version, result, requestedService: 'private',
+    request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine },
+  });
+  for (const s of ['pending_review', 'ready']) await quotes.patch(q.id, { status: s as never });
+  return q.id;
+}
+const mintSel = (app: App, id: string, body?: unknown) =>
+  app.request(`/admin/quote/${id}/pay-link`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
 describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', () => {
-  const ENGINE3 = {
-    product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
-    legs: [
-      { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
-      { from: 'Kandy', to: 'Ella', distanceKm: 140 },
-      { from: 'Ella', to: 'Galle', distanceKm: 200 },
-    ],
-    extras: [{ code: 'luggage' as const, legIndex: 1 }],
-  };
-
-  // A REAL priced quote: payLines reads result.lineItems, so a fixture with `result: {}` would
-  // be testing nothing but the guard.
-  async function priced(quotes: InMemoryQuoteRepo, engine: QuoteRequest = ENGINE3) {
-    const result = quote(engine, RATE_CARD);
-    const q = await quotes.save({
-      channel: 'ops', product: engine.product, vehicle: 'car', totalCents: result.totalCents,
-      currency: 'USD', rateCardVersion: RATE_CARD.version, result, requestedService: 'private',
-      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine },
-    });
-    for (const s of ['pending_review', 'ready']) await quotes.patch(q.id, { status: s as never });
-    return q.id;
-  }
-  const mintSel = (app: App, id: string, body?: unknown) =>
-    app.request(`/admin/quote/${id}/pay-link`, {
-      method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-
   it('mints for the picked legs and freezes the summed amount', async () => {
     const quotes = new InMemoryQuoteRepo();
     const id = await priced(quotes);
@@ -2819,5 +2821,86 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     });
     const app = createApp({ quotes });
     expect((await authedGet(app, `/admin/quote/${id}/pay-lines`)).status).toBe(409);
+  });
+});
+
+describe('price-drift baseline (spec 2026-08-05)', () => {
+  const toStatus = (app: App, id: string, status: string) =>
+    app.request(`/admin/quote/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+      body: JSON.stringify({ status }),
+    });
+
+  it('marking a quote sent records the total the customer was quoted', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const total = (await quotes.get(id))!.totalCents;
+    const app = createApp({ quotes });
+
+    expect((await toStatus(app, id, 'sent')).status).toBe(200);
+
+    const q = await quotes.get(id);
+    expect(q!.customerTotalCents).toBe(total);
+    expect(q!.customerTotalVia).toBe('sent');
+    expect(q!.customerTotalAt).toBeInstanceOf(Date);
+  });
+
+  it('a non-sent transition does not stamp it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    await toStatus(app, id, 'draft'); // reopen to edit
+    expect((await quotes.get(id))!.customerTotalCents).toBeNull();
+  });
+
+  it('a full-total pay-link mint records the quote total', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const total = (await quotes.get(id))!.totalCents;
+    const app = createApp({ quotes });
+
+    await mintSel(app, id); // bodyless — the classic full-total link
+
+    const q = await quotes.get(id);
+    expect(q!.customerTotalCents).toBe(total);
+    expect(q!.customerTotalVia).toBe('pay_link');
+  });
+
+  // THE trap this exists for (spec §9). A partial link CHARGES less than the quote total, so
+  // storing the charged amount would leave the indicator permanently lit on this quote.
+  it('a PARTIAL mint records the quote total, not the amount charged', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const total = (await quotes.get(id))!.totalCents;
+    const app = createApp({ quotes });
+
+    const body = await (await mintSel(app, id, { legIndexes: [0], extraIndexes: [] })).json();
+    expect(body.amountCents).toBeLessThan(total); // the link really does charge less
+
+    const q = await quotes.get(id);
+    expect(q!.customerTotalCents).toBe(total);
+    expect(q!.soldCents).toBe(body.amountCents); // the charged amount is not lost
+  });
+
+  it('re-minting the same link leaves the baseline in place', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    await mintSel(app, id);
+    const first = (await quotes.get(id))!.customerTotalAt;
+    await mintSel(app, id);
+    expect((await quotes.get(id))!.customerTotalAt).toEqual(first);
+  });
+
+  // Stamping must never bump the seq — that would retire the link it just minted.
+  it('stamping does not retire the link it just minted', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await priced(quotes);
+    const app = createApp({ quotes });
+    const a = await (await mintSel(app, id)).json();
+    const b = await (await mintSel(app, id)).json();
+    expect(b.url).toBe(a.url);
+    expect((await quotes.get(id))!.payLinkSeq).toBe(0);
   });
 });

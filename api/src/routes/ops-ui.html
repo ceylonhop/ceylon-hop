@@ -1433,6 +1433,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-svc-head { padding: 12px 16px 0; }
 .qv .ch-svc-caption-lbl { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted-2); }
 .qv .ch-total-lkr { display: block; font-size: 12px; color: var(--muted-2); font-weight: 400; margin-top: 1px; }
+/* Price drift (2026-08-05): quiet by design — it sits under the total and states a fact. The fade
+   matches the total's own colour transition so the pane never snaps. */
+.qv .ch-drift { margin-top: 6px; font-size: 12px; color: var(--muted-2); animation: chDriftIn .35s cubic-bezier(.23,.9,.32,1) both; }
+.qv .ch-drift b { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+@keyframes chDriftIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 
 /* due-now highlighted chip row (chauffeur) */
 .qv .ch-deposit-chip { margin-top: 12px; background: rgba(10,185,182,.08); border: 1px solid rgba(10,185,182,.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -4660,6 +4665,8 @@ function resetToNew() {
     requestedService: null,
     outputCurrency: 'USD',
     status: 'draft',
+    customerTotalCents: null,
+    customerTotalVia: null,
     notes: '',
     internalNotes: '',
     legs: [newLeg()],
@@ -4878,6 +4885,12 @@ async function transition(toStatus, opts) {
     return;
   }
   state.status = toStatus;
+  // Mark-sent stamps the price-drift baseline server-side; take it on so the indicator clears
+  // immediately rather than lingering until the next reload.
+  if (res && res.customerTotalCents !== undefined) {
+    state.customerTotalCents = (res.customerTotalCents == null) ? null : Number(res.customerTotalCents);
+    state.customerTotalVia = res.customerTotalVia || null;
+  }
   _dirty = false;
   if (window.opsRefreshQuotes) window.opsRefreshQuotes();
   if (opts.toast) showToast(opts.toast);
@@ -5359,6 +5372,8 @@ async function reopenQuote(id) {
     state.savedId = q.id;
     state.reference = q.reference || q.id;
     state.status = q.status || 'draft';
+    state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
+    state.customerTotalVia = q.customerTotalVia || null;
     state.assignedTo = q.assignedTo || null;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
@@ -5434,6 +5449,8 @@ async function reopenQuote(id) {
   state.luggageCount = Math.max(0, parseInt(tool.luggageCount, 10) || 0);
   state.legs = legs;
   state.status = q.status || 'draft';
+  state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
+  state.customerTotalVia = q.customerTotalVia || null;
   state.notes = q.notes || ''; // send-back reason etc., shown in the review banner
   state.internalNotes = q.internalNotes || ''; // ops-only scratchpad, edited beside the route map
   state.savedId = q.id;
@@ -6382,6 +6399,24 @@ function submitBlockers() {
   return out;
 }
 
+/* Price drift (spec 2026-08-05 §9). One quiet line beside the total: what the customer was last
+   quoted, against what the quote says now. Owner call — an indicator, NOT a toast and NOT a
+   confirmation gate.
+
+   Its ABSENCE is the all-clear, so this returns '' for exactly one reason: the numbers match.
+   Never add a "hide while estimating" or "hide when partial" branch — a silent indicator meaning
+   "I don't know" is indistinguishable from one meaning "you're fine", which is the failure this
+   whole feature exists to prevent. */
+function priceDriftHtml(baselineCents, via, liveCents) {
+  if (baselineCents == null || liveCents == null) return '';
+  if (baselineCents === liveCents) return '';
+  var lead = via === 'pay_link' ? 'Link sent at' : 'Sent at';
+  return '<div class="ch-drift">'
+    + esc(lead) + ' <b>' + esc(fmtUsd(baselineCents)) + '</b>'
+    + ' &middot; now <b>' + esc(fmtUsd(liveCents)) + '</b>'
+    + '</div>';
+}
+
 function renderSummaryCardBody() {
   // Unpriceable: keep the total as the calm hero (an em-dash, not a wall of warnings),
   // with a single needs line beneath. Gated-vehicle/server errors keep their precise text.
@@ -6437,6 +6472,9 @@ function renderSummaryCardBody() {
     + (est.total.lkr ? '<span class="ch-total-lkr ch-val-sub">' + esc(est.total.lkr) + '</span>' : '')
     + '</span>');
   lines.push('</div>');
+
+  // What the customer was last quoted, when that differs from the number above it.
+  lines.push(priceDriftHtml(state.customerTotalCents, state.customerTotalVia, est.total.cents));
 
   // Defect A: when the total covers only the ready legs, say so — the number is real but partial.
   if (lastEstimatePartial > 0) {

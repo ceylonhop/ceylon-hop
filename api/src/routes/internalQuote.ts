@@ -1017,11 +1017,28 @@ export function internalQuoteRoutes(deps: {
     const changed =
       JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection);
     const seq = changed ? quote.payLinkSeq + 1 : quote.payLinkSeq;
-    if (changed) {
+
+    // Price-drift baseline (spec 2026-08-05 §9). Minting a link is a customer-facing moment — for
+    // many quotes the ONLY one, since a link can go out without Mark sent ever being pressed. It
+    // records the quote TOTAL, deliberately NOT `amountCents`: a partial link charges less than
+    // the total by design, and storing that would leave the indicator permanently lit on this
+    // quote. The charged amount is persisted as soldCents just above.
+    const customerTotal =
+      quote.customerTotalCents !== quote.totalCents
+        ? { cents: quote.totalCents, at: new Date(), via: 'pay_link' as const }
+        : undefined;
+
+    // `seq` is untouched by the stamp — bumping it would retire the link being minted.
+    if (changed || customerTotal) {
       await deps.quotes.patch(quote.id, {
-        payLinkSelection: selection,
-        soldCents: selection ? amountCents : null,
-        payLinkSeq: seq,
+        ...(changed
+          ? {
+              payLinkSelection: selection,
+              soldCents: selection ? amountCents : null,
+              payLinkSeq: seq,
+            }
+          : {}),
+        ...(customerTotal ? { customerTotal } : {}),
       });
     }
 
@@ -1261,6 +1278,14 @@ export function internalQuoteRoutes(deps: {
         }
       }
     }
+    // Price-drift baseline (spec 2026-08-05 §9). Sending a quote IS the moment a customer is
+    // quoted a number, so record the total as it stands right now. Read from the STORED row, never
+    // the body — only POST /save writes pricing, so a body value here would be a hole.
+    const customerTotal: QuotePatch['customerTotal'] =
+      body.status === 'sent' && current
+        ? { cents: current.totalCents, at: new Date(), via: 'sent' as const }
+        : undefined;
+
     const updated = await deps.quotes.patch(c.req.param('id'), {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
@@ -1269,6 +1294,7 @@ export function internalQuoteRoutes(deps: {
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
+      customerTotal,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not

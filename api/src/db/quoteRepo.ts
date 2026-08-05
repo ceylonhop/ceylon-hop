@@ -97,6 +97,10 @@ export interface SavedQuote {
   payLinkSelection: PaySelection | null;
   soldCents: number | null;
   payLinkSeq: number;
+  // Price-drift baseline (spec 2026-08-05): the quote total when the customer was last quoted.
+  customerTotalCents: number | null;
+  customerTotalAt: Date | null;
+  customerTotalVia: 'sent' | 'pay_link' | null;
   accessTokenDigest: string | null;
   convertedBookingId: string | null;
   notes: string | null;
@@ -171,6 +175,10 @@ export interface QuotePatch {
   payLinkSelection?: PaySelection | null;
   soldCents?: number | null;
   payLinkSeq?: number;
+  // Price-drift baseline (spec 2026-08-05). Moves as a UNIT, like rateLock: `undefined` = leave
+  // alone, an object = stamp all three. There is no clear case — a quote that has been shown to a
+  // customer has been shown to a customer.
+  customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' };
 }
 
 // Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
@@ -338,6 +346,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       payLinkSelection: null,
       soldCents: null,
       payLinkSeq: 0,
+      customerTotalCents: null,
+      customerTotalAt: null,
+      customerTotalVia: null,
       accessTokenDigest: q.accessTokenDigest ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
@@ -460,6 +471,13 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (patch.payLinkSelection !== undefined) row.payLinkSelection = patch.payLinkSelection;
     if (patch.soldCents !== undefined) row.soldCents = patch.soldCents;
     if (patch.payLinkSeq !== undefined) row.payLinkSeq = patch.payLinkSeq;
+    // All three together or none: a baseline amount without its date would render an indicator
+    // that cannot say when the customer was quoted it.
+    if (patch.customerTotal !== undefined) {
+      row.customerTotalCents = patch.customerTotal.cents;
+      row.customerTotalAt = patch.customerTotal.at;
+      row.customerTotalVia = patch.customerTotal.via;
+    }
     row.updatedAt = now;
     return { ...row };
   }

@@ -57,6 +57,9 @@ export function quoteRowToSaved(r: Row): SavedQuote {
     payLinkSelection: (r.payLinkSelection ?? null) as SavedQuote['payLinkSelection'],
     soldCents: r.soldCents ?? null,
     payLinkSeq: r.payLinkSeq ?? 0,
+    customerTotalCents: r.customerTotalCents ?? null,
+    customerTotalAt: r.customerTotalAt ?? null,
+    customerTotalVia: (r.customerTotalVia ?? null) as SavedQuote['customerTotalVia'],
     accessTokenDigest: r.accessTokenDigest,
     convertedBookingId: r.convertedBookingId,
     notes: r.notes,
@@ -354,6 +357,14 @@ export class PostgresQuoteRepo implements QuoteRepo {
           : {}),
         ...(patch.soldCents !== undefined ? { soldCents: patch.soldCents } : {}),
         ...(patch.payLinkSeq !== undefined ? { payLinkSeq: patch.payLinkSeq } : {}),
+        // Price-drift baseline (spec 2026-08-05) — all three or none.
+        ...(patch.customerTotal !== undefined
+          ? {
+              customerTotalCents: patch.customerTotal.cents,
+              customerTotalAt: patch.customerTotal.at,
+              customerTotalVia: patch.customerTotal.via,
+            }
+          : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
