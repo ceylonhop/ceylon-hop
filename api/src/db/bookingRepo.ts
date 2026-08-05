@@ -144,9 +144,12 @@ export interface BookingRepo {
   // Implementations MUST make the not-yet-paid check part of the write itself, so a settlement
   // landing concurrently cannot have its payer overwritten. Returns the booking unchanged when
   // it is no longer chargeable.
+  // `termsAcceptedAt` is optional: an ops "Mark booked" re-book carries no acceptance, because
+  // nobody ticked a box — that customer agreed over WhatsApp. Absent leaves the column alone
+  // rather than stamping an acceptance that never happened.
   refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
   ): Promise<Booking>;
 }
 
@@ -225,7 +228,7 @@ export class InMemoryBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
@@ -239,7 +242,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       // The acceptance belongs to whoever is actually paying. /start requires termsAccepted:true
       // on EVERY call, so a resuming payer has just agreed — recording the earlier submitter's
       // timestamp would leave a refund dispute holding evidence about the wrong person.
-      termsAcceptedAt: details.termsAcceptedAt.toISOString(),
+      termsAcceptedAt: details.termsAcceptedAt ? details.termsAcceptedAt.toISOString() : current.termsAcceptedAt,
     } as Booking;
     this.byId.set(id, updated);
     return updated;

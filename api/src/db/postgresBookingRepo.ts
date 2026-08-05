@@ -273,7 +273,7 @@ export class PostgresBookingRepo implements BookingRepo {
 
   async refreshPayerDetails(
     id: string,
-    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt: Date },
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
   ): Promise<Booking> {
     const c = details.customer;
     const b = details.billing;
@@ -284,25 +284,28 @@ export class PostgresBookingRepo implements BookingRepo {
       //
       // Absent billing leaves what was captured before, matching the in-memory repo: a payer who
       // filled the address on their first attempt and left it blank on a retry keeps it.
+      const set: Record<string, unknown> = {};
+      if (b) {
+        set.billingFirstName = b.firstName ?? null;
+        set.billingLastName = b.lastName ?? null;
+        set.billingAddress = b.address;
+        set.billingCity = b.city;
+        set.billingCountry = b.country;
+        set.billingPostcode = b.postcode ?? null;
+        set.billingState = b.state ?? null;
+      }
+      // The acceptance belongs to whoever is actually paying, so a payer submission always
+      // rewrites it. An ops re-book sends none — nobody ticked a box on a WhatsApp booking —
+      // and must leave the column as it found it.
+      if (details.termsAcceptedAt) set.termsAcceptedAt = details.termsAcceptedAt;
+      // The UPDATE has to SET something real or it returns no row, and the status guard below
+      // is the whole point of doing this as one statement. An ops re-book carries neither
+      // billing nor an acceptance, so assign status to itself: here the guard, not the value,
+      // is what the statement is for.
+      if (Object.keys(set).length === 0) set.status = bookings.status;
       const [bk] = await tx
         .update(bookings)
-        .set(
-          b
-            ? {
-                billingFirstName: b.firstName ?? null,
-                billingLastName: b.lastName ?? null,
-                billingAddress: b.address,
-                billingCity: b.city,
-                billingCountry: b.country,
-                billingPostcode: b.postcode ?? null,
-                billingState: b.state ?? null,
-                termsAcceptedAt: details.termsAcceptedAt,
-              }
-            : // No billing in this submission — but the terms acceptance still belongs to
-              // whoever is paying now, and writing it also gives the UPDATE something real to
-              // set, keeping the status guard and the customerId read in one atomic statement.
-              { termsAcceptedAt: details.termsAcceptedAt },
-        )
+        .set(set)
         .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])))
         .returning();
       if (!bk) return;
