@@ -1,6 +1,8 @@
 # Replacing the PayHere iframe checkout with a top-level redirect
 
-**Status:** spec, not built. **Two prerequisites in §2 are hard blockers — confirm both before any code.**
+**Status:** server side built (see the commits on `spec/redirect-checkout`); client side not started.
+**§2.1 is a hard blocker before this SHIPS.** §2.2 was downgraded from a blocker on 2026-08-05 —
+see the owner note in §1.2, which retracts this spec's original reading of the pending payments.
 **Written:** 2026-08-05. **Trigger:** a real customer could not pay quote CH-XKZL3 on 2026-08-05.
 **Scope:** `pay.html` (WhatsApp pay links) only. `booking.html` runs the same SDK and has the same
 defect — see §10; it is deliberately NOT in this spec's scope.
@@ -54,7 +56,7 @@ What that proves, in order:
 `terms_accepted_at` on this booking is 18:26:11, ~24 minutes after creation: the owner's own test of
 the same link, which correctly reused the booking and payment row via the idempotency key.
 
-### 1.2 This is not a one-off
+### 1.2 How common is it? Not established — and the raw counts MISLEAD
 
 Payments created in the last 14 days, by status:
 
@@ -66,23 +68,25 @@ pending   |  8
 
 The eight `pending` rows, oldest first: CH-HL3P6 (2026-07-23, booking now cancelled), CH-4XBFW and
 CH-79HNC (2026-07-31, both cancelled), CH-MNSQD (2026-08-01, $50.00), CH-W6RHF (2026-08-01, $64.50),
-CH-JTHDE (2026-08-02, **$749.00**), CH-B44VY (2026-08-04, $59.00), CH-XKZL3 (2026-08-05, $52.00).
+CH-JTHDE (2026-08-02, $749.00), CH-B44VY (2026-08-04, $59.00), CH-XKZL3 (2026-08-05, $52.00).
 
-Last 30 days by channel:
+> **Owner, 2026-08-05: all of these except CH-XKZL3 are the owner's own testing.** They are not
+> stranded customers, they need no follow-up, and they are **not evidence of a failure rate.** An
+> earlier draft of this spec read them as a systemic bleed; that reading was wrong and is retracted
+> here rather than quietly deleted, because the same query will look just as alarming next time.
 
-```
-channel  | status    | count
-website  | pending   |   3
-website  | succeeded |   1
-whatsapp | failed    |   1
-whatsapp | pending   |   5
-whatsapp | succeeded |   3
-```
+**Anyone querying this table later needs to know: `pending` rows are dominated by owner testing, and
+the DB cannot tell a test from a customer.** `bookings.channel` does not separate them either — the
+owner's pay-link tests are `channel = 'whatsapp'`, exactly like a real pay link.
 
-Every one of these `pending` rows is a customer who got all the way through our forms, reached the
-PayHere iframe, and never came back with any status at all. **What this does not prove:** how many
-were technical failures versus ordinary abandonment. The database cannot distinguish them — see
-§2.2, which is a blocker for exactly this reason.
+So the honest position on scale: **one confirmed real-customer failure (CH-XKZL3), and no measured
+failure rate at all.** The case for this change does not rest on volume — it rests on §1.4 and §1.5:
+the iframe integration is structurally unable to report its own failures, and the redirect is the
+integration PayHere documents as primary. That argument was never a volume argument, and it is
+unweakened by the counts being smaller than they looked.
+
+It also means **do not treat this as an emergency.** Build it properly, verify it per §7, ship it
+when it is right.
 
 ### 1.3 One unexplained beacon
 
@@ -91,9 +95,11 @@ kind         | dedupe_key   | count | last_sent_at (SLT)
 client_error | 2a926f877aff |     2 | 2026-08-04 07:07:11.312
 ```
 
-Eight minutes before CH-B44VY's payment row was created (07:15:48). `alert_log` stores only the
-dedupe hash; the full event — including the customer's user agent — is in Sentry. **Unread.** It may
-name the failing device class outright, and it is the cheapest remaining evidence. See §2.3.
+Eight minutes before CH-B44VY's payment row was created (07:15:48). **That correlation is now weak:
+CH-B44VY was owner testing (§1.2), so this beacon plausibly belongs to the owner's own device rather
+than to a failing customer.** `alert_log` stores only the dedupe hash; the full event is in Sentry.
+**Unread.** Still worth opening — it costs a minute and either names a failing device or rules
+itself out — but it is no longer evidence of anything on its own.
 
 ### 1.4 What the SDK actually does
 
@@ -186,18 +192,19 @@ payments currently work.
 payment fails at the gateway door — and it will fail *identically* to a wrong-secret bug, which is
 the single most expensive thing to debug in production.
 
-### 2.2 ⚠️ Establish what the eight pending payments actually did
+### 2.2 Confirm CH-XKZL3 in the PayHere dashboard
 
-§1.2 shows eight abandoned-at-gateway payments and cannot say why. The PayHere merchant dashboard
-can: it will show, per `order_id`, whether an attempt was recorded at all and how far it got.
+**Downgraded from a blocker (owner, 2026-08-05):** the other pending rows were owner testing, so
+there is no population to survey — see §1.2. What remains is the single real failure.
 
-**Action:** look up CH-XKZL3, CH-B44VY, CH-JTHDE, CH-W6RHF and CH-MNSQD in the PayHere dashboard.
+**Action:** look up CH-XKZL3 in the PayHere merchant dashboard. Either an attempt was recorded and
+stalled (which pins the death point inside the iframe precisely), or nothing arrived at all (which
+says the frame never reached PayHere). Both corroborate §1.4; they differ on which of its three
+mechanisms applied.
 
-**Why this is a blocker:** it is the difference between "the iframe is silently eating most of our
-checkouts" and "one customer had a bad day and the rest is normal abandonment". Both justify the
-redirect — PayHere documents it as the primary integration either way — but only the first justifies
-treating it as urgent and back-filling the affected customers. **Do not let this spec's §1.1
-conclusion (which is solid for CH-XKZL3 alone) be read as proof about the other seven.**
+**Why it is no longer a blocker:** the fix does not depend on the answer. The redirect removes the
+entire class either way, and §1.1's evidence for CH-XKZL3 stands on its own. Worth doing because it
+is cheap and it is the only real data point that exists.
 
 ### 2.3 Read the Sentry event behind `2a926f877aff`
 
@@ -287,7 +294,7 @@ now.**
 
 **D8 — Both fetches get a timeout.** `/start` and `/checkout` have none. On a stalled API the button
 sits at "Opening secure payment…" forever with no retry — an *alternate* silent-hang path that the
-redirect does not fix, and one that cannot be ruled out for the seven other pending payments (§2.2).
+redirect does not fix. Worth doing on its own merits, not as a theory about any particular payment.
 Use `AbortSignal.timeout()` (the codebase already uses it in `payhere.ts`) and surface the existing
 "no charge was made" error so the customer can retry.
 
@@ -390,8 +397,9 @@ merchant `243025`, so a live test is a known-good procedure.
 
 ## 8. Rollout
 
-The two surfaces are independent; ship `pay.html` alone. Its blast radius is WhatsApp pay links,
-which is where the money is currently getting stuck (§1.2: 5 of 9 whatsapp-channel payments pending).
+The two surfaces are independent; ship `pay.html` alone — it is where the one confirmed failure
+happened, and a smaller change is a safer one. (An earlier draft justified the ordering with
+whatsapp-channel pending counts; per §1.2 those counts are mostly owner testing and prove nothing.)
 
 There is **no feature flag proposed**, deliberately: a flag would mean maintaining and testing both
 the redirect and the iframe path, and the iframe path is the defect. If the redirect fails
@@ -413,8 +421,9 @@ Migrations: none. This spec adds no columns and no data model changes.
   its own investigation into where reliable route data lives for a pay-link booking. **Note that
   `items` is not the bank-statement descriptor** — PayHere's Checkout API has no descriptor
   parameter at all, and the statement text can only be changed by asking PayHere.
-- **Back-filling the eight stuck customers.** A commercial decision that depends on §2.2. CH-JTHDE
-  ($749.00, stuck since 2026-08-02) is worth a personal follow-up regardless of what this spec does.
+- **Back-filling the stuck payments.** ~~A commercial decision.~~ **Closed (owner, 2026-08-05): they
+  were owner testing. Nobody is to be contacted, and CH-JTHDE's $749 is not a real stranded sale.**
+  Only CH-XKZL3 is a real customer, and they are already in conversation on WhatsApp.
 - **Any change to pricing, refunds, or the webhook.**
 
 ---
@@ -423,7 +432,8 @@ Migrations: none. This spec adds no columns and no data model changes.
 
 1. **§2.1** — which domains are registered against merchant `243025`, and is `pay.ceylonhop.com`
    among them?
-2. **§2.2** — what does the PayHere dashboard show for the eight pending orders?
+2. **§2.2** — what does the PayHere dashboard show for CH-XKZL3? (No longer a blocker; the other
+   pending orders were owner testing and need no investigation.)
 3. **§7.2** — where does a *declined* payment redirect the customer?
 4. **§7.3** — does PayHere append anything at all to `return_url`?
 5. **§1.3** — what does the Sentry event behind `2a926f877aff` say about the device?
