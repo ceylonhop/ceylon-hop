@@ -51,7 +51,9 @@ describe('customerQuoteView', () => {
   it('quantifies the delta on the non-priced option', () => {
     const v = customerQuoteView(quote({ requestedService: 'both' }), both);
     expect(v.options[1].deltaUsd).toBe('+$340');
-    expect(v.options[1].deltaText).toBe('+$340 — your driver stays with you throughout');
+    // Per-day reframing (owner, 2026-08-06): the fixture's legs span 20–22 Aug = 3 days,
+    // so $340 / 3 ≈ $113 a day. The same fact, priced per day, is how an upsell reads small.
+    expect(v.options[1].deltaText).toBe('+$340 for the whole trip — about $113 a day for your own driver-guide');
   });
 
   it('degrades to one card when chauffeur cannot be priced on a `both` quote', () => {
@@ -195,5 +197,17 @@ describe('the lead option is the stored, approved total', () => {
       { pointToPoint: { totalCents: 79_500 }, chauffeur: { totalCents: 118_000 } },
     );
     expect(v.options[1].deltaUsd).toBe('+$340'); // 1180 - 840, not 1180 - 795
+  });
+});
+
+
+// The per-day line needs an honest denominator: strip the dates and it must fall back to the
+// whole-trip phrasing rather than inventing a span.
+describe('delta per-day fallback', () => {
+  it('drops the per-day figure when legs are undated', () => {
+    const undated = quote({ requestedService: 'both' });
+    (undated.request as { tool: { legs: { date?: string }[] } }).tool.legs.forEach((l) => delete l.date);
+    const v = customerQuoteView(undated, both);
+    expect(v.options[1].deltaText).toBe('+$340 — your driver stays with you throughout');
   });
 });
