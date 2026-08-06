@@ -236,8 +236,10 @@ this page is the first place the customer sees a number; it must not be three sc
    visible (§4.4). Falls back to the designed SVG placeholder when there is no key or
    routing fails. `ch-map.js` fixes the inline height at 260px; the quote page needs its own
    height on a phone rather than inheriting that.
-3. **Options** — one card, or two when `requestedService === 'both'`: side by side from
-   560px, **stacked on a phone**. Each carries its total, what that service includes, its
+3. **Options** — one card, or two when `requestedService === 'both'`: **stacked on a
+   phone**, side by side when the page column is ≥560px — via a **container query on the
+   column, not a viewport media query** (a viewport query rendered two half-width cards
+   inside a 375px frame; owner-caught 2026-08-05). Each carries its total, what that service includes, its
    own cancellation ladder (chauffeur is capped at 80% ten days out; a transfer is fully
    refundable to 24 hours — `pay.html` already switches on product and this must too), and a
    WhatsApp CTA. No Pay button (D6). On a `both` quote the second card carries a **delta
