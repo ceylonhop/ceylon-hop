@@ -216,17 +216,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function optionCardHtml(opt){
     var pol = opt.cancellation || { headline: '', ladder: [] };
     var ladder = (pol.ladder || []).map(function(li){ return '<li>' + esc(li) + '</li>'; }).join('');
+    // Identical row order on BOTH cards — on a phone they stack and get read one after the
+    // other, so the eye must not have to re-learn the layout on card two. The delta is the
+    // only slot that differs, and only because the lead card has nothing to compare to.
     return '<div class="ticket' + (opt.lead ? ' opt-lead' : '') + '"><div class="t-main">'
-      + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3></div>'
+      // "YOUR QUOTE" chip: the lead card carries the number ops actually quoted — the one the
+      // WhatsApp thread has been discussing — and the chip is what anchors that.
+      + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3>'
+      + (opt.lead ? '<span class="t-stat ok">Your quote</span>' : '') + '</div>'
       + '<p class="opt-d">' + esc(opt.blurb) + '</p>'
       + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
       + '<div class="tot" style="margin-top:13px"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
       + (opt.deltaText ? '<div class="delta">' + esc(opt.deltaText) + '</div>' : '')
       + '<details class="dt-pol"><summary>' + esc(pol.headline) + '</summary><ul>' + ladder + '</ul></details>'
+      // The secondary CTA NAMES its option ("Book Chauffeur & guide") — "Book this instead"
+      // framed the upgrade as a deviation from the default, which is upsell-hostile copy.
       + '<a class="btn ' + (opt.lead ? 'btn-wa' : 'btn-ghost') + ' pp-cta" href="' + waHref(opt.waText) + '">'
-      + (opt.lead ? 'Message us to book' : 'Book this instead') + '</a>'
+      + (opt.lead ? 'Message us to book' : 'Book ' + esc(opt.name)) + '</a>'
+      // One line, and it leads with the reassurance that converts: tapping this charges nothing.
       + (opt.lead
-          ? '<p class="paysub">Opens WhatsApp with your quote number ready to send. We’ll confirm the details and send a payment link.</p>'
+          ? '<p class="paysub">Opens WhatsApp — nothing is charged until you’ve confirmed the details.</p>'
           : '')
       + '</div></div>';
   }
