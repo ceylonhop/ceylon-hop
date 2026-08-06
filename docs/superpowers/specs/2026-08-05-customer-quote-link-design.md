@@ -179,7 +179,7 @@ A view token must be rejected by `verifyQuotePayToken` and vice versa.
 |---|---|---|
 | `live` | `ready` or `sent`, within the validity window | the proposal |
 | `lapsed` | `ready` or `sent`, past `offerValidUntil` | the proposal, prices marked out of date, invited to get in touch |
-| `booked` | `won`, or a settled booking | keepsake |
+| `booked` | `won`, or a settled booking | keepsake; payload carries the booking's manage-link URL for "View your booking" |
 | `unavailable` | any other status, soft-deleted, bad token | the "sailed off" screen |
 
 `unavailable` is deliberately **soft** — no detail leak, matching `/quote-pay/view` returning
@@ -209,23 +209,55 @@ Two mitigations, both required:
 2. **Defer the map** until it scrolls into view, so an open that never reaches it costs
    nothing.
 
+Two more map requirements, both learned from the prototype:
+
+- **A muted map style is part of the build, not a polish item.** Default Google tiles — POI
+  pins, road shields, saturated parks — fight the page's cream-and-teal design everywhere.
+  The live map needs a Google cloud style (desaturated terrain, POI labels off) so it sits
+  inside the `.ticket` card instead of shouting from it.
+- **The fallback is designed, not apologised for.** The stylized-island SVG in the prototype
+  *is* the no-map state — stops as numbered pins on a hand-drawn island, matching the share
+  card's art. Given the referrer-key trap makes a silent fallback the likely first-deploy
+  state, the fallback must look intentional.
+
 ## 5. The page
 
 Mobile-first: these links are opened from WhatsApp, so the ~375px layout is the primary
-design and the wide layout is the variant. Four blocks.
+design and the wide layout is the variant. Four blocks — **decision information first, the
+itinerary as supporting detail**. The share card deliberately carries no price (D11), so
+this page is the first place the customer sees a number; it must not be three screens down.
 
-1. **Header** — greeting by first name, trip title and subtitle from the shared projection,
-   and **"held until <date>"** from D9's stored field.
+1. **Header** — greeting by first name, trip title and subtitle, **the total in the hero**
+   ("$840 · all-in · private transfers"; on a `both` quote, both numbers: "$840 · or $1,180
+   with your driver throughout"), and **"held until <date>"** from D9's stored field. The
+   lapsed state reuses the same held-until row in amber — one visual system across states,
+   and no state gets its own layout.
 2. **Route map** — `CH_MAP.renderRoute()` over the quote's stops, expandable, deferred until
-   visible (§4.4). Falls back to the SVG placeholder when there is no key or routing fails,
-   as `booking.js` does. `ch-map.js` fixes the inline height at 260px; the quote page needs
-   its own height on a phone rather than inheriting that.
-3. **Day by day** — the itinerary as *days*, not the pay page's compact hop rail.
-4. **Options** — one card, or two when `requestedService === 'both'`: side by side on wide
-   screens, **stacked on a phone**. Each carries its total, what that service includes, its
+   visible (§4.4). Falls back to the designed SVG placeholder when there is no key or
+   routing fails. `ch-map.js` fixes the inline height at 260px; the quote page needs its own
+   height on a phone rather than inheriting that.
+3. **Options** — one card, or two when `requestedService === 'both'`: side by side from
+   560px, **stacked on a phone**. Each carries its total, what that service includes, its
    own cancellation ladder (chauffeur is capped at 80% ten days out; a transfer is fully
    refundable to 24 hours — `pay.html` already switches on product and this must too), and a
-   **"message us to book"** WhatsApp CTA. No Pay button (D6).
+   WhatsApp CTA. No Pay button (D6). On a `both` quote the second card carries a **delta
+   line** ("+$340 — your driver stays with you throughout"), so the page does the arithmetic
+   rather than making the customer diff two Included paragraphs.
+4. **Day by day** — the itinerary as *days*, below the offer it supports.
+
+**Every CTA is a `wa.me` deep link with prefilled text** naming the quote reference and, on
+an option card, the tapped option — *"Hi! I'd like to book the chauffeur & guide option for
+quote Q-7F3KX"*. Without the prefill both buttons open the same bare chat, ops receives
+"hi", and has to ask which option — the round-trip this page exists to remove. The prefill
+is the mechanism by which the customer's choice reaches ops (D6: ops switches the priced
+service if needed and mints the pay link).
+
+**First paint gets a skeleton.** `ticket.css` grew `.tk-sk` precisely because pay.html's
+unskeletoned first paint jumped, and this page is heavier. Same idiom, this page's own shape.
+
+**The booked state links onward.** Its payload carries the booking's manage-link URL, so
+"View your booking" hands the customer to `manage.html` — the keepsake must not be a dead
+end when the booking now has a real home.
 
 ### 5.1 What a day row is built from
 
@@ -236,12 +268,20 @@ structured fields only:
 
 | Leg | Renders as |
 |---|---|
-| driving (`transfer`, `airport`, `train_support`) | date · `from → to`, or the stop chain when `stops[]` is present · distance |
-| `stay_day` | date · "in <place>" — named, and nothing more |
+| driving (`transfer`, `airport`, `train_support`) | route bold · date in the mono caption (`hop-d`'s ticket.css duty) · **distance and duration at body size** — they are primary information on this page and must not be set in caption type |
+| `stay_day` | date · "In <place>" — named, and nothing more |
 | `addSightseeingFee` / `addWaitingFee` / `addSafariWait` | included time on that day, phrased as inclusion, never as a priced line |
 
+**Gap days are synthesized.** The data only has legs, so a trip dated 20–28 with legs on
+20/22/24/28 would render a section titled "Day by day" with days visibly missing — and a
+customer will count. Every calendar day between the first and last leg date renders: days
+with no leg become quiet "In <the last place reached>" rows, and consecutive identical ones
+collapse into a range ("MON 25 – WED 27 AUG · In Ella"). Pure date arithmetic in the
+projection; no new data. If any leg is undated, synthesis is skipped and the section falls
+back to journeys-only.
+
 Chauffeur idle-day pricing is deliberately understated in quotes and must stay that way: a
-`stay_day` is never surfaced as a priced sightseeing or rest line.
+`stay_day` or synthesized gap day is never surfaced as a priced sightseeing or rest line.
 
 An ops-authored per-day description would make this page substantially better, but it is a
 new field plus new ops UI — see §10.
@@ -290,7 +330,10 @@ a pay link, because honouring a lapsed offer is ops's call to make.
 - **Unit** — `customerQuoteView` over the golden quotes: single, multi-leg, chauffeur, `both`,
   `both`-with-unpriceable-chauffeur, undated legs, multi-stop legs, soft-deleted. Assert **no
   margin field on any path** (the pay page's margin tests are the template). Day-row
-  generation per leg category, including that a `stay_day` never renders a price.
+  generation per leg category, including that a `stay_day` never renders a price; **gap-day
+  synthesis** — a 20–28 trip with legs on 20/22/24/28 yields a row for every calendar day,
+  consecutive identical stays collapsed to one range row, and synthesis skipped when any leg
+  is undated. The `both` delta line equals the difference of the two card totals.
 - **Route** — the state machine across every quote status; the `lapsed` boundary either side
   of `offerValidUntil`; the soft-unavailable contract; **`Cache-Control: no-store` asserted**;
   and the following property asserted directly — a token for a quote that is then edited
@@ -298,9 +341,11 @@ a pay link, because honouring a lapsed offer is ops's call to make.
 - **Token** — round-trip; a view token rejected by `verifyQuotePayToken` and vice versa.
 - **Migration** — the validity column auto-applies on boot (merging it is its release), so it
   must be nullable and every existing quote must render with it null.
-- **e2e** (`web-tests/`) — open a live quote link on a mobile viewport, assert the map host,
-  the day rows and both option cards render stacked. Per the repo's e2e lesson: **act, then
-  verify** — assert against the state after the action, not the state that raced it.
+- **e2e** (`web-tests/`) — open a live quote link on a mobile viewport, assert the hero
+  total, the map host, the day rows and both option cards render stacked; assert each CTA's
+  `wa.me` href carries the quote reference and, on an option card, that option's name. Per
+  the repo's e2e lesson: **act, then verify** — assert against the state after the action,
+  not the state that raced it.
 - **Regression** — pay links and the pay page are untouched by this branch; the existing pay
   suites must pass unchanged.
 
