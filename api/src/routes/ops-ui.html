@@ -1039,7 +1039,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
 /* ---------- Customer strip (one compact row) ---------- */
 .qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; container-type: inline-size; container-name: custstrip; }
-.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: end; }
+/* align-items: START, not end (2026-08-06). With `end` every field is bottom-aligned, so the
+   moment the contact field shows its validation error the field's bottom becomes the ERROR text
+   — and the input above it is shoved 36px UP, out of line with the other four. Owner-reported.
+   With `start` the labels and inputs line up at the top and the error grows the row downward,
+   which is what an error should do. */
+.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: start; }
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
 .qv .ch-cust-grid .ch-input { padding: 7px 0; }
@@ -6528,7 +6533,10 @@ function renderSummaryCardBody() {
     // this the only trace of a premium was forensic arithmetic on the leg price (owner, 2026-07-23).
     var hz = item.meta && item.meta.hotZone;
     lines.push('<div class="ch-line">');
-    lines.push('  <span class="ch-line-label">' + esc(item.label)
+    // The SERVER shortens (shape() in internalQuote.ts). Clients render what they are given —
+    // one copy of the rule, so ops, the pay page and emails can never disagree. Full address on
+    // hover: the short label is for reading, the full one for checking.
+    lines.push('  <span class="ch-line-label" title="' + esc(item.label) + '">' + esc(item.displayLabel || item.label)
       + (hz ? '<span class="ch-hz-chip" title="Hot zone applied: ' + esc(hz.label || '') + '">&#9889; ' + esc(hz.placeName) + ' +' + esc(String(hz.boostPct)) + '%</span>' : '')
       + '</span>');
     lines.push('  <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');
@@ -6918,6 +6926,22 @@ function legOrderItems() {
 
 // The adjustment is visible in the internal price build-up, but customer drafts show only the
 // polished final total rather than exposing an internal pricing-policy label.
+/* The server shortens; the builder LOOKS UP (2026-08-06). No copy of the rule lives here — that
+   is how ops, the pay page and emails drift apart. Falls back to the raw string so a cached or
+   older estimate still renders something true. */
+function displayPlace(raw) {
+  var map = lastEstimate && lastEstimate.displayPlaces;
+  return (map && map[raw]) || raw || '';
+}
+
+/* routeText(), with each stop resolved through the server's map. Same joiner, so the message
+   reads identically apart from the names. */
+function shortRouteText(leg) {
+  var stops = leg.stops || [leg.pickupLocation, leg.dropoffLocation];
+  var named = (stops || []).filter(Boolean).map(displayPlace);
+  return named.length ? named.join(' \u2192 ') : routeText(leg);
+}
+
 function customerLineItems() {
   var adjustment = 0;
   var items = [];
@@ -6993,7 +7017,8 @@ function privateLegRows() {
   drivingLegs.forEach(function(leg, di) {
     var item = split.travel[di];
     if (!item) return;
-    rows.push({ date: leg.date, route: routeText(leg), cents: item.amountCents });
+    // The travel line item for this leg already carries the server's shortened route.
+    rows.push({ date: leg.date, route: item.displayLabel || routeText(leg), cents: item.amountCents });
   });
   return rows;
 }
@@ -7021,15 +7046,15 @@ function generatedWhatsappMessage() {
     // Itinerary lines UNpriced (driving legs + stay days), in state order.
     state.legs.forEach(function(leg) {
       if (legDrives(leg)) {
-        lines.push(fmtDate(leg.date) + ' — ' + routeText(leg));
+        lines.push(fmtDate(leg.date) + ' — ' + shortRouteText(leg));
       } else {
-        lines.push(fmtDate(leg.date) + ' — Stay in ' + (legTo(leg) || legFrom(leg) || '?'));
+        lines.push(fmtDate(leg.date) + ' — Stay in ' + (displayPlace(legTo(leg) || legFrom(leg)) || '?'));
       }
     });
     lines.push('');
     // Every engine lineItem as a priced row.
     customerLineItems().forEach(function(it) {
-      lines.push(it.label + ' — ' + M(it.amountCents));
+      lines.push((it.displayLabel || it.label) + ' — ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
@@ -7041,7 +7066,7 @@ function generatedWhatsappMessage() {
       lines.push(fmtDate(r.date) + ' — ' + r.route + ' — ' + M(r.cents));
     });
     splitLineItems().extras.forEach(function(it) {
-      lines.push(it.label + ' — ' + M(it.amountCents));
+      lines.push((it.displayLabel || it.label) + ' — ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
     lines.push('', productBlurb(veh));
@@ -7062,14 +7087,14 @@ function generatedEmailMessage() {
   if (isChauffeurEstimate()) {
     state.legs.forEach(function(leg) {
       if (legDrives(leg)) {
-        lines.push('  ' + fmtDate(leg.date) + '   ' + routeText(leg));
+        lines.push('  ' + fmtDate(leg.date) + '   ' + shortRouteText(leg));
       } else {
-        lines.push('  ' + fmtDate(leg.date) + '   Stay in ' + (legTo(leg) || legFrom(leg) || '?'));
+        lines.push('  ' + fmtDate(leg.date) + '   Stay in ' + (displayPlace(legTo(leg) || legFrom(leg)) || '?'));
       }
     });
     lines.push('');
     customerLineItems().forEach(function(it) {
-      lines.push('  ' + it.label + '   ' + M(it.amountCents));
+      lines.push('  ' + (it.displayLabel || it.label) + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
     var dueCents = lastEstimate.amountDueNow && lastEstimate.amountDueNow.cents != null ? lastEstimate.amountDueNow.cents : 0;
@@ -7079,7 +7104,7 @@ function generatedEmailMessage() {
       lines.push('  ' + fmtDate(r.date) + '   ' + r.route + '   ' + M(r.cents));
     });
     splitLineItems().extras.forEach(function(it) {
-      lines.push('  ' + it.label + '   ' + M(it.amountCents));
+      lines.push('  ' + (it.displayLabel || it.label) + '   ' + M(it.amountCents));
     });
     lines.push('', 'Total: ' + M(totalCents));
   }

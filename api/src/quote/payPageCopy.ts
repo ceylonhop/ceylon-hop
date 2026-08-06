@@ -27,6 +27,8 @@ interface ToolLegLite {
   stops?: string[];
 }
 
+import { shortPlace } from './shortPlace';
+
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
 
@@ -77,7 +79,8 @@ function vehicleLabel(tier: string | null | undefined): string {
 
 function legRoute(l: ToolLegLite): string {
   const stops = Array.isArray(l.stops) && l.stops.length >= 2 ? l.stops : [l.from ?? '?', l.to ?? '?'];
-  return `${stops[0]} → ${stops[stops.length - 1]}`;
+  // Short labels (2026-08-06): a full Google address wraps this row to three lines on a phone.
+  return `${shortPlace(stops[0])} → ${shortPlace(stops[stops.length - 1])}`;
 }
 
 // `selection` (spec 2026-08-04 partial links) — the legs THIS payment covers, by index into the

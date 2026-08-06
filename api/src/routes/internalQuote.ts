@@ -31,6 +31,7 @@ import {
   type PaySelection,
 } from '../quote/paySelection';
 import { changedFields } from '../quote/quoteDiff';
+import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
 import { signQuotePayToken } from '../lib/bookingToken';
 
 // Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
@@ -377,6 +378,22 @@ function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string
   return Object.keys(rest).length ? rest : undefined;
 }
 
+// Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
+//
+// The ops builder composes the customer message from its own UNSAVED state, so a few rows (a
+// chauffeur "Stay in …") have no engine line item to read a label off. Rather than let the client
+// keep its own copy of the shortening rule — which is how ops, the pay page and emails drift
+// apart — the server hands over the answers and the client looks them up.
+function displayPlacesFor(toolLegs: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!Array.isArray(toolLegs)) return out;
+  for (const leg of toolLegs as { from?: string; to?: string; stops?: string[] }[]) {
+    const places = Array.isArray(leg?.stops) && leg.stops.length ? leg.stops : [leg?.from, leg?.to];
+    for (const p of places) if (typeof p === 'string' && p.trim()) out[p] = shortPlace(p);
+  }
+  return out;
+}
+
 function shape(result: QuoteResult, canMargin: boolean) {
   const base = {
     product: result.product,
@@ -386,7 +403,11 @@ function shape(result: QuoteResult, canMargin: boolean) {
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
     // The founder-only zone annotation is stripped for non-margin:view roles (D9).
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
+    // `displayLabel` is the ONE place a route row gets shortened (2026-08-06). Clients render
+    // what they are given rather than each keeping a copy of the rule — ops-ui had one, and
+    // manage.html and the drawer were about to grow two more. `label` stays exact for search,
+    // tooltips and anything that needs the address as stored.
+    lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   if (!canMargin) return base;
   return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
@@ -447,7 +468,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -472,6 +493,7 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
       ...base,
       breakdown: quoteBreakdown(engineReq, rateCard),
       services: serviceChooserData(toolReq, rateCard, selected, result),
+      displayPlaces: displayPlacesFor(toolReq.legs),
     };
   } catch {
     return null;
@@ -701,6 +723,7 @@ export function internalQuoteRoutes(deps: {
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req, card),
         services,
+        displayPlaces: displayPlacesFor(body.legs),
       });
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
