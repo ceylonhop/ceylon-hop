@@ -355,7 +355,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/quote-view', quoteViewRoutes({
     quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
   }));
-  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl }));
+  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client

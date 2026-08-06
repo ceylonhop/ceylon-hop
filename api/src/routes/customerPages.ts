@@ -2,8 +2,9 @@ import { Hono, type Context } from 'hono';
 import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'node:fs';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { verifyQuotePayToken } from '../lib/bookingToken';
+import { verifyQuotePayToken, verifyQuoteViewToken } from '../lib/bookingToken';
 import { payCardModel, payCardSvg, payCardMeta, GENERIC_PAY_CARD, type PayCardModel } from './payCard';
+import { quoteCardModel, quoteCardSvg, quoteCardMeta, GENERIC_QUOTE_CARD, type QuoteCardModel } from './quoteCard';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,6 +40,8 @@ export interface CustomerPagesDeps {
   linkSecret?: string;
   /** Absolute origin for og:url / og:image. Falls back to the request's own origin. */
   payBaseUrl?: string;
+  /** Same, for quote links. Falls back to payBaseUrl, matching how the mint resolves its base. */
+  quoteBaseUrl?: string;
 }
 const SITE_HOME = 'https://ceylonhop.com/';
 
@@ -158,6 +161,40 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
     });
   });
 
+  /** The card model for a quote-view token, or the generic card for anything not live. */
+  async function quoteModelFor(token: string | undefined): Promise<QuoteCardModel> {
+    if (!token || !deps.quotes || !deps.linkSecret) return GENERIC_QUOTE_CARD;
+    try {
+      const parsed = verifyQuoteViewToken(token, deps.linkSecret);
+      if (!parsed) return GENERIC_QUOTE_CARD;
+      const quote = await deps.quotes.get(parsed.quoteId);
+      // Same gate the page applies. Deliberately NO revision check: a quote link FOLLOWS its
+      // quote (spec D3), so an edited quote still has a real card — unlike the pay card, whose
+      // token pins a revision. Lapsed quotes keep their card too: the PRICE went stale, and the
+      // card never carried one.
+      if (!quote || (quote.status !== 'ready' && quote.status !== 'sent')) return GENERIC_QUOTE_CARD;
+      return quoteCardModel(quote);
+    } catch {
+      return GENERIC_QUOTE_CARD; // never a 500 to a crawler
+    }
+  }
+
+  // The quote card image. Same shape and cache policy as /pay/card.png. The 5-minute s-maxage is
+  // deliberate even though the page itself is no-store: WhatsApp caches the preview against the
+  // URL for days regardless of what we send, which is exactly why nothing time-sensitive (a
+  // price, a countdown) is on the card in the first place.
+  r.get('/quote/card.png', async (c) => {
+    const model = await quoteModelFor(c.req.query('t'));
+    const png = new Resvg(quoteCardSvg(model), {
+      font: { fontFiles: FONT_FILES, loadSystemFonts: false },
+      fitTo: { mode: 'width', value: 1200 },
+    }).render().asPng();
+    return c.body(new Uint8Array(png), 200, {
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=300, s-maxage=300',
+    });
+  });
+
   // `/p` is the SHORT alias for pay.html (2026-08-02) — the path shed 8 characters of a URL
   // that was 208 long. `/q` is the same idea for quote.html, which is minted into every
   // quote-link URL. Same handler, same OG injection: an alias, not a second page.
@@ -166,15 +203,22 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
     r.get(`/${page}`, async (c) => {
       const html = read(file, forApiHost) as string | null;
       if (html === null) return c.notFound();
-      // Only the pay page unfurls today — manage.html is sent after payment, when trust is
-      // already established (spec: deliberately deferred).
-      if (file !== 'pay.html') return c.html(html);
+      // manage.html still does not unfurl — it is sent after payment, when trust is already
+      // established (spec: deliberately deferred).
+      if (file !== 'pay.html' && file !== 'quote.html') return c.html(html);
       const token = c.req.query('t');
-      const origin = absoluteOrigin(deps.payBaseUrl, c);
-      const model = await modelFor(token);
-      const image = `${origin}/pay/card.png${token ? `?t=${encodeURIComponent(token)}` : ''}`;
+      const isQuote = file === 'quote.html';
+      // Each page's links are minted against its own base, so each unfurls against its own
+      // origin — a quote card served from the pay host would make og:url disagree with the URL
+      // the customer actually tapped.
+      const origin = absoluteOrigin(isQuote ? (deps.quoteBaseUrl ?? deps.payBaseUrl) : deps.payBaseUrl, c);
+      const meta = isQuote
+        ? quoteCardMeta(await quoteModelFor(token))
+        : payCardMeta(await modelFor(token));
+      const cardPath = isQuote ? '/quote/card.png' : '/pay/card.png';
+      const image = `${origin}${cardPath}${token ? `?t=${encodeURIComponent(token)}` : ''}`;
       const page_ = `${origin}/${page}${token ? `?t=${encodeURIComponent(token)}` : ''}`;
-      return c.html(html.replace('<head>', `<head>\n${ogTags(payCardMeta(model), page_, image)}`));
+      return c.html(html.replace('<head>', `<head>\n${ogTags(meta, page_, image)}`));
     });
   }
   for (const [rel, type] of ASSETS) {
