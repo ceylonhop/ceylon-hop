@@ -96,8 +96,8 @@
 .dt-pol{margin-top:12px;font-size:.72rem;color:var(--ink-faint);text-align:center}
 .dt-pol summary{cursor:pointer;color:var(--ink-soft);font-weight:600;font-size:.74rem;list-style:none}
 .dt-pol summary::-webkit-details-marker{display:none}
-.dt-pol summary:after{content:' A';font-weight:800}
-.dt-pol[open] summary:after{content:' 4'}
+.dt-pol summary:after{content:' ›';font-weight:800}
+.dt-pol[open] summary:after{content:' ⌄'}
 .dt-pol ul{margin:8px auto 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft);text-align:left;display:inline-block}
 
 /* lapsed banner — the .t-stat.wait palette, sized as a card */
