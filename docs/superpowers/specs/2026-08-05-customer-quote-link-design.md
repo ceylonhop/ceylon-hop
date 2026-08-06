@@ -114,7 +114,7 @@ The owner's framing, verbatim:
   been parked since 2026-07-23 on the single blocker *"there is no customer-facing view/book
   a quote page today"*. This build is that page.
 
-- **D11 — The share card carries the trip, never the total.** WhatsApp and Facebook fetch a
+- **D11 — The share card carries the trip, never the total. The customer's FIRST NAME stays on the card deliberately (owner, 2026-08-06): a preview visibly addressed to one person disincentivises posting the link publicly — personalisation doubling as the anti-share mechanism. Do not strip it in a privacy pass.** WhatsApp and Facebook fetch a
   preview once and cache it against the URL for days — the reason `shareCard.ts` writes ride
   deadlines as fixed dates. Because ops re-sends the same URL after an edit (D4), a price in
   the preview would show the old number under a page showing the new one.
