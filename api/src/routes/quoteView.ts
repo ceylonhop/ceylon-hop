@@ -44,7 +44,14 @@ interface StoredToolLeg {
 // request has already dropped — must carry a date, and the trip must span more than one distinct
 // date. Anything short of that returns null, same as ops's "not offerable" state, so the page
 // renders one option rather than a broken second card.
-function chauffeurFromPrivate(
+//
+// Exported for direct unit testing: the undated-leg guard below is otherwise invisible to a
+// route-level test. Without it, a malformed chauffeur request still gets built (a travel day
+// with `date: undefined`) and handed to the engine, which throws reading that undefined date —
+// a throw the generic try/catch in servicesFor's price() helper swallows into the same `null`
+// the guard would have produced. A route-level test can't tell "guard fired" from "engine
+// crashed and was caught", so it can't pin this guard; calling the function directly can.
+export function chauffeurFromPrivate(
   engine: Extract<QuoteRequest, { product: 'private' }>,
   toolLegs: StoredToolLeg[] | undefined,
 ): QuoteRequest | null {

@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuoteViewToken, signQuotePayToken } from '../lib/bookingToken';
+import { chauffeurFromPrivate } from './quoteView';
+import type { QuoteRequest } from '../quote/types';
 
 const SECRET = 'test-link-secret';
 
@@ -223,5 +225,56 @@ describe('GET /quote-view', () => {
       expect(body.view.options).toHaveLength(1);
       expect(body.view.options[0].service).toBe('private');
     });
+  });
+});
+
+// Direct unit tests for chauffeurFromPrivate — see the export's comment in quoteView.ts. The
+// route-level "undated leg" test above (in the describe block up top) asserts the same
+// customer-visible outcome (one option, not two), but it can't tell "the guard returned null"
+// apart from "the guard was missing and the engine crashed on the undefined date, and
+// servicesFor's price() try/catch swallowed that crash into the same null". Calling the
+// function directly removes the engine and its try/catch from the picture, so these tests pin
+// the guards themselves rather than an accidental same-shaped failure mode.
+describe('chauffeurFromPrivate (direct)', () => {
+  const engine: Extract<QuoteRequest, { product: 'private' }> = {
+    product: 'private',
+    vehicle: 'car',
+    pax: 2,
+    bags: 2,
+    legs: [
+      { from: 'Colombo Airport', to: 'Sigiriya', distanceKm: 168 },
+      { from: 'Sigiriya', to: 'Kandy', distanceKm: 92 },
+    ],
+  };
+
+  it('returns null when any leg lacks a date', () => {
+    const toolLegs = [
+      { from: 'Colombo Airport', to: 'Sigiriya', date: '2026-08-20' },
+      { from: 'Sigiriya', to: 'Kandy', date: undefined },
+    ];
+    expect(chauffeurFromPrivate(engine, toolLegs)).toBeNull();
+  });
+
+  it('returns null when every dated leg falls on the same date', () => {
+    const toolLegs = [
+      { from: 'Colombo Airport', to: 'Sigiriya', date: '2026-08-20' },
+      { from: 'Sigiriya', to: 'Kandy', date: '2026-08-20' },
+    ];
+    expect(chauffeurFromPrivate(engine, toolLegs)).toBeNull();
+  });
+
+  it('returns a well-formed chauffeur request for a dated multi-day itinerary', () => {
+    const toolLegs = [
+      { from: 'Colombo Airport', to: 'Sigiriya', date: '2026-08-20' },
+      { from: 'Sigiriya', to: 'Kandy', date: '2026-08-22' },
+    ];
+    const result = chauffeurFromPrivate(engine, toolLegs);
+    expect(result).not.toBeNull();
+    expect(result!.product).toBe('chauffeur');
+    if (result!.product === 'chauffeur') {
+      expect(result!.travelDays).toHaveLength(2);
+      expect(result!.firstDate).toBe('2026-08-20');
+      expect(result!.lastDate).toBe('2026-08-22');
+    }
   });
 });
