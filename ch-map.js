@@ -97,6 +97,35 @@
   // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
   // rejection is evicted so a transient failure isn't cached for the rest of the session.
   const routeCache = new Map();
+  /* Group the journey's stops into PINS. A round trip's last stop lands on its first, so a pin
+     per STOP means the last is drawn over the first and hides it — the customer sees a map that
+     appears to start numbering at 2 (owner-reported on the ops map, 2026-08-06; this file had the
+     identical bug). One pin per PLACE, carrying every stop number that lands there: "1·3".
+
+     Tolerance ~50 m because Google snaps to the road network, so a return leg can finish metres
+     from where it started — tight enough that two hotels on one strip stay separate pins.
+
+     DELIBERATE SECOND COPY of mapPins() in api/src/routes/ops-ui.html. The ops shell is a
+     self-contained single-file app served from a different origin and cannot import this file;
+     there is no shared runtime to put this in. Change one, change both — the pair is covered by
+     web-tests/unit/ops-map-pins.test.js and web-tests/unit/ch-map-pins.test.js. */
+  function mapPins(pts) {
+    const TOL = 0.0005; // ~50 m in degrees at Sri Lankan latitudes
+    const pins = [];
+    (pts || []).forEach((loc, i) => {
+      const hit = pins.find((p) => Math.abs(p.lat - loc.lat) < TOL && Math.abs(p.lng - loc.lng) < TOL);
+      if (hit) hit.stops.push(i + 1);
+      else pins.push({ lat: loc.lat, lng: loc.lng, stops: [i + 1] });
+    });
+    const last = (pts || []).length;
+    return pins.map((p) => ({
+      lat: p.lat, lng: p.lng, stops: p.stops,
+      text: p.stops.join('\u00b7'),
+      isFirst: p.stops.includes(1),
+      isLast: p.stops.includes(last),
+    }));
+  }
+
   function computeRouteCached(Route, stops) {
     const key = JSON.stringify(stops.map(toLoc));
     const hit = routeCache.get(key);
@@ -285,15 +314,17 @@
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
         const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
-        stopLocs.forEach((pos, i) => {
-          const first = i === 0, last = i === stopLocs.length - 1;
+        // One pin per PLACE, not per stop — see mapPins().
+        mapPins(stopLocs).forEach((p) => {
           new libs.Marker({
-            map, position: pos, zIndex: 5,
-            icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
+            map, position: { lat: p.lat, lng: p.lng }, zIndex: 5,
+            icon: pin(p.isFirst ? '#0a7d6f' : p.isLast ? '#e8623a' : '#0AB9B6'),
             // The number ties each pin to the stops legend — without it the pins are
             // anonymous and "is stop 3 the right place?" can't be answered.
-            label: { text: String(i + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
-            title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
+            label: { text: p.text, color: '#ffffff', fontSize: p.stops.length > 1 ? '9px' : '11px', fontWeight: '700' },
+            title: p.stops.length > 1
+              ? 'Stops ' + p.stops.join(' and ')
+              : (p.isFirst ? 'Pick-up' : p.isLast ? 'Drop-off' : 'Stop ' + p.stops[0]),
           });
         });
       } catch (e) { /* markers are non-essential */ }
