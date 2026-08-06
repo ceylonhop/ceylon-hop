@@ -17,7 +17,10 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js"></script>
-<script src="consent.js" defer></script>
+<!-- No consent.js here (owner, 2026-08-06), same call pay.html made on 2026-08-01: a customer
+     reading a proposal we sent them privately is not the audience for a cookie banner, and it
+     overlaid the map. The head's Consent Mode default above is 'denied' and nothing on this
+     page grants, so no banner ≠ tracking. -->
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
@@ -83,17 +86,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // First paint is the page's own shape, not a bare line of text — ticket.css grew .tk-sk
   // because pay.html's unskeletoned first paint jumped, and this page is heavier: a hero line,
   // a map-sized block and one option card, all shimmering until /quote-view answers.
+  // The shapes must match what actually renders — an extra bar here for a hero total the page
+  // no longer draws would make the skeleton lie about the layout it is standing in for.
   function renderSkeleton(){
     app.className = 'tk-sk';
     app.setAttribute('aria-busy', 'true');
     app.setAttribute('aria-label', 'Loading your quote');
     app.innerHTML = '<i class="sk-hello"></i><i class="sk-title"></i><i class="sk-sub"></i>'
-      + '<i class="sk-tot2"></i>'
+      + '<i class="sk-held"></i>'
       + '<i class="sk-map"></i>'
       + '<i class="sk-opt"></i>';
   }
 
-  // '2026-08-12T00:00:00.000Z' → 'Tue 12 August'. Local time deliberately: "held until" is a
+  // '2026-08-12T00:00:00.000Z' → 'Tue 12 August'. Local time deliberately: an expiry date is a
   // deadline for whoever is reading it, not a UTC instant they have to convert themselves.
   var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -103,16 +108,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return DOW[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
   }
 
-  // held-until — the share card's clock treatment; .warn variant keeps ONE system across
+  // The expiry row — the share card's clock treatment; .warn variant keeps ONE system across
   // live and lapsed rather than a second banner design.
+  //
+  // "Quote expires on" (owner, 2026-08-06), not "Held until". What expires is the PRICE, never
+  // the link: past this date the same URL still opens and still shows the whole itinerary, it
+  // just says the price needs refreshing (spec D8 — link liveness is the quote's status, and
+  // has no clock). The sub-line carries that distinction so "expires" can't read as "gone".
   function heldRow(validUntil, lapsed){
     var label = heldLabel(validUntil);
     if (!label) return '';
     return '<div class="held' + (lapsed ? ' warn' : '') + '">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M12 6.5V12l4 2.5"/></svg>'
-      + '<span>' + (lapsed ? 'Was held until ' : 'Held until ') + esc(label)
+      + '<span>' + (lapsed ? 'This quote expired on ' : 'Quote expires on ') + esc(label)
       + '<small>' + (lapsed
-          ? 'That date has passed, so the price needs a refresh.'
+          ? 'Your trip is still here — message us and we’ll refresh the price.'
           : 'This price is locked for you until then.')
       + '</small></span></div>';
   }
@@ -214,7 +224,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var html = '<div class="pp-hello">' + (v.greetingName ? 'Hi ' + esc(v.greetingName) + ',' : 'Hello,') + '</div>'
       + '<h1 class="pp-title">' + esc(v.title) + '</h1>'
       + '<p class="pp-sub">' + esc(v.subtitle) + '</p>'
-      + '<div class="hero-tot"><span class="v">' + esc(v.heroTotalUsd) + '</span><span class="k">' + esc(v.heroTotalNote) + '</span></div>'
+      // No total in the hero (owner, 2026-08-06). The option card below IS the price, and
+      // repeating it here read as a duplicate rather than a lead. `view.heroTotalUsd` and
+      // `heroTotalNote` are still on the wire for the share card and the quote email.
       + heldRow(d.validUntil, lapsed);
     if (lapsed) {
       html += '<div class="lapse"><b>These prices are out of date</b>'

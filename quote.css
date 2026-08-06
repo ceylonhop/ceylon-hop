@@ -27,11 +27,10 @@
 .pp-sub{margin-bottom:10px}
 
 /* hero total — critique #1: the price leads. Newsreader money, same face as .tot .v */
-.hero-tot{display:flex;align-items:baseline;gap:9px;margin:2px 0 8px;flex-wrap:wrap}
-.hero-tot .v{font-family:var(--display);font-weight:800;font-size:1.6rem;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
-.hero-tot .k{font-size:.78rem;font-weight:600;color:var(--ink-soft)}
+/* No .hero-tot rules: the hero carries no total (owner, 2026-08-06) — the option card below IS
+   the price, and repeating it above read as a duplicate rather than a lead. */
 
-/* held-until — the share card's clock treatment; .warn variant keeps ONE system across states */
+/* the expiry row — the share card's clock treatment; .warn variant keeps ONE system across states */
 .held{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:800;color:var(--accent-deep)}
 .held svg{width:15px;height:15px;flex:none;stroke:currentColor}
 .held small{display:block;font-weight:600;font-size:.73rem;color:var(--ink-soft)}
@@ -118,9 +117,9 @@
 .de-art .sail{animation:de-sail 4.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
 @media (prefers-reduced-motion:reduce){.de-art .bob,.de-art .spin,.de-art .dash,.de-art .pin,.de-art .sail{animation:none}}
 
-/* ── First-paint skeleton — the two extra shapes beyond ticket.css's .tk-sk set: a hero-total
+/* ── First-paint skeleton — the two extra shapes beyond ticket.css's .tk-sk set: the expiry
    line and a map-sized block, so the skeleton reads as THIS page's shape (hero, map, one
    option card) rather than the booking pass's (header, facts, total). ── */
-.tk-sk .sk-tot2{width:150px;height:26px;margin:4px 0 10px}
+.tk-sk .sk-held{width:190px;height:16px;margin:6px 0 10px}
 .tk-sk .sk-map{width:100%;height:180px;border-radius:var(--r);margin-top:16px}
 .tk-sk .sk-opt{width:100%;height:190px;border-radius:var(--r);margin-top:16px}
