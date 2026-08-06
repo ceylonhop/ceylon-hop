@@ -106,6 +106,7 @@ export interface SavedQuote {
   notes: string | null;
   internalNotes: string | null;
   requestedService: string | null;
+  offerValidUntil: Date | null;
   assignedTo: string | null;
   assignedAt: Date | null;
   createdBy: string | null;
@@ -179,6 +180,8 @@ export interface QuotePatch {
   // alone, an object = stamp all three. There is no clear case — a quote that has been shown to a
   // customer has been shown to a customer.
   customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' };
+  // Offer validity (spec 2026-08-05 D9). Stamped on → ready; null = no validity recorded.
+  offerValidUntil?: Date | null;
 }
 
 // Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
@@ -212,6 +215,7 @@ export interface DemandQuoteRow {
   product: string;
   vehicle: string | null;
   requestedService: string | null;
+  offerValidUntil: Date | null;
   totalCents: number;
   currency: string;
   createdAt: Date;
@@ -390,6 +394,9 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
+      // Offer validity (spec 2026-08-05 D9): never set at save() — a new quote isn't approved
+      // yet. Stamped later via patch() on the → ready transition.
+      offerValidUntil: null,
       assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on save (spec 2026-07-22)
       assignedAt: q.assignedTo ? now : null,
       createdBy: q.createdBy ?? null,
@@ -467,7 +474,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
       id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
-      requestedService: r.requestedService, totalCents: r.totalCents,
+      requestedService: r.requestedService, offerValidUntil: r.offerValidUntil, totalCents: r.totalCents,
       currency: r.currency, createdAt: r.createdAt, request: r.request,
     }));
     return { rows, truncated: all.length > limit };
@@ -518,6 +525,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       row.customerTotalAt = patch.customerTotal.at;
       row.customerTotalVia = patch.customerTotal.via;
     }
+    if (patch.offerValidUntil !== undefined) row.offerValidUntil = patch.offerValidUntil;
     row.updatedAt = now;
     return { ...row };
   }

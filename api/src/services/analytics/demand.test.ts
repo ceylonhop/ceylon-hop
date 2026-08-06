@@ -17,6 +17,7 @@ function mk(over: Partial<DemandQuoteRow> & { places?: string[]; km?: number } =
     product: 'private',
     vehicle: 'car',
     requestedService: 'private',
+    offerValidUntil: null,
     totalCents: 10000,
     currency: 'USD',
     createdAt: daysAgo(5),
