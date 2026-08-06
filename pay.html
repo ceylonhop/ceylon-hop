@@ -72,6 +72,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
   .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
   .pp-help li+li{margin-top:6px}
+  /* Available, not asserted — see the `quiet` note on fail(). Same affordance as the cancellation
+     policy below it, so the page has one way of saying "there is more here if you want it". */
+  .pp-quiet summary{font-size:.8rem;font-weight:700;color:var(--accent-deep);cursor:pointer;list-style:none}
+  .pp-quiet summary::-webkit-details-marker{display:none}
+  .pp-quiet summary:after{content:' \25BE'}
+  .pp-quiet[open] summary:after{content:' \25B4'}
+  .pp-quiet ol{margin-top:9px}
   .dt-terms{padding-top:12px;margin-top:2px;border-top:1px solid var(--line);align-items:flex-start}
   .dt-terms a{color:var(--accent-deep);font-weight:700}
   .dt-terms b{display:block;font-weight:600;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
@@ -677,7 +684,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // Shared with booking.html — see decline-help.js for why this copy says what it says.
   var DECLINE_HELP = window.CH_DECLINE_HELP || [];
 
-  function fail(msg, help){
+  // `quiet` collapses the decline steps behind a summary instead of printing them open.
+  //
+  // Why it exists (2026-08-05, from a real decline on CH-R3ZBZ): PayHere does NOT always send a
+  // notify when a card is refused — that order carries exactly ONE payment_event, the later
+  // success, so the decline itself never reached us. When that happens our payment row stays
+  // `pending`, /bookings/pay-return answers `pending`, and the confident "your card was declined"
+  // branch never fires. The payer who most needs these four steps was the one least likely to see
+  // them. But most people arriving with no verdict simply changed their mind, and four paragraphs
+  // about phoning a bank would be noise — hence available, not asserted.
+  function fail(msg, help, quiet){
     // If the interstitial (or PayHere) is on screen, rebuild the details step first —
     // with the customer's typed values — then surface the error on it.
     if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
@@ -688,9 +704,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var h = document.getElementById('payhelp');
     if (h) {
       if (help && help.length) {
-        h.innerHTML = '<h3>If your card was declined</h3><ol>'
-          + help.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('')
-          + '</ol>';
+        var steps = '<ol>' + help.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ol>';
+        h.innerHTML = quiet
+          ? '<details class="pp-quiet"><summary>Card refused? Here’s what usually fixes it</summary>'
+            + steps + '</details>'
+          : '<h3>If your card was declined</h3>' + steps;
         h.hidden = false;
       } else {
         h.innerHTML = '';
@@ -871,7 +889,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var fallback = setTimeout(function(){
       if (settled || !t) return;
       fellBack = true;
-      resumeAfterFailure('Just checking your payment with the bank — nothing has been charged unless you completed it on PayHere.', null);
+      resumeAfterFailure('Just checking your payment with the bank — nothing has been charged unless you completed it on PayHere.', DECLINE_HELP, true);
     }, FIRST_PAINT_MS);
 
     function stop(){ settled = true; clearTimeout(fallback); }
@@ -904,7 +922,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           return;
         }
         if (cameFromCancel) {
-          return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', null);
+          return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', DECLINE_HELP, true);
         }
         renderStillWaiting();
       }).catch(function(){
@@ -935,7 +953,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // Put them back on the form they left, with what they typed. The caller says WHY they are back
   // — a refusal (with the decline steps) or their own change of mind (without) — because the two
   // deserve different words and the wrong one is worse than none.
-  function resumeAfterFailure(message, help){
+  function resumeAfterFailure(message, help, quiet){
     if (!t) return renderCannotResume();
     fetchJson(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){
       if (!r.ok) throw new Error('view ' + r.status);
@@ -946,7 +964,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       if (v.state === 'revised') return renderRevised();
       if (v.state !== 'payable') return renderUnavailable();
       renderDetails();
-      fail(message, help);
+      fail(message, help, quiet);
     }).catch(function(){ renderCannotResume(); });
   }
 
