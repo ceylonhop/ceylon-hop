@@ -213,28 +213,54 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // Every option's action is WhatsApp, prefilled with the quote reference and the tapped
   // option's name (spec D6) — that prefill is how the customer's choice reaches ops, without
   // which both buttons would open the same bare chat and ops would have to ask which one.
-  // IDENTICAL structure on both cards, row for row (owner, 2026-08-06): same chip slot, same
-  // blurb/included/total/cancellation order, same CTA pattern ("Book <option>"), same one-line
-  // helper under each. The ONLY differences left are the ones that carry meaning — the teal
-  // ring + YOUR QUOTE chip and the solid CTA say "this is the one we quoted you"; the ghost
-  // CTA says "also available". Everything else matching is what makes those two signals read.
+  // The one sentence that does the customer's arithmetic (owner critique, 2026-08-06). The
+  // delta line was cut from the cards as clutter, but the information had a job: $669 next to
+  // $969 should not require mental subtraction, and what the gap buys should not hide
+  // mid-sentence in an included box. One line, above both cards, priced once. Falls back to
+  // the plain sentence whenever the pairing isn't the normal cheaper-private/dearer-chauffeur
+  // shape, rather than inventing a phrasing for a case ops never sends.
+  function fmtUsd(cents){
+    var d = cents / 100;
+    return '$' + (d % 1 === 0 ? d.toLocaleString('en-US') : d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  }
+  function waysSubline(options){
+    var base = 'Same itinerary, same vehicle.';
+    if (options.length === 2 && typeof options[0].totalCents === 'number' && typeof options[1].totalCents === 'number') {
+      var diff = options[1].totalCents - options[0].totalCents;
+      if (diff > 0 && options[1].service === 'chauffeur') {
+        return base + ' ' + fmtUsd(diff) + ' more keeps the driver with you the whole way.';
+      }
+      if (diff < 0 && options[1].service === 'private') {
+        return base + ' Save ' + fmtUsd(-diff) + ' if you travel journey by journey.';
+      }
+    }
+    return base + ' The difference is whether the driver stays with you.';
+  }
+
+  // IDENTICAL structure on both cards, row for row. No chip (owner critique, 2026-08-06):
+  // the teal ring and the solid CTA already say "this is the one we quoted" — a third badge
+  // was one signal more than the distinction needed, its label was ambiguous, and it broke
+  // header parity (and 320px wrapping) on the card that didn't have one.
+  //
+  // Cancellation sits LAST, below the CTA: it is reassurance, not a selling point — styled
+  // like a link in the delta's old slot it out-shouted the blurb — and opening its ladder
+  // now only grows the card downward, never shoving the button mid-read (CH motion standard:
+  // nothing snaps).
   function optionCardHtml(opt){
     var pol = opt.cancellation || { headline: '', ladder: [] };
     var ladder = (pol.ladder || []).map(function(li){ return '<li>' + esc(li) + '</li>'; }).join('');
     return '<div class="ticket' + (opt.lead ? ' opt-lead' : '') + '"><div class="t-main">'
-      + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3>'
-      + (opt.lead ? '<span class="t-stat ok">Your quote</span>' : '') + '</div>'
+      + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3></div>'
       + '<p class="opt-d">' + esc(opt.blurb) + '</p>'
       + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
       + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
-      + '<details class="dt-pol"><summary>' + esc(pol.headline) + '</summary><ul>' + ladder + '</ul></details>'
-      // "Confirm on WhatsApp" (owner, 2026-08-06), identical on both cards. "Book" over-promised —
-      // tapping books nothing; ops confirms details and then sends the pay link — and naming the
-      // channel means the app-switch is exactly what the label said. WHICH option is being
-      // confirmed is carried by the card itself and by the wa.me prefill, which names the option.
+      // "Confirm on WhatsApp" on both cards (owner, 2026-08-06): "Book" over-promised — tapping
+      // books nothing — and naming the channel makes the app-switch exactly what the label said.
+      // Which option is being confirmed is carried by the card and the wa.me prefill.
       + '<a class="btn ' + (opt.lead ? 'btn-wa' : 'btn-ghost') + ' pp-cta" href="' + waHref(opt.waText) + '">'
       + 'Confirm on WhatsApp</a>'
       + '<p class="paysub">Nothing is charged yet.</p>'
+      + '<details class="dt-pol"><summary>' + esc(pol.headline) + '</summary><ul>' + ladder + '</ul></details>'
       + '</div></div>';
   }
   function optionsHtml(options){
@@ -261,7 +287,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (v.options && v.options.length) {
       if (v.options.length > 1) {
         html += '<h2 style="font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--ink);margin:22px 0 0">Two ways to travel it</h2>'
-          + '<p class="pp-sub" style="margin-bottom:0">Same itinerary, same vehicle. The difference is whether the driver stays with you.</p>';
+          + '<p class="pp-sub" style="margin-bottom:0">' + esc(waysSubline(v.options)) + '</p>';
       }
       var optsHtml = optionsHtml(v.options);
       // Lapsing dims the PRICE, never the itinerary — the map and day-by-day below render at
