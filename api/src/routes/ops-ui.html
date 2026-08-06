@@ -6514,13 +6514,14 @@ function shortPlace(full) {
   var re = new RegExp('\\b' + town.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
   return re.test(venue) ? venue : venue + ' \u00b7 ' + town;
 }
+/* The vehicle suffix is DROPPED (owner, 2026-08-06): quotePrivateLegs takes ONE vehicle for the
+   whole request, so the tier is identical on every row and repeats what the VEHICLE chips above
+   already say. The stored label keeps it — and so does this row's title tooltip. */
 function shortenRouteLabel(label) {
   if (!label) return '';
-  var m = label.match(/\s*\((car|van\d*|custom)\)\s*$/i);
-  var body = m ? label.slice(0, m.index) : label;
+  var body = label.replace(/\s*\((car|van\d*|custom)\)\s*$/i, '');
   if (body.indexOf('\u2192') < 0) return label; // extras / adjustments have no route in them
-  return body.split('\u2192').map(function (p) { return shortPlace(p.trim()); }).join(' \u2192 ')
-    + (m ? m[0].replace(/\s+$/, '') : '');
+  return body.split('\u2192').map(function (p) { return shortPlace(p.trim()); }).join(' \u2192 ');
 }
 
 function renderSummaryCardBody() {

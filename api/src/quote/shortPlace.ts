@@ -43,12 +43,16 @@ export function shortPlace(full: string): string {
 // The engine bakes route labels as "A → B (car)" at pricing time (quotePrivateLegs). Both the ops
 // money pane and the pay-page receipt render those stored strings, so shortening splits on the
 // arrow we generated ourselves. A label with no arrow — "Final price adjustment" — passes through.
+//
+// The vehicle suffix is DROPPED (owner, 2026-08-06). `quotePrivateLegs` takes one `vehicle` for
+// the whole request, so the tier can never differ between legs — printing it on every row repeats
+// a per-quote fact the VEHICLE chips already state, and on a nine-leg quote it pushed rows onto
+// extra lines. The STORED label keeps it, so the tier a quote was priced on is never lost.
 const VEHICLE_SUFFIX = /\s*\((car|van\d*|custom)\)\s*$/i;
 
 export function shortenRouteLabel(label: string): string {
   if (!label) return '';
-  const suffix = label.match(VEHICLE_SUFFIX);
-  const body = suffix ? label.slice(0, suffix.index) : label;
+  const body = label.replace(VEHICLE_SUFFIX, '');
   if (!body.includes('→')) return label; // not a route row (extras, adjustments) — leave it be
-  return body.split('→').map((part) => shortPlace(part.trim())).join(' → ') + (suffix ? suffix[0].trimEnd() : '');
+  return body.split('→').map((part) => shortPlace(part.trim())).join(' → ');
 }

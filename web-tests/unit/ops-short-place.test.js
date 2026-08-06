@@ -54,9 +54,15 @@ describe('ops shortPlace mirrors the server', () => {
 });
 
 describe('ops shortenRouteLabel', () => {
-  it('shortens both sides and keeps the vehicle suffix', () => {
+  // Must match api/src/quote/shortPlace.test.ts — the tier is a per-quote fact, not a per-leg one.
+  it('shortens both sides and drops the repeated vehicle suffix', () => {
     expect(shortenRouteLabel('The Den 23, Norris Canal Road, Colombo, Sri Lanka → Sigiri dilu villa, Thalkote Road, Sigiriya, Sri Lanka (car)'))
-      .toBe('The Den 23 · Colombo → Sigiri dilu villa · Sigiriya (car)');
+      .toBe('The Den 23 · Colombo → Sigiri dilu villa · Sigiriya');
+  });
+
+  it('does not eat a bracket that belongs to the place name', () => {
+    expect(shortenRouteLabel('Colombo Airport (CMB) → Galle, Sri Lanka (car)'))
+      .toBe('Colombo Airport (CMB) → Galle');
   });
 
   it('leaves rows that are not routes alone', () => {
