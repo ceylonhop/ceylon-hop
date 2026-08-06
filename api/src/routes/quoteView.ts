@@ -5,6 +5,7 @@ import { verifyQuoteViewToken, signBookingToken } from '../lib/bookingToken';
 import { customerQuoteView } from '../quote/customerQuoteView';
 import { rateCardFor } from '../quote/rateLock';
 import { quote as priceQuote } from '../quote/engine';
+import { drives } from '../quote/legCategory';
 import type { QuoteRequest, PrivateLeg, Ride, ChauffeurTravelDay, ChauffeurRideDay } from '../quote/types';
 import type { RateCard } from '../quote/rateCard';
 
@@ -24,15 +25,13 @@ type ViewState = 'live' | 'lapsed' | 'booked' | 'unavailable';
 
 // The stored `request.tool` payload, narrowed to the one field this route actually needs: each
 // leg's date (chauffeur eligibility is a date-count check) and category (to tell a stay day from
-// a driving leg). NOT the full ToolRequest from internalQuote.ts — that type is private to that
-// route file, and this route is scoped to quoteView.ts/app.ts only, so the shape is duplicated
-// rather than exported. Keep it in lockstep with internalQuote.ts's ToolLegSchema if that changes.
+// a driving leg — via the shared `drives` predicate, see ../quote/legCategory). NOT the full
+// ToolRequest from internalQuote.ts — that type is private to that route file, and this route is
+// scoped to quoteView.ts/app.ts only, so the shape is duplicated rather than exported.
 interface StoredToolLeg {
   date?: string;
   category?: 'transfer' | 'airport' | 'train_support' | 'stay_day';
 }
-
-const drivesLeg = (l: StoredToolLeg): boolean => (l.category ?? 'transfer') !== 'stay_day';
 
 // Reconstruct the CHAUFFEUR pricing request from a stored PRIVATE engine request, using the tool
 // payload's leg dates. This is the inverse of internalQuote.ts's toEngineRequest: a chauffeur
@@ -53,7 +52,7 @@ function chauffeurFromPrivate(
   if (toolLegs.some((l) => !l.date)) return null; // "add a date to every leg"
   const dates = toolLegs.map((l) => l.date as string);
   if (new Set(dates).size <= 1) return null; // single-day — point-to-point only
-  const drivingDates = toolLegs.filter(drivesLeg).map((l) => l.date as string);
+  const drivingDates = toolLegs.filter(drives).map((l) => l.date as string);
   if (drivingDates.length !== engine.legs.length) return null; // stored shapes disagree — degrade, don't guess
   const sorted = [...dates].sort();
   return {

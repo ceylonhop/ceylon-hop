@@ -154,4 +154,74 @@ describe('GET /quote-view', () => {
     expect(body.state).toBe('booked');
     expect(body.booked.firstName).toBe('Anna');
   });
+
+  // requestedService: 'both' exercises servicesFor's chauffeur-pricing path — chauffeurFromPrivate
+  // reconstructs a chauffeur engine request from the stored private one. None of the tests above
+  // touch it, so it shipped uncovered; these three pin its offerability gates and its price.
+  describe('requestedService: both — the chauffeur reconstruction path', () => {
+    it('a dated multi-day private quote returns two options, the second chauffeur, with a real engine total', async () => {
+      const input = { ...quoteInput(), requestedService: 'both' as const };
+      const saved = await quotes.save(input as never);
+      const q = (await quotes.patch(saved.id, { status: 'ready' }))!;
+      const body = await (await get(signQuoteViewToken(q.id, SECRET))).json();
+
+      expect(body.state).toBe('live');
+      expect(body.view.options).toHaveLength(2);
+      expect(body.view.options[0].service).toBe('private');
+      expect(body.view.options[0].totalCents).toBe(11_450);
+      expect(body.view.options[1].service).toBe('chauffeur');
+      // 22750 = quote/engine.ts's quote() run directly against RATE_CARD for the equivalent
+      // chauffeur request (same two legs, dated 2026-08-20 and 2026-08-22) — verified by running
+      // the engine, not guessed.
+      expect(body.view.options[1].totalCents).toBe(22_750);
+      expect(body.view.options[1].totalUsd).toBe('$227.50');
+    });
+
+    it('a quote whose legs are all on one date returns one option — chauffeur is not offerable', async () => {
+      const base = quoteInput();
+      const input = {
+        ...base,
+        requestedService: 'both' as const,
+        request: {
+          ...base.request,
+          tool: {
+            ...base.request.tool,
+            legs: base.request.tool.legs.map((l) => ({ ...l, date: '2026-08-20' })),
+          },
+        },
+      };
+      const saved = await quotes.save(input as never);
+      const q = (await quotes.patch(saved.id, { status: 'ready' }))!;
+      const body = await (await get(signQuoteViewToken(q.id, SECRET))).json();
+
+      expect(body.state).toBe('live');
+      expect(body.view.options).toHaveLength(1);
+      expect(body.view.options[0].service).toBe('private');
+    });
+
+    it('a quote with any undated leg returns one option — chauffeur is not offerable', async () => {
+      const base = quoteInput();
+      const input = {
+        ...base,
+        requestedService: 'both' as const,
+        request: {
+          ...base.request,
+          tool: {
+            ...base.request.tool,
+            legs: [
+              base.request.tool.legs[0],
+              { ...base.request.tool.legs[1], date: undefined },
+            ],
+          },
+        },
+      };
+      const saved = await quotes.save(input as never);
+      const q = (await quotes.patch(saved.id, { status: 'ready' }))!;
+      const body = await (await get(signQuoteViewToken(q.id, SECRET))).json();
+
+      expect(body.state).toBe('live');
+      expect(body.view.options).toHaveLength(1);
+      expect(body.view.options[0].service).toBe('private');
+    });
+  });
 });

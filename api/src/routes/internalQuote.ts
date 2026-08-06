@@ -32,14 +32,7 @@ import {
 } from '../quote/paySelection';
 import { changedFields } from '../quote/quoteDiff';
 import { signQuotePayToken } from '../lib/bookingToken';
-
-// Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
-const CATEGORIES: Record<string, { drives: boolean }> = {
-  transfer: { drives: true },
-  airport: { drives: true },
-  train_support: { drives: true },
-  stay_day: { drives: false },
-};
+import { drives } from '../quote/legCategory';
 
 // Tool vehicle tiers → engine vehicle class. All tiers now have rates.
 const VEHICLE_MAP: Record<string, Vehicle | null> = {
@@ -270,9 +263,6 @@ const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
 
-function drives(l: ToolLeg): boolean {
-  return CATEGORIES[l.category || 'transfer']?.drives ?? true;
-}
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
