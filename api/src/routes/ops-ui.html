@@ -4998,6 +4998,32 @@ function copyPayLink() {
   return true;
 }
 
+/* The customer QUOTE link (spec 2026-08-05). Unlike the pay link this mints no state, so the
+   button is a plain mint-and-copy with no picker and no sandbox warning — a quote link takes
+   no money and cannot reach anything that does. */
+async function copyQuoteLink() {
+  if (!state.savedId) return;
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/quote-link', { method: 'POST' });
+    if (!r.ok) {
+      var err = await jsonOrNull(r);
+      showToast(err && err.error === 'not_linkable'
+        ? 'Only an approved (ready or sent) quote can have a quote link'
+        : 'Could not create the quote link', 'error');
+      return;
+    }
+    var body = await jsonOrNull(r);
+    if (!body || !body.url) { showToast('Could not create the quote link', 'error'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(body.url).catch(function () {});
+    }
+    showToast('Quote link copied');
+  } catch (e) {
+    window.opsReportError && window.opsReportError('mint quote link', e);
+    showToast('Could not create the quote link', 'error');
+  }
+}
+
 /* ── Part of trip… (partial pay links, spec 2026-08-04) ─────────────────────────────────
    The picker OPENS with every line ticked, so its untouched state is exactly today's
    full-total link — ops only ever unticks. The three functions below are PURE and are
@@ -7325,6 +7351,9 @@ function renderActionBar() {
   var PAYLINK = _payLinkCopied
     ? B('mintPayLink', 'Link copied ✓', 'ch-btn-outline ch-btn-copied', true)
     : B('mintPayLink', 'Payment link', 'ch-btn-outline', false, 'Copies the customer payment link to your clipboard');
+  // The customer QUOTE link (spec 2026-08-05) — same class as PAYLINK, same ready/sent gate,
+  // but no minted-state to reflect back: it's a plain button, not a copied/pending toggle.
+  var QUOTELINK = B('copyQuoteLink', 'Quote link', 'ch-btn-outline', false, 'Copies the customer quote link to your clipboard');
   /* Part of trip… (spec 2026-08-04): private quotes only — a chauffeur leg is a km share, so a
      subset of chauffeur legs sums to nothing meaningful; the server refuses it too. */
   var PAYPART = state.service !== 'chauffeur'
@@ -7336,14 +7365,14 @@ function renderActionBar() {
     // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
@@ -8616,6 +8645,8 @@ function attachEventListeners() {
       runAction(action, markSent);
     } else if (action === 'mintPayLink') {
       runAction(action, payLinkPress);
+    } else if (action === 'copyQuoteLink') {
+      runAction(action, copyQuoteLink);
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'toggleHistory') {

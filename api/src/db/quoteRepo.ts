@@ -100,7 +100,7 @@ export interface SavedQuote {
   // Price-drift baseline (spec 2026-08-05): the quote total when the customer was last quoted.
   customerTotalCents: number | null;
   customerTotalAt: Date | null;
-  customerTotalVia: 'sent' | 'pay_link' | null;
+  customerTotalVia: 'sent' | 'pay_link' | 'quote_link' | null;
   accessTokenDigest: string | null;
   convertedBookingId: string | null;
   notes: string | null;
@@ -179,7 +179,7 @@ export interface QuotePatch {
   // Price-drift baseline (spec 2026-08-05). Moves as a UNIT, like rateLock: `undefined` = leave
   // alone, an object = stamp all three. There is no clear case — a quote that has been shown to a
   // customer has been shown to a customer.
-  customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' };
+  customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' | 'quote_link' };
   // Offer validity (spec 2026-08-05 D9). Stamped on → ready; null = no validity recorded.
   offerValidUntil?: Date | null;
 }

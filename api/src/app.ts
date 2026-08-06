@@ -80,6 +80,8 @@ export interface AppDeps {
   bookingBaseUrl?: string;
   /** Origin the customer pay/manage links are built from; defaults to PAY_BASE_URL, then the site. */
   payBaseUrl?: string;
+  /** Origin the customer QUOTE links are built from; defaults to QUOTE_BASE_URL, then payBaseUrl. */
+  quoteBaseUrl?: string;
   // Public origin share links are built from — the ride domain (e.g. https://ride.ceylonhop.com),
   // which is a second custom domain on this same service. Unset = use the request's own host.
   shareBaseUrl?: string;
@@ -166,6 +168,7 @@ export function createApp(deps: AppDeps = {}) {
   // resolve differently again.
   // Declared HERE rather than at its first use: bookingRoutes is mounted well above and needs it.
   const payBaseUrl = deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL;
+  const quoteBaseUrl = deps.quoteBaseUrl ?? (config.QUOTE_BASE_URL || undefined) ?? payBaseUrl;
   // Which PayHere the server would hand a customer: 'off' with no merchant creds (the
   // fake adapter), else the configured mode. Surfaced to ops so a sandbox link is
   // labelled as one (spec 2026-07-31) — a sandbox payment marks real bookings Paid.
@@ -377,6 +380,7 @@ export function createApp(deps: AppDeps = {}) {
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
+    quoteBaseUrl,
     linkSecret: bookingLinkSecret,
     payhereMode,
   }));
