@@ -53,20 +53,36 @@ interface ToolLegLite {
   from?: string; to?: string; date?: string; category?: string; distanceKm?: number; stops?: string[];
 }
 
-// '$840' / '$1,180' — whole dollars with a thousands separator. Quote totals are charm-finished
-// to round figures; cents on a proposal would read as a bill, not an offer.
-const usd = (cents: number): string => `$${Math.round(cents / 100).toLocaleString('en-US')}`;
+// '$840' / '$1,180' when the total is an exact number of dollars, '$840.37' / '$1,180.37'
+// otherwise — always with a thousands separator. priceFinish.ts's 'unchanged' and
+// 'nearest_50_cents' strategies can legitimately leave cents on a total (e.g. 84037), and
+// rounding those away here would show a lower figure than pay.html's .toFixed(2) actually
+// charges — a proposal that understates checkout by up to $0.49.
+const usd = (cents: number): string => {
+  const dollars = cents / 100;
+  const decimals = Number.isInteger(dollars) ? 0 : 2;
+  return `$${dollars.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
+};
 
-// terms.html §7. The two ladders genuinely differ, and a customer comparing two totals is
+// Must track pay.html's cancellationPolicy(product) exactly (terms.html §7 is the underlying
+// authority). The two ladders genuinely differ, and a customer comparing two totals is
 // comparing two different commitments — so each option carries its own.
 const CANCELLATION = {
   private: {
-    headline: 'Free cancellation up to 24 hours before',
-    ladder: ['More than 24 h before pickup: full refund', 'Inside 24 h: 50% refund', 'No-show: no refund'],
+    headline: 'Free cancellation until 24 hours before departure.',
+    ladder: [
+      'More than 24 hours before departure: full refund, unlimited changes',
+      'Within 24 hours, a no-show, or after departure: no refund',
+    ],
   },
   chauffeur: {
-    headline: 'Free cancellation up to 10 days before',
-    ladder: ['More than 10 days before: full refund', 'Inside 10 days: up to 80% refund'],
+    headline: 'Free cancellation until 10 days before your trip starts.',
+    ladder: [
+      '10–8 days before: 80% refund',
+      '7–3 days before: 60% refund',
+      '2 days–24 hours before: 40% refund',
+      'Within 24 hours, a no-show, or after the trip begins: no refund',
+    ],
   },
 } as const;
 

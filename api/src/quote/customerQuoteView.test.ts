@@ -67,11 +67,24 @@ describe('customerQuoteView', () => {
     expect(v.heroTotalNote).toBe('private transfers · or $1,180 with your driver throughout');
   });
 
-  it('gives each service its own cancellation ladder', () => {
+  it('gives each service its own cancellation ladder, matching pay.html exactly', () => {
     const v = customerQuoteView(quote({ requestedService: 'both' }), both);
-    expect(v.options[0].cancellation.headline).toBe('Free cancellation up to 24 hours before');
-    expect(v.options[1].cancellation.headline).toBe('Free cancellation up to 10 days before');
-    expect(v.options[1].cancellation.ladder.join(' ')).toMatch(/80%/);
+    expect(v.options[0].cancellation).toEqual({
+      headline: 'Free cancellation until 24 hours before departure.',
+      ladder: [
+        'More than 24 hours before departure: full refund, unlimited changes',
+        'Within 24 hours, a no-show, or after departure: no refund',
+      ],
+    });
+    expect(v.options[1].cancellation).toEqual({
+      headline: 'Free cancellation until 10 days before your trip starts.',
+      ladder: [
+        '10–8 days before: 80% refund',
+        '7–3 days before: 60% refund',
+        '2 days–24 hours before: 40% refund',
+        'Within 24 hours, a no-show, or after the trip begins: no refund',
+      ],
+    });
   });
 
   it('prefills WhatsApp with the reference and the tapped option', () => {
@@ -127,5 +140,38 @@ describe('customerQuoteView', () => {
     expect(v.options).toHaveLength(1);
     expect(v.options[0].service).toBe('private');
     expect(v.options[0].lead).toBe(true);
+  });
+
+  // Finding 2: priceFinish.ts has an 'unchanged' (and 'nearest_50_cents') strategy, so a total
+  // can legitimately carry cents. usd() must not silently drop them and understate the price
+  // the pay page (which uses .toFixed(2)) would actually charge.
+  it('renders whole dollars when the total is an exact number of dollars', () => {
+    const v = customerQuoteView(quote({ totalCents: 84_000 }), { pointToPoint: { totalCents: 84_000 }, chauffeur: null });
+    expect(v.heroTotalUsd).toBe('$840');
+  });
+
+  it('renders cents, with the thousands separator, when the total carries cents', () => {
+    const v = customerQuoteView(quote({ totalCents: 84_037 }), { pointToPoint: { totalCents: 84_037 }, chauffeur: null });
+    expect(v.heroTotalUsd).toBe('$840.37');
+  });
+
+  it('renders a thousands-separated cents value correctly', () => {
+    const v = customerQuoteView(quote({ totalCents: 1_180_37 }), { pointToPoint: { totalCents: 1_180_37 }, chauffeur: null });
+    expect(v.heroTotalUsd).toBe('$1,180.37');
+  });
+
+  // Finding 3: `totalFor(priced) ?? quote.totalCents` is the guard that keeps the STORED,
+  // approved total authoritative when a recompute is unavailable. `??` (not `||`) also matters
+  // because a legitimate stored total of 0 must survive, not be treated as falsy.
+  it('falls back to the stored total when the priced service itself cannot be priced', () => {
+    const v = customerQuoteView(quote({ totalCents: 84_000 }), { pointToPoint: null, chauffeur: null });
+    expect(v.options[0].totalCents).toBe(84_000);
+    expect(v.heroTotalUsd).toBe('$840');
+  });
+
+  it('preserves a stored total of 0 rather than treating it as missing', () => {
+    const v = customerQuoteView(quote({ totalCents: 0 }), { pointToPoint: null, chauffeur: null });
+    expect(v.options[0].totalCents).toBe(0);
+    expect(v.heroTotalUsd).toBe('$0');
   });
 });
