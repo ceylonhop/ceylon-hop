@@ -9,6 +9,8 @@
 // A stay NEVER carries a price or a "rest day" framing: chauffeur idle-day pricing is
 // deliberately understated in quotes and must stay that way.
 
+import { shortPlace } from './shortPlace';
+
 export interface QuoteDayRow {
   kind: 'journey' | 'stay';
   date: string;
@@ -48,9 +50,19 @@ function rangeStamp(a: Date, b: Date): string {
   return a.getTime() === b.getTime() ? stamp(a) : `${stamp(a)} – ${stamp(b)}`;
 }
 
+// Places are SHORTENED for display, exactly as payPageCopy, the pay page, the ops money pane and
+// the customer emails already do (quote/shortPlace.ts, 2026-08-06). Without this the same page
+// would read "The Den 23 · Colombo" in its title, from payPageCopy, and "The Den 23, Norris Canal
+// Road, Colombo, Sri Lanka" in the day row underneath — which is the exact drift that module was
+// written to stop. Render-time only: the stored string is untouched, so pricing, geocoding and
+// the map's own routing still see the full place.
 function endpoints(l: ToolLegLite): { from: string; to: string; mid: string[] } {
   const chain = Array.isArray(l.stops) && l.stops.length >= 2 ? l.stops : [l.from ?? '?', l.to ?? '?'];
-  return { from: chain[0], to: chain[chain.length - 1], mid: chain.slice(1, -1) };
+  return {
+    from: shortPlace(chain[0]),
+    to: shortPlace(chain[chain.length - 1]),
+    mid: chain.slice(1, -1).map(shortPlace),
+  };
 }
 
 // "about 4 h" / "about 2 h 30" — a road-speed estimate, deliberately vague. 42 km/h is the

@@ -74,3 +74,30 @@ describe('quoteDays', () => {
     expect(rows[0].meta).toBe('121 km · about 3 h');
   });
 });
+
+// Place names are shortened for display the way payPageCopy, the pay page, the ops money pane
+// and the customer emails already shorten them (quote/shortPlace.ts). Without this the same page
+// shows a short name in its title and a full Google address in the day row underneath.
+describe('quoteDays place labels', () => {
+  it('shortens the places it renders', () => {
+    const rows = quoteDays(q([
+      {
+        from: 'The Den 23, Norris Canal Road, Colombo, Sri Lanka',
+        to: 'Hotel Ella Flower Garden, Passara Road, Ella, Sri Lanka',
+        date: '2026-08-20', distanceKm: 200,
+      },
+    ]));
+    // 'Hotel Ella Flower Garden' already names Ella, so shortPlace drops the redundant town.
+    expect(rows[0].title).toBe('The Den 23 · Colombo → Hotel Ella Flower Garden');
+  });
+
+  it('shortens intermediate stops and the synthesized stay place too', () => {
+    const rows = quoteDays(q([
+      { from: 'A, Colombo, Sri Lanka', to: 'Kandy, Sri Lanka', date: '2026-08-20', distanceKm: 100,
+        stops: ['A, Colombo, Sri Lanka', 'Dambulla Cave Temple, Dambulla, Sri Lanka', 'Kandy, Sri Lanka'] },
+      { from: 'Kandy, Sri Lanka', to: 'Ella, Sri Lanka', date: '2026-08-23', distanceKm: 140 },
+    ]));
+    expect(rows[0].stops).toEqual(['Dambulla Cave Temple']); // venue already names its town
+    expect(rows[1]).toMatchObject({ kind: 'stay', title: 'In Kandy' });
+  });
+});
