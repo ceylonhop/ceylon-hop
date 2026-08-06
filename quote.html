@@ -228,9 +228,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
       + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
       + '<details class="dt-pol"><summary>' + esc(pol.headline) + '</summary><ul>' + ladder + '</ul></details>'
+      // "Confirm on WhatsApp" (owner, 2026-08-06), identical on both cards. "Book" over-promised —
+      // tapping books nothing; ops confirms details and then sends the pay link — and naming the
+      // channel means the app-switch is exactly what the label said. WHICH option is being
+      // confirmed is carried by the card itself and by the wa.me prefill, which names the option.
       + '<a class="btn ' + (opt.lead ? 'btn-wa' : 'btn-ghost') + ' pp-cta" href="' + waHref(opt.waText) + '">'
-      + 'Book ' + esc(opt.name) + '</a>'
-      + '<p class="paysub">Opens WhatsApp — nothing is charged yet.</p>'
+      + 'Confirm on WhatsApp</a>'
+      + '<p class="paysub">Nothing is charged yet.</p>'
       + '</div></div>';
   }
   function optionsHtml(options){

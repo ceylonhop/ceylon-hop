@@ -79,8 +79,13 @@
 .opts.two{align-items:stretch}
 .opts .ticket{display:flex}
 .opts .t-main{display:flex;flex-direction:column;flex:1;min-width:0}
+/* The included box absorbs the slack, so every row BELOW it — total, cancellation, CTA —
+   lands on the same line in both cards. Equal card height alone was not enough: a 3-line and
+   a 4-line inclusion list pushed the two $ totals to visibly different heights, which is the
+   misalignment that reads first. */
+.opts .included{flex:1}
 .opts .tot{margin-top:13px}
-.opts .pp-cta{margin-top:auto}
+.opts .pp-cta{margin-top:0}
 .opts .dt-pol{margin-bottom:13px}
 .opts>*{min-width:0}
 @container (min-width:560px){.opts.two{grid-template-columns:1fr 1fr}}
