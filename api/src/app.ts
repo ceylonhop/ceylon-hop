@@ -46,6 +46,7 @@ import {
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
+import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
@@ -102,6 +103,9 @@ export interface AppDeps {
   digestTo?: string;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
+  // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
+  // offerValidUntil without waiting on the real clock. Defaults to Date.now.
+  now?: () => number;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -343,6 +347,11 @@ export function createApp(deps: AppDeps = {}) {
   // mount below, whose /:code route would otherwise match /pay.html and answer 404.
   // `quotes` + the link secret enable the per-token WhatsApp share card on pay.html; without
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
+  // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
+  // READS ONLY — no route in it can start a payment (spec D6).
+  app.route('/quote-view', quoteViewRoutes({
+    quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+  }));
   app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
