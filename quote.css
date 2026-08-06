@@ -68,36 +68,37 @@
 .stop-chain{margin:0 0 10px;font-size:.73rem;color:var(--ink-soft)}
 .stop-chain span{display:inline-block;background:var(--cream);border-radius:6px;padding:1px 7px;margin:2px 4px 0 0}
 
-/* options — .ticket shells; two columns from 560px (critique #7: now actually implemented).
-   Option columns switch on the COLUMN's width, not the viewport's. A viewport media query
-   here fired inside narrow embeds and crushed both cards into half a phone. */
+/* options — .ticket shells; two columns from 560px. Columns switch on the COLUMN's width,
+   not the viewport's — a viewport media query fired inside narrow embeds and crushed both
+   cards into half a phone (owner-caught, 2026-08-05). */
 .opts{margin-top:4px;display:grid;gap:14px}
 /* Side-by-side cards are EQUAL tiles (owner, 2026-08-06): stretch to one height, and the
-   CTA + helper pin to the bottom so the two buttons sit on the same line no matter how the
-   copy above them differs. Without this the totals, buttons and card edges all landed at
-   different heights and the pair read as two unrelated designs. */
+   INCLUDED box absorbs the slack — a 3-line vs 4-line inclusion list must not push the two
+   $ totals, the first thing the eye compares, to different heights. Everything below the
+   box — total, CTA, helper, cancellation — then lands on the same line in both cards. */
 .opts.two{align-items:stretch}
 .opts .ticket{display:flex}
 .opts .t-main{display:flex;flex-direction:column;flex:1;min-width:0}
-/* The included box absorbs the slack, so every row BELOW it — total, cancellation, CTA —
-   lands on the same line in both cards. Equal card height alone was not enough: a 3-line and
-   a 4-line inclusion list pushed the two $ totals to visibly different heights, which is the
-   misalignment that reads first. */
 .opts .included{flex:1}
 .opts .tot{margin-top:13px}
-.opts .pp-cta{margin-top:0}
-.opts .dt-pol{margin-bottom:13px}
 .opts>*{min-width:0}
 @container (min-width:560px){.opts.two{grid-template-columns:1fr 1fr}}
 .opt-lead{border-color:#c9e8e4;box-shadow:0 0 0 3px rgba(10,185,182,.09),var(--shadow-s)}
+/* The ghost CTA is secondary, never disabled-looking (owner critique, 2026-08-06): site.css's
+   paper-and-hairline ghost read as inactive on cream next to the solid green. Teal ink and a
+   firmer border keep the hierarchy while staying unmistakably tappable. */
+.opts .btn-ghost{color:var(--accent-deep);border:1.5px solid #9ed4d0}
 .opt-n{font-family:var(--display);font-weight:800;font-size:1.2rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
 .opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
-.dt-pol{margin-top:10px;font-size:.72rem;color:var(--ink-faint)}
-.dt-pol summary{cursor:pointer;color:var(--accent-deep);font-weight:700;font-size:.76rem;list-style:none}
+/* Cancellation is reassurance, not a selling point (owner critique, 2026-08-06): quiet grey in
+   the helper's voice — link-teal in the old slot out-shouted the blurb — sitting last on the
+   card so the open ladder only ever grows the card downward, never shoving the CTA. */
+.dt-pol{margin-top:12px;font-size:.72rem;color:var(--ink-faint);text-align:center}
+.dt-pol summary{cursor:pointer;color:var(--ink-soft);font-weight:600;font-size:.74rem;list-style:none}
 .dt-pol summary::-webkit-details-marker{display:none}
-.dt-pol summary:after{content:' \203A';font-weight:800}
-.dt-pol[open] summary:after{content:' \2304'}
-.dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
+.dt-pol summary:after{content:' A';font-weight:800}
+.dt-pol[open] summary:after{content:' 4'}
+.dt-pol ul{margin:8px auto 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft);text-align:left;display:inline-block}
 
 /* lapsed banner — the .t-stat.wait palette, sized as a card */
 .lapse{background:#fbf0d8;border:1px solid #eeda9e;border-radius:var(--r);padding:13px 15px;margin-top:14px}
