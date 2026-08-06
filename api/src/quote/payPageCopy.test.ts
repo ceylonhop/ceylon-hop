@@ -157,3 +157,46 @@ describe('payPageCopy — reads the tool payload', () => {
     expect(c.facts.find((f) => f.k === 'Travellers')?.v).toBe('4 · Van');
   });
 });
+
+// A partial-leg link (spec 2026-08-04) pays for SOME legs. Before this, every word on the page
+// still described the whole trip — the total line literally read "all 4 journeys" over a
+// two-leg payment. Owner-caught in PROD, 2026-08-05.
+describe('payPageCopy — partial link', () => {
+  const fourLegs = [
+    leg('Colombo Airport (CMB)', 'Unawatuna', '2026-08-07'),
+    leg('Unawatuna', 'Trincomalee', '2026-08-12'),
+    leg('Trincomalee', 'Sigiriya', '2026-08-14'),
+    leg('Sigiriya', 'Colombo Airport (CMB)', '2026-08-16'),
+  ];
+  const q = quoteOf({ legs: fourLegs, name: 'Kirsty' });
+  const covering = (legIndexes: number[]) => payPageCopy(q, { legIndexes, extraIndexes: [] });
+
+  it('never claims the payment covers all of them', () => {
+    const copy = covering([0, 2]);
+    expect(copy.totalLabel).not.toMatch(/all/i);
+    expect(copy.totalLabel).toContain('2 of');
+    expect(copy.title).not.toMatch(/^Four journeys/);
+  });
+
+  it('marks which journeys the payment covers', () => {
+    const copy = covering([0, 2]);
+    expect(copy.legs!.map((l) => l.covered)).toEqual([true, false, true, false]);
+    // Every journey still shown — the customer keeps sight of the whole trip.
+    expect(copy.legs).toHaveLength(4);
+  });
+
+  it('does not promise driver and fuel on journeys nobody paid for', () => {
+    expect(covering([0, 2]).includedText).not.toMatch(/every journey/i);
+  });
+
+  it('is unchanged when the selection covers everything', () => {
+    const full = payPageCopy(q, { legIndexes: [0, 1, 2, 3], extraIndexes: [] });
+    expect(full).toEqual(payPageCopy(q));
+  });
+
+  it('is unchanged with no selection at all', () => {
+    const copy = payPageCopy(q);
+    expect(copy.totalLabel).toBe('Total · all 4 journeys');
+    expect(copy.legs!.every((l) => l.covered === undefined)).toBe(true);
+  });
+});

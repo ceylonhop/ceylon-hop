@@ -138,7 +138,9 @@ export function quotePayRoutes(deps: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
           amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
-          title: payPageCopy(quote).title,
+          // Selection-aware here too: a keepsake for a two-leg payment must not be headed
+          // "Four journeys" either.
+          title: payPageCopy(quote, quote.payLinkSelection).title,
         },
       });
     }
@@ -151,7 +153,9 @@ export function quotePayRoutes(deps: {
 
     return c.json({
       state,
-      copy: payPageCopy(quote),
+      // The copy must know about the selection, or the page describes the whole trip while the
+      // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
+      copy: payPageCopy(quote, sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
       prefill: prefillFor(quote),
       ...(partial ?? {}),

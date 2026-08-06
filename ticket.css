@@ -54,6 +54,11 @@
 .perf:before,.perf:after{content:'';position:absolute;top:-9px;width:18px;height:18px;border-radius:50%;background:var(--cream);border:1px solid var(--line)}
 .perf:before{left:-10px}.perf:after{right:-10px}
 .t-stub{padding:13px 18px 18px}
+/* Partial pay links (2026-08-05): a journey this payment does NOT cover. Dimmed, never hidden —
+   the customer keeps the whole trip in view while the row says plainly it isn't bought. */
+.hop.is-uncovered{opacity:.45}
+.hop.is-uncovered .hop-dot{background:transparent;box-shadow:inset 0 0 0 1.5px currentColor}
+.hop-x{display:inline-block;margin-left:8px;font-size:.62rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#80560f;background:var(--wait-bg,#fbf0d8);border:1px solid #eeda9e;border-radius:5px;padding:1px 5px;vertical-align:1px}
 /* Partial pay links (2026-08-04): the receipt of paid lines above the total. */
 .paid-lines{list-style:none;margin:0 0 10px;padding:0 0 10px;border-bottom:1px dashed var(--line,#e8e0d2)}
 .paid-lines li{display:flex;justify-content:space-between;gap:12px;font-size:.82rem;padding:3px 0}
