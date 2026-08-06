@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Customer quote page — design prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..800&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ── prototype chrome (dark, matches customer-quote-share-card.html) ───────────────── */
+  :root{
+    --teal:#0AB9B6; --teal-deep:#08938f; --saffron:#F9A429; --tomato:#EC3A24;
+    --ink:#2C2A2B; --ink-soft:#6c6a6b; --ink-faint:#8a8272;
+    --cream:#F4F2EA; --cream-deep:#EAE6D8; --paper:#fffdf8; --line:#e7e3d6; --line-soft:#f0ece1;
+    --accent:var(--teal); --accent-deep:var(--teal-deep);
+    --display:'Newsreader',Georgia,serif; --body:'Hanken Grotesk',-apple-system,Segoe UI,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --r-sm:10px; --r:16px; --r-lg:24px;
+    --shadow-s:0 2px 8px rgba(44,42,43,.06);
+    --shadow:0 14px 40px -18px rgba(44,42,43,.30);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#14181a;color:#e9e6df;font-family:var(--body);line-height:1.55}
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 24px 100px}
+  h1{font-family:var(--display);font-weight:800;font-size:2.15rem;letter-spacing:-.02em;margin:0 0 .35rem;color:#fff}
+  h2{font-family:var(--display);font-weight:800;font-size:1.4rem;margin:64px 0 6px;color:#fff}
+  h3{font-size:.98rem;margin:28px 0 4px;color:#fff}
+  .sub{color:#9aa3a1;margin:0 0 10px;max-width:76ch}
+  .eyebrow{font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin:0 0 26px}
+  .note{background:#1c2225;border:1px solid #2b3336;border-left:3px solid var(--saffron);border-radius:0 10px 10px 0;padding:14px 18px;margin:16px 0;font-size:.92rem;color:#c9d0ce}
+  .note.good{border-left-color:var(--teal)}
+  .note.bad{border-left-color:var(--tomato)}
+  .note b{color:#fff}
+  .note code,.sub code{background:#0f1315;border:1px solid #2b3336;border-radius:5px;padding:1px 5px;font-family:var(--mono);font-size:.85em}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:.9rem}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #262d30;vertical-align:top}
+  th{color:#fff;font-weight:700;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase}
+  td b{color:#fff}
+
+  .rail{display:flex;gap:34px;flex-wrap:wrap;align-items:flex-start;margin-top:22px}
+  .cap{font-size:.76rem;color:#8b9694;text-align:center;margin:10px auto 0;max-width:330px}
+  .cap b{color:#cfd6d4}
+
+  /* phone frame */
+  .phone{width:375px;flex:none;border-radius:34px;padding:9px;background:#0b0e0f;border:1px solid #2b3336;box-shadow:0 26px 70px rgba(0,0,0,.55)}
+  .screen{border-radius:26px;overflow:hidden;background:var(--cream);height:720px;overflow-y:auto;position:relative}
+  .screen::-webkit-scrollbar{width:0}
+  .wide{flex:1;min-width:420px;border-radius:14px;overflow:hidden;background:var(--cream);border:1px solid #262d30;height:720px;overflow-y:auto}
+  .wide::-webkit-scrollbar{width:0}
+
+  /* ── THE PAGE ITSELF — real tokens from site.css + ticket.css ─────────────────────── */
+  .pg{background:var(--cream);color:var(--ink);font-family:var(--body);line-height:1.55;min-height:100%}
+  .pg-top{border-bottom:1px solid var(--line);background:var(--paper)}
+  .pg-topin{max-width:660px;margin:0 auto;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .pg-brand{display:flex;align-items:center;gap:8px}
+  .pg-cmark{width:27px;height:27px;border-radius:7px;background:linear-gradient(150deg,#F9A429,#EC7A24);display:grid;place-items:center;
+    font-family:var(--display);font-weight:800;color:#fff;font-size:1rem;flex:none}
+  .pg-word{font-family:var(--display);font-weight:800;font-size:1.08rem;color:var(--accent-deep);letter-spacing:-.01em}
+  .pg-wa{font-size:.74rem;color:var(--ink-soft)}
+  .pg-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+
+  .pg-wrap{max-width:660px;margin:0 auto;padding:24px 18px 64px}
+
+  /* hero */
+  .pg-hello{font-family:var(--display);font-weight:800;font-size:1.22rem;color:var(--ink-soft);margin:0}
+  .pg-title{font-family:var(--display);font-weight:800;font-size:2rem;line-height:1.1;letter-spacing:-.02em;margin:3px 0 3px}
+  .pg-sub{font-size:.85rem;color:var(--ink-soft);margin:0}
+  .held{display:inline-flex;align-items:center;gap:7px;margin-top:13px;background:var(--paper);border:1px solid var(--line);
+    border-radius:999px;padding:5px 13px 5px 9px;font-size:.73rem;color:var(--ink-soft)}
+  .held .dot{width:7px;height:7px;border-radius:50%;background:#2f9558;box-shadow:0 0 0 3px rgba(47,149,88,.16);flex:none}
+  .held b{color:var(--ink);font-weight:700}
+  .held.warn .dot{background:var(--saffron);box-shadow:0 0 0 3px rgba(249,164,41,.18)}
+
+  /* card shell — shared with the pay page's language, WITHOUT the ticket perforation */
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden;margin-top:18px}
+  .card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:14px 17px 0}
+  .card-k{font-size:.62rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-faint)}
+  .card-b{padding:12px 17px 16px}
+
+  /* map */
+  .map{position:relative;height:210px;background:linear-gradient(170deg,#eaf4f1,#dfeee9);overflow:hidden}
+  .map svg{position:absolute;inset:0;width:100%;height:100%}
+  .map-exp{position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:0;
+    border-radius:999px;background:rgba(255,255,255,.96);color:var(--accent-deep);font-family:var(--body);font-weight:700;
+    font-size:.72rem;box-shadow:0 2px 8px rgba(0,0,0,.16);cursor:pointer}
+  .map-foot{display:flex;gap:14px;padding:9px 17px;border-top:1px solid var(--line-soft);font-size:.72rem;color:var(--ink-faint)}
+  .map-foot b{color:var(--ink);font-weight:700}
+
+  /* day-by-day — extends the pay page's .hop rail idiom */
+  .days{margin:2px 0 0}
+  .day{display:grid;grid-template-columns:16px 1fr;gap:11px}
+  .day-rail{display:flex;flex-direction:column;align-items:center}
+  .day-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:6px;box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+  .day-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
+  .day-dot.stay{background:var(--paper);box-shadow:inset 0 0 0 2px var(--cream-deep),0 0 0 3px rgba(234,230,216,.5)}
+  .day-line{width:2px;flex:1;min-height:14px;background:var(--line)}
+  .day-line.dash{background:repeating-linear-gradient(to bottom,var(--line) 0 4px,transparent 4px 8px)}
+  .day-b{padding-bottom:15px;min-width:0}
+  .day-d{font-family:var(--mono);font-size:.65rem;letter-spacing:.05em;color:var(--ink-faint);text-transform:uppercase}
+  .day-t{font-weight:700;font-size:.92rem;line-height:1.3;margin:1px 0 0}
+  .day-m{font-size:.75rem;color:var(--ink-soft);margin-top:2px}
+  .day-m .sep{color:var(--line);margin:0 6px}
+  .stop-chain{margin-top:5px;font-size:.75rem;color:var(--ink-soft)}
+  .stop-chain span{display:inline-block;background:var(--cream);border-radius:6px;padding:1px 7px;margin:2px 4px 0 0}
+  .day.is-stay .day-t{font-weight:600;color:var(--ink-soft)}
+
+  /* options */
+  .opts{margin-top:20px;display:grid;gap:14px}
+  .opt{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
+  .opt.lead{border-color:#bfe3e0;box-shadow:0 0 0 3px rgba(10,185,182,.09),var(--shadow-s)}
+  .opt-h{padding:15px 17px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .opt-n{font-family:var(--display);font-weight:800;font-size:1.2rem;letter-spacing:-.01em;margin:0}
+  .opt-tag{font-size:.58rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;background:#e6f4f2;color:var(--accent-deep);
+    border:1px solid #c9e8e4;border-radius:6px;padding:3px 7px;white-space:nowrap;flex:none}
+  .opt-d{padding:0 17px;font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
+  .opt-inc{margin:12px 17px 0;background:var(--cream);border-radius:11px;padding:10px 12px}
+  .opt-inc b{display:block;font-size:.6rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
+  .opt-inc ul{margin:0;padding-left:16px;font-size:.77rem;line-height:1.65;color:var(--ink-soft)}
+  .opt-tot{display:flex;align-items:baseline;justify-content:space-between;padding:13px 17px 0}
+  .opt-tot .l{font-size:.62rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .opt-tot .v{font-family:var(--display);font-weight:800;font-size:1.95rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .opt-can{padding:6px 17px 0;font-size:.72rem;color:var(--ink-faint)}
+  .opt-can summary{cursor:pointer;color:var(--accent-deep);font-weight:700}
+  .opt-can ul{margin:6px 0 0;padding-left:16px;line-height:1.7}
+  .btn-wa{display:flex;align-items:center;justify-content:center;gap:8px;margin:13px 17px 17px;background:#0B7A44;color:#fff;
+    font-weight:700;font-size:.88rem;border:0;border-radius:11px;padding:12px;text-decoration:none;cursor:pointer}
+  .btn-wa.ghost{background:var(--paper);color:var(--accent-deep);border:1.5px solid var(--line)}
+  .opt-sub{text-align:center;font-size:.71rem;color:var(--ink-faint);margin:-8px 17px 15px}
+
+  .pg-foot{text-align:center;font-size:.75rem;color:var(--ink-soft);margin-top:26px;line-height:1.7}
+  .pg-foot a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+
+  /* lapsed + booked states */
+  .lapse{background:#fbf0d8;border:1px solid #eeda9e;border-radius:var(--r);padding:13px 15px;margin-top:18px}
+  .lapse b{display:block;font-family:var(--display);font-size:1.05rem;color:#7a5210;margin-bottom:2px}
+  .lapse p{margin:0;font-size:.8rem;color:#8a6520}
+  .stale .opt-tot .v{color:var(--ink-faint)}
+  .stale .opt{opacity:.72}
+  .keep{text-align:center;padding:30px 0 6px}
+  .keep-b{width:56px;height:56px;border-radius:50%;display:inline-grid;place-items:center;font-size:1.5rem;margin-bottom:12px;
+    background:#e6f4ec;color:#2f9558;box-shadow:0 0 0 8px rgba(47,149,88,.08)}
+  .keep-t{font-family:var(--display);font-weight:800;font-size:1.5rem;line-height:1.15;margin:0 0 4px}
+  .keep-s{font-size:.85rem;color:var(--ink-soft);margin:0}
+  .refchip{display:inline-block;font-family:var(--mono);font-weight:600;font-size:.9rem;color:var(--accent-deep);
+    background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:13px 0}
+
+  @media(max-width:900px){ .rail{gap:22px} .wide{display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">Prototype · not built · 2026-08-05</p>
+<h1>The quote page</h1>
+<p class="sub">The design for <code>quote.ceylonhop.com/q?t=…</code>, per the spec at
+<code>docs/superpowers/specs/2026-08-05-customer-quote-link-design.md</code>. Follows on from the
+28 July share-card prototype, which designed the unfurl card that sits on top of this page.
+Everything below uses the real tokens from <code>site.css</code> and <code>ticket.css</code> — same palette, same
+Newsreader/Hanken pairing, same card treatment — so this is the page, not an impression of it.</p>
+
+<div class="note good"><b>One deliberate divergence from the pay page.</b> This does <b>not</b> use the perforated
+ticket. The perforation, the stub and the tear line are a <b>boarding pass</b> — they say "you have bought
+this". A quote has not been bought yet, and dressing a proposal as a ticket quietly implies otherwise.
+So: same design language, plain cards. The ticket chrome stays exclusive to <code>pay.html</code>, and the
+moment of tearing off a stub belongs to the moment they pay.</div>
+
+<div class="note"><b>No pay button anywhere on this page</b> (spec D6). Every option's action is WhatsApp.
+That is what makes a forwarded link harmless, and it is why the page can afford to show a price at all.</div>
+
+<h2>1 · Live, one option — the usual case</h2>
+<p class="sub">Most quotes carry one <code>requestedService</code>. Phone first: this is a WhatsApp link, so ~375px
+is the design, not the fallback.</p>
+
+<div class="rail">
+  <div>
+    <div class="phone"><div class="screen">
+      <div class="pg">
+        <div class="pg-top"><div class="pg-topin">
+          <div class="pg-brand"><div class="pg-cmark">C</div><div class="pg-word">Ceylon Hop</div></div>
+          <div class="pg-wa">Questions? <a href="#">WhatsApp us</a></div>
+        </div></div>
+        <div class="pg-wrap">
+          <p class="pg-hello">Hi Anna,</p>
+          <h1 class="pg-title" style="color:var(--ink)">Nine days across Sri Lanka</h1>
+          <p class="pg-sub">20–28 August · 2 travellers · 4 bags</p>
+          <div class="held"><span class="dot"></span><span>Held until <b>Tue 12 August</b></span></div>
+
+          <div class="card">
+            <div class="map">
+              <svg viewBox="0 0 380 210" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect width="380" height="210" fill="#dfeee9"/>
+                <path d="M150 8 C196 20 214 62 210 104 C206 150 178 196 150 204 C118 194 96 150 100 104 C104 60 118 20 150 8 Z" fill="#f2f0e2" stroke="#cfe0d8" stroke-width="1.5"/>
+                <path d="M136 34 L170 62 L150 104 L178 132 L156 176" fill="none" stroke="#0AB9B6" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+                <g font-family="Hanken Grotesk" font-size="9" font-weight="700" fill="#fff">
+                  <circle cx="136" cy="34" r="9" fill="#08938f"/><text x="136" y="37.5" text-anchor="middle">1</text>
+                  <circle cx="170" cy="62" r="9" fill="#0AB9B6"/><text x="170" y="65.5" text-anchor="middle">2</text>
+                  <circle cx="150" cy="104" r="9" fill="#0AB9B6"/><text x="150" y="107.5" text-anchor="middle">3</text>
+                  <circle cx="178" cy="132" r="9" fill="#0AB9B6"/><text x="178" y="135.5" text-anchor="middle">4</text>
+                  <circle cx="156" cy="176" r="9" fill="#EC7A24"/><text x="156" y="179.5" text-anchor="middle">5</text>
+                </g>
+              </svg>
+              <button class="map-exp">⤢ Expand</button>
+            </div>
+            <div class="map-foot"><span><b>5</b> stops</span><span><b>612 km</b> total</span><span><b>4</b> travel days</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-h"><span class="card-k">Day by day</span></div>
+            <div class="card-b"><div class="days">
+              <div class="day"><div class="day-rail"><span class="day-dot"></span><span class="day-line"></span></div>
+                <div class="day-b"><div class="day-d">Wed 20 Aug</div><p class="day-t">Colombo Airport → Sigiriya</p>
+                <div class="day-m">168 km<span class="sep">·</span>about 4 h</div></div></div>
+              <div class="day is-stay"><div class="day-rail"><span class="day-dot stay"></span><span class="day-line dash"></span></div>
+                <div class="day-b"><div class="day-d">Thu 21 Aug</div><p class="day-t">In Sigiriya</p></div></div>
+              <div class="day"><div class="day-rail"><span class="day-dot"></span><span class="day-line"></span></div>
+                <div class="day-b"><div class="day-d">Fri 22 Aug</div><p class="day-t">Sigiriya → Kandy</p>
+                <div class="day-m">92 km<span class="sep">·</span>about 2 h 30</div>
+                <div class="stop-chain"><span>Dambulla</span><span>Matale</span></div></div></div>
+              <div class="day"><div class="day-rail"><span class="day-dot"></span><span class="day-line"></span></div>
+                <div class="day-b"><div class="day-d">Sun 24 Aug</div><p class="day-t">Kandy → Ella</p>
+                <div class="day-m">140 km<span class="sep">·</span>about 4 h</div></div></div>
+              <div class="day is-stay"><div class="day-rail"><span class="day-dot stay"></span><span class="day-line dash"></span></div>
+                <div class="day-b"><div class="day-d">Mon 25 Aug</div><p class="day-t">In Ella</p></div></div>
+              <div class="day"><div class="day-rail"><span class="day-dot end"></span></div>
+                <div class="day-b" style="padding-bottom:2px"><div class="day-d">Thu 28 Aug</div><p class="day-t">Ella → Colombo Airport</p>
+                <div class="day-m">212 km<span class="sep">·</span>about 5 h 30</div></div></div>
+            </div></div>
+          </div>
+
+          <div class="opts">
+            <div class="opt lead">
+              <div class="opt-h"><h3 class="opt-n">Private transfers</h3></div>
+              <p class="opt-d">A car and driver for each journey. Between them, your time is your own.</p>
+              <div class="opt-inc"><b>Included</b><ul>
+                <li>Air-conditioned car, English-speaking driver</li><li>Fuel, tolls and parking</li><li>All pickups at your door</li></ul></div>
+              <div class="opt-tot"><span class="l">Total</span><span class="v">$840</span></div>
+              <div class="opt-can"><details><summary>Free cancellation up to 24 hours before</summary>
+                <ul><li>More than 24 h before: full refund</li><li>Inside 24 h: 50% refund</li><li>No-show: no refund</li></ul></details></div>
+              <a class="btn-wa" href="#">Message us to book</a>
+              <p class="opt-sub">We'll confirm the details and send a payment link.</p>
+            </div>
+          </div>
+
+          <p class="pg-foot">Anything you'd like changed — dates, stops, a bigger vehicle —<br><a href="#">just message us</a> and we'll update this page.</p>
+        </div>
+      </div>
+    </div></div>
+    <p class="cap"><b>375px.</b> Hero → map → days → one option. The whole page is one scroll, and the only action is WhatsApp.</p>
+  </div>
+
+  <div class="wide">
+    <div class="pg">
+      <div class="pg-top"><div class="pg-topin">
+        <div class="pg-brand"><div class="pg-cmark">C</div><div class="pg-word">Ceylon Hop</div></div>
+        <div class="pg-wa">Questions? <a href="#">WhatsApp us</a></div>
+      </div></div>
+      <div class="pg-wrap">
+        <p class="pg-hello">Hi Anna,</p>
+        <h1 class="pg-title" style="color:var(--ink);font-size:2.4rem">Nine days across Sri Lanka</h1>
+        <p class="pg-sub">20–28 August · 2 travellers · 4 bags</p>
+        <div class="held"><span class="dot"></span><span>Held until <b>Tue 12 August</b></span></div>
+        <div class="card"><div class="map" style="height:280px">
+          <svg viewBox="0 0 620 280" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="620" height="280" fill="#dfeee9"/>
+            <path d="M300 12 C360 28 384 84 378 140 C372 200 336 262 300 272 C258 260 226 200 220 140 C214 82 258 28 300 12 Z" fill="#f2f0e2" stroke="#cfe0d8" stroke-width="1.6"/>
+            <path d="M280 48 L326 84 L300 140 L338 178 L308 238" fill="none" stroke="#0AB9B6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <g font-family="Hanken Grotesk" font-size="10" font-weight="700" fill="#fff">
+              <circle cx="280" cy="48" r="10" fill="#08938f"/><text x="280" y="51.5" text-anchor="middle">1</text>
+              <circle cx="326" cy="84" r="10" fill="#0AB9B6"/><text x="326" y="87.5" text-anchor="middle">2</text>
+              <circle cx="300" cy="140" r="10" fill="#0AB9B6"/><text x="300" y="143.5" text-anchor="middle">3</text>
+              <circle cx="338" cy="178" r="10" fill="#0AB9B6"/><text x="338" y="181.5" text-anchor="middle">4</text>
+              <circle cx="308" cy="238" r="10" fill="#EC7A24"/><text x="308" y="241.5" text-anchor="middle">5</text>
+            </g>
+          </svg>
+          <button class="map-exp">⤢ Expand</button>
+        </div>
+        <div class="map-foot"><span><b>5</b> stops</span><span><b>612 km</b> total</span><span><b>4</b> travel days</span></div></div>
+        <p class="pg-foot" style="margin-top:20px">The wide layout is the <b>same single column</b>, only roomier —<br>the map grows, the type steps up, nothing rearranges.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>2 · Live, two options — when they asked for both</h2>
+<p class="sub"><code>requestedService === 'both'</code>. Stacked on a phone, side by side from ~560px. The service you
+actually priced leads and carries the teal ring; the second is a real offer, not an upsell footnote.</p>
+
+<div class="rail">
+  <div>
+    <div class="phone"><div class="screen">
+      <div class="pg"><div class="pg-wrap" style="padding-top:20px">
+        <p class="pg-hello">Hi Anna,</p>
+        <h1 class="pg-title" style="color:var(--ink)">Nine days across Sri Lanka</h1>
+        <p class="pg-sub">20–28 August · 2 travellers · 4 bags</p>
+        <div class="held"><span class="dot"></span><span>Held until <b>Tue 12 August</b></span></div>
+        <p style="margin:22px 0 0;font-family:var(--display);font-weight:800;font-size:1.15rem">Two ways to travel it</p>
+        <p style="margin:2px 0 0;font-size:.82rem;color:var(--ink-soft)">Same itinerary, same vehicle. The difference is whether the driver stays with you.</p>
+        <div class="opts">
+          <div class="opt lead">
+            <div class="opt-h"><h3 class="opt-n">Private transfers</h3></div>
+            <p class="opt-d">A car and driver for each journey. Between them, your time is your own.</p>
+            <div class="opt-inc"><b>Included</b><ul>
+              <li>Air-conditioned car, English-speaking driver</li><li>Fuel, tolls and parking</li><li>All pickups at your door</li></ul></div>
+            <div class="opt-tot"><span class="l">Total</span><span class="v">$840</span></div>
+            <div class="opt-can"><details><summary>Free cancellation up to 24 hours before</summary>
+              <ul><li>More than 24 h before: full refund</li><li>Inside 24 h: 50% refund</li></ul></details></div>
+            <a class="btn-wa" href="#">Message us to book</a>
+          </div>
+          <div class="opt">
+            <div class="opt-h"><h3 class="opt-n">Chauffeur &amp; guide</h3><span class="opt-tag">All 9 days</span></div>
+            <p class="opt-d">The same car and driver stay with you for the whole trip, including the days you're not moving.</p>
+            <div class="opt-inc"><b>Included</b><ul>
+              <li>Vehicle &amp; English-speaking driver, all 9 days</li><li>Fuel and tolls</li><li>Driver's meals and accommodation</li></ul></div>
+            <div class="opt-tot"><span class="l">Total</span><span class="v">$1,180</span></div>
+            <div class="opt-can"><details><summary>Free cancellation up to 10 days before</summary>
+              <ul><li>More than 10 days before: full refund</li><li>Inside 10 days: up to 80% refund</li></ul></details></div>
+            <a class="btn-wa ghost" href="#">Message us to book this instead</a>
+          </div>
+        </div>
+        <p class="pg-foot">Not sure which suits you? <a href="#">Ask us</a> — we'll tell you honestly.</p>
+      </div></div>
+    </div></div>
+    <p class="cap"><b>Stacked on a phone.</b> Both cards are complete: price, inclusions and cancellation terms each stand on their own, because a customer will screenshot one and forward it.</p>
+  </div>
+
+  <div style="flex:1;min-width:330px">
+    <h3 style="margin-top:0">Why the second card isn't a footnote</h3>
+    <p class="sub">Today the chauffeur price reaches the customer as a sentence appended to a WhatsApp message
+    by <code>appendChauffeurUpsell()</code> — after the real quote, in the same grey as everything else. It reads as an
+    afterthought, so it gets treated as one.</p>
+    <p class="sub">Given equal visual weight, the more expensive option stops being an upsell and becomes a choice.
+    The lead card keeps a quiet ring rather than a "RECOMMENDED" badge: you priced it, so it leads — but the
+    page shouldn't pressure a decision you were happy to leave open.</p>
+    <div class="note"><b>Cancellation terms sit on the card, not in a footer.</b> The two ladders genuinely differ —
+    24 hours versus 10 days, and 80% rather than 100%. A customer comparing $840 with $1,180 is comparing two
+    different commitments, and burying that under one shared "terms apply" line would be the dishonest version
+    of this page.</div>
+    <div class="note good"><b>Degrades cleanly to one card.</b> On a <code>both</code> quote where the trip is single-day or
+    has an undated leg, <code>serviceChooserData</code> can't price chauffeur. The page then renders exactly panel 1 —
+    one option, full width, no hole where the second card was.</div>
+  </div>
+</div>
+
+<h2>3 · Lapsed — past the 7-day validity</h2>
+<p class="sub">The link still works (liveness is status-driven, spec D8). What expires is the <b>price</b> —
+D9's stored validity field, set at approval. This must never read as "your trip is gone".</p>
+
+<div class="rail">
+  <div>
+    <div class="phone"><div class="screen">
+      <div class="pg"><div class="pg-wrap" style="padding-top:20px">
+        <p class="pg-hello">Hi Anna,</p>
+        <h1 class="pg-title" style="color:var(--ink)">Nine days across Sri Lanka</h1>
+        <p class="pg-sub">20–28 August · 2 travellers · 4 bags</p>
+        <div class="held warn"><span class="dot"></span><span>Held until <b>Tue 12 August</b></span></div>
+        <div class="lapse"><b>These prices are out of date</b>
+          <p>This quote was held until 12 August. Everything below is still exactly the trip we planned — message us and we'll refresh the price, usually within the hour.</p></div>
+        <a class="btn-wa" href="#" style="margin:14px 0 0">Get an up-to-date price</a>
+        <div class="opts stale">
+          <div class="opt">
+            <div class="opt-h"><h3 class="opt-n">Private transfers</h3><span class="opt-tag" style="background:var(--cream);color:var(--ink-faint);border-color:var(--line)">Was</span></div>
+            <div class="opt-tot"><span class="l">Total on 5 Aug</span><span class="v">$840</span></div>
+            <div class="opt-can" style="padding-bottom:15px">Prices move with fuel and season. Yours is usually close.</div>
+          </div>
+        </div>
+        <p class="pg-foot">The itinerary below hasn't changed.</p>
+      </div></div>
+    </div></div>
+    <p class="cap"><b>Lapsed.</b> The old number stays visible, labelled with the date it was true. Hiding it would make us look evasive; presenting it as current would be a lie.</p>
+  </div>
+
+  <div style="flex:1;min-width:330px">
+    <h3 style="margin-top:0">What lapsing does and doesn't do</h3>
+    <table>
+      <tr><th></th><th>Lapsed</th></tr>
+      <tr><td><b>The link</b></td><td>Still works. Liveness is the quote's status, not the clock (D8).</td></tr>
+      <tr><td><b>The itinerary</b></td><td>Unchanged and still shown in full — it's the part that took the work.</td></tr>
+      <tr><td><b>The price</b></td><td>Shown, dated, visibly past. Never silently re-priced under the customer.</td></tr>
+      <tr><td><b>The action</b></td><td>Becomes "get an up-to-date price" — one WhatsApp tap.</td></tr>
+      <tr><td><b>Ops</b></td><td>Can still mint a pay link and honour the old price. Lapsing gates this page's display, never your judgement (§7).</td></tr>
+    </table>
+    <div class="note"><b>Re-approving resets it.</b> Seven more days from the new approval, so the fix for a lapsed quote is the thing ops was going to do anyway.</div>
+  </div>
+</div>
+
+<h2>4 · Booked — the keepsake</h2>
+<p class="sub">Reached when the quote is <code>won</code>. A quote that succeeded must never read as a dead end,
+which is the same rule the pay page's paid screen already follows.</p>
+
+<div class="rail">
+  <div>
+    <div class="phone"><div class="screen" style="height:520px">
+      <div class="pg"><div class="pg-wrap">
+        <div class="keep">
+          <div class="keep-b">✓</div>
+          <h2 class="keep-t" style="color:var(--ink);margin:0 0 4px">You're booked, Anna</h2>
+          <p class="keep-s">Nine days across Sri Lanka · 20–28 August</p>
+          <div class="refchip">CH-4821</div>
+        </div>
+        <div class="card"><div class="card-h"><span class="card-k">What happens next</span></div>
+          <div class="card-b" style="font-size:.82rem;color:var(--ink-soft);line-height:1.7">
+            Your driver's name and number arrive by WhatsApp 48 hours before pickup.<br>
+            Anything to change before then — just message us.</div></div>
+        <p class="pg-foot"><a href="#">Message us</a></p>
+      </div></div>
+    </div></div>
+    <p class="cap"><b>Booked.</b> Reuses the pay page's paid-screen language — badge, reference chip, "what happens next".</p>
+  </div>
+
+  <div style="flex:1;min-width:330px">
+    <h3 style="margin-top:0">The fifth state needs no new art</h3>
+    <p class="sub"><code>unavailable</code> — a bad token, a soft-deleted quote, a status that isn't payable — renders the
+    existing <b>"This quote has sailed off somewhere sunny"</b> screen from <code>pay.html</code>, illustration and all.
+    It's already written, already tested, and already the right tone.</p>
+    <div class="note bad"><b>Deliberately soft.</b> Like <code>/quote-pay/view</code>, an unverifiable token returns 200 with
+    <code>{state:'unavailable'}</code> — no distinction between "wrong token" and "quote withdrawn", so the endpoint
+    can't be used to probe which quotes exist.</div>
+  </div>
+</div>
+
+<h2>5 · What this page does not have</h2>
+<table>
+  <tr><th>Not here</th><th>Why</th></tr>
+  <tr><td><b>A pay button</b></td><td>Spec D6. The money path is unreachable from a quote link, which is what makes forwarding it harmless.</td></tr>
+  <tr><td><b>The perforated ticket</b></td><td>A boarding pass says "bought". This is a proposal.</td></tr>
+  <tr><td><b>A line-item breakdown</b></td><td>One total per option. Idle-day pricing stays deliberately understated — a <code>stay_day</code> is named, never priced.</td></tr>
+  <tr><td><b>A countdown</b></td><td>Fixed dates only. WhatsApp caches the unfurl per URL for days; a countdown would freeze and lie.</td></tr>
+  <tr><td><b>Any editable field</b></td><td>Spec D5 — the customer reads, ops writes.</td></tr>
+  <tr><td><b>Per-day prose</b></td><td>No such field exists in the data (§5.1). Every day row above is generated from <code>category</code>, <code>date</code>, <code>from</code>, <code>to</code>, <code>distanceKm</code> and <code>stops[]</code>.</td></tr>
+</table>
+
+<div class="note"><b>The one thing worth arguing about.</b> "Colombo Airport → Sigiriya · 168 km · about 4 h" is
+accurate and slightly mechanical. One ops-authored line per day — <i>"straight up to the cultural triangle;
+you'll want the afternoon free for the rock"</i> — would change what this page is. That's a new field plus ops
+UI, and it's the single highest-leverage addition to this design. Currently out of scope.</div>
+
+<h2>6 · Reconciling two earlier documents</h2>
+<table>
+  <tr><th>Document</th><th>Status</th></tr>
+  <tr><td><b>28 Jul — customer-quote-share-card</b></td><td><b>Still live.</b> It designs the unfurl card that sits on top of this page. Its open question (b) — "is 7 days the right shelf life" — is now answered yes, but as a <b>stored validity field</b>: it assumed the link would expire with <code>rateLockedUntil</code>, which is <code>null</code> for ops quotes, so there was nothing to expire against.</td></tr>
+  <tr><td><b>23 Jul — deposits Slice 1</b></td><td><b>Superseded</b> for the page and token. It specced <code>ceylonhop.com/quote.html?t=</code> keyed on a stored random <code>payToken</code> column with <code>GET /pay/quote/:token</code>. Pay links then shipped on <b>signed stateless tokens</b>; this design follows what shipped. The deposits work itself is untouched and still parked.</td></tr>
+</table>
+
+</div>
+</body>
+</html>

@@ -122,6 +122,14 @@ The owner's framing, verbatim:
 - **D12 — Content is the map, the day-by-day itinerary, and the options.** Photos of
   destinations were considered and dropped: nothing maps a place name to a vetted photo.
 
+- **D13 — Shared design language, but not the ticket chrome.** The page uses `ticket.css`'s
+  palette, type pairing, radii, card treatment and the `.hop` rail idiom — but **not** the
+  perforation, the tear line or the stub. Those are a boarding pass: they say *you have
+  bought this*. A quote has not been bought, and dressing a proposal as a ticket implies
+  otherwise. The ticket chrome stays exclusive to `pay.html`, so tearing off a stub remains
+  the visual reward for paying.
+  Designed in `docs/prototypes/customer-quote-page.html`.
+
 ## 3. What already exists (verified, not assumed)
 
 | Need | Already built |
@@ -306,7 +314,22 @@ a pay link, because honouring a lapsed offer is ops's call to make.
 - Wiring `sendCustomerQuote()` to send. This build removes its blocker and shares its
   projection; turning the send on is a small follow-up.
 
-## 11. Follow-ups this unblocks
+## 11. Reconciling two earlier documents
+
+- **`docs/prototypes/customer-quote-share-card.html` (28 Jul) — still live.** It designs the
+  WhatsApp unfurl card that sits on top of this page, and D11 follows it. Its open question
+  (b) — *"is 7 days the right shelf life"* — is answered yes by D9, but its **mechanism does
+  not work**: it assumed the link expires with `rateLockedUntil`, which is `null` for ops
+  quotes (they lock at approval with no expiry), so there was nothing to expire against.
+  Hence a stored field. Its question (a) — *"does the customer page need the pay button in
+  the first cut"* — is answered no, permanently, by D6.
+- **`docs/superpowers/specs/2026-07-23-deposits-balance-payments-design.md` Slice 1 —
+  superseded for the page and token.** It specced `ceylonhop.com/quote.html?t=` keyed on a
+  stored random `payToken` column with `GET /pay/quote/:token`. Pay links then shipped on
+  **signed stateless tokens**, and this design follows what shipped. The deposits work itself
+  is untouched and still parked.
+
+## 12. Follow-ups this unblocks
 
 1. **The parked customer-quote email** — template built and approved since 2026-07-23,
    blocked only on a Book-link destination. That destination now exists.
