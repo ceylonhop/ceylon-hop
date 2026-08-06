@@ -6494,6 +6494,35 @@ function priceDriftHtml(baselineCents, via, liveCents) {
     + '</div>';
 }
 
+/* Short place labels (2026-08-06) — mirrors api/src/quote/shortPlace.ts. A full Google address
+   ("The Den 23, Norris Canal Road, Colombo, Sri Lanka") wraps every money-pane row to three or
+   four lines; dropping the street and the country halves the pane.
+
+   A pure function of ONE string on purpose: an earlier design made labels unique across a quote
+   and, in doing so, made them depend on which OTHER places were present — reordering legs renamed
+   a place, and a partial pay link showed the customer a different name than ops saw. Two
+   same-named places in one town reading alike is the accepted cost. Extracted by
+   web-tests/unit/ops-short-place.test.js — keep it DOM-free and state-free. */
+function shortPlace(full) {
+  if (!full) return '';
+  var segs = String(full).trim().replace(/,\s*Sri Lanka\s*$/i, '').split(',')
+    .map(function (x) { return x.trim(); }).filter(Boolean);
+  if (!segs.length) return String(full).trim() ? full : '';
+  if (segs.length < 2) return segs[0];
+  var venue = segs[0], town = segs[segs.length - 1];
+  // Whole words only: "Umbrella Cafe" contains "ella" but is not in Ella.
+  var re = new RegExp('\\b' + town.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+  return re.test(venue) ? venue : venue + ' \u00b7 ' + town;
+}
+function shortenRouteLabel(label) {
+  if (!label) return '';
+  var m = label.match(/\s*\((car|van\d*|custom)\)\s*$/i);
+  var body = m ? label.slice(0, m.index) : label;
+  if (body.indexOf('\u2192') < 0) return label; // extras / adjustments have no route in them
+  return body.split('\u2192').map(function (p) { return shortPlace(p.trim()); }).join(' \u2192 ')
+    + (m ? m[0].replace(/\s+$/, '') : '');
+}
+
 function renderSummaryCardBody() {
   // Unpriceable: keep the total as the calm hero (an em-dash, not a wall of warnings),
   // with a single needs line beneath. Gated-vehicle/server errors keep their precise text.
@@ -6533,7 +6562,8 @@ function renderSummaryCardBody() {
     // this the only trace of a premium was forensic arithmetic on the leg price (owner, 2026-07-23).
     var hz = item.meta && item.meta.hotZone;
     lines.push('<div class="ch-line">');
-    lines.push('  <span class="ch-line-label">' + esc(item.label)
+    // Full address on hover — the short label is for reading, the full one for checking.
+    lines.push('  <span class="ch-line-label" title="' + esc(item.label) + '">' + esc(shortenRouteLabel(item.label))
       + (hz ? '<span class="ch-hz-chip" title="Hot zone applied: ' + esc(hz.label || '') + '">&#9889; ' + esc(hz.placeName) + ' +' + esc(String(hz.boostPct)) + '%</span>' : '')
       + '</span>');
     lines.push('  <span class="ch-line-val">' + usdWithLkr(item.amountCents, item.lkr) + '</span>');

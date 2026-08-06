@@ -7,6 +7,7 @@ import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { payLines } from '../quote/paySelection';
+import { shortenRouteLabel } from '../quote/shortPlace';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -77,7 +78,8 @@ function partialView(
   );
   if (!ticked.length) return null;
   return {
-    lines: ticked.map((l) => ({ label: l.label, amountCents: l.amountCents })),
+    // Short labels (2026-08-06): the stored engine label is a full address pair.
+    lines: ticked.map((l) => ({ label: shortenRouteLabel(l.label), amountCents: l.amountCents })),
     coverage: {
       soldLegs: sel.legIndexes.length,
       totalLegs: all.filter((l) => l.kind === 'leg').length,

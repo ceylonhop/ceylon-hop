@@ -1,10 +1,11 @@
 # Replacing the PayHere iframe checkout with a top-level redirect
 
-**Status:** **BUILT** — server and client, on branch `spec/redirect-checkout`. Not merged, not shipped.
-**Both §2 prerequisites are now resolved** (§2.1 answered from the dashboard, §2.2 downgraded —
-see the owner note in §1.2, which retracts this spec's original reading of the pending payments).
-What remains before shipping is §7 verification: sandbox, the decline-redirect question, and real
-devices.
+**Status:** **SHIPPED and VERIFIED on the live gateway** (PRs #310/#312, then #313/#315, #317/#318).
+A real payment completed inside WhatsApp's in-app browser on 2026-08-05 — Payment ID
+#320048289427 — which is the exact environment the iframe defect killed CH-XKZL3 in.
+**Both §2 prerequisites were resolved** (§2.1 from the dashboard; §2.2 downgraded — see the owner
+note in §1.2, which retracts this spec's original reading of the pending payments).
+**Still open: `booking.js`, the WEBSITE checkout, has the identical defect and is NOT converted — §10.**
 **Written:** 2026-08-05. **Trigger:** a real customer could not pay quote CH-XKZL3 on 2026-08-05.
 **Scope:** `pay.html` (WhatsApp pay links) only. `booking.html` runs the same SDK and has the same
 defect — see §10; it is deliberately NOT in this spec's scope.
@@ -431,6 +432,61 @@ Migrations: none. This spec adds no columns and no data model changes.
   its own investigation into where reliable route data lives for a pay-link booking. **Note that
   `items` is not the bank-statement descriptor** — PayHere's Checkout API has no descriptor
   parameter at all, and the statement text can only be changed by asking PayHere.
+## 10. `booking.js` — the website checkout, NOT yet converted
+
+`booking.html:963` still loads `payhere.js` and `booking.js:1675` still calls
+`payhere.startPayment()`. **It has the identical defect** and needs the identical fix. It is not
+done, and it is deliberately not a copy-paste of `pay.html`. Investigated 2026-08-05; recorded here
+so the next attempt starts from knowledge rather than from scratch.
+
+### Why it is harder than pay.html was
+
+`pay.html` could rebuild itself after the round trip from ONE token in the URL: `t` names the quote,
+and `/quotes/pay/view` returns everything the page renders. The wizard has no such anchor.
+`finalizeBooking()` (booking.js:1863) builds the boarding pass from:
+
+- live DOM inputs — `#f-first`, `#f-last`
+- the in-memory `state` object — `state.date`, `state.flexDate`, `state.dep`, `state.ad`, `state.ch`,
+  `state.svc`, `state.locFrom` (144 `state.` references across the file)
+- derived values — `r.stops`, `isTrip`, `calcTotal()`, `fmtTime()`
+
+A top-level redirect destroys all of it. So the conversion is not "swap the SDK call for a form
+POST" — that part is twenty lines. It is "decide where the confirmation's content comes from once
+the page has been reloaded", and that is a design decision, not a mechanical edit.
+
+### The two candidate designs
+
+**(a) Serialise the wizard state to sessionStorage**, as `pay.html` does for `typed`. Smallest
+change, keeps the existing pass rendering untouched. Risk: the pass silently degrades wherever
+storage is unavailable (some in-app webviews), and it duplicates truth the server already holds.
+
+**(b) Rebuild the confirmation from the server** via the customer-safe projection
+(`GET /bookings/view?t=`, already used by manage.html). Honest single source of truth, and it
+survives any storage loss. Cost: the page needs a booking VIEW token it does not currently hold —
+and the obvious shortcut, returning one from `GET /bookings/pay-return`, **expands that endpoint's
+power**. It is deliberately status-only today (a test pins `{status, reference}` exactly), and
+handing out a view token from a token that rode through the gateway's redirect chain deserves its
+own security think, not a convenience decision.
+
+A hybrid is probably right: (a) for the fast path, (b) as the fallback — the same shape as
+`renderPaid` vs `renderPaidMinimal` on the pay page.
+
+### What the server already has
+
+Nothing new is needed on `createCheckout`: `returnUrl`/`cancelUrl` are already optional args
+(§D3). `POST /bookings/:id/checkout` would need a second intent alongside `returnTo:'pay-link'` —
+say `returnTo:'website'` — resolving to `${APP_BASE_URL}/booking.html?rt=…`. That part is small and
+additive.
+
+### Do not do this in a hurry
+
+This is the highest-traffic money path on the site. `pay.html` was safe to move fast on because a
+WhatsApp pay link is low volume and the old path was already broken for some customers. The website
+checkout is neither. It deserves its own session, its own e2e coverage of the return leg, and its
+own promote.
+
+---
+
 - **Back-filling the stuck payments.** ~~A commercial decision.~~ **Closed (owner, 2026-08-05): they
   were owner testing. Nobody is to be contacted, and CH-JTHDE's $749 is not a real stranded sale.**
   Only CH-XKZL3 is a real customer, and they are already in conversation on WhatsApp.
@@ -438,7 +494,7 @@ Migrations: none. This spec adds no columns and no data model changes.
 
 ---
 
-## 10. Open questions — answer before building, do not assume
+## 11. Open questions — answer before building, do not assume
 
 1. **§2.1** — which domains are registered against merchant `243025`, and is `pay.ceylonhop.com`
    among them?

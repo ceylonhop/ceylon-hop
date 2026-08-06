@@ -637,8 +637,12 @@ test('coming back from Back to Site resumes the form instead of confirming forev
   // once polling gives up. Both must say plainly that no money moved.
   await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
   await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
-  // NOT a decline — the bank-call steps would be noise to someone who changed their mind.
-  await expect(page.locator('#payhelp')).toBeHidden();
+  // NOT asserted as a decline — no "your card was declined" headline, because we do not know
+  // that. The steps are reachable but collapsed (PayHere does not always notify us of a refusal;
+  // see the quiet-help tests below).
+  await expect(page.locator('#payhelp h3')).toHaveCount(0);
+  await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+  await expect(page.locator('#payhelp ol')).toBeHidden();
   // Their details survived, so retrying is one tap.
   await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
   await expect(page.locator('#gobtn')).toBeVisible();
@@ -750,4 +754,48 @@ test('the return screen gives the form back quickly instead of holding a spinner
   expect(Date.now() - t0).toBeLessThan(6000);
   await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
   await expect(page.locator('#payerr')).toContainText('nothing has been charged');
+});
+
+// PayHere does not always notify us of a decline — CH-R3ZBZ (2026-08-05) carries exactly one
+// payment_event, the later success, so the refusal never reached us at all. The payer who most
+// needs the four steps was the one least likely to be shown them. They are now reachable on the
+// no-verdict path — collapsed, because most people arriving here simply changed their mind.
+test('a return with no verdict offers the decline steps without asserting a decline', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+
+  const help = page.locator('#payhelp');
+  await expect(help).toBeVisible({ timeout: 8000 });
+  // NOT asserted: no "your card was declined" headline, because we do not know that.
+  await expect(help.locator('h3')).toHaveCount(0);
+  await expect(help.locator('.pp-quiet summary')).toContainText('Card refused?');
+  // Collapsed by default — the steps exist but do not shout at someone who changed their mind.
+  await expect(help.locator('ol')).toBeHidden();
+  await help.locator('summary').click();
+  await expect(help.locator('ol li')).toHaveCount(4);
+});
+
+// A CONFIRMED decline still states it plainly and opens the steps — the quiet variant must not
+// have softened the case where we actually know.
+test('a confirmed decline still shows the steps open, not hidden', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'failed', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1');
+  await expect(page.locator('#payhelp h3')).toContainText('declined');
+  await expect(page.locator('#payhelp li')).toHaveCount(4);
+  await expect(page.locator('#payhelp .pp-quiet')).toHaveCount(0);
 });
