@@ -120,7 +120,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pp-expect .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
   .pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
   .pp-expect .amt2{font-family:var(--display);font-weight:800;font-size:1.3rem;color:var(--ink)}
-  .pp-loading .lead{font-size:.88rem;color:var(--ink-soft);max-width:34ch;margin:6px auto 0}
+  .pp-loading .lead{font-size:.92rem;color:var(--ink-soft);max-width:38ch;margin:8px auto 0;line-height:1.55}
+  .pp-loading h2{font-size:1.5rem;margin-bottom:2px}
+  /* The hand-off, drawn rather than described: us → them, with something travelling the gap.
+     A payer who can SEE they are being passed to a named gateway does not have to read a
+     paragraph to know why the next page looks nothing like this one. Motion standard: the dot
+     travels, it does not blink. */
+  .pp-hop{display:flex;align-items:center;justify-content:center;gap:13px;margin:2px 0 20px}
+  .pp-hop .chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--paper);font-weight:700;font-size:.82rem;
+    color:var(--ink);white-space:nowrap;box-shadow:var(--shadow-s)}
+  .pp-hop .chip img{width:19px;height:19px;border-radius:5px;display:block}
+  .pp-hop .track{position:relative;width:64px;height:2px;background:var(--line);border-radius:2px;overflow:hidden;flex:none}
+  .pp-hop .track:after{content:'';position:absolute;top:0;left:-26px;width:26px;height:2px;
+    background:var(--accent);animation:pphop 1.25s cubic-bezier(.45,0,.35,1) infinite}
+  @keyframes pphop{0%{left:-26px}100%{left:64px}}
+  @media (prefers-reduced-motion:reduce){ .pp-hop .track:after{animation:none;left:19px} }
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
@@ -621,10 +636,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // It no longer says "don't close this page": the customer is being sent TO PayHere, not shown
   // a window on top of us, and telling them to stay here would be a lie about where they are.
   function renderLoading(){
-    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+    app.innerHTML = '<div class="pp-loading">'
+      + '<div class="pp-hop">'
+      +   '<span class="chip"><img src="img/ceylon-hop-c.png" alt="" width="19" height="19">Ceylon Hop</span>'
+      +   '<span class="track"></span>'
+      +   '<span class="chip">🔒 PayHere</span>'
+      + '</div>'
       + '<h2>Taking you to PayHere…</h2>'
-      + '<p class="lead">You’ll finish paying on PayHere’s own secure page. '
-      +   'We never see your card details.</p>'
+      + '<p class="lead">You’ll finish paying on PayHere’s own secure page, then come '
+      +   'straight back here. We never see your card details.</p>'
       // The amount lives ONLY in the preview card. It was above this as a big standalone figure
       // too, and the same number twice on one short screen reads as a bug rather than emphasis.
       //
@@ -635,7 +655,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="pp-expect"><b>On the next screen you should see</b>'
       +   '<div class="row"><span class="who">Ceylon Hop (PVT) LTD</span>'
       +   '<span class="amt2">' + esc(data.totals.usd) + '</span></div></div>'
-      + '<p>🔒 Central Bank approved · no extra fees · you’ll come straight back here</p></div>';
+      // "come straight back here" already appears in the lead — repeating it here was the same
+      // reassurance twice in six lines, which reads as padding rather than emphasis.
+      + '<p>Central Bank approved · no extra fees</p>'
+      // What PayHere makes them do on the way back. Owner-observed 2026-08-05: the gateway does
+      // NOT redirect on its own — it parks the payer on "Payment Approved" (or "Payment
+      // Declined") behind a manual "Back to Site" link. A payer who is not told that closes the
+      // tab, and never sees their confirmation.
+      + '<p class="lead" style="margin-top:12px">When PayHere is done, tap <strong>Back to '
+      +   'Site</strong> to get your confirmation.</p></div>';
   }
 
   // Shared with booking.html — see decline-help.js for why this copy says what it says.
@@ -722,18 +750,25 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       whatsapp: parts.whatsapp,
       country: parts.country,
     };
-    // Owner call (2026-08-01): the wait for /start + /checkout stays ON THE BUTTON — the
-    // form remains visible and the customer keeps their context. On a cold API the old
-    // full-screen interstitial blocked them behind a takeover for seconds. The takeover
-    // now appears only at the moment the PayHere window actually opens (below), where
-    // "don't close this page" is true and the amount belongs.
+    // SUPERSEDES the 2026-08-01 owner call ("keep the wait on the button"). That decision was
+    // made when the takeover said "don't close this page" and lied about a modal opening over
+    // us. Now the takeover is TRUE the moment it appears — we are leaving for PayHere — and the
+    // owner's 2026-08-05 call, watching the real flow, is that pressing Continue must land on
+    // "Taking you to PayHere…" straight away rather than on a button that merely dims.
+    //
+    // A failure still rebuilds the form: fail() re-renders the details step when neither button
+    // is on screen, so a dead API drops them back where they were rather than stranding them
+    // behind a spinner.
     // Belt AND braces against a second checkout. `disabled` alone is not enough: fail() re-enables
     // the button, a stray re-render would hand back a fresh one, and a double-tap on mobile can
     // land two clicks before the first repaint. `submitting` is the one that cannot be undone by
     // the DOM — and two checkouts means two PayHere hand-offs for one booking.
     if (submitting) return;
     submitting = true;
+    // Straight to the hand-off screen. The button latch stays because a double-tap can land two
+    // clicks in the same frame, before this repaint removes the button at all.
     setBusy(document.getElementById('gobtn'), true, 'Opening secure payment…');
+    renderLoading();
     fetchJson(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
@@ -782,8 +817,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         form.appendChild(input);
       });
       document.body.appendChild(form);
-      // The takeover is honest here: we are navigating away this instant.
-      renderLoading();
+      // (The hand-off screen is already up — painted the instant they pressed, above.)
       form.submit();
     }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
   }
@@ -803,41 +837,72 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // documents return_url for an approved payment and cancel_url for a cancelled one, and says
   // nothing at all about where a DECLINED payment lands — so both legs poll identically.
   var RETURN_TRIES = 30;
-  // A customer who pressed "Back to Site" on PayHere's page never attempted a payment, so no
-  // notify is coming and polling a full minute would strand them on "confirming…" — then tell
-  // them "Payment received?", which is nonsense for someone who deliberately backed out.
-  // So the cancel leg waits only long enough to catch a genuine race (they paid, then hit back
-  // before the webhook landed). The DB still decides: this shortens the WAIT, never the verdict.
-  var CANCEL_TRIES = 3;
+  // Owner-observed on the live gateway (2026-08-05): PayHere does NOT redirect by itself. It
+  // parks the payer on "Payment Approved" / "Payment Declined" behind a manual "Back to Site"
+  // link — so a DECLINE arrives here on the cancel leg too, not only a change of mind. The
+  // cancel budget therefore has to be long enough for a decline's notify to land, not merely
+  // long enough to be polite.
+  var CANCEL_TRIES = 8;
+  // ...and none of that may cost the payer a stare. Waiting is decoupled from what is ON SCREEN:
+  // after this long we put their form back and keep checking underneath, upgrading the moment an
+  // answer arrives. Owner-reported: "Checking where that left things…" held the screen far too
+  // long before showing anything useful.
+  var FIRST_PAINT_MS = 1400;
+
   function renderReturn(){
     app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
       + '<h1 class="st-title">' + (cameFromCancel ? 'Checking where that left things…' : 'Confirming your payment…') + '</h1>'
       + '<p class="st-sub">This usually takes a few seconds.</p></div>';
     var tries = 0;
     var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
+    var settled = false;   // a terminal answer arrived; stop everything
+    var fellBack = false;  // the form is already on screen, polling continues underneath
+
+    // Stop making them watch a spinner. Their details are restored and the page is usable again;
+    // if an answer lands later it simply replaces this.
+    var fallback = setTimeout(function(){
+      if (settled || !t) return;
+      fellBack = true;
+      resumeAfterFailure('Just checking your payment with the bank — nothing has been charged unless you completed it on PayHere.', null);
+    }, FIRST_PAINT_MS);
+
+    function stop(){ settled = true; clearTimeout(fallback); }
+
     (function poll(){
       tries++;
       fetchJson(A + '/bookings/pay-return?rt=' + encodeURIComponent(rt)).then(function(r){
         if (!r.ok) throw new Error('pay-return ' + r.status);
         return r.json();
       }).then(function(v){
-        if (v.status === 'paid') { forget(); return t ? load() : renderPaidMinimal(v.reference); }
-        // A refusal must never read as an endless "confirming" — that is the whole point of
-        // asking our own server rather than trusting the redirect.
+        if (v.status === 'paid') { stop(); forget(); return t ? load() : renderPaidMinimal(v.reference); }
+        // A refusal must never read as an endless "confirming" — the whole point of asking our
+        // own server rather than trusting the redirect.
         if (v.status === 'failed') {
+          stop();
           return resumeAfterFailure('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
         }
         if (tries < budget) { setTimeout(poll, 2000); return; }
-        // Still nothing. On the cancel leg that is the expected answer, not a slow webhook.
-        // No decline help: nothing was declined, and four paragraphs about phoning a bank would
-        // be noise to someone who simply changed their mind.
+        stop();
+        // Nothing terminal ever arrived. If the form is already up, just retire the "checking"
+        // line in place — re-rendering underneath someone who has started typing again is worse
+        // than a stale sentence.
+        if (fellBack) {
+          var e = document.getElementById('payerr');
+          if (e) {
+            e.textContent = cameFromCancel
+              ? 'You came back without finishing the payment — nothing was charged. Your details are still here.'
+              : 'We haven’t had confirmation yet — nothing was charged unless you completed the payment. We’ll email you if it lands.';
+          }
+          return;
+        }
         if (cameFromCancel) {
           return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', null);
         }
         renderStillWaiting();
       }).catch(function(){
         if (tries < budget) { setTimeout(poll, 2000); return; }
-        renderStillWaiting();
+        stop();
+        if (!fellBack) renderStillWaiting();
       });
     })();
   }
