@@ -5,17 +5,16 @@
 
 ## 1. Goal
 
-Today a quote reaches the customer as a WhatsApp message: a block of typed prose, a price,
-and — when the customer asked about both services — a sentence appended by
-`appendChauffeurUpsell()` reading *"If you'd prefer the chauffeur-guide option … that would
-be $X total."* There is nothing to look at and nothing to act on. The only customer-facing
-page a quote can produce is the **pay page**, which is a checkout: it exists to remove
-friction between *decided* and *paid*.
+Today a quote reaches the customer as a WhatsApp message: typed prose, a price, and — when
+they asked about both services — a sentence appended by `appendChauffeurUpsell()` reading
+*"If you'd prefer the chauffeur-guide option … that would be $X total."* There is nothing to
+look at. The only customer-facing page a quote can produce is the **pay page**, which is a
+checkout: it exists to remove friction between *decided* and *paid*.
 
-This feature gives a quote its own customer-facing page — a **proposal**. It shows the trip
-on a map, lays the itinerary out day by day, and when the customer asked about both
-services, shows both prices side by side. It is read-only. When the customer is ready, it
-hands off to the existing pay flow.
+This gives a quote its own page — a **proposal**. It shows the trip on a map, lays the
+itinerary out day by day, and shows both prices when the customer asked about both services.
+It is read-only, and **it cannot reach the money path at all**. When the customer agrees, ops
+sends the existing pay link.
 
 The owner's framing, verbatim:
 
@@ -27,221 +26,245 @@ The owner's framing, verbatim:
 > "Customer can choose which one they want. However, both options only show if they asked
 > for quotes for both options. Usually it will be the one option they asked for"
 
+> "If a customer were to agree we can send a pay.ceylonhop.com link. Therefore pay is
+> isolated from risk incase the csutoemr shared the link publickly?"
+
 ## 2. Decisions (all owner-confirmed)
 
-- **D1 — A separate page, not a mode of `pay.html`.** The two have different jobs. The pay
-  page is a checkout: one column, one number, one button. The quote page is a proposal —
-  opened repeatedly, forwarded to a travel companion, sat on for days. Putting a map, a
-  day-by-day itinerary and an option comparison inside the ticket layout would make it a
-  worse checkout *and* a worse proposal.
+- **D1 — A separate page, not a mode of `pay.html`.** Different jobs. The pay page is a
+  checkout: one column, one number, one button. The quote page is a proposal — opened
+  repeatedly, forwarded to a travel companion, sat on for days. A map, a day-by-day itinerary
+  and an option comparison inside the ticket layout would make it a worse checkout *and* a
+  worse proposal.
 
 - **D2 — New hostname `quote.ceylonhop.com`, same API service.** `pay.ceylonhop.com` is
-  already a custom domain pointed at the API, which serves `pay.html`/`manage.html` itself
-  out of `customerPages.ts` and injects `window.CEYLON_HOP_API = location.origin` into every
-  page it serves. A second custom domain on the *same service* is therefore same-origin with
-  the API for free — no CORS work, no second deployment, no second codebase. The name
-  matters: the mint already returns `/p` rather than `/pay.html` because of *"eight
-  characters off a link that a customer reads immediately before being asked for money"*.
-  A proposal sent from a domain called **pay** presumes the sale.
-  **Both hostnames stay one service.** A second deployment would create two customer-facing
-  surfaces that can drift — which is exactly the failure the pay/manage 404 saga was.
+  already a custom domain on the API, which serves `pay.html`/`manage.html` itself out of
+  `customerPages.ts` and injects `window.CEYLON_HOP_API = location.origin`. A second custom
+  domain on the *same service* is same-origin with the API for free — no CORS work, no second
+  deployment. The name matters: the mint already returns `/p` rather than `/pay.html` because
+  of *"eight characters off a link that a customer reads immediately before being asked for
+  money"*. A proposal sent from a domain called **pay** presumes the sale.
+  **Both hostnames stay one service** — a second deployment would create two customer-facing
+  surfaces that can drift, which is what the pay/manage 404 saga was.
 
 - **D3 — The quote link FOLLOWS the quote. The pay token PINS.** One URL, minted once, sent
-  once. It always renders the current version. Ops edits; the same link updates; ops says
-  "updated it, have another look". Tapping Pay is what mints a revision-pinned token and
-  freezes the amount.
-  This is the core decision. Every content save bumps `revision` (`quoteRepo.ts:578` —
-  *"a content write is a new revision, and that bump is what makes a pay link minted against
-  the old price refuse to be paid"*), so a *pinned* quote link would die on every round of
-  feedback. The owner's flow — send, they ask for edits, edit, send again, agree, send again
-  — would produce three URLs for one trip, each older one a dead end reading "This quote has
-  sailed off somewhere sunny". People scroll up in WhatsApp: they would tap the first link,
-  see the dead end, and believe the trip was gone while a live link sat ten messages below.
-  The safety property survives intact, because the freeze happens at commitment rather than
-  at sending: **nobody can be charged an amount they were not shown.**
+  once, always rendering the current version. Ops edits; the same link updates.
+  Every content save bumps `revision` (`quoteRepo.ts:578` — *"a content write is a new
+  revision, and that bump is what makes a pay link minted against the old price refuse to be
+  paid"*), so a *pinned* quote link would die on every round of feedback. The owner's flow —
+  send, they ask for edits, edit, send again, agree, send again — would produce three URLs
+  for one trip, each older one a dead end reading "This quote has sailed off somewhere
+  sunny". People scroll up in WhatsApp: they would tap the first link, see the dead end, and
+  believe the trip was gone while a live link sat ten messages below.
 
 - **D4 — The mint is idempotent and the URL is stable.** Pressing "Copy quote link" twice
-  yields a byte-identical URL — the same guarantee `payLinkSeq` already gives the pay link so
-  ops can re-copy a link it already sent. The owner intends to re-paste the link into the
-  chat rather than make the customer scroll: *"we might just keep sending becuase we may not
-  want the customer keep scrolling up to find the link"*. With a following link that is free.
+  yields a byte-identical URL — the guarantee `payLinkSeq` already gives the pay link. The
+  owner intends to re-paste rather than make the customer scroll: *"we might just keep
+  sending becuase we may not want the customer keep scrolling up to find the link"*.
 
-- **D5 — Read-only. The customer reads; ops writes.** No control on the page mutates the
-  quote: no editing, no date picking, no "request a change" form. If the customer wants
-  something different they message ops on WhatsApp, ops changes the quote, and the link
-  updates. Choosing *which of two offered services to buy* is not editing the quote — it is
-  choosing what to buy — and is the one customer action the page permits (D6).
+- **D5 — Read-only. The customer reads; ops writes.** No control mutates the quote. If the
+  customer wants something different they message ops, ops changes the quote, the link
+  updates.
 
-- **D6 — `requestedService` drives which options appear.** The field already exists, is
-  captured at intake, and a quote cannot reach `pending_review` or `ready` without it
-  (`internalQuote.ts:1264`). No new switch and no new ops control:
+- **D6 — No Pay button on the quote page. The money path is unreachable from a quote link.**
+  This is the decision that makes a shared or forwarded quote link safe. Every option card's
+  call to action is *"message us to book"* — a WhatsApp deep link. When the customer agrees,
+  ops mints and sends a `pay.ceylonhop.com` link in the thread they are already in.
+  A leaked quote link therefore exposes a name, an itinerary and a price, and **nothing it
+  can reach writes anything or starts a payment**. The pay link stays what it is today:
+  revision-pinned, and only in the hands of someone ops chose to send it to.
+  This also removes the entire "pay for the service that wasn't priced" problem. Because ops
+  mints the pay link *after* the customer chooses, ops sets the product — switching the
+  quote's service and minting is the existing workflow. No product discriminator in the pay
+  token, no `quoteToBooking` override, no derived-product pricing path, no new column.
+  **This feature changes nothing about how money moves.**
 
-  | `requestedService` | Page shows | Payable |
-  |---|---|---|
-  | `private` | one option | point-to-point |
-  | `chauffeur` | one option | chauffeur |
-  | `both` | two options side by side | either |
+- **D7 — `requestedService` drives which options appear.** The field exists, is captured at
+  intake, and a quote cannot reach `pending_review` or `ready` without it
+  (`internalQuote.ts:1264`). No new switch:
 
-- **D7 — Approving a `both` quote is the sign-off on both numbers.** A reviewer approving a
-  quote is looking at the ops service chooser with *both* totals on screen, priced against
-  the card being locked. No second approval concept is introduced. The existing review gate
-  is the gate.
+  | `requestedService` | Page shows |
+  |---|---|
+  | `private` | one option |
+  | `chauffeur` | one option |
+  | `both` | two options, side by side on wide screens, stacked on a phone |
 
-- **D8 — One shared projection, three consumers.** The margin-safe view-model of a trip is
-  extracted once and used by the quote page, the pay page, and the parked customer-quote
-  email. `sendCustomerQuote()` in `notifications.ts` already takes a decoupled
-  `CustomerQuoteView`, and its send-wiring has been parked since 2026-07-23 on the single
-  blocker *"there is no customer-facing view/book a quote page today"*. This build is that
-  page. Unifying the projection stops the three surfaces drifting in how they describe the
-  same trip.
+  Every card carries a price ops must be willing to honour, so approving a `both` quote is
+  the sign-off on both numbers — the reviewer sees both in the ops service chooser, priced
+  against the card being locked. The existing review gate is the gate.
 
-- **D9 — The share card carries the trip, never the total.** WhatsApp and Facebook fetch a
-  link preview once and cache it against the URL for days — the reason `shareCard.ts` writes
-  ride deadlines as fixed dates rather than countdowns. Because ops will re-send the same URL
-  after an edit (D4), a price in the preview would show the *old* number under a page showing
-  the new one. The card shows the route and the customer's name.
+- **D8 — Link liveness is status-driven. No TTL in the token.** Live while the quote is
+  `ready` or `sent`; dead when it is `lost`, `expired`, `won` or soft-deleted. This keeps the
+  URL byte-stable (D4) and gives ops an **instant kill switch** a timer cannot: marking a
+  quote lost kills its link immediately. The 180-day `expireStaleQuotes` sweep remains the
+  backstop.
+  A hard link TTL was considered and rejected: the sweep was raised 30 → 180 days precisely
+  because the team parks quotes in `sent` as a working state (44 live when measured, the
+  oldest 18 days old), so a short link timer would kill links on active quotes.
 
-- **D10 — Content is the map, the day-by-day itinerary, and the options.** Photos of the
-  destinations were considered and dropped: nothing maps a place name to a vetted photo, and
-  it is the one item here with no existing machinery behind it.
+- **D9 — A 7-day offer validity, stored and shown.** Separate from link liveness: this is how
+  long the *price* is honoured. Today it is honoured forever — ops quotes lock at approval
+  with `rateLockedUntil = null`. A new stored field is set when a quote is approved, and the
+  page shows "held until 12 August". Past it the page reads as **lapsed** and invites the
+  customer to get in touch for a current price.
+
+- **D10 — One shared projection, three consumers.** The margin-safe view-model is extracted
+  once and used by the quote page, the pay page, and the parked customer-quote email.
+  `sendCustomerQuote()` already takes a decoupled `CustomerQuoteView`, and its send-wiring has
+  been parked since 2026-07-23 on the single blocker *"there is no customer-facing view/book
+  a quote page today"*. This build is that page.
+
+- **D11 — The share card carries the trip, never the total.** WhatsApp and Facebook fetch a
+  preview once and cache it against the URL for days — the reason `shareCard.ts` writes ride
+  deadlines as fixed dates. Because ops re-sends the same URL after an edit (D4), a price in
+  the preview would show the old number under a page showing the new one.
+
+- **D12 — Content is the map, the day-by-day itinerary, and the options.** Photos of
+  destinations were considered and dropped: nothing maps a place name to a vetted photo.
 
 ## 3. What already exists (verified, not assumed)
 
 | Need | Already built |
 |---|---|
-| Both services priced | `serviceChooserData()` prices the itinerary **both** ways against the quote's **locked** rate card, with no maps round-trip (`internalQuote.ts:423`) |
+| Both services priced | `serviceChooserData()` prices the itinerary **both** ways against the quote's **locked** rate card, no maps round-trip (`internalQuote.ts:423`) |
 | Margin safety | Each side returns through `summary()` — total / deposit / amountDueNow only. No cost, no markup, no hot-zone annotation |
-| Route map | `CH_MAP.renderRoute(host, stops)` — numbered pins, intermediate stops, expand-to-fullscreen with a legend, cached route computation, placeholder fallback with no key |
-| Page copy | `payPageCopy()` — pure over the quote; returns product, greeting, title, subtitle, facts, legs, includedText, totalLabel |
-| Page serving | `customerPages.ts` serves customer HTML + assets from the API host and rewrites `CEYLON_HOP_API` to `location.origin` |
-| Expiry | `expireStaleQuotes()` closes `sent` quotes at 180 days off `sentAt`; `expired` is a reversible status |
-| Price-drift visibility | `customerTotal` baseline, stamped when a customer-facing link is minted |
+| Route map | `CH_MAP.renderRoute(host, stops)` — numbered pins, intermediate stops, expand-to-fullscreen, placeholder fallback with no key |
+| Page copy | `payPageCopy()` — pure; returns product, greeting, title, subtitle, facts, legs, includedText, totalLabel |
+| Page serving | `customerPages.ts` serves customer HTML + assets from the API host, rewriting `CEYLON_HOP_API` to `location.origin` |
+| Consent + analytics | `consent.js` and `analytics.js` are already in the served asset list |
+| Backstop expiry | `expireStaleQuotes()` closes `sent` quotes at 180 days off `sentAt`; `expired` is reversible |
 
-**Displaying two options needs no new pricing code and no data-model change.** *Selling* the
-option that was not priced does — see §6.1, which is the only part of this design that
-touches the money path.
+**This feature needs no new pricing code and no change to the money path.** The only schema
+change is D9's validity field.
 
 ## 4. Architecture
 
-Three new modules, one extraction, one page.
+```
+quote.ceylonhop.com/q?t=<token>     (new custom domain → same API service)
+   └─ GET /quote-view?t=            quoteView.ts → customerQuoteView projection
+```
 
-```
-quote.ceylonhop.com/q?t=<token>        (new custom domain → same API service)
-   │
-   ├─ GET  /quote-view?t=              quoteView.ts    → customerQuoteView projection
-   └─ POST /quote-view/pay-intent      quoteView.ts    → returns pay.ceylonhop.com/p?t=<pinned>
-                                                          for the chosen product
-```
+One endpoint. It reads, and nothing else.
 
 - **`api/src/quote/customerQuoteView.ts`** *(extraction)* — the margin-safe view-model.
   Absorbs `payPageCopy`'s output and adds the itinerary days, the map stops, and the option
-  set. Pure over `(quote, options)`; no request, no I/O; unit-testable without a server.
-  Consumed by `quoteView.ts`, `quotePay.ts` and `sendCustomerQuote()`.
-- **`api/src/routes/quoteView.ts`** *(new)* — the customer half of quote links. Same two
-  invariants as `quotePay.ts`, stated in its header: margin never reaches the wire, and
-  **neither route in this module ever writes to the quote** — including `pay-intent`, which
-  only validates and hands back a URL. Every write in this feature happens somewhere the
-  customer cannot reach: the ops mint (`customerTotal`) and `/quote-pay/start`
-  (`convertedBookingId`, `sold_product`).
-- **`quote.html`** *(new)* — added to `customerPages.ts`'s `PAGES`, served at `/q`.
-  Loads `ticket.css` for the shared travel-document language, plus its own stylesheet.
+  set. Pure over `(quote, options)`; no I/O; unit-testable without a server. Consumed by
+  `quoteView.ts`, `quotePay.ts` and `sendCustomerQuote()`.
+- **`api/src/routes/quoteView.ts`** *(new)* — two invariants in its header: margin never
+  reaches the wire, and **this module never writes**. There is no POST.
+- **`quote.html`** *(new)* — added to `customerPages.ts`'s `PAGES`, served at `/q`, loading
+  `ticket.css` plus its own stylesheet, `consent.js` and `analytics.js`.
 
-### 4.1 The following token
+### 4.1 The token
 
-A new token kind, deliberately **not** a variant of the pay token. Packed like the others in
+A new kind, deliberately not a variant of the pay token. Packed like the others in
 `bookingToken.ts`: `1 version + 1 purpose + 16 uuid = 18 bytes`, `PURPOSE_QUOTE_VIEW = 0x02`,
-disjoint from `PURPOSE_QUOTE_PAY`. **It carries no revision and no seq**, so it cannot pin —
-following is a property of the type, not of a branch in the code.
-
+disjoint from `PURPOSE_QUOTE_PAY`. **No revision, no seq, no expiry** — following is a
+property of the type, not a branch in the code, and liveness is read from the quote (D8).
 `signQuoteViewToken(quoteId, secret)` is deterministic, which is what makes D4 free.
+
+A view token must be rejected by `verifyQuotePayToken` and vice versa.
 
 ### 4.2 State machine
 
-Simpler than the pay page's, because `revised` cannot occur:
-
 | State | When | Page |
 |---|---|---|
-| `live` | status `ready` or `sent` | the proposal |
-| `booked` | quote `won`, or a settled booking | keepsake, reusing the pay page's paid screen language |
-| `unavailable` | any other status, soft-deleted, expired, bad token | the "sailed off" screen |
+| `live` | `ready` or `sent`, within the validity window | the proposal |
+| `lapsed` | `ready` or `sent`, past `offerValidUntil` | the proposal, prices marked out of date, invited to get in touch |
+| `booked` | `won`, or a settled booking | keepsake |
+| `unavailable` | any other status, soft-deleted, bad token | the "sailed off" screen |
 
-`unavailable` is deliberately **soft** — no detail leak, same as `/quote-pay/view` returning
+`unavailable` is deliberately **soft** — no detail leak, matching `/quote-pay/view` returning
 `{state:'unavailable'}` with a 200 for an unverifiable token.
+
+### 4.3 Caching
+
+`/quote-view` responses must be sent `Cache-Control: no-store`. A following link whose
+response is cached anywhere — CDN, proxy, browser — silently becomes a pinned link, which is
+the exact behaviour D3 exists to avoid, failing in the way that is hardest to notice because
+it works for whoever tests it first. **Verify whether Cloudflare proxies this hostname before
+launch**, and assert the header in a route test.
+
+### 4.4 Map cost
+
+`routeCache` in `ch-map.js` is memoised **per page load** (its own comment says so), so today
+every open bills one `computeRoutes` call. This page is designed to be opened repeatedly and
+forwarded to a travel group, and D4 encourages re-sending the link — so the naive wiring
+turns one quote into dozens of billable calls.
+
+Two mitigations, both required:
+
+1. **Server-side route cache**, keyed on the ordered stop list and shared across quotes. Route
+   geometry for a given stop chain is stable, and the same corridors recur constantly across
+   quotes, so the hit rate is high. The client renders from the cached geometry and only
+   computes live on a miss.
+2. **Defer the map** until it scrolls into view, so an open that never reaches it costs
+   nothing.
 
 ## 5. The page
 
-Four blocks, top to bottom. The design language is `ticket.css`; this is a proposal, so it
-breathes more than the pay ticket does.
+Mobile-first: these links are opened from WhatsApp, so the ~375px layout is the primary
+design and the wide layout is the variant. Four blocks.
 
-1. **Header** — greeting by first name, and the trip title and subtitle from the shared
-   projection.
-   **No "held until" date.** Ops quotes lock at approval with `rateLockedUntil = null` —
-   they carry no rate-lock expiry (`rateLock.ts:8`), and the only other clock is the 180-day
-   `sent` hygiene sweep, which is not a promise to a customer. A validity date on this page
-   would be a commitment nothing enforces. If the business wants one, it needs to be a real
-   stored field first.
-2. **Route map** — `CH_MAP.renderRoute()` over the quote's stops, expandable. Falls back to
-   the SVG placeholder when there is no key or routing fails, exactly as `booking.js` does.
-3. **Day by day** — the itinerary as *days*, not the pay page's compact hop rail: date,
-   route, distance, and what happens that day. Idle / `stay_day` legs are named honestly, but
-   **not** surfaced as a priced sightseeing or rest line — chauffeur idle-day pricing is
-   deliberately understated in quotes and must stay that way.
-4. **Options** — one card, or two when `requestedService === 'both'`. Each card carries its
-   total, what that service includes, **its own cancellation ladder** (chauffeur is capped at
-   80% ten days out; a transfer is fully refundable to 24 hours — `pay.html` already switches
-   on product and this must too), and its Pay button.
+1. **Header** — greeting by first name, trip title and subtitle from the shared projection,
+   and **"held until <date>"** from D9's stored field.
+2. **Route map** — `CH_MAP.renderRoute()` over the quote's stops, expandable, deferred until
+   visible (§4.4). Falls back to the SVG placeholder when there is no key or routing fails,
+   as `booking.js` does. `ch-map.js` fixes the inline height at 260px; the quote page needs
+   its own height on a phone rather than inheriting that.
+3. **Day by day** — the itinerary as *days*, not the pay page's compact hop rail.
+4. **Options** — one card, or two when `requestedService === 'both'`: side by side on wide
+   screens, **stacked on a phone**. Each carries its total, what that service includes, its
+   own cancellation ladder (chauffeur is capped at 80% ten days out; a transfer is fully
+   refundable to 24 hours — `pay.html` already switches on product and this must too), and a
+   **"message us to book"** WhatsApp CTA. No Pay button (D6).
 
-Below that: a WhatsApp line, which is the only route for anything the customer wants changed.
+### 5.1 What a day row is built from
 
-### 5.1 Degrading to one card on a `both` quote
+There is **no free-text per-day description anywhere in the data**. `ToolLegSchema` carries
+`category`, `date`, `from`, `to`, `distanceKm`, `stops[]` and fee flags; quote-level `notes`
+is the send-back reason field, not a customer description. So a day row is generated from
+structured fields only:
+
+| Leg | Renders as |
+|---|---|
+| driving (`transfer`, `airport`, `train_support`) | date · `from → to`, or the stop chain when `stops[]` is present · distance |
+| `stay_day` | date · "in <place>" — named, and nothing more |
+| `addSightseeingFee` / `addWaitingFee` / `addSafariWait` | included time on that day, phrased as inclusion, never as a priced line |
+
+Chauffeur idle-day pricing is deliberately understated in quotes and must stay that way: a
+`stay_day` is never surfaced as a priced sightseeing or rest line.
+
+An ops-authored per-day description would make this page substantially better, but it is a
+new field plus new ops UI — see §10.
+
+### 5.2 Degrading to one card on a `both` quote
 
 `serviceChooserData` returns `{error: 'single-day — point-to-point only'}` for a one-day trip
 and `{error: 'add a date to every leg'}` when any leg is undated — and tours default to blank
-dates. On a `both` quote where chauffeur cannot be priced, the page shows the one option it
-has. It must read as a complete page, not a broken two-card layout with a hole in it. Ops
-sees the same error in the chooser at review time, so this is visible before sending.
+dates. The page then shows the one option it has, and must read as a complete page rather
+than a two-card layout with a hole in it. Ops sees the same error in the chooser at review
+time, so it is visible before sending.
 
-## 6. Paying — the handoff
+## 6. Booking — the handoff
 
-Tapping Pay on an option calls `POST /quote-view/pay-intent {t, product}`. The server
-validates the token and the product against `requestedService`, then returns the existing
-`pay.ceylonhop.com/p?t=<pinned>` URL. **The customer changes host at the moment they commit**
-— a small, honest signal that something changed. The entire existing pay flow, its dead-end
-screens, its decline recovery and its PayHere handoff are untouched.
-
-### 6.1 Paying for the service that was not priced
-
-On a `both` quote, one service is the quote's priced product and the other is a recompute.
-Selling the recompute is a **money-path change** and needs the same rigor as the pay link
-itself. It is bounded to `both` quotes:
-
-- **Pay token v4** adds a 1-byte product discriminator. `0` = "the quote's priced product",
-  which is what every existing v1/v2/v3 link means — so all live links keep working
-  unchanged.
-- `/quote-pay/view` and `/start` resolve the effective product from the token, price it via
-  `toEngineRequest(tool, product)` against the **locked** card — the same call
-  `serviceChooserData` already makes, so there is one pricing path, not two — and charge that
-  total.
-- `quoteToBooking()` takes a product override so the booking, the driver's itinerary and the
-  confirmation email describe what was actually bought.
-- The chosen product is written to the quote at booking creation (`sold_product`), so ops can
-  see which option won. Without it the quote and its booking disagree about the product
-  forever.
-
-**Partial pay links stay scoped to the priced product.** A partial selection over a derived
-product is a combination with no owner demand and a large test surface; it is explicitly out
-of scope. `/pay-link` must refuse it rather than mint something untested.
+There is no handoff in software. The customer messages ops; ops mints the existing pay link
+and sends it. The pay flow, its dead-end screens, its decline recovery and its PayHere
+handoff are untouched, and no code in this feature can start a payment (D6).
 
 ## 7. Ops surface
 
-One button in the quote builder beside "Payment link": **"Quote link"** — mint, copy, say so,
-go quiet, exactly the one-press behaviour `copyPayLink()` already implements. Mintable from
-`ready` and `sent`, the same gate as the pay link, and like it, minting does **not** move the
-quote's status.
+One button beside "Payment link": **"Quote link"** — mint, copy, say so, go quiet, the
+one-press behaviour `copyPayLink()` already implements. Mintable from `ready` and `sent`, the
+same gate as the pay link, and like it, minting does not move the quote's status.
 
-Minting stamps the `customerTotal` drift baseline, for the same reason the pay link does:
-minting is a customer-facing moment, and with a following link the number can now move under
-a customer who has already looked. The drift indicator is how ops sees that happened.
+Minting stamps the `customerTotal` drift baseline, for the reason the pay link does: minting
+is a customer-facing moment, and with a following link the number can move under a customer
+who has already looked. The drift indicator is how ops sees that happened.
+
+**D9's validity field** is set on the transition into `ready`, as approval date + 7 days, and
+reset on re-approval. It gates the quote page's display only — it does **not** block minting
+a pay link, because honouring a lapsed offer is ops's call to make.
 
 ## 8. Error handling
 
@@ -249,7 +272,7 @@ a customer who has already looked. The drift indicator is how ops sees that happ
   referrer-restricted: `quote.ceylonhop.com` **must** be added to the allow-list or the map
   silently falls back with no error — the same trap as 127.0.0.1.
 - **Bad / unverifiable token** → soft `unavailable`, no detail leak.
-- **Quote un-priceable or legacy row** → `unavailable` rather than a 500. `lockedEstimate()`
+- **Quote un-priceable or legacy row** → `unavailable`, never a 500. `lockedEstimate()`
   already degrades to `null` for a corrupt lock snapshot; the page must too.
 - **`QUOTE_BASE_URL` unset** → the mint returns 503 `quote_links_unavailable`, matching how
   pay links already fail closed rather than minting a broken URL.
@@ -257,44 +280,33 @@ a customer who has already looked. The drift indicator is how ops sees that happ
 ## 9. Testing
 
 - **Unit** — `customerQuoteView` over the golden quotes: single, multi-leg, chauffeur, `both`,
-  `both`-with-unpriceable-chauffeur, undated legs, soft-deleted. Assert **no margin field on
-  any path** (the pay page's margin tests are the template).
-- **Route** — the state machine across every quote status; the soft-unavailable contract; a
-  token for a quote that gets edited still renders (the following property, asserted
-  directly); `pay-intent` refuses a product the quote never offered.
-- **Token** — v4 round-trip; v1/v2/v3 links still verify and resolve to the priced product;
-  a view token is rejected by `verifyQuotePayToken` and vice versa.
-- **e2e** (`web-tests/`) — open a live quote link, assert the map host and the day rows
-  render, tap Pay, land on `/p`. Per the repo's own e2e lesson: **act, then verify** — assert
-  against the state after the action, not the state that raced it.
-- **Regression** — an existing pay link minted before this change still pays the same amount.
+  `both`-with-unpriceable-chauffeur, undated legs, multi-stop legs, soft-deleted. Assert **no
+  margin field on any path** (the pay page's margin tests are the template). Day-row
+  generation per leg category, including that a `stay_day` never renders a price.
+- **Route** — the state machine across every quote status; the `lapsed` boundary either side
+  of `offerValidUntil`; the soft-unavailable contract; **`Cache-Control: no-store` asserted**;
+  and the following property asserted directly — a token for a quote that is then edited
+  still renders, showing the new content.
+- **Token** — round-trip; a view token rejected by `verifyQuotePayToken` and vice versa.
+- **Migration** — the validity column auto-applies on boot (merging it is its release), so it
+  must be nullable and every existing quote must render with it null.
+- **e2e** (`web-tests/`) — open a live quote link on a mobile viewport, assert the map host,
+  the day rows and both option cards render stacked. Per the repo's e2e lesson: **act, then
+  verify** — assert against the state after the action, not the state that raced it.
+- **Regression** — pay links and the pay page are untouched by this branch; the existing pay
+  suites must pass unchanged.
 
-## 10. Build order
+## 10. Out of scope
 
-Two phases, because §6.1 is the only part that can charge a card and it should not ride in on
-the same PR as a new page. Both phases are in scope — this is sequencing, not a reduction.
-
-- **Phase 1 — the page.** New hostname, view token, `quoteView.ts`, the
-  `customerQuoteView` extraction, `quote.html` with the map and the day-by-day itinerary, and
-  the option cards. On a `both` quote both cards show both prices; the Pay button is live on
-  the **priced** service and the other card's button routes to WhatsApp. Ships a complete,
-  useful page with **zero change to the money path**.
-- **Phase 2 — either option payable.** Pay token v4, product resolution in
-  `/quote-pay/view` and `/start`, the `quoteToBooking` product override, and `sold_product`.
-  Turns the second card's button live.
-
-Phase 1 is worth shipping alone: `both` is the minority case, and every quote benefits from
-the page.
-
-## 11. Out of scope
-
-- Photos of destinations (D10).
-- Partial pay links over a derived product (§6.1).
+- Photos of destinations (D12).
+- An ops-authored per-day description (§5.1) — a real improvement, but a new field plus ops
+  UI, and the page is useful without it.
 - Customer-initiated edits of any kind (D5).
-- Wiring `sendCustomerQuote()` to actually send. This build removes its blocker and shares
-  its projection; turning the send on is a follow-up, and a small one.
+- Any change to the money path (D6).
+- Wiring `sendCustomerQuote()` to send. This build removes its blocker and shares its
+  projection; turning the send on is a small follow-up.
 
-## 12. Follow-ups this unblocks
+## 11. Follow-ups this unblocks
 
 1. **The parked customer-quote email** — template built and approved since 2026-07-23,
    blocked only on a Book-link destination. That destination now exists.
