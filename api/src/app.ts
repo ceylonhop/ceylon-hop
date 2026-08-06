@@ -46,6 +46,7 @@ import {
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
+import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
@@ -79,6 +80,8 @@ export interface AppDeps {
   bookingBaseUrl?: string;
   /** Origin the customer pay/manage links are built from; defaults to PAY_BASE_URL, then the site. */
   payBaseUrl?: string;
+  /** Origin the customer QUOTE links are built from; defaults to QUOTE_BASE_URL, then payBaseUrl. */
+  quoteBaseUrl?: string;
   // Public origin share links are built from — the ride domain (e.g. https://ride.ceylonhop.com),
   // which is a second custom domain on this same service. Unset = use the request's own host.
   shareBaseUrl?: string;
@@ -102,6 +105,9 @@ export interface AppDeps {
   digestTo?: string;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
+  // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
+  // offerValidUntil without waiting on the real clock. Defaults to Date.now.
+  now?: () => number;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -162,6 +168,7 @@ export function createApp(deps: AppDeps = {}) {
   // resolve differently again.
   // Declared HERE rather than at its first use: bookingRoutes is mounted well above and needs it.
   const payBaseUrl = deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL;
+  const quoteBaseUrl = deps.quoteBaseUrl ?? (config.QUOTE_BASE_URL || undefined) ?? payBaseUrl;
   // Which PayHere the server would hand a customer: 'off' with no merchant creds (the
   // fake adapter), else the configured mode. Surfaced to ops so a sandbox link is
   // labelled as one (spec 2026-07-31) — a sandbox payment marks real bookings Paid.
@@ -343,7 +350,12 @@ export function createApp(deps: AppDeps = {}) {
   // mount below, whose /:code route would otherwise match /pay.html and answer 404.
   // `quotes` + the link secret enable the per-token WhatsApp share card on pay.html; without
   // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
-  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl }));
+  // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
+  // READS ONLY — no route in it can start a payment (spec D6).
+  app.route('/quote-view', quoteViewRoutes({
+    quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+  }));
+  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
@@ -368,6 +380,7 @@ export function createApp(deps: AppDeps = {}) {
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
+    quoteBaseUrl,
     linkSecret: bookingLinkSecret,
     payhereMode,
   }));

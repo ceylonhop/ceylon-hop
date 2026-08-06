@@ -288,6 +288,13 @@
       "when": 1786344800000,
       "tag": "0040_quote_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786431200000,
+      "tag": "0041_quote_offer_validity",
+      "breakpoints": true
     }
   ]
 }

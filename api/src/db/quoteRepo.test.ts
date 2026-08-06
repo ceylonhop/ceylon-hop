@@ -708,3 +708,16 @@ describe('quote revision history — customer web-edit path', () => {
     expect(await repo.listRevisions(q.id)).toHaveLength(0);
   });
 });
+
+// Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured, as distinct from how
+// long the quote link works.
+describe('offerValidUntil', () => {
+  it('round-trips offerValidUntil through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    expect(saved.offerValidUntil).toBeNull();
+    const when = new Date('2026-08-12T00:00:00Z');
+    const patched = await repo.patch(saved.id, { offerValidUntil: when });
+    expect(patched!.offerValidUntil?.toISOString()).toBe(when.toISOString());
+  });
+});
