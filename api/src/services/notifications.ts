@@ -1,4 +1,5 @@
 import type { Booking } from '../db/bookingRepo';
+import { shortPlace } from '../quote/shortPlace';
 import type { EmailAdapter } from '../adapters/email';
 import { corridorRouteEnds } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
@@ -74,7 +75,8 @@ function journey(booking: Booking): Stop[] {
       return {
         color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
         label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
-        place: s,
+        // Short labels (2026-08-06) — an email column is narrow, and a full address swamps it.
+        place: shortPlace(s),
         sub: parts.join(' · ') || undefined,
       };
     });
@@ -86,8 +88,8 @@ function journey(booking: Booking): Stop[] {
     return [{ color: TEAL, label: 'Service', place: ends ? `${ends.from} – ${ends.to} shared shuttle` : 'Shared ride' }];
   }
   return [
-    { color: TEAL_DEEP, label: 'Pickup', place: booking.input.from },
-    { color: TOMATO, label: 'Drop-off', place: booking.input.to },
+    { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(booking.input.from) },
+    { color: TOMATO, label: 'Drop-off', place: shortPlace(booking.input.to) },
   ];
 }
 
@@ -139,12 +141,12 @@ function factRows(booking: Booking): [string, string][] {
 }
 
 export function routeText(booking: Booking): string {
-  if (booking.mode === 'trip') return booking.input.stops.join(' → ');
+  if (booking.mode === 'trip') return booking.input.stops.map(shortPlace).join(' → ');
   if (booking.mode === 'shared') {
     const ends = corridorRouteEnds(booking.input.corridorId);
     return ends ? `Shared shuttle · ${ends.from} – ${ends.to}` : 'Shared ride';
   }
-  return `${booking.input.from} → ${booking.input.to}`;
+  return `${shortPlace(booking.input.from)} → ${shortPlace(booking.input.to)}`;
 }
 
 function cancellationPolicy(booking: Booking): string {
