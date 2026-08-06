@@ -216,12 +216,15 @@ test('sailed-off screen animation is guarded for reduced motion', async ({ page 
   expect(anim).toBe('none');
 });
 
-test('continuing keeps the form on screen with a pending button; a failure restores it', async ({ page }) => {
+test('continuing hands off immediately; a failure restores the form with what was typed', async ({ page }) => {
   await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
-  // /start answers slowly, then with a named-field error — long enough for the pending
-  // state to be assertable, honest enough to exercise the recovery path. Owner call
-  // (2026-08-01): the full-screen interstitial must NOT appear during the start/checkout
-  // round-trips — on a cold API that blocked the customer behind a takeover for seconds.
+  // /start answers slowly, then with a named-field error — long enough for the hand-off screen
+  // to be assertable, honest enough to exercise the recovery path.
+  //
+  // REVERSES the 2026-08-01 rule this test used to enforce ("no takeover during the round-trips;
+  // the wait stays on the button"). Owner, 2026-08-05, after watching the real flow: pressing
+  // Continue must land on "Taking you to PayHere…" straight away. The old rule existed because
+  // the takeover then LIED — it claimed a window was opening over us. It no longer does.
   await page.route('**/quotes/pay/start', async (r) => {
     await new Promise((res) => setTimeout(res, 600));
     await r.fulfill({ status: 400, contentType: 'application/json',
@@ -239,13 +242,11 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
 
-  // While the API works: the FORM stays put, the button carries the wait — no takeover.
-  await expect(page.locator('#gobtn')).toBeDisabled();
-  await expect(page.locator('#gobtn')).toHaveText('Opening secure payment…');
-  await expect(page.locator('#f-email')).toBeVisible();
-  await expect(page.locator('.pp-loading')).toHaveCount(0);
+  // While the API works: the hand-off screen holds the stage, so the press is unmistakable.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
 
-  // The failure re-arms the same form WITH what the customer typed, plus the error.
+  // The failure drops them back on the same form WITH what they typed, plus the error — a dead
+  // API must never strand a payer behind a spinner.
   await expect(page.locator('#gobtn')).toBeEnabled();
   await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
   await expect(page.locator('#f-email')).toHaveValue('nimal@@typo');
@@ -632,8 +633,10 @@ test('coming back from Back to Site resumes the form instead of confirming forev
   });
   await page.goto('/pay.html?rt=return-token-1&c=1');
 
-  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 15000 });
-  await expect(page.locator('#payerr')).toContainText('nothing was charged');
+  // The form comes back fast with a truthful holding line, and settles on the cancel wording
+  // once polling gives up. Both must say plainly that no money moved.
+  await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
   // NOT a decline — the bank-call steps would be noise to someone who changed their mind.
   await expect(page.locator('#payhelp')).toBeHidden();
   // Their details survived, so retrying is one tap.
@@ -678,16 +681,17 @@ test('pressing Continue twice starts exactly one checkout', async ({ page }) => 
   await page.locator('#f-bcountry').selectOption('United States');
   await page.locator('#f-terms').check();
 
-  const go = page.locator('#gobtn');
-  await go.click();
-  // The press must LOOK like it is working, or the payer presses again — which is how this bug
-  // was reported in the first place.
-  await expect(go).toBeDisabled();
-  await expect(go).toHaveAttribute('aria-busy', 'true');
-  await expect(page.locator('#gobtn .cta-spin')).toBeVisible();
-
-  await go.click({ force: true }).catch(() => {});
-  await go.click({ force: true }).catch(() => {});
+  // Three clicks dispatched SYNCHRONOUSLY, in one task, before the browser can repaint. This is
+  // the real shape of the bug — a double-tap landing inside a single frame — and it is why
+  // `disabled` alone cannot be the guard: nothing has re-rendered yet when the second lands.
+  await page.evaluate(() => {
+    const b = document.getElementById('gobtn');
+    b.click(); b.click(); b.click();
+  });
+  // Pressing goes STRAIGHT to the hand-off screen (owner, 2026-08-05), so the feedback is
+  // unmistakable and the button is gone for any later press.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('#gobtn')).toHaveCount(0);
   await page.waitForURL(/sandbox\.payhere\.lk/);
   expect(starts).toBe(1);
 });
@@ -713,10 +717,37 @@ test('the interstitial names PayHere, the amount, and the merchant line they wil
   await page.locator('#gobtn').click();
 
   await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
-  await expect(page.locator('.pp-loading .lead')).toContainText('never see your card details');
+  await expect(page.locator('.pp-loading .lead').first()).toContainText('never see your card details');
+  // The hand-off drawn as well as described: us, a gap, them.
+  await expect(page.locator('.pp-hop .chip')).toHaveCount(2);
+  // PayHere parks the payer behind a manual "Back to Site"; not saying so loses confirmations.
+  await expect(page.locator('.pp-loading')).toContainText('Back to Site');
   // The amount appears exactly once, in the preview card — not twice on one short screen.
   await expect(page.locator('.pp-loading .amt')).toHaveCount(0);
   // The merchant line as PayHere actually prints it — the anti-surprise cue.
   await expect(page.locator('.pp-expect .who')).toHaveText('Ceylon Hop (PVT) LTD');
   await expect(page.locator('.pp-expect .amt2')).toHaveText('$498.85');
+});
+
+// Owner-reported 2026-08-05: the return screen held the stage far too long before showing
+// anything useful. Waiting is now decoupled from what is on screen — the form comes back fast
+// and the polling continues underneath.
+test('the return screen gives the form back quickly instead of holding a spinner', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  // Never answers — the worst case for perceived speed.
+  await page.route('**/bookings/pay-return*', async () => { await new Promise(() => {}); });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  const t0 = Date.now();
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+  await expect(page.locator('#gobtn')).toBeVisible({ timeout: 6000 });
+  expect(Date.now() - t0).toBeLessThan(6000);
+  await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
+  await expect(page.locator('#payerr')).toContainText('nothing has been charged');
 });
