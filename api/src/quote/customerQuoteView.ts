@@ -18,8 +18,6 @@ export interface QuoteViewOption {
   includedText: string;
   totalCents: number;
   totalUsd: string;
-  deltaUsd: string | null;
-  deltaText: string | null;
   cancellation: { headline: string; ladder: string[] };
   lead: boolean;
   waText: string;
@@ -92,12 +90,12 @@ const COPY = {
     // Not "your time is your own" — the lead card's included box already ends with that exact
     // sentence (it reuses payPageCopy's wording for pay-page parity), and the two collided on
     // the live page. This line instead carries the differentiator the comparison turns on.
-    blurb: "A fresh car and driver for each journey — you only pay for the days you're moving.",
+    blurb: "The lowest-cost way to do this trip — you only pay for the days you're moving.",
     included: 'Air-conditioned car with an English-speaking driver · fuel, tolls and parking · every pickup at your door.',
   },
   chauffeur: {
     name: 'Chauffeur & guide',
-    blurb: "The same car and driver stay with you for the whole trip, including the days you're not moving.",
+    blurb: 'Total flexibility — your own driver-guide from start to finish, stopping wherever you like.',
     // "Everything in X, plus" — pricing-table grammar. The two cards' included boxes used to be
     // near-identical feature lists, so scanning them answered nothing about what the extra money
     // buys; this one now lists only the difference.
@@ -132,18 +130,6 @@ function mapStopsOf(quote: ViewQuote): string[] {
     }
   }
   return out;
-}
-
-// Whole-trip span in days, first to last leg date inclusive — the denominator for the delta's
-// per-day reframing. null when any needed date is missing; the per-day line simply doesn't
-// render then, rather than being invented.
-function tripSpanDays(quote: ViewQuote): number | null {
-  const times = legsOf(quote)
-    .map((l) => Date.parse(String(l.date ?? '').slice(0, 10) + 'T00:00:00Z'))
-    .filter((t) => !Number.isNaN(t));
-  if (!times.length) return null;
-  const days = Math.round((Math.max(...times) - Math.min(...times)) / 86_400_000) + 1;
-  return days >= 1 ? days : null;
 }
 
 export function customerQuoteView(
@@ -182,33 +168,19 @@ export function customerQuoteView(
       ? `Hi! I'd like to book the ${label} option for quote ${quote.reference}`
       : `Hi! I have a question about quote ${quote.reference}`;
 
-  const span = tripSpanDays(quote);
-  const deltaTextFor = (service: 'private' | 'chauffeur', diff: number | null): string | null => {
-    if (diff == null || diff <= 0) return null;
-    if (service !== 'chauffeur') return `+${usd(diff)} — you travel journey by journey`;
-    const perDay = span != null && span >= 2 ? Math.round(diff / 100 / span) : null;
-    return perDay != null && perDay >= 1
-      ? `+${usd(diff)} for the whole trip — about $${perDay} a day for your own driver-guide`
-      : `+${usd(diff)} — your driver stays with you throughout`;
-  };
-
+  // Both cards use THIS file's copy, not payPageCopy's inclusion sentence (owner, 2026-08-06).
+  // The pay-page-parity reuse put "your time is your own" in the lead card twice and left the
+  // two included boxes scanning as near-identical lists — on the comparison card the job is a
+  // value proposition, and the two must read as parallel statements of what each buys.
   const build = (service: 'private' | 'chauffeur', cents: number, lead: boolean): QuoteViewOption => {
     const c = COPY[service];
-    const diff = lead ? null : cents - pricedTotal;
     return {
       service,
       name: c.name,
       blurb: c.blurb,
-      // The priced option reuses payPageCopy's own inclusion sentence, so the quote page and the
-      // pay page describe the same purchase in the same words.
-      includedText: lead ? copy.includedText : c.included,
+      includedText: c.included,
       totalCents: cents,
       totalUsd: usd(cents),
-      deltaUsd: diff == null || diff <= 0 ? null : `+${usd(diff)}`,
-      // "+$112 for the whole trip — about $12 a day" (owner, 2026-08-06): the same fact, priced
-      // per day, is how an upsell reads as small. Only for the chauffeur upsell, only when the
-      // trip's dates give an honest denominator, and never rounded below $1.
-      deltaText: deltaTextFor(service, diff),
       cancellation: { headline: CANCELLATION[service].headline, ladder: [...CANCELLATION[service].ladder] },
       lead,
       waText: waFor(c.name),

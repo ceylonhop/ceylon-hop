@@ -42,9 +42,6 @@
 .ticket{margin-top:16px}
 .pp-cta{white-space:normal;line-height:1.25}
 
-/* critique #8: the delta does the arithmetic the customer shouldn't have to */
-.delta{margin-top:5px;font-size:.76rem;font-weight:700;color:var(--accent-deep)}
-
 /* map — page-specific, inline like pay.html's leg rail. Height is NOT fixed: ch-map.js's own
    .ch-map-wrap sets itself to 260px once a real route loads, and clipping that to a shorter
    box (rather than letting the ticket grow) is worse than the extra 50px. The static fallback
@@ -75,8 +72,18 @@
    Option columns switch on the COLUMN's width, not the viewport's. A viewport media query
    here fired inside narrow embeds and crushed both cards into half a phone. */
 .opts{margin-top:4px;display:grid;gap:14px}
+/* Side-by-side cards are EQUAL tiles (owner, 2026-08-06): stretch to one height, and the
+   CTA + helper pin to the bottom so the two buttons sit on the same line no matter how the
+   copy above them differs. Without this the totals, buttons and card edges all landed at
+   different heights and the pair read as two unrelated designs. */
+.opts.two{align-items:stretch}
+.opts .ticket{display:flex}
+.opts .t-main{display:flex;flex-direction:column;flex:1;min-width:0}
+.opts .tot{margin-top:13px}
+.opts .pp-cta{margin-top:auto}
+.opts .dt-pol{margin-bottom:13px}
 .opts>*{min-width:0}
-@container (min-width:560px){.opts.two{grid-template-columns:1fr 1fr;align-items:start}}
+@container (min-width:560px){.opts.two{grid-template-columns:1fr 1fr}}
 .opt-lead{border-color:#c9e8e4;box-shadow:0 0 0 3px rgba(10,185,182,.09),var(--shadow-s)}
 .opt-n{font-family:var(--display);font-weight:800;font-size:1.2rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
 .opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
