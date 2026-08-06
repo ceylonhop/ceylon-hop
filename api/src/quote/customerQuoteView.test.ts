@@ -175,3 +175,25 @@ describe('customerQuoteView', () => {
     expect(v.heroTotalUsd).toBe('$0');
   });
 });
+
+// The page must never print a number the pay link would not charge. The pay link charges the
+// STORED total (quotePay.ts: soldCents ?? totalCents); approval snapshots the rate card without
+// re-writing totalCents, so a recompute can legitimately differ from it after a rate-card deploy.
+describe('the lead option is the stored, approved total', () => {
+  it('shows the stored total even when the recompute disagrees', () => {
+    const v = customerQuoteView(
+      quote({ totalCents: 84_000 }),
+      { pointToPoint: { totalCents: 79_500 }, chauffeur: null }, // recompute drifted down
+    );
+    expect(v.options[0].totalUsd).toBe('$840');
+    expect(v.heroTotalUsd).toBe('$840');
+  });
+
+  it('measures the secondary option delta against the stored total', () => {
+    const v = customerQuoteView(
+      quote({ totalCents: 84_000, requestedService: 'both' }),
+      { pointToPoint: { totalCents: 79_500 }, chauffeur: { totalCents: 118_000 } },
+    );
+    expect(v.options[1].deltaUsd).toBe('+$340'); // 1180 - 840, not 1180 - 795
+  });
+});

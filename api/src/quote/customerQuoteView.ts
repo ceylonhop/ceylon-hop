@@ -145,7 +145,18 @@ export function customerQuoteView(
 
   // The priced service always falls back to the STORED total: it is the number that was
   // approved, and a recompute must never quietly outrank it.
-  const pricedTotal = totalFor(priced) ?? quote.totalCents;
+  // THE STORED TOTAL WINS for the service that was priced — never the recompute.
+  //
+  // What this page shows must equal what the pay link charges, and the pay link charges the
+  // STORED figure (`quotePay.ts`: soldCents ?? totalCents). Approval snapshots the rate card but
+  // never re-writes totalCents, so a quote saved before a rate-card deploy and approved after it
+  // has a snapshot from the new card and a total from the old one. Preferring the recompute here
+  // would print one number on the proposal and charge another at checkout — and the price-drift
+  // indicator could not catch it, since that compares two stored figures.
+  //
+  // The secondary option has no stored counterpart, so it is necessarily a recompute; that is
+  // fine, because ops re-prices the quote before any of it can be charged.
+  const pricedTotal = quote.totalCents;
   const otherTotal = wantsBoth ? totalFor(other) : null;
 
   const waFor = (label: string | null) =>

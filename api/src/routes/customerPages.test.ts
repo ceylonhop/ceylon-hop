@@ -14,7 +14,7 @@ const get = (path: string) => app.request(path);
 
 describe('customer pay pages are served by the API host', () => {
   it('serves pay.html and manage.html as HTML, not 404', async () => {
-    for (const page of ['/pay.html', '/manage.html']) {
+    for (const page of ['/pay.html', '/manage.html', '/quote.html']) {
       const res = await get(page);
       expect(res.status, `${page} must not 404 — this is the staging bug`).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/html');
