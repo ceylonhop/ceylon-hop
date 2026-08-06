@@ -101,6 +101,21 @@ describe('customer pay pages are served by the API host', () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('<!doctype html>');
   });
+
+  it('serves the quote page at /q and /quote.html with the API origin injected', async () => {
+    for (const path of ['/q', '/quote.html']) {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('window.CEYLON_HOP_API=location.origin');
+      expect(html).toContain('quote.css');
+    }
+  });
+
+  it('serves quote.css and ch-map.js', async () => {
+    expect((await app.request('/quote.css')).status).toBe(200);
+    expect((await app.request('/ch-map.js')).status).toBe(200);
+  });
 });
 
 // ── WhatsApp share card (spec 2026-08-02) ────────────────────────────────────────────────

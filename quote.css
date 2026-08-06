@@ -1,0 +1,126 @@
+/* The customer quote page (spec 2026-08-05, docs/prototypes/customer-quote-page.html — the
+   approved design). Loads AFTER site.css + ticket.css and only adds what those two don't
+   already give pay.html/manage.html: the two design tokens ticket.css leans on without a
+   fallback, the wider column the map needs, and every page-specific piece (hero total,
+   held-until clock, map, option grid, day-by-day meta line). Anything identical to an
+   existing ticket.css/site.css rule was deliberately left OUT rather than copied — see the
+   prototype's own "THE PAGE" section for where each class came from. */
+
+:root{
+  /* ticket.css already uses these two custom properties (.t-ref, .t-stat.off, .included b,
+     .tot .l, .hop-d, .refchip, .next b) but neither site.css nor ticket.css ever DEFINES
+     them — every one of those rules has been resolving to an unset/inherited value. This
+     page leans on both even harder (.dt-pol, .opt-d, .map-foot, .stop-chain), so define them
+     here rather than let a new set of "faint" text silently render full-strength ink. */
+  --ink-faint:#8a8272;
+  --line-soft:#f0ece1;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+
+/* page column — ticket.css caps 470; the quote page widens to 660 for the map (D13).
+   container-type: the option grid switches on the COLUMN's width, not the viewport's — a
+   viewport media query fired inside a narrow embed (or the 375px phone mockups) and crushed
+   both option cards into half a phone (owner-caught, 2026-08-05). */
+.pp-wrap{max-width:660px;container-type:inline-size}
+/* Tighter than ticket.css's 16px: the hero total sits right under the subtitle here, where
+   ticket.css's pp-sub only ever had to lead into a single fact list. */
+.pp-sub{margin-bottom:10px}
+
+/* hero total — critique #1: the price leads. Newsreader money, same face as .tot .v */
+.hero-tot{display:flex;align-items:baseline;gap:9px;margin:2px 0 8px;flex-wrap:wrap}
+.hero-tot .v{font-family:var(--display);font-weight:800;font-size:1.6rem;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.hero-tot .k{font-size:.78rem;font-weight:600;color:var(--ink-soft)}
+
+/* held-until — the share card's clock treatment; .warn variant keeps ONE system across states */
+.held{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:800;color:var(--accent-deep)}
+.held svg{width:15px;height:15px;flex:none;stroke:currentColor}
+.held small{display:block;font-weight:600;font-size:.73rem;color:var(--ink-soft)}
+.held.warn{color:#96631a}
+
+/* This page piles several .ticket cards in one column (map, each option, the day-by-day)
+   where pay.html only ever shows one, so it needs the stacking gap ticket.css never had to
+   supply. pp-cta may wrap (critique #7): the longest CTA here is a full sentence, not a word. */
+.ticket{margin-top:16px}
+.pp-cta{white-space:normal;line-height:1.25}
+
+/* critique #8: the delta does the arithmetic the customer shouldn't have to */
+.delta{margin-top:5px;font-size:.76rem;font-weight:700;color:var(--accent-deep)}
+
+/* map — page-specific, inline like pay.html's leg rail. Height is NOT fixed: ch-map.js's own
+   .ch-map-wrap sets itself to 260px once a real route loads, and clipping that to a shorter
+   box (rather than letting the ticket grow) is worse than the extra 50px. The static fallback
+   SVG below sizes itself the same way, via its own aspect ratio. */
+.map{position:relative;background:linear-gradient(170deg,#eaf4f1,#dfeee9);overflow:hidden}
+.map svg{display:block;width:100%;height:auto}
+.map-exp{position:absolute;top:10px;right:10px;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:0;
+  border-radius:999px;background:rgba(255,255,255,.96);color:var(--accent-deep);font-family:var(--body);font-weight:700;
+  font-size:.76rem;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer}
+.map-foot{display:flex;gap:16px;padding:9px 18px;border-top:1px solid var(--line-soft);font-size:.73rem;color:var(--ink-faint)}
+.map-foot b{color:var(--ink);font-weight:700}
+
+/* day-by-day — ticket.css's .hops rail already carries the dot/line/date styling for a single
+   journey list. This page adds STAY rows (a night with no journey), a dashed line so a gap
+   night reads as "resting", and moves distance/duration onto their own body-size line
+   (critique #5) instead of squeezing them into ticket.css's caption-size .hop-d, which existed
+   for a boarding pass's one short fact, not a sentence. */
+.hop-dot.stay{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
+.hop-line.dash{background:repeating-linear-gradient(to bottom,var(--line) 0 4px,transparent 4px 8px)}
+.hop.is-stay .hop-t{font-weight:600;color:var(--ink-soft)}
+.hop-d{margin:1px 0 0} /* the bottom margin moves to .hop-m below it */
+.hop-m{font-size:.78rem;color:var(--ink-soft);margin:1px 0 10px}
+.hop.is-stay .hop-d{margin-bottom:10px}
+.hop:last-child .hop-m,.hop:last-child .hop-d{margin-bottom:0}
+.stop-chain{margin:0 0 10px;font-size:.73rem;color:var(--ink-soft)}
+.stop-chain span{display:inline-block;background:var(--cream);border-radius:6px;padding:1px 7px;margin:2px 4px 0 0}
+
+/* options — .ticket shells; two columns from 560px (critique #7: now actually implemented).
+   Option columns switch on the COLUMN's width, not the viewport's. A viewport media query
+   here fired inside narrow embeds and crushed both cards into half a phone. */
+.opts{margin-top:4px;display:grid;gap:14px}
+.opts>*{min-width:0}
+@container (min-width:560px){.opts.two{grid-template-columns:1fr 1fr;align-items:start}}
+.opt-lead{border-color:#c9e8e4;box-shadow:0 0 0 3px rgba(10,185,182,.09),var(--shadow-s)}
+.opt-n{font-family:var(--display);font-weight:800;font-size:1.2rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
+.opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
+.dt-pol{margin-top:10px;font-size:.72rem;color:var(--ink-faint)}
+.dt-pol summary{cursor:pointer;color:var(--accent-deep);font-weight:700;font-size:.76rem;list-style:none}
+.dt-pol summary::-webkit-details-marker{display:none}
+.dt-pol summary:after{content:' \203A';font-weight:800}
+.dt-pol[open] summary:after{content:' \2304'}
+.dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
+
+/* lapsed banner — the .t-stat.wait palette, sized as a card */
+.lapse{background:#fbf0d8;border:1px solid #eeda9e;border-radius:var(--r);padding:13px 15px;margin-top:14px}
+.lapse b{display:block;font-family:var(--display);font-weight:800;font-size:1.05rem;color:#7a5210;margin-bottom:2px}
+.lapse p{margin:0;font-size:.8rem;color:#8a6520}
+.stale .ticket{opacity:.72}
+.stale .tot .v{color:var(--ink-faint)}
+
+/* ── dead-end screen — copied verbatim from pay.html (spec 2026-07-31), which is where the
+   `unavailable` state's markup comes from. This is page-specific CSS there too (not in
+   ticket.css), so it has to be repeated here rather than inherited. ── */
+.de-wrap{text-align:center;padding:18px 0 8px}
+.de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
+.de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
+.de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+.de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
+.de-cta{margin-top:20px}
+.de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
+@keyframes de-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+@keyframes de-spin{to{transform:rotate(360deg)}}
+@keyframes de-dash{to{stroke-dashoffset:-30}}
+@keyframes de-pin{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes de-sail{0%,100%{transform:translate(0,0) rotate(-2deg)}50%{transform:translate(7px,-5px) rotate(2.5deg)}}
+.de-art .bob{animation:de-bob 5.5s ease-in-out infinite}
+.de-art .spin{animation:de-spin 40s linear infinite;transform-box:fill-box;transform-origin:center}
+.de-art .dash{stroke-dasharray:6 9;animation:de-dash 2.6s linear infinite}
+.de-art .pin{animation:de-pin 3.4s ease-in-out infinite}
+.de-art .sail{animation:de-sail 4.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@media (prefers-reduced-motion:reduce){.de-art .bob,.de-art .spin,.de-art .dash,.de-art .pin,.de-art .sail{animation:none}}
+
+/* ── First-paint skeleton — the two extra shapes beyond ticket.css's .tk-sk set: a hero-total
+   line and a map-sized block, so the skeleton reads as THIS page's shape (hero, map, one
+   option card) rather than the booking pass's (header, facts, total). ── */
+.tk-sk .sk-tot2{width:150px;height:26px;margin:4px 0 10px}
+.tk-sk .sk-map{width:100%;height:180px;border-radius:var(--r);margin-top:16px}
+.tk-sk .sk-opt{width:100%;height:190px;border-radius:var(--r);margin-top:16px}

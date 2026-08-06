@@ -44,15 +44,17 @@ const SITE_HOME = 'https://ceylonhop.com/';
 
 const JS = 'text/javascript; charset=utf-8';
 
-const PAGES = ['manage.html', 'pay.html'];
+const PAGES = ['manage.html', 'pay.html', 'quote.html'];
 const ASSETS: [string, string][] = [
   ['site.css', 'text/css; charset=utf-8'],
   ['ticket.css', 'text/css; charset=utf-8'], // the shared travel-document design, loaded by BOTH pages
+  ['quote.css', 'text/css; charset=utf-8'],
   ['favicon.svg', 'image/svg+xml'],
   ['analytics.js', JS],
   ['consent.js', JS],
   ['phone-countries.js', JS],
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
+  ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
   ['img/ceylon-hop-c.png', 'image/png'], // the header logo glyph — same file site.js's cmark() uses
 ];
@@ -157,9 +159,10 @@ export function customerPagesRoutes(deps: CustomerPagesDeps = {}) {
   });
 
   // `/p` is the SHORT alias for pay.html (2026-08-02) — the path shed 8 characters of a URL
-  // that was 208 long. Same handler, same OG injection: it is an alias, not a second page.
-  for (const page of [...PAGES, 'p']) {
-    const file = page === 'p' ? 'pay.html' : page;
+  // that was 208 long. `/q` is the same idea for quote.html, which is minted into every
+  // quote-link URL. Same handler, same OG injection: an alias, not a second page.
+  for (const page of [...PAGES, 'p', 'q']) {
+    const file = page === 'p' ? 'pay.html' : page === 'q' ? 'quote.html' : page;
     r.get(`/${page}`, async (c) => {
       const html = read(file, forApiHost) as string | null;
       if (html === null) return c.notFound();
