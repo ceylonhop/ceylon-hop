@@ -1039,7 +1039,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
 /* ---------- Customer strip (one compact row) ---------- */
 .qv .ch-cust-strip { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-card); padding: 12px 14px; container-type: inline-size; container-name: custstrip; }
-.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: end; }
+/* align-items: START, not end (2026-08-06). With `end` every field is bottom-aligned, so the
+   moment the contact field shows its validation error the field's bottom becomes the ERROR text
+   — and the input above it is shoved 36px UP, out of line with the other four. Owner-reported.
+   With `start` the labels and inputs line up at the top and the error grows the row downward,
+   which is what an error should do. */
+.qv .ch-cust-grid { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(160px, 1.4fr) 84px 84px; gap: 12px; align-items: start; }
 .qv .ch-cust-grid .ch-field { gap: 4px; }
 .qv .ch-cust-grid .ch-field-label { font-size: 10px; letter-spacing: .5px; }
 .qv .ch-cust-grid .ch-input { padding: 7px 0; }
