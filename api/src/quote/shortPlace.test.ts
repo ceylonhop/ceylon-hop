@@ -47,14 +47,25 @@ describe('shortPlace', () => {
 describe('shortenRouteLabel', () => {
   // The engine bakes "A → B (car)" into result.lineItems at pricing time. Shortening happens at
   // RENDER, so stored quotes are untouched and every existing quote improves with no migration.
-  it('shortens each side and keeps the vehicle suffix', () => {
+  // The vehicle is resolved ONCE for the whole quote (quotePrivateLegs takes one `vehicle`), so
+  // the suffix is identical on every row and repeats a fact the VEHICLE chips already state.
+  // Dropped from the rendered label; the stored label still carries it (owner, 2026-08-06).
+  it('shortens each side and drops the repeated vehicle suffix', () => {
     expect(shortenRouteLabel('The Den 23, Norris Canal Road, Colombo, Sri Lanka → Sigiri dilu villa, Thalkote Road, Sigiriya, Sri Lanka (car)'))
-      .toBe('The Den 23 · Colombo → Sigiri dilu villa · Sigiriya (car)');
+      .toBe('The Den 23 · Colombo → Sigiri dilu villa · Sigiriya');
   });
 
   it('handles a multi-stop chain', () => {
     expect(shortenRouteLabel('Colombo Airport (CMB) → Dambulla Cave Temple, Kandy - Jaffna Highway, Dambulla, Sri Lanka → Sigiriya, Sri Lanka (van9)'))
-      .toBe('Colombo Airport (CMB) → Dambulla Cave Temple → Sigiriya (van9)');
+      .toBe('Colombo Airport (CMB) → Dambulla Cave Temple → Sigiriya');
+  });
+
+  // A parenthesis that is part of the PLACE must survive — only a trailing vehicle tier goes.
+  it('does not eat a bracket that belongs to the place name', () => {
+    expect(shortenRouteLabel('Colombo Airport (CMB) → Galle, Sri Lanka (car)'))
+      .toBe('Colombo Airport (CMB) → Galle');
+    expect(shortenRouteLabel('Colombo Airport (CMB) → Galle, Sri Lanka'))
+      .toBe('Colombo Airport (CMB) → Galle');
   });
 
   it('leaves a label with no route in it alone', () => {
