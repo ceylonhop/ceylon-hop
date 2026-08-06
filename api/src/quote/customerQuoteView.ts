@@ -94,7 +94,7 @@ const COPY = {
     included: 'Air-conditioned car with an English-speaking driver · fuel, tolls and parking · every pickup at your door.',
   },
   chauffeur: {
-    name: 'Chauffeur & guide',
+    name: 'Chauffeur Service',
     blurb: 'Total flexibility — your own driver-guide from start to finish, stopping wherever you like.',
     // "Everything in X, plus" — pricing-table grammar. The two cards' included boxes used to be
     // near-identical feature lists, so scanning them answered nothing about what the extra money
