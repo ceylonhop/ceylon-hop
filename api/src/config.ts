@@ -44,6 +44,10 @@ const Env = z.object({
   // link reading ops.<domain> is what prompted this (owner, 2026-07-31).
   // Unset: falls back to APP_BASE_URL, i.e. exactly the behaviour before this existed.
   PAY_BASE_URL: z.string().default(''),
+  // Where customer QUOTE links point (spec 2026-08-05 D2) — e.g. https://quote.ceylonhop.com.
+  // A second custom domain on THIS service, so the page it serves is same-origin with the API.
+  // Unset falls back to PAY_BASE_URL, which keeps dev and staging working with one host.
+  QUOTE_BASE_URL: z.string().default(''),
   // Browser origins allowed to call the API (comma-separated). The live site + local dev.
   ALLOWED_ORIGINS: z
     .string()

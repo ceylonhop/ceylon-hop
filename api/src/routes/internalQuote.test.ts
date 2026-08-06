@@ -2956,3 +2956,61 @@ describe('GET /admin/quote/:id/revisions (spec 2026-08-05)', () => {
     expect(body.revisions).toEqual([]);
   });
 });
+
+describe('POST /admin/quote/:id/quote-link — mint the customer quote link (spec 2026-08-05)', () => {
+  // Same fixture shape as the pay-link suite above: a real priced ops quote walked to a status.
+  async function quoteAt(quotes: InMemoryQuoteRepo, status: string) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', totalCents: 21900, currency: 'USD',
+      rateCardVersion: 'v1', result: {}, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120, date: '2026-09-01' }] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] } },
+    });
+    const walk: Record<string, string[]> = {
+      draft: [], pending_review: ['pending_review'],
+      ready: ['pending_review', 'ready'], sent: ['pending_review', 'ready', 'sent'],
+    };
+    for (const s of walk[status]) await quotes.patch(q.id, { status: s as never });
+    return q.id;
+  }
+  const mintLink = (app: App, id: string) => app.request(`/admin/quote/${id}/quote-link`, {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+  });
+  const patchStatus = (app: App, id: string, body: unknown) => app.request(`/admin/quote/${id}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json', cookie: FOUNDER_COOKIE },
+    body: JSON.stringify(body),
+  });
+
+  it('mints a stable URL for a ready quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await quoteAt(quotes, 'ready');
+    const app = createApp({ quotes });
+    const a = await mintLink(app, id);
+    const b = await mintLink(app, id);
+    expect(a.status).toBe(200);
+    const urlA = (await a.json()).url as string;
+    expect(urlA).toMatch(/\/q\?t=/);
+    expect((await b.json()).url).toBe(urlA); // byte-identical on re-copy — the token pins nothing
+  });
+
+  it('refuses a draft quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await quoteAt(quotes, 'draft');
+    const app = createApp({ quotes });
+    const res = await mintLink(app, id);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('not_linkable');
+  });
+
+  it('stamps offerValidUntil seven days out when a quote is approved', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const id = await quoteAt(quotes, 'pending_review');
+    const app = createApp({ quotes });
+    const res = await patchStatus(app, id, { status: 'ready' });
+    expect(res.status).toBe(200);
+    const after = await quotes.get(id);
+    const days = (after!.offerValidUntil!.getTime() - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThan(7.1);
+  });
+});

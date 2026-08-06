@@ -32,15 +32,10 @@ import {
 } from '../quote/paySelection';
 import { changedFields } from '../quote/quoteDiff';
 import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
-import { signQuotePayToken } from '../lib/bookingToken';
-
-// Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
-const CATEGORIES: Record<string, { drives: boolean }> = {
-  transfer: { drives: true },
-  airport: { drives: true },
-  train_support: { drives: true },
-  stay_day: { drives: false },
-};
+import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+// CATEGORIES/drives moved to quote/legCategory.ts so quoteView.ts shares one definition —
+// a second copy here is how the customer page and the ops chooser drift on which legs drive.
+import { drives } from '../quote/legCategory';
 
 // Tool vehicle tiers → engine vehicle class. All tiers now have rates.
 const VEHICLE_MAP: Record<string, Vehicle | null> = {
@@ -271,9 +266,6 @@ const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
 
-function drives(l: ToolLeg): boolean {
-  return CATEGORIES[l.category || 'transfer']?.drives ?? true;
-}
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
@@ -574,6 +566,9 @@ export function internalQuoteRoutes(deps: {
   // link secret that signs it, and which PayHere mode the server is running — surfaced so
   // the ops UI can label a sandbox link instead of letting it pass for a live one.
   payBaseUrl?: string;
+  // Customer quote links (spec 2026-08-05): the public site origin the link points at. Falls
+  // back to payBaseUrl (see app.ts) so dev/staging keep working with one host.
+  quoteBaseUrl?: string;
   linkSecret?: string;
   payhereMode?: string;
   // Positive location identification (spec 2026-08-02). Optional: with no repo injected there
@@ -1077,6 +1072,29 @@ export function internalQuoteRoutes(deps: {
     });
   });
 
+  // The customer quote link (spec 2026-08-05). Same gate as the pay link — an approved quote —
+  // but it mints no state: the token pins nothing, so pressing this twice is byte-identical and
+  // ops can re-paste the link into the thread instead of making the customer scroll.
+  r.post('/:id/quote-link', csrf, async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    if (quote.channel !== 'ops' || (quote.status !== 'ready' && quote.status !== 'sent')) {
+      return c.json({ error: 'not_linkable', status: quote.status }, 409);
+    }
+    const base = deps.quoteBaseUrl || deps.payBaseUrl;
+    if (!deps.linkSecret || !base) return c.json({ error: 'quote_links_unavailable' }, 503);
+
+    // Same price-drift baseline the pay link stamps, for the same reason: minting is a
+    // customer-facing moment, and with a FOLLOWING link the number can move under a customer
+    // who has already looked.
+    if (quote.customerTotalCents !== quote.totalCents) {
+      await deps.quotes.patch(quote.id, {
+        customerTotal: { cents: quote.totalCents, at: new Date(), via: 'quote_link' as const },
+      });
+    }
+    return c.json({ url: `${base.replace(/\/$/, '')}/q?t=${signQuoteViewToken(quote.id, deps.linkSecret)}` });
+  });
+
   // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as
   // editing the quote, deliberately NOT founder-only: this response carries no margin, and ops
   // are the people making the edits, so ops are the people who need to see what an edit did.
@@ -1253,6 +1271,7 @@ export function internalQuoteRoutes(deps: {
     // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
     // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
     let rateLock: QuotePatch['rateLock'] = undefined;
+    let offerValidUntil: Date | undefined;
     // Read the pre-patch row once when either path needs it: the status gate below, and the
     // notification's "did the assignee actually change?" test (re-assigning to the same person
     // is not news, so it must not re-mail them).
@@ -1304,6 +1323,11 @@ export function internalQuoteRoutes(deps: {
         // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
         // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
+        // Offer validity (spec D9): the price is honoured for 7 days from approval. Re-approving
+        // resets it, so the fix for a lapsed quote is the thing ops was going to do anyway.
+        // Deliberately NOT rateLockedUntil, which stays null for ops quotes — that is precisely
+        // why this field exists.
+        offerValidUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000);
       } else if ((current.status === 'ready' || current.status === 'sent' || current.status === 'expired') && EDITABLE.includes(to)) {
         // Reopen-to-edit (from ready, sent, OR expired) unlocks; sending keeps the lock.
         // 'expired' matters most here: a quote can now sit closed for months before someone
@@ -1351,6 +1375,7 @@ export function internalQuoteRoutes(deps: {
       assignedTo,
       updatedBy: c.get('identity').email,
       customerTotal,
+      offerValidUntil,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not

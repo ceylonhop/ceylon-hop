@@ -66,6 +66,7 @@ export function quoteRowToSaved(r: Row): SavedQuote {
     notes: r.notes,
     internalNotes: r.internalNotes,
     requestedService: r.requestedService,
+    offerValidUntil: r.offerValidUntil ?? null,
     assignedTo: r.assignedTo,
     assignedAt: r.assignedAt,
     createdBy: r.createdBy,
@@ -274,6 +275,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       .select({
         id: quotes.id, status: quotes.status, product: quotes.product,
         vehicle: quotes.vehicle, requestedService: quotes.requestedService,
+        offerValidUntil: quotes.offerValidUntil,
         totalCents: quotes.totalCents, currency: quotes.currency,
         createdAt: quotes.createdAt, request: quotes.requestJson,
       })
@@ -388,6 +390,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
               customerTotalVia: patch.customerTotal.via,
             }
           : {}),
+        ...(patch.offerValidUntil !== undefined ? { offerValidUntil: patch.offerValidUntil } : {}),
         updatedAt: new Date(),
         ...(patch.status
           ? {
