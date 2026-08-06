@@ -1,0 +1,153 @@
+import { test, expect } from '@playwright/test';
+
+// The customer quote page (quote.html, backed by GET /quote-view) — spec 2026-08-05 D6: a
+// READ-ONLY proposal, not a payment page. There is no pay button and no link to /p anywhere on
+// it, which is the property that makes a forwarded copy of the link harmless — every action a
+// customer can take is a wa.me deep link back to ops.
+//
+// Same offline pattern as manage-page.spec.js (its nearest sibling: also a customer page reached
+// by a bare `?t=` token, also fetching its own state after first paint). quote.html defaults
+// window.CEYLON_HOP_API to the PRODUCTION api host unless the API itself serves the page
+// (customerPages.ts's forApiHost injection, which the static e2e server does not run) — so
+// **/quote-view* is stubbed by URL glob regardless of host, exactly like manage-page.spec.js
+// stubs **/bookings/view*, and the page never has to reach a real backend, real Postgres or a
+// minted view token to be exercised here. The mint endpoint (/admin/quote/:id/quote-link) and
+// the token itself are already covered by unit tests (internalQuote.test.ts,
+// bookingToken.test.ts) — this file is about what renders once a customer opens the link.
+
+test.use({ viewport: { width: 375, height: 812 } });
+
+const PAGE = '/quote.html?t=test-token';
+const REF = 'Q-E2E77';
+
+function opt({ service, name, totalCents, lead }) {
+  const dollars = `$${(totalCents / 100).toFixed(totalCents % 100 ? 2 : 0)}`;
+  return {
+    service,
+    name,
+    blurb: `${name} — the e2e blurb.`,
+    includedText: 'Everything the trip needs, included.',
+    totalCents,
+    totalUsd: dollars,
+    deltaUsd: null,
+    deltaText: null,
+    cancellation: { headline: 'Free cancellation until 24 hours before departure.', ladder: ['Full refund more than 24h out.'] },
+    lead,
+    waText: `Hi! I'd like to book the ${name} option for quote ${REF}`,
+  };
+}
+
+const PRIVATE_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 45_000, lead: true });
+const CHAUFFEUR_OPT = opt({ service: 'chauffeur', name: 'Chauffeur & guide', totalCents: 61_000, lead: false });
+
+const DAYS = [
+  { kind: 'journey', date: 'MON 10 AUG', title: 'Colombo Airport → Kandy', meta: '120 km · about 3 h', stops: [] },
+  { kind: 'stay', date: 'TUE 11 AUG', title: 'In Kandy', meta: null, stops: [] },
+  { kind: 'journey', date: 'WED 12 AUG', title: 'Kandy → Ella', meta: '140 km · about 4 h', stops: [] },
+];
+
+function view({ options, days = DAYS, reference = REF }) {
+  return {
+    reference,
+    greetingName: 'Anna',
+    title: 'Colombo Airport → Ella',
+    subtitle: `${days.length}-day private trip · 2 travellers`,
+    heroTotalUsd: options[0].totalUsd,
+    heroTotalNote: `${options[0].name.toLowerCase()}`,
+    days,
+    mapStops: [], // empty on purpose — keeps the map card (and its Google Maps script load) out of scope
+    totalKm: 260,
+    travelDays: days.filter((d) => d.kind === 'journey').length,
+    options,
+    waText: `Hi! I have a question about quote ${reference}`,
+  };
+}
+
+// Stub GET /quote-view* with a fixed CustomerQuoteView response, and keep the run offline: the
+// GTM tag and the error beacon both point at real hosts by default (quote.html's own comments
+// call this out — the same trap board.html/booking.html are known for), and maps.googleapis.com
+// would otherwise be hit by ch-map.js if a map card ever did render.
+async function stubQuoteView(page, body) {
+  await page.route('**/quote-view*', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
+  await page.route('**/errors/client', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
+  await page.route('https://www.googletagmanager.com/**', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.route('**/maps.googleapis.com/**', (r) => r.abort());
+}
+
+// The prefilled WhatsApp text an <a class="pp-cta"> carries, decoded.
+async function waText(locator) {
+  const href = await locator.getAttribute('href');
+  expect(href, 'CTA must be a wa.me link').toMatch(/^https:\/\/wa\.me\/94779669662\?text=/);
+  return decodeURIComponent(href.split('text=')[1]);
+}
+
+test('a live quote link renders the trip, a priced option and a WhatsApp CTA', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.pp-title')).toHaveText(body.view.title);
+  await expect(page.locator('.hop')).not.toHaveCount(0);
+
+  const card = page.locator('.opts .ticket').first();
+  await expect(card.locator('.tot .v')).toHaveText(/^\$\d/);
+
+  const cta = card.locator('a.pp-cta');
+  const text = await waText(cta);
+  expect(text, 'CTA text must carry the quote reference').toContain(REF);
+  expect(text, "the option card's CTA must carry that option's name").toContain(PRIVATE_OPT.name);
+});
+
+test('every option-card CTA is a wa.me link naming its own option', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT, CHAUFFEUR_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  const cards = page.locator('.opts .ticket');
+  await expect(cards).toHaveCount(2);
+  for (const [i, o] of [PRIVATE_OPT, CHAUFFEUR_OPT].entries()) {
+    const text = await waText(cards.nth(i).locator('a.pp-cta'));
+    expect(text).toContain(REF);
+    expect(text).toContain(o.name);
+  }
+});
+
+test('option cards stack, full width, at a 375px viewport', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT, CHAUFFEUR_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  const cards = page.locator('.opts .ticket');
+  await expect(cards).toHaveCount(2);
+  const a = await cards.nth(0).boundingBox();
+  const b = await cards.nth(1).boundingBox();
+  expect(b.y, 'second card must sit below the first, not beside it').toBeGreaterThan(a.y + a.height - 5);
+  expect(Math.abs(a.width - b.width), 'stacked cards must share a width').toBeLessThan(2);
+});
+
+test('no pay button and no /p link exists anywhere on the page', async ({ page }) => {
+  const body = { state: 'live', view: view({ options: [PRIVATE_OPT, CHAUFFEUR_OPT] }), validUntil: new Date(Date.now() + 7 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.opts .ticket')).toHaveCount(2); // page has actually rendered
+  await expect(page.getByRole('button', { name: /pay/i })).toHaveCount(0);
+  await expect(page.locator('#paybtn')).toHaveCount(0);
+  await expect(page.locator('a[href*="/p?t="]')).toHaveCount(0);
+  await expect(page.locator('a[href*="/p.html"]')).toHaveCount(0);
+});
+
+test('a lapsed quote shows the expiry row and still renders the itinerary', async ({ page }) => {
+  const body = { state: 'lapsed', view: view({ options: [PRIVATE_OPT] }), validUntil: new Date(Date.now() - 3 * 864e5).toISOString() };
+  await stubQuoteView(page, body);
+  await page.goto(PAGE);
+
+  await expect(page.locator('.pp-title')).toHaveText(body.view.title); // the trip itself is untouched
+  await expect(page.locator('.hop')).toHaveCount(DAYS.length); // full itinerary still renders
+  await expect(page.locator('.held.warn')).toContainText('expired on');
+  await expect(page.locator('.lapse')).toContainText('Everything below is still exactly the trip we planned');
+  // Never reads as "your trip is gone" — the sailed-off dead-end art must not appear here.
+  await expect(page.locator('.de-wrap')).toHaveCount(0);
+});
