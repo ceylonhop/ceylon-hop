@@ -150,20 +150,37 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var feet = '<span><b>' + v.mapStops.length + '</b> stops</span>';
     if (v.totalKm != null) feet += '<span><b>' + v.totalKm + ' km</b> total</span>';
     feet += '<span><b>' + v.travelDays + '</b> travel day' + (v.travelDays === 1 ? '' : 's') + '</span>';
-    return '<div class="ticket"><div class="map" id="map">' + MAP_ART
-      + '<button class="map-exp" type="button">⤦ Expand</button></div>'
+    // No Expand button drawn here: ch-map.js injects its OWN (.ch-map-expand) once a live map
+    // renders, and it is the only one wired to anything. Ours was decorative — a control that
+    // did nothing, and which sat on top of the static island in exactly the failure state where
+    // there is nothing to expand.
+    return '<div class="ticket"><div class="map" id="map">' + MAP_ART + '</div>'
       + '<div class="map-foot">' + feet + '</div></div>';
   }
 
   // The map is DEFERRED until it scrolls into view: ch-map.js memoises per page load, so every
   // open bills a computeRoutes call, and this page is designed to be opened repeatedly.
+  //
+  // onFail is NOT optional here. renderRoute() replaces the host with its own loading markup the
+  // moment it starts, destroying the island above — so on any failure path (missing key, blocked
+  // referrer, unroutable stops, its 12s timeout) a caller without onFail is left with a spinner
+  // turning forever. A referrer-restricted key that hasn't had this hostname added is the likely
+  // first-deploy state, which makes that the DEFAULT experience, not an edge case. Putting the
+  // art back is what makes the fallback read as designed rather than broken.
   function mountMap(stops){
     var host = document.getElementById('map');
     if (!host || !window.CH_MAP || stops.length < 2) return;
+    var art = host.innerHTML;
     var io = new IntersectionObserver(function(entries){
       if (!entries[0].isIntersecting) return;
       io.disconnect();
-      window.CH_MAP.renderRoute(host, stops, {});
+      window.CH_MAP.renderRoute(host, stops, {
+        // ch-map draws its Expand button ONLY when asked, and only over a map that actually
+        // rendered — never over the spinner, never over the island. That is exactly the
+        // affordance we want: expandable when there is something to expand.
+        expandable: true,
+        onFail: function(){ host.innerHTML = art; },
+      });
     }, { rootMargin: '200px' });
     io.observe(host);
   }
