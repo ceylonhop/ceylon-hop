@@ -20,8 +20,8 @@ function extract(file, sig) {
   // eslint-disable-next-line no-new-func
   return new Function('return (' + m[0].trim() + ')')();
 }
-const websitePins = extract('ch-map.js', 'mapPins(pts)');
-const opsPins = extract('api/src/routes/ops-ui.html', 'mapPins(pts)');
+const websitePins = extract('ch-map.js', 'mapPins(pts, zoom)');
+const opsPins = extract('api/src/routes/ops-ui.html', 'mapPins(pts, zoom)');
 
 const P = (lat, lng) => ({ lat, lng });
 const ROUND_TRIP = [P(6.8649, 79.8997), P(6.42, 79.999), P(6.86492, 79.89968)];

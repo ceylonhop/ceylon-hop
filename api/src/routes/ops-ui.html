@@ -9208,27 +9208,51 @@ function loadMapsJs() {
 
    Pure: no Maps API, no DOM. Extracted by web-tests/unit/ops-map-pins.test.js — the Maps key
    rejects local origins, so this grouping is the only part that can be tested off staging. */
-function mapPins(pts) {
-  var TOL = 0.0005; // ~50 m in degrees at Sri Lankan latitudes
+function mapPins(pts, zoom) {
+  var SAME_PLACE = 0.0005;   // ~50 m — one place, merged at EVERY zoom (a round trip's start/end)
+  var MERGE_PX = 34;         // a pin head — closer than this and the labels collide on screen
+  // Web Mercator world pixels, so "do these collide?" is asked in the units the eye actually uses.
+  var px = function (p) {
+    var scale = 256 * Math.pow(2, zoom);
+    var s = Math.max(-0.9999, Math.min(0.9999, Math.sin(p.lat * Math.PI / 180)));
+    return {
+      x: (p.lng + 180) / 360 * scale,
+      y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale
+    };
+  };
+  var collide = function (a, b) {
+    if (Math.abs(a.lat - b.lat) < SAME_PLACE && Math.abs(a.lng - b.lng) < SAME_PLACE) return true;
+    if (typeof zoom !== 'number') return false;
+    var pa = px(a), pb = px(b), dx = pa.x - pb.x, dy = pa.y - pb.y;
+    return Math.sqrt(dx * dx + dy * dy) < MERGE_PX;
+  };
   var pins = [];
   (pts || []).forEach(function (loc, i) {
     var hit = null;
-    for (var k = 0; k < pins.length; k++) {
-      if (Math.abs(pins[k].lat - loc.lat) < TOL && Math.abs(pins[k].lng - loc.lng) < TOL) { hit = pins[k]; break; }
-    }
+    for (var k = 0; k < pins.length; k++) { if (collide(pins[k], loc)) { hit = pins[k]; break; } }
     if (hit) hit.stops.push(i + 1);
     else pins.push({ lat: loc.lat, lng: loc.lng, stops: [i + 1] });
   });
   var last = (pts || []).length;
   return pins.map(function (p) {
+    // A consecutive run reads as a range ("3–7"); a revisited place keeps its dots ("1·3").
+    var runs = p.stops.length > 2 && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1;
     return {
       lat: p.lat, lng: p.lng, stops: p.stops,
-      text: p.stops.join('\u00b7'),
-      // A merged start/end pin is BOTH — the tone picker below prefers the start colour.
+      text: p.stops.length === 1 ? String(p.stops[0])
+        : (runs || p.stops.length === 2) && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1
+          ? p.stops[0] + '–' + p.stops[p.stops.length - 1]
+          : p.stops.join('·'),
       isFirst: p.stops.indexOf(1) >= 0,
-      isLast: p.stops.indexOf(last) >= 0,
+      isLast: p.stops.indexOf(last) >= 0
     };
   });
+}
+
+function pinLabelsVisible(zoom) {
+  // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
+  // the story anyway — the expanded map's legend still carries the full numbered order.
+  return typeof zoom !== 'number' || zoom >= 9;
 }
 
 // The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
@@ -9314,6 +9338,7 @@ function itinMapAvailable() { return !!OPS_MAPS_KEY && itinChains().length >= 1;
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
+var _mapZoomListener = null; // pins are re-grouped on zoom; keep one listener, not one per render
 // Monotonic token for the async route draw below. computeRoutes() resolves out of order
 // (a shorter post-removal route can come back before an earlier longer one still in flight),
 // so without this the last response to *resolve* — not the last requested — wins the polyline
@@ -9461,19 +9486,35 @@ async function drawItinRoute(hostEl, chains) {
     // they line up with the itinerary's numbered legs: leg N runs from pin N to pin N+1.
     // One pin per PLACE, not per stop — a round trip revisits its start, and two pins on one
     // point means the later one hides the earlier (see mapPins).
-    mapPins(pts.map(at)).forEach(function (p) {
-      var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
-      _mapMarkers.push(new libs.Marker({
-        map: _mapMap, position: { lat: p.lat, lng: p.lng }, icon: pin(fill),
-        zIndex: (p.isFirst || p.isLast) ? 6 : 5,
-        // White on all three fills; the pin head is small, so bold and tight. A merged pin reads
-        // "1·3" — narrower than "1, 3" and it still fits the teardrop head.
-        label: { text: p.text, color: '#fff', fontSize: p.stops.length > 1 ? '9px' : '11px', fontWeight: '700' },
-        title: p.stops.length > 1
-          ? 'Stops ' + p.stops.join(' and ') + ' of ' + pts.length
-          : 'Stop ' + p.stops[0] + ' of ' + pts.length,
-      }));
-    });
+    // Redrawn on every zoom: which pins collide is a question about SCREEN distance, so the
+    // answer changes as you zoom. A 26-stop itinerary is a wall of overlapping digits at country
+    // view and resolves into individual numbered stops as you go in (owner-reported 2026-08-07).
+    var locs = pts.map(at);
+    var drawPins = function () {
+      _mapMarkers.forEach(function (m) { m.setMap(null); });
+      _mapMarkers = [];
+      var z = _mapMap.getZoom();
+      var showText = pinLabelsVisible(z);
+      mapPins(locs, z).forEach(function (p) {
+        var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
+        _mapMarkers.push(new libs.Marker({
+          map: _mapMap, position: { lat: p.lat, lng: p.lng }, icon: pin(fill),
+          zIndex: (p.isFirst || p.isLast) ? 6 : 5,
+          // White on all three fills; the pin head is small, so bold and tight. A merged pin
+          // reads "3–7" or "1·3" — both narrower than a comma list, and they fit the head.
+          label: showText
+            ? { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
+            : undefined,
+          // The title is always the full truth, even when the label is hidden.
+          title: p.stops.length > 1
+            ? 'Stops ' + p.stops.join(', ') + ' of ' + pts.length
+            : 'Stop ' + p.stops[0] + ' of ' + pts.length,
+        }));
+      });
+    };
+    drawPins();
+    if (_mapZoomListener) _mapZoomListener.remove();
+    _mapZoomListener = _mapMap.addListener('zoom_changed', drawPins);
   } catch (e) { /* markers are non-essential */ }
   // Fit to every chain: union the per-route viewports (LatLngBounds.union), so a
   // multi-chain itinerary frames all of its separate segments, not just the first.
