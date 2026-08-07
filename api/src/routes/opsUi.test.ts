@@ -746,7 +746,10 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     const body = await uiBody();
     expect(body).toContain('function mayReverseNow(');
     expect(body).toContain("state.caps.includes('payments:reverse')) return true;");
-    expect(body).toContain('const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);');
+    // The rule itself, now inside reverseGate() where the split refund and cancel blocks share
+    // it (2026-08-07). It reads the same as the line it replaced: only an ops agent is
+    // time-limited, and only when BOTH the fresh-intake grace and the trip window have closed.
+    expect(body).toContain('blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),');
   });
 
   // The other half of the contract these assertions rest on. Every test above proves the client
@@ -776,11 +779,61 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain('if(!Number.isFinite(created)) return false;'); // unknown age fails closed
   });
 
-  it('requires a typed reason for both cancelling and refunding', async () => {
+  // Two fields, not one (2026-08-07). Cancel and refund used to share #reversereason because they
+  // shared a block. Now that they are separate blocks, one shared input would let a reason typed
+  // for a cancellation be submitted with a refund — and both are written to permanent audit
+  // records. The ids must stay distinct, and each handler must read its own.
+  it('requires a typed reason for both cancelling and refunding, from separate fields', async () => {
     const body = await uiBody();
-    expect(body).toContain("id=\"reversereason\"");
+    expect(body).toContain('id="cancelreason"');
+    expect(body).toContain('id="refundreason"');
+    expect(body).not.toContain('id="reversereason"'); // the shared field is gone
+    expect(body).toContain("$('#cancelreason')");
+    expect(body).toContain("$('#refundreason')");
     expect(body).toContain('it is saved against the booking');
     expect(body).toContain('it is saved against the refund');
+  });
+
+  // The 2026-08-07 consolidation. Requesting a refund HIDES the request button (a full-amount
+  // pending row drives `remaining` to 0), so if the controls that complete it live somewhere
+  // else, pressing Refund looks like a button that broke. Request and completion now share one
+  // block, and the block that starts a cancellation offers no refund control at all.
+  it('puts the refund request inside the Refunds block, not the cancel block', async () => {
+    const body = await uiBody();
+    // the request form is built by the Refunds block, via its `request` slot
+    expect(body).toContain('const request=refundRequestFor(t,d);');
+    expect(body).toContain('function refundRequestFor(');
+    // and the cancel block is now cancel-only, retitled to match
+    expect(body).toContain('<h4>Cancel booking</h4>');
+    expect(body).not.toContain('<h4>Cancel &amp; refund</h4>');
+  });
+
+  // Both blocks answer the same question about who may reverse and whether the ops window has
+  // closed. They were one function until the split; a divergence would offer a cancel where a
+  // refund is refused, or vice versa.
+  it('gates the split refund and cancel blocks through one shared reversal test', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function reverseGate(');
+    // both call sites read the same helper rather than re-deriving the rule
+    expect(body.match(/reverseGate\(t, ?d\)/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // A refund that settles flips the BOOKING to refunded. reloadRefundDetail repaints only the
+  // sheet's detail payload, so without refreshRow the header chip and queue row keep reading
+  // "Paid" after the money went back — which reads as a refund that failed (owner, 2026-08-07).
+  it('refreshes the queue row on the refund actions that change booking status', async () => {
+    const body = await uiBody();
+    // Bounded to ONE case block: split on the label, then cut at the next one. Without the second
+    // cut the slice runs to the end of the file, so an assertion about refundconfirm would be
+    // satisfied by refundexecute's call — a test that cannot fail. Caught by deleting the call
+    // and watching it still pass.
+    const handler = (name: string) => (body.split(`case '${name}':`)[1] ?? '').split("case '")[0];
+
+    expect(handler('refundconfirm')).toContain('await refreshRow(id)');
+    expect(handler('refundexecute')).toContain('await refreshRow(id)');
+    // Guard the guard: each slice must be a plausible single handler, not the rest of the file.
+    expect(handler('refundconfirm').length).toBeLessThan(3000);
+    expect(handler('refundexecute').length).toBeLessThan(3000);
   });
 
   it('translates the server refusal codes instead of saying "could not cancel"', async () => {

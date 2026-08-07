@@ -22,14 +22,14 @@ watched the button vanish, scrolled the foot of the sheet, found nothing, and re
 concluded the refund UI was broken. It was not — the controls were two blocks above the fold.
 Recovering took a DevTools session. Most operators would have stopped at "it's broken".
 
-Two dead ends sit in the same block:
+And the sheet misreports itself immediately afterwards: the header and queue row keep their
+**pre-refund status**, because the handlers call `reloadRefundDetail(id)` but never
+`refreshRow(id)`. The owner watched a booking read "Paid" seconds after a successful $29 refund
+and reasonably doubted a refund that had in fact worked.
 
-- An **`api_processing`** row shows a warning instructing the operator to *"find the payment in
-  PayHere and either confirm this row with its reference or cancel it"* — and renders **neither
-  control**. The server accepts a confirm from that state; only the UI refuses.
-- After any refund action the header and queue row keep their **pre-refund status**, because the
-  handlers call `reloadRefundDetail(id)` but never `refreshRow(id)`. The owner watched a booking
-  read "Paid" seconds after a successful $29 refund and reasonably doubted the refund.
+(A third defect sits in the same block — an `api_processing` row instructs the operator to
+confirm-or-cancel and renders neither control. It is **deferred**, see D5: that state has never
+been reached here.)
 
 ### What already exists (verified against `origin/main` @ `47446c2`)
 
@@ -58,9 +58,9 @@ Two dead ends sit in the same block:
 |---|----------|-----------|
 | D1 | The **Refunds** block owns the whole job. **Cancel & refund** keeps only Cancel booking and is retitled **Cancel booking**. | The split is the reported defect. Refund controls belong beside the money summary they act on. |
 | D2 | The request form (reason + **Refund $X in full**) moves from the foot into the Refunds block, directly under the summary. | It is the entry point to that block's workflow; putting it anywhere else is what caused the incident. |
-| D3 | The confirm form renders for **`api_processing`** as well as `manual_pending`. | The server already permits it and the row's own warning instructs it. A screen that names an action it does not offer is worse than one that stays silent. |
-| D4 | The **PayHere API button does not** render for `api_processing`. | The Refund API has no idempotency key; the money may already have moved. Confirm-by-reference and cancel are the only safe exits. |
-| D5 | Every refund handler calls `refreshRow(id)` alongside `reloadRefundDetail(id)`. | Matches `cancelbooking`/`markpaid`. A booking reading "Paid" after a successful refund destroys trust in a working feature. |
+| D3 | `refundconfirm` and `refundexecute` call `refreshRow(id)` alongside `reloadRefundDetail(id)`. Not the other two. | Matches `cancelbooking`/`markpaid`. A booking reading "Paid" after a successful refund destroys trust in a working feature. Request and cancel do not move booking status, so refetching the queue there is a wasted round trip. |
+| D4 | The cancel and refund blocks share one `reverseGate(t,d)` helper. | They were one function and must keep answering "who may reverse, and has the ops window closed" identically. A divergence would offer a cancel where a refund is refused. |
+| D5 | Do **not** add the `api_processing` escape now. | Deferred with the method picker — same reasoning. It needs PayHere to accept a refund call and then never answer, which has never happened here; the one real failure was a token 403, which lands on `api_failed`. Building an exit from a state never reached is the YAGNI this revision exists to avoid. |
 | D6 | **No server, route, repo or schema change.** | Every story here is a rendering or refetch concern. Keeping the change UI-only means the money state machine is untouched and the blast radius is one file. |
 | D7 | Do **not** make `api_failed` cancellable. | It changes which transitions are legal on a money row — a domain rule wanting its own red-green test, not a rider on a UI change. |
 | D8 | Do **not** add a refund-method picker now. | See *Deferred*. It was most of the first draft; the critique below is why it is not here. |
@@ -76,25 +76,19 @@ finishes it are in different halves of the sheet.
 - Requesting a refund leaves the operator looking at the row they just created, with its next
   action visible without scrolling.
 
-**US-2 — A stuck refund has a way out.** As a founder, I want an `api_processing` row to offer
-the actions its own warning tells me to take.
-- The reference field and **Confirm** render for `api_processing` as well as `manual_pending`.
-- The PayHere API button does **not** render for `api_processing`.
-- **Cancel request** does not render for `api_processing` — `refundRepo.cancel()` rejects that
-  state deliberately, because cancelling would release a reserve on money that may have moved.
-  The warning text already tells the operator to resolve it in PayHere.
-
-**US-3 — The header stops lying after a refund.** As a founder, I want the booking status to
+**US-2 — The header stops lying after a refund.** As a founder, I want the booking status to
 update when a refund succeeds.
-- `refundrequest`, `refundconfirm`, `refundexecute` and `refundcancel` each call `refreshRow(id)`
-  alongside `reloadRefundDetail(id)`.
+- `refundconfirm` and `refundexecute` call `refreshRow(id)` alongside `reloadRefundDetail(id)`.
 - After a full refund the sheet header and the queue row both read **Refunded** with no reload.
+- **Only those two**, deliberately. `refundrequest` and `refundcancel` do not change the
+  booking's status — a request records an intent and a cancellation withdraws it — so refetching
+  the whole queue there would be a wasted round trip on every keystroke-adjacent action.
 
-**US-4 — Reversal permissions unchanged.** As the business owner, I want the reshuffle to change
+**US-3 — Reversal permissions unchanged.** As the business owner, I want the reshuffle to change
 nothing about who may reverse a sale.
 - The request form stays behind exactly the gate it has today — `payments:reverse`, or the
-  time-bounded `bookings:operate` grant, via the existing `mayReverseNow` / `reverseActionsFor`
-  logic, which moves with it.
+  time-bounded `bookings:operate` grant. The rule moves into `reverseGate(t,d)`, which both
+  blocks call, so neither can drift from the other.
 - Finance (`payments:act`) keeps read-only refund history and sees no request or confirm control.
 - Ops keeps the 24-hour window and the fresh-intake grace.
 
@@ -103,15 +97,13 @@ nothing about who may reverse a sale.
 The **Refunds** block, in order:
 
 1. **Summary** — Captured / Previously refunded / Pending / Refundable remaining. Unchanged.
-2. **Request** — rendered only when `remaining > 0` **and** the viewer may reverse (the existing
-   `mayReverseNow` test, relocated with the form): required **Reason**, then **Refund $X in
-   full**. When blocked by the ops time window, the existing explanatory note renders here
+2. **Request** — rendered only when `remaining > 0` **and** `reverseGate` allows it: required
+   **Reason** (`#refundreason`), then **Refund $X in full**. When blocked by the ops time window, the existing explanatory note renders here
    instead, unchanged in wording.
 3. **History** — newest first. Per row: status label, amount, reason, requester; plus
    - `manual_pending` → **Refund now via PayHere**, **Cancel request**, and the manual path
      (reference + **Confirm manual refund**). Unchanged from today.
-   - `api_processing` → the existing do-not-retry warning, **plus** reference + **Confirm**.
-     No API button, no Cancel request.
+   - `api_processing` → the existing do-not-retry warning. Unchanged (D5).
    - `api_failed` → PayHere's message. No controls (D7).
    - settled → reference and confirming actor. Unchanged.
 
@@ -130,10 +122,10 @@ a second `clearInput` call is a cheap price for that not being possible.
 UI (`api/src/routes/opsUi.test.ts` — served-HTML assertions, the pattern already used there):
 - the Refunds block contains the reason input and the request button
 - the Cancel & refund block contains **no** refund control
-- the confirm form is gated on `manual_pending` **or** `api_processing`
-- the PayHere API button is gated on `manual_pending` only
-- **Cancel request** is gated on `manual_pending` only
-- each of the four refund handlers calls `refreshRow`
+- the cancel and refund blocks both gate through `reverseGate`
+- `refundconfirm` and `refundexecute` each call `refreshRow`, asserted against a slice bounded to
+  that one handler — an unbounded slice runs to the end of the file and is satisfied by the other
+  handler's call, which is a test that cannot fail (found by deleting the call and watching it pass)
 
 Regression guard on the capability gate (`api/src/routes/opsUi.test.ts`): the relocated request
 form is still behind `mayReverseNow`, so a time-blocked ops agent gets the explanatory note and
@@ -174,7 +166,7 @@ whether the method belongs at request or confirm time.
 ## Out of scope
 
 - Refund methods other than PayHere (deferred, above).
-- Making `api_failed` cancellable (D7) — separate PR. The 2026-08-03 row on `CH-MCF8D` stays
+- The `api_processing` escape (D5) and making `api_failed` cancellable (D7) — separate PRs. The 2026-08-03 row on `CH-MCF8D` stays
   stuck until then; it reserves nothing, so it blocks no future refund.
 - Partial refunds. Our PayHere setup cannot do them and the UI deliberately offers no amount box.
 - A cross-booking view of outstanding refunds (see Deferred #3).

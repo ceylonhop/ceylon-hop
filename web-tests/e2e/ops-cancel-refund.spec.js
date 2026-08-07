@@ -93,13 +93,16 @@ test('a FOUNDER is never time-limited — 12 hours out, both actions stay live',
   await boot(page, { caps: FOUNDER, travelDate: iso(Date.now() + 0.5 * DAY) });
   await expect(page.locator('[data-act="refundrequest"]')).toBeVisible();
   await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
-  await expect(page.locator('#reversereason')).toBeVisible(); // a reason is required of everyone
+  // Two reason fields since the split (2026-08-07): the refund one lives with the refund
+  // request in the Refunds block, the cancel one with Cancel booking.
+  await expect(page.locator('#refundreason')).toBeVisible();
+  await expect(page.locator('#cancelreason')).toBeVisible();
 });
 
 test('an OPS agent may reverse while more than 24 hours remain', async ({ page }) => {
   await boot(page, { caps: OPS, travelDate: iso(Date.now() + 10 * DAY) });
   await expect(page.locator('[data-act="cancelbooking"]')).toBeVisible();
-  await expect(page.locator('#reversereason')).toBeVisible();
+  await expect(page.locator('#cancelreason')).toBeVisible();
 });
 
 test('an OPS agent is locked out inside the last 24 hours, and told why', async ({ page }) => {
@@ -108,7 +111,8 @@ test('an OPS agent is locked out inside the last 24 hours, and told why', async 
   await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
   await expect(page.locator('#sheet')).toContainText('only a founder can cancel or refund');
   // No reason box either — there is nothing here they can do.
-  await expect(page.locator('#reversereason')).toHaveCount(0);
+  await expect(page.locator('#cancelreason')).toHaveCount(0);
+  await expect(page.locator('#refundreason')).toHaveCount(0);
 });
 
 test('an OPS agent cannot reverse a booking with no trip date — fails closed', async ({ page }) => {
