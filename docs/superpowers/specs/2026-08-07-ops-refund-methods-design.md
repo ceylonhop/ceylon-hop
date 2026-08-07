@@ -64,6 +64,7 @@ been reached here.)
 | D6 | **No server, route, repo or schema change.** | Every story here is a rendering or refetch concern. Keeping the change UI-only means the money state machine is untouched and the blast radius is one file. |
 | D7 | Do **not** make `api_failed` cancellable. | It changes which transitions are legal on a money row — a domain rule wanting its own red-green test, not a rider on a UI change. |
 | D8 | Do **not** add a refund-method picker now. | See *Deferred*. It was most of the first draft; the critique below is why it is not here. |
+| D9 | The request button reads **Request refund $X**, not "Refund $X in full". Its toast and dialog say no money has moved. | The old label promised the one thing the button does not do. The owner read it as completed three times in one evening — twice while actively debugging this flow, which is as fair a test as a label gets. Moving the controls closer helps; a label that stops over-promising helps more, and it is a one-word change. |
 
 ## User stories
 
@@ -98,7 +99,7 @@ The **Refunds** block, in order:
 
 1. **Summary** — Captured / Previously refunded / Pending / Refundable remaining. Unchanged.
 2. **Request** — rendered only when `remaining > 0` **and** `reverseGate` allows it: required
-   **Reason** (`#refundreason`), then **Refund $X in full**. When blocked by the ops time window, the existing explanatory note renders here
+   **Reason** (`#refundreason`), then **Request refund $X** (D9). When blocked by the ops time window, the existing explanatory note renders here
    instead, unchanged in wording.
 3. **History** — newest first. Per row: status label, amount, reason, requester; plus
    - `manual_pending` → **Refund now via PayHere**, **Cancel request**, and the manual path

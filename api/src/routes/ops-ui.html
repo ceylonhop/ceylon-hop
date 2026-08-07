@@ -2794,8 +2794,15 @@ function refundRequestFor(t, d){
   if(!g.allowed) return '';
   const s = refundSummary(d);
   if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
+  /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
+     NOT do: it files an intent and moves no money, and the control that moves money is a separate
+     press on the row it creates. The owner read it as done three times in one evening — twice
+     while actively debugging the refund flow, which is about as fair a test as a label can get.
+     Moving the controls closer (this change) helps; a label that stops over-promising helps more.
+     "Request" is also the word the rest of the flow already uses — the row it creates is a refund
+     request, and its sibling control is "Cancel request". */
   if(g.blocked){
-    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
+    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
       <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
   }
   /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
@@ -2804,7 +2811,7 @@ function refundRequestFor(t, d){
   return `<label class="reverse-reason">Reason <span class="req">required</span>
       <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
     </label>
-    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Requests a FULL refund; you complete it below">Refund ${money({amount:s.remaining,currency:s.currency})} in full</button></div>`;
+    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Files a FULL refund request — no money moves until you complete it on the row below">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
 }
 
 function reverseActionsFor(t, d){
@@ -3448,7 +3455,7 @@ document.addEventListener('click',async e=>{
          predated the Refund API button and described the only route there used to be. */
       if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request — no money moves yet. Complete it on the row below, through PayHere or by hand.`))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
+      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund requested — no money has moved yet, complete it below');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;

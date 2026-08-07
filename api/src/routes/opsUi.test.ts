@@ -808,6 +808,19 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).not.toContain('<h4>Cancel &amp; refund</h4>');
   });
 
+  // The label is the fix, not decoration. "Refund $X in full" promised the one thing the button
+  // does NOT do — it files an intent and moves no money — and the owner read it as completed
+  // three times in one evening, twice while actively debugging this very flow. Every string the
+  // request path shows now says the same thing: asked for, not done.
+  it('never tells the operator a requested refund has been paid', async () => {
+    const body = await uiBody();
+    expect(body).toContain('Request refund ${money({amount:s.remaining,currency:s.currency})}');
+    expect(body).not.toContain('in full</button>');          // the old over-promising label
+    expect(body).not.toContain('complete it in PayHere');    // predated the Refund API button
+    expect(body).toContain('no money has moved yet');        // the toast
+    expect(body).toContain('This records the request — no money moves yet'); // the confirm dialog
+  });
+
   // Both blocks answer the same question about who may reverse and whether the ops window has
   // closed. They were one function until the split; a divergence would offer a cancel where a
   // refund is refused, or vice versa.
