@@ -38,7 +38,7 @@ function opt({ service, name, totalCents, lead }) {
 }
 
 const PRIVATE_OPT = opt({ service: 'private', name: 'Private transfers', totalCents: 45_000, lead: true });
-const CHAUFFEUR_OPT = opt({ service: 'chauffeur', name: 'Chauffeur Service', totalCents: 61_000, lead: false });
+const CHAUFFEUR_OPT = opt({ service: 'chauffeur', name: 'Chauffeur-guide', totalCents: 61_000, lead: false });
 
 const DAYS = [
   { kind: 'journey', date: 'MON 10 AUG', title: 'Colombo Airport → Kandy', meta: '120 km · about 3 h', stops: [] },
