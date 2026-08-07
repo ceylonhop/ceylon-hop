@@ -186,7 +186,7 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   await expect(request).toContainText('$100');
   // A reason is required for both reversal actions now (owner rule 2026-08-02) and is stored
   // against the refund — without it the request is refused client-side and never POSTs.
-  await page.locator('#reversereason').fill('Customer cancelled — airline strike');
+  await page.locator('#refundreason').fill('Customer cancelled — airline strike');
   await request.dispatchEvent('click');
   await request.dispatchEvent('click');
 
@@ -265,7 +265,7 @@ test('the founder refunds through PayHere directly and the row reads Confirmed, 
   page.on('dialog', (dialog) => dialog.accept());
   await boot(page, { role: 'founder', store });
 
-  await page.locator('#reversereason').fill('Customer cancelled — airline strike');
+  await page.locator('#refundreason').fill('Customer cancelled — airline strike');
   await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
   await expect(page.locator('.refund-status-manual_pending')).toBeVisible();
 
@@ -337,5 +337,8 @@ test('ops is locked out once the trip is inside 24 hours', async ({ page }) => {
   // The button is shown but inert, with the reason why — not silently absent.
   await expect(page.locator('[data-act="cancelbooking"]')).toHaveCount(0);
   await expect(page.getByText('only a founder can cancel or refund')).toBeVisible();
-  await expect(page.locator('#reversereason')).toHaveCount(0);
+  // Neither reason field: since the 2026-08-07 split there is one per block, and a blocked
+  // ops agent gets neither action, so neither input.
+  await expect(page.locator('#refundreason')).toHaveCount(0);
+  await expect(page.locator('#cancelreason')).toHaveCount(0);
 });
