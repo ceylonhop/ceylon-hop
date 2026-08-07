@@ -40,7 +40,57 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .gallery .ph{border-radius:12px}
   .gallery image-slot{display:block;width:100%;height:100%;min-height:0}
   .gallery .g0{grid-row:1/3}
-  @media(max-width:760px){.gallery{grid-template-columns:1fr 1fr;grid-template-rows:auto;height:auto}.gallery .g0{grid-row:auto;aspect-ratio:16/10;grid-column:1/-1}.gallery .ph:not(.g0),.gallery image-slot:not(.g0){aspect-ratio:4/3;height:auto}}
+  @media(max-width:760px){.gallery{grid-template-columns:1fr 1fr;grid-template-rows:auto;height:auto}.gallery .g0{grid-row:auto;aspect-ratio:16/10;grid-column:1/-1}.gallery .ph:not(.g0),.gallery .gtile:not(.g0){aspect-ratio:4/3;height:auto}}
+
+  /* Each tile is a button wrapping its slot, so the whole photo is one click target.
+     The slot scales inside the clipped tile — the frame holds still, the picture moves. */
+  .gtile{position:relative;display:block;width:100%;height:100%;min-height:0;padding:0;border:0;
+    background:none;border-radius:12px;overflow:hidden;cursor:zoom-in;-webkit-tap-highlight-color:transparent}
+  .gtile image-slot{transition:transform .75s var(--ease,cubic-bezier(.22,.75,.3,1))}
+  .gtile::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+    background:linear-gradient(180deg,rgba(8,26,24,0) 45%,rgba(8,26,24,.42));
+    opacity:0;transition:opacity .45s var(--ease,cubic-bezier(.22,.75,.3,1))}
+  .gtile:hover image-slot,.gtile:focus-visible image-slot{transform:scale(1.055)}
+  .gtile:hover::after,.gtile:focus-visible::after{opacity:1}
+  .gtile:focus-visible{outline:3px solid var(--teal,#0AB9B6);outline-offset:2px}
+  .gcue{position:absolute;right:10px;bottom:10px;z-index:2;display:inline-flex;align-items:center;gap:6px;
+    padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.94);color:#0a7d6f;font-weight:700;
+    font-size:.74rem;box-shadow:0 2px 8px rgba(0,0,0,.18);opacity:0;transform:translateY(7px);
+    transition:opacity .4s var(--ease,cubic-bezier(.22,.75,.3,1)),transform .4s var(--ease,cubic-bezier(.22,.75,.3,1))}
+  .gtile:hover .gcue,.gtile:focus-visible .gcue{opacity:1;transform:none}
+  .gcue svg{width:13px;height:13px}
+  /* "+N photos" sits on the last visible tile when the set is bigger than the grid. */
+  .gmore{position:absolute;inset:0;z-index:2;display:grid;place-items:center;border-radius:inherit;
+    background:rgba(10,28,26,.52);color:#fff;font-weight:700;font-size:.95rem;letter-spacing:.01em;
+    transition:background .45s var(--ease,cubic-bezier(.22,.75,.3,1))}
+  .gtile:hover .gmore{background:rgba(10,28,26,.36)}
+  .gtile:has(.gmore){cursor:pointer}
+  .gtile:has(.gmore) .gcue{display:none}
+  @media(hover:none){.gcue{opacity:1;transform:none}}
+
+  /* lightbox — same shell as the ch-map expand modal (overlay + rounded card + close) */
+  .ch-lb{position:fixed;inset:0;z-index:400;background:rgba(20,30,28,.72);display:flex;align-items:center;
+    justify-content:center;padding:20px;backdrop-filter:blur(3px)}
+  .ch-lb-card{background:#fff;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.3);
+    width:min(1120px,94vw);height:min(760px,88vh);display:flex;flex-direction:column;overflow:hidden}
+  .ch-lb-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;
+    border-bottom:1px solid #e6ebe8;font-family:var(--body,system-ui,sans-serif)}
+  .ch-lb-count{font-size:.82rem;color:#5b6b66;font-variant-numeric:tabular-nums}
+  .ch-lb-close{border:0;background:#f1f5f3;border-radius:50%;width:32px;height:32px;cursor:pointer;
+    font-size:1.15rem;line-height:1;color:#2b3a35}
+  .ch-lb-body{flex:1;position:relative;min-height:0;display:flex;align-items:center;justify-content:center;
+    background:#0d1a18}
+  .ch-lb-body img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+  .ch-lb-cap{padding:12px 18px;font-family:var(--body,system-ui,sans-serif);font-size:.88rem;color:#2b3a35;
+    border-top:1px solid #e6ebe8;min-height:1.2em}
+  .ch-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:42px;height:42px;border:0;
+    border-radius:50%;background:rgba(255,255,255,.92);color:#12312e;font-size:1.4rem;line-height:1;
+    cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.22);transition:background .3s,transform .3s}
+  .ch-lb-nav:hover{background:#fff;transform:translateY(-50%) scale(1.06)}
+  .ch-lb-nav[disabled]{opacity:.35;cursor:default}
+  .ch-lb-prev{left:14px}.ch-lb-next{right:14px}
+  @media(max-width:760px){.ch-lb{padding:0}.ch-lb-card{width:100vw;height:100dvh;border-radius:0}
+    .ch-lb-nav{width:38px;height:38px}}
 
   .detail{display:grid;grid-template-columns:1fr 360px;gap:44px;align-items:start;margin-top:30px}
   @media(max-width:920px){.detail{grid-template-columns:1fr}}
@@ -239,60 +289,198 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       ['img/tour-classic-hop-1.jpg','The Temple of the Sacred Tooth Relic, Kandy'],
       ['img/tour-classic-hop-2.jpg','Tea country above Nuwara Eliya'],
       ['img/tour-classic-hop-3.jpg','The hill-country train crossing Nine Arch Bridge'],
-      ['img/tour-classic-hop-4.jpg','A leopard on the track in Yala']
+      ['img/tour-classic-hop-4.jpg','A leopard on the track in Yala'],
+      ['img/tour-classic-hop-6.jpg','Elephants at a Minneriya waterhole'],
+      ['img/tour-classic-hop-7.jpg','Boats on the lake below the hills'],
+      ['img/tour-classic-hop-5.jpg','Rice and curry, the everyday feast']
     ],
     'grand-island-loop':[
       ['img/tour-grand-island-loop.jpg','Galle Fort lighthouse and ramparts at golden hour'],
       ['img/tour-grand-island-loop-1.jpg','Ruwanwelisaya stupa, Anuradhapura'],
-      ['img/tour-grand-island-loop-2.jpg','The climb up Sigiriya rock fortress'],
-      ['img/tour-grand-island-loop-3.jpg','A wild elephant in Udawalawe'],
+      ['img/tour-grand-island-loop-5.jpg','A wild elephant in Udawalawe'],
+      ['img/tour-grand-island-loop-7.jpg','The hill-country train from the air'],
+      ['img/tour-grand-island-loop-6.jpg','Kandyan dancers'],
+      ['img/tour-grand-island-loop-8.jpg','A whale breaching off Mirissa'],
       ['img/tour-grand-island-loop-4.jpg','Mirissa beach below Coconut Tree Hill']
     ],
     'tea-and-trains':[
       ['img/tour-tea-and-trains.jpg','Blue train curving through emerald tea plantations near Ella'],
-      ['img/tour-tea-and-trains-1.jpg','Misty tea fields on the way to Lipton’s Seat'],
+      ['img/tour-tea-and-trains-1.jpg','Misty tea fields on the way to Lipton\u2019s Seat'],
+      ['img/tour-tea-and-trains-5.jpg','Pluckers working the tea fields'],
       ['img/tour-tea-and-trains-2.jpg','The escarpment at Horton Plains'],
+      ['img/tour-tea-and-trains-8.jpg','A highland lake on the Horton Plains loop'],
       ['img/tour-tea-and-trains-3.jpg','The train through the hill country'],
-      ['img/tour-tea-and-trains-4.jpg','Cloud rolling over the high tea hills']
+      ['img/tour-tea-and-trains-6.jpg','A planter\u2019s bungalow above Nuwara Eliya'],
+      ['img/tour-tea-and-trains-7.jpg','Cattle on the line \u2014 hill-country traffic']
     ],
     'wild-ceylon':[
       ['img/tour-wild-ceylon.jpg','Wild elephants gathering at a Minneriya reservoir at dusk'],
       ['img/tour-wild-ceylon-1.jpg','A Sri Lankan leopard in Yala'],
+      ['img/tour-wild-ceylon-5.jpg','A wild peacock in the scrub'],
       ['img/tour-wild-ceylon-2.jpg','An elephant on the park track, Udawalawe'],
+      ['img/tour-wild-ceylon-6.jpg','A leopard resting on a fallen tree'],
       ['img/tour-wild-ceylon-3.jpg','A herd crossing the river'],
-      ['img/tour-wild-ceylon-4.jpg','Elephants at the waterhole']
+      ['img/tour-wild-ceylon-7.jpg','A leopard watching from a branch']
     ],
     'cultural-triangle-express':[
       ['img/tour-cultural-triangle.jpg','Golden Buddha statues inside the Dambulla cave temple'],
       ['img/tour-cultural-triangle-express-1.jpg','Sigiriya rock fortress above the plain'],
       ['img/tour-cultural-triangle-express-2.jpg','The rock-carved Buddha at Polonnaruwa'],
+      ['img/tour-cultural-triangle-express-6.jpg','Nissanka Latha Mandapaya, Polonnaruwa'],
       ['img/tour-cultural-triangle-express-3.jpg','A great stupa at Anuradhapura'],
-      ['img/tour-cultural-triangle-express-4.jpg','Evening at the Temple of the Tooth, Kandy']
+      ['img/tour-cultural-triangle-express-7.jpg','Buddha statue by the Jethawana pool'],
+      ['img/tour-cultural-triangle-express-4.jpg','Evening at the Temple of the Tooth, Kandy'],
+      ['img/tour-cultural-triangle-express-5.jpg','A Kandyan dancer in full costume']
     ],
     'coast-honeymoon':[
       ['img/tour-coast-honeymoon.jpg','A couple on a quiet palm-fringed beach at Tangalle'],
       ['img/tour-coast-honeymoon-1.jpg','A quiet palm-fringed beach on the south coast'],
-      ['img/tour-coast-honeymoon-2.jpg','Galle lighthouse at sunset'],
-      ['img/tour-coast-honeymoon-3.jpg','Whale watching off Mirissa'],
-      ['img/tour-coast-honeymoon-4.jpg','Palms at sunset on the southern shore']
+      ['img/tour-coast-honeymoon-5.jpg','A sea turtle in the shallows'],
+      ['img/tour-coast-honeymoon-7.jpg','The lighthouse among the palms at sunset'],
+      ['img/tour-coast-honeymoon-6.jpg','A whale off the southern coast'],
+      ['img/tour-coast-honeymoon-8.jpg','The bay from above'],
+      ['img/tour-coast-honeymoon-4.jpg','Palms at sunset on the southern shore'],
+      ['img/tour-coast-honeymoon-9.jpg','A Sri Lankan meal served on a leaf']
     ],
     'southern-surf':[
       ['img/tour-southern-surf.jpg','Surfers at a golden point break at sunrise'],
-      ['img/tour-southern-surf-1.jpg','Riding a clean south-coast wave'],
+      ['img/tour-southern-surf-5.jpg','Dropping into a clean south-coast wave'],
       ['img/tour-southern-surf-2.jpg','Rocky headland on the southern shore'],
-      ['img/tour-southern-surf-3.jpg','Galle and the coast from the air'],
+      ['img/tour-southern-surf-6.jpg','Open ocean swell rolling in'],
+      ['img/tour-southern-surf-1.jpg','An early session at the point'],
       ['img/tour-southern-surf-4.jpg','Palms along the beach road']
     ]
   };
-  // gallery — lead photo from the tour, plus scene placeholders
+  // gallery — the grid shows the first TILES photos; anything beyond that is reachable
+  // only through the lightbox, which the last tile advertises as "+N photos".
+  const TILES=5;
   const fallback=[t.photo,'Your private AC vehicle & chauffeur-guide','A boutique hotel along the route','Local Sri Lankan rice & curry','A scenic stop on the road'];
-  const scenes=TOUR_GALLERY[t.id] || fallback.map(p=>[null,p]);
-  document.getElementById('gallery').innerHTML = scenes.map((entry,i)=>{
-    const [src,caption]=Array.isArray(entry)?entry:[null,entry];
-    const cap=String(caption).replace(/^PHOTO\s*—\s*/,'').replace(/"/g,'&quot;');
-    const photo=src?` src="${src}"`:'';
-    return `<image-slot id="tour-photo-${t.id}${i?'-'+i:''}" class="${i===0?'g0':''}" shape="rounded" radius="12"${photo} placeholder="Drop a photo — ${cap}"></image-slot>`;
+  const scenes=(TOUR_GALLERY[t.id] || fallback.map(p=>[null,p]))
+    .map(e=>Array.isArray(e)?e:[null,e])
+    .map(([src,caption])=>[src,String(caption).replace(/^PHOTO\s*—\s*/,'')]);
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const zoomIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5"/></svg>';
+  const extra=Math.max(0,scenes.length-TILES);
+
+  document.getElementById('gallery').innerHTML = scenes.slice(0,TILES).map(([src,caption],i)=>{
+    const cap=esc(caption);
+    const photo=src?` src="${esc(src)}"`:'';
+    const last=(i===TILES-1 && extra>0);
+    const badge=last?`<span class="gmore">+${extra} photo${extra>1?'s':''}</span>`
+                    :`<span class="gcue">${zoomIcon} View</span>`;
+    const label=last?`View all ${scenes.length} photos`:`${cap} — open larger`;
+    return `<button type="button" class="gtile ${i===0?'g0':''}" data-i="${i}" aria-label="${esc(label)}">`+
+      `<image-slot id="tour-photo-${t.id}${i?'-'+i:''}" shape="rounded" radius="12"${photo} placeholder="Drop a photo — ${cap}"></image-slot>`+
+      `${badge}</button>`;
   }).join('');
+
+  /* Lightbox. Deliberately the same shell as ch-map.js's expand modal — overlay, rounded
+     card, head with a round close button — so expanding a photo and expanding the route map
+     feel like the same gesture. Built on demand and thrown away on close; there is never
+     more than one, and it owns document scroll only while open. */
+  function openLightbox(start){
+    if(document.querySelector('.ch-lb')) return;
+    const prevFocus=document.activeElement;
+    const prevOverflow=document.body.style.overflow;
+    const EASE=(window.CH&&CH.motion&&CH.motion.EASE)||'cubic-bezier(.22,.75,.3,1)';
+    const reduce=()=>!!(window.CH&&CH.motion&&CH.motion.reduce&&CH.motion.reduce());
+    let i=Math.min(Math.max(start|0,0),scenes.length-1);
+
+    const lb=document.createElement('div');
+    lb.className='ch-lb';
+    lb.setAttribute('role','dialog');
+    lb.setAttribute('aria-modal','true');
+    lb.setAttribute('aria-label',t.name+' photos');
+    lb.innerHTML=
+      '<div class="ch-lb-card">'+
+        '<div class="ch-lb-head"><span class="ch-lb-count"></span>'+
+        '<button type="button" class="ch-lb-close" aria-label="Close photos">×</button></div>'+
+        '<div class="ch-lb-body">'+
+          '<button type="button" class="ch-lb-nav ch-lb-prev" aria-label="Previous photo">‹</button>'+
+          '<img alt="">'+
+          '<button type="button" class="ch-lb-nav ch-lb-next" aria-label="Next photo">›</button>'+
+        '</div>'+
+        '<p class="ch-lb-cap"></p>'+
+      '</div>';
+
+    const img=lb.querySelector('img'), cap=lb.querySelector('.ch-lb-cap');
+    const count=lb.querySelector('.ch-lb-count');
+    const prev=lb.querySelector('.ch-lb-prev'), next=lb.querySelector('.ch-lb-next');
+
+    // Fetch the neighbours so a click on ‹ / › swaps an already-decoded image instead of
+    // flashing an empty frame on a slow connection.
+    const warm=n=>{ const s=scenes[n]&&scenes[n][0]; if(s){ const p=new Image(); p.src=s; } };
+
+    function show(n,dir){
+      i=n;
+      const [src,caption]=scenes[i];
+      img.src=src||''; img.alt=caption||'';
+      cap.textContent=caption||'';
+      count.textContent=(i+1)+' / '+scenes.length;
+      prev.disabled=(i===0); next.disabled=(i===scenes.length-1);
+      warm(i+1); warm(i-1);
+      if(dir && !reduce()) img.animate(
+        [{opacity:0,transform:'translateX('+(dir*18)+'px)'},{opacity:1,transform:'none'}],
+        {duration:280,easing:EASE});
+    }
+
+    let closed=false,removed=false;
+    // The teardown must never be reachable ONLY through an animation's finished promise.
+    // Animations don't advance in a background tab, so a visitor who hits Esc and switches
+    // away would come back to a modal still covering the page with scroll already restored.
+    // Same guard CH.motion.tweenNumber uses: skip the animation when we know it can't run,
+    // and back it with a timer either way. done() is idempotent so both paths are safe.
+    function close(){
+      if(closed) return;
+      closed=true;
+      document.removeEventListener('keydown',onKey);
+      document.body.style.overflow=prevOverflow;
+      const done=()=>{
+        if(removed) return;
+        removed=true;
+        if(lb.parentNode) lb.remove();
+        if(prevFocus&&prevFocus.isConnected&&prevFocus.focus) prevFocus.focus();
+      };
+      if(reduce()||document.hidden) return done();
+      lb.animate([{opacity:1},{opacity:0}],{duration:180,easing:EASE}).finished.catch(()=>{}).then(done);
+      setTimeout(done,400);
+    }
+    function onKey(e){
+      if(e.key==='Escape') close();
+      else if(e.key==='ArrowRight'&&i<scenes.length-1) show(i+1,1);
+      else if(e.key==='ArrowLeft'&&i>0) show(i-1,-1);
+    }
+
+    document.addEventListener('keydown',onKey);
+    lb.addEventListener('mousedown',e=>{ if(e.target===lb) close(); });
+    lb.querySelector('.ch-lb-close').addEventListener('click',close);
+    prev.addEventListener('click',()=>{ if(i>0) show(i-1,-1); });
+    next.addEventListener('click',()=>{ if(i<scenes.length-1) show(i+1,1); });
+
+    // Horizontal swipe on touch. Ignores mostly-vertical drags so scrolling still works.
+    let x0=null,y0=null;
+    lb.addEventListener('touchstart',e=>{ const p=e.touches[0]; x0=p.clientX; y0=p.clientY; },{passive:true});
+    lb.addEventListener('touchend',e=>{
+      if(x0==null) return;
+      const p=e.changedTouches[0], dx=p.clientX-x0, dy=p.clientY-y0;
+      x0=null;
+      if(Math.abs(dx)<45||Math.abs(dx)<Math.abs(dy)) return;
+      if(dx<0&&i<scenes.length-1) show(i+1,1);
+      if(dx>0&&i>0) show(i-1,-1);
+    },{passive:true});
+
+    document.body.style.overflow='hidden';
+    document.body.appendChild(lb);
+    show(i,0);
+    lb.querySelector('.ch-lb-close').focus();
+    if(!reduce()) lb.animate([{opacity:0},{opacity:1}],{duration:200,easing:EASE});
+    return close;
+  }
+
+  document.getElementById('gallery').addEventListener('click',e=>{
+    const tile=e.target.closest&&e.target.closest('.gtile');
+    if(tile) openLightbox(+tile.dataset.i||0);
+  });
 
   // route ribbon
   document.getElementById('t-route').innerHTML = t.stops.map((s,i)=>
