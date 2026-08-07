@@ -77,6 +77,39 @@ function vehicleLabel(tier: string | null | undefined): string {
   return 'Vehicle';
 }
 
+// Does this place read as an airport? Same test the ops shell raises its airport flag on, so the
+// pay page and the ops sheet can never disagree about what an airport run is.
+const AIRPORT_RE = /airport|cmb|katunayake/i;
+const isAirportPlace = (s: string | undefined): boolean => !!s && AIRPORT_RE.test(s);
+
+// The endpoints, in travel order — the same resolution legRoute() renders from.
+function legEnds(l: ToolLegLite): [string, string] {
+  const stops = Array.isArray(l.stops) && l.stops.length >= 2 ? l.stops : [l.from ?? '', l.to ?? ''];
+  return [stops[0] ?? '', stops[stops.length - 1] ?? ''];
+}
+
+// What a single transfer actually includes. Until 2026-08-07 this sentence was a constant that
+// promised "Airport pickup with a name board" on EVERY one-leg private transfer — so a
+// Sigiriya → Kandy page told the customer we'd meet them at an airport that appears nowhere in
+// their trip (owner-caught on a live pay page). That is exactly the invention this file's header
+// says cannot happen, so the copy now follows the endpoints.
+//
+// Direction matters and is why the name board can't simply be conditioned on "is an airport
+// involved": the board is an ARRIVALS service. On a Kandy → CMB run the airport is the drop-off,
+// and promising a name board there would be a second wrong sentence, not a fix.
+//
+// The last case is deliberately silent rather than guessing: an operator-set airport category
+// with no airport in either endpoint name tells us a terminal is involved but not which end, and
+// a wrong pickup promise is worse than no pickup line at all.
+function transferIncludedText(l: ToolLegLite): string {
+  const base = 'Driver, fuel and highway tolls.';
+  const [from, to] = legEnds(l);
+  if (isAirportPlace(from)) return `${base} Airport pickup with a name board.`;
+  if (isAirportPlace(to)) return `${base} Hotel pickup and airport drop-off.`;
+  if (l.category === 'airport') return base;
+  return `${base} Hotel pickup and drop-off.`;
+}
+
 function legRoute(l: ToolLegLite): string {
   const stops = Array.isArray(l.stops) && l.stops.length >= 2 ? l.stops : [l.from ?? '?', l.to ?? '?'];
   // Short labels (2026-08-06): a full Google address wraps this row to three lines on a phone.
@@ -153,7 +186,7 @@ export function payPageCopy(quote: {
         { k: 'Vehicle', v: `Private ${veh.toLowerCase()}` },
       ],
       legs: null,
-      includedText: 'Driver, fuel and highway tolls. Airport pickup with a name board.',
+      includedText: transferIncludedText(l),
       totalLabel: 'Total',
     };
   }
