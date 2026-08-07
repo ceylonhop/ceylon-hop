@@ -12,7 +12,7 @@
    /errors/client sink (same-origin) → Sentry + founder alert. Prefixed [ops-ui] so ops-tooling
    errors are distinguishable from customer-site ones. Placed first so it catches early errors. */
 (function(){var n=0;
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:'ops',message:'[ops-ui] '+String(m||'unknown').slice(0,480),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon('/errors/client',new Blob([b],{type:'application/json'})))||fetch('/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});
 /* Handled-failure reporting: the catch blocks below swallow errors into a toast or a silent

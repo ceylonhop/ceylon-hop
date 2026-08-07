@@ -17,7 +17,14 @@ const MAX_BODY_BYTES = 2048;
 // planner (mostly crawlers and stale links) — acknowledge those beacons but don't track/alert.
 const BENIGN_MESSAGE = /no catalogue route/i;
 
+// Which of our front-ends beaconed. A CLOSED set on purpose: this value becomes a Sentry
+// tag and part of an alert subject, and this endpoint is public and unauthenticated — an
+// open string field would be a way to write arbitrary text into both. Optional because
+// pages cached before 2026-08-07 are still in the wild and must keep reporting.
+const PROPERTIES = ['site', 'pay', 'quote', 'manage', 'board', 'ops'] as const;
+
 const ClientErrorSchema = z.object({
+  property: z.enum(PROPERTIES).optional(),
   message: z.string().min(1).max(500),
   stack: z.string().max(1500).optional(),
   url: z.string().max(300).optional(),
@@ -44,7 +51,12 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
       // Expected control-flow beacons are acknowledged but never tracked or alerted.
       if (BENIGN_MESSAGE.test(e.message)) return c.body(null, 204);
 
-      track(new Error(e.message), { tag: 'frontend', extra: { stack: e.stack, url: e.url, ua: e.ua } });
+      const property = e.property ?? 'site';
+      track(new Error(e.message), {
+        tag: 'frontend',
+        property,
+        extra: { stack: e.stack, url: e.url, ua: e.ua },
+      });
       // Coarsen the dedupe key so a beacon can't defeat the alert throttle by varying the
       // message — an attacker appending a random token, or a real error carrying an embedded
       // id/url, would otherwise mint a fresh key every time. Strip urls, hex/uuid runs and
@@ -59,12 +71,15 @@ export function clientErrorRoutes(deps: { alerts: AlertAdapter }) {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 80);
-      const digest = createHash('sha1').update(basis).digest('hex').slice(0, 12);
+      // The property joins the dedupe basis: the SAME message on the marketing site and on
+      // the payment page are two different incidents, and collapsing them means a chatty
+      // blog-page error silently swallows the one that is costing money.
+      const digest = createHash('sha1').update(`${property}|${basis}`).digest('hex').slice(0, 12);
       await deps.alerts.send({
         severity: 'warning',
         kind: 'client_error',
-        title: `Front-end error: ${e.message.slice(0, 80)}`,
-        body: `${e.message}\n\nurl: ${e.url ?? '?'}\nua: ${e.ua ?? '?'}\n\n${e.stack ?? ''}`.trim(),
+        title: `Front-end error [${property}]: ${e.message.slice(0, 80)}`,
+        body: `${e.message}\n\nproperty: ${property}\nurl: ${e.url ?? '?'}\nua: ${e.ua ?? '?'}\n\n${e.stack ?? ''}`.trim(),
         dedupeKey: digest,
       });
       return c.body(null, 204);

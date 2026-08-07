@@ -15,14 +15,26 @@ window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<!-- Declare the property BEFORE analytics.js: it tags every event, the Clarity session and
+     the error beacon, and it is what lets one GTM container tell the pay page apart from a
+     blog post. See docs/analytics/property-tracking.md. -->
+<script>window.CH_PROPERTY='pay';</script>
 <script src="analytics.js"></script>
-<!-- No consent.js here (owner, 2026-08-01): a customer mid-payment is not the audience
-     for a cookie banner, and it overlaid the CTA. The head's Consent Mode default is
-     'denied' and nothing on this page grants, so no banner ≠ tracking. -->
+<!-- Still no consent.js (owner, 2026-08-01): a customer mid-payment is not the audience for a
+     floating cookie card, and it overlaid the CTA. But "no banner" had become "no consent" —
+     nothing here ever granted, so Clarity never recorded a single payment and GA4 saw only
+     cookieless pings. consent-transactional.js keeps the owner's rule (it reserves its own
+     height instead of covering anything) and asks for analytics ONLY; ads stay denied here
+     permanently. -->
+<script src="consent-transactional.js" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
-(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:P,message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+// Published so the page can report HANDLED failures too. A dead /quotes/pay/view used to be
+// swallowed into a friendly "this link has sailed off" — indistinguishable, to us, from a
+// genuinely expired link. The n>=5 cap is shared, so a hot loop still cannot flood the sink.
+window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
@@ -191,6 +203,59 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var typed = null;        // raw form values, so a payment failure restores what they typed
   var submitting = false;  // one checkout per press — see startPayment
 
+  // ── funnel + failure reporting (2026-08-07) ───────────────────────────────────────────
+  // This page had NO client-side instrumentation at all, which is why a payment that died
+  // inside the gateway left a `pending` row in Postgres and nothing else: we could not tell
+  // how many payers reached the form, abandoned at billing, or came back on the cancel leg.
+  // Both helpers are guarded — analytics must never be why a payment page breaks — and
+  // neither ever carries a name, email, phone, address or pay token.
+  function track(event, params){
+    if (typeof window.chTrack === 'function') window.chTrack(event, params || {});
+  }
+  function report(what, err){
+    var x = err || {};
+    if (typeof window.chReportError === 'function') {
+      window.chReportError('[pay] ' + what + (x.message ? ' — ' + x.message : ''), x.stack);
+    }
+  }
+  // The quote's own money, in GA4's shape. `totals.cents` is the integer minor unit the
+  // server sent; the displayed string is never parsed back into a number. On the return leg
+  // /view has not been re-fetched yet, so fall back to the figure stashed at hand-off —
+  // otherwise a real payment reports a value of zero.
+  var stashedCents = 0;
+  function money(){
+    var c = data && data.totals ? Number(data.totals.cents || 0) : stashedCents;
+    return { value: Math.round(c) / 100, currency: 'USD' };
+  }
+  function withMoney(extra){
+    var p = money();
+    if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) p[k] = extra[k];
+    return p;
+  }
+  // `purchase` is the one event that becomes revenue in GA4, and GA4 cannot delete events
+  // after the fact. Two independent gates: the host must be a real one (chIsProd), and the
+  // gateway we actually handed off to must not have been the sandbox — recorded at
+  // hand-off time, because the return leg never sees the checkout URL.
+  function sandboxUsed(){
+    try { return sessionStorage.getItem(STORE + ':sandbox') === '1'; } catch (e) { return false; }
+  }
+  function markSandbox(isSandbox){
+    try { sessionStorage.setItem(STORE + ':sandbox', isSandbox ? '1' : '0'); } catch (e) {}
+  }
+  function trackPurchase(reference){
+    if (typeof window.chIsProd !== 'function' || !window.chIsProd()) return;
+    if (sandboxUsed()) return;
+    // Once per booking, whatever the customer does with the back button or a refresh. GA4
+    // does dedupe on transaction_id in its ecommerce reports, but the raw event count feeds
+    // everything else, so the guard lives here rather than being left to the platform.
+    var seen = STORE + ':purchased';
+    try {
+      if (sessionStorage.getItem(seen) === String(reference || '1')) return;
+      sessionStorage.setItem(seen, String(reference || '1'));
+    } catch (e) { /* private mode — better a possible double than a missing purchase */ }
+    track('purchase', withMoney({ transaction_id: reference || '' }));
+  }
+
   // A press that is WORKING, not a control that is unavailable. Spinner + text, so the wait for
   // /start + /checkout reads as progress on the button itself (the owner's 2026-08-01 call: no
   // full-screen takeover until the gateway window is genuinely opening).
@@ -219,7 +284,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // NO CARD DATA is ever on this page, and none may ever be put here.
   var STORE = 'ch_pay_v1';
   function remember(){
-    try { sessionStorage.setItem(STORE, JSON.stringify({ t: t, typed: typed })); }
+    // `cents` rides along for the same reason `typed` does: the return leg renders before
+    // /view has been re-fetched, so without it a `purchase` would report a value of zero.
+    try {
+      sessionStorage.setItem(STORE, JSON.stringify({
+        t: t, typed: typed, cents: (data && data.totals ? Number(data.totals.cents || 0) : 0),
+      }));
+    }
     catch (e) { /* private mode, quota, storage disabled — the flow must still work without it */ }
   }
   function recall(){
@@ -322,8 +393,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // A cell is only rendered when the quote actually states it. The pass on booking.html can say
   // "Departs 09:00" because the wizard asked; a quote pay link never records a departure time,
   // so rather than print "To confirm" into a keepsake, the row is simply not there.
-  function passCell(k, v){
-    return v ? '<div><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>' : '';
+  // ── Clarity masking ─────────────────────────────────────────────────────────────────
+  // Clarity's default mode masks form INPUTS, not rendered text — so the traveller's name,
+  // written into the page as ordinary text, would be legible in every replay. `data-clarity-
+  // mask` covers the elements that carry a person, and only those: the layout, the prices,
+  // the itinerary and the booking reference stay visible, because a replay you cannot read
+  // is a replay that answers nothing. The reference in particular is the join key back to
+  // the booking, and is not identifying on its own.
+  var MASK = ' data-clarity-mask="true"';
+
+  function passCell(k, v, sensitive){
+    return v ? '<div' + (sensitive ? MASK : '') + '><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>' : '';
   }
 
   function renderPaid(p){
@@ -344,7 +424,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
     app.innerHTML = '<div class="pp-paid">'
       + '<div class="st-badge ok">&#10003;</div>'
-      + '<h1 class="st-title">You’re booked' + (p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
+      + '<h1 class="st-title"' + (p.firstName ? MASK : '') + '>You’re booked' + (p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
       + '<p class="st-sub">Confirmation emailed. Keep this pass for your records.</p>'
       + '<div class="pass">'
       +   '<div class="pass-main">'
@@ -358,7 +438,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       +       passCell('Travellers', fact('Travellers'))
       +       passCell('Vehicle', fact('Vehicle'))
       +       passCell('Days', fact('Days'))
-      +       passCell('Lead guest', p.leadName || '')
+      +       passCell('Lead guest', p.leadName || '', true)
       +       passCell('Paid', p.amountUsd || '')
       +     '</div>'
       +   '</div>'
@@ -406,7 +486,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderPayable(){
     var c = data.copy, tt = data.totals;
     app.innerHTML =
-      '<div class="pp-hello">' + (c.greetingName ? 'Hi ' + esc(c.greetingName) + ',' : 'Here’s your trip.') + '</div>'
+      '<div class="pp-hello"' + (c.greetingName ? MASK : '') + '>' + (c.greetingName ? 'Hi ' + esc(c.greetingName) + ',' : 'Here’s your trip.') + '</div>'
       + '<h1 class="pp-title">' + esc(c.title) + '</h1>'
       + '<p class="pp-sub">' + esc(c.subtitle) + '</p>'
       + '<div class="ticket"><div class="t-main">'
@@ -423,7 +503,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '<div class="pp-help" id="payhelp" hidden></div>'
       + '</div></div>' + waLine();
-    document.getElementById('paybtn').addEventListener('click', renderDetails);
+    track('view_item', withMoney({ item_category: String((data.copy && data.copy.product) || 'quote') }));
+    document.getElementById('paybtn').addEventListener('click', function(){
+      track('begin_checkout', withMoney());
+      renderDetails();
+    });
   }
 
   // ── details step: only what the quote couldn't already tell us. Country + phone use
@@ -556,7 +640,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           + esc(c[2]) + ' ' + esc(c[1]) + '</option>';
       }).join('');
     app.innerHTML =
-      '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
+      '<h2 class="dt-h"' + (data.copy.greetingName ? MASK : '') + '>Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
       + '<div class="ticket"><div class="t-main">'
       + '<div class="dt-kick">Lead passenger <span>· who&rsquo;s travelling</span></div>'
@@ -741,16 +825,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       billLast: (document.getElementById('f-blast').value || '').trim(),
       terms: document.getElementById('f-terms').checked,
     };
+    // Each block reports WHICH field stopped them. A payer who gives up at the billing
+    // address and one who never ticked the terms are different problems with different
+    // fixes, and until now both were simply absent from every report. The reason is a fixed
+    // keyword, never the value they typed.
+    function blocked(reason){ track('pay_form_invalid', withMoney({ reason: reason })); }
     // The country is asked, never assumed — and the server requires it (customer.country is
     // min(1)), so a blank one would 400 at the gateway door instead of here.
-    if (parts.noCountry) { fail('Please choose your country code.'); return; }
-    if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    if (parts.noCountry) { blocked('country'); fail('Please choose your country code.'); return; }
+    if (parts.empty) { blocked('phone'); fail('Please enter your WhatsApp number.'); return; }
     // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
     // placeholder. Name each empty box rather than a generic "check the form".
-    if (!typed.address) { fail('Please enter your billing address.'); return; }
-    if (!typed.city) { fail('Please enter your billing city.'); return; }
-    if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
+    if (!typed.address) { blocked('address'); fail('Please enter your billing address.'); return; }
+    if (!typed.city) { blocked('city'); fail('Please enter your billing city.'); return; }
+    if (!typed.billCountry) { blocked('bill_country'); fail('Please choose your billing country.'); return; }
     if (!typed.terms) {
+      blocked('terms');
       fail('Please accept the terms & cancellation policy to continue.');
       // fail() rebuilds the step, so re-find the box; focus is what turns "you must" into "here".
       var box = document.getElementById('f-terms');
@@ -758,6 +848,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       return;
     }
     if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
+      blocked('cardholder');
       fail('Please enter the cardholder’s first and last name.'); return;
     }
     var billing = {
@@ -791,6 +882,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // the DOM — and two checkouts means two PayHere hand-offs for one booking.
     if (submitting) return;
     submitting = true;
+    // Everything the form needed is in hand and we are about to leave for the gateway.
+    track('add_payment_info', withMoney());
     // Straight to the hand-off screen. The button latch stays because a double-tap can land two
     // clicks in the same frame, before this repaint removes the button at all.
     setBusy(document.getElementById('gobtn'), true, 'Opening secure payment…');
@@ -801,8 +894,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }).then(function(r){
       if (r.ok) return r.json();
       return r.json().catch(function(){ return {}; }).then(function(x){
+        // A refusal at OUR door, before the gateway is ever reached. Named, because
+        // "quote changed underneath them" and "the API is down" are not the same story.
+        track('payment_start_failed', withMoney({ reason: String(x.error || ('http_' + r.status)) }));
         if (x.error === 'quote_revised') { renderRevised(); throw { handled: true }; }
         if (x.error === 'already_paid') { load(); throw { handled: true }; }
+        report('pay/start refused', new Error(String(x.error || r.status)));
         throw new Error(x.message || 'We couldn’t start your payment just now — no charge was made.');
       });
     }).then(function(st){
@@ -815,7 +912,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         headers: { authorization: 'Bearer ' + st.checkoutToken, 'content-type': 'application/json' },
         body: JSON.stringify({ returnTo: 'pay-link' }),
       }).then(function(r){
-        if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.');
+        if (!r.ok) {
+          track('payment_start_failed', withMoney({ reason: 'checkout_' + r.status }));
+          report('checkout refused', new Error('checkout ' + r.status));
+          throw new Error('We couldn’t start your payment just now — no charge was made.');
+        }
         return r.json();
       });
     }).then(function(checkout){
@@ -828,6 +929,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // Remember the link before leaving our origin: the return trip lands on a URL that carries
       // only a settlement-status token, so this is how the page finds its way back to the quote.
       remember();
+      // Record WHICH gateway we are handing off to, before we lose sight of the URL. The return
+      // leg never sees it, and a sandbox settlement reported as revenue is permanent in GA4.
+      markSandbox(/sandbox\.payhere\.lk/.test(checkout.checkoutUrl));
+      // The last thing we know for certain: they left for the gateway. Everything after this
+      // is inferred from what our own server tells us on the way back.
+      track('payment_initiated', withMoney());
       // A TOP-LEVEL form POST — the whole point of this page's redesign. PayHere's checkout takes
       // ~16 POST fields, so it cannot be a location assignment. The fields are the server's
       // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
@@ -881,6 +988,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="st-sub">This usually takes a few seconds.</p></div>';
     var tries = 0;
     var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
+    // Which leg we came back on, for reporting ONLY. Computed here, beside the budget — the
+    // one other thing the hint is allowed to influence — and deliberately not inside the
+    // poll: `cameFromCancel` must stay nowhere near the code that decides an outcome, which
+    // is the invariant pay-page-redirect.test.js exists to hold.
+    var leg = cameFromCancel ? 'cancel' : 'return';
     var settled = false;   // a terminal answer arrived; stop everything
     var fellBack = false;  // the form is already on screen, polling continues underneath
 
@@ -900,15 +1012,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if (!r.ok) throw new Error('pay-return ' + r.status);
         return r.json();
       }).then(function(v){
-        if (v.status === 'paid') { stop(); forget(); return t ? load() : renderPaidMinimal(v.reference); }
+        if (v.status === 'paid') {
+          stop(); forget();
+          trackPurchase(v.reference);
+          return t ? load() : renderPaidMinimal(v.reference);
+        }
         // A refusal must never read as an endless "confirming" — the whole point of asking our
         // own server rather than trusting the redirect.
         if (v.status === 'failed') {
           stop();
+          track('payment_failed', withMoney({ leg: leg }));
           return resumeAfterFailure('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
         }
         if (tries < budget) { setTimeout(poll, 2000); return; }
         stop();
+        // The poll budget ran out with no verdict. THIS is the state behind the `pending`
+        // rows: not a decline, not a success, just a payer who left and never came back to a
+        // definite answer. It had no name and no number until now.
+        track(cameFromCancel ? 'payment_cancelled' : 'payment_unconfirmed', withMoney({ leg: leg, tries: tries }));
         // Nothing terminal ever arrived. If the form is already up, just retire the "checking"
         // line in place — re-rendering underneath someone who has started typing again is worse
         // than a stale sentence.
@@ -925,9 +1046,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', DECLINE_HELP, true);
         }
         renderStillWaiting();
-      }).catch(function(){
+      }).catch(function(e){
         if (tries < budget) { setTimeout(poll, 2000); return; }
         stop();
+        // Every poll failed. The customer may well have paid; we simply cannot ask.
+        report('pay-return unreachable', e);
+        track('payment_unconfirmed', withMoney({ leg: leg, tries: tries, reason: 'unreachable' }));
         if (!fellBack) renderStillWaiting();
       });
     })();
@@ -982,20 +1106,38 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       return r.json();
     }).then(function(v){
       data = v;
+      // Every arrival is counted with the state it landed in, so "how many pay links get
+      // opened at all" and "how many arrive already dead" stop being the same unknown.
+      track('pay_link_opened', withMoney({ state: String(v.state || 'unknown') }));
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
       if (v.state === 'revised') return renderRevised();
       if (v.state === 'payable') return renderPayable();
       return renderUnavailable();
-    }).catch(function(){ renderUnavailable(); });
+    }).catch(function(e){
+      // This used to swallow a dead or 500-ing API into the same friendly dead-end a
+      // genuinely expired link gets — so an outage on the pay endpoint was invisible to us
+      // until a customer complained. It reports now, and still shows the same screen.
+      report('view failed', e);
+      track('pay_link_opened', { state: 'error' });
+      renderUnavailable();
+    });
   }
 
   if (rt) {
     // Coming back from the gateway. The pay token is not in this URL by design, so recover it —
     // and what they typed — from the tab's own storage.
     var saved = recall();
-    if (saved) { if (!t && saved.t) t = saved.t; if (saved.typed) typed = saved.typed; }
+    if (saved) {
+      if (!t && saved.t) t = saved.t;
+      if (saved.typed) typed = saved.typed;
+      // What the trip cost, for the `purchase` value — /view has not run on this leg yet.
+      if (saved.cents) stashedCents = Number(saved.cents) || 0;
+    }
     renderReturn();
   } else if (!t) {
+    // No token at all: a truncated link, or someone trimming the URL back. Worth counting —
+    // it is indistinguishable, in the server logs, from a link that was never clicked.
+    track('pay_link_opened', { state: 'no_token' });
     renderUnavailable();
   } else {
     load();
