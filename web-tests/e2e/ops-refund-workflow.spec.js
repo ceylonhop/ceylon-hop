@@ -138,6 +138,31 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate 
     refund.status = 'cancelled';
     return route.fulfill(json(refund));
   });
+  // The API path: POST .../execute calls PayHere's Refund API server-side. `store.executeOutcome`
+  // decides what PayHere "said", so one mock covers success, decline and the indeterminate 202.
+  await page.route(/\/admin\/bookings\/booking-1\/refunds\/([^/]+)\/execute$/, async (route) => {
+    const match = new URL(route.request().url()).pathname.match(/refunds\/([^/]+)\/execute$/);
+    const refund = store.refunds.find((item) => item.id === match[1]);
+    store.executePosts = (store.executePosts || 0) + 1;
+    if (store.executeOutcome === 'failed') {
+      Object.assign(refund, { status: 'api_failed', providerMessage: 'Error processing refund' });
+      return route.fulfill(json({ error: 'refund_declined', refund }, 409));
+    }
+    if (store.executeOutcome === 'unknown') {
+      Object.assign(refund, { status: 'api_processing' });
+      return route.fulfill(json(
+        { error: 'refund_outcome_unknown', refundId: refund.id, providerMessage: 'timed out' },
+        202,
+      ));
+    }
+    Object.assign(refund, {
+      status: 'api_confirmed',
+      gatewayRef: 'PH-API-778899',
+      confirmedBy: store.email,
+      confirmedAt: '2030-01-02T10:06:00.000Z',
+    });
+    return route.fulfill(json({ refund, bookingFullyRefunded: true }));
+  });
 
   await page.goto(OPS_FILE);
   await page.locator('[data-act="open"][data-id="booking-1"]').click();
@@ -174,7 +199,9 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   // The reason is the operator's own words now, and it survives a reload because it is stored
   // on the refund rather than being a label the button supplied.
   await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer cancelled — airline strike');
-  await expect(page.getByText('Complete the refund in the PayHere dashboard first')).toBeVisible();
+  // The manual dashboard-and-paste route is still here, but it is now the alternative to the
+  // API button rather than the only way through — hence "Or refund it by hand".
+  await expect(page.getByText('Or refund it by hand in the PayHere dashboard')).toBeVisible();
 
   await page.locator('[data-refund-ref="refund-1"]').fill('PAYHERE-R-1001');
   await page.locator('[data-act="refundconfirm"]').click();
@@ -217,6 +244,89 @@ test('ops may reverse a far-off trip, but still cannot read the refund ledger', 
   // must not even fetch it.
   await expect(page.getByText('Refundable remaining')).toHaveCount(0);
   expect(store.refundReads).toBe(0);
+});
+
+/* ── the PayHere Refund API path ────────────────────────────────────────────────────────────
+   Until PayHere whitelisted our server IPs (2026-08-07) the API path existed server-side with
+   no way to reach it from the dashboard, and refundHtmlFor knew only the three manual statuses
+   — so every api_* row rendered as "Cancelled" and refundSummary counted none of them as money
+   spoken for. These specs pin both halves: the button, and the balance arithmetic. ── */
+
+function apiRefund(status, extra = {}) {
+  return {
+    ...makeRefund({ refunds: [], email: 'founder@e2e.test' }, 10000, 'Trip called off'),
+    status,
+    ...extra,
+  };
+}
+
+test('the founder refunds through PayHere directly and the row reads Confirmed, not Cancelled', async ({ page }) => {
+  const store = { refunds: [] };
+  page.on('dialog', (dialog) => dialog.accept());
+  await boot(page, { role: 'founder', store });
+
+  await page.locator('#reversereason').fill('Customer cancelled — airline strike');
+  await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
+  await expect(page.locator('.refund-status-manual_pending')).toBeVisible();
+
+  const execute = page.locator('[data-act="refundexecute"]');
+  await expect(execute).toBeVisible();
+  await execute.dispatchEvent('click');
+  await execute.dispatchEvent('click'); // refundBusy must collapse this to one call
+
+  const done = page.locator('.refund-status-api_confirmed');
+  await expect(done).toContainText('Confirmed');
+  await expect(done).toContainText('PH-API-778899');
+  await expect(done).not.toContainText('Cancelled');
+  expect(store.executePosts).toBe(1);
+  // No dashboard-and-paste step: the API supplied the evidence itself.
+  await expect(page.locator('[data-refund-ref="refund-1"]')).toHaveCount(0);
+});
+
+test('an API-confirmed refund spends the balance, so the sheet does not re-offer it', async ({ page }) => {
+  // The bug this pins: refundSummary counted only manual_confirmed, so a booking already
+  // refunded in full through the API read as fully refundable and showed the button again.
+  const store = { refunds: [apiRefund('api_confirmed', { gatewayRef: 'PH-API-778899' })] };
+  await boot(page, { role: 'founder', store });
+
+  await expect(page.getByText('Previously refunded').locator('..').locator('.v')).toHaveText('$100');
+  await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$0');
+  await expect(page.locator('[data-act="refundrequest"]')).toHaveCount(0);
+});
+
+test('a refund in flight reserves the money and offers no buttons', async ({ page }) => {
+  const store = { refunds: [apiRefund('api_processing')] };
+  await boot(page, { role: 'founder', store });
+
+  const row = page.locator('.refund-status-api_processing');
+  await expect(row).toContainText('Processing at PayHere');
+  await expect(row).not.toContainText('Cancelled');
+  // api_processing is the state the whole design exists for: the money MAY have moved, so the
+  // dashboard must not offer a retry. A human reconciles it against PayHere.
+  await expect(page.getByText('Check PayHere before doing anything else')).toBeVisible();
+  await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(0);
+  await expect(page.locator('[data-act="refundconfirm"]')).toHaveCount(0);
+  await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$0');
+});
+
+test('a declined refund explains itself and hands the balance back', async ({ page }) => {
+  const store = { refunds: [apiRefund('api_failed', { providerMessage: 'Error processing refund' })] };
+  await boot(page, { role: 'founder', store });
+
+  const row = page.locator('.refund-status-api_failed');
+  await expect(row).toContainText('Failed');
+  await expect(row).toContainText('Error processing refund'); // not a bare status code
+  // api_failed reserves nothing — PayHere told us the money definitely did not move.
+  await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$100');
+  await expect(page.locator('[data-act="refundrequest"]')).toBeVisible();
+});
+
+test('finance can see an API refund but cannot fire one', async ({ page }) => {
+  const store = { refunds: [apiRefund('manual_pending')] };
+  await boot(page, { role: 'finance', store });
+
+  await expect(page.locator('.refund-status-manual_pending')).toBeVisible();
+  await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(0);
 });
 
 test('ops is locked out once the trip is inside 24 hours', async ({ page }) => {
