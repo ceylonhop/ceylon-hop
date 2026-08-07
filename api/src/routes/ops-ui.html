@@ -4269,6 +4269,16 @@ function setRequestedService(dim) {
      toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
      price (see requestMismatch's 'both'+chauffeur case). */
   if (next === 'both') outputIncludeChauffeurUpsell = true;
+  /* Picking ONE service also prices the quote that way (owner, 2026-08-06). These two controls
+     were fully decoupled — deliberately, so the tool could record a request it did NOT price
+     (see requestMismatch) — but in practice the decoupling only ever produced the mistake: pick
+     Chauffeur-guide at intake, leave the quote priced Point-to-point, approve past the banner,
+     and the customer opens their quote link to the wrong service. Worse, the pay link charges
+     the STORED total, so a chauffeur trip would have gone out at the point-to-point price.
+     The mismatch state still exists and is still flagged — ops can always change Pricing as
+     afterwards — but it now takes a deliberate second action rather than being the default.
+     'both' is untouched: two requested services cannot imply one priced service. */
+  if (next === 'private' || next === 'chauffeur') setService(next);
   markDirty();
   render();
 }
