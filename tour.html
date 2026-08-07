@@ -40,7 +40,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .gallery .ph{border-radius:12px}
   .gallery image-slot{display:block;width:100%;height:100%;min-height:0}
   .gallery .g0{grid-row:1/3}
-  @media(max-width:760px){.gallery{grid-template-columns:1fr 1fr;height:auto}.gallery .g0{grid-row:auto;aspect-ratio:16/10;grid-column:1/-1}.gallery .ph:not(.g0),.gallery image-slot:not(.g0){aspect-ratio:4/3;height:auto}}
+  @media(max-width:760px){.gallery{grid-template-columns:1fr 1fr;grid-template-rows:auto;height:auto}.gallery .g0{grid-row:auto;aspect-ratio:16/10;grid-column:1/-1}.gallery .ph:not(.g0),.gallery image-slot:not(.g0){aspect-ratio:4/3;height:auto}}
 
   .detail{display:grid;grid-template-columns:1fr 360px;gap:44px;align-items:start;margin-top:30px}
   @media(max-width:920px){.detail{grid-template-columns:1fr}}
@@ -230,11 +230,68 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // headline (point-to-point) + chauffeur secondary are both set by updateEst() below
   document.getElementById('bk-wa').innerHTML = ICON.wa + ' Ask a question';
 
+  // Gallery photography, per tour: [lead, ...4 scenes]. Photos live in img/ and are
+  // referenced by src; a tour with no entry here keeps its empty placeholder slots.
+  // Credits for every photo are listed on credits.html (Unsplash requires attribution).
+  const TOUR_GALLERY={
+    'classic-hop':[
+      ['img/tour-classic-hop.jpg','Sigiriya Lion Rock rising over the jungle at dawn'],
+      ['img/tour-classic-hop-1.jpg','The Temple of the Sacred Tooth Relic, Kandy'],
+      ['img/tour-classic-hop-2.jpg','Tea country above Nuwara Eliya'],
+      ['img/tour-classic-hop-3.jpg','The hill-country train crossing Nine Arch Bridge'],
+      ['img/tour-classic-hop-4.jpg','A leopard on the track in Yala']
+    ],
+    'grand-island-loop':[
+      ['img/tour-grand-island-loop.jpg','Galle Fort lighthouse and ramparts at golden hour'],
+      ['img/tour-grand-island-loop-1.jpg','Ruwanwelisaya stupa, Anuradhapura'],
+      ['img/tour-grand-island-loop-2.jpg','The climb up Sigiriya rock fortress'],
+      ['img/tour-grand-island-loop-3.jpg','A wild elephant in Udawalawe'],
+      ['img/tour-grand-island-loop-4.jpg','Mirissa beach below Coconut Tree Hill']
+    ],
+    'tea-and-trains':[
+      ['img/tour-tea-and-trains.jpg','Blue train curving through emerald tea plantations near Ella'],
+      ['img/tour-tea-and-trains-1.jpg','Misty tea fields on the way to Lipton’s Seat'],
+      ['img/tour-tea-and-trains-2.jpg','The escarpment at Horton Plains'],
+      ['img/tour-tea-and-trains-3.jpg','The train through the hill country'],
+      ['img/tour-tea-and-trains-4.jpg','Cloud rolling over the high tea hills']
+    ],
+    'wild-ceylon':[
+      ['img/tour-wild-ceylon.jpg','Wild elephants gathering at a Minneriya reservoir at dusk'],
+      ['img/tour-wild-ceylon-1.jpg','A Sri Lankan leopard in Yala'],
+      ['img/tour-wild-ceylon-2.jpg','An elephant on the park track, Udawalawe'],
+      ['img/tour-wild-ceylon-3.jpg','A herd crossing the river'],
+      ['img/tour-wild-ceylon-4.jpg','Elephants at the waterhole']
+    ],
+    'cultural-triangle-express':[
+      ['img/tour-cultural-triangle.jpg','Golden Buddha statues inside the Dambulla cave temple'],
+      ['img/tour-cultural-triangle-express-1.jpg','Sigiriya rock fortress above the plain'],
+      ['img/tour-cultural-triangle-express-2.jpg','The rock-carved Buddha at Polonnaruwa'],
+      ['img/tour-cultural-triangle-express-3.jpg','A great stupa at Anuradhapura'],
+      ['img/tour-cultural-triangle-express-4.jpg','Evening at the Temple of the Tooth, Kandy']
+    ],
+    'coast-honeymoon':[
+      ['img/tour-coast-honeymoon.jpg','A couple on a quiet palm-fringed beach at Tangalle'],
+      ['img/tour-coast-honeymoon-1.jpg','A quiet palm-fringed beach on the south coast'],
+      ['img/tour-coast-honeymoon-2.jpg','Galle lighthouse at sunset'],
+      ['img/tour-coast-honeymoon-3.jpg','Whale watching off Mirissa'],
+      ['img/tour-coast-honeymoon-4.jpg','Palms at sunset on the southern shore']
+    ],
+    'southern-surf':[
+      ['img/tour-southern-surf.jpg','Surfers at a golden point break at sunrise'],
+      ['img/tour-southern-surf-1.jpg','Riding a clean south-coast wave'],
+      ['img/tour-southern-surf-2.jpg','Rocky headland on the southern shore'],
+      ['img/tour-southern-surf-3.jpg','Galle and the coast from the air'],
+      ['img/tour-southern-surf-4.jpg','Palms along the beach road']
+    ]
+  };
   // gallery — lead photo from the tour, plus scene placeholders
-  const scenes=[t.photo,'Your private AC vehicle & chauffeur-guide','A boutique hotel along the route','Local Sri Lankan rice & curry','A scenic stop on the road'];
-  document.getElementById('gallery').innerHTML = scenes.map((p,i)=>{
-    const cap=String(p).replace(/^PHOTO\s*—\s*/,'').replace(/"/g,'&quot;');
-    return `<image-slot id="tour-photo-${t.id}${i?'-'+i:''}" class="${i===0?'g0':''}" shape="rounded" radius="12" placeholder="Drop a photo — ${cap}"></image-slot>`;
+  const fallback=[t.photo,'Your private AC vehicle & chauffeur-guide','A boutique hotel along the route','Local Sri Lankan rice & curry','A scenic stop on the road'];
+  const scenes=TOUR_GALLERY[t.id] || fallback.map(p=>[null,p]);
+  document.getElementById('gallery').innerHTML = scenes.map((entry,i)=>{
+    const [src,caption]=Array.isArray(entry)?entry:[null,entry];
+    const cap=String(caption).replace(/^PHOTO\s*—\s*/,'').replace(/"/g,'&quot;');
+    const photo=src?` src="${src}"`:'';
+    return `<image-slot id="tour-photo-${t.id}${i?'-'+i:''}" class="${i===0?'g0':''}" shape="rounded" radius="12"${photo} placeholder="Drop a photo — ${cap}"></image-slot>`;
   }).join('');
 
   // route ribbon
