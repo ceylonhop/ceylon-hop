@@ -6,7 +6,7 @@
 (function () {
   /* @generated:pricing — from api/src/quote/rateCard.ts · DO NOT EDIT BY HAND · run `npm run generate` */
   const PER_KM = {"car":0.4025,"van":0.5405};
-  const FLOORS = {"car":29,"van":50};
+  const FLOORS = {"car":29,"van":49.99};
   const BUFFER_PCT = 10;
   const PRICE_FINISHING = {"maxReductionBps":250,"roundToCents":50};
   const CHAUFFEUR_DAY_FEE = 31.05;
@@ -170,6 +170,10 @@
     const rawCents = Math.round(amount * 100);
     const minimumAllowedCents = Math.round((minimumAllowed || 0) * 100);
     if(rawCents === 0) return 0;
+    // A price that IS the protected minimum is already final — mirrors api/src/quote/priceFinish.ts.
+    // The nearest-increment pass rounds to the NEAREST multiple, upward when that is closer, so a
+    // $49.99 floor was rounded back to $50.00 and the floor became decorative (owner, 2026-08-07).
+    if(rawCents === minimumAllowedCents) return rawCents / 100;
     // $10 charm grid at EVERY size, and a hard $10 floor under any reduction (owner 2026-07-26).
     // The interval used to widen with the magnitude, which cost a $1,842.77 quote $43.77.
     const CHARM_INTERVAL_CENTS = 1000, MAX_REDUCTION_CENTS = 1000;

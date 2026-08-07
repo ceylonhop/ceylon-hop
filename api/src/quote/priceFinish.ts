@@ -63,6 +63,12 @@ export function finishPrice(
     throw new Error('INVALID_PRICE_FINISHING_CONFIG');
   }
   if (rawCents === 0) return unchanged(rawCents);
+  // A price that IS the protected minimum is already final. rateCard.ts states a floor is "a
+  // FINAL price with NO markup", and nearestIncrement rounds to the NEAREST multiple — upward
+  // when that is closer — so without this a $49.99 floor was rounded back to $50.00 and the
+  // floor became decorative. It also made the same minimum render two ways: a one-leg quote
+  // finished at 5000 while a two-leg one totalled 9998 (owner-hit, 2026-08-07).
+  if (rawCents === minimumAllowedCents) return unchanged(rawCents);
 
   const charm = charmCandidate(rawCents);
   if (charm === rawCents) return unchanged(rawCents);
