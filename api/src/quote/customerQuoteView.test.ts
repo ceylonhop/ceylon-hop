@@ -91,7 +91,7 @@ describe('customerQuoteView', () => {
   it('prefills WhatsApp with the reference and the tapped option', () => {
     const v = customerQuoteView(quote({ requestedService: 'both' }), both);
     expect(v.options[1].waText).toBe(
-      "Hi! I'd like to book the Chauffeur Service option for quote Q-7F3KX",
+      "Hi! I'd like to book the Chauffeur-guide option for quote Q-7F3KX",
     );
     expect(v.waText).toContain('Q-7F3KX');
   });
@@ -131,7 +131,7 @@ describe('customerQuoteView', () => {
     const v = customerQuoteView(chauffeurQuote, both);
     expect(v.options.map((o) => o.service)).toEqual(['chauffeur', 'private']);
     expect(v.heroTotalUsd).toBe('$1,180');
-    expect(v.heroTotalNote).toBe('chauffeur service · or $840 travelling journey by journey');
+    expect(v.heroTotalNote).toBe('chauffeur-guide · or $840 travelling journey by journey');
   });
 
   // Correction 2: a legacy row with requestedService: null must render exactly one option
