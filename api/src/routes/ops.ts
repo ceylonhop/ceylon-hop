@@ -6,7 +6,7 @@ import type { QuoteRepo } from '../db/quoteRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
-import { assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail, type OpsAction } from '../lib/opsAuth';
+import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
@@ -43,12 +43,6 @@ export interface OpsDeps {
   // booking sold through a partial link. Optional so every existing ops test keeps working.
   quotes?: QuoteRepo;
 }
-
-// Every action the capability matrix knows about — used only to compute whoami's `caps`
-// list from the resolved role, never to grant anything (can() remains the sole gate).
-const ALL_ACTIONS: OpsAction[] = [
-  'quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view',
-];
 
 // Every status a booking can hold once it has left the website's cart. 'draft' and
 // 'awaiting_details' stay out on purpose — those are half-finished web checkouts, not ops work.
@@ -171,7 +165,7 @@ export function opsRoutes(deps: OpsDeps) {
   // a smell worth the honesty of the picker naming actual humans on day one.
   r.get('/whoami', requireCap('bookings:read'), async (c) => {
     const identity = c.get('identity');
-    const caps = ALL_ACTIONS.filter((a) => can(identity.role, a));
+    const caps = ALL_OPS_ACTIONS.filter((a) => can(identity.role, a));
     await rememberName(identity.email, identity.name);
     return c.json({ email: identity.email, role: identity.role, caps, ...(identity.name ? { name: identity.name } : {}) });
   });

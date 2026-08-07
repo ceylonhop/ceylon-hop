@@ -3654,12 +3654,19 @@ const QuoteView = (function () {
 'use strict';
 
 // ── HTML escape helper ────────────────────────────────────────────────────────
+// Every interpolation of operator- or customer-supplied text into this file's markup goes
+// through here. `'` is escaped alongside `"` even though every attribute we write today is
+// double-quoted: the helper's contract is "safe in HTML text and in an HTML attribute", and a
+// single-quoted attribute is a normal enough thing to reach for that the helper should already
+// be correct when someone does. Entity-encoding an apostrophe is invisible in rendered output
+// and decodes back to `'` when read via dataset/getAttribute, so nothing downstream changes.
 function esc(s) {
   return (s == null ? '' : String(s))
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // ── Status tone + label maps (maker-checker lifecycle) ────────────────────────
