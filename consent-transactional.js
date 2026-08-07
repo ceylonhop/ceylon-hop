@@ -23,12 +23,18 @@
    shared site.css, so this file can be added to or removed from a page on its own. */
 (function (window, document, localStorage) {
   // ── the one owner switch ──────────────────────────────────────────────────
-  // true  → ask, with the strip below (the shipped default: assume nothing).
-  // false → grant analytics silently on arrival, no strip, ads still denied — the
+  // false → grant analytics on arrival, no strip, ads still denied. The
   //         legitimate-interest posture for a first-party transactional page with the
-  //         privacy policy linked. That is a legal call, not an engineering one, which
-  //         is why it is a flip here rather than my default.
-  var ASK_FIRST = true;
+  //         privacy policy linked: our own site, a customer who has already decided to
+  //         buy, no advertising and no data sold.
+  // true  → ask first, with the strip below, and measure only those who accept.
+  //
+  // **Owner call, 2026-08-07: false, revisit at scale.** The trade is coverage against
+  // exposure — asking loses the majority of a mostly-European audience, and at today's
+  // volume the risk of not asking is small. Flip to `true` when the business is large
+  // enough for that to stop being true; everything below the switch is still built,
+  // tested and ready, so it is a one-word change and a deploy.
+  var ASK_FIRST = false;
 
   var KEY = 'ceylonhop_consent';
   // Analytics only. Deliberately NOT the GRANT object in consent.js.

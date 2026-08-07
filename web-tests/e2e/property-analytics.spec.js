@@ -456,19 +456,79 @@ test('the manage and quote greetings are masked too', async ({ page }) => {
 
 // ── consent: the fix that makes all of the above collectable ─────────────────────────────
 
-test('the pay page asks for analytics without covering the CTA', async ({ page }) => {
-  // Supersedes the old "shows no cookie banner" assertion. The owner's objection (2026-08-01)
-  // was the OVERLAY — consent.js floats a card that landed on "Pay with PayHere" on a phone.
-  // Removing it removed the grant too, which is why we have no replay of anyone paying. This
-  // strip reserves its own height instead, so the invariant the owner actually asked for —
-  // nothing covers the CTA — is the thing under test.
+// Reads the real module off the static server and flips the owner switch, so the strip's
+// tests exercise the SHIPPED file rather than a second copy that could drift from it.
+async function forceAsk(page) {
+  await page.route('**/consent-transactional.js', async (route) => {
+    const res = await route.fetch();
+    const body = (await res.text()).replace('var ASK_FIRST = false;', 'var ASK_FIRST = true;');
+    if (!body.includes('var ASK_FIRST = true;')) throw new Error('ASK_FIRST switch not found');
+    await route.fulfill({ status: 200, contentType: 'text/javascript', body });
+  });
+}
+
+async function payablePage(page) {
   await offline(page);
   await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ state: 'payable', copy: COPY, totals: TOTALS, prefill: PREFILL }) }));
+}
+
+const consentUpdates = (page) =>
+  page.evaluate(() =>
+    (window.dataLayer || [])
+      .map((e) => Array.from(e && e.length !== undefined ? e : []))
+      .filter((a) => a[0] === 'consent' && a[1] === 'update')
+      .map((a) => a[2]));
+
+test('the pay page measures on arrival, and shows the payer nothing at all', async ({ page }) => {
+  // Owner call 2026-08-07: ASK_FIRST = false. This is the SHIPPED behaviour — no floating
+  // card (the 2026-08-01 objection), no strip either, and analytics granted so Clarity can
+  // finally record a payment. The old test here asserted only that consent.js's card was
+  // absent, which was true while nothing was being measured at all.
+  await payablePage(page);
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.goto('/pay.html?t=test-token');
+  await expect(page.locator('#paybtn')).toBeVisible();
+
+  await expect(page.locator('#ch-consent')).toHaveCount(0);     // consent.js's card stays gone
+  await expect(page.locator('.ch-tconsent')).toHaveCount(0);    // ...and nothing replaced it
+  // Nothing rendered means nothing reserved space either.
+  expect(await page.evaluate(() => document.body.style.paddingBottom)).toBe('');
+
+  const consent = await consentUpdates(page);
+  expect(consent).toHaveLength(1);
+  expect(consent[0].analytics_storage).toBe('granted');
+  // The entire basis for not asking is that this is first-party measurement with no
+  // advertising attached. An ad key here would remove that argument.
+  expect(consent[0].ad_storage).toBeUndefined();
+  expect(consent[0].ad_user_data).toBeUndefined();
+  expect(consent[0].ad_personalization).toBeUndefined();
+});
+
+test('a customer who already refused is still not measured', async ({ page }) => {
+  // manage.html shares this storage key on the apex via consent.js, so a stored refusal is a
+  // real person's answer. The switch may skip ASKING; it must never overrule a decision.
+  await payablePage(page);
+  await page.addInitScript(() => localStorage.setItem('ceylonhop_consent', 'denied'));
+  await page.goto('/pay.html?t=test-token');
+  await expect(page.locator('#paybtn')).toBeVisible();
+  expect(await consentUpdates(page)).toHaveLength(0);
+});
+
+// ── the strip, kept green for the day the owner flips the switch ──────────────────────────
+// "False, revisit when we're larger" — so these run against the real file with ASK_FIRST
+// rewritten to true. Without them the flip becomes a rediscovery instead of a one-word change.
+
+test('[ASK_FIRST] the strip asks without ever covering the CTA', async ({ page }) => {
+  // The owner's original objection was the OVERLAY: consent.js floats a card that landed on
+  // "Pay with PayHere" on a phone. This strip reserves its own height instead, and that —
+  // not the presence of an ask — is the invariant under test.
+  await payablePage(page);
+  await forceAsk(page);
   await page.setViewportSize({ width: 390, height: 720 });
   await page.goto('/pay.html?t=test-token');
 
-  await expect(page.locator('#ch-consent')).toHaveCount(0);        // the floating card stays gone
+  await expect(page.locator('#ch-consent')).toHaveCount(0);
   const strip = page.locator('.ch-tconsent');
   await expect(strip).toBeVisible();
 
@@ -477,42 +537,34 @@ test('the pay page asks for analytics without covering the CTA', async ({ page }
   const [c, s] = [await cta.boundingBox(), await strip.boundingBox()];
   const overlaps = c.y < s.y + s.height && s.y < c.y + c.height;
   expect(overlaps, 'the consent strip is sitting on the pay button').toBe(false);
-  // And the CTA is genuinely reachable, not merely elsewhere on the page.
   await expect(cta).toBeInViewport();
+
+  // ...and nothing is granted until they answer.
+  expect(await consentUpdates(page)).toHaveLength(0);
 });
 
-test('accepting grants analytics and nothing else', async ({ page }) => {
-  await offline(page);
-  await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
-    body: JSON.stringify({ state: 'payable', copy: COPY, totals: TOTALS, prefill: PREFILL }) }));
+test('[ASK_FIRST] accepting grants analytics and nothing else', async ({ page }) => {
+  await payablePage(page);
+  await forceAsk(page);
   await page.goto('/pay.html?t=test-token');
   await page.locator('.ch-tconsent [data-consent="granted"]').click();
 
   await expect(page.locator('.ch-tconsent')).toHaveCount(0);
-  const consent = await page.evaluate(() =>
-    (window.dataLayer || [])
-      .map((e) => Array.from(e && e.length !== undefined ? e : []))
-      .filter((a) => a[0] === 'consent' && a[1] === 'update')
-      .map((a) => a[2]));
+  const consent = await consentUpdates(page);
   expect(consent).toHaveLength(1);
   expect(consent[0].analytics_storage).toBe('granted');
-  // A payer is not an ad audience. These pages stay out of remarketing entirely.
   expect(consent[0].ad_storage).toBeUndefined();
   expect(consent[0].ad_personalization).toBeUndefined();
 });
 
-test('the choice carries across properties, so a quote and its payment are one session', async ({ page }) => {
+test('[ASK_FIRST] the choice carries across properties, so a quote and its payment are one session', async ({ page }) => {
   // Separate ORIGINS, so localStorage does not travel. Without the hand-off a customer is
   // asked twice and the two hops look like two cold sessions with a referral in between.
-  await offline(page);
-  await page.route('**/quotes/pay/view*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
-    body: JSON.stringify({ state: 'payable', copy: COPY, totals: TOTALS, prefill: PREFILL }) }));
+  await payablePage(page);
+  await forceAsk(page);
   await page.goto('/pay.html?t=test-token&chc=1');
   await expect(page.locator('#paybtn')).toBeVisible();
   await expect(page.locator('.ch-tconsent')).toHaveCount(0);
-  const granted = await page.evaluate(() =>
-    (window.dataLayer || [])
-      .map((e) => Array.from(e && e.length !== undefined ? e : []))
-      .some((a) => a[0] === 'consent' && a[1] === 'update' && a[2] && a[2].analytics_storage === 'granted'));
-  expect(granted).toBe(true);
+  const consent = await consentUpdates(page);
+  expect(consent[0]?.analytics_storage).toBe('granted');
 });

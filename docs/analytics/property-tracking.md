@@ -97,34 +97,53 @@ reference, so a refresh of the confirmation screen cannot bill the funnel twice.
 
 ### 2.2 Consent on the transactional properties (fixes F1)
 
-The owner's UX call stands: no cookie banner may cover the pay CTA. But "no banner" was
-implemented as "no consent", which silently turned off measurement rather than deferring it.
+The owner's UX call stands: no cookie banner may cover the pay CTA. But "no banner" had been
+implemented as "no consent", which silently turned measurement off rather than deferring it.
 
-`consent-transactional.js` resolves both. On `pay.html` and `quote.html` it renders a
-**single-line, in-flow strip pinned below the fold's content, never fixed and never
-overlaying anything**, offering analytics only:
+**Shipped posture — `ASK_FIRST = false` (owner, 2026-08-07).** `pay.html` and `quote.html`
+grant `analytics_storage` on arrival and render nothing. The basis is legitimate interest on a
+first-party transactional page: our own site, a customer who has already decided to buy, the
+privacy policy one tap away, and — the load-bearing part — **no advertising of any kind**.
+`ad_storage`, `ad_user_data` and `ad_personalization` stay denied on these two pages
+permanently, so they are out of remarketing entirely and no data leaves for an ad platform.
 
-- it requests **`analytics_storage` alone**. `ad_storage`, `ad_user_data` and
-  `ad_personalization` stay denied on these pages permanently — a payer is not an ad
-  audience, and this keeps the pages out of remarketing entirely;
-- it **reserves its own height** as body padding rather than floating. The owner's objection
-  was the overlay, and this is the line of code that answers it: an e2e test asserts the
-  strip's bounding box never intersects the pay CTA at 390px wide;
-- the choice is remembered per-origin in `localStorage` under the same key the apex uses,
-  so it is asked once per property, not once per page — and a stored refusal wins over
-  everything, including the hand-off below;
-- **cross-property hand-off**: a link that arrives with `?chc=1` is treated as already
-  consented. `quote.ceylonhop.com` and `pay.ceylonhop.com` are separate origins, so
-  `localStorage` cannot travel between them; without this a customer is asked twice and the
-  two hops read as two cold sessions with a referral in between. (Most pay links arrive from
-  email, where there is no upstream consent to carry — so this helps the in-page hops, and
-  §6.2's cross-domain list does the session stitching.)
+The trade the owner weighed: asking loses the majority of a mostly-European audience, and at
+today's volume the exposure from not asking is small. **Revisit at scale** — flip `ASK_FIRST`
+to `true` at the top of `consent-transactional.js` when the business is big enough for that
+calculus to change. It is one word and a deploy, and the ask path below is fully built and
+still under test so the flip is not a rediscovery.
 
-> **Owner decision still open.** The safe default shipped here is *ask, don't assume*. If
-> you would rather these two transactional pages default to granted analytics (no ads) on
-> the legitimate-interest argument — first-party, no remarketing, privacy policy linked —
-> flip `ASK_FIRST` to `false` at the top of `consent-transactional.js`. That is a legal
-> posture call, not an engineering one, so it is a one-line switch rather than my default.
+Two things the switch deliberately does **not** overrule:
+
+- **A stored refusal still wins.** `manage.html` shares this `localStorage` key on the apex via
+  `consent.js`, so a customer who rejected there and then opens a booking link has genuinely
+  said no. Granting anyway because a constant says so would be the one indefensible version of
+  this feature, and there is a test for it on both the unit and e2e side.
+- **`?chc=1` cross-property hand-off** still applies. `quote.ceylonhop.com` and
+  `pay.ceylonhop.com` are separate origins, so `localStorage` cannot travel between them.
+  (Only observable while `ASK_FIRST` is true; most pay links arrive from email, where there is
+  no upstream consent to carry, and §6.2's cross-domain list does the session stitching.)
+
+> ⚠️ **The privacy policy now contradicts the code, and needs one sentence changed.**
+> `tools/legal/privacy.body.html` says analytics cookies are *"off by default until you accept
+> them in the cookie banner"*. On `pay` and `quote` there is no banner and they are now on by
+> default, so that promise is not kept — which is precisely the kind of inconsistency that
+> turns a defensible legitimate-interest posture into an indefensible one. Suggested wording,
+> to be reviewed rather than applied silently (it is legal copy in a `@generated:` source, so
+> it is the owner's call, then `npm run generate:static`):
+>
+> *"We use cookies and third-party analytics (Google Analytics and Microsoft Clarity) to
+> understand how visitors use the site and improve it, and advertising cookies (via Google) to
+> measure and personalise ads. On our main site these are off until you accept them in the
+> cookie banner. On our payment and quote pages we use analytics only — never advertising —
+> to make sure checkout works; email us and we'll exclude you."*
+
+**The ask path (`ASK_FIRST = true`)** renders a slim strip that **reserves its own height** as
+body padding instead of floating. That single detail is the answer to the owner's original
+objection — `consent.js` is `position: fixed` with nothing reserving room, which is how it came
+to sit on "Pay with PayHere" on a phone. An e2e test asserts the strip's bounding box never
+intersects the CTA at 390px wide, and it runs against the real module with the switch rewritten
+to `true`, so it cannot rot while the path is dormant.
 
 ### 2.3 Funnel events (fixes F3)
 
