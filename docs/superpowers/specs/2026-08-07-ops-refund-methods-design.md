@@ -1,8 +1,9 @@
-# Refund methods in the ops booking sheet — design
+# Refunds in the ops booking sheet — one block, no dead ends — design
 
 **Date:** 2026-08-07
-**Status:** proposed (owner brainstorm 2026-08-07; approaches A/B/C → **A** chosen)
-**Surface:** `/ops` → booking sheet (`api/src/routes/ops-ui.html`), `POST /admin/bookings/:id/refunds*` (`api/src/routes/admin.ts`), `api/src/db/refundRepo.ts`
+**Status:** proposed (owner brainstorm 2026-08-07; **revised same day after self-critique** —
+the refund-method picker that formed most of the first draft is deferred, see *Deferred*)
+**Surface:** `/ops` booking sheet (`api/src/routes/ops-ui.html`) — **UI only**
 
 ## Problem
 
@@ -19,200 +20,164 @@ correctly hides.
 The owner hit exactly this on 2026-08-07 with a live $29 pending on `CH-MCF8D`: pressed Refund,
 watched the button vanish, scrolled the foot of the sheet, found nothing, and reasonably
 concluded the refund UI was broken. It was not — the controls were two blocks above the fold.
+Recovering took a DevTools session. Most operators would have stopped at "it's broken".
 
-Second gap: the only refund channel the UI acknowledges is PayHere. Every label says PayHere.
-But a refund sometimes has to go out another way — most concretely during the 2026-08-03→07
-window when the Refund API returned 403 at the OAuth token endpoint and no card refund was
-possible at all. Recording "we sent this customer a bank transfer" is possible today only by
-typing the transfer reference into a field labelled *PayHere refund reference*.
+Two dead ends sit in the same block:
+
+- An **`api_processing`** row shows a warning instructing the operator to *"find the payment in
+  PayHere and either confirm this row with its reference or cancel it"* — and renders **neither
+  control**. The server accepts a confirm from that state; only the UI refuses.
+- After any refund action the header and queue row keep their **pre-refund status**, because the
+  handlers call `reloadRefundDetail(id)` but never `refreshRow(id)`. The owner watched a booking
+  read "Paid" seconds after a successful $29 refund and reasonably doubted the refund.
 
 ### What already exists (verified against `origin/main` @ `47446c2`)
 
-- **`refunds.provider` is inherited, not chosen.** `refundRepo.request()` sets
-  `provider: captured[0].provider` — the provider of the payment being reversed.
-- **No CHECK constrains `refunds.provider`.** `schema.ts` declares it `text('provider').notNull()`.
-  Storing `'bank_transfer'` needs **no migration**.
-- **`refunds_confirmation_evidence_valid` enforces evidence in the database:** a
-  `manual_confirmed` / `api_confirmed` row must have `gatewayRef`, `confirmedBy` and
-  `confirmedAt` all non-null, and any other status must have all three null.
-- **`refunds_provider_gateway_ref_unique`** is a UNIQUE on `(provider, gateway_ref)` — the same
-  reference cannot be recorded twice against one provider. `confirm()` maps the collision to
-  `gateway_ref_conflict`.
-- `MANUAL_PAYMENT_METHODS = ['cash', 'bank_transfer', 'manual_other']` already exists for
-  `mark-paid` (`domain/paymentMethod.ts`), so the vocabulary is established.
-- `RESERVING_STATUSES` = `manual_pending`, `manual_confirmed`, `api_processing`, `api_confirmed`.
-  `api_failed` is deliberately excluded — PayHere said the money did not move.
-- `confirm()` accepts `manual_pending` **or** `api_processing` (`refundRepo.ts:190`); `cancel()`
-  accepts only `manual_pending`.
-- The UI renders the pending-row controls on `r.status==='manual_pending' && mayFire` only, so
-  `api_processing` renders a warning telling the operator to "confirm this row with its
-  reference or cancel it" and **no control to do either**.
-- Refund handlers call `reloadRefundDetail(id)` but not `refreshRow(id)`, so the sheet header
-  and queue row keep their pre-refund status until a reload.
+- `refundHtmlFor(t,d)` renders the **Refunds** block between Payment and Vehicle & pickup;
+  `reverseActionsFor(t,d)` renders **Cancel & refund** at the foot. Both are gated on the
+  viewer's capabilities, not on each other.
+- `openDetail(id)` **does** fetch the refund ledger on sheet open, guarded on `payments:act`
+  and degrading to `refunds:[]` with a toast. The ledger is not missing on open.
+- `refundSummary(d)` computes `remaining = captured − confirmed − pending`, where pending counts
+  `RESERVING_STATUSES`. A full-amount `manual_pending` row therefore correctly drives
+  `remaining` to 0 and hides the request button.
+- `refundRepo.confirm()` accepts **`manual_pending` or `api_processing`** (`refundRepo.ts:190`),
+  explicitly commented as confirmable "on purpose". `cancel()` accepts `manual_pending` only.
+- The pending-row controls render on `r.status==='manual_pending' && mayFire` only — which is
+  why `api_processing` gets a warning and no controls.
 - Reversal is gated on `payments:reverse` (founder, unlimited) or the time-bounded
   `bookings:operate` grant (`domain/reversalWindow.ts`). Finance holds `payments:act`: it reads
   refund history and cannot request, confirm or cancel.
+- Handlers `refundrequest`, `refundconfirm`, `refundexecute`, `refundcancel` all call
+  `reloadRefundDetail(id)`; none calls `refreshRow(id)`. `cancelbooking` and `markpaid` call
+  both.
 
 ## Decisions
 
 | # | Decision | Rationale |
 |---|----------|-----------|
 | D1 | The **Refunds** block owns the whole job. **Cancel & refund** keeps only Cancel booking and is retitled **Cancel booking**. | The split is the reported defect. Refund controls belong beside the money summary they act on. |
-| D2 | The method is chosen when the refund is **requested**, and stored on the row. | The owner chose "log the intent, confirm later" for manual methods. An intent to refund by an unspecified method is not a complete intent — "we owe them $39 **by bank transfer**" is the chaseable fact. |
-| D3 | Methods are **PayHere** and **Bank transfer**. No cash. | Owner call, 2026-08-07. Both carry a real reference, so `refunds_confirmation_evidence_valid` is satisfied with no migration. Cash has no reference and would have forced relaxing a money-integrity constraint. |
-| D4 | The picker **defaults to the payment's provider**, and may be overridden. | Steers to the obvious answer without trapping the operator when the card route is unavailable — the 403 window is the worked example. A `cash` / `manual_other` payment has no matching refund method and defaults to `bank_transfer`. |
-| D5 | `provider` on the refund row changes meaning: *the channel we are refunding through*, not *the provider of the payment*. | One column, one line in `request()`. Downstream already keys off it. The two meanings coincide whenever the operator does not override, which is the common case. |
-| D6 | `execute` refuses a non-`payhere` row with `refund_method_mismatch`. | Nothing stops the API being fired at a bank-transfer row today. PayHere would reject it, but the refusal belongs where the reason is knowable. |
-| D7 | Fold in the `api_processing` escape and the missing `refreshRow`. | Both are edits to lines this redesign rewrites anyway. Leaving them means editing the same condition twice, and shipping a redesign whose header still misreports state. |
-| D8 | Do **not** fold in making `api_failed` cancellable. | It changes which state transitions are legal on a money row — a domain rule deserving its own red-green test, not a rider on a UI change. |
+| D2 | The request form (reason + **Refund $X in full**) moves from the foot into the Refunds block, directly under the summary. | It is the entry point to that block's workflow; putting it anywhere else is what caused the incident. |
+| D3 | The confirm form renders for **`api_processing`** as well as `manual_pending`. | The server already permits it and the row's own warning instructs it. A screen that names an action it does not offer is worse than one that stays silent. |
+| D4 | The **PayHere API button does not** render for `api_processing`. | The Refund API has no idempotency key; the money may already have moved. Confirm-by-reference and cancel are the only safe exits. |
+| D5 | Every refund handler calls `refreshRow(id)` alongside `reloadRefundDetail(id)`. | Matches `cancelbooking`/`markpaid`. A booking reading "Paid" after a successful refund destroys trust in a working feature. |
+| D6 | **No server, route, repo or schema change.** | Every story here is a rendering or refetch concern. Keeping the change UI-only means the money state machine is untouched and the blast radius is one file. |
+| D7 | Do **not** make `api_failed` cancellable. | It changes which transitions are legal on a money row — a domain rule wanting its own red-green test, not a rider on a UI change. |
+| D8 | Do **not** add a refund-method picker now. | See *Deferred*. It was most of the first draft; the critique below is why it is not here. |
 
 ## User stories
 
 **US-1 — One place to refund.** As an ops agent, I want every refund control in one block, so I
 don't conclude a refund is impossible because the button that starts it and the button that
 finishes it are in different halves of the sheet.
-- The Refunds block holds summary, request, method, completion and history.
-- Cancel & refund keeps only Cancel booking.
-- No refund control appears elsewhere in the sheet.
+- The Refunds block holds summary, request form, per-row completion controls and history.
+- Cancel & refund keeps only Cancel booking and is retitled accordingly.
+- No refund control appears anywhere else in the sheet.
+- Requesting a refund leaves the operator looking at the row they just created, with its next
+  action visible without scrolling.
 
-**US-2 — Refund a card payment in one click.** As a founder, I want to refund a PayHere payment
-without opening PayHere's dashboard.
-- Refund $X → picker with **PayHere** preselected → reason → pending row marked `payhere`.
-- Row shows **Refund now via PayHere**; on success stores the returned reference, marks
-  `api_confirmed`, sets the booking to `refunded`, emails the customer.
-- Header and queue row stop reading "Paid" without a manual reload.
-
-**US-3 — Refund by bank transfer when the card route is unavailable.** As a founder, I want to
-refund by bank transfer even though they paid by card.
-- Picker overrides to **Bank transfer**; pending row records `bank_transfer`.
-- Row shows a **transfer reference** field and **Confirm transfer sent** — no API button.
-- Confirming behaves identically downstream: booking → `refunded`, seats released, customer
-  emailed, quote un-won on a full refund.
-
-**US-4 — See money promised but not sent.** As a founder, I want a requested-but-unsent refund
-visible as an outstanding debt.
-- Pending row shows method, amount, reason, requester and time.
-- It reserves the balance; Refund $X hides while a full-amount refund is outstanding.
-- Cancelling it releases the reserve and restores the button.
-
-**US-5 — Don't fire the card API at a bank-transfer refund.** As a founder, I want the system to
-refuse a nonsensical action rather than let PayHere refuse it.
-- `execute` returns `refund_method_mismatch` unless `provider === 'payhere'`.
-- The UI never renders the API button on a `bank_transfer` row; the server check is defence in
-  depth.
-
-**US-6 — Reversal permissions unchanged.** As the business owner, I want the picker to change
-nothing about who may reverse a sale.
-- Every entry point stays behind `payments:reverse` or the time-bounded `bookings:operate` grant.
-- Finance (`payments:act`) reads history, sees no request/method/confirm control.
-- Ops keeps the 24-hour window and the fresh-intake grace.
-
-**US-8 — A stuck refund has a way out.** As a founder, I want an `api_processing` row to offer
+**US-2 — A stuck refund has a way out.** As a founder, I want an `api_processing` row to offer
 the actions its own warning tells me to take.
-- The confirm form (reference + Confirm) renders for `api_processing` as well as
-  `manual_pending`. The server already accepts it.
-- The API button does **not** render for `api_processing` — the money may have moved and the
-  Refund API has no idempotency key.
+- The reference field and **Confirm** render for `api_processing` as well as `manual_pending`.
+- The PayHere API button does **not** render for `api_processing`.
+- **Cancel request** does not render for `api_processing` — `refundRepo.cancel()` rejects that
+  state deliberately, because cancelling would release a reserve on money that may have moved.
+  The warning text already tells the operator to resolve it in PayHere.
 
-**US-9 — The header stops lying after a refund.** As a founder, I want the booking status to
+**US-3 — The header stops lying after a refund.** As a founder, I want the booking status to
 update when a refund succeeds.
-- Every refund handler calls `refreshRow(id)` alongside `reloadRefundDetail(id)`.
+- `refundrequest`, `refundconfirm`, `refundexecute` and `refundcancel` each call `refreshRow(id)`
+  alongside `reloadRefundDetail(id)`.
+- After a full refund the sheet header and the queue row both read **Refunded** with no reload.
+
+**US-4 — Reversal permissions unchanged.** As the business owner, I want the reshuffle to change
+nothing about who may reverse a sale.
+- The request form stays behind exactly the gate it has today — `payments:reverse`, or the
+  time-bounded `bookings:operate` grant, via the existing `mayReverseNow` / `reverseActionsFor`
+  logic, which moves with it.
+- Finance (`payments:act`) keeps read-only refund history and sees no request or confirm control.
+- Ops keeps the 24-hour window and the fresh-intake grace.
 
 ## UI
 
-The Refunds block, in order:
+The **Refunds** block, in order:
 
 1. **Summary** — Captured / Previously refunded / Pending / Refundable remaining. Unchanged.
-2. **Request** — rendered only when `remaining > 0` and the viewer may reverse:
-   - **Method**: two radio-style chips, PayHere ⦁ Bank transfer, defaulted per D4.
-   - **Reason**: required, existing field, moved here from the foot.
-   - **Refund $X in full** — the existing full-remainder behaviour.
+2. **Request** — rendered only when `remaining > 0` **and** the viewer may reverse (the existing
+   `mayReverseNow` test, relocated with the form): required **Reason**, then **Refund $X in
+   full**. When blocked by the ops time window, the existing explanatory note renders here
+   instead, unchanged in wording.
 3. **History** — newest first. Per row: status label, amount, reason, requester; plus
-   - `manual_pending` + `payhere` → **Refund now via PayHere**, **Cancel request**, and the
-     manual fallback (PayHere reference + **Confirm manual refund**).
-   - `manual_pending` + `bank_transfer` → **transfer reference** + **Confirm transfer sent**,
-     **Cancel request**.
-   - `api_processing` → the existing do-not-retry warning **plus** reference + Confirm (US-8).
-   - `api_failed` → PayHere's message. No controls (D8).
-   - settled → reference and confirming actor, as today.
+   - `manual_pending` → **Refund now via PayHere**, **Cancel request**, and the manual path
+     (reference + **Confirm manual refund**). Unchanged from today.
+   - `api_processing` → the existing do-not-retry warning, **plus** reference + **Confirm**.
+     No API button, no Cancel request.
+   - `api_failed` → PayHere's message. No controls (D7).
+   - settled → reference and confirming actor. Unchanged.
 
-The method chip is rendered once, on the request form — not per history row, where it is a fact
-rather than a choice. History rows label their method in the status line.
+**Cancel & refund** at the foot becomes **Cancel booking**: the reason field it shares with the
+refund request stays, because cancelling still requires one.
 
-**Legacy rows.** The provider fallback above governs rows written from now on; rows already in
-the database inherited the payment's provider unfiltered, so a refund against a cash- or
-`manual_other`-paid booking can hold a provider neither method covers. A history row whose
-provider is neither `payhere` nor `bank_transfer` renders its method label verbatim and offers
-the **manual confirm** path only (reference + Confirm) — never the PayHere API button. This is
-the same shape as the `bank_transfer` row, so it needs no extra branch: the API button is gated
-on `provider === 'payhere'` positively rather than on `!== 'bank_transfer'`. Stated explicitly
-because an unrecognised provider silently rendering the *card* control is precisely the failure
-D6 exists to prevent.
-
-## API
-
-- `POST /admin/bookings/:id/refunds` — body gains `method: z.enum(['payhere','bank_transfer']).optional()`.
-- `refundRepo.request()` — the provider written to the row is, exactly:
-
-  ```
-  input.method ?? (captured[0].provider === 'payhere' ? 'payhere' : 'bank_transfer')
-  ```
-
-  So an explicit method always wins; otherwise a PayHere payment yields a PayHere refund and
-  every other payment provider (`cash`, `bank_transfer`, `manual_other`, and any gateway added
-  later that has no refund path here) yields `bank_transfer`. The refund row's provider is
-  therefore always one of the two supported refund methods — never a value the UI cannot render
-  a control for.
-- `POST /admin/bookings/:id/refunds/:refundId/execute` — 409 `refund_method_mismatch` when the
-  row's `provider !== 'payhere'`, checked before `beginApi` so no row is claimed.
-- `confirm` / `cancel` — unchanged.
-
-No migration. No new status. No change to `RESERVING_STATUSES` or the evidence CHECK.
-
-## Error handling
-
-- `refund_method_mismatch` → toast "This refund is set to bank transfer — confirm it with the
-  transfer reference instead."
-- Existing `refund_outcome_unknown`, `refund_declined`, `refund_api_unavailable`,
-  `gateway_ref_conflict` handling is unchanged.
-- A `gateway_ref_conflict` on a bank transfer means the reference is already recorded against
-  another `bank_transfer` refund — toast "That transfer reference is already recorded against
-  another refund."
-- The method chips are disabled while a request is in flight, alongside the existing
-  `refundBusy` guard.
+**The shared reason field splits in two.** Today a single `#reversereason` input serves both
+cancel and refund, because they sit in the same block. Separating the blocks means **two fields
+with distinct ids** (`#cancelreason`, `#refundreason`), each cleared by the action that consumes
+it. Not one field read by both: a reason typed for a cancellation and then left behind would be
+silently attached to a refund, and both are written to permanent audit records. One extra id and
+a second `clearInput` call is a cheap price for that not being possible.
 
 ## Testing
 
-Server (`api/src/routes/refunds.test.ts`, `api/src/db/refundRepo.test.ts`):
-- request with `method:'bank_transfer'` on a PayHere payment stores `provider:'bank_transfer'`
-- request with no method on a PayHere payment stores `provider:'payhere'`
-- request with no method on a `cash` payment stores `provider:'bank_transfer'` (D4 fallback)
-- `execute` on a `bank_transfer` row → 409 `refund_method_mismatch`, and the row is **not**
-  claimed (still `manual_pending`, `apiAttemptedAt` still null)
-- confirming a `bank_transfer` row settles it, releases seats and emails, exactly as PayHere does
-- finance (`payments:act`) still cannot request, confirm or cancel by any method
-- ops outside the 24h window still cannot request by any method
-- a legacy row whose provider is neither supported method (e.g. `cash`) is confirmable by
-  reference and is refused by `execute` with `refund_method_mismatch`
+UI (`api/src/routes/opsUi.test.ts` — served-HTML assertions, the pattern already used there):
+- the Refunds block contains the reason input and the request button
+- the Cancel & refund block contains **no** refund control
+- the confirm form is gated on `manual_pending` **or** `api_processing`
+- the PayHere API button is gated on `manual_pending` only
+- **Cancel request** is gated on `manual_pending` only
+- each of the four refund handlers calls `refreshRow`
 
-UI (`api/src/routes/opsUi.test.ts` — served-HTML assertions, the pattern already used):
-- the served shell contains the method chips and the bank-transfer confirm control
-- Cancel & refund contains no refund control
-- the confirm form is gated on `manual_pending` **or** `api_processing`, and the API button on
-  `manual_pending` + payhere only
-- every refund handler calls `refreshRow`
+Regression guard on the capability gate (`api/src/routes/opsUi.test.ts`): the relocated request
+form is still behind `mayReverseNow`, so a time-blocked ops agent gets the explanatory note and
+no button. The gate moving location is the risk this change carries; it is the one thing worth a
+dedicated assertion.
 
-E2E (`web-tests/e2e/ops-refund-workflow.spec.js`, `CH_E2E_API=1`): request-by-bank-transfer →
-confirm with a reference → booking reads Refunded without a reload. **Note:** these specs need
-`DATABASE_URL_TEST` and were not run during this session.
+E2E (`web-tests/e2e/ops-refund-workflow.spec.js`, `CH_E2E_API=1`): after a successful refund the
+queue row reads Refunded without a reload. **Not run in this session** — these specs require
+`DATABASE_URL_TEST`, and the only local copy sits beside the production `DATABASE_URL`.
+
+## Deferred — the refund-method picker
+
+The first draft of this spec was mostly a PayHere / bank-transfer method picker: method chosen at
+request time, defaulted to the payment's provider, overridable, stored on `refunds.provider`.
+It is deferred, not rejected. Four problems surfaced on self-critique:
+
+1. **It may solve a problem that no longer exists.** The justification throughout was the
+   2026-08-03→07 window when the PayHere Refund API returned 403 and no card refund was
+   possible. That outage is over — a live API refund succeeded 2026-08-07 19:51 UTC. Nobody has
+   established how often a bank-transfer refund is actually wanted.
+2. **No way to change a refund's method** — and that gap sits precisely in the scenario used to
+   justify the feature. Request intending PayHere, the API fails, now you want a bank transfer:
+   the method is baked into the row, so the only route is cancel-and-recreate, losing the
+   original `requestedAt` and reason and leaving a cancelled row explained by nothing but a UI
+   limitation. Either the pending row needs an editable method, or the method belongs at
+   **confirm** time — which is the approach that was considered and set aside.
+3. **The pending state was sold as a chaseable debt and nothing makes it chaseable.** A pending
+   refund is visible only inside the booking's own sheet. No queue filter, no badge, no digest
+   line. Without one of those, the second step is friction with no payoff.
+4. **"No migration" was a false economy.** Reaching it meant overloading `refunds.provider` so it
+   means *provider of the payment* on existing rows and *channel we refunded through* on new
+   ones, distinguishable only by write date. A nullable `method` column is a trivial migration
+   and the honest modelling.
+
+If a real bank-transfer refund is wanted, revisit with those four resolved — starting with
+whether the method belongs at request or confirm time.
 
 ## Out of scope
 
-- **Cash refunds** (D3).
-- **Making `api_failed` cancellable** (D8) — separate PR. The 2026-08-03 row on `CH-MCF8D`
-  stays stuck until then; it reserves nothing, so it blocks no future refund.
+- Refund methods other than PayHere (deferred, above).
+- Making `api_failed` cancellable (D7) — separate PR. The 2026-08-03 row on `CH-MCF8D` stays
+  stuck until then; it reserves nothing, so it blocks no future refund.
 - Partial refunds. Our PayHere setup cannot do them and the UI deliberately offers no amount box.
-- Refund notifications beyond the existing customer email.
+- A cross-booking view of outstanding refunds (see Deferred #3).
 
 ## Related
 
