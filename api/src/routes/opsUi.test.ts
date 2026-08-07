@@ -178,9 +178,9 @@ describe('ops UI — manual refund workflow (SH9)', () => {
     expect(body).toContain("'/cancel'");
   });
 
-  it('requires PayHere dashboard completion and evidence before confirmation', async () => {
+  it('still offers the manual dashboard route, with evidence, alongside the API one', async () => {
     const body = await (await createApp().request('/ops')).text();
-    expect(body).toContain('Complete the refund in the PayHere dashboard first');
+    expect(body).toContain('Or refund it by hand in the PayHere dashboard');
     expect(body).toContain('PayHere refund reference');
     expect(body).toContain('gatewayRef');
   });
@@ -193,6 +193,36 @@ describe('ops UI — manual refund workflow (SH9)', () => {
     expect(body).toContain('requestedBy');
     expect(body).toContain('confirmedBy');
     expect(body).toContain('gatewayRef');
+  });
+
+  // The API path (PayHere Refund API, reachable since they whitelisted our egress 2026-08-07).
+  it('can fire the Refund API from the sheet, and labels all six statuses', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('data-act="refundexecute"');
+    expect(body).toContain("'/refunds/'+refundId+'/execute'");
+    // Every status gets its own label. The old ternary ended in :'Cancelled', so a successful
+    // api_confirmed refund — and an api_processing one — both read as "Cancelled".
+    expect(body).toContain('api_processing:');
+    expect(body).toContain('api_confirmed:');
+    expect(body).toContain('api_failed:');
+    expect(body).not.toContain(
+      "r.status==='manual_pending'?'Pending':r.status==='manual_confirmed'?'Confirmed':'Cancelled'",
+    );
+  });
+
+  it('counts API refunds as money spoken for, exactly as the server does', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // Must mirror REFUNDED_STATUSES / RESERVING_STATUSES in db/refundRepo.ts. Counting only the
+    // manual statuses made a fully API-refunded booking read as fully refundable.
+    expect(body).toContain("const REFUND_SETTLED=['manual_confirmed','api_confirmed'];");
+    expect(body).toContain("const REFUND_IN_FLIGHT=['manual_pending','api_processing'];");
+  });
+
+  it('refuses to retry an indeterminate refund and says why', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // api_processing means the money MAY have moved and the API has no idempotency key.
+    expect(body).toContain('Check PayHere before doing anything else');
+    expect(body).toContain('refund_outcome_unknown');
   });
 });
 
