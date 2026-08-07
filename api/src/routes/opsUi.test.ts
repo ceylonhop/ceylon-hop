@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { gunzipSync } from 'node:zlib';
 import { createApp } from '../app';
+import { ALL_OPS_ACTIONS } from '../lib/opsAuth';
 
 describe('ops UI shell', () => {
   it('serves the ops UI shell without auth', async () => {
@@ -746,6 +747,25 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain('function mayReverseNow(');
     expect(body).toContain("state.caps.includes('payments:reverse')) return true;");
     expect(body).toContain('const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);');
+  });
+
+  // The other half of the contract these assertions rest on. Every test above proves the client
+  // ASKS for a capability; none proved the server ever ANSWERS with it. That gap is not
+  // theoretical — /whoami built its caps list by hand and omitted 'payments:reverse', so the
+  // guard asserted two tests up was permanently false and refund confirm/cancel were dead
+  // buttons for the founder, the only role that holds it. Every suite stayed green throughout.
+  //
+  // So: pull every capability the shipped HTML gates on straight out of the served body, and
+  // require the server to be able to emit each one. Reading the real artifact rather than a
+  // hand-kept list is the point — a new caps.includes('…') in the client is covered the moment
+  // it ships, with no second place to remember to update.
+  it('never gates on a capability /whoami cannot emit', async () => {
+    const body = await uiBody();
+    const gated = [...body.matchAll(/caps\.includes\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(gated.length).toBeGreaterThan(0); // the regex still matches the shipped source
+    expect([...new Set(gated)].sort()).toEqual(
+      [...new Set(gated)].filter((cap) => (ALL_OPS_ACTIONS as readonly string[]).includes(cap)).sort(),
+    );
   });
 
   // Bookings frequently arrive inside 24h of travel, so ops must be able to undo fresh intake.

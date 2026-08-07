@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { issueSessionCookie } from '../lib/opsMiddleware';
+import { ALL_OPS_ACTIONS, can } from '../lib/opsAuth';
 import { Hono } from 'hono';
 
 const auth = { opsUsers: 'f@x.com:founder,fin@x.com:finance,op@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
@@ -47,6 +48,37 @@ describe('ops capability gates', () => {
     expect(body.role).toBe('founder');
     expect(body.caps).toContain('quote:approve'); // client uses this to render the Approve action
     expect(body.caps).toContain('margin:view');
+  });
+
+  // Drift guard. whoami's caps list is a STRING CONTRACT with the ops client: ops-ui.html gates
+  // the refund confirm/cancel actions on caps.includes('payments:reverse'), so a capability the
+  // matrix grants but whoami forgets to list is a silently dead button, not a visible error.
+  // That is exactly what happened: ALL_ACTIONS was hand-maintained and omitted payments:reverse,
+  // which disabled refund confirmation for the founder — the only role that has it.
+  //
+  // These assertions are EXACT (not arrayContaining) on purpose: an omission is the failure mode,
+  // and arrayContaining cannot see one. The list itself is now derived from the matrix, so this
+  // test guards the derivation rather than a second hand-written copy of it.
+  it('whoami lists every capability the matrix grants the role — exactly, in every role', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    for (const [email, role] of [['f@x.com', 'founder'], ['fin@x.com', 'finance'], ['op@x.com', 'ops']] as const) {
+      const res = await app.request('/admin/ops/whoami', { headers: { cookie: await cookie(email) } });
+      const body = await res.json();
+      expect(body.role).toBe(role);
+      const granted = ALL_OPS_ACTIONS.filter((a) => can(role, a));
+      expect([...body.caps].sort()).toEqual([...granted].sort());
+    }
+  });
+
+  // The specific regression: reversing a sale is founder-only, and the founder must be TOLD they
+  // hold it or the client hides the action from the one person allowed to take it.
+  it('whoami gives the founder payments:reverse, and nobody else', async () => {
+    const app = createApp({ auth, adminApiKey: 'adminkey' });
+    const capsFor = async (email: string) =>
+      (await (await app.request('/admin/ops/whoami', { headers: { cookie: await cookie(email) } })).json()).caps;
+    expect(await capsFor('f@x.com')).toContain('payments:reverse');
+    expect(await capsFor('fin@x.com')).not.toContain('payments:reverse');
+    expect(await capsFor('op@x.com')).not.toContain('payments:reverse');
   });
 });
 

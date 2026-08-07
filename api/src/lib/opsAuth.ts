@@ -22,6 +22,17 @@ export function can(role: OpsRole, action: OpsAction): boolean {
   return CAPABILITIES[role]?.has(action) ?? false;
 }
 
+// Every action the matrix grants to somebody — DERIVED from it, never hand-listed. /admin/ops/whoami
+// filters this by role to tell the client what it may offer, and ops-ui.html gates its actions on the
+// resulting strings (refund confirm/cancel read caps.includes('payments:reverse')). A hand-maintained
+// copy of this list is a silent-failure machine: omitting an action there does not fail a request or
+// a type check, it just makes the client hide a button from the role that holds it. That is precisely
+// what happened to payments:reverse — dead refund confirmation for the founder, the only role with it.
+// Deriving it means adding a capability to the matrix above is the whole change, as it should be.
+export const ALL_OPS_ACTIONS: readonly OpsAction[] = [
+  ...new Set(Object.values(CAPABILITIES).flatMap((actions) => [...actions])),
+];
+
 const ROLE_VALUES: ReadonlySet<string> = new Set(['founder', 'finance', 'ops']);
 
 // Parse OPS_USERS="email:role,email:role". Emails lowercased. 'system' is NOT a
