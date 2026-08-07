@@ -97,6 +97,7 @@ export function verifyCheckoutToken(
 // Packed as bytes: 1 version + 1 purpose + 16 uuid + 2 revision = 20 bytes → 27 base64url
 // chars, plus a 22-char truncated signature. ~80 characters all in.
 const PURPOSE_QUOTE_PAY = 0x01;
+const PURPOSE_QUOTE_VIEW = 0x02; // disjoint from PURPOSE_QUOTE_PAY — see signQuoteViewToken
 const SIG_BYTES = 16; // 128-bit truncated HMAC
 const MAX_REVISION = 0xffff;
 const MAX_SEQ = 0xffff;
@@ -179,6 +180,59 @@ export function verifyQuotePayToken(
   if (typeof parsed.r !== 'number' || !Number.isInteger(parsed.r) || parsed.r < 1) return null;
   const seq = typeof parsed.s === 'number' && Number.isInteger(parsed.s) && parsed.s >= 0 ? parsed.s : 0;
   return { quoteId: parsed.q, revision: parsed.r, seq };
+}
+
+// ── the quote VIEW token (spec 2026-08-05 D3) ────────────────────────────────────────────────
+// The quote link FOLLOWS its quote; only the pay token pins. So this token carries NO revision
+// and NO seq — following is a property of the type, not a branch in the code, and there is no
+// path by which this one could be made to pin. Liveness is read from the quote's status (D8).
+//
+// Deterministic by construction, which is what makes "copy the link twice, get the same URL"
+// free — ops re-pastes the link into the thread rather than making the customer scroll.
+//
+// Packed: 1 version + 1 purpose + 16 uuid = 18 bytes. The purpose byte is disjoint from the pay
+// token's, so neither can be spent as the other even though both are HMACs over the same secret.
+export function signQuoteViewToken(quoteId: string, secret: string): string {
+  const hex = quoteId.replace(/-/g, '');
+  if (hex.length !== 32 || !/^[0-9a-f]+$/i.test(hex)) {
+    return signedBody({ v: 1, purpose: 'quote-view', q: quoteId }, secret);
+  }
+  const buf = Buffer.alloc(18);
+  buf.writeUInt8(1, 0);
+  buf.writeUInt8(PURPOSE_QUOTE_VIEW, 1);
+  Buffer.from(hex, 'hex').copy(buf, 2);
+  const body = b64url(buf);
+  return `${body}.${b64url(macBytes(body, secret))}`;
+}
+
+export function verifyQuoteViewToken(
+  token: string | undefined,
+  secret: string,
+): { quoteId: string } | null {
+  if (!token) return null;
+  const [body, sig] = token.split('.');
+  if (body && sig) {
+    let buf: Buffer | null = null;
+    try {
+      buf = Buffer.from(body, 'base64url');
+    } catch {
+      buf = null;
+    }
+    if (buf && buf.length === 18 && buf.readUInt8(0) === 1 && buf.readUInt8(1) === PURPOSE_QUOTE_VIEW) {
+      const expected = b64url(macBytes(body, secret));
+      if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+        const hex = buf.subarray(2, 18).toString('hex');
+        return {
+          quoteId: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
+        };
+      }
+      return null;
+    }
+  }
+  const parsed = verifiedPayload(token, secret) as { v?: unknown; purpose?: unknown; q?: unknown } | null;
+  if (!parsed || parsed.v !== 1 || parsed.purpose !== 'quote-view') return null;
+  if (typeof parsed.q !== 'string' || parsed.q.length === 0) return null;
+  return { quoteId: parsed.q };
 }
 
 // ── the return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D4) ──────────

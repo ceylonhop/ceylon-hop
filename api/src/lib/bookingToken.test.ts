@@ -10,6 +10,8 @@ import {
   verifyQuotePayToken,
   signPayReturnToken,
   verifyPayReturnToken,
+  signQuoteViewToken,
+  verifyQuoteViewToken,
 } from './bookingToken';
 
 const S = 'test-secret';
@@ -252,5 +254,30 @@ describe('pay-return token', () => {
     expect(verifyCheckoutToken(t, B, S, Date.now())).toBe(false);
     expect(verifyBookingToken(t, S)).toBeNull();
     expect(verifyQuotePayToken(t, S)).toBeNull();
+  });
+});
+
+describe('quote view token', () => {
+  const S = 'test-secret';
+  const ID = '11111111-2222-4333-8444-555555555555';
+
+  it('round-trips the quote id', () => {
+    expect(verifyQuoteViewToken(signQuoteViewToken(ID, S), S)).toEqual({ quoteId: ID });
+  });
+
+  it('is deterministic, so re-copying a link yields a byte-identical URL', () => {
+    expect(signQuoteViewToken(ID, S)).toBe(signQuoteViewToken(ID, S));
+  });
+
+  it('rejects a wrong secret and a tampered body', () => {
+    const t = signQuoteViewToken(ID, S);
+    expect(verifyQuoteViewToken(t, 'other-secret')).toBeNull();
+    expect(verifyQuoteViewToken('AAAA' + t.slice(4), S)).toBeNull();
+    expect(verifyQuoteViewToken(undefined, S)).toBeNull();
+  });
+
+  it('cannot be spent as a pay token, and a pay token cannot be spent as a view token', () => {
+    expect(verifyQuotePayToken(signQuoteViewToken(ID, S), S)).toBeNull();
+    expect(verifyQuoteViewToken(signQuotePayToken(ID, 3, S, 1), S)).toBeNull();
   });
 });

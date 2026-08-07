@@ -125,6 +125,39 @@ Trigger each once against prod and confirm the branded email lands + reads corre
 
 ---
 
+## Customer quote links (spec 2026-08-05) — REQUIRED BEFORE SENDING A QUOTE LINK
+
+The build ships `quote.html` at `/q?t=…`, served by the API host exactly as `pay.html` is. It
+is read-only: no pay button, no route on it that writes or charges. Every one of these steps is
+an operator action — the code cannot do them, and skipping any of them breaks a link a customer
+has already been sent.
+
+- [ ] **`QUOTE_BASE_URL` set on the API service** to `https://quote.ceylonhop.com`.
+      Unset, the mint falls back to `PAY_BASE_URL`, so quote links go out on the **pay** domain —
+      it works, but a proposal arrives from a host that presumes the sale. Set it before minting
+      anything you intend to send: the URL is baked into whatever you paste into WhatsApp, and a
+      link already sent cannot be re-pointed.
+- [ ] **`quote.ceylonhop.com` added as a custom domain on the API service** — the SAME service
+      that already serves `pay.ceylonhop.com`, not a second deployment. Confirm the certificate
+      has issued and `https://quote.ceylonhop.com/q?t=test` answers before minting a real link.
+- [ ] **`quote.ceylonhop.com` added to the Google Maps browser-key referrer allow-list.**
+      This is the one that fails **silently**: the page falls back to the static island map with
+      no error anywhere. The page still works and still sells, so nothing will tell you it is
+      wrong — check it deliberately by opening a real link and confirming a live map appears.
+- [ ] **A muted Google map style applied** (cloud style ID: desaturated terrain, POI labels off).
+      Default tiles fight the cream-and-teal design. Cosmetic, not blocking.
+
+### Sending the first real link — do this once, end to end
+- [ ] Approve a quote (`→ ready`). Confirm it stamps a validity date: the page must read
+      **"Quote expires on <date>"**, seven days out.
+- [ ] Press **Quote link** in the ops builder, paste into WhatsApp, open it on a phone.
+- [ ] Confirm: your customer's name, the itinerary day by day, the right price, a live map,
+      and that every button opens WhatsApp — there must be **no way to pay from this page**.
+- [ ] Edit the quote in ops, reload the same link, and confirm it shows the NEW content. The
+      quote link deliberately follows its quote; only the pay link pins.
+
+---
+
 ## Still-to-build (not launch-blocking — but finish or consciously defer)
 
 - **Customer emails** beyond confirmation: ✅ **cancellation** (`POST /admin/bookings/:id/cancel`), ✅ **refund** (`/refund`), ✅ **pre-trip reminder + thank-you/review request** (M14 scheduler — `POST /admin/jobs/notifications`), and (PR #35) ✅ **booking confirmed** (`/confirm`), ✅ **no-show** (`/no-show`), ✅ **awaiting details** (auto on paid+flexible), ✅ **payment-didn't-complete recovery** (watchdog sweep) now built + branded. Test them via §4a before deploy. Still to do: deposit/balance (blocked by the chauffeur deposit-charge fix), booking-modified, no-availability. (Tracked in the agent's email roadmap notes.)

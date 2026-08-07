@@ -1773,18 +1773,25 @@ const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('e
 const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
 const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
 
-const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Closed'];
+const DAYGROUPS=['Pending','Today','Tomorrow','Needs closing','Upcoming','Closed'];
 const dayGroup=t=>{
   /* Every closed outcome files together — a cancelled or refunded booking has a travel date
      that has not stopped being "tomorrow", and dating it into the live groups would put a
      dead booking at the top of the day's work. */
   if(CLOSED.includes(t.stage))return 'Closed';
   if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
+  /* The PAST gets its own bucket (team report 2026-08-06): with no branch here, a live-stage
+     booking from last week fell through to "Upcoming" and sat beside real future work forever.
+     A passed date on a live stage means one thing — nobody recorded how the trip ended — so
+     these file as closing admin, oldest first, never as upcoming. Deliberately NOT auto-
+     completed: whether it ran or no-showed is a fact only ops knows (the server-side date
+     enforcement call deferred in July stays deferred). */
+  if(t.date<TODAY)return 'Needs closing';
   if(t.date===TODAY)return 'Today';
   if(t.date===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
-const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
+const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),'Needs closing':'date passed — mark completed or no-show',Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
    channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
@@ -1848,6 +1855,7 @@ const reason=t=>{
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
+  if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -2152,7 +2160,7 @@ function viewTickets(){
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
-    html+=`<div class="sec${g==='Pending'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
+    html+=`<div class="sec${g==='Pending'||g==='Needs closing'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
   });
   if(!list.length){
     // Three cases: still loading (a skeleton — NOT the empty state, which is what this used to
@@ -4261,6 +4269,16 @@ function setRequestedService(dim) {
      toggle was forgotten. Still overridable; one-directional, so it only rides a point-to-point
      price (see requestMismatch's 'both'+chauffeur case). */
   if (next === 'both') outputIncludeChauffeurUpsell = true;
+  /* Picking ONE service also prices the quote that way (owner, 2026-08-06). These two controls
+     were fully decoupled — deliberately, so the tool could record a request it did NOT price
+     (see requestMismatch) — but in practice the decoupling only ever produced the mistake: pick
+     Chauffeur-guide at intake, leave the quote priced Point-to-point, approve past the banner,
+     and the customer opens their quote link to the wrong service. Worse, the pay link charges
+     the STORED total, so a chauffeur trip would have gone out at the point-to-point price.
+     The mismatch state still exists and is still flagged — ops can always change Pricing as
+     afterwards — but it now takes a deliberate second action rather than being the default.
+     'both' is untouched: two requested services cannot imply one priced service. */
+  if (next === 'private' || next === 'chauffeur') setService(next);
   markDirty();
   render();
 }
@@ -5001,6 +5019,32 @@ function copyPayLink() {
   _payLinkCopiedT = setTimeout(function () { _payLinkCopied = false; render(); }, 2600);
   render();
   return true;
+}
+
+/* The customer QUOTE link (spec 2026-08-05). Unlike the pay link this mints no state, so the
+   button is a plain mint-and-copy with no picker and no sandbox warning — a quote link takes
+   no money and cannot reach anything that does. */
+async function copyQuoteLink() {
+  if (!state.savedId) return;
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/quote-link', { method: 'POST' });
+    if (!r.ok) {
+      var err = await jsonOrNull(r);
+      showToast(err && err.error === 'not_linkable'
+        ? 'Only an approved (ready or sent) quote can have a quote link'
+        : 'Could not create the quote link', 'error');
+      return;
+    }
+    var body = await jsonOrNull(r);
+    if (!body || !body.url) { showToast('Could not create the quote link', 'error'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(body.url).catch(function () {});
+    }
+    showToast('Quote link copied');
+  } catch (e) {
+    window.opsReportError && window.opsReportError('mint quote link', e);
+    showToast('Could not create the quote link', 'error');
+  }
 }
 
 /* ── Part of trip… (partial pay links, spec 2026-08-04) ─────────────────────────────────
@@ -7350,6 +7394,9 @@ function renderActionBar() {
   var PAYLINK = _payLinkCopied
     ? B('mintPayLink', 'Link copied ✓', 'ch-btn-outline ch-btn-copied', true)
     : B('mintPayLink', 'Payment link', 'ch-btn-outline', false, 'Copies the customer payment link to your clipboard');
+  // The customer QUOTE link (spec 2026-08-05) — same class as PAYLINK, same ready/sent gate,
+  // but no minted-state to reflect back: it's a plain button, not a copied/pending toggle.
+  var QUOTELINK = B('copyQuoteLink', 'Quote link', 'ch-btn-outline', false, 'Copies the customer quote link to your clipboard');
   /* Part of trip… (spec 2026-08-04): private quotes only — a chauffeur leg is a km share, so a
      subset of chauffeur legs sums to nothing meaningful; the server refuses it too. */
   var PAYPART = state.service !== 'chauffeur'
@@ -7361,14 +7408,14 @@ function renderActionBar() {
     // pending_review below — matching the server, which now rejects draft/changes_requested → ready.
     if (s === 'draft' || s === 'changes_requested') { out.push(GB('submitForReview', s === 'changes_requested' ? 'Resubmit for review' : 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
     else if (s === 'changes_requested') { out.push(GB('submitForReview', 'Resubmit for review', 'ch-btn-teal'), SAVE); }
-    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), PAYLINK); if (PAYPART) out.push(PAYPART); }
-    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
+    else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); }
+    else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
     else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'pending_review') { out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); } // pull it back from review to fix something
   }
@@ -8641,6 +8688,8 @@ function attachEventListeners() {
       runAction(action, markSent);
     } else if (action === 'mintPayLink') {
       runAction(action, payLinkPress);
+    } else if (action === 'copyQuoteLink') {
+      runAction(action, copyQuoteLink);
     } else if (action === 'copyPayLink') {
       copyPayLink();
     } else if (action === 'toggleHistory') {

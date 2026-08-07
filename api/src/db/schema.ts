@@ -487,6 +487,9 @@ export const quotes = pgTable('quotes', {
   // (internalQuote's PATCH), not a storage constraint. There is no 'legacy' sentinel — every
   // quote is gated, old ones included (spec I7).
   requestedService: text('requested_service'),
+  // Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured. Distinct from link
+  // liveness, which is status-driven and has no clock. Stamped on → ready as approval + 7 days.
+  offerValidUntil: timestamp('offer_valid_until', { withTimezone: true }),
   // Assignment + audit (spec 2026-07-16). assignedTo is the notification target: who HOLDS the
   // quote, set only by an explicit assign — never inferred from who last moved it. All nullable:
   // rows predating this can't be backfilled (we don't know who made them). Emails, not FKs —
