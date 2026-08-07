@@ -1773,18 +1773,25 @@ const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('e
 const fmtDateTime=iso=>{const d=new Date(iso);return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'})+' · '+_pad(d.getHours())+':'+_pad(d.getMinutes());};
 const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}:${_pad(d.getMinutes())}`;};
 
-const DAYGROUPS=['Pending','Today','Tomorrow','Upcoming','Closed'];
+const DAYGROUPS=['Pending','Today','Tomorrow','Needs closing','Upcoming','Closed'];
 const dayGroup=t=>{
   /* Every closed outcome files together — a cancelled or refunded booking has a travel date
      that has not stopped being "tomorrow", and dating it into the live groups would put a
      dead booking at the top of the day's work. */
   if(CLOSED.includes(t.stage))return 'Closed';
   if(t.stage==='awaiting_payment'||!t.date)return 'Pending';
+  /* The PAST gets its own bucket (team report 2026-08-06): with no branch here, a live-stage
+     booking from last week fell through to "Upcoming" and sat beside real future work forever.
+     A passed date on a live stage means one thing — nobody recorded how the trip ended — so
+     these file as closing admin, oldest first, never as upcoming. Deliberately NOT auto-
+     completed: whether it ran or no-showed is a fact only ops knows (the server-side date
+     enforcement call deferred in July stays deferred). */
+  if(t.date<TODAY)return 'Needs closing';
   if(t.date===TODAY)return 'Today';
   if(t.date===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
-const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
+const groupNote={Pending:'awaiting payment · undated',Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),'Needs closing':'date passed — mark completed or no-show',Upcoming:'scheduled ahead',Closed:'done · cancelled · refunded'};
 
 /* ── fulfilment lifecycle — ops only sees bookings that are paid (or, on the manual
    channel, still awaiting payment — by link or hand-collected). Quoting/payment-link
@@ -1848,6 +1855,7 @@ const reason=t=>{
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
+  if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
   return '';
@@ -2152,7 +2160,7 @@ function viewTickets(){
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
-    html+=`<div class="sec${g==='Pending'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
+    html+=`<div class="sec${g==='Pending'||g==='Needs closing'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
   });
   if(!list.length){
     // Three cases: still loading (a skeleton — NOT the empty state, which is what this used to
