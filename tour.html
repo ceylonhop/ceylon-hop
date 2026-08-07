@@ -83,14 +83,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ch-lb-body img{max-width:100%;max-height:100%;object-fit:contain;display:block}
   .ch-lb-cap{padding:12px 18px;font-family:var(--body,system-ui,sans-serif);font-size:.88rem;color:#2b3a35;
     border-top:1px solid #e6ebe8;min-height:1.2em}
-  .ch-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:42px;height:42px;border:0;
-    border-radius:50%;background:rgba(255,255,255,.92);color:#12312e;font-size:1.4rem;line-height:1;
-    cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.22);transition:background .3s,transform .3s}
-  .ch-lb-nav:hover{background:#fff;transform:translateY(-50%) scale(1.06)}
-  .ch-lb-nav[disabled]{opacity:.35;cursor:default}
-  .ch-lb-prev{left:14px}.ch-lb-next{right:14px}
+  /* Stroked SVG chevrons, not text ‹ › — the glyphs render thin and sit off-centre in the
+     circle, and every other icon on this page is an SVG of the same weight. */
+  .ch-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:44px;border:0;
+    border-radius:50%;background:rgba(255,255,255,.94);color:#12312e;display:grid;place-items:center;padding:0;
+    cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.28);
+    transition:background .3s,transform .3s,opacity .3s}
+  .ch-lb-nav svg{width:19px;height:19px;display:block}
+  .ch-lb-nav:hover:not([disabled]){background:#fff;transform:translateY(-50%) scale(1.07)}
+  .ch-lb-nav[disabled]{opacity:.3;cursor:default}
+  .ch-lb-prev{left:16px}.ch-lb-next{right:16px}
   @media(max-width:760px){.ch-lb{padding:0}.ch-lb-card{width:100vw;height:100dvh;border-radius:0}
-    .ch-lb-nav{width:38px;height:38px}}
+    .ch-lb-nav{width:40px;height:40px}.ch-lb-prev{left:10px}.ch-lb-next{right:10px}}
 
   .detail{display:grid;grid-template-columns:1fr 360px;gap:44px;align-items:start;margin-top:30px}
   @media(max-width:920px){.detail{grid-template-columns:1fr}}
@@ -360,6 +364,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .map(([src,caption])=>[src,String(caption).replace(/^PHOTO\s*—\s*/,'')]);
   const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const zoomIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 9V4h5M20 15v5h-5M15 4h5v5M9 20H4v-5"/></svg>';
+  const chev=d=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+d+'"/></svg>';
   const extra=Math.max(0,scenes.length-TILES);
 
   document.getElementById('gallery').innerHTML = scenes.slice(0,TILES).map(([src,caption],i)=>{
@@ -396,9 +401,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         '<div class="ch-lb-head"><span class="ch-lb-count"></span>'+
         '<button type="button" class="ch-lb-close" aria-label="Close photos">×</button></div>'+
         '<div class="ch-lb-body">'+
-          '<button type="button" class="ch-lb-nav ch-lb-prev" aria-label="Previous photo">‹</button>'+
+          '<button type="button" class="ch-lb-nav ch-lb-prev" aria-label="Previous photo">'+chev('m15 5-7 7 7 7')+'</button>'+
           '<img alt="">'+
-          '<button type="button" class="ch-lb-nav ch-lb-next" aria-label="Next photo">›</button>'+
+          '<button type="button" class="ch-lb-nav ch-lb-next" aria-label="Next photo">'+chev('m9 5 7 7-7 7')+'</button>'+
         '</div>'+
         '<p class="ch-lb-cap"></p>'+
       '</div>';
