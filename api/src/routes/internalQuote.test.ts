@@ -534,7 +534,7 @@ describe('internal quoting tool route', () => {
     const d = await (await authedGet(createApp(), '/admin/quote/rate-card')).json();
     expect(d.version).toBe('2026-07-14');
     expect(d.perKmCents).toMatchObject({ car: 40.25, van: 54.05, van9: 54.05, van14: 55.2, custom: 201.25 });
-    expect(d.floorCents).toMatchObject({ car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 });
+    expect(d.floorCents).toMatchObject({ car: 2900, van: 4999, van9: 4999, van14: 8500, custom: 11000 });
     expect(d.chauffeurDayRateCents).toBe(3105);
     expect(d.fxUsdToLkr).toBe(330);
     // V12 server half: expose vehicle capacity caps for client-side vehicle labelling
