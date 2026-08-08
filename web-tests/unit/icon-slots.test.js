@@ -9,11 +9,23 @@ const read = p => readFileSync(join(ROOT, p), 'utf8');
 // each card must have its own icon, or the row is saying one thing three times.
 const VAL_PAGES = ['index.html', 'why.html', 'about.html'];
 
-/** Every `src` on an `<img class="ico">`, in document order. */
+/** Every `src` on an `<img class="...ico...">`, in document order. Matches `ico` as a
+ * standalone class token — not a substring of `step-ico` or `hiw-ico` — so a compound
+ * class like `class="ico ico-lg"` is still caught. */
 function icoSrcs(html) {
-  return [...html.matchAll(/<img[^>]*class="ico"[^>]*>/g)]
-    .map(([tag]) => (tag.match(/src="([^"]+)"/) || [])[1])
+  return [...html.matchAll(/<img[^>]*class="[^"]*"[^>]*>/g)]
+    .map(([tag]) => tag)
+    .filter(tag => (tag.match(/class="([^"]*)"/) || [])[1]?.split(/\s+/).includes('ico'))
+    .map(tag => (tag.match(/src="([^"]+)"/) || [])[1])
     .filter(Boolean);
+}
+
+/** Just the markup of the `.val` value-proposition row, so callers who only care about that
+ * three-card row (like the disc-rotation rule) aren't tripped up by an unrelated `img.ico`
+ * elsewhere on the page. Cards are flat — no nested `<div>` — so a non-greedy match to the
+ * next `</div>` is enough to isolate one card. */
+function valRowHtml(html) {
+  return [...html.matchAll(/<div class="val[^"]*">[\s\S]*?<\/div>/g)].map(([tag]) => tag).join('\n');
 }
 
 describe('icon slots', () => {
@@ -30,17 +42,26 @@ describe('icon slots', () => {
     });
   }
 
-  it('why.html and about.html do not reuse each other’s icons', () => {
-    const why = new Set(icoSrcs(read('why.html')));
-    const about = icoSrcs(read('about.html'));
-    const shared = about.filter(src => why.has(src));
-    expect(shared).toEqual([]);
-  });
+  // Every distinct pair of value-row pages: no page may reuse another's mark. Pairwise,
+  // not just why-vs-about, so a future page added to VAL_PAGES is covered automatically.
+  for (let i = 0; i < VAL_PAGES.length; i++) {
+    for (let j = i + 1; j < VAL_PAGES.length; j++) {
+      const [pageA, pageB] = [VAL_PAGES[i], VAL_PAGES[j]];
+      it(`${pageA} and ${pageB} do not reuse each other’s icons`, () => {
+        const a = new Set(icoSrcs(read(pageA)));
+        const b = icoSrcs(read(pageB));
+        const shared = b.filter(src => a.has(src));
+        expect(shared).toEqual([]);
+      });
+    }
+  }
 
   // Each row must rotate teal / sky / saffron — the rule in img/icons/badges/README.md,
   // and what the original PNG trio did. The disc is the first <path> fill in the badge.
+  // Scoped to the `.val` row itself: this is a rule about that three-card row, not the
+  // whole page, and there are only three brand disc colours to rotate through.
   it.each(VAL_PAGES)('%s: the value row rotates its disc colours', page => {
-    const discs = icoSrcs(read(page)).map(src => {
+    const discs = icoSrcs(valRowHtml(read(page))).map(src => {
       const svg = readFileSync(join(ROOT, src), 'utf8');
       return (svg.match(/<path[^>]*fill="(#[0-9A-Fa-f]{6})"/) || [])[1];
     });

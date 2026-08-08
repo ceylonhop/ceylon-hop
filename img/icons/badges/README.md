@@ -17,8 +17,13 @@ Drop-in replacement for the existing 62px slots. No CSS change:
 <img class="ico" src="img/icons/badges/thambili.svg" alt="" width="62" height="62" loading="lazy">
 ```
 
-They also inline safely — each badge's filter ids are unique across the whole set, so two
-inlined badges on one page will not collide.
+They also inline safely — each badge's filter ids are unique across the base set, so two
+inlined badges on one page will not collide. A colour variant (see "Colour variants" below)
+is the exception: it byte-copies its original's filter ids rather than getting its own. That's
+still harmless — via `<img src>` each is its own document with its own id scope regardless, and
+even inlined, two copies of the same id are fine here because the duplicated `<filter>` elements
+are byte-identical. But don't rely on the "unique across the whole set" claim if you ever inline
+a badge alongside its own colour variant on the same page.
 
 ## House rules these follow
 
@@ -63,6 +68,10 @@ colour. Named `<badge>-<colour>.svg`:
 Recolouring a disc can swallow an inner accent that shares the new colour — `pro-hopper-teal`
 has its cap button in saffron for exactly that reason. Check the artwork after any recolour.
 `hop-van` carries both teal and sky inside and therefore has no variant: it stays saffron.
+
+These three variants do not appear in
+[`docs/prototypes/badge-icon-set.html`](../../../docs/prototypes/badge-icon-set.html) — that
+page only renders the base set.
 
 ## Known rough edge
 
