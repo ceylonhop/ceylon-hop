@@ -187,6 +187,49 @@ export function createApp(deps: AppDeps = {}) {
     crossOriginOpenerPolicy: 'same-origin-allow-popups',
   }));
 
+  // NOTHING this app serves may be indexed. pay./quote./ops. are all this one host, and between
+  // them they answer with customer names, prices, itineraries and an admin dashboard.
+  //
+  // The pay and quote PAGES already carry <meta name="robots">, but a meta tag only exists inside
+  // HTML — and /quotes/pay/view answers application/json with the customer's details in it. A
+  // header covers every response regardless of content type, including 404s.
+  //
+  // Preview bots ignore this by design: they are not indexing, they are rendering a card, which
+  // is exactly the named unfurl the quote links rely on (spec 2026-08-06).
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  });
+
+  // Served, not 404'd. Without it a crawler FETCHES before it learns not to index — and the
+  // fetch is the part that takes the data out of the building.
+  //
+  // The wildcard group sits LAST: robots.txt matching picks the most specific group, and a
+  // preview agent named above must not be shadowed by it. The AI crawlers are named one by one
+  // because several are documented to honour only their own token, not `*`.
+  app.get('/robots.txt', (c) =>
+    c.text(
+      [
+        '# pay./quote./ops.ceylonhop.com — customer and staff surfaces. Not for indexing.',
+        '',
+        '# Link-preview agents ARE allowed: the named unfurl card on a quote or pay link is',
+        '# deliberate, and blocking these turns every WhatsApp link into a bare URL.',
+        ...['facebookexternalhit', 'WhatsApp', 'Twitterbot', 'Slackbot-LinkExpanding', 'TelegramBot']
+          .flatMap((ua) => [`User-agent: ${ua}`, 'Allow: /', '']),
+        '# AI crawlers, named individually — several honour only their own token.',
+        ...['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'CCBot', 'ClaudeBot', 'anthropic-ai',
+          'Google-Extended', 'PerplexityBot', 'Bytespider', 'Amazonbot']
+          .flatMap((ua) => [`User-agent: ${ua}`, 'Disallow: /', '']),
+        '# Everyone else.',
+        'User-agent: *',
+        'Disallow: /',
+        '',
+      ].join('\n'),
+      200,
+      { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+    ),
+  );
+
   // Restrict cross-origin browser calls to the live site + local dev. Server-to-server
   // callers (e.g. the PayHere webhook) send no Origin and are unaffected by CORS.
   app.use(
