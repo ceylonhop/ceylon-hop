@@ -4,6 +4,7 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { SendBudget } from './sendBudget';
 
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
 const NOW = new Date('2026-07-01T08:00:00'); // local — matches how travelAt builds dates
@@ -225,5 +226,210 @@ describe('sweepStaleSharedHolds', () => {
     const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(48) });
     expect(r.swept).toBe(0);
     expect((await bookings.get(b.id))!.status).toBe('draft');
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+// The rail that matters for the "a migration made 400 old bookings eligible" case: the
+// tick stops at the cap instead of mailing everyone, and what it did NOT send is
+// recorded so the caller can page a human.
+describe('runScheduledNotifications — burst cap', () => {
+  it('stops at the cap and leaves the rest unsent', async () => {
+    const d = deps();
+    for (let i = 0; i < 10; i++) await paidSingle(d.bookings, '2026-07-02');
+    const budget = new SendBudget(3);
+
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+
+    expect(r.reminders).toBe(3);
+    expect(d.email.sent).toHaveLength(3);
+    expect(budget.report().suppressed).toBe(7);
+    expect(budget.report().kinds).toEqual({ trip_reminder: 7 });
+  });
+
+  it('does NOT mark a suppressed booking as sent, so a later run still reaches it', async () => {
+    const d = deps();
+    for (let i = 0; i < 4; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const r1 = await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(1) });
+    expect(r1.reminders).toBe(1);
+
+    // The cap is a pause, not a cancellation — with room, the next run finishes the job.
+    const r2 = await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(25) });
+    expect(r2.reminders).toBe(3);
+    expect(d.email.sent).toHaveLength(4);
+  });
+
+  it('caps reminders and reviews against one shared budget', async () => {
+    const d = deps();
+    for (let i = 0; i < 3; i++) await paidSingle(d.bookings, '2026-07-02'); // reminders
+    for (let i = 0; i < 3; i++) await paidSingle(d.bookings, '2026-06-29'); // reviews
+    const budget = new SendBudget(4);
+
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+
+    expect(r.reminders + r.reviews).toBe(4);
+    expect(d.email.sent).toHaveLength(4);
+    expect(budget.report().suppressed).toBe(2);
+  });
+
+  it('behaves exactly as before when the run stays under the cap', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+    const budget = new SendBudget(25);
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+    expect(r.reminders).toBe(1);
+    expect(budget.anySuppressed).toBe(false);
+  });
+
+  it('is uncapped when no budget is passed (existing callers unchanged)', async () => {
+    const d = deps();
+    for (let i = 0; i < 30; i++) await paidSingle(d.bookings, '2026-07-02');
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(30);
+  });
+});
+
+// ── Claim-then-send (notification safety rails, slice 3) ───────────────────
+// The race this closes: a manual POST /admin/jobs/notifications landing while the external
+// cron tick is mid-sweep. Both used to read wasSent=false and both sent.
+describe('runScheduledNotifications — concurrent ticks', () => {
+  it('sends exactly once when two ticks run against the same booking', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    const [r1, r2] = await Promise.all([
+      runScheduledNotifications(NOW, d),
+      runScheduledNotifications(NOW, d),
+    ]);
+
+    expect(r1.reminders + r2.reminders).toBe(1);
+    expect(d.email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(1);
+  });
+
+  it('sends each of many bookings exactly once across two concurrent ticks', async () => {
+    const d = deps();
+    for (let i = 0; i < 8; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const [r1, r2] = await Promise.all([
+      runScheduledNotifications(NOW, d),
+      runScheduledNotifications(NOW, d),
+    ]);
+
+    expect(r1.reminders + r2.reminders).toBe(8);
+    expect(d.email.sent).toHaveLength(8);
+  });
+
+  it('a failed send releases the claim, so the next tick retries it', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    let calls = 0;
+    const flaky = { send: async () => { calls++; if (calls === 1) throw new Error('provider down'); } };
+    await paidSingle(bookings, '2026-07-02');
+    const d = { bookings, log, email: flaky, baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(0);
+    expect(await log.wasSent((await bookings.list())[0].id, 'trip_reminder')).toBe(false);
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+  });
+
+  it('a suppressed send releases the claim too — the cap must not consume it', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(0) });
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'trip_reminder')).toBe(false);
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+  });
+});
+
+// ── Relevance window (notification safety rails, slice 5) ──────────────────
+// The rail that retires the owner's scenario outright rather than merely capping it: a
+// booking that fails the window is never eligible in the first place, so an empty ledger
+// after a migration or a restore cannot wake it.
+describe('runScheduledNotifications — relevance window', () => {
+  it('NEVER asks for a review of a trip that ended long ago, even with an empty ledger', async () => {
+    // The regression test for "a migration backfilled dates/status on old rows and the next
+    // tick emailed everyone who ever travelled with us".
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01'); // 3 months before NOW
+
+    const r = await runScheduledNotifications(NOW, { ...d, maxTripAgeDays: 30 });
+
+    expect(r.reviews).toBe(0);
+    expect(d.email.sent).toHaveLength(0);
+    // and it is not merely deferred — nothing was recorded either way
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'review_request')).toBe(false);
+  });
+
+  it('still asks for a review of a trip that ended within the window', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-06-29'); // 2 days before NOW
+    expect((await runScheduledNotifications(NOW, { ...d, maxTripAgeDays: 30 })).reviews).toBe(1);
+  });
+
+  it('is uncapped when no window is configured (existing callers unchanged)', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01');
+    expect((await runScheduledNotifications(NOW, d)).reviews).toBe(1);
+  });
+
+  it('NOTIFY_EPOCH fences off bookings taken before it, whatever their trip date', async () => {
+    // The window above only bounds trips in the PAST. A backfill that writes FUTURE dates
+    // onto old rows would sail past it — the epoch is what catches that direction, because
+    // it keys on when the booking was TAKEN, which a trip-date backfill does not change.
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02'); // reminder-eligible, 25h out
+    const epoch = new Date(Date.now() + 24 * 3600 * 1000); // every fixture predates this
+
+    const r = await runScheduledNotifications(NOW, { ...d, epoch });
+
+    expect(r.reminders).toBe(0);
+    expect(d.email.sent).toHaveLength(0);
+  });
+
+  it('lets through a booking taken after the epoch', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+    const epoch = new Date(Date.now() - 24 * 3600 * 1000);
+    expect((await runScheduledNotifications(NOW, { ...d, epoch })).reminders).toBe(1);
+  });
+});
+
+// ── Dry run (notification safety rails, slice 5) ───────────────────────────
+describe('runScheduledNotifications — dry run', () => {
+  it('reports what it WOULD send, and sends nothing', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02'); // reminder
+    await paidSingle(d.bookings, '2026-06-29'); // review
+
+    const r = await runScheduledNotifications(NOW, { ...d, dryRun: true });
+
+    expect(d.email.sent).toHaveLength(0);
+    expect(r.reminders).toBe(1);
+    expect(r.reviews).toBe(1);
+    expect(r.plan?.map((p) => p.kind).sort()).toEqual(['review_request', 'trip_reminder']);
+    expect(r.plan?.every((p) => p.reference.startsWith('CH-'))).toBe(true);
+  });
+
+  it('writes nothing to the ledger, so the real tick still sends', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    await runScheduledNotifications(NOW, { ...d, dryRun: true });
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'trip_reminder')).toBe(false);
+
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+    expect(d.email.sent).toHaveLength(1);
+  });
+
+  it('applies the window and the cap while planning, so the plan is honest', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01'); // outside the window
+    for (let i = 0; i < 5; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const r = await runScheduledNotifications(NOW, { ...d, dryRun: true, maxTripAgeDays: 30, budget: new SendBudget(2) });
+
+    expect(r.plan).toHaveLength(2);
+    expect(r.reminders).toBe(2);
   });
 });

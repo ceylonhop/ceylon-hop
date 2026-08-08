@@ -78,7 +78,7 @@ export async function sendQuoteAssigned(
     label: 'Open the quote',
     link,
   });
-  await email.send({ to: assignedTo, subject: `Quote ${q.reference} assigned to you — Ceylon Hop ops`, html, text });
+  await email.send({ to: assignedTo, subject: `Quote ${q.reference} assigned to you — Ceylon Hop ops`, html, text, audience: 'ops' });
 }
 
 export async function sendQuoteAwaitingApproval(
@@ -93,7 +93,7 @@ export async function sendQuoteAwaitingApproval(
     label: 'Review the quote',
     link,
   });
-  await email.send({ to, subject: `Quote ${q.reference} needs your approval — Ceylon Hop ops`, html, text });
+  await email.send({ to, subject: `Quote ${q.reference} needs your approval — Ceylon Hop ops`, html, text, audience: 'ops' });
 }
 
 export async function sendQuoteSentBack(
@@ -110,5 +110,5 @@ export async function sendQuoteSentBack(
   const html = [`<p style="font-size:16px;margin:0 0 4px">${lead}</p>`, heroRef(q.reference), noteHtml, ctaBlock('Open the quote', link, 'Open it from the Quotes tab in the ops dashboard.')].join('');
   const text = [lead.replace(/<[^>]+>/g, ''), '', `Reference: ${q.reference}`, note ? `\nNote: ${note}` : '', '', link ? `Open the quote: ${link}` : 'Open it from the Quotes tab.'].join('\n');
   const wrapped = opsEmailShell(html, text);
-  await email.send({ to, subject: `Changes requested on quote ${q.reference} — Ceylon Hop ops`, html: wrapped.html, text: wrapped.text });
+  await email.send({ to, subject: `Changes requested on quote ${q.reference} — Ceylon Hop ops`, html: wrapped.html, text: wrapped.text, audience: 'ops' });
 }

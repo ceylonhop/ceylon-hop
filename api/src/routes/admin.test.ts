@@ -6,6 +6,7 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday, futureIsoDate } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
@@ -824,5 +825,146 @@ describe('mark-paid claims the linked quote', () => {
     });
     expect(res.status).toBe(200);
     expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+describe('POST /admin/jobs/notifications — burst cap', () => {
+  async function seedDueReminders(bookings: InMemoryBookingRepo, n: number) {
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    for (let i = 0; i < n; i++) {
+      const b = await bookings.create({
+        mode: 'single',
+        input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+        total: 5000, amountDueNow: 5000, currency: 'USD',
+      });
+      await bookings.setStatus(b.id, 'payment_pending');
+      await bookings.setStatus(b.id, 'paid');
+    }
+  }
+
+  it('stops at the cap, pages the founder, and reports what it held back', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email, alerts, notifyMaxPerRun: 3 });
+    await seedDueReminders(bookings, 9);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reminders).toBe(3);
+    expect(body.suppressed).toBe(6);
+    expect(email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(3);
+
+    const burst = alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed');
+    expect(burst).toHaveLength(1);
+    expect(burst[0].severity).toBe('critical');
+    expect(burst[0].body).toMatch(/trip_reminder: 6/);
+  });
+
+  it('raises no burst alert on a normal tick', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, notifyMaxPerRun: 25 });
+    await seedDueReminders(bookings, 2);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await res.json()).suppressed).toBe(0);
+    expect(alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed')).toHaveLength(0);
+  });
+});
+
+// ── Outbound mail guard (notification safety rails, slice 2) ───────────────
+describe('EMAIL_ALLOWLIST is enforced end-to-end, not just in the adapter', () => {
+  it('a real customer address is dropped before it reaches the provider', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    // What staging will run: only ceylonhop.com addresses are reachable.
+    const app = createApp({
+      adminApiKey: KEY, auth, bookings, email,
+      emailPolicy: { allowlist: ['@ceylonhop.com'] },
+    });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    // The sweep ran and considered the booking handled — but nothing left the building.
+    // Suppression is deliberately invisible to the caller (see GuardedEmailAdapter): the
+    // send is ledgered, so a later run will NOT retry it.
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(0);
+  });
+});
+
+// ── Dry run (notification safety rails, slice 5) ───────────────────────────
+describe('POST /admin/jobs/notifications?dryRun=1', () => {
+  it('reports the plan and mutates nothing — not the ledger, not the other sweeps', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email });
+
+    // A reminder that a real tick would send…
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const due = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(due.id, 'payment_pending');
+    await bookings.setStatus(due.id, 'paid');
+
+    // …and a stale shared hold the same tick would normally cancel.
+    await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    const hold = await bookings.create({
+      mode: 'shared',
+      input: { corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12, customer: valid.customer },
+      total: 25200, amountDueNow: 25200, currency: 'USD',
+    });
+    (await bookings.get(hold.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+
+    const res = await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.dryRun).toBe(true);
+    expect(body.plan).toEqual([{ reference: due.reference, kind: 'trip_reminder' }]);
+    expect(email.sent).toHaveLength(0);
+    // A dry run is READ-ONLY across the whole tick, not just the mail part.
+    expect((await bookings.get(hold.id))!.status).toBe('draft');
+  });
+
+  it('the real tick still sends afterwards — a dry run consumes nothing', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it('still requires admin:jobs', async () => {
+    const { app } = makeApp();
+    expect((await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST' })).status).toBe(401);
   });
 });
