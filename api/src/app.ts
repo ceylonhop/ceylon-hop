@@ -102,6 +102,9 @@ export interface AppDeps {
   // Outbound mail guard (R3). Defaults to the EMAIL_ALLOWLIST / NOTIFICATIONS_ENABLED env
   // pair; tests pass it directly.
   emailPolicy?: EmailPolicy;
+  // Relevance window + epoch (R6); default to their env values.
+  notifyMaxTripAgeDays?: number;
+  notifyEpoch?: Date;
   // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
   resendWebhookSecret?: string;
   // M17 — /health/deep runs this to prove DB connectivity (server passes SELECT 1;
@@ -419,6 +422,8 @@ export function createApp(deps: AppDeps = {}) {
       ridePaygw: paygw,
       refunds,
       notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
+      notifyMaxTripAgeDays: deps.notifyMaxTripAgeDays ?? config.NOTIFY_MAX_TRIP_AGE_DAYS,
+      notifyEpoch: deps.notifyEpoch ?? (config.NOTIFY_EPOCH ? new Date(config.NOTIFY_EPOCH) : undefined),
       // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.
       paymentAdapter: adapter,
       // Manual settlement (mark-paid) records the money in the payment ledger and its audit

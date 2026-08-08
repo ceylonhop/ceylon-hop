@@ -904,3 +904,67 @@ describe('EMAIL_ALLOWLIST is enforced end-to-end, not just in the adapter', () =
     expect(email.sent).toHaveLength(0);
   });
 });
+
+// ── Dry run (notification safety rails, slice 5) ───────────────────────────
+describe('POST /admin/jobs/notifications?dryRun=1', () => {
+  it('reports the plan and mutates nothing — not the ledger, not the other sweeps', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email });
+
+    // A reminder that a real tick would send…
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const due = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(due.id, 'payment_pending');
+    await bookings.setStatus(due.id, 'paid');
+
+    // …and a stale shared hold the same tick would normally cancel.
+    await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    const hold = await bookings.create({
+      mode: 'shared',
+      input: { corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12, customer: valid.customer },
+      total: 25200, amountDueNow: 25200, currency: 'USD',
+    });
+    (await bookings.get(hold.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+
+    const res = await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.dryRun).toBe(true);
+    expect(body.plan).toEqual([{ reference: due.reference, kind: 'trip_reminder' }]);
+    expect(email.sent).toHaveLength(0);
+    // A dry run is READ-ONLY across the whole tick, not just the mail part.
+    expect((await bookings.get(hold.id))!.status).toBe('draft');
+  });
+
+  it('the real tick still sends afterwards — a dry run consumes nothing', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it('still requires admin:jobs', async () => {
+    const { app } = makeApp();
+    expect((await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST' })).status).toBe(401);
+  });
+});

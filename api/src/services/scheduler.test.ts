@@ -341,3 +341,95 @@ describe('runScheduledNotifications — concurrent ticks', () => {
     expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
   });
 });
+
+// ── Relevance window (notification safety rails, slice 5) ──────────────────
+// The rail that retires the owner's scenario outright rather than merely capping it: a
+// booking that fails the window is never eligible in the first place, so an empty ledger
+// after a migration or a restore cannot wake it.
+describe('runScheduledNotifications — relevance window', () => {
+  it('NEVER asks for a review of a trip that ended long ago, even with an empty ledger', async () => {
+    // The regression test for "a migration backfilled dates/status on old rows and the next
+    // tick emailed everyone who ever travelled with us".
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01'); // 3 months before NOW
+
+    const r = await runScheduledNotifications(NOW, { ...d, maxTripAgeDays: 30 });
+
+    expect(r.reviews).toBe(0);
+    expect(d.email.sent).toHaveLength(0);
+    // and it is not merely deferred — nothing was recorded either way
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'review_request')).toBe(false);
+  });
+
+  it('still asks for a review of a trip that ended within the window', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-06-29'); // 2 days before NOW
+    expect((await runScheduledNotifications(NOW, { ...d, maxTripAgeDays: 30 })).reviews).toBe(1);
+  });
+
+  it('is uncapped when no window is configured (existing callers unchanged)', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01');
+    expect((await runScheduledNotifications(NOW, d)).reviews).toBe(1);
+  });
+
+  it('NOTIFY_EPOCH fences off bookings taken before it, whatever their trip date', async () => {
+    // The window above only bounds trips in the PAST. A backfill that writes FUTURE dates
+    // onto old rows would sail past it — the epoch is what catches that direction, because
+    // it keys on when the booking was TAKEN, which a trip-date backfill does not change.
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02'); // reminder-eligible, 25h out
+    const epoch = new Date(Date.now() + 24 * 3600 * 1000); // every fixture predates this
+
+    const r = await runScheduledNotifications(NOW, { ...d, epoch });
+
+    expect(r.reminders).toBe(0);
+    expect(d.email.sent).toHaveLength(0);
+  });
+
+  it('lets through a booking taken after the epoch', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+    const epoch = new Date(Date.now() - 24 * 3600 * 1000);
+    expect((await runScheduledNotifications(NOW, { ...d, epoch })).reminders).toBe(1);
+  });
+});
+
+// ── Dry run (notification safety rails, slice 5) ───────────────────────────
+describe('runScheduledNotifications — dry run', () => {
+  it('reports what it WOULD send, and sends nothing', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02'); // reminder
+    await paidSingle(d.bookings, '2026-06-29'); // review
+
+    const r = await runScheduledNotifications(NOW, { ...d, dryRun: true });
+
+    expect(d.email.sent).toHaveLength(0);
+    expect(r.reminders).toBe(1);
+    expect(r.reviews).toBe(1);
+    expect(r.plan?.map((p) => p.kind).sort()).toEqual(['review_request', 'trip_reminder']);
+    expect(r.plan?.every((p) => p.reference.startsWith('CH-'))).toBe(true);
+  });
+
+  it('writes nothing to the ledger, so the real tick still sends', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    await runScheduledNotifications(NOW, { ...d, dryRun: true });
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'trip_reminder')).toBe(false);
+
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+    expect(d.email.sent).toHaveLength(1);
+  });
+
+  it('applies the window and the cap while planning, so the plan is honest', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-04-01'); // outside the window
+    for (let i = 0; i < 5; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const r = await runScheduledNotifications(NOW, { ...d, dryRun: true, maxTripAgeDays: 30, budget: new SendBudget(2) });
+
+    expect(r.plan).toHaveLength(2);
+    expect(r.reminders).toBe(2);
+  });
+});

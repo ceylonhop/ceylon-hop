@@ -113,6 +113,14 @@ const Env = z.object({
   // which is what makes it structurally unable to email a real customer instead of merely
   // conventionally unable (docs/staging-environment-plan.md).
   EMAIL_ALLOWLIST: z.string().default(''),
+  // Relevance window (same spec, R6). Never notify about a trip that ended more than this
+  // many days ago — stateless, so an emptied or restored notification_log cannot resurrect
+  // an old booking. 30 days is well past any legitimate review request.
+  NOTIFY_MAX_TRIP_AGE_DAYS: z.coerce.number().default(30),
+  // Notification epoch (R6), ISO date. Never notify about a booking TAKEN before this.
+  // Unset by default; set it to the go-live date to fence off the pre-launch backlog
+  // permanently, in the direction the age window cannot cover (future-dated backfills).
+  NOTIFY_EPOCH: z.string().default(''),
   // NOTIFICATIONS_ENABLED: the lever to throw WHILE a burst is happening. Stops customer
   // mail; ops alerts still go out, because silencing them would hide the incident.
   NOTIFICATIONS_ENABLED: z

@@ -71,6 +71,9 @@ export function adminRoutes(deps: {
   // ONE tick may send before it stops and pages. Optional so existing callers/tests keep
   // their uncapped behaviour; the production mount always passes config.NOTIFY_MAX_PER_RUN.
   notifyMaxPerRun?: number;
+  // Relevance window + epoch (R6). Both optional; unset means unbounded, as before.
+  notifyMaxTripAgeDays?: number;
+  notifyEpoch?: Date;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -491,7 +494,20 @@ export function adminRoutes(deps: {
     // ONE budget for the whole tick: the scheduler and the Ride Board sweep both draw on
     // it, so the cap bounds everything this endpoint can send, not each sweep separately.
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
-    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret, budget });
+    const window = { maxTripAgeDays: deps.notifyMaxTripAgeDays, epoch: deps.notifyEpoch };
+
+    // Dry run (R7): report what a real tick WOULD send and return. Deliberately returns
+    // before every other sweep on this endpoint — the stale-hold, Ride Board, quote-expiry
+    // and abandoned-draft passes all mutate, and "read-only" has to mean the whole tick or
+    // it is not a safe thing to run after a migration.
+    if (c.req.query('dryRun')) {
+      const preview = await runScheduledNotifications(new Date(), {
+        bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true,
+      });
+      return c.json({ ...preview, dryRun: true }, 200);
+    }
+
+    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window });
     let staleSharedHolds = 0;
     try {
       staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
