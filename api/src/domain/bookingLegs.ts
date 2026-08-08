@@ -48,10 +48,38 @@ export function deriveLegsForMode(
     trip?: Parameters<typeof deriveTripLegs>[0];
   },
 ): DerivedLeg[] | undefined {
-  if (mode === 'single') return input.single ? deriveSingleLegs(input.single) : [];
-  if (mode === 'trip') return input.trip ? deriveTripLegs(input.trip) : [];
+  if (mode === 'single') return input.single ? filterUsableLegs(deriveSingleLegs(input.single)) : [];
+  if (mode === 'trip') return input.trip ? filterUsableLegs(deriveTripLegs(input.trip)) : [];
   if (mode === 'shared') return [];
   return undefined;
+}
+
+// `booking_legs.from_place`/`to_place` are `text NOT NULL`. A literal SQL NULL element in
+// trip_request.stops (a `text[] NOT NULL`, which Postgres allows to contain nulls) would violate
+// that constraint if it reached the insert — rolling back the customer, the booking and the
+// request row INSIDE a payment transaction, turning a recoverable data gap into a failed payment.
+//
+// An empty string is a different story: `''` satisfies NOT NULL and inserts fine — dropping it is
+// not a constraint requirement but a POLICY choice, made here alongside the null case because a
+// blank endpoint is just as unusable a place name as a missing one, and a leg row with one would
+// surface to a customer.
+export function isUsablePlace(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0;
+}
+
+// Drops any leg whose endpoints aren't usable, and strips any unusable entries out of viaStops
+// rather than dropping the whole row — a `day` row's endpoints can be perfectly fine even when a
+// stop it merely passes through is null or blank (trip_request.stops allows both). Applied here,
+// the one place both legRowsForBooking and planBackfill call, so a leg derived at booking time and
+// one derived by the backfill can never disagree about what "usable" means.
+function filterUsableLegs(legs: DerivedLeg[]): DerivedLeg[] {
+  return legs
+    .filter((leg) => isUsablePlace(leg.fromPlace) && isUsablePlace(leg.toPlace))
+    .map((leg) =>
+      leg.viaStops.some((s) => !isUsablePlace(s))
+        ? { ...leg, viaStops: leg.viaStops.filter(isUsablePlace) }
+        : leg,
+    );
 }
 
 export function deriveSingleLegs(input: {
@@ -122,7 +150,12 @@ function chauffeurDays(stops: string[], dates: string[]): Unsequenced[] {
   // elsewhere. A chauffeur trip with NO dates at all (e.g. still being drafted, or a producer
   // that hasn't supplied dates yet) is not "all gaps" — every segment is still a journey we will
   // need to ask the customer about, so fall back to one `day` row per segment.
-  if (!dates.some((d) => !!d)) {
+  //
+  // Only the SEGMENTS that actually exist (stops.length - 1 of them) count here — a trailing
+  // dates[] entry past the last segment (dates can be longer than segments, same as elsewhere in
+  // this function) must not make an otherwise-undated trip look dated, or every real segment
+  // reads as a gap instead of falling back to askable days.
+  if (!dates.slice(0, stops.length - 1).some((d) => !!d)) {
     return stops.slice(0, -1).map((from, i) => ({
       kind: 'day' as const,
       fromPlace: from,
