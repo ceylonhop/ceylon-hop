@@ -40,7 +40,7 @@ export const RATE_CARD = {
   costPerKmCents: COST_PER_KM_CENTS, // real owner cost — margin = sell − cost
   // Minimum fares are FINAL prices with NO markup: a leg that prices below the floor is charged
   // the floor as-is (the floor already covers the fixed cost of a short trip).
-  floorCents: { car: 2900, van: 5000, van9: 5000, van14: 8500, custom: 11000 }, // van9 floor = van6's $50
+  floorCents: { car: 2900, van: 4999, van9: 4999, van14: 8500, custom: 11000 }, // van9 floor tracks van6's $49.99
   // Chauffeur: SELL day rate = cost × 1.15 (dayRateCostCents kept for margin). Idle days bill a
   // per-vehicle min km/day at the sell per-km, on top of the day charge (car 50, vans 100).
   chauffeur: {

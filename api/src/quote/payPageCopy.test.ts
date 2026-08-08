@@ -31,6 +31,55 @@ function quoteOf(opts: {
   };
 }
 
+// What a transfer page promises has to match the trip it is selling. This was a live defect:
+// the sentence was a constant, so a Sigiriya → Kandy page told a paying customer we would meet
+// them at an airport their trip never touches (owner-caught 2026-08-07).
+describe('payPageCopy — what a single transfer says is included', () => {
+  const included = (from: string, to: string, category = 'transfer') =>
+    payPageCopy(quoteOf({ legs: [leg(from, to, '2026-08-08', category)] })).includedText;
+
+  it('promises the name board only when the customer is COLLECTED from an airport', () => {
+    expect(included('Colombo Airport (CMB)', 'Galle')).toBe(
+      'Driver, fuel and highway tolls. Airport pickup with a name board.',
+    );
+  });
+
+  // The board is an arrivals service. Flying home, the airport is where they are dropped —
+  // promising to meet them there with a sign would be a second wrong sentence, not a fix.
+  it('does not promise a name board when the airport is the DROP-OFF', () => {
+    const text = included('Kandy', 'Colombo Airport (CMB)');
+    expect(text).toBe('Driver, fuel and highway tolls. Hotel pickup and airport drop-off.');
+    expect(text).not.toMatch(/name board/i);
+  });
+
+  it('says hotel pickup and drop-off when no airport is involved', () => {
+    expect(included('Sigiriya / Dambulla', 'Kandy')).toBe(
+      'Driver, fuel and highway tolls. Hotel pickup and drop-off.',
+    );
+  });
+
+  it('never mentions an airport on a trip that has none', () => {
+    for (const [from, to] of [['Sigiriya / Dambulla', 'Kandy'], ['Galle', 'Mirissa'], ['Kandy', 'Ella']]) {
+      expect(included(from, to)).not.toMatch(/airport|name board/i);
+    }
+  });
+
+  // Katunayake is the airport's town and how operators often type it; CMB is the code.
+  it('recognises the airport however the operator wrote it', () => {
+    for (const spelling of ['Colombo Airport (CMB)', 'CMB', 'Katunayake', 'Bandaranaike Airport']) {
+      expect(included(spelling, 'Kandy')).toMatch(/name board/i);
+    }
+  });
+
+  // An operator-set airport category with no airport in either name says a terminal is involved
+  // but not which end. Say nothing rather than guess the direction wrong.
+  it('makes no pickup promise when the category says airport but the endpoints do not', () => {
+    const text = included('Some Hotel', 'Another Hotel', 'airport');
+    expect(text).toBe('Driver, fuel and highway tolls.');
+    expect(text).not.toMatch(/name board|hotel pickup/i);
+  });
+});
+
 describe('payPageCopy — single transfer', () => {
   it('titles with the route and carries the journey facts', () => {
     const c = payPageCopy(quoteOf({}));

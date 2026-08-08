@@ -217,12 +217,12 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_
 
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_upgrade_car_to_van 1`] = `
 {
-  "amountDueNowCents": 5000,
+  "amountDueNowCents": 4999,
   "currency": "USD",
   "depositCents": 500,
   "lineItems": [
     {
-      "amountCents": 5000,
+      "amountCents": 4999,
       "label": "Galle → Mirissa (van)",
       "meta": {
         "billableKm": 50,
@@ -231,16 +231,16 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_upgr
       },
     },
   ],
-  "marginEstimateCents": 2650,
+  "marginEstimateCents": 2649,
   "priceAdjustmentCents": 0,
   "priceStrategy": "unchanged",
   "product": "private",
   "rateCardVersion": "2026-07-14",
-  "subtotalCents": 5000,
-  "totalCents": 5000,
+  "subtotalCents": 4999,
+  "totalCents": 4999,
   "warnings": [
     "vehicle set to van for 6 pax / 4 bags",
-    "Galle→Mirissa hit the $50 van minimum",
+    "Galle→Mirissa hit the $49.99 van minimum",
   ],
 }
 `;
@@ -261,7 +261,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
       },
     },
     {
-      "amountCents": 5000,
+      "amountCents": 4999,
       "label": "Kandy → Nuwara Eliya (van)",
       "meta": {
         "billableKm": 85,
@@ -270,7 +270,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
       },
     },
     {
-      "amountCents": 5000,
+      "amountCents": 4999,
       "label": "Nuwara Eliya → Ella (van)",
       "meta": {
         "billableKm": 62,
@@ -287,7 +287,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
       "label": "Waiting fee",
     },
     {
-      "amountCents": -14,
+      "amountCents": -12,
       "label": "Final price adjustment",
       "meta": {
         "kind": "price_adjustment",
@@ -296,15 +296,15 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_
     },
   ],
   "marginEstimateCents": 5972,
-  "priceAdjustmentCents": -14,
+  "priceAdjustmentCents": -12,
   "priceStrategy": "nearest_50_cents",
   "product": "private",
   "rateCardVersion": "2026-07-14",
-  "subtotalCents": 18864,
+  "subtotalCents": 18862,
   "totalCents": 18850,
   "warnings": [
-    "Kandy→Nuwara Eliya hit the $50 van minimum",
-    "Nuwara Eliya→Ella hit the $50 van minimum",
+    "Kandy→Nuwara Eliya hit the $49.99 van minimum",
+    "Nuwara Eliya→Ella hit the $49.99 van minimum",
   ],
 }
 `;
@@ -544,7 +544,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): pri
       "distanceKm": 45,
       "from": "Galle",
       "minApplied": true,
-      "priceCents": 5000,
+      "priceCents": 4999,
       "to": "Mirissa",
     },
   ],
@@ -574,7 +574,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): pri
       "distanceKm": 77,
       "from": "Kandy",
       "minApplied": true,
-      "priceCents": 5000,
+      "priceCents": 4999,
       "to": "Nuwara Eliya",
     },
     {
@@ -583,7 +583,7 @@ exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): pri
       "distanceKm": 56,
       "from": "Nuwara Eliya",
       "minApplied": true,
-      "priceCents": 5000,
+      "priceCents": 4999,
       "to": "Ella",
     },
   ],

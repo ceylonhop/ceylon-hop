@@ -11,8 +11,8 @@ describe('legPriceCents', () => {
   it('applies the $29 car floor on short legs (35km → $29)', () => {
     expect(legPriceCents(35, 'car')).toBe(2900);
   });
-  it('applies the $50 van floor (40km van = 1880 → floored to 5000)', () => {
-    expect(legPriceCents(40, 'van')).toBe(5000);
+  it('applies the $49.99 van floor (40km van = 1880 → floored to 4999)', () => {
+    expect(legPriceCents(40, 'van')).toBe(4999);
   });
   it('van per-km above the floor (200km van = $108.10)', () => {
     expect(legPriceCents(200, 'van')).toBe(10810); // round(200 × 54.05) = 10810

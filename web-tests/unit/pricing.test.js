@@ -58,8 +58,8 @@ describe('privateQuote (the fare customers see)', () => {
     // car raw = round(12 × 0.4025) = 5  → $29 floor
     // van raw = round(12 × 0.5405) = 6  → $50 floor
     expect(q.car).toBe(29); // floor
-    expect(q.rawVan).toBe(50); // core floor
-    expect(q.van).toBe(50); // final-price policy preserves the configured floor
+    expect(q.rawVan).toBe(49.99); // core floor
+    expect(q.van).toBe(49.99); // final-price policy preserves the configured floor
   });
 
   // Regression guard: hill-country must not collapse back to the haversine estimate
