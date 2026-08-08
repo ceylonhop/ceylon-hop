@@ -334,6 +334,7 @@ export function createApp(deps: AppDeps = {}) {
     quotes, bookings, payments,
     linkSecret: bookingLinkSecret,
     checkoutNow: deps.checkoutNow,
+    opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
   }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.

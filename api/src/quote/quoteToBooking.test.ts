@@ -272,3 +272,64 @@ describe('partial mapping (legIndexes, spec 2026-08-04)', () => {
     expect(isQuoteBookable(threeLegs(), { legIndexes: [] })).toBe(false);
   });
 });
+
+// Per-leg dates died at conversion: only the modal's single date survived, so the ops drawer and
+// the customer's itinerary labelled later legs "Leg 2"/"Leg 3" instead of dating them
+// (docs/known-bugs.md, 2026-07-30). The dates the operator typed live in the TOOL payload.
+describe('per-leg dates survive the conversion (2026-08-08)', () => {
+  const dated = (legs: { from: string; to: string; date?: string; category?: string }[]) => ({
+    id: 'q1', reference: 'Q-1', channel: 'ops', status: 'sent', totalCents: 21900, currency: 'USD',
+    request: {
+      tool: { legs },
+      engine: {
+        product: 'private', vehicle: 'car', pax: 2, bags: 1,
+        legs: legs.filter((l) => (l.category ?? 'transfer') !== 'stay_day')
+          .map((l) => ({ from: l.from, to: l.to, distanceKm: 100 })),
+      },
+    },
+    result: {}, convertedBookingId: null,
+  } as unknown as SavedQuote);
+
+  const THREE = [
+    { from: 'Colombo', to: 'Kandy', date: '2026-09-01' },
+    { from: 'Kandy', to: 'Ella', date: '2026-09-04' },
+    { from: 'Ella', to: 'Galle', date: '2026-09-07' },
+  ];
+
+  it('carries every leg’s date, not just the first', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: undefined });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '2026-09-04', '2026-09-07']);
+  });
+
+  // "if we get updated dates from the booking, update using that" — the booking modal's date is
+  // newer information than the quote's.
+  it('lets a date entered at booking time win', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: '2026-09-02' });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-02', '2026-09-04', '2026-09-07']);
+  });
+
+  it('leaves an undated leg blank rather than guessing', () => {
+    const m = quoteToBooking(dated([THREE[0], { from: 'Kandy', to: 'Ella' }, THREE[2]]), { ...DETAILS, date: undefined });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '', '2026-09-07']);
+  });
+
+  // Stay days sit in the tool payload but are NOT engine legs, so a naive index would shift
+  // every later date onto the wrong leg.
+  it('is not thrown off by a stay day in the tool payload', () => {
+    const withStay = [
+      THREE[0],
+      { from: 'Kandy', to: 'Kandy', date: '2026-09-02', category: 'stay_day' },
+      THREE[1],
+      THREE[2],
+    ];
+    const m = quoteToBooking(dated(withStay), { ...DETAILS, date: undefined });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '2026-09-04', '2026-09-07']);
+  });
+
+  // A partial pay link books a SUBSET of legs — the dates must follow the same filter.
+  it('follows a partial selection', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: undefined }, { legIndexes: [0, 2] });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '', '2026-09-07']);
+  });
+});

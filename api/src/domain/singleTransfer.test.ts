@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SingleTransferInput } from './singleTransfer';
+import { SingleTransferInput, CustomerInput } from './singleTransfer';
 
 const valid = {
   from: 'Colombo Airport',
@@ -78,5 +78,32 @@ describe('SingleTransferInput', () => {
       expect(res.data.customer.phoneCountryCode).toBe('+94');
       expect(res.data.customer.phoneNumber).toBe('771234567');
     }
+  });
+});
+
+// The pay page let a visitor become the customer (spec 2026-08-08). A phone-only quote renders an
+// EMPTY surname and email; both are required, both carry autocomplete hints, and Chrome offered
+// the operator's saved identity. Four live bookings ended up under the owner's name.
+describe('customer identity on the pay page (spec 2026-08-08)', () => {
+  const base = {
+    firstName: 'Frank', email: 'frank@example.com',
+    whatsapp: '+31 641256927', country: 'NL',
+  };
+
+  it('accepts a customer with no surname', () => {
+    expect(CustomerInput.safeParse(base).success).toBe(true);
+    expect(CustomerInput.safeParse({ ...base, lastName: '' }).success).toBe(true);
+  });
+
+  it('still demands a first name — someone has to be travelling', () => {
+    expect(CustomerInput.safeParse({ ...base, firstName: '' }).success).toBe(false);
+  });
+
+  it('still demands a way to reach them', () => {
+    expect(CustomerInput.safeParse({ ...base, whatsapp: '' }).success).toBe(false);
+  });
+
+  it('keeps the email a real email when one is given', () => {
+    expect(CustomerInput.safeParse({ ...base, email: 'not-an-email' }).success).toBe(false);
   });
 });
