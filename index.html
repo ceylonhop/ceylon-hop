@@ -236,11 +236,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* trust strip — carries the hero's deep teal-ink base onward */
   .trust{background:#0c2422;color:#dcebe8;border-top:1px solid rgba(255,255,255,.06)}
-  .trust-row{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:19px 0;flex-wrap:wrap;font-size:.88rem;font-weight:600;letter-spacing:.01em}
-  .trust-row .item{display:flex;align-items:center;gap:.65rem}
-  .trust-row svg{width:32px;height:32px;padding:7px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  /* Five items on ONE line at desktop. The margin here is thin and was blown by the
+     Hanken Grotesk → Poppins swap: Poppins sets ~11.6% wider, so the row needed ~1243px
+     against a 1152px inner .wrap and wrapped at every desktop size, orphaning the last
+     item. It fitted before only by ~7px, which was never real headroom.
+     Trimmed on three axes — 28px icons, 18px gaps, .82rem type — which brings it to
+     ~1135px. justify-content:center is the safety net: if a translation or a longer
+     label ever pushes it over again, the wrapped row centres and reads as deliberate
+     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
+  .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
+  .trust-row .item{display:flex;align-items:center;gap:.55rem}
+  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
+     Set this lower and you get the worst case: a wrapped row still justified apart, so
+     the orphan hangs at the left edge — which is exactly how this bug looked. */
+  @media(min-width:1160px){ .trust-row{justify-content:space-between} }
+  /* Between the one-line width and the mobile scroll strip, free wrapping puts four
+     items up and one alone underneath. Three columns splits five as 3 + 2 instead, and
+     the aligned columns read as a deliberate grid rather than a broken row. */
+  @media(min-width:951px) and (max-width:1159px){
+    .trust-row{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 18px;padding-block:16px}
+  }
+  /* Below ~950 a third column squeezes cells under 280px and the longest label
+     ("Free cancellation up to 24h before") wraps to two lines inside its cell. Two
+     columns keeps every label on one line. */
+  @media(min-width:761px) and (max-width:950px){
+    .trust-row{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 18px;padding-block:16px}
+  }
   @media(max-width:760px){
-    .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding:15px 0 17px;
+    .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding-block:15px 17px;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .trust-row::-webkit-scrollbar{display:none}
     .trust-row .item{flex:none;scroll-snap-align:start}
@@ -461,7 +485,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</div>
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</div>
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Shared seats every Wed &amp; Sat</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24h before</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation 24h before</div>
     <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
   </div>
 </section>
