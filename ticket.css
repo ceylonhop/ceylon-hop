@@ -17,7 +17,7 @@
 .pp-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
 /* The real logo glyph, same file + sizing rule as the site header's cmark() (site.js). */
 .pp-cmark{width:32px;height:32px;object-fit:contain;flex:none}
-.pp-word{font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--accent-deep);letter-spacing:-.01em}
+.pp-word{font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--accent-deep);letter-spacing:0}
 .pp-wa{font-size:.78rem;color:var(--ink-soft)}
 .pp-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
 
@@ -27,8 +27,8 @@
    huge route title — these pages should open by telling you they are YOURS. Display face,
    brand teal, sized as a kicker so it reads before the headline without competing with it. */
 .pp-hello{font-family:var(--display);font-weight:700;font-size:1.3rem;line-height:1.15;
-  letter-spacing:-.01em;color:var(--accent-deep);margin-bottom:3px}
-.pp-title{font-family:var(--display);font-weight:700;font-size:1.9rem;line-height:1.12;letter-spacing:-.015em;margin:4px 0 2px}
+  letter-spacing:0;color:var(--accent-deep);margin-bottom:3px}
+.pp-title{font-family:var(--display);font-weight:700;font-size:1.9rem;line-height:1.12;letter-spacing:0;margin:4px 0 2px}
 .pp-sub{font-size:.85rem;color:var(--ink-soft);margin-bottom:16px}
 
 /* ticket */
@@ -67,7 +67,7 @@
 .coverage{margin:0 0 10px;font-size:.74rem;color:var(--ink-faint,#8a8272)}
 .tot{display:flex;justify-content:space-between;align-items:baseline}
 .tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
-.tot .v{font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:-.02em}
+.tot .v{font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:0}
 .tot.due{margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft,#f0ece1)}
 .tot.due .v{font-size:1.15rem;color:var(--accent-deep)}
 

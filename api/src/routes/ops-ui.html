@@ -66,7 +66,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden;transition:grid-template-columns .32s cubic-bezier(.2,.7,.3,1)}
   .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2;overflow:hidden;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
   .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(var(--blue-rgb),.12),transparent 58%);pointer-events:none}
-  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative;white-space:nowrap;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:0;color:#fbf6ea;padding:2px 6px;position:relative;white-space:nowrap;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
   .brand span{max-width:160px;overflow:hidden;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
   .rail-logo{width:30px;height:30px;object-fit:contain;display:block;flex:0 0 auto}
   .brand small{display:block;font-family:var(--body);font-size:.57rem;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);margin-top:2px}
@@ -167,7 +167,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   #quoteRoot.is-opening::before{content:"";position:absolute;top:50%;left:50%;z-index:31;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2.5px solid var(--teal);border-top-color:transparent;animation:ops-btn-spin .7s linear infinite}
   @keyframes qv-veil-in{from{opacity:0}to{opacity:1}}
   @media(prefers-reduced-motion:reduce){#quoteRoot.is-opening::before{animation:none;border-top-color:var(--teal);opacity:.4}}
-  .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:-.025em;line-height:1}
+  .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:0;line-height:1}
   .pagesub{color:var(--ink-soft);margin:9px 0 22px;font-size:.95rem}.pagesub b{color:var(--ink);font-weight:700}.pagesub .a{color:var(--alert);font-weight:700}
   .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
 
@@ -184,7 +184,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .chan.board{background:#eef2f6;color:#4a5a68;border-color:#d5dfe7}
   .tk-board .tk-cust .id{background:#eef2f6;color:#4a5a68}
   .tk-main{min-width:0}
-  .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:600;font-size:1.2rem;letter-spacing:-.015em;line-height:1.1;color:var(--ink)}
+  .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:600;font-size:1.2rem;letter-spacing:0;line-height:1.1;color:var(--ink)}
   .tk-cust .id{font-family:var(--mono);font-size:.67rem;color:var(--ink-faint);font-weight:600;letter-spacing:0}
   .tk-route{font-size:.92rem;color:var(--ink-soft);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
   .tk-route b{color:var(--ink);font-weight:700}.tk-route .md{color:var(--ink-faint)}
@@ -196,14 +196,14 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .pill .pd{width:7px;height:7px;border-radius:50%;background:var(--c,var(--ink-faint))}
   .tk-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
-  .tk-right .val{font-family:var(--display);font-weight:600;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+  .tk-right .val{font-family:var(--display);font-weight:600;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
   /* Quotes tab list rows — same card language as .tk, simpler single-line grid */
   .qlist{margin-top:6px}
   .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
   .qrow:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--cream-deep)}
   .qrow .qref{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);letter-spacing:0}
-  .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:-.012em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qrow .qcust{font-family:var(--display);font-weight:600;font-size:1.08rem;letter-spacing:0;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qprod{font-size:.86rem;color:var(--ink-soft);text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qrow .qtotal{font-family:var(--display);font-weight:600;font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right}
   /* An unpriced shell (spec 2026-07-29) states its condition instead of showing a $0 total; muted
@@ -363,7 +363,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sheet-h .x{margin-left:auto;flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:0;font-weight:700;color:var(--ink-soft);transition:.15s}
   .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft);transform:translateY(-1px)}
   .sheet-h .ey{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .sheet-h h2{font-family:var(--display);font-size:1.55rem;font-weight:600;margin:9px 0 0;line-height:1.08;letter-spacing:-.02em;overflow-wrap:anywhere}
+  .sheet-h h2{font-family:var(--display);font-size:1.55rem;font-weight:600;margin:9px 0 0;line-height:1.08;letter-spacing:0;overflow-wrap:anywhere}
   .sheet-h h2.sm{font-size:1.22rem}  /* long Google-profile names: wrap smaller, don't shout */
   .idrow{display:flex;align-items:center;gap:9px;margin-top:7px}
   .sheet-h .rf{font-family:var(--mono);font-size:.74rem;color:var(--ink-soft);font-weight:600;display:inline-flex;align-items:center;gap:5px;border:0;background:none;padding:3px 7px;margin-left:-7px;border-radius:7px;transition:.15s;cursor:pointer}
@@ -504,7 +504,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .login.show .login-card{transform:none;opacity:1}
   .login-mark{width:120px;height:120px;margin:0 auto 20px;border-radius:24px;overflow:hidden;box-shadow:0 24px 60px -22px rgba(var(--blue-rgb),.65)}
   .login-logo{width:100%;height:100%;object-fit:cover;display:block}
-  .login h1{font-family:var(--display);font-weight:600;font-size:2.1rem;letter-spacing:-.025em;color:#fbf6ea;line-height:1.05;margin:0}
+  .login h1{font-family:var(--display);font-weight:600;font-size:2.1rem;letter-spacing:0;color:#fbf6ea;line-height:1.05;margin:0}
   .login .sub{color:#9c9284;font-size:.9rem;margin:9px 0 30px;font-weight:500}
   .login .sub b{color:var(--teal);font-weight:700;letter-spacing:.02em}
   .login form{display:flex;flex-direction:column;gap:12px}
@@ -1452,7 +1452,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    inside a 38px line, so the span's rect swallowed the LKR row rendered beneath it and
    the two read as one flattened line. As a block its rect is its line box. Guarded by
    web-tests/e2e/ops-money-line.spec.js ("LKR renders below the USD"). */
-.qv .ch-total-usd { display: block; line-height: 1.05; font-family: var(--serif); font-size: 36px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; font-variant-numeric: lining-nums; transition: color .35s cubic-bezier(.23,.9,.32,1); }
+.qv .ch-total-usd { display: block; line-height: 1.05; font-family: var(--serif); font-size: 36px; font-weight: 700; color: var(--ink); letter-spacing:0; font-variant-numeric: lining-nums; transition: color .35s cubic-bezier(.23,.9,.32,1); }
 .qv .ch-total-usd.pending { color: var(--muted-2); font-weight: 400; }
 .qv .ch-needs { border: 0; padding: 4px 0 0; font-size: 12px; color: var(--muted); }
 .qv .ch-svc-head { padding: 12px 16px 0; }

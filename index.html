@@ -88,8 +88,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      column-gap:clamp(40px,5vw,84px);align-items:center;
      min-height:clamp(560px,76vh,760px);padding-top:36px;padding-bottom:80px}
   .hero .hero-copy{grid-area:copy;position:relative;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:22px;max-width:37rem}
-  .hero .hero-title{color:#fff;font-size:clamp(2.55rem,4.85vw,4.15rem);line-height:1.02;letter-spacing:-.018em;
-     text-shadow:0 2px 30px rgba(0,0,0,.38);margin:0;text-wrap:balance}
+  /* Tuned for Bodoni, not for the grotesk-ish serif this replaced.
+     · letter-spacing was -.018em, the tightest value on the site. A didone's hairline
+       serifs are long and horizontal; pulling the letters together laps them over their
+       neighbours and the word turns into a picket fence. Bodoni wants 0 or positive.
+     · line-height was 1.02. Bodoni 72 has tall ascenders and deep descenders, so 1.02
+       put the 'y' of "Anywhere" into the cap-line of "in Sri Lanka" and left the swash
+       nowhere to sit. 1.14 matches the h1-h4 rule in site.css.
+     · the shadow was a single 30px blur — far too diffuse to hold a hairline. A tight
+       1-2px shadow is what actually keeps the thin strokes off a busy photograph; the
+       wide blur stays underneath it for overall separation. */
+  .hero .hero-title{color:#fff;font-size:clamp(2.55rem,4.85vw,4.15rem);line-height:1.14;letter-spacing:0;
+     text-shadow:0 1px 2px rgba(0,0,0,.42), 0 2px 30px rgba(0,0,0,.38);margin:0;text-wrap:balance}
   .hero .hero-sub{color:rgba(255,255,255,.93);max-width:46ch;font-size:1.12rem;line-height:1.6;font-weight:500;
      text-shadow:0 1px 16px rgba(0,0,0,.4);margin:0}
   .hero .hero-sub b{color:#fff;font-weight:700}
@@ -138,14 +148,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-pc .pc-cap,.hero-pc .pc-stamp,.hero-pc .postmark,.hero-pc .route-doodle,.hero-pc .pc-pin{display:none}
   .pc-pin[hidden]{display:none}
 
-  /* hand-stitched underline on the headline's key word.
-     Anchored to the BASELINE, not the bottom of the inline box: Bodoni Moda's content
-     area is ~1.53em tall (Newsreader's was ~1.2), so a bottom:-.05em decoration hangs
-     far below the glyphs and lands on the next line of the headline. .28em ≈ the font's
-     descent, which puts the stitch just under the baseline where it belongs. */
-  .hl-swash{position:relative}
-  .hl-swash::after{content:"";position:absolute;left:.02em;right:.05em;bottom:.28em;height:.17em;pointer-events:none;
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 16' preserveAspectRatio='none'%3E%3Cpath d='M4 11 C 58 4, 150 3, 216 9' fill='none' stroke='%23F9A429' stroke-width='5' stroke-linecap='round' stroke-dasharray='.5 12'/%3E%3C/svg%3E") no-repeat center/100% 100%}
+  /* Dotted saffron underline on the headline's key word.
+
+     This was an absolutely-positioned SVG strip. That cannot work here: the word is
+     "Anywhere", whose 'y' descends ~0.26em, and at Bodoni's proportions there is no
+     offset that both clears that tail AND stays out of the next line's cap-line — the
+     two constraints overlap. The old offset split the difference and drew the dots
+     straight through the 'y', which read as a strikethrough.
+
+     A real underline solves it: text-decoration-skip-ink makes the browser break the
+     line around the descender automatically, and the position is derived from the
+     font's own baseline, so it stays correct whether the visitor gets Bodoni 72 or the
+     Bodoni Moda fallback. */
+  .hl-swash{
+    text-decoration-line:underline;
+    text-decoration-style:dotted;
+    text-decoration-color:var(--saffron);
+    text-decoration-thickness:.07em;
+    text-underline-offset:.17em;
+    text-decoration-skip-ink:auto;
+  }
 
   /* entrance choreography — auto-playing keyframes (fill:both) so the VISIBLE base
      style is what shows whenever motion is off or scripts fail; when motion is on,
