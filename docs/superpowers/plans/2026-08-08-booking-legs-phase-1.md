@@ -23,6 +23,9 @@ the API on boot. `trip_request` / `transfer_request` are untouched and remain th
 - **Migrations auto-apply on Render boot and fail closed.** Merging this migration releases it to
   staging. The owner's explicit ok is required before merge (CLAUDE.md maintenance rule 3 + 7).
 - No customer-visible change ships in this phase. No endpoint, no UI.
+- **Migrations in this repo are hand-written.** The drizzle snapshots stop at `0028_snapshot.json`
+  while the journal is at idx 41, so `npm run db:generate` diffs against a stale snapshot and emits
+  statements that would fail on the real schema. Write the SQL and the journal entry by hand.
 
 ## Scope decisions taken before writing this plan
 
@@ -48,7 +51,8 @@ reduction, recorded so a reader knows it was chosen:
 | `api/src/domain/bookingLegs.ts` (create) | Pure derivation: booking input → leg rows. No DB, no I/O. |
 | `api/src/domain/bookingLegs.test.ts` (create) | Its tests. |
 | `api/src/db/schema.ts` (modify) | The `booking_legs` table definition. |
-| `api/drizzle/0042_booking_legs.sql` (create, generated) | The migration. Table only — no data movement. |
+| `api/drizzle/0042_booking_legs.sql` (create, hand-written) | The migration. Table only — no data movement. |
+| `api/drizzle/meta/_journal.json` (modify) | The migration's journal entry, appended by hand as 0029-0041 were. |
 | `api/src/db/bookingLegsMigration.test.ts` (create) | Asserts the migration's SQL contains its constraints, per the `moneyConstraints.test.ts` pattern. |
 | `api/src/db/postgresBookingRepo.ts` (modify) | Insert legs in the existing create transaction. |
 | `api/src/db/postgresQuoteConversionRepo.ts` (modify) | Same, for quote-born bookings. |
@@ -471,16 +475,77 @@ export const bookingLegs = pgTable(
 `sql` is already imported in this file (used by the `bookings` checks); `unique`, `index`, `check`,
 `jsonb`, `doublePrecision` and `timestamp` are all in the line-1 import.
 
-- [ ] **Step 4: Generate the migration**
+- [ ] **Step 4: Hand-write the migration**
 
-```bash
-cd api && npm run db:generate
+**Do NOT run `npm run db:generate`.** This repo's drizzle snapshots stop at `0028_snapshot.json`,
+while the journal is at idx 41 — every migration from 0029 on was hand-written. `db:generate` would
+diff the schema against the stale 0028 snapshot and emit a migration that re-adds ~16 columns which
+already exist in production, which fails closed on boot. The house style is a prose comment
+explaining *why*, then plain SQL — see `api/drizzle/0040_quote_revisions.sql:1-23`.
+
+Create `api/drizzle/0042_booking_legs.sql`:
+
+```sql
+-- One record per journey in a booking (spec 2026-08-08 §1). A journey is currently a POSITION
+-- between two entries in trip_request.stops[], so anything attached to it silently follows the
+-- position when the trip changes — insert a stop and every later journey wears the previous
+-- occupant's details, with nothing on any screen looking wrong.
+--
+-- This table prices nothing. trip_request / transfer_request stay the priced record; the two agree
+-- at booking time and may legitimately diverge afterwards, and flattening them would erase why the
+-- price is what it is.
+--
+-- Table only, deliberately: no data moves here. Migrations auto-apply on Render boot and fail
+-- closed, so backfilling inside one could take the API down over a single malformed historical row.
+-- The backfill is scripts/backfill-booking-legs.ts, run deliberately.
+CREATE TABLE "booking_legs" (
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+  "booking_id" uuid NOT NULL REFERENCES "bookings"("id"),
+  "seq" integer NOT NULL,
+  "kind" text NOT NULL,
+  "from_place" text NOT NULL,
+  "to_place" text NOT NULL,
+  "via_stops" text[] DEFAULT '{}'::text[] NOT NULL,
+  "travel_date" text,
+  "from_lat" double precision,
+  "from_lng" double precision,
+  "to_lat" double precision,
+  "to_lng" double precision,
+  "pickup_spot" text,
+  "dropoff_spot" text,
+  "pickup_lat" double precision,
+  "pickup_lng" double precision,
+  "dropoff_lat" double precision,
+  "dropoff_lng" double precision,
+  "pickup_time" text,
+  "flight_no" text,
+  "detail_flag" text,
+  "distance_check" text,
+  "refused_spot" text,
+  "refused_at" timestamptz,
+  "details_history" jsonb,
+  "details_updated_at" timestamptz,
+  "removed_at" timestamptz,
+  "created_at" timestamptz DEFAULT now() NOT NULL,
+  CONSTRAINT "booking_legs_booking_seq_unique" UNIQUE ("booking_id", "seq"),
+  CONSTRAINT "booking_legs_kind_valid" CHECK ("kind" in ('leg', 'day', 'gap')),
+  CONSTRAINT "booking_legs_seq_positive" CHECK ("seq" > 0)
+);
+CREATE INDEX "booking_legs_booking_idx" ON "booking_legs" ("booking_id");
 ```
 
-Expected: writes `api/drizzle/0042_booking_legs.sql` and updates `api/drizzle/meta/_journal.json`.
-Open the SQL and confirm it contains only `CREATE TABLE` / `ALTER TABLE ... ADD CONSTRAINT` /
-`CREATE INDEX` statements. If drizzle names the file differently, rename it to
-`0042_booking_legs.sql` and update the journal's `tag` to match.
+Then append the journal entry. In `api/drizzle/meta/_journal.json`, add to the end of `entries`,
+keeping the existing formatting:
+
+```json
+    {
+      "idx": 42,
+      "version": "7",
+      "when": <epoch-ms, from `node -e "console.log(Date.now())"`>,
+      "tag": "0042_booking_legs",
+      "breakpoints": true
+    }
+```
 
 - [ ] **Step 5: Run the migration test**
 
