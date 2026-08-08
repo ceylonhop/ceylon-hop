@@ -41,6 +41,7 @@ async function main(): Promise<void> {
         seq: bookingLegs.seq,
         fromPlace: bookingLegs.fromPlace,
         toPlace: bookingLegs.toPlace,
+        viaStops: bookingLegs.viaStops,
       })
       .from(bookingLegs)
       .where(eq(bookingLegs.bookingId, b.id))

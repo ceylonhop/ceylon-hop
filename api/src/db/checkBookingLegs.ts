@@ -7,6 +7,9 @@ export interface LegEndpoints {
   seq: number;
   fromPlace: string;
   toPlace: string;
+  // A `day` row's intermediate stops (see bookingLegs.ts). Absent/omitted is treated as [] —
+  // true for `leg` and `gap` rows, which never have any.
+  viaStops?: string[];
 }
 
 export interface RequestData {
@@ -56,17 +59,57 @@ export function reconcileBooking(
   if (!t) return [{ ref, message: 'trip booking has no trip_request' }];
   if (!legs.length) return [{ ref, message: `trip with ${t.stops.length} stops has no legs` }];
 
-  // A `day` row legitimately spans several stops (one chauffeur travel day), so leg COUNTS are
-  // never compared here — only that the chain starts and ends where the trip does.
-  const first = legs[0]!;
-  const last = legs[legs.length - 1]!;
-  if (first.fromPlace !== t.stops[0] || last.toPlace !== t.stops[t.stops.length - 1]) {
-    return [
-      {
-        ref,
-        message: `legs run ${first.fromPlace}→${last.toPlace}, trip runs ${t.stops[0]}→${t.stops[t.stops.length - 1]}`,
-      },
-    ];
+  // Rebuild the full stop sequence the legs imply and compare it to trip_request.stops[]
+  // element-for-element. Checking only the endpoints (as this used to) passes a booking whose
+  // MIDDLE legs are missing, duplicated, or route through the wrong stop — the review that
+  // demanded this rewrite found exactly that hole. A `day` row legitimately spans several stops
+  // via viaStops (one chauffeur travel day), which is why leg COUNTS are still never compared —
+  // only the resulting stop chain.
+  const implied = reconstructStops(legs);
+  if (arraysEqual(implied, t.stops)) return [];
+
+  const at = firstDivergence(implied, t.stops);
+  return [
+    {
+      ref,
+      message:
+        `legs imply ${windowAround(implied, at)} (${implied.length} stops), ` +
+        `trip stops are ${windowAround(t.stops, at)} (${t.stops.length} stops) — diverge at stop ${at + 1}`,
+    },
+  ];
+}
+
+// legs[0].fromPlace, then each leg's viaStops (in order) followed by its toPlace. Holds for every
+// kind bookingLegs.ts derives: `leg`/`gap` rows have no viaStops so contribute just their toPlace;
+// a `day` row's viaStops are exactly the stops it passes through before its toPlace. Chaining them
+// in leg order reconstructs trip_request.stops[] exactly when the legs are intact and in order.
+function reconstructStops(legs: LegEndpoints[]): string[] {
+  const stops = [legs[0]!.fromPlace];
+  for (const leg of legs) stops.push(...(leg.viaStops ?? []), leg.toPlace);
+  return stops;
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+// Index of the first place the two sequences disagree (including one running out before the
+// other). Assumes the caller already knows they're not equal.
+function firstDivergence(a: string[], b: string[]): number {
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    if (a[i] !== b[i]) return i;
   }
-  return [];
+  return len;
+}
+
+// A short excerpt of `stops` centred on `index`, so a long itinerary's problem message still
+// shows the operator where the two sequences actually diverge instead of drowning it in stops
+// far from the mismatch.
+function windowAround(stops: string[], index: number, radius = 2): string {
+  const start = Math.max(0, index - radius);
+  const end = Math.min(stops.length, index + radius + 1);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < stops.length ? '…' : '';
+  return prefix + stops.slice(start, end).join('→') + suffix;
 }
