@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b108f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="516" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b108k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="570" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M93.9 67.2 Q87.7 82.5 75.0 89.7 Q62.4 97.0 42.7 94.5 Q23.0 92.1 12.6 78.8 Q2.2 65.6 4.0 48.8 Q5.9 32.1 15.7 20.2 Q25.6 8.3 43.5 4.6 Q61.4 0.8 75.2 10.8 Q89.0 20.8 94.6 36.4 Q100.1 51.9 93.9 67.2Z" fill="#0DB9B6"></path>
+<g transform="rotate(-2.73 50 50)">
+  <g class="pass-fill" filter="url(#b108f)"><path d="M28 26h44a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="41" cy="44" r="8" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><path d="M30 66c0-6.5 5-10 11-10s11 3.5 11 10" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M58 40h13M58 50h13M58 60h9" stroke="#F9A429" stroke-width="3.4" stroke-linecap="round"></path></g>
+  <g class="pass-ink" filter="url(#b108k)"><path d="M28 26h44a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="41" cy="44" r="8" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><path d="M30 66c0-6.5 5-10 11-10s11 3.5 11 10" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M58 40h13M58 50h13M58 60h9" stroke="#F9A429" stroke-width="3.4" stroke-linecap="round"></path></g>
+</g>
+</svg>
