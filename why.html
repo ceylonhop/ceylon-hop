@@ -46,6 +46,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .diff-list li{padding-left:22px;border-left:3px solid var(--accent)}
   .step-card{background:var(--paper);border-radius:var(--r);padding:24px;box-shadow:var(--shadow-s);height:100%}
   .step-card .num{font-family:var(--display);font-size:2rem;font-weight:700;color:var(--accent)}
+  .step-card{position:relative}
+  /* the badge sits opposite the number, top-right, so the number keeps its reading order */
+  .step-card .step-ico{position:absolute;top:18px;right:18px;width:46px;height:46px}
+  @media (max-width:560px){ .step-card .step-ico{width:38px;height:38px;top:16px;right:16px} }
   .step-card h3{font-size:1.1rem;margin:.3rem 0}
   .step-card p{font-size:.9rem;color:var(--ink-soft);margin:0}
   .val{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.6rem}
@@ -147,10 +151,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="wrap">
     <div class="center" style="margin-bottom:40px"><span class="eyebrow" style="justify-content:center">How it works</span><h2>Four simple steps</h2></div>
     <div class="grid cols-4 steps-grid">
-      <div class="step-card"><div class="num">1</div><h3>Tell us where</h3><p>Pick-up, drop-off &mdash; any two points on the island. Add stops if you like.</p></div>
-      <div class="step-card"><div class="num">2</div><h3>See your fixed price</h3><p>Your exact fare appears instantly &mdash; private car, van, or a shared seat.</p></div>
-      <div class="step-card"><div class="num">3</div><h3>Book in minutes</h3><p>Pay securely online. A planner confirms your pickup on WhatsApp.</p></div>
-      <div class="step-card"><div class="num">4</div><h3>Your driver, your door</h3><p>An AC vehicle and a friendly Pro Hopper, exactly where and when you asked.</p></div>
+      <div class="step-card"><img class="step-ico" src="img/icons/badges/door-to-door.svg" alt="" width="46" height="46" loading="lazy"><div class="num">1</div><h3>Tell us where</h3><p>Pick-up, drop-off &mdash; any two points on the island. Add stops if you like.</p></div>
+      <div class="step-card"><img class="step-ico" src="img/icons/badges/zero-coin.svg" alt="" width="46" height="46" loading="lazy"><div class="num">2</div><h3>See your fixed price</h3><p>Your exact fare appears instantly &mdash; private car, van, or a shared seat.</p></div>
+      <div class="step-card"><img class="step-ico" src="img/icons/badges/locked-in.svg" alt="" width="46" height="46" loading="lazy"><div class="num">3</div><h3>Book in minutes</h3><p>Pay securely online. A planner confirms your pickup on WhatsApp.</p></div>
+      <div class="step-card"><img class="step-ico" src="img/icons/badges/pro-hopper.svg" alt="" width="46" height="46" loading="lazy"><div class="num">4</div><h3>Your driver, your door</h3><p>An AC vehicle and a friendly Pro Hopper, exactly where and when you asked.</p></div>
     </div>
   </div>
 </section>
