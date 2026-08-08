@@ -53,6 +53,17 @@ detail, so use a plain stroke icon instead.
 Scenic badges suit marketing surfaces (home, route pages, blog, emails). Utility badges suit
 places where the icon has a job to do (seat counters, bag counts, rate-card extras).
 
+## Colour variants
+
+Every three-card row rotates teal · sky · saffron, so a few badges exist in a second disc
+colour. Named `<badge>-<colour>.svg`:
+
+`door-to-door-sky` · `pro-hopper-teal` · `rate-lock-sky`
+
+Recolouring a disc can swallow an inner accent that shares the new colour — `pro-hopper-teal`
+has its cap button in saffron for exactly that reason. Check the artwork after any recolour.
+`hop-van` carries both teal and sky inside and therefore has no variant: it stays saffron.
+
 ## Known rough edge
 
 `whale.svg` is a raised fluke breaking the surface (the whale-watching image), not a side-on whale —
