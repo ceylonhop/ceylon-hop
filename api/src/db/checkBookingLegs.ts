@@ -34,7 +34,8 @@ export type ProblemReason =
   | 'missing_trip_request'
   | 'no_legs'
   | 'all_gap'
-  | 'route_mismatch';
+  | 'route_mismatch'
+  | 'unknown_mode';
 
 export interface Problem {
   ref: string;
@@ -104,7 +105,14 @@ export function reconcileBooking(
     return [];
   }
 
-  // trip (and anything that is neither 'shared' nor 'single' — mirrors the brief's fall-through).
+  // A mode that is none of 'shared'/'single'/'trip' (a historical row, or a future mode this
+  // script hasn't been taught about yet) used to fall through into the trip branch below and
+  // get reported as `missing_trip_request` — true in the narrow sense that there's no
+  // trip_request row, but misleading: the actual problem is the mode itself, not a missing trip.
+  if (mode !== 'trip') {
+    return [{ ref, reason: 'unknown_mode', message: `unrecognised booking mode "${mode}"` }];
+  }
+
   const t = data.trip;
   if (!t) return [{ ref, reason: 'missing_trip_request', message: 'trip booking has no trip_request' }];
   if (!legs.length) {

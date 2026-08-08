@@ -193,6 +193,17 @@ describe('reconcileBooking', () => {
     ]);
   });
 
+  // Finding 5: an unknown booking.mode (e.g. a future mode this script hasn't been taught about
+  // yet) used to fall through into the trip branch and get reported as `missing_trip_request` —
+  // technically true (there's no trip_request row) but a misleading reason: the actual problem is
+  // that the mode itself is unrecognised, not that a trip is missing its request row.
+  it('gives an unrecognised mode its own problem reason instead of reporting missing_trip_request', () => {
+    const problems = reconcileBooking({ ref: 'CH-020', mode: 'gift-card' }, {}, []);
+    expect(problems).toEqual([
+      { ref: 'CH-020', reason: 'unknown_mode', message: 'unrecognised booking mode "gift-card"' },
+    ]);
+  });
+
   // Finding 1, assertion 1: an undated chauffeur trip used to derive all-gap rows, which
   // reconstruct the stop chain perfectly and so passed silently — a booking with no journeys
   // authorising the next phase. `kind: 'gap'` is explicitly "never a journey we drive as one".
