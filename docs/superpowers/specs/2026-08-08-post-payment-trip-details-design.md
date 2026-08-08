@@ -35,7 +35,11 @@ Two further facts shape the design:
    reads as owed.
 2. **It must be answerable later**, not only on the success screen.
 3. **Stored on the booking**, visible where the driver is assigned — not emailed, not WhatsApp-only.
-4. **Private point-to-point only.** Not shared taxi, not ride board, not chauffeur.
+4. **Private point-to-point and chauffeur.** Not shared taxi, not ride board. (Revised 2026-08-08:
+   chauffeur was initially excluded on the mistaken grounds that it is "a car retained, not journeys
+   with two ends". The engine says otherwise — `chauffeur.ts:60-64` charges a day rate **plus per-km
+   on each travel day's route**, buffered with the same `billableKm` as a private leg. A chauffeur
+   day is a journey, and its customer is collected from a hotel like anyone else.)
 5. **A multi-leg trip is point-to-point × N** — the same card repeated per leg, not a different
    product.
 6. **The out-of-area control must work post-payment.**
@@ -106,17 +110,34 @@ every existing reader (ops view, emails, digests) keeps showing a time without b
 Multi-leg trips have no such column to mirror to: `trip_request` has no time field at all, which is
 the other half of why legs are needed.
 
-**Written for every booking with a route** — `mode: 'single'` produces exactly one leg, `mode:
-'trip'` produces `stops.length - 1`, both service types. `mode: 'shared'` produces none: a shared
+**Written for every booking with a route** — `mode: 'single'` produces exactly one `leg` row,
+`mode: 'trip'` produces `stops.length - 1` `leg` rows for a private trip and one `day` row per
+travel day for a chauffeur trip (§1.1). `mode: 'shared'` produces none: a shared
 seat is a corridor and a timetable, not journeys with editable ends. Legs are created in the same
 transaction as the request row, in both writers (`postgresBookingRepo.ts:226/248` and
 `postgresQuoteConversionRepo.ts:151/163`).
 
-> **Decision to sanity-check:** legs are created for chauffeur trips too, even though the card never
-> shows for them. A half-normalised model ("which bookings have legs?") is its own trap. The gate
-> lives in one place — the card and the endpoint — not in the storage.
+#### 1.1 Two kinds of row: the leg and the travel day
 
-#### 1.1 Re-deriving legs when a trip is edited
+A private trip and a chauffeur trip are both journeys priced by the kilometre, but their **unit
+differs**, so `booking_legs` carries a `kind` column:
+
+| `kind` | Unit | Source | Endpoints |
+|---|---|---|---|
+| `leg` | one journey between two overnight stops | `transfer_request`, or a consecutive pair in `trip_request.stops[]` | `from_place` → `to_place` |
+| `day` | one **travel day** | `ChauffeurRideDay` — `{ date, stops[], segmentKms[] }` (`quote/types.ts:12`) | first stop → last stop; `via_stops` (text array) holds the rest |
+
+A chauffeur travel day is often multi-stop, and the stops in between are **itinerary, not
+accommodation** — the customer sleeps at the ends, so only the ends are asked about. `via_stops` is
+recorded for ops context and never prompted for.
+
+**Idle days produce no row.** They have no journey: the car is parked and inherits the last travel
+day's location (`chauffeur.ts:44-47`). Nothing to collect, nothing to ask.
+
+Everything downstream — the guard, the matching rule, the card, the ops block — treats both kinds
+identically, keyed on the row's two endpoints. The only difference is what the row was derived from.
+
+#### 1.2 Re-deriving legs when a trip is edited
 
 Matching new legs to old ones **by label string is not safe**. Ops correcting "Yala" to "Yala
 National Park" — the exact ambiguous-place-label case already on record — would fail to match, and a
@@ -186,10 +207,15 @@ One definition, loaded by both pages: a new shared `trip-details.js` + its style
 `ticket.css`. **It must be added to `ASSETS` in `api/src/routes/customerPages.ts:51`** — these pages
 are served from the API host, and an asset missing from that list 404s there while working locally.
 
-**Gate: show only when the booking has `booking_legs` and is private point-to-point** — i.e. `mode:
-'single'`, or `mode: 'trip'` with `serviceType: 'private'`. Chauffeur, shared and ride board are
-excluded. Written as a positive test, so a product type invented later defaults to hidden rather
-than to showing a form that does not fit it.
+**Gate: show only when the booking has `booking_legs`** — which is `mode: 'single'`, or `mode:
+'trip'` at either service type. Shared taxi and ride board are excluded, and the reason holds: a
+shared seat is a corridor and a timetable with set meeting points, so there is nothing for the
+customer to specify. Written as a positive test, so a product type invented later defaults to hidden
+rather than to showing a form that does not fit it.
+
+**On a chauffeur booking the card reads by day** — *"Day 2 · Fri 22 Aug"* rather than a route pair —
+and asks where to collect them that morning, at what time, and where the day ends. Idle days are not
+listed. Everything else about the card is identical.
 
 **Closed bookings show nothing.** When the booking is `cancelled`, `refunded`, `completed` or
 `no_show`, the card is not rendered and the endpoint answers **410**. There is nothing useful about
@@ -334,13 +360,14 @@ No customer-facing behaviour changes on Phase 1 deploy: the card does not exist 
 - **Endpoint** — bad/absent token rejected; 410 on a closed booking; write refused after
   `travel_date`; `late_change` flag inside 48 h; 409 on a removed leg preserves input; re-submission
   overwrites and appends to `details_history`.
-- **Gate** — card absent for shared, chauffeur and ride board; present for single and private trip.
+- **Gate** — card absent for shared taxi and ride board; present for single, private trip and
+  chauffeur. Idle chauffeur days produce no row and no ask.
 - **Airport variant** — flight field present only when the leg's pick-up is an airport.
 - **DOM contract + Playwright** for the card on `pay.html` and `manage.html`, per `web-tests`.
 
 ### 11. Out of scope
 
-- **Chauffeur, shared taxi and ride board** — excluded by product rule, not deferred.
+- **Shared taxi and ride board** — excluded by product rule, not deferred.
 - **Any change to emails or reminders.** The existing `manage.html` link is the return path.
 - **Collecting more money, or re-pricing anything.** Nothing in this build touches price.
 - **Ops editing these fields** — display only in v1.
@@ -355,11 +382,10 @@ These are recorded so a later reader knows they were chosen rather than defaulte
    alternative, adding an `exp`, invalidates links already sitting in customers' inboxes to buy
    protection the fences already give. The thing worth *noticing* is not the choice but the fact
    underneath it: a token that until now only revealed a booking can now change where a driver goes.
-2. **Legs for chauffeur bookings (§1) — decided: yes.** The product rule (no card for chauffeur) is
-   settled and lives in the gate. Making the storage selective as well would mean "which bookings
-   have legs?" becomes a question every future reader has to ask, which is a worse trap than a few
-   hundred extra backfilled rows. Reversible by restricting the backfill if the migration proves
-   heavier than expected.
+2. **Chauffeur is in, by travel day (§1.1) — owner, 2026-08-08.** Superseding the first draft's
+   exclusion. Chauffeur is priced per kilometre on each travel day's route plus a day rate, so its
+   customers are collected from a hotel exactly like a private transfer's. The unit is the dated
+   travel day rather than the stop pair, and idle days are not asked about.
 3. **The one-in-five success criterion (§8) — provisional.** A number chosen to make the feature
    falsifiable, not handed down. It gates nothing in the build and should be revisited once real
    numbers exist; its only job is to stop "did this work?" from being answered by impression.
