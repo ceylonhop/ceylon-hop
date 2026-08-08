@@ -11,10 +11,21 @@ export interface EmailAdapter {
   send(msg: EmailMessage): Promise<void>;
 }
 
+// A customer who reached out on WhatsApp has no email address, and since 2026-08-08 a booking may
+// legitimately carry none. All ten senders read `booking.input.customer.email` straight into `to`,
+// so the guard lives HERE — one place rather than ten, and no sender can forget it.
+//
+// Silently skipping is deliberate: a missing address is a fact about the customer, not a failure.
+// Throwing would fail the awaited webhook path that sends the confirmation inline.
+export function hasDeliverableAddress(to: string | null | undefined): boolean {
+  return !!(to && to.trim());
+}
+
 export class FakeEmailAdapter implements EmailAdapter {
   readonly sent: EmailMessage[] = [];
 
   async send(msg: EmailMessage): Promise<void> {
+    if (!hasDeliverableAddress(msg.to)) return;
     this.sent.push(msg);
   }
 }
@@ -35,6 +46,9 @@ export class ResendEmailAdapter implements EmailAdapter {
   ) {}
 
   async send(msg: EmailMessage): Promise<void> {
+    // No address, nothing to send. Resend would answer 4xx for `to: ['']`, which reads in the
+    // logs as a delivery failure rather than a customer we never had an address for.
+    if (!hasDeliverableAddress(msg.to)) return;
     // Bound the outbound call so a hung Resend endpoint can't stall the awaited webhook path
     // (the confirmation email is sent inline in the PayHere webhook) or the notifications cron.
     const ctrl = new AbortController();
