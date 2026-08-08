@@ -16,7 +16,7 @@ function loadFn(signature) {
   // eslint-disable-next-line no-new-func
   return new Function('return (' + m[0] + ')')();
 }
-const mapPins = loadFn('mapPins(pts)');
+const mapPins = loadFn('mapPins(pts, zoom)');
 
 const P = (lat, lng) => ({ lat, lng });
 

@@ -808,17 +808,25 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).not.toContain('<h4>Cancel &amp; refund</h4>');
   });
 
-  // The label is the fix, not decoration. "Refund $X in full" promised the one thing the button
-  // does NOT do — it files an intent and moves no money — and the owner read it as completed
-  // three times in one evening, twice while actively debugging this very flow. Every string the
-  // request path shows now says the same thing: asked for, not done.
+  // The label must match what the press actually does. It once said "Refund $X in full" while
+  // moving no money, and the owner read it as completed three times in one evening. The button
+  // now DOES refund (2026-08-08), so the rule inverts but does not relax: an operator who can
+  // fire the API is promised a refund and gets one; an operator who cannot is promised a request
+  // and told plainly that no money moved.
   it('never tells the operator a requested refund has been paid', async () => {
     const body = await uiBody();
-    expect(body).toContain('Request refund ${money({amount:s.remaining,currency:s.currency})}');
+    // One template, both wordings, chosen by the capability that decides which actually happens.
+    expect(body).toContain("${mayFire?'Refund':'Request refund'}");
+    expect(body).toContain("const mayFire = !!(state.caps && state.caps.includes('payments:reverse'))");
     expect(body).not.toContain('in full</button>');          // the old over-promising label
     expect(body).not.toContain('complete it in PayHere');    // predated the Refund API button
-    expect(body).toContain('no money has moved yet');        // the toast
-    expect(body).toContain('This records the request — no money moves yet'); // the confirm dialog
+    // The request-only path still says so, in the confirm and in the toast.
+    expect(body).toContain('no money has moved yet');
+    expect(body).toContain('files the request for someone who can');
+    // …and the old wording, which claimed nothing had moved when now it has, is gone.
+    expect(body).not.toContain('This records the request — no money moves yet');
+    // A one-press refund must warn that it is final.
+    expect(body).toContain('There is no undo.');
   });
 
   // Both blocks answer the same question about who may reverse and whether the ops window has
@@ -843,10 +851,17 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     const handler = (name: string) => (body.split(`case '${name}':`)[1] ?? '').split("case '")[0];
 
     expect(handler('refundconfirm')).toContain('await refreshRow(id)');
-    expect(handler('refundexecute')).toContain('await refreshRow(id)');
+    // The API path moved into fireRefund() when the request button gained one-press refunding
+    // (2026-08-08) — so the repaint is asserted where it now lives, and BOTH ways in are checked
+    // to route through it. That is stronger than before: one implementation, not two to drift.
+    const fire = (body.split('async function fireRefund(')[1] ?? '').split('\nasync function ')[0];
+    expect(fire).toContain('await refreshRow(bookingId)');
+    expect(handler('refundexecute')).toContain('fireRefund(id,refundId)');
+    expect(handler('refundrequest')).toContain('fireRefund(id,refund&&refund.id)');
     // Guard the guard: each slice must be a plausible single handler, not the rest of the file.
     expect(handler('refundconfirm').length).toBeLessThan(3000);
     expect(handler('refundexecute').length).toBeLessThan(3000);
+    expect(fire.length).toBeLessThan(3000);
   });
 
   it('translates the server refusal codes instead of saying "could not cancel"', async () => {

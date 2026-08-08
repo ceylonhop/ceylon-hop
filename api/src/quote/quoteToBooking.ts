@@ -117,21 +117,41 @@ export function quoteToBooking(
         },
       };
     }
-    const { stops } = chainStops(rides);
-    const startDate = details.date;
+    const { stops, rideIndex } = chainStops(rides);
     const segmentCount = Math.max(0, stops.length - 1);
+
+    // Per-leg dates (2026-08-08, closing docs/known-bugs.md 2026-07-30). A PrivateLeg carries no
+    // date of its own — the operator's dates live in the quote's TOOL payload — so only the modal's
+    // single date used to survive, and the drawer and the customer's itinerary showed later legs
+    // as "Leg 2"/"Leg 3" instead of dating them.
+    //
+    // Tool legs include STAY DAYS; engine legs are the driving ones only. Filtering to driving
+    // legs is what makes the two line up — a raw index would shift every later date onto the
+    // wrong leg. `opts.legIndexes` is applied identically, so a partial pay link's booking keeps
+    // the dates of the legs it actually sold.
+    const drivingToolLegs = selectRides(
+      ((quote.request as { tool?: { legs?: { date?: string; category?: string }[] } } | null)?.tool?.legs ?? [])
+        .filter((l) => (l?.category ?? 'transfer') !== 'stay_day'),
+      opts?.legIndexes,
+    );
+    // Spined on RIDES, not on the tool legs: a legacy row carries no tool payload at all, and
+    // spining on that would drop the modal's date too — which an existing test caught.
+    // A date typed at booking time is newer information than the quote's, so it wins on the first
+    // leg, which is the one the modal asks about.
+    const legDates = rides.map((_, i) => (i === 0 && details.date ? details.date : drivingToolLegs[i]?.date ?? ''));
     return {
       mode: 'trip',
       distanceKm,
       input: {
         stops,
         nights: Array(segmentCount).fill(0),
-        // Per segment, like the chauffeur branch, so the two don't drift. A PrivateLeg carries
-        // no date of its own (the operator's per-leg dates live in the quote's TOOL payload,
-        // not the engine request we map from — logged as its own bug), so the only date we know
-        // is the trip start from the modal: it lands on the first segment and the rest stay
-        // blank — exactly what the old single-element array meant.
-        dates: startDate ? Array.from({ length: segmentCount }, (_, i) => (i === 0 ? startDate : '')) : undefined,
+        // One date per SEGMENT, rebuilt through rideIndex exactly as the chauffeur branch does:
+        // a multi-stop ride owns several segments and a gap stop shifts every later index, so a
+        // positional copy would put dates on the wrong hops. A gap gets '' (blank reads as
+        // "flexible" everywhere downstream).
+        dates: legDates.some(Boolean)
+          ? rideIndex.map((i) => (i < 0 ? '' : legDates[i] ?? ''))
+          : undefined,
         pax: details.pax,
         vehicleType: details.vehicleType,
         serviceType: 'private',

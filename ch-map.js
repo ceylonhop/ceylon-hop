@@ -97,6 +97,65 @@
   // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
   // rejection is evicted so a transient failure isn't cached for the rest of the session.
   const routeCache = new Map();
+  /* Group the journey's stops into PINS. A round trip's last stop lands on its first, so a pin
+     per STOP means the last is drawn over the first and hides it — the customer sees a map that
+     appears to start numbering at 2 (owner-reported on the ops map, 2026-08-06; this file had the
+     identical bug). One pin per PLACE, carrying every stop number that lands there: "1·3".
+
+     Tolerance ~50 m because Google snaps to the road network, so a return leg can finish metres
+     from where it started — tight enough that two hotels on one strip stay separate pins.
+
+     DELIBERATE SECOND COPY of mapPins() in api/src/routes/ops-ui.html. The ops shell is a
+     self-contained single-file app served from a different origin and cannot import this file;
+     there is no shared runtime to put this in. Change one, change both — the pair is covered by
+     web-tests/unit/ops-map-pins.test.js and web-tests/unit/ch-map-pins.test.js. */
+  function mapPins(pts, zoom) {
+    var SAME_PLACE = 0.0005;   // ~50 m — one place, merged at EVERY zoom (a round trip's start/end)
+    var MERGE_PX = 34;         // a pin head — closer than this and the labels collide on screen
+    // Web Mercator world pixels, so "do these collide?" is asked in the units the eye actually uses.
+    var px = function (p) {
+      var scale = 256 * Math.pow(2, zoom);
+      var s = Math.max(-0.9999, Math.min(0.9999, Math.sin(p.lat * Math.PI / 180)));
+      return {
+        x: (p.lng + 180) / 360 * scale,
+        y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale
+      };
+    };
+    var collide = function (a, b) {
+      if (Math.abs(a.lat - b.lat) < SAME_PLACE && Math.abs(a.lng - b.lng) < SAME_PLACE) return true;
+      if (typeof zoom !== 'number') return false;
+      var pa = px(a), pb = px(b), dx = pa.x - pb.x, dy = pa.y - pb.y;
+      return Math.sqrt(dx * dx + dy * dy) < MERGE_PX;
+    };
+    var pins = [];
+    (pts || []).forEach(function (loc, i) {
+      var hit = null;
+      for (var k = 0; k < pins.length; k++) { if (collide(pins[k], loc)) { hit = pins[k]; break; } }
+      if (hit) hit.stops.push(i + 1);
+      else pins.push({ lat: loc.lat, lng: loc.lng, stops: [i + 1] });
+    });
+    var last = (pts || []).length;
+    return pins.map(function (p) {
+      // A consecutive run reads as a range ("3–7"); a revisited place keeps its dots ("1·3").
+      var runs = p.stops.length > 2 && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1;
+      return {
+        lat: p.lat, lng: p.lng, stops: p.stops,
+        text: p.stops.length === 1 ? String(p.stops[0])
+          : (runs || p.stops.length === 2) && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1
+            ? p.stops[0] + '–' + p.stops[p.stops.length - 1]
+            : p.stops.join('·'),
+        isFirst: p.stops.indexOf(1) >= 0,
+        isLast: p.stops.indexOf(last) >= 0
+      };
+    });
+  }
+
+  function pinLabelsVisible(zoom) {
+    // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
+    // the story anyway — the expanded map's legend still carries the full numbered order.
+    return typeof zoom !== 'number' || zoom >= 9;
+  }
+
   function computeRouteCached(Route, stops) {
     const key = JSON.stringify(stops.map(toLoc));
     const hit = routeCache.get(key);
@@ -285,17 +344,34 @@
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
         const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
-        stopLocs.forEach((pos, i) => {
-          const first = i === 0, last = i === stopLocs.length - 1;
-          new libs.Marker({
-            map, position: pos, zIndex: 5,
-            icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
-            // The number ties each pin to the stops legend — without it the pins are
-            // anonymous and "is stop 3 the right place?" can't be answered.
-            label: { text: String(i + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
-            title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
+        // One pin per PLACE, not per stop — see mapPins(). Redrawn on zoom, because whether two
+        // pins collide is a question about SCREEN distance and the answer changes as you zoom.
+        let drawn = [];
+        const drawPins = () => {
+          drawn.forEach((m) => m.setMap(null));
+          drawn = [];
+          const z = map.getZoom();
+          const showText = pinLabelsVisible(z);
+          mapPins(stopLocs, z).forEach((p) => {
+            drawn.push(new libs.Marker({
+              map, position: { lat: p.lat, lng: p.lng }, zIndex: 5,
+              icon: pin(p.isFirst ? '#0a7d6f' : p.isLast ? '#e8623a' : '#0AB9B6'),
+              // The number ties each pin to the stops legend — without it the pins are
+              // anonymous and "is stop 3 the right place?" can't be answered. Hidden at country
+              // zoom, where a long itinerary is an unreadable wall of digits and the legend
+              // carries the order anyway.
+              label: showText
+                ? { text: p.text, color: '#ffffff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
+                : undefined,
+              // The title is the full truth even when the label is hidden.
+              title: p.stops.length > 1
+                ? 'Stops ' + p.stops.join(', ')
+                : (p.isFirst ? 'Pick-up' : p.isLast ? 'Drop-off' : 'Stop ' + p.stops[0]),
+            }));
           });
-        });
+        };
+        drawPins();
+        map.addListener('zoom_changed', drawPins);
       } catch (e) { /* markers are non-essential */ }
 
       // Fit the whole route in view, and re-fit if the container gains its size later:

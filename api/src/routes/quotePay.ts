@@ -93,7 +93,31 @@ export function quotePayRoutes(deps: {
   payments: PaymentRepo;
   linkSecret: string;
   checkoutNow?: () => number;
+  // The staff address list, so a submission cannot record an operator as the customer
+  // (spec 2026-08-08 §4.4, as revised). Optional: absent = the guard is simply off.
+  opsUsers?: string;
 }) {
+  // Four live bookings were recorded under the owner's name because a pay link was opened in a
+  // staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
+  //
+  // Deliberately NOT a flat ban on staff addresses: the owner books trips for himself, and that
+  // submission is truthful. It is refused only when it would CONTRADICT the quote — i.e. the
+  // quote was raised against somebody else. A quote whose own contact is that address may be
+  // paid from it.
+  const opsEmails = new Set(
+    (deps.opsUsers ?? '')
+      .split(',')
+      .map((entry) => entry.split(':')[0].trim().toLowerCase())
+      .filter(Boolean),
+  );
+  function impersonatesStaff(quote: SavedQuote, email: string): boolean {
+    const submitted = email.trim().toLowerCase();
+    if (!opsEmails.has(submitted)) return false;
+    // The quote's own contact is the test: if the quote belongs to this address, it is not
+    // impersonation. Compared loosely — the contact field holds a phone OR an email.
+    return (quote.customerContact ?? '').trim().toLowerCase() !== submitted;
+  }
+
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
@@ -193,6 +217,10 @@ export function quotePayRoutes(deps: {
     // ready/sent, which is the business's own statement that it is payable. The lever for
     // "stop taking money" is moving the quote out of those statuses, which already renders the
     // sailed-off screen. So a dead prior is ignored and a fresh booking is minted.
+    if (impersonatesStaff(quote, body.data.customer.email)) {
+      return c.json({ error: 'staff_email_not_customer' }, 400);
+    }
+
     // Seq-scoped since partial links (spec §9): the key carries the revision AND the selection
     // seq, so a lookup can only ever return a booking minted for THIS selection.
     //
