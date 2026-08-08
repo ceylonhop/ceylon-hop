@@ -102,9 +102,29 @@ describe('deriveTripLegs — chauffeur', () => {
     expect(legs.map((l) => l.travelDate)).toEqual(['2026-08-22', '2026-08-23']);
   });
 
-  it('falls back to one row per segment when a chauffeur trip has no dates at all', () => {
+  // No dates anywhere means the "blank = chainStops() connector" convention doesn't apply — see
+  // the comment on chauffeurDays(). Every segment must still be an askable journey, so this falls
+  // back to one `day` row per segment rather than reading every segment as a gap.
+  it('falls back to one askable day per segment when a chauffeur trip has no dates at all', () => {
     const legs = deriveTripLegs({ stops: ['A', 'B', 'C'], serviceType: 'chauffeur' });
-    expect(legs.map((l) => l.kind)).toEqual(['gap', 'gap']);
+    expect(legs.map((l) => [l.kind, l.fromPlace, l.toPlace, l.travelDate])).toEqual([
+      ['day', 'A', 'B', null],
+      ['day', 'B', 'C', null],
+    ]);
+  });
+
+  // Mixed case is unchanged: as soon as the trip has a date anywhere, a blank date on another
+  // segment still reads as chainStops()'s connector, not as "no dates yet".
+  it('still treats a blank date as a gap when some other segment IS dated', () => {
+    const legs = deriveTripLegs({
+      stops: ['A', 'B', 'C'],
+      dates: ['', '2026-08-23'],
+      serviceType: 'chauffeur',
+    });
+    expect(legs.map((l) => [l.kind, l.fromPlace, l.toPlace, l.travelDate])).toEqual([
+      ['gap', 'A', 'B', null],
+      ['day', 'B', 'C', '2026-08-23'],
+    ]);
   });
 });
 

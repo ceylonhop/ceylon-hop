@@ -57,6 +57,14 @@ export function deriveTripLegs(input: {
 
 type Unsequenced = Omit<DerivedLeg, 'seq'>;
 
+// For a private trip, a blank date means "flexible", not "gap" — the heuristic chauffeurDays()
+// uses (blank = chainStops()'s connector) is NOT available here. chainStops() also inserts a
+// connector for a hop the customer makes themselves (the Ella→Galle train case — see
+// docs/known-bugs.md, 2026-07-30), and that connector is indistinguishable from a driven leg at
+// this layer: it comes through as an ordinary consecutive pair with no marker of its own. So this
+// always emits `kind: 'leg'`, even for a connector. A later phase that wants to tell "we drive
+// this" apart from "the customer arranges this themselves" needs a signal this function does not
+// have — this is a note for whoever designs that phase, not a bug to fix here.
 function privateLegs(stops: string[], dates: string[]): Unsequenced[] {
   return stops.slice(0, -1).map((from, i) => ({
     kind: 'leg' as const,
@@ -70,7 +78,29 @@ function privateLegs(stops: string[], dates: string[]): Unsequenced[] {
 
 // A chauffeur booking stores one date per SEGMENT (quoteToBooking.ts:170), so consecutive segments
 // carrying the same non-empty date are the same travel day. A blank date is chainStops()'s gap.
+//
+// This leans on every chauffeur travel day being dated — a precondition enforced above this
+// layer, not in the schema (`TripInput.dates` is optional): the booker refuses to let a customer
+// pick chauffeur service until every leg has a date (booking.js:906, tripDatesComplete()), and
+// pricing refuses to price an undated chauffeur quote (internalQuote.ts:323-330). Without that
+// precondition a trip with genuinely no dates would read as ALL gaps — see the no-dates-at-all
+// fallback below, which exists precisely because a fully-undated chauffeur trip must still
+// produce askable journeys, not zero of them.
 function chauffeurDays(stops: string[], dates: string[]): Unsequenced[] {
+  // A blank date is only meaningful as "chainStops() connector" when the trip has dates
+  // elsewhere. A chauffeur trip with NO dates at all (e.g. still being drafted, or a producer
+  // that hasn't supplied dates yet) is not "all gaps" — every segment is still a journey we will
+  // need to ask the customer about, so fall back to one `day` row per segment.
+  if (!dates.some((d) => !!d)) {
+    return stops.slice(0, -1).map((from, i) => ({
+      kind: 'day' as const,
+      fromPlace: from,
+      toPlace: stops[i + 1],
+      viaStops: [],
+      travelDate: null,
+      pickupTime: null,
+    }));
+  }
   const out: Unsequenced[] = [];
   const lastSegment = stops.length - 2;
   let i = 0;
