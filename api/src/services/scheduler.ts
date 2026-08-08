@@ -1,7 +1,8 @@
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
-import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import type { NotificationLogRepo, NotificationKind } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
+import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
@@ -33,6 +34,14 @@ function tripWindow(b: Booking): { start: Date | null; end: Date | null } {
 
 const TRAVELLED_STATUSES = ['paid', 'confirmed', 'in_progress', 'completed'];
 
+const DAY_MS = 24 * 3600 * 1000;
+
+/** One line of a dry run: what WOULD be sent, and to which booking. */
+export interface PlannedSend {
+  reference: string;
+  kind: NotificationKind;
+}
+
 // Drive the scheduled customer emails. Pure over (now, repos) so it's deterministic in
 // tests; the cron endpoint calls it with the real clock.
 export async function runScheduledNotifications(
@@ -44,28 +53,77 @@ export async function runScheduledNotifications(
     // Signs the customer's "manage my booking" link in the trip reminder email.
     baseUrl: string;
     linkSecret: string;
+    // Blast-radius cap (R1). Optional: without one the sweep is uncapped, exactly as before.
+    // The tick's other sweeps share this same budget, so the cap bounds the WHOLE tick.
+    budget?: SendBudget;
+    // Relevance window (R6) — never notify about a trip that ended more than this many days
+    // ago. Unlike the ledger this is stateless, so an empty or restored notification_log
+    // cannot resurrect an old booking: it fails the window before the ledger is consulted.
+    maxTripAgeDays?: number;
+    // Notification epoch (R6) — never notify about a booking TAKEN before this instant. The
+    // window above only bounds trips in the past; a backfill writing FUTURE dates onto old
+    // rows would sail straight through it. Booking creation time is the one input such a
+    // backfill does not touch, which is what makes this the complementary guard.
+    epoch?: Date;
+    // Dry run (R7) — evaluate everything, write nothing, send nothing, and report the plan.
+    // What you run after a migration touches booking state, before letting the real tick fire.
+    dryRun?: boolean;
   },
-): Promise<{ reminders: number; reviews: number }> {
-  const { bookings, log, email, baseUrl, linkSecret } = deps;
+): Promise<{ reminders: number; reviews: number; plan?: PlannedSend[] }> {
+  const { bookings, log, email, baseUrl, linkSecret, budget, maxTripAgeDays, epoch, dryRun } = deps;
   const all = await bookings.list();
   let reminders = 0;
   let reviews = 0;
+  const plan: PlannedSend[] = [];
+
+  // The one place a send is authorised. Everything upstream decides WHETHER a booking is
+  // eligible; this decides whether that eligibility becomes an email — ledger claim, cap,
+  // and dry run all live here so no caller can accidentally bypass one.
+  const dispatch = async (b: Booking, kind: NotificationKind, send: () => Promise<void>): Promise<boolean> => {
+    if (dryRun) {
+      // Planning consults the ledger read-only and spends the budget, so the plan reflects
+      // what a real tick would do rather than an optimistic superset of it.
+      if (await log.wasSent(b.id, kind)) return false;
+      if (budget && !budget.tryClaim()) {
+        budget.suppress(kind, b.reference);
+        return false;
+      }
+      plan.push({ reference: b.reference, kind });
+      return true;
+    }
+    if (!(await log.claim(b.id, kind))) return false;
+    if (budget && !budget.tryClaim()) {
+      await log.release(b.id, kind);
+      budget.suppress(kind, b.reference);
+      return false;
+    }
+    try {
+      await send();
+      return true;
+    } catch (err) {
+      await log.release(b.id, kind);
+      console.error(`${kind} failed for ${b.reference}:`, err);
+      return false;
+    }
+  };
 
   for (const b of all) {
+    // Taken before we started notifying at all — fence it off whatever its dates say.
+    if (epoch && Date.parse(b.createdAt) < epoch.getTime()) continue;
+
     const { start, end } = tripWindow(b);
     if (!start || !end) continue;
+
+    // Too long ago to be worth an email from us, and far too long ago to be worth one
+    // triggered by a data change nobody intended.
+    if (maxTripAgeDays != null && now.getTime() - end.getTime() > maxTripAgeDays * DAY_MS) continue;
+
     const untilStart = start.getTime() - now.getTime();
 
     // Pre-trip reminder: trip STARTS within the lead window, and still active.
     if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
-      if (!(await log.wasSent(b.id, 'trip_reminder'))) {
-        try {
-          await sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) });
-          await log.markSent(b.id, 'trip_reminder');
-          reminders++;
-        } catch (err) {
-          console.error(`trip reminder failed for ${b.reference}:`, err);
-        }
+      if (await dispatch(b, 'trip_reminder', () => sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) }))) {
+        reminders++;
       }
     }
 
@@ -74,19 +132,13 @@ export async function runScheduledNotifications(
     const sinceEnd = now.getTime() - end.getTime();
     const travelled = TRAVELLED_STATUSES.includes(b.status);
     if (travelled && (b.status === 'completed' || sinceEnd > REVIEW_DELAY_MS)) {
-      if (!(await log.wasSent(b.id, 'review_request'))) {
-        try {
-          await sendReviewRequest(b, email);
-          await log.markSent(b.id, 'review_request');
-          reviews++;
-        } catch (err) {
-          console.error(`review request failed for ${b.reference}:`, err);
-        }
+      if (await dispatch(b, 'review_request', () => sendReviewRequest(b, email))) {
+        reviews++;
       }
     }
   }
 
-  return { reminders, reviews };
+  return { reminders, reviews, ...(dryRun ? { plan } : {}) };
 }
 
 // GL-3 — an abandoned shared checkout holds real seats. After this long unpaid, the draft
