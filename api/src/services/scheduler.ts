@@ -2,6 +2,7 @@ import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
+import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
@@ -44,9 +45,12 @@ export async function runScheduledNotifications(
     // Signs the customer's "manage my booking" link in the trip reminder email.
     baseUrl: string;
     linkSecret: string;
+    // Blast-radius cap (R1). Optional: without one the sweep is uncapped, exactly as before.
+    // The tick's other sweeps share this same budget, so the cap bounds the WHOLE tick.
+    budget?: SendBudget;
   },
 ): Promise<{ reminders: number; reviews: number }> {
-  const { bookings, log, email, baseUrl, linkSecret } = deps;
+  const { bookings, log, email, baseUrl, linkSecret, budget } = deps;
   const all = await bookings.list();
   let reminders = 0;
   let reviews = 0;
@@ -59,6 +63,12 @@ export async function runScheduledNotifications(
     // Pre-trip reminder: trip STARTS within the lead window, and still active.
     if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
       if (!(await log.wasSent(b.id, 'trip_reminder'))) {
+        // Over the cap: count it and move on. Deliberately NOT ledgered — an unsent
+        // reminder must stay unsent, so the next run still reaches this booking.
+        if (budget && !budget.tryClaim()) {
+          budget.suppress('trip_reminder', b.reference);
+          continue;
+        }
         try {
           await sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) });
           await log.markSent(b.id, 'trip_reminder');
@@ -75,6 +85,10 @@ export async function runScheduledNotifications(
     const travelled = TRAVELLED_STATUSES.includes(b.status);
     if (travelled && (b.status === 'completed' || sinceEnd > REVIEW_DELAY_MS)) {
       if (!(await log.wasSent(b.id, 'review_request'))) {
+        if (budget && !budget.tryClaim()) {
+          budget.suppress('review_request', b.reference);
+          continue;
+        }
         try {
           await sendReviewRequest(b, email);
           await log.markSent(b.id, 'review_request');

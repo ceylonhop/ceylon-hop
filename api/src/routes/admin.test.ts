@@ -6,6 +6,7 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday, futureIsoDate } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
@@ -824,5 +825,53 @@ describe('mark-paid claims the linked quote', () => {
     });
     expect(res.status).toBe(200);
     expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+describe('POST /admin/jobs/notifications — burst cap', () => {
+  async function seedDueReminders(bookings: InMemoryBookingRepo, n: number) {
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    for (let i = 0; i < n; i++) {
+      const b = await bookings.create({
+        mode: 'single',
+        input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+        total: 5000, amountDueNow: 5000, currency: 'USD',
+      });
+      await bookings.setStatus(b.id, 'payment_pending');
+      await bookings.setStatus(b.id, 'paid');
+    }
+  }
+
+  it('stops at the cap, pages the founder, and reports what it held back', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email, alerts, notifyMaxPerRun: 3 });
+    await seedDueReminders(bookings, 9);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reminders).toBe(3);
+    expect(body.suppressed).toBe(6);
+    expect(email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(3);
+
+    const burst = alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed');
+    expect(burst).toHaveLength(1);
+    expect(burst[0].severity).toBe('critical');
+    expect(burst[0].body).toMatch(/trip_reminder: 6/);
+  });
+
+  it('raises no burst alert on a normal tick', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, notifyMaxPerRun: 25 });
+    await seedDueReminders(bookings, 2);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await res.json()).suppressed).toBe(0);
+    expect(alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed')).toHaveLength(0);
   });
 });

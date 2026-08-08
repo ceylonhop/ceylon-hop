@@ -101,6 +101,12 @@ const Env = z.object({
   SENTRY_DSN: z.string().optional(),
   // RESEND_WEBHOOK_SECRET: enables POST /webhooks/resend (bounce/complaint alerts).
   RESEND_WEBHOOK_SECRET: z.string().optional(),
+  // Notification blast-radius cap (docs/notification-safety-rails-spec.md, R1). The most
+  // outbound emails ONE cron tick may send before it stops and pages the founder. Guards the
+  // case notification_log cannot: a migration or status backfill making a batch of old
+  // bookings newly eligible all at once. 25 is far above any legitimate tick at current
+  // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
+  NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
 });
 
 // Ops⇄quote merge T1: the founder ops-session cookie now unlocks /admin/quote (margin +

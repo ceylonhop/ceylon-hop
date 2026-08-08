@@ -95,6 +95,9 @@ export interface AppDeps {
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
   // tests inject FakeAlertAdapter. Defaults to log-only so alerts are always at least visible.
   alerts?: AlertAdapter;
+  // Notification blast-radius cap (R1). Defaults to config.NOTIFY_MAX_PER_RUN; tests set a
+  // low value to exercise the cap without seeding twenty-five bookings.
+  notifyMaxPerRun?: number;
   // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
   resendWebhookSecret?: string;
   // M17 — /health/deep runs this to prove DB connectivity (server passes SELECT 1;
@@ -406,6 +409,7 @@ export function createApp(deps: AppDeps = {}) {
       rideLists,
       ridePaygw: paygw,
       refunds,
+      notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
       // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.
       paymentAdapter: adapter,
       // Manual settlement (mark-paid) records the money in the payment ledger and its audit

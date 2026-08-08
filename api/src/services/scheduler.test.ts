@@ -4,6 +4,7 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { SendBudget } from './sendBudget';
 
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
 const NOW = new Date('2026-07-01T08:00:00'); // local — matches how travelAt builds dates
@@ -225,5 +226,65 @@ describe('sweepStaleSharedHolds', () => {
     const r = await sweepStaleSharedHolds({ bookings, departures, now: hoursFromNow(48) });
     expect(r.swept).toBe(0);
     expect((await bookings.get(b.id))!.status).toBe('draft');
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+// The rail that matters for the "a migration made 400 old bookings eligible" case: the
+// tick stops at the cap instead of mailing everyone, and what it did NOT send is
+// recorded so the caller can page a human.
+describe('runScheduledNotifications — burst cap', () => {
+  it('stops at the cap and leaves the rest unsent', async () => {
+    const d = deps();
+    for (let i = 0; i < 10; i++) await paidSingle(d.bookings, '2026-07-02');
+    const budget = new SendBudget(3);
+
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+
+    expect(r.reminders).toBe(3);
+    expect(d.email.sent).toHaveLength(3);
+    expect(budget.report().suppressed).toBe(7);
+    expect(budget.report().kinds).toEqual({ trip_reminder: 7 });
+  });
+
+  it('does NOT mark a suppressed booking as sent, so a later run still reaches it', async () => {
+    const d = deps();
+    for (let i = 0; i < 4; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const r1 = await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(1) });
+    expect(r1.reminders).toBe(1);
+
+    // The cap is a pause, not a cancellation — with room, the next run finishes the job.
+    const r2 = await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(25) });
+    expect(r2.reminders).toBe(3);
+    expect(d.email.sent).toHaveLength(4);
+  });
+
+  it('caps reminders and reviews against one shared budget', async () => {
+    const d = deps();
+    for (let i = 0; i < 3; i++) await paidSingle(d.bookings, '2026-07-02'); // reminders
+    for (let i = 0; i < 3; i++) await paidSingle(d.bookings, '2026-06-29'); // reviews
+    const budget = new SendBudget(4);
+
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+
+    expect(r.reminders + r.reviews).toBe(4);
+    expect(d.email.sent).toHaveLength(4);
+    expect(budget.report().suppressed).toBe(2);
+  });
+
+  it('behaves exactly as before when the run stays under the cap', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+    const budget = new SendBudget(25);
+    const r = await runScheduledNotifications(NOW, { ...d, budget });
+    expect(r.reminders).toBe(1);
+    expect(budget.anySuppressed).toBe(false);
+  });
+
+  it('is uncapped when no budget is passed (existing callers unchanged)', async () => {
+    const d = deps();
+    for (let i = 0; i < 30; i++) await paidSingle(d.bookings, '2026-07-02');
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(30);
   });
 });

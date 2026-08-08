@@ -18,6 +18,7 @@ import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
 import { runWatchdog } from '../services/watchdog';
+import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
@@ -66,6 +67,10 @@ export function adminRoutes(deps: {
   // row to write the audit note the booking sheet's activity list renders.
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
+  // Blast-radius cap (docs/notification-safety-rails-spec.md R1) — the most notifications
+  // ONE tick may send before it stops and pages. Optional so existing callers/tests keep
+  // their uncapped behaviour; the production mount always passes config.NOTIFY_MAX_PER_RUN.
+  notifyMaxPerRun?: number;
 }) {
   const { bookings, departures, email, notificationLog, auth, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -483,7 +488,10 @@ export function adminRoutes(deps: {
   // The stale shared-hold sweep (GL-3) rides the same tick, best-effort: a sweep failure
   // must never block the notifications the caller asked for.
   r.post('/jobs/notifications', requireCap('admin:jobs'), async (c) => {
-    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret });
+    // ONE budget for the whole tick: the scheduler and the Ride Board sweep both draw on
+    // it, so the cap bounds everything this endpoint can send, not each sweep separately.
+    const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
+    const result = await runScheduledNotifications(new Date(), { bookings, log: notificationLog, email, baseUrl, linkSecret, budget });
     let staleSharedHolds = 0;
     try {
       staleSharedHolds = (await sweepStaleSharedHolds({ bookings, departures, now: new Date() })).swept;
@@ -494,7 +502,7 @@ export function adminRoutes(deps: {
     let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
     if (deps.rideLists && deps.ridePaygw) {
       try {
-        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email });
+        const rb = await runRideBoardCutoff(new Date(), { rideLists: deps.rideLists, paygw: deps.ridePaygw, email, budget });
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);
@@ -543,14 +551,24 @@ export function adminRoutes(deps: {
         }
       }
     }
-    return c.json({ ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard }, 200);
+    // The digest above is an OPS email, not a customer one, so it is deliberately outside
+    // the budget — same reasoning as the watchdog's alerts.
+    const burst = budget && burstAlert(budget, 'notifications');
+    if (burst) await alerts.send(burst);
+    return c.json(
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, suppressed: budget?.report().suppressed ?? 0 },
+      200,
+    );
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
-    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds });
-    return c.json(result, 200);
+    const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
+    const result = await runWatchdog(new Date(), { bookings, log: notificationLog, alerts, email, baseUrl, linkSecret, payments: deps.payments, refunds: deps.refunds, budget });
+    const burst = budget && burstAlert(budget, 'watchdog');
+    if (burst) await alerts.send(burst);
+    return c.json({ ...result, suppressed: budget?.report().suppressed ?? 0 }, 200);
   });
 
   return r;
