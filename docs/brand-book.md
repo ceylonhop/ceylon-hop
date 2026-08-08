@@ -38,14 +38,40 @@ derivatives that clear 4.5:1 (see `--btn-*` in `site.css` and
 | Subheadings | Bodoni 72 Book | 10pt |
 | Body | Poppins Regular | 12pt |
 
-Bodoni 72 is an Apple system font with no web licence. The web substitute is
-**Bodoni Moda** (Google Fonts) — same Bodoni-72 lineage, variable optical size, and it
-holds up at screen sizes where a straight Bodoni cut would lose its hairlines. Poppins
-is used as specified.
+Bodoni 72 is **ITC Bodoni Seventy-Two** (© ITC/Monotype). Poppins is used as specified.
+
+### How the display face is served
+
+The real Bodoni 72 ships with macOS and iOS (`/System/Library/Fonts/Supplemental/Bodoni
+72.ttc`), with exactly the two weights the book names — Bold and Book. `site.css`
+therefore serves the **genuine face** to every Apple visitor via `@font-face { src:
+local('Bodoni 72 Bold') }`. Naming a locally-installed font is not embedding and needs no
+licence; what we may **not** do is self-host or bundle the file.
+
+Everyone else falls through to **Bodoni Moda** (Google Fonts) — same Bodoni-72 lineage,
+variable optical size, holds its hairlines at screen sizes.
+
+Both are served under one alias, `'CH Bodoni'`, with `ascent-override:113%` /
+`descent-override:40%` / `line-gap-override:0%`. That matters: the two faces have
+materially different boxes (Bodoni 72 is 0.94/0.27, Bodoni Moda 1.13/0.40), so without
+normalising, everything baseline-relative — the hero swash, line boxes, the ops total's
+LKR sub-line — lands somewhere different depending on which font the visitor happens to
+have. Normalised, layout is identical on both and offsets are tuned once.
+
+**Bodoni 72 has no ExtraBold.** Display weights are 700, never 800, or the browser
+synthesises a fake bold and the hairlines clog. Poppins 800 is loaded and is fine on the
+body face.
+
+**To get the genuine face for every visitor**, buy an ITC Bodoni Seventy-Two *webfont*
+licence (Monotype/MyFonts, licensed per domain) and self-host Bold + Book. That would
+also let the rasterised OG cards use it — they currently bundle Bodoni Moda, because
+`api/assets/fonts/` may not contain the ITC file.
+
+### Size floors
 
 The 35pt heading floor is a print number. On the web it is honoured as intent, not
-arithmetic: Bodoni Moda is display-only, and anything that would land under ~24px uses
-Poppins instead. This keeps the hairlines off the sizes that would break them.
+arithmetic: the display face is display-only, and anything that would land under ~24px
+uses Poppins instead. This keeps the hairlines off the sizes that would break them.
 
 ## Logo
 
@@ -112,4 +138,5 @@ written to make readers eager to plan a trip to Sri Lanka.
 | Solid buttons | Darkened derivatives of the book hues, not the hues themselves | The book colours are 2.10:1 (blue) to 4.04:1 (tomato) on white; white button text needs 4.5:1. Guarded by `button-contrast.test.js`. |
 | Booking + payment copy | Reassurance-led, not "joyful" | These surfaces convert on trust. The book's register applies to marketing surfaces: home, tours, blog, ride board. |
 | Body face at small sizes | Poppins carries anything under ~24px | Bodoni's hairlines break below display sizes; see Typography above. |
+| Display face off-Apple | Bodoni Moda substitutes for Bodoni 72 | ITC Bodoni Seventy-Two has no free web licence. Apple visitors get the real face via `local()`; the rest get Moda under normalised metrics. Buy a Monotype webfont licence to close this. |
 | Ops UI | Adds JetBrains Mono for references and money columns | Internal tool; tabular figures are a legibility requirement the book does not cover. |

@@ -3,7 +3,40 @@
    "Postcard from Ceylon": editorial, playful, conversion-led
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Caveat:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Caveat:wght@600;700&display=swap');
+
+/* ---------- The brand display face ----------
+   'Bodoni 72' IS the book's typeface (ITC Bodoni Seventy-Two), and it ships with
+   macOS/iOS — so `local()` serves the genuine article to every Apple visitor at no
+   licensing cost. We may name a locally-installed font; we may NOT self-host or bundle
+   it. Everyone else falls through to Bodoni Moda, the Google Fonts stand-in.
+
+   The metric overrides are the point of this block. The two faces have materially
+   different boxes — Bodoni 72 is 0.94/0.27 ascent/descent, Bodoni Moda 1.13/0.40 — so
+   without normalising, every baseline-relative thing (the hero swash, line boxes, the
+   ops total's LKR sub-line) lands in a different place depending on which font the
+   visitor happens to have. Overriding to a single set of metrics makes layout identical
+   on both, so we tune offsets once instead of per-platform.
+
+   Values are Bodoni Moda's, since that is what non-Apple visitors get natively. */
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Bold'), local('BodoniSvtyTwoITCTT-Bold');
+  font-weight:700; font-style:normal; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Book'), local('BodoniSvtyTwoITCTT-Book');
+  font-weight:400; font-style:normal; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Book Italic'), local('BodoniSvtyTwoITCTT-BookIta');
+  font-weight:400; font-style:italic; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
 
 :root{
   /* Brand palette — docs/brand-book.md p4. Hexes are the book's, verbatim. */
@@ -63,16 +96,30 @@
   --pc-saffron:#fbf0d8;  /* soft saffron */
   --pc-line:#dde8ed;     /* hairline that reads on washes */
 
-  /* Type — brand book pp.7-8. Bodoni 72 has no web licence (it is an Apple system
-     font), so the display face is Bodoni Moda: same Bodoni-72 lineage, variable optical
-     size, and it holds its hairlines at screen sizes where a straight Bodoni cut loses
-     them. Poppins is the book's body face, used as specified.
+  /* Type — brand book pp.7-8. Poppins is the book's body face, used as specified.
+
+     The display stack asks for the REAL specified face first. 'Bodoni 72' is ITC Bodoni
+     Seventy-Two, which ships with macOS/iOS at /System/Library/Fonts/Supplemental — so
+     every Apple visitor gets the actual brand typeface, in its actual Bold and Book
+     weights. Naming a locally-installed font in a stack is not embedding and needs no
+     licence; what we may NOT do is self-host or bundle it (© ITC/Monotype).
+
+     Bodoni Moda is the fallback for everyone else: same Bodoni-72 lineage, on Google
+     Fonts, and it holds its hairlines at screen sizes. It is a FALLBACK now, not the
+     default — put it first again and the real face never renders, including on the
+     machines that have it.
+
+     To get the genuine face everywhere, buy an ITC Bodoni Seventy-Two webfont licence
+     (Monotype/MyFonts, per-domain) and self-host Bold + Book — see docs/brand-book.md.
+
+     Bodoni 72 tops out at Bold: there is no ExtraBold, so display weights are 700, not
+     800, or the browser synthesises a fake bold and the hairlines clog.
 
      The book's 35pt heading floor is a print number, honoured here as intent: --display
      is DISPLAY-ONLY. Anything that would land under ~24px uses --body instead, which is
      why .stamp b, .dp-head b and .pass-brand are on Poppins rather than Bodoni. Putting
      Bodoni back on those will thin out to mush on a phone. */
-  --display:'Bodoni Moda', 'Didot', 'Bodoni 72', Georgia, serif;
+  --display:'CH Bodoni', 'Bodoni Moda', 'Didot', Georgia, serif;
   --body:'Poppins', system-ui, -apple-system, sans-serif;
   --hand:'Caveat', 'Segoe Script', cursive;
 
@@ -136,12 +183,12 @@ h1,h2,h3,h4{
   font-optical-sizing:auto;font-variation-settings:"opsz" 72;
 }
 h2{margin-bottom:.5rem}
-.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:800;line-height:1.06;letter-spacing:-.004em;margin-bottom:0;font-variation-settings:"opsz" 96}
+.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:700;line-height:1.06;letter-spacing:-.004em;margin-bottom:0;font-variation-settings:"opsz" 96}
 h1{font-size:clamp(2.2rem,5vw,3.8rem)}
 h2{font-size:clamp(1.9rem,3.6vw,3rem)}
 /* h3 bottoms out at 1.3rem ≈ 21px — under the ~24px floor where Bodoni's hairlines
    start to break up, so it runs a heavier weight and a text-grade optical size. */
-h3{font-size:clamp(1.35rem,2.2vw,1.7rem);font-weight:800;font-variation-settings:"opsz" 24}
+h3{font-size:clamp(1.35rem,2.2vw,1.7rem);font-weight:700;font-variation-settings:"opsz" 24}
 p{margin:0 0 1rem}
 .eyebrow{
   font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;

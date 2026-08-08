@@ -21,8 +21,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.message||String(x)),x.stack)};})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+/* Brand display face — see site.css for the full rationale. 'Bodoni 72' is the book's
+   real typeface and ships with macOS/iOS, so local() serves it free; Bodoni Moda is the
+   fallback. The metric overrides normalise the two faces' very different boxes so
+   baseline-relative layout (notably .ch-total-usd's LKR sub-line) is identical on both. */
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Bold'),local('BodoniSvtyTwoITCTT-Bold');
+  font-weight:700;font-style:normal;font-display:swap;
+  ascent-override:113%;descent-override:40%;line-gap-override:0%}
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Book'),local('BodoniSvtyTwoITCTT-Book');
+  font-weight:400;font-style:normal;font-display:swap;
+  ascent-override:113%;descent-override:40%;line-gap-override:0%}
+
   :root{
     --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
     --ink:#3A3739;--ink-soft:#6b645f;--ink-faint:#a59d92;
@@ -33,7 +44,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
        near-white panel while the text stayed hardcoded #fff, and every toast went
        white-on-white. A surface must never be expressed as a text token. */
     --pop-bg:#241f1d;--pop-fg:#fffdf8;--pop-line:transparent;
-    --display:'Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+    --display:'CH Bodoni','Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
     --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
@@ -327,7 +338,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qempty-title{font-family:var(--display);font-size:1.3rem;color:var(--ink-soft);margin-top:8px}
   .qempty-sub{font-size:.9rem;margin-top:5px}
   .sec{margin:30px 0 13px;display:flex;align-items:center;gap:12px}
-  .sec h2{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
+  .sec h2{font-family:var(--body);font-weight:700;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
   .sec.alert h2{color:var(--alert)}
   .sec.alert h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 4px var(--alert-bg)}
   .sec.warn h2{color:var(--wait)}
@@ -365,7 +376,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .block:last-child{border-bottom:0}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-  .block h4{font-size:.63rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 11px;display:flex;justify-content:space-between;align-items:center}
+  .block h4{font-size:.63rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 11px;display:flex;justify-content:space-between;align-items:center}
   .block h4 .lnk{font-size:.75rem;color:var(--teal-deep);font-weight:700;text-transform:none;letter-spacing:0;cursor:pointer}
   /* key · dotted leader · value — the leader is a flex-ordered pseudo, zero extra markup */
   .kv{display:flex;align-items:baseline;gap:10px;padding:5px 0;font-size:.9rem}
@@ -568,7 +579,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   --r-sm: 9px;
   --shadow-card: 0 1px 2px rgba(40,33,28,.05), 0 1px 3px rgba(40,33,28,.04); /* → ops --shadow-s (warm ink tint) */
   --shadow-pop: 0 8px 26px -12px rgba(40,33,28,.20);                          /* → ops --shadow */
-  --serif: 'Bodoni Moda', Didot, Georgia, serif;       /* → ops display */
+  --serif: 'CH Bodoni', 'Bodoni Moda', Didot, Georgia, serif; /* → ops display */
   --sans: 'Poppins', system-ui, sans-serif;             /* → ops body */
 }
 

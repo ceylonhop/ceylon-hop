@@ -286,7 +286,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html += mapTicketHtml(v);
     if (v.options && v.options.length) {
       if (v.options.length > 1) {
-        html += '<h2 style="font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--ink);margin:22px 0 0">Two ways to travel it</h2>'
+        html += '<h2 style="font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--ink);margin:22px 0 0">Two ways to travel it</h2>'
           + '<p class="pp-sub" style="margin-bottom:0">' + esc(waysSubline(v.options)) + '</p>';
       }
       var optsHtml = optionsHtml(v.options);

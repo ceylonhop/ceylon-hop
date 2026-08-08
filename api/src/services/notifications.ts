@@ -24,7 +24,7 @@ const PAPER = '#F0EEE5'; // Marshmallow — outer page tone
 const CARD = '#fffefb'; // letter surface
 const HAIR = '#efe6d6'; // hairline dividers
 const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
-const SERIF = "'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
+const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
 const SANS = "'Poppins', Helvetica, Arial, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
@@ -369,7 +369,7 @@ function footer(): string {
 
 function page(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
