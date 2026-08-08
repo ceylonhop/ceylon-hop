@@ -2765,40 +2765,71 @@ function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
   return false;
 }
-function reverseActionsFor(t, d){
+/* Who may reverse, and whether the ops time window has closed on them. Shared by the refund
+   request form and the cancel block, which were one block until 2026-08-07 and must keep
+   answering this identically — a cancel offered where a refund is refused would be incoherent. */
+function reverseGate(t, d){
   const founder = !!(state.caps && state.caps.includes('payments:reverse'));
   const opsAgent = !founder && !!(state.caps && state.caps.includes('bookings:operate'));
-  if(!founder && !opsAgent) return '';
-  if(isBoard(t)) return '';                  // ride-board vans are read-only projections
-  const canCancel = CANCELLABLE.includes(t.stage);
+  const allowed = (founder || opsAgent) && !isBoard(t); // ride-board vans are read-only projections
+  return {
+    allowed,
+    /* Only ops is time-limited. Disabling the refund for EVERYONE past the cutoff contradicted
+       the rule that a founder is never time-limited. */
+    blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),
+    why: tripStartMs(t) === null
+      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
+      : 'The trip starts in under 24 hours — only a founder can cancel or refund from here',
+  };
+}
+
+/* The refund entry point. Lives INSIDE the Refunds block (2026-08-07) rather than at the foot of
+   the sheet: it used to sit in "Cancel & refund" while everything that completes a refund sat two
+   blocks above, and requesting one HIDES this button — a full-amount pending row reserves the
+   balance, so `remaining` drops to 0. Press it and the control vanishes while its follow-up
+   actions are off-screen upward, which reads exactly like a broken button. Owner lost an hour to
+   that on CH-MCF8D. Request and completion now sit in one block, in reading order. */
+function refundRequestFor(t, d){
+  const g = reverseGate(t, d);
+  if(!g.allowed) return '';
   const s = refundSummary(d);
-  /* Only ops is time-limited. The old code disabled the refund for EVERYONE past the cutoff,
-     which contradicted the rule that a founder is never time-limited. */
-  const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);
-  const why = tripStartMs(t) === null
-    ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
-    : 'The trip starts in under 24 hours — only a founder can cancel or refund from here';
-  const btns = [];
-  if(canCancel){
-    btns.push(blocked
-      ? `<button class="btn btn-noshow" disabled title="${esc(why)}">Cancel booking</button>`
-      : `<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`);
+  if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
+  /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
+     NOT do: it files an intent and moves no money, and the control that moves money is a separate
+     press on the row it creates. The owner read it as done three times in one evening — twice
+     while actively debugging the refund flow, which is about as fair a test as a label can get.
+     Moving the controls closer (this change) helps; a label that stops over-promising helps more.
+     "Request" is also the word the rest of the flow already uses — the row it creates is a refund
+     request, and its sibling control is "Cancel request". */
+  if(g.blocked){
+    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
+      <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
   }
-  if(s.remaining > 0){
-    btns.push(blocked
-      ? `<button class="btn btn-noshow" disabled title="${esc(why)}">Refund ${money({amount:s.remaining,currency:s.currency})}</button>`
-      : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Requests a FULL refund; you still confirm it with the PayHere reference">Refund ${money({amount:s.remaining,currency:s.currency})} in full</button>`);
-  }
-  if(!btns.length) return '';
-  const note = blocked ? `<p class="muted" style="margin:8px 0 0">${esc(why)}.</p>` : '';
-  /* One reason field for both actions. Required by the owner rule and stored against the
-     booking — a time-bounded grant is only auditable if the reason and the actor are written
-     down. An inline field, not a browser dialog — this file is asserted to contain none. */
-  const reasonBox = blocked ? '' : `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="reversereason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
+  /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
+     reason typed for a cancellation then left behind would be silently attached to a refund —
+     both are written to permanent audit records. One extra id is cheap insurance. */
+  return `<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
+    </label>
+    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Files a FULL refund request — no money moves until you complete it on the row below">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
+}
+
+function reverseActionsFor(t, d){
+  const g = reverseGate(t, d);
+  if(!g.allowed) return '';
+  if(!CANCELLABLE.includes(t.stage)) return '';
+  const btn = g.blocked
+    ? `<button class="btn btn-noshow" disabled title="${esc(g.why)}">Cancel booking</button>`
+    : `<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`;
+  const note = g.blocked ? `<p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>` : '';
+  /* Required by the owner rule and stored against the booking — a time-bounded grant is only
+     auditable if the reason and the actor are written down. An inline field, not a browser
+     dialog — this file is asserted to contain none. */
+  const reasonBox = g.blocked ? '' : `<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="cancelreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
     </label>`;
-  return `<div class="block"><h4>Cancel &amp; refund</h4>
-    ${reasonBox}<div class="reverse-actions">${btns.join('')}</div>${note}</div>`;
+  return `<div class="block"><h4>Cancel booking</h4>
+    ${reasonBox}<div class="reverse-actions">${btn}</div>${note}</div>`;
 }
 
 function refundHtmlFor(t,d){
@@ -2837,11 +2868,12 @@ function refundHtmlFor(t,d){
       ${why}${stuck}${pendingActions}</div>`;
   }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
   /* No amount box: our PayHere setup cannot do partial refunds, so offering a field that
-     invites one only creates records the gateway can't honour (owner, 2026-08-02). The refund
-     BUTTON now lives in the action row at the foot of the sheet, next to Cancel, and always
-     requests the full refundable remainder. The API still accepts a partial amount — a manual
-     part-refund can be recorded there — the dashboard is simply opinionated. */
-  const request='';
+     invites one only creates records the gateway can't honour (owner, 2026-08-02). The button
+     always requests the full refundable remainder. The API still accepts a partial amount — a
+     manual part-refund can be recorded there — the dashboard is simply opinionated.
+     The button came BACK here on 2026-08-07 (it had moved to the sheet foot next to Cancel):
+     see refundRequestFor for why splitting request from completion was the defect. */
+  const request=refundRequestFor(t,d);
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
     <div class="kv"><span class="k">Previously refunded</span><span class="v">${money({amount:s.confirmed,currency:s.currency})}</span></div>
@@ -3038,7 +3070,6 @@ function renderSheet(){
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
         ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
       </div>
-      ${refundHtmlFor(t,d)}
       <div class="block"><h4>Vehicle &amp; pickup</h4>
         <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
         <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
@@ -3047,6 +3078,7 @@ function renderSheet(){
       <div class="block"><h4>Activity</h4>${acts}
         <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div>
       </div>
+      ${refundHtmlFor(t,d)}
       ${reverseActionsFor(t,d)}
     </div>`+sheetFootHtml(t,nx));
   sc.classList.add('show');sh.classList.add('show');
@@ -3360,7 +3392,7 @@ document.addEventListener('click',async e=>{
       /* payments:reverse, re-checked here for the same reason markpaid does: a sheet rendered
          before a session change must not be able to POST what it should no longer offer. */
       if(!mayReverseNow(t,state.detailData))break;
-      const reasonEl=$('#reversereason');
+      const reasonEl=$('#cancelreason');
       const cancelReason=((reasonEl&&reasonEl.value)||'').trim();
       if(!cancelReason){toast('Give a reason first — it is saved against the booking','error');if(reasonEl)reasonEl.focus();break;}
       if(!confirm(`Cancel ${t.ref}?\n\nThis calls the trip off and emails the customer. Any money already taken still has to be refunded separately.`))break;
@@ -3414,13 +3446,16 @@ document.addEventListener('click',async e=>{
          amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
       const amountCents=s.remaining;
-      const reasonEl=$('#reversereason');
+      const reasonEl=$('#refundreason');
       const reason=((reasonEl&&reasonEl.value)||'').trim();
       if(!amountCents){toast('Nothing left to refund','error');break;}
       if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
-      if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request. You still have to make the refund in PayHere and confirm it with the reference.`))break;
+      /* Says "below" because it now IS below: the completion controls appear on the pending row
+         in this same block. The old wording ("you still have to make the refund in PayHere")
+         predated the Refund API button and described the only route there used to be. */
+      if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request — no money moves yet. Complete it on the row below, through PayHere or by hand.`))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund request recorded — complete it in PayHere');}
+      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund requested — no money has moved yet, complete it below');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
@@ -3434,7 +3469,11 @@ document.addEventListener('click',async e=>{
       if(!gatewayRef){toast('Paste the PayHere refund reference first','error');break;}
       if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/confirm',{gatewayRef});await reloadRefundDetail(id);toast('Refund confirmed — customer emailed');}
+      /* refreshRow too: a full refund flips the BOOKING to refunded (refundRepo.confirm →
+         setStatus), and reloadRefundDetail only repaints the sheet's detail payload. Without it
+         the header chip and the queue row keep saying "Paid" seconds after the money went back —
+         which reads as a refund that silently failed. Owner hit exactly that on 2026-08-07. */
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/confirm',{gatewayRef});await reloadRefundDetail(id);await refreshRow(id);toast('Refund confirmed — customer emailed');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund confirm',err);toast('Could not confirm refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
@@ -3450,7 +3489,9 @@ document.addEventListener('click',async e=>{
       refundBusy.add(busyKey);el.disabled=true;
       try{
         await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/execute',{});
-        await reloadRefundDetail(id);toast('Refunded through PayHere — customer emailed');
+        /* refreshRow for the same reason as the manual confirm above — a successful API refund
+           flips the booking to refunded, and the queue row must stop saying "Paid". */
+        await reloadRefundDetail(id);await refreshRow(id);toast('Refunded through PayHere — customer emailed');
       }catch(err){
         /* Three failures worth telling apart. `refund_outcome_unknown` is the dangerous one:
            the row is api_processing, the money MAY have moved, and the operator must go and
