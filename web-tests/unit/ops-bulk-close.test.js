@@ -65,3 +65,19 @@ describe('the tick box and its grid template ship together', () => {
     expect(count(sel[1])).toBe(count(base[1]) + 1);
   });
 });
+
+// Bodoni 72 ships Book (400) and Bold (700) and nothing else — the brand pass swapped the ops
+// display face to it, but seven rules still asked for 600. Browsers synthesise a missing weight,
+// and on a face with Bodoni's thick/thin contrast that smears the hairlines into heavy mud at
+// row sizes. Owner-reported: "why is everything bold and hard to read" (2026-08-08).
+describe('the ops display face only ever asks for weights it has', () => {
+  it('no --display rule requests a weight Bodoni 72 does not ship', () => {
+    const bad = html.match(/font-family:var\(--display\)[^}]*font-weight:(100|200|300|500|600|800|900)/g) || [];
+    expect(bad, `synthesised weights: ${bad.join(' | ')}`).toEqual([]);
+  });
+
+  it('and no rule sets the weight before the family either', () => {
+    const bad = html.match(/font-weight:(100|200|300|500|600|800|900)[^}]*font-family:var\(--display\)/g) || [];
+    expect(bad, `synthesised weights: ${bad.join(' | ')}`).toEqual([]);
+  });
+});
