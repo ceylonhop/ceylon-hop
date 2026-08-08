@@ -43,7 +43,42 @@ export interface BackfillRow {
 
 export interface SkipReport {
   bookingId: string;
-  reason: 'missing_request' | 'no_journey';
+  reason: 'missing_request' | 'no_journey' | 'insert_failed';
+  detail?: string;
+}
+
+/**
+ * The pure half of row assembly: turns one joined (booking, transfer, trip) triple into the shape
+ * planBackfill consumes. `transfer`/`trip` are undefined when the booking's request row is
+ * missing — that is not this function's problem, planBackfill reports it as `missing_request`.
+ */
+export function toBackfillRow(
+  booking: { id: string; mode: string },
+  transfer: typeof transferRequests.$inferSelect | undefined,
+  trip: typeof tripRequests.$inferSelect | undefined,
+): BackfillRow {
+  if (booking.mode === 'single') {
+    return {
+      bookingId: booking.id,
+      mode: booking.mode,
+      transfer: transfer
+        ? {
+            fromPlace: transfer.fromPlace,
+            toPlace: transfer.toPlace,
+            travelDate: transfer.travelDate,
+            travelTime: transfer.travelTime,
+          }
+        : undefined,
+    };
+  }
+  if (booking.mode === 'trip') {
+    return {
+      bookingId: booking.id,
+      mode: booking.mode,
+      trip: trip ? { stops: trip.stops, dates: trip.dates, serviceType: trip.serviceType } : undefined,
+    };
+  }
+  return { bookingId: booking.id, mode: booking.mode };
 }
 
 /** The pure half: what this run WOULD write. Exported for test. */
@@ -102,39 +137,51 @@ async function main(): Promise<void> {
         .select()
         .from(transferRequests)
         .where(eq(transferRequests.bookingId, b.id));
-      rows.push({
-        bookingId: b.id,
-        mode: b.mode,
-        transfer: t
-          ? {
-              fromPlace: t.fromPlace,
-              toPlace: t.toPlace,
-              travelDate: t.travelDate,
-              travelTime: t.travelTime,
-            }
-          : undefined,
-      });
+      rows.push(toBackfillRow(b, t, undefined));
     } else if (b.mode === 'trip') {
       const [t] = await db.select().from(tripRequests).where(eq(tripRequests.bookingId, b.id));
-      rows.push({
-        bookingId: b.id,
-        mode: b.mode,
-        trip: t ? { stops: t.stops, dates: t.dates, serviceType: t.serviceType } : undefined,
-      });
+      rows.push(toBackfillRow(b, undefined, t));
     } else {
-      rows.push({ bookingId: b.id, mode: b.mode });
+      rows.push(toBackfillRow(b, undefined, undefined));
     }
   }
 
   const { legs, skipped } = planBackfill(rows);
-  if (legs.length) await db.insert(bookingLegs).values(legs).onConflictDoNothing();
+
+  // Grouped and inserted PER BOOKING, not as one statement for the whole run: a multi-row INSERT
+  // is atomic, so a single row tripping a NOT NULL/CHECK constraint would abort every other
+  // booking's legs too (onConflictDoNothing only covers unique conflicts), and at ~8 bind
+  // params/row a whole-run statement can hit Postgres' 65,535-parameter ceiling past ~8,000 legs.
+  // Per-booking keeps "all its legs or none" true without needing an arbitrary chunk size.
+  const legsByBooking = new Map<string, NewLegRow[]>();
+  for (const leg of legs) {
+    const bucket = legsByBooking.get(leg.bookingId);
+    if (bucket) bucket.push(leg);
+    else legsByBooking.set(leg.bookingId, [leg]);
+  }
+  let written = 0;
+  for (const [bookingId, bookingLegRows] of legsByBooking) {
+    try {
+      await db.insert(bookingLegs).values(bookingLegRows).onConflictDoNothing();
+      written += bookingLegRows.length;
+    } catch (err) {
+      skipped.push({
+        bookingId,
+        reason: 'insert_failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   // Skips are REPORTED, never silent: a booking with no legs shows no card in Phase 2 and would
   // otherwise be invisible.
   console.log(`bookings examined : ${rows.length}`);
-  console.log(`legs written      : ${legs.length}`);
+  console.log(`legs written      : ${written}`);
   console.log(`skipped           : ${skipped.length}`);
-  for (const report of skipped) console.log(`  ${report.bookingId} — ${report.reason}`);
+  for (const report of skipped) {
+    const detail = report.detail ? `: ${report.detail}` : '';
+    console.log(`  ${report.bookingId} — ${report.reason}${detail}`);
+  }
   await sql.end();
 }
 

@@ -1,5 +1,82 @@
 import { describe, expect, it } from 'vitest';
-import { planBackfill } from '../../scripts/backfill-booking-legs';
+import { planBackfill, toBackfillRow } from '../../scripts/backfill-booking-legs';
+
+describe('toBackfillRow', () => {
+  it('assembles a single transfer with all fields present', () => {
+    const row = toBackfillRow(
+      { id: 'b1', mode: 'single' },
+      {
+        id: 't1',
+        bookingId: 'b1',
+        fromPlace: 'Ella',
+        toPlace: 'Kandy',
+        travelDate: '2026-08-22',
+        travelTime: '09:00',
+        vehicleType: 'sedan',
+        adults: 2,
+        children: 0,
+        bags: 2,
+        distanceKm: 120,
+        durationMin: 180,
+      },
+      undefined,
+    );
+    expect(row).toEqual({
+      bookingId: 'b1',
+      mode: 'single',
+      transfer: {
+        fromPlace: 'Ella',
+        toPlace: 'Kandy',
+        travelDate: '2026-08-22',
+        travelTime: '09:00',
+      },
+    });
+  });
+
+  it('assembles a trip with a null dates array', () => {
+    const row = toBackfillRow(
+      { id: 'b2', mode: 'trip' },
+      undefined,
+      {
+        id: 'tr1',
+        bookingId: 'b2',
+        serviceType: 'private',
+        pax: 2,
+        vehicleType: 'sedan',
+        stops: ['Colombo', 'Galle'],
+        nights: [1],
+        dates: null,
+        days: null,
+        driverNights: null,
+      },
+    );
+    expect(row).toEqual({
+      bookingId: 'b2',
+      mode: 'trip',
+      trip: { stops: ['Colombo', 'Galle'], dates: null, serviceType: 'private' },
+    });
+  });
+
+  it('leaves transfer/trip undefined when the request row is missing', () => {
+    expect(toBackfillRow({ id: 'b3', mode: 'single' }, undefined, undefined)).toEqual({
+      bookingId: 'b3',
+      mode: 'single',
+      transfer: undefined,
+    });
+    expect(toBackfillRow({ id: 'b4', mode: 'trip' }, undefined, undefined)).toEqual({
+      bookingId: 'b4',
+      mode: 'trip',
+      trip: undefined,
+    });
+  });
+
+  it('assembles a shared booking with no request row at all', () => {
+    expect(toBackfillRow({ id: 'b5', mode: 'shared' }, undefined, undefined)).toEqual({
+      bookingId: 'b5',
+      mode: 'shared',
+    });
+  });
+});
 
 describe('planBackfill', () => {
   it('derives legs for a single transfer and a trip', () => {
