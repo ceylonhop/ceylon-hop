@@ -1,6 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking } from './_stubs.js';
 
+// Resolve a design token to the rgb() string the browser reports, so these assertions
+// track site.css instead of a frozen hex. They pinned rgb(44,42,43) — the pre-brand-book
+// ink — and broke when --ink moved to the book's Bristol Black. The INTENT is "unselected
+// options use the full ink, not a muted grey", which is a token relationship, not a hex.
+const tokenColor = (page, name) => page.evaluate((n) => {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const probe = document.createElement('div');
+  probe.style.color = raw;
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color;
+  probe.remove();
+  return rgb;
+}, name);
+
 test('planner prices Kandy to Ella with the shared route table', async ({ page }) => {
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
@@ -42,16 +56,19 @@ test('mobile planner keeps unselected vehicle option text readable', async ({ pa
   await page.route('**/maps.googleapis.com/**', (r) => r.abort());
   await page.goto('/plan.html?stops=Kandy%7CElla&pax=2&vehicle=car');
 
-  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
-  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(44, 42, 43)');
-  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
-  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(8, 147, 143)');
+  const ink = await tokenColor(page, '--ink');
+  const selected = await tokenColor(page, '--accent-deep');
+
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', ink);
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', ink);
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', selected);
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', selected);
 
   await page.locator('.veh-btn[data-veh="van"]').click();
-  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', 'rgb(44, 42, 43)');
-  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(44, 42, 43)');
-  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', 'rgb(8, 147, 143)');
-  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', 'rgb(8, 147, 143)');
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('color', ink);
+  await expect(page.locator('.veh-btn[data-veh="car"] b')).toHaveCSS('-webkit-text-fill-color', ink);
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('color', selected);
+  await expect(page.locator('.veh-btn[data-veh="van"] b')).toHaveCSS('-webkit-text-fill-color', selected);
 });
 
 test('planner prices country-suffixed popular places without waiting for Google', async ({ page }) => {

@@ -307,7 +307,7 @@ function blogPost(post) {
     bodyHtml: `${jsonLd}
   <section class="post-hero${post.photo ? ' has-photo' : ''}">${post.photo ? `\n    <img class="post-hero-img" src="${p}img/${post.photo}" alt="${esc(post.photoAlt || '')}">` : ''}
     <div class="wrap">
-      <nav class="breadcrumbs on-dark" aria-label="Breadcrumb"><a href="${p}index.html">Home</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><a href="${p}blog.html">Travel Guide</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><span class="bc-cur" aria-current="page">${esc(post.crumb)}</span></nav>
+      <nav class="breadcrumbs on-dark" aria-label="Breadcrumb"><a href="${p}index.html">Home</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><a href="${p}blog.html">Travel Guide</a><svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg><span class="bc-cur" aria-current="page">${esc(post.crumb)}</span></nav>
       <span class="post-kicker">${esc(post.kicker)}</span>
       <h1>${post.heading}</h1>
       <p class="post-meta"><time datetime="${post.published}">${longDate(post.published)}</time> &middot; ${minutes} min read &middot; Ceylon Hop</p>
