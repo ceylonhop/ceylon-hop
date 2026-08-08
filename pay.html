@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pay for your trip · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css">
@@ -168,7 +168,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <body>
 <header class="pp-top"><div class="pp-topin">
   <a class="pp-brand" href="index.html">
-    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <img class="pp-cmark" src="img/brand-c.svg" alt="" width="32" height="32">
     <span class="pp-word">Ceylon Hop</span>
   </a>
   <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
@@ -338,7 +338,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // trip has no single pair, and picking two of its stops would imply the rest don't exist.
     var route = p.from && p.to
       ? '<div class="pt">' + esc(p.from) + '<small>From</small></div>'
-        + '<div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>'
+        + '<div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>'
         + '<div class="pt" style="text-align:right">' + esc(p.to) + '<small>To</small></div>'
       : '<div class="pt">' + esc(p.title || 'Your trip') + '<small>Trip</small></div>';
 
@@ -349,7 +349,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="pass">'
       +   '<div class="pass-main">'
       +     '<div class="pass-top">'
-      +       '<div class="pass-brand"><img src="img/ceylon-hop-c.png" alt="" width="26" height="26">Ceylon Hop</div>'
+      +       '<div class="pass-brand"><img src="img/brand-c.svg" alt="" width="26" height="26">Ceylon Hop</div>'
       +       '<span class="pill pill-saffron" style="font-size:.72rem">Boarding pass</span>'
       +     '</div>'
       +     '<div class="pass-route">' + route + '</div>'
@@ -653,7 +653,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderLoading(){
     app.innerHTML = '<div class="pp-loading">'
       + '<div class="pp-hop">'
-      +   '<span class="chip"><img src="img/ceylon-hop-c.png" alt="" width="19" height="19">Ceylon Hop</span>'
+      +   '<span class="chip"><img src="img/brand-c.svg" alt="" width="19" height="19">Ceylon Hop</span>'
       +   '<span class="track"></span>'
       +   '<span class="chip">🔒 PayHere</span>'
       + '</div>'

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ceylon Hop · Ops Control</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='16'%20fill='%23123039'/%3E%3Cpath%20d='M43%2021%20A17%2017%200%201%200%2043%2043'%20fill='none'%20stroke='%2312c2bb'%20stroke-width='9'%20stroke-linecap='round'/%3E%3C/svg%3E">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <script>
 /* M17 parity: client-error beacon for the ops dashboard. The customer pages have this; the
    ops UI did not, so a JS bug in the staff dashboard vanished silently. Forwards to the same
@@ -21,19 +21,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.message||String(x)),x.stack)};})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
-    --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
-    --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+    --ink:#3A3739;--ink-soft:#6b645f;--ink-faint:#a59d92;
+    --cream:#F0EEE5;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
     --espresso:#1b1714;
     /* Elevated overlay surface (toasts, dark chips). Its OWN token on purpose: these used
        to borrow --ink/--black, which are TEXT colours — so in dark mode they inverted to a
        near-white panel while the text stayed hardcoded #fff, and every toast went
        white-on-white. A surface must never be expressed as a text token. */
     --pop-bg:#241f1d;--pop-fg:#fffdf8;--pop-line:transparent;
-    --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+    --display:'Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
     --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
@@ -54,7 +54,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      interpolation just get the old snap. */
   .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden;transition:grid-template-columns .32s cubic-bezier(.2,.7,.3,1)}
   .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2;overflow:hidden;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
-  .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
+  .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(var(--blue-rgb),.12),transparent 58%);pointer-events:none}
   .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative;white-space:nowrap;transition:padding .32s cubic-bezier(.2,.7,.3,1)}
   .brand span{max-width:160px;overflow:hidden;transition:max-width .32s cubic-bezier(.2,.7,.3,1),opacity .18s ease .14s}
   .rail-logo{width:30px;height:30px;object-fit:contain;display:block;flex:0 0 auto}
@@ -64,7 +64,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .nav button{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border:0;background:none;border-radius:11px;color:#c5bcad;font-weight:600;font-size:.92rem;transition:background .18s,color .18s,box-shadow .18s,padding .32s cubic-bezier(.2,.7,.3,1),gap .32s cubic-bezier(.2,.7,.3,1);text-align:left;position:relative}
   .nav button svg{width:18px;height:18px;flex:none;stroke-width:2;opacity:.82}
   .nav button:hover{background:rgba(255,255,255,.055);color:#fff}
-  .nav button.active{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;box-shadow:0 12px 28px -14px rgba(10,185,182,.75)}
+  .nav button.active{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;box-shadow:0 12px 28px -14px rgba(var(--blue-rgb),.75)}
   .nav button.active svg{opacity:1}
   /* Always absolutely positioned (it used to be in-flow when expanded, absolute when collapsed
      — a coordinate-system flip can't interpolate; two absolute positions can). */
@@ -98,13 +98,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
   .main{display:flex;flex-direction:column;overflow:hidden;position:relative;background:
     radial-gradient(110% 55% at 100% 0%,rgba(249,164,41,.07),transparent 55%),
-    radial-gradient(85% 50% at -5% 105%,rgba(10,185,182,.06),transparent 60%),var(--cream)}
+    radial-gradient(85% 50% at -5% 105%,rgba(var(--blue-rgb),.06),transparent 60%),var(--cream)}
   .main::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;opacity:.4;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
   .topbar{display:flex;align-items:center;gap:12px;padding:14px 30px;border-bottom:1px solid var(--line);background:rgba(252,250,244,.78);backdrop-filter:blur(10px) saturate(1.15);flex-wrap:wrap;min-height:62px;position:relative;z-index:6}
   .search{position:relative;flex:1;max-width:360px;min-width:190px}
   .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--ink-faint)}
   .search input{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:10px 12px 10px 38px;font:inherit;font-size:.9rem;color:var(--ink);transition:.18s}
-  .search input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 4px rgba(10,185,182,.13)}
+  .search input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.13)}
   .search input::placeholder{color:var(--ink-faint)}
   .fchip{--fc:var(--ink);border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font:inherit;font-weight:700;font-size:.82rem;padding:8px 13px;border-radius:999px;transition:transform .16s,border-color .16s,background .16s,box-shadow .16s;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-s)}
   .fchip .dot{width:8px;height:8px;border-radius:50%;background:var(--fc);transition:.16s}
@@ -241,7 +241,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   }
   /* Queue head: title + "New quote" action */
   .qhead{display:flex;align-items:center;justify-content:space-between;gap:16px}
-  .qnew{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border:0;border-radius:11px;padding:10px 16px;font-weight:700;font-size:.9rem;cursor:pointer;box-shadow:0 12px 26px -14px rgba(10,185,182,.8);transition:transform .15s,filter .15s}
+  .qnew{display:inline-flex;align-items:center;gap:7px;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border:0;border-radius:11px;padding:10px 16px;font-weight:700;font-size:.9rem;cursor:pointer;box-shadow:0 12px 26px -14px rgba(var(--blue-rgb),.8);transition:transform .15s,filter .15s}
   .qnew:hover{transform:translateY(-1px);filter:brightness(1.05)}
   .qnew .qnew-plus{font-size:1.05rem;line-height:1;font-weight:600}
   /* Queue status-group filter toggles */
@@ -249,7 +249,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qfilter{border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font:inherit;font-weight:700;font-size:.82rem;padding:8px 14px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:var(--shadow-s);transition:transform .16s,border-color .16s,background .16s,color .16s}
   .qfilter:hover{border-color:var(--cream-deep);color:var(--ink);transform:translateY(-1px)}
   .qfilter .qfilter-n{font-family:var(--mono);font-size:.72rem;font-weight:700;color:var(--ink-faint);font-variant-numeric:tabular-nums}
-  .qfilter.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-color:transparent;box-shadow:0 10px 22px -14px rgba(10,185,182,.8)}
+  .qfilter.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-color:transparent;box-shadow:0 10px 22px -14px rgba(var(--blue-rgb),.8)}
   .qfilter.on .qfilter-n{color:rgba(255,255,255,.85)}
   /* ── analytics (founder-only) ── */
   .an-controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:2px 0 14px}
@@ -445,11 +445,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      reminder" stays the loud primary action in the same stack. */
   .settle{display:flex;gap:8px;align-items:center}
   .settle select{flex:1;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
-  .settle select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+  .settle select:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(var(--blue-rgb),.11)}
   .refund-form{display:grid;grid-template-columns:minmax(0,130px) 1fr auto;gap:8px;align-items:end;margin-top:12px}
   .refund-form label{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft)}
   .refund-form input{min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
-  .refund-form input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+  .refund-form input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(var(--blue-rgb),.11)}
   .refund-row{border:1px solid var(--line);border-left:4px solid var(--ink-faint);border-radius:11px;padding:11px 12px;margin-top:9px;background:var(--paper)}
   .refund-row.refund-status-manual_pending{border-left-color:var(--wait);background:var(--wait-bg)}
   .refund-row.refund-status-manual_confirmed{border-left-color:var(--ok);background:var(--ok-bg)}
@@ -462,7 +462,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .reverse-reason{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft);margin-bottom:10px}
 .reverse-reason .req{font-weight:600;color:var(--alert);text-transform:none;letter-spacing:0}
 .reverse-reason input{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
-.reverse-reason input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.11)}
+.reverse-reason input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(var(--blue-rgb),.11)}
 .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
   @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
   /* activity */
@@ -486,12 +486,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .login[hidden]{display:none} /* author display:grid beats the UA [hidden] rule without this */
   .login.show{opacity:1;pointer-events:auto}
   .login::before{content:"";position:absolute;inset:0;background:
-    radial-gradient(60% 42% at 50% -6%,rgba(10,185,182,.22),transparent 66%),
+    radial-gradient(60% 42% at 50% -6%,rgba(var(--blue-rgb),.22),transparent 66%),
     radial-gradient(48% 40% at 92% 108%,rgba(249,164,41,.10),transparent 62%);pointer-events:none}
   .login::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
   .login-card{position:relative;width:392px;max-width:92vw;padding:40px 38px 34px;text-align:center;transform:translateY(14px);opacity:0;transition:transform .55s cubic-bezier(.2,.7,.3,1) .08s,opacity .55s ease .08s}
   .login.show .login-card{transform:none;opacity:1}
-  .login-mark{width:120px;height:120px;margin:0 auto 20px;border-radius:24px;overflow:hidden;box-shadow:0 24px 60px -22px rgba(10,185,182,.65)}
+  .login-mark{width:120px;height:120px;margin:0 auto 20px;border-radius:24px;overflow:hidden;box-shadow:0 24px 60px -22px rgba(var(--blue-rgb),.65)}
   .login-logo{width:100%;height:100%;object-fit:cover;display:block}
   .login h1{font-family:var(--display);font-weight:600;font-size:2.1rem;letter-spacing:-.025em;color:#fbf6ea;line-height:1.05;margin:0}
   .login .sub{color:#9c9284;font-size:.9rem;margin:9px 0 30px;font-weight:500}
@@ -500,7 +500,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .login .keywrap{position:relative}
   .login input{width:100%;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.045);color:#f4eede;border-radius:13px;padding:15px 16px;font:inherit;font-size:1rem;letter-spacing:.02em;text-align:center;transition:.22s cubic-bezier(.2,.7,.3,1)}
   .login input::placeholder{color:#7d7466;letter-spacing:0}
-  .login input:focus{outline:none;border-color:var(--teal);background:rgba(10,185,182,.07);box-shadow:0 0 0 4px rgba(10,185,182,.14)}
+  .login input:focus{outline:none;border-color:var(--teal);background:rgba(var(--blue-rgb),.07);box-shadow:0 0 0 4px rgba(var(--blue-rgb),.14)}
   .login button{position:relative;overflow:hidden;border:1px solid var(--teal-deep);background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;border-radius:13px;padding:15px 16px;font:inherit;font-weight:700;font-size:.98rem;letter-spacing:.01em;box-shadow:0 18px 40px -18px rgba(8,147,143,.9);transition:.2s cubic-bezier(.2,.7,.3,1)}
   .login button::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 22%,rgba(255,255,255,.4) 50%,transparent 78%);transform:translateX(-130%);transition:transform .7s ease}
   .login button:hover{filter:brightness(1.05);transform:translateY(-1px)}.login button:hover::after{transform:translateX(130%)}
@@ -533,16 +533,20 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      palette so it reads as one console. The quote CSS keeps its own token NAMES (--blue,
      --muted, --serif, …) but their VALUES now point at the ops :root system — one edit
      reskins all ~180 .ch-* components. The quote's cool-grey/blue/Bodoni identity is gone;
-     the accent unifies on ops teal, type on Newsreader + Hanken Grotesk. */
-  --blue: #0AB9B6;      /* accent → ops teal (was #63BFD6) */
-  --blue-d: #08938f;    /* → ops teal-deep */
-  --black: #241f1d;     /* → ops ink (TEXT — never use as a background, see --pop-bg) */
+     the accent unifies on ops teal, type on Bodoni Moda + Poppins. */
+  --blue: #63BFD6;      /* Bachelor Button — the book's PRIMARY, restored */
+  --blue-rgb: 99,191,214; /* pair rgba(var(--blue-rgb),…) with var(--blue) — a literal
+                             teal channel here is how ~30 focus rings ended up glowing
+                             teal around blue borders when the accent flipped. */
+  --blue-d: #24758A;    /* text/icon-safe Bachelor Button, 5.27:1 */
+  --teal-rgb: 10,185,182; /* for .tone-teal, which means teal on purpose */
+  --black: #3A3739;     /* Bristol Black (TEXT — never a background, see --pop-bg) */
   /* Elevated overlay surface for the builder's toast + dark chips. Mirrors the ops-scope
      token above; both themes define it explicitly so nothing inverts by accident. */
   --pop-bg: #241f1d;
   --pop-fg: #fffdf8;
   --pop-line: transparent;
-  --cream: #F1EEE4;     /* → ops cream */
+  --cream: #F0EEE5;     /* Marshmallow — docs/brand-book.md */
   --cream-d: #e4dfd0;   /* → ops cream-deep */
   --orange: #F9A429;    /* == ops saffron (already matched) */
   --red: #EC3A24;       /* == ops tomato (already matched) */
@@ -550,7 +554,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   --teal-d: #08938f;    /* → ops teal-deep */
 
   --paper: #fffdf8;     /* → ops paper (warm, was pure #fff) */
-  --ink: #241f1d;       /* → ops ink */
+  --ink: #3A3739;       /* Bristol Black — docs/brand-book.md */
   --muted: #6b645f;     /* → ops ink-soft */
   --muted-2: #a59d92;   /* → ops ink-faint */
   --line: #e8e3d4;      /* → ops line */
@@ -564,8 +568,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   --r-sm: 9px;
   --shadow-card: 0 1px 2px rgba(40,33,28,.05), 0 1px 3px rgba(40,33,28,.04); /* → ops --shadow-s (warm ink tint) */
   --shadow-pop: 0 8px 26px -12px rgba(40,33,28,.20);                          /* → ops --shadow */
-  --serif: 'Newsreader', Georgia, serif;               /* → ops display */
-  --sans: 'Hanken Grotesk', system-ui, sans-serif;     /* → ops body */
+  --serif: 'Bodoni Moda', Didot, Georgia, serif;       /* → ops display */
+  --sans: 'Poppins', system-ui, sans-serif;             /* → ops body */
 }
 
 .qv, .qv * { box-sizing: border-box; }
@@ -708,7 +712,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-card-body > .ch-field { margin-top: 14px; }
 
 .qv .ch-input-wrap { display: flex; align-items: center; gap: 0; background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 0 10px; transition: border-color .15s, box-shadow .15s; }
-.qv .ch-input-wrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-input-wrap:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.18); }
 .qv .ch-input-wrap.invalid { border-color: var(--red); }
 .qv .ch-input { width: 100%; border: none; background: none; outline: none; padding: 9px 0; font-size: 14px; color: var(--ink); min-width: 0; }
 .qv .ch-input::placeholder { color: var(--muted-2); }
@@ -716,7 +720,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-input-prefix { padding-right: 6px; }
 .qv .ch-input-suffix { padding-left: 6px; }
 .qv .ch-textarea { padding: 9px 10px; resize: vertical; border: 1.5px solid var(--line); border-radius: var(--r-sm); line-height: 1.5; }
-.qv .ch-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.18); }
 
 /* ---------- Segmented ---------- */
 .qv .ch-seg { display: inline-flex; background: var(--cream); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 3px; gap: 3px; width: 100%; }
@@ -776,8 +780,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* ---------- Badge ---------- */
 .qv .ch-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
 .qv .ch-badge.tone-slate { background: var(--cream); color: var(--muted); }
-.qv .ch-badge.tone-blue { background: rgba(10,185,182,.16); color: var(--blue-d); }
-.qv .ch-badge.tone-teal { background: rgba(10,185,182,.14); color: var(--teal-d); }
+.qv .ch-badge.tone-blue { background: rgba(var(--blue-rgb),.16); color: var(--blue-d); }
+.qv .ch-badge.tone-teal { background: rgba(var(--teal-rgb),.14); color: var(--teal-d); }
 .qv .ch-badge.tone-orange { background: rgba(249,164,41,.16); color: #c47d12; }
 .qv .ch-badge.tone-red { background: rgba(236,58,36,.13); color: var(--red); }
 
@@ -824,9 +828,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
 .qv .ch-tl-head { display: flex; align-items: center; gap: 10px; }
 .qv .ch-tl-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; padding: 4px 10px; border-radius: 999px; flex: none; }
-.qv .ch-tl-tag.tone-teal { background: rgba(10,185,182,.13); color: var(--teal-d); }
+.qv .ch-tl-tag.tone-teal { background: rgba(var(--teal-rgb),.13); color: var(--teal-d); }
 .qv .ch-tl-tag.tone-red { background: rgba(236,58,36,.11); color: var(--red); }
-.qv .ch-tl-tag.tone-blue { background: rgba(10,185,182,.16); color: var(--blue-d); }
+.qv .ch-tl-tag.tone-blue { background: rgba(var(--blue-rgb),.16); color: var(--blue-d); }
 .qv .ch-tl-cat { width: 175px; }
 .qv .ch-tl-cat .ch-input-wrap { padding: 0 10px; }
 .qv .ch-tl-cat .ch-input { padding: 6px 0; font-size: 12.5px; font-weight: 500; }
@@ -859,7 +863,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-ac-item.loading .ch-ac-source { color: var(--muted); }
 .qv .ch-tl-title { font-family: var(--serif); font-size: 21px; font-weight: 700; color: var(--ink); border: 1.5px solid var(--line); background: var(--surface); outline: none; padding: 7px 12px; border-radius: 10px; width: 100%; line-height: 1.2; transition: border-color .15s, box-shadow .15s; text-overflow: ellipsis; }
 .qv .ch-tl-title:hover { border-color: var(--cream-d); }
-.qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-tl-title:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.18); }
 .qv .ch-tl-title::placeholder { color: var(--muted-2); font-style: italic; font-weight: 600; }
 
 .qv .ch-tl-from { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -4px; }
@@ -874,13 +878,13 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-meta-date input { border: none; background: none; outline: none; font-family: inherit; font-size: 12.5px; color: var(--ink); font-weight: 500; }
 .qv .ch-meta-dist { display: flex; align-items: center; }
 .qv .ch-dist-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--cream); color: var(--ink); }
-.qv .ch-dist-pill.auto { background: rgba(10,185,182,.12); color: var(--blue-d); }
+.qv .ch-dist-pill.auto { background: rgba(var(--blue-rgb),.12); color: var(--blue-d); }
 .qv .ch-dist-pill.warn { background: rgba(249,164,41,.13); color: #b9760f; }
 /* route choice (2026-07-20): expressway vs local-road picker, rendered inline (never a popover
    — background estimate renders wipe floating DOM) */
 .qv .ch-route-pick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .qv .ch-route-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 999px; background: var(--cream); color: var(--ink); border: 1px solid transparent; cursor: pointer; }
-.qv .ch-route-pill.is-active { background: rgba(10,185,182,.12); color: var(--blue-d); border-color: rgba(10,185,182,.35); }
+.qv .ch-route-pill.is-active { background: rgba(var(--blue-rgb),.12); color: var(--blue-d); border-color: rgba(var(--blue-rgb),.35); }
 .qv .ch-dist-manual { display: flex; align-items: center; gap: 7px; }
 .qv .ch-link { border: none; background: none; color: currentColor; font-size: 11px; font-weight: 700; cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; opacity: .75; }
 .qv .ch-link:hover { opacity: 1; }
@@ -898,9 +902,9 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-stay-toggle.on { background: var(--surface); }
 .qv .ch-stay-toggle.on .ch-stay-ic { filter: none; opacity: 1; }
 .qv .ch-stay-toggle.on .ch-stay-lb { color: var(--ink); }
-.qv .ch-stay-toggle.on.tone-teal { border-color: var(--teal); background: rgba(10,185,182,.07); }
+.qv .ch-stay-toggle.on.tone-teal { border-color: var(--teal); background: rgba(var(--teal-rgb),.07); }
 .qv .ch-stay-toggle.on.tone-teal .ch-stay-state { background: var(--teal); color: #fff; }
-.qv .ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(10,185,182,.08); }
+.qv .ch-stay-toggle.on.tone-blue { border-color: var(--blue); background: rgba(var(--blue-rgb),.08); }
 .qv .ch-stay-toggle.on.tone-blue .ch-stay-state { background: var(--blue); color: #fff; }
 
 /* Hot-zones "Add a zone" composer (Rate Settings) — an inset card so it reads as a
@@ -960,7 +964,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 /* USD-primary display: small muted LKR reference under a value */
 .qv .ch-val-sub { display: block; font-size: 10.5px; font-weight: 400; color: var(--muted-2); font-family: var(--sans); line-height: 1.3; text-align: right; }
 .qv .ch-margin { font-size: 11.5px; color: var(--teal-d); text-align: right; margin-top: 3px; font-weight: 600; }
-.qv .ch-tip { background: rgba(10,185,182,.1); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; color: var(--black); margin-top: 13px; line-height: 1.5; }
+.qv .ch-tip { background: rgba(var(--blue-rgb),.1); border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; color: var(--black); margin-top: 13px; line-height: 1.5; }
 .qv .ch-tip b { color: var(--blue-d); }
 
 /* ---------- Flags ---------- */
@@ -972,7 +976,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-flag.tone-red .ch-flag-mark { color: var(--red); }
 .qv .ch-flag.tone-orange { background: rgba(249,164,41,.1); }
 .qv .ch-flag.tone-orange .ch-flag-mark { color: var(--orange); }
-.qv .ch-flag.tone-blue { background: rgba(10,185,182,.1); }
+.qv .ch-flag.tone-blue { background: rgba(var(--blue-rgb),.1); }
 .qv .ch-flag.tone-blue .ch-flag-mark { color: var(--blue-d); }
 .qv .ch-flag-title { font-weight: 600; font-size: 13px; }
 .qv .ch-flag-detail { font-size: 12px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
@@ -987,7 +991,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-output-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .qv .ch-output-hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
 .qv .ch-output-editor { width: 100%; min-height: 320px; border: 1px solid var(--line); resize: vertical; }
-.qv .ch-output-editor:focus { outline: none; border-color: rgba(10,185,182,.55); box-shadow: 0 0 0 3px rgba(10,185,182,.12); }
+.qv .ch-output-editor:focus { outline: none; border-color: rgba(var(--blue-rgb),.55); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.12); }
 .qv .ch-email-subject { font-size: 13px; margin-bottom: 10px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
 .qv .ch-email-subject span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted-2); margin-right: 8px; }
 .qv .ch-internal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
@@ -1072,7 +1076,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    stretches to the map's height when the map is open (no empty void); its own min-height
    keeps it usable when the map is collapsed (the map opts out of stretch — see below). */
 .qv .ch-notes-block { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--paper); transition: border-color .15s, box-shadow .15s; }
-.qv .ch-notes-block:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.18); }
+.qv .ch-notes-block:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.18); }
 .qv .ch-notes-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 15px; border-bottom: 1px solid var(--line); }
 .qv .ch-note-label { font-size: 13px; font-weight: 600; color: var(--ink-soft); margin: 0; display: inline-flex; align-items: center; gap: 8px; }
 .qv .ch-note-ico { color: var(--teal-d); flex: none; }
@@ -1126,7 +1130,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-leg-route { display: flex; align-items: center; gap: 7px; flex: 1 1 auto; min-width: 0; }
 .qv .ch-leg-ac { position: relative; flex: 1 1 0; min-width: 60px; }
 .qv .ch-leg-in { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 7px; padding: 7px 9px; font-size: 14px; font-weight: 500; color: var(--ink); outline: none; font-family: var(--sans); transition: border-color .15s, box-shadow .15s; min-width: 0; }
-.qv .ch-leg-in:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(10,185,182,.16); }
+.qv .ch-leg-in:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(var(--blue-rgb),.16); }
 .qv .ch-leg-in::placeholder { color: var(--muted-2); }
 .qv .ch-leg-arrow { color: var(--muted-2); font-size: 14px; flex: none; }
 
@@ -1283,8 +1287,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    row hanging off the rail between consecutive stops. This makes each leg read as ONE
    ride, so consecutive legs stay visually separate even when both are expanded. */
 .qv .ch-leg.is-multistop .ch-leg-main { min-height: 46px; border-bottom: 1px solid var(--line-soft); border-radius: calc(var(--r-md) - 2px) calc(var(--r-md) - 2px) 0 0; }
-.qv .ch-leg.is-multistop.tone-teal .ch-leg-main { background: rgba(10,185,182,.06); }
-.qv .ch-leg.is-multistop.tone-blue .ch-leg-main { background: rgba(10,185,182,.06); }
+.qv .ch-leg.is-multistop.tone-teal .ch-leg-main { background: rgba(var(--teal-rgb),.06); }
+.qv .ch-leg.is-multistop.tone-blue .ch-leg-main { background: rgba(var(--blue-rgb),.06); }
 .qv .ch-leg.is-multistop.tone-red .ch-leg-main { background: rgba(236,58,36,.05); }
 .qv .ch-leg-stoplist { padding: 10px 12px 6px 24px; }
 .qv .ch-leg-route.ch-stops-multi { position: relative; flex-direction: column; align-items: stretch; gap: 5px; padding-left: 18px; }
@@ -1354,16 +1358,16 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; transition: border-color .15s, background .15s, box-shadow .15s; }
 .qv .ch-veh-chip:hover { border-color: var(--blue); }
-.qv .ch-veh-chip.active { border-color: var(--blue); background: rgba(10,185,182,.10); box-shadow: 0 0 0 1px var(--blue) inset; }
+.qv .ch-veh-chip.active { border-color: var(--blue); background: rgba(var(--blue-rgb),.10); box-shadow: 0 0 0 1px var(--blue) inset; }
 .qv .ch-veh-chip .ch-veh-cap { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--muted-2); }
 .qv .ch-veh-chip.over { border-color: #e6b35c; background: #fff8ec; }
 .qv .ch-veh-chip.over .ch-veh-cap { color: #b06a00; }
 .qv .ch-veh-chips.unset .ch-veh-chip { border-color: #e6b35c; background: #fffdf7; }
 /* D3: the suggested fit breathes softly toward teal — a lighting change, not a flash. */
-.qv .ch-veh-chip.suggest { border-color: var(--teal); background: rgba(10,185,182,.05); animation: ch-sug-breathe 2.6s cubic-bezier(.45,.05,.55,.95) infinite; }
+.qv .ch-veh-chip.suggest { border-color: var(--teal); background: rgba(var(--blue-rgb),.05); animation: ch-sug-breathe 2.6s cubic-bezier(.45,.05,.55,.95) infinite; }
 @keyframes ch-sug-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(10,185,182,0); }
-  50% { box-shadow: 0 0 0 4px rgba(10,185,182,.13); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--blue-rgb),0); }
+  50% { box-shadow: 0 0 0 4px rgba(var(--blue-rgb),.13); }
 }
 @media (prefers-reduced-motion: reduce) { .qv .ch-veh-chip.suggest { animation: none; } }
 /* Seats are a hard limit — a vehicle that can't seat the party is greyed out + disabled.
@@ -1374,7 +1378,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-svc-choose { display: flex; gap: 10px; padding: 14px 16px; }
 .qv .ch-svc-box { flex: 1 1 0; min-width: 0; text-align: left; border: 1.5px solid var(--line); background: var(--surface); border-radius: var(--r-md); padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 3px; font-family: var(--sans); }
 .qv .ch-svc-box:hover:not(:disabled):not(.active) { border-color: var(--muted-2); }
-.qv .ch-svc-box.active { border-color: var(--teal); background: rgba(10,185,182,.06); box-shadow: 0 0 0 1px var(--teal) inset; }
+.qv .ch-svc-box.active { border-color: var(--teal); background: rgba(var(--blue-rgb),.06); box-shadow: 0 0 0 1px var(--teal) inset; }
 .qv .ch-svc-box:disabled { cursor: not-allowed; background: var(--cream); border-color: var(--line); }
 .qv .ch-svc-lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
 .qv .ch-svc-box.active .ch-svc-lbl { color: var(--teal-d); }
@@ -1392,7 +1396,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-req-row { display: flex; gap: 6px; flex-wrap: wrap; }
 .qv .ch-req-chip { border: 1.5px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-family: var(--sans); color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
 .qv .ch-req-chip:hover:not(.active) { border-color: var(--muted-2); }
-.qv .ch-req-chip.active { border-color: var(--teal); background: rgba(10,185,182,.06); color: var(--teal-d); font-weight: 600; }
+.qv .ch-req-chip.active { border-color: var(--teal); background: rgba(var(--blue-rgb),.06); color: var(--teal-d); font-weight: 600; }
 /* Mismatch stays in the price panel under the service chooser (no longer under the chips), so a
    small positive top margin sits it cleanly below the price boxes. */
 .qv .ch-req-mismatch { margin: 4px 16px 12px; padding: 7px 10px; border-radius: 8px; background: rgba(214,138,42,.09); border: 1px solid rgba(214,138,42,.28); color: #8a5a12; font-size: 11.5px; line-height: 1.35; font-weight: 500; }
@@ -1432,7 +1436,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .qv .ch-total-lbl { font-size: 11px; font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .5px; }
 .qv .ch-total-val { text-align: right; line-height: 1.05; }
-.qv .ch-total-usd { font-family: var(--serif); font-size: 36px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; font-variant-numeric: lining-nums; transition: color .35s cubic-bezier(.23,.9,.32,1); }
+/* display:block is load-bearing, not cosmetic. As an inline span this inherits the
+   FONT's content area, and Bodoni Moda's is ~1.53em — at 36px that is a 55px tall box
+   inside a 38px line, so the span's rect swallowed the LKR row rendered beneath it and
+   the two read as one flattened line. As a block its rect is its line box. Guarded by
+   web-tests/e2e/ops-money-line.spec.js ("LKR renders below the USD"). */
+.qv .ch-total-usd { display: block; line-height: 1.05; font-family: var(--serif); font-size: 36px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; font-variant-numeric: lining-nums; transition: color .35s cubic-bezier(.23,.9,.32,1); }
 .qv .ch-total-usd.pending { color: var(--muted-2); font-weight: 400; }
 .qv .ch-needs { border: 0; padding: 4px 0 0; font-size: 12px; color: var(--muted); }
 .qv .ch-svc-head { padding: 12px 16px 0; }
@@ -1457,7 +1466,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 @keyframes chDriftIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 
 /* due-now highlighted chip row (chauffeur) */
-.qv .ch-deposit-chip { margin-top: 12px; background: rgba(10,185,182,.08); border: 1px solid rgba(10,185,182,.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.qv .ch-deposit-chip { margin-top: 12px; background: rgba(var(--blue-rgb),.08); border: 1px solid rgba(var(--blue-rgb),.22); border-radius: var(--r-md); padding: 9px 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .qv .ch-deposit-chip .dep-lbl { font-size: 12px; color: var(--teal-d); font-weight: 600; }
 .qv .ch-deposit-chip .dep-val { font-family: var(--serif); font-size: 16px; font-weight: 700; color: var(--teal-d); font-variant-numeric: tabular-nums; }
 .qv .ch-deposit-note { font-size: 10.5px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
@@ -1561,7 +1570,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .kbar-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;
     font-size:.92rem;color:var(--ink)}
   .kbar-item .kbar-hint{margin-left:auto;font-family:var(--mono);font-size:.68rem;color:var(--ink-faint)}
-  .kbar-item.sel{background:rgba(10,185,182,.09);color:var(--teal-deep)}
+  .kbar-item.sel{background:rgba(var(--blue-rgb),.09);color:var(--teal-deep)}
   .kbar-item.sel .kbar-hint{color:var(--teal-deep)}
   .kbar-empty{padding:14px 12px;font-size:.85rem;color:var(--ink-faint)}
   .kbar-foot{display:flex;gap:16px;padding:9px 16px;border-top:1px solid var(--line-soft);
@@ -1672,7 +1681,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
 /* Taps feel immediate rather than "considered": drop the 300ms double-tap-zoom wait,
    and replace the browser's grey flash with our own quieter one. */
-button, [role="button"], .qrow, .tk { touch-action: manipulation; -webkit-tap-highlight-color: rgba(10,185,182,.13); }
+button, [role="button"], .qrow, .tk { touch-action: manipulation; -webkit-tap-highlight-color: rgba(var(--blue-rgb),.13); }
 
 /* Shell chrome. :not(:disabled) so a blocked control stays visibly blocked — moving
    under the finger is the one thing that would say "that worked". */
@@ -1882,15 +1891,15 @@ const inGroup=(t,g)=>{
 };
 const ICON={
   wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>',
-  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
-  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>',
+  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg>',
   /* Failure toasts used to ship the green check above — "Save failed ✓" reads as a success and
      quietly costs the console its credibility. Every toast now declares its kind. */
-  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg>',
-  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   /* Ride-board rows are a vehicle, not a channel — a van reads instantly in the list. */
-  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V8a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v5"/><path d="M3 17h2m14 0h2M9 17h6"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
+  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17V8a1 1 0 0 1 1-1h9l4 4h3a1 1 0 0 1 1 1v5"/><path d="M3 17h2m14 0h2M9 17h6"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
 };
 const chanClass=c=>c==='whatsapp'?'wa':'web';
 const chanIcon=c=>c==='whatsapp'?ICON.wa:ICON.web;
@@ -2140,7 +2149,7 @@ function flipRows(sel,mutate){
 
 function viewTickets(){
   $('#topbar').innerHTML=`
-    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
     <div class="spacer"></div>
     <select class="sel" id="chansel"><option value="">All channels</option><option value="website" ${state.chan==='website'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>`;
   const q=state.q.trim().toLowerCase();
@@ -2233,7 +2242,7 @@ let quoteQuery='';
 function renderQuotesTopbar(){
   const tb=$('#topbar');
   if(tb.querySelector('#qq'))return;
-  tb.innerHTML='<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
+  tb.innerHTML='<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'
     +'<input id="qq" aria-label="Search quotes" placeholder="Search name, ref, route&hellip;" autocomplete="off" spellcheck="false"></div>';
   /* Re-entering Quotes from another view rebuilds the topbar from scratch; restore the query
      that survived in module state so the box and the list agree. */
@@ -8197,7 +8206,7 @@ function render() {
       '        <div class="ch-itin-aside">',
       '          <div class="ch-notes-block">',
       '            <div class="ch-notes-head">',
-      '              <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
+      '              <label class="ch-note-label" for="f-internalNotes"><svg class="ch-note-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Internal notes</label>',
       '              <span class="ch-notes-cap">Ops-only &middot; autosaves</span>',
       '            </div>',
       '            <textarea class="ch-notes-area" id="f-internalNotes" placeholder="Private notes for the team — trip context, customer preferences, follow-ups. Never shown to the customer.">' + esc(st.internalNotes || '') + '</textarea>',
@@ -9286,7 +9295,7 @@ var OPS_MAPS_KEY = '{{MAPS_KEY}}';
 try { if (window.OPS_MAPS_KEY != null) OPS_MAPS_KEY = window.OPS_MAPS_KEY; } catch (e) {}
 if (typeof OPS_MAPS_KEY !== 'string' || OPS_MAPS_KEY.indexOf('{{') === 0) OPS_MAPS_KEY = '';
 
-var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+var MAP_PIN_SVG = '<svg class="ch-map-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
 var _mapsJsPromise = null;
 function loadMapsJs() {
   if (_mapsJsPromise) return _mapsJsPromise;
