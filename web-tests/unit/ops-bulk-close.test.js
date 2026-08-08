@@ -44,3 +44,40 @@ describe('bulk close-out', () => {
     expect(html).toMatch(/const MUTATES=\['closedone'/);
   });
 });
+
+// The tick box is a FOURTH child of .tk, which is a three-column grid. Shipping the checkbox
+// without a matching template pushed name, route and the entire price/stage column out of every
+// Needs-closing row in production (owner-caught, 2026-08-07). These two must always travel
+// together: emit the tick, declare the column.
+describe('the tick box and its grid template ship together', () => {
+  it('a row that renders a tick also carries the tk-sel modifier', () => {
+    const row = html.slice(html.indexOf('function ticketRow'), html.indexOf('function optionsHtml') > 0 ? html.indexOf('function optionsHtml') : html.indexOf('function ticketRow') + 4000);
+    expect(row).toContain('tk-tick');            // the extra child
+    expect(row).toContain("closable?'tk-sel':''"); // and the class that makes room for it
+  });
+
+  it('.tk.tk-sel declares one more column than .tk', () => {
+    const base = html.match(/\.tk\{[^}]*grid-template-columns:([^;]+);/);
+    const sel = html.match(/\.tk\.tk-sel\{grid-template-columns:([^;]+)[;}]/);
+    expect(base, '.tk must define its columns').toBeTruthy();
+    expect(sel, '.tk.tk-sel must define its own columns').toBeTruthy();
+    const count = (s) => s.trim().split(/\s+(?![^(]*\))/).length;
+    expect(count(sel[1])).toBe(count(base[1]) + 1);
+  });
+});
+
+// Bodoni 72 ships Book (400) and Bold (700) and nothing else — the brand pass swapped the ops
+// display face to it, but seven rules still asked for 600. Browsers synthesise a missing weight,
+// and on a face with Bodoni's thick/thin contrast that smears the hairlines into heavy mud at
+// row sizes. Owner-reported: "why is everything bold and hard to read" (2026-08-08).
+describe('the ops display face only ever asks for weights it has', () => {
+  it('no --display rule requests a weight Bodoni 72 does not ship', () => {
+    const bad = html.match(/font-family:var\(--display\)[^}]*font-weight:(100|200|300|500|600|800|900)/g) || [];
+    expect(bad, `synthesised weights: ${bad.join(' | ')}`).toEqual([]);
+  });
+
+  it('and no rule sets the weight before the family either', () => {
+    const bad = html.match(/font-weight:(100|200|300|500|600|800|900)[^}]*font-family:var\(--display\)/g) || [];
+    expect(bad, `synthesised weights: ${bad.join(' | ')}`).toEqual([]);
+  });
+});

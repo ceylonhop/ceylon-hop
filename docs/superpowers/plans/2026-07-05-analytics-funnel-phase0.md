@@ -210,7 +210,7 @@ Then extend `headAssets(p)` to include the snippet and the two helper scripts (k
 
 ```js
 export function headAssets(p) {
-  return `<meta name="theme-color" content="#0AB9B6">
+  return `<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="${p}favicon.svg">
 <link rel="stylesheet" href="${p}site.css">
 ${analyticsSnippet}

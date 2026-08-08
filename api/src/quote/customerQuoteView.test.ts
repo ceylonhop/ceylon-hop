@@ -103,11 +103,56 @@ describe('customerQuoteView', () => {
     expect(v.travelDays).toBe(2);
   });
 
+  // The customer map must draw the road the quote was priced on. routeVariant is stored per
+  // leg and was never exposed here, so a Local-road quote drew the expressway to the customer.
+  it('exposes the map runs the route was quoted on', () => {
+    const v = customerQuoteView(quote(), p2pOnly);
+    expect(v.mapRuns).toEqual([
+      { stops: ['Colombo Airport', 'Sigiriya', 'Kandy'], avoidTolls: false, continues: false },
+    ]);
+  });
+
+  it('marks a toll-free leg so the customer sees the local road', () => {
+    const v = customerQuoteView(quote({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: {
+          legs: [{ from: 'Ella', to: 'Colombo City', distanceKm: 197, routeVariant: 'no_tolls' }],
+        },
+      },
+    }), p2pOnly);
+    expect(v.mapRuns).toEqual([
+      { stops: ['Ella', 'Colombo City'], avoidTolls: true, continues: false },
+    ]);
+  });
+
+  // avoidTolls is a per-request modifier, so legs that disagree can't be one query.
+  it('splits a journey whose legs disagree on the road, flagging the join', () => {
+    const v = customerQuoteView(quote({
+      request: {
+        engine: { product: 'private', firstDate: '2026-08-20', lastDate: '2026-08-28' },
+        tool: {
+          legs: [
+            { from: 'Ella', to: 'Kandy', distanceKm: 120, routeVariant: 'no_tolls' },
+            { from: 'Kandy', to: 'Colombo City', distanceKm: 115 },
+          ],
+        },
+      },
+    }), p2pOnly);
+    expect(v.mapRuns).toEqual([
+      { stops: ['Ella', 'Kandy'], avoidTolls: true, continues: false },
+      { stops: ['Kandy', 'Colombo City'], avoidTolls: false, continues: true },
+    ]);
+    // mapStops stays the flat, de-duplicated list the stop count and SVG fallback are built on.
+    expect(v.mapStops).toEqual(['Ella', 'Kandy', 'Colombo City']);
+  });
+
   it('renders a legacy quote with no engine without throwing', () => {
     const v = customerQuoteView(quote({ request: {} }), { pointToPoint: { totalCents: 84_000 }, chauffeur: null });
     expect(v.options).toHaveLength(1);
     expect(v.days).toEqual([]);
     expect(v.mapStops).toEqual([]);
+    expect(v.mapRuns).toEqual([]);
   });
 
   // Correction 1: heroTotalNote must describe the SECONDARY option's own service, not always

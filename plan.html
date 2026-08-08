@@ -6,7 +6,7 @@
 <title>Plan your multi-stop trip — Ceylon Hop</title>
 <meta name="description" content="Build your Sri Lanka route stop by stop. Add the places you want to visit, set nights at each, and we plan the private door-to-door transfers between them.">
 <link rel="canonical" href="https://ceylonhop.com/plan.html">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
@@ -212,7 +212,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .leg-meta .lm-price{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
   .leg-meta .lm-veh{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pc-teal);color:var(--teal-deep);flex:none}
   .leg-meta .lm-veh svg{width:12px;height:12px;display:block}
-  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:800}
+  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:700}
   .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);white-space:nowrap}
   .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
   @media(max-width:540px){.leg-meta .lm-src{display:none}}
@@ -332,7 +332,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .plan-side{position:static;overflow:visible;max-height:none;display:flex;flex-direction:column;align-self:stretch}
   .side-pin{flex:1 1 auto;min-height:0}
   .summary{position:sticky;top:86px}
-  .sum-head{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:800;font-size:1.2rem;margin:0 0 4px}
+  .sum-head{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:700;font-size:1.2rem;margin:0 0 4px}
   .sum-head svg{width:20px;height:20px;color:var(--accent-deep)}
   .sum-dates{font-size:.86rem;color:var(--ink-soft);margin:0 0 16px}
   .sum-stat{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:.92rem}
@@ -343,7 +343,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sum-route[hidden]{display:none} /* author rules beat the UA [hidden] rule — keep the companion */
   .sum-total{display:flex;align-items:flex-end;justify-content:space-between;margin:16px 0 4px}
   .sum-total .lbl{font-size:.82rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
-  .sum-total .amt{font-family:var(--display);font-weight:800;font-size:2rem;color:var(--ink);line-height:1}
+  .sum-total .amt{font-family:var(--display);font-weight:700;font-size:2rem;color:var(--ink);line-height:1}
   .sum-total .amt small{font-size:.8rem;font-weight:600;color:var(--ink-soft)}
   .sum-fine{font-size:.76rem;color:var(--ink-soft);margin:2px 0 0}
 
@@ -464,15 +464,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="sb-group sb-veh">
           <span class="sb-lbl">Vehicle</span>
           <div class="veh-toggle" id="veh">
-            <button class="veh-btn on" data-veh="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg><b>AC car</b><small>up to 3 · 2 bags</small></button>
-            <button class="veh-btn" data-veh="van"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><b>AC van</b><small>up to 6 · 6 bags</small></button>
+            <button class="veh-btn on" data-veh="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg><b>AC car</b><small>up to 3 · 2 bags</small></button>
+            <button class="veh-btn" data-veh="van"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg><b>AC van</b><small>up to 6 · 6 bags</small></button>
           </div>
         </div>
       </div>
-      <p class="veh-note" id="veh-note" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span id="veh-note-tx"></span></p>
+      <p class="veh-note" id="veh-note" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg><span id="veh-note-tx"></span></p>
 
       <p class="itin-gate" id="itin-gate" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span>Tell us how many are travelling — pick your travellers above and we&rsquo;ll open up your itinerary.</span>
       </p>
 
@@ -484,12 +484,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="rail" id="rail"></div>
 
       <p class="rail-empty" id="rail-empty" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v4.2a3.4 3.4 0 0 0 3.4 3.4h5.2"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v4.2a3.4 3.4 0 0 0 3.4 3.4h5.2"/></svg>
         <span><b>No transfers yet.</b> Add your first one below — tell us where you’re picked up and dropped off, and we’ll work out the distance and price.</span>
       </p>
 
       <div class="add-row">
-        <button class="add-stop-btn" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add another transfer</button>
+        <button class="add-stop-btn" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add another transfer</button>
       </div>
       <p class="reorder-hint" id="reorder-hint"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg> Drag a card to reorder · Google fills in each distance automatically</p>
     </div>
@@ -501,7 +501,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="side-pin">
       <div class="panel-card summary">
         <div class="trip-map" id="trip-map"></div>
-        <div class="sum-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0M9 12l11 0M9 18l11 0M5 6h.01M5 12h.01M5 18h.01"/></svg> Trip summary</div>
+        <div class="sum-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l11 0M9 12l11 0M9 18l11 0M5 6h.01M5 12h.01M5 18h.01"/></svg> Trip summary</div>
         <p class="sum-dates" id="sum-dates">—</p>
 
         <div class="sum-stats">
@@ -521,7 +521,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         </div>
 
         <button class="btn btn-primary btn-lg sum-cta" id="request-btn">Next: add your dates</button>
-        <p class="route-incomplete-hint" id="route-incomplete-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Add a pick-up and drop-off to every leg to continue.</p>
+        <p class="route-incomplete-hint" id="route-incomplete-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Add a pick-up and drop-off to every leg to continue.</p>
       </div>
       </div>
 
@@ -531,7 +531,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <p class="sum-fine" id="sum-fine">A guide only — we tailor and confirm your exact quote when you book. One private vehicle &amp; driver for every leg; fuel, tolls &amp; taxes included. You book your own hotels.</p>
 
         <div class="hotels-note">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-5h6v5"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-5h6v5"/></svg>
           <div><b>Hotels are your own</b><p>We’re a transfer service — you book the stays you love. We’ll have you at each hotel’s door, on your dates.</p></div>
         </div>
 
@@ -542,11 +542,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
         <div class="incl">
           <h4>What’s included</h4>
-          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Private AC vehicle + driver, all legs</div>
-          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Door-to-door hotel pickups &amp; drop-offs</div>
-          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg> Flexible departure times you choose</div>
-          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Hotels &amp; accommodation</span></div>
-          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Entrance tickets &amp; activities</span></div>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Private AC vehicle + driver, all legs</div>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Door-to-door hotel pickups &amp; drop-offs</div>
+          <div class="row yes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Flexible departure times you choose</div>
+          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Hotels &amp; accommodation</span></div>
+          <div class="row no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 6l12 12M18 6 6 18"/></svg> <span>Entrance tickets &amp; activities</span></div>
         </div>
       </div>
     </aside>
@@ -556,7 +556,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- STEP 2 · WHEN — add an optional date to each transfer / stay -->
 <div class="dates-wrap" id="dates-wrap" hidden>
   <div class="wrap">
-    <button class="back-to-route" id="back-route"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Back to route</button>
+    <button class="back-to-route" id="back-route"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Back to route</button>
     <div class="dates-head">
       <span class="eyebrow">Step 2 · When</span>
       <h2>Add your dates</h2>
@@ -567,7 +567,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <button class="btn btn-ghost" id="dates-back2">← Back to route</button>
       <button class="btn btn-primary btn-lg" id="dates-continue">Continue to select service →</button>
     </div>
-    <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
+    <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
     <p class="route-incomplete-hint" id="dates-drive-hint" hidden></p>
   </div>
 </div>
