@@ -7,22 +7,42 @@
   // ---- SVG snippets ----
   const ICON = {
     wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.15a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.24 8.24 0 1 1 6.97 3.86zm4.52-6.16c-.25-.12-1.47-.72-1.69-.8-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.18-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.5.11-.11.25-.29.37-.43.13-.15.17-.25.25-.42.08-.16.04-.31-.02-.43-.06-.12-.56-1.35-.76-1.85-.2-.48-.41-.42-.56-.43h-.48c-.16 0-.43.06-.66.31-.22.25-.86.85-.86 2.07 0 1.22.89 2.4 1.01 2.56.12.16 1.75 2.67 4.25 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z"/></svg>',
-    arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+    arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
     ig:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.7 3.7 0 0 1-1.38-.9 3.7 3.7 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68A6.16 6.16 0 1 0 18.16 12 6.16 6.16 0 0 0 12 5.84zm0 10.16A4 4 0 1 1 16 12a4 4 0 0 1-4 4zm6.41-10.4a1.44 1.44 0 1 0 1.44 1.44 1.44 1.44 0 0 0-1.44-1.44z"/></svg>',
     tiktok:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.6 5.82a4.28 4.28 0 0 1-1.06-2.82h-3.3v12.6a2.34 2.34 0 1 1-2.34-2.34c.23 0 .46.04.67.1V9.98a5.66 5.66 0 0 0-.67-.04 5.66 5.66 0 1 0 5.66 5.66V9.01a7.52 7.52 0 0 0 4.4 1.4V7.1a4.28 4.28 0 0 1-3.36-1.28z"/></svg>',
     x:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.24 2H21l-6.56 7.5L22.5 22h-6.06l-4.74-6.2L6.2 22H3.44l7.02-8.03L1.5 2h6.22l4.29 5.67L18.24 2zm-1.06 18h1.68L7.92 3.9H6.12L17.18 20z"/></svg>',
     fb:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12z"/></svg>',
-    check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
+    check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'
   };
   window.ICON = ICON;
 
   // ---- Brand C mark (real Ceylon Hop logo glyph) ----
-  window.CMARK_SRC = "img/ceylon-hop-c.png";
+  window.CMARK_SRC = "img/brand-c.svg";
   // A cacheable file, not ~8KB of base64 inlined into every page (the generated route pages
   // carried it TWICE, about half their weight). The glyph is cropped to its bounding box so it
   // actually fills the 34px slot instead of sitting ~14px inside empty canvas.
+  // Vector since the brand-book pass: the mark is an identity asset and was a 256px raster,
+  // which softened on retina and at the 180px touch-icon size.
   window.cmark = function(size=34, _color){
     return `<img class="cmark" src="${window.CMARK_SRC}" style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true">`;
+  };
+
+  // The stacked "Ceylon / Hop" lockup — the brand book's actual logo (p2). The one-line
+  // .brand in the nav is a horizontal-space concession; use this wherever there is room.
+  // The mark is sized in em by .brand-lockup .cmark, so no inline width/height here.
+  window.lockup = function(){
+    return `<span class="brand-lockup">` +
+      `<img class="cmark" src="${window.CMARK_SRC}" alt="Ceylon Hop">` +
+      `<span class="bl-words" aria-hidden="true"><span>Ceylon</span><span>Hop</span></span>` +
+      `</span>`;
+  };
+
+  // The mark centred on a photograph, per p5: 92% opacity, min 48px, no outline.
+  // A SPAN, not an <img>: the mark has to take its colour from the page (cream on a dark
+  // photo, ink on a light one) and an external SVG loaded via <img> cannot inherit
+  // currentColor. .brand-mark-photo paints it with a CSS mask instead.
+  window.markOverPhoto = function(cls=''){
+    return `<span class="brand-mark-photo ${cls}" aria-hidden="true"></span>`;
   };
 
   // ---- Placeholder ----
@@ -72,8 +92,8 @@
     const cta = showCta ? `
     <section class="foot-cta">
       <image-slot id="foot-cta-photo" shape="rect" src="img/cta-nine-arch.jpg" placeholder="Drop a photo — nine-arch bridge train through jungle"></image-slot>
+      ${markOverPhoto()}
       <div class="wrap">
-        <div class="sun" style="margin:0 auto 10px">${cmark(64,'#fff')}</div>
         <h2 style="color:#fff;max-width:20ch;margin:0 auto .6rem">Your whole route, planned in minutes</h2>
         <p style="color:rgba(255,255,255,.85);max-width:46ch;margin:0 auto 1.6rem">Drop in your stops, set your nights, and see one fixed price for every transfer &mdash; or message us and we&rsquo;ll plan it together.</p>
         <div class="flex gap" style="justify-content:center;flex-wrap:wrap">
@@ -114,7 +134,7 @@
   // Last item (no href) is the current page. Renders into [data-breadcrumbs].
   window.mountBreadcrumbs = function(trail){
     const host=document.querySelector('[data-breadcrumbs]'); if(!host||!trail||!trail.length) return;
-    const sep='<svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+    const sep='<svg class="bc-sep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
     const items=trail.map((it,i)=>{
       const last=i===trail.length-1;
       const [label,href]=it;
