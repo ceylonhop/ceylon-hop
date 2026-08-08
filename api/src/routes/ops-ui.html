@@ -177,6 +177,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 
   /* ledger row — colour spine carries the stage; editorial type leads */
   .tk{position:relative;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:17px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 20px 16px 22px;margin-bottom:10px;transition:transform .17s cubic-bezier(.2,.7,.3,1),box-shadow .17s,border-color .17s;box-shadow:var(--shadow-s);cursor:pointer;overflow:hidden;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
+  /* A Needs-closing row carries a tick box, which is a FOURTH child of a three-column grid.
+     Without its own template the tick took the icon's column and pushed name, route and the
+     whole price/stage column out of the row (shipped broken, owner-caught 2026-08-07). */
+  .tk.tk-sel{grid-template-columns:22px 36px minmax(0,1fr) auto;gap:12px 14px}
   .tk::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--line));transition:width .17s}
   .tk:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:var(--cream-deep)}
   .tk:hover::before{width:7px}
@@ -2140,7 +2144,7 @@ function ticketRow(t,i){
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
-  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
     ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
