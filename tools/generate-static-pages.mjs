@@ -5,7 +5,7 @@ import { ROOT } from './generate-route-pages.mjs';
 
 const legalStyle = `
   .legal-hero{background:linear-gradient(160deg,#0d8f8c,#0AB9B6 60%,#2aa9bf);color:#fff;padding:104px 0 40px;margin-top:-74px}
-  .legal-hero h1{color:#fff;font-weight:800;margin:0}
+  .legal-hero h1{color:#fff;font-weight:700;margin:0}
   .legal-hero p{color:rgba(255,255,255,.9);margin:.4rem 0 0}
   .legal-body{max-width:64ch}
   .legal-body h2{margin:1.8rem 0 .5rem;font-size:1.2rem}
@@ -237,7 +237,7 @@ const blogStyle = `
   .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
   .post-hero .breadcrumbs{padding-top:0;margin-bottom:18px}
   .post-kicker{display:inline-block;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:.32rem .7rem;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3)}
-  .post-hero h1{color:#fff;font-weight:800;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
+  .post-hero h1{color:#fff;font-weight:700;max-width:22ch;margin:.7rem 0 .5rem;font-size:clamp(1.9rem,4.4vw,2.9rem);line-height:1.12}
   .post-meta{color:rgba(255,255,255,.88);font-size:.9rem;margin:0}
   .post-body{padding:clamp(40px,5vw,68px) 0 clamp(32px,4vw,52px)}
   .post-body .wrap{max-width:900px}
