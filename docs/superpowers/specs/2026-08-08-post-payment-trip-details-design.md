@@ -346,12 +346,20 @@ No customer-facing behaviour changes on Phase 1 deploy: the card does not exist 
 - **Ops editing these fields** — display only in v1.
 - **Places autocomplete on the customer page** — resolution is server-side by design (§5).
 
-### 12. Decisions needing owner confirmation
+### 12. Decisions taken here, and why
 
-1. **Write-token constraints (§4).** Existing emailed links keep working and writes are fenced by
-   booking state, a travel-date cutoff, a rate limit and a late-change flag. The alternative — adding
-   an expiry — invalidates links already sitting in customers' inboxes. Recommended as written.
-2. **Legs for chauffeur bookings (§1).** Normalised for coherence even though the card never shows.
-   Reversible: restrict the backfill to `serviceType: 'private'` and single transfers.
-3. **The one-in-five success criterion (§8)** is a number I chose, not one you gave me. It governs
-   only whether the feature is judged to have worked.
+These are recorded so a later reader knows they were chosen rather than defaulted into.
+
+1. **Write-token constraints (§4) — decided.** Existing emailed links keep working; writes are
+   fenced by booking state, a travel-date cutoff, a rate limit and a late-change flag. The
+   alternative, adding an `exp`, invalidates links already sitting in customers' inboxes to buy
+   protection the fences already give. The thing worth *noticing* is not the choice but the fact
+   underneath it: a token that until now only revealed a booking can now change where a driver goes.
+2. **Legs for chauffeur bookings (§1) — decided: yes.** The product rule (no card for chauffeur) is
+   settled and lives in the gate. Making the storage selective as well would mean "which bookings
+   have legs?" becomes a question every future reader has to ask, which is a worse trap than a few
+   hundred extra backfilled rows. Reversible by restricting the backfill if the migration proves
+   heavier than expected.
+3. **The one-in-five success criterion (§8) — provisional.** A number chosen to make the feature
+   falsifiable, not handed down. It gates nothing in the build and should be revisited once real
+   numbers exist; its only job is to stop "did this work?" from being answered by impression.
