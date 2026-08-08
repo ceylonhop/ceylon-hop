@@ -14,6 +14,7 @@ import {
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
+import { track } from '../observability/track';
 
 type BookingRow = typeof bookings.$inferSelect;
 
@@ -48,30 +49,41 @@ export function isIdempotencyCollision(err: unknown): boolean {
   return v !== null && v.constraint.includes('idempotency');
 }
 
-// `booking_legs.from_place`/`to_place` are `text NOT NULL`, but `trip_request.stops` is a
-// Postgres `text[] NOT NULL` — an array that may legally contain a null or empty-string element.
-// A malformed stop reaching the insert would raise a not-null violation INSIDE insertBooking's
-// transaction, rolling back the customer, the booking and the request row that already validated
-// fine — turning a recoverable data gap into a failed payment. A dropped leg is fully
-// recoverable (the backfill and the reconciliation script both pick it up later); a failed
-// booking is not. So malformed legs are filtered out here, not thrown on.
-function isUsablePlace(v: string): boolean {
-  return typeof v === 'string' && v.length > 0;
-}
-
 // Exported for test — see postgresBookingRepo.legs.test.ts. b.mode is always a known literal
 // here (it's a NewBooking), so deriveLegsForMode never actually returns undefined; `?? []`
 // exists only so a future NewBooking mode nobody's taught this dispatch about degrades to "no
 // legs" rather than a type error, same as before this was shared with planBackfill.
+//
+// deriveLegsForMode already drops malformed places (a null/empty fromPlace or toPlace, or a
+// null/empty entry inside viaStops) before returning — see domain/bookingLegs.ts. That filtering
+// used to live here; it moved so legRowsForBooking and planBackfill (backfill-booking-legs.ts)
+// can't disagree about what "usable" means.
 export function legRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
   const legs =
     deriveLegsForMode(b.mode, {
       single: b.mode === 'single' ? b.input : undefined,
       trip: b.mode === 'trip' ? b.input : undefined,
     }) ?? [];
-  return legs
-    .filter((leg) => isUsablePlace(leg.fromPlace) && isUsablePlace(leg.toPlace))
-    .map((leg) => ({ ...leg, bookingId }));
+  return legs.map((leg) => ({ ...leg, bookingId }));
+}
+
+// legRowsForBooking guards VALUES (a null/empty place) but not SHAPES: a `stops` that isn't an
+// array, or a `dates` that isn't an array for a chauffeur trip, still throws inside
+// deriveTripLegs/chauffeurDays. None of these are reachable today — trip_request.stops is
+// `text[] NOT NULL`, quoteToBooking builds both arrays itself, and zod validates the website
+// path — but insertBooking calls this INSIDE its transaction, after the customer, booking and
+// request rows are already written, so "this insert cannot fail a payment" has to be literally
+// true for shapes too. A dropped set of legs is fully recoverable (the backfill and the
+// reconciliation script both pick it up); a failed payment is not. track() so the failure isn't
+// silent — something this basic reaching this deep is a bug worth knowing about, not a routine
+// data gap like the value-level drops above.
+export function safeLegRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
+  try {
+    return legRowsForBooking(bookingId, b);
+  } catch (err) {
+    track(err, { tag: 'booking-legs-derivation', extra: { bookingId, mode: b.mode } });
+    return [];
+  }
 }
 
 export class PostgresBookingRepo implements BookingRepo {
@@ -286,7 +298,7 @@ export class PostgresBookingRepo implements BookingRepo {
           durationMin: b.durationMin ?? null,
         });
       }
-      const legs = legRowsForBooking(bk.id, b);
+      const legs = safeLegRowsForBooking(bk.id, b);
       if (legs.length) await tx.insert(bookingLegs).values(legs);
       return bk;
     });

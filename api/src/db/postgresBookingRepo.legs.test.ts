@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { legRowsForBooking } from './postgresBookingRepo';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { legRowsForBooking, safeLegRowsForBooking } from './postgresBookingRepo';
 import type { NewBooking } from './bookingRepo';
+import * as trackModule from '../observability/track';
 
 const bookingId = '00000000-0000-4000-8000-000000000001';
 
@@ -120,6 +121,10 @@ describe('legRowsForBooking', () => {
   // element inside that array. A malformed stop must never reach the insert: dropping the leg
   // is recoverable (backfill + reconciliation pick it up); failing the insert rolls back the
   // customer, the booking and the request row inside a payment transaction.
+  //
+  // The filtering itself now lives in deriveLegsForMode (domain/bookingLegs.ts) — see the
+  // "usable-place filtering" tests there — so this is integration coverage that legRowsForBooking
+  // still gets that behaviour through the shared dispatch, plus that it wires bookingId correctly.
   it('drops a leg whose place is null, and one whose place is empty, without throwing', () => {
     const stops = ['Galle', null as unknown as string, 'Kandy', ''] as string[];
     expect(() =>
@@ -163,5 +168,56 @@ describe('legRowsForBooking', () => {
       ['A', 'B'],
       ['D', 'E'],
     ]);
+  });
+});
+
+// Finding 3: legRowsForBooking guards VALUES (a null/empty place), not SHAPES. A `stops` that
+// isn't an array, or a `dates` that isn't an array for a chauffeur trip, still throws inside
+// deriveTripLegs/chauffeurDays — and legRowsForBooking is called from inside insertBooking's
+// transaction, after the customer, booking and request rows are already written. None of these
+// shapes are reachable today (trip_request.stops is `text[] NOT NULL`, quoteToBooking builds
+// both arrays itself, zod validates the website path) but the claim "this insert cannot fail a
+// payment" has to hold for shapes too, not just values — so insertBooking calls
+// safeLegRowsForBooking, which turns any throw into "no legs" instead of a failed booking.
+describe('safeLegRowsForBooking', () => {
+  beforeEach(() => {
+    vi.spyOn(trackModule, 'track').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the same rows as legRowsForBooking when derivation does not throw', () => {
+    const booking = tripBooking({ stops: ['Galle', 'Ella'], nights: [0], serviceType: 'private' });
+    expect(safeLegRowsForBooking(bookingId, booking)).toEqual(legRowsForBooking(bookingId, booking));
+    expect(trackModule.track).not.toHaveBeenCalled();
+  });
+
+  it('yields no legs, without throwing, when stops is not an array (a shape the deriver cannot handle)', () => {
+    const booking = tripBooking({
+      stops: 'not-an-array' as unknown as string[],
+      serviceType: 'private',
+    });
+    expect(() => safeLegRowsForBooking(bookingId, booking)).not.toThrow();
+    expect(safeLegRowsForBooking(bookingId, booking)).toEqual([]);
+  });
+
+  it('yields no legs, without throwing, when dates is not an array for a chauffeur trip', () => {
+    const booking = tripBooking({
+      stops: ['A', 'B', 'C'],
+      dates: 'not-an-array' as unknown as string[],
+      serviceType: 'chauffeur',
+    });
+    expect(() => safeLegRowsForBooking(bookingId, booking)).not.toThrow();
+    expect(safeLegRowsForBooking(bookingId, booking)).toEqual([]);
+  });
+
+  it('records the failure via track() rather than swallowing it silently', () => {
+    const booking = tripBooking({ stops: 'not-an-array' as unknown as string[], serviceType: 'private' });
+    safeLegRowsForBooking(bookingId, booking);
+    expect(trackModule.track).toHaveBeenCalledTimes(1);
+    const [err, ctx] = vi.mocked(trackModule.track).mock.calls[0];
+    expect(err).toBeInstanceOf(Error);
+    expect(ctx).toMatchObject({ extra: { bookingId, mode: 'trip' } });
   });
 });
