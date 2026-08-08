@@ -2,7 +2,9 @@
 // so the booking journeys are deterministic and run fully offline.
 
 // Runs in the PAGE before any site script. Must be self-contained (no closures).
-function installStubs() {
+// Exported so pages outside the booking journey (quote.html) can install the same Google
+// stub and exercise the real ch-map render path offline.
+export function installStubs() {
   const latlng = (lat, lng) => ({ lat: () => lat, lng: () => lng });
 
   // Mirrors the async-loaded Maps API (see ops-itin-map.spec.js): classes come ONLY from
@@ -11,6 +13,12 @@ function installStubs() {
   // them throws. Requests are recorded on window.__computeRoutesReqs for assertions.
   function MapCls(el, opts) { (window.__chMaps = window.__chMaps || []).push(opts || {}); }
   MapCls.prototype.fitBounds = function () {};
+  // Pins became zoom-aware (they re-group as you zoom, 2026-08-07) and the renderer now calls
+  // getZoom()/addListener(). Without them the whole pin pass threw into its "markers are
+  // non-essential" catch and every marker assertion silently saw an EMPTY list — map-expand's
+  // and ops-map-pin-numbers' pin tests had been dark ever since.
+  MapCls.prototype.getZoom = function () { return 10; };
+  MapCls.prototype.addListener = function () { return { remove() {} }; };
   function Marker(opts) { (window.__chMarkers = window.__chMarkers || []).push(opts || {}); }
   Marker.prototype.setMap = function () {};
   function Point() {}

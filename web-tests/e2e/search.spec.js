@@ -1,6 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { gotoBooking } from './_stubs.js';
 
+// Resolve a design token to the rgb() string the browser reports, so these assertions
+// track site.css instead of a frozen hex. They pinned rgb(44,42,43) — the pre-brand-book
+// ink — and broke when --ink moved to the book's Bristol Black. The INTENT is "unselected
+// options use the full ink, not a muted grey", which is a token relationship, not a hex.
+const tokenColor = (page, name) => page.evaluate((n) => {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const probe = document.createElement('div');
+  probe.style.color = raw;
+  document.body.appendChild(probe);
+  const rgb = getComputedStyle(probe).color;
+  probe.remove();
+  return rgb;
+}, name);
+
 test('search prices on real distance and carries that price into booking', async ({ page }) => {
   // reuse the stub harness (installs Maps/PayHere stubs + API mocks for the booking nav)
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
@@ -143,13 +157,14 @@ test('mobile home search keeps unselected booking tabs readable', async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await gotoBooking(page, { path: '/index.html', query: '' });
 
+  const ink = await tokenColor(page, '--ink');
   const inactiveTab = page.locator('#tab-multi');
   await expect(inactiveTab).toHaveAttribute('aria-selected', 'false');
-  await expect(inactiveTab).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(inactiveTab).toHaveCSS('color', ink);
 
   await inactiveTab.click();
   await expect(page.locator('#tab-single')).toHaveAttribute('aria-selected', 'false');
-  await expect(page.locator('#tab-single')).toHaveCSS('color', 'rgb(44, 42, 43)');
+  await expect(page.locator('#tab-single')).toHaveCSS('color', ink);
 });
 
 test('home multi-stop toggle does not open autocomplete until the user types', async ({ page }) => {

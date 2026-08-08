@@ -17,7 +17,7 @@
 .pp-brand{display:flex;align-items:center;gap:9px;text-decoration:none}
 /* The real logo glyph, same file + sizing rule as the site header's cmark() (site.js). */
 .pp-cmark{width:32px;height:32px;object-fit:contain;flex:none}
-.pp-word{font-family:var(--display);font-weight:800;font-size:1.15rem;color:var(--accent-deep);letter-spacing:-.01em}
+.pp-word{font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--accent-deep);letter-spacing:0}
 .pp-wa{font-size:.78rem;color:var(--ink-soft)}
 .pp-wa a{color:var(--accent-deep);font-weight:700;text-decoration:none}
 
@@ -26,9 +26,9 @@
 /* The name leads. It used to be the faintest text on the page, buried mid-sentence under a
    huge route title — these pages should open by telling you they are YOURS. Display face,
    brand teal, sized as a kicker so it reads before the headline without competing with it. */
-.pp-hello{font-family:var(--display);font-weight:800;font-size:1.3rem;line-height:1.15;
-  letter-spacing:-.01em;color:var(--accent-deep);margin-bottom:3px}
-.pp-title{font-family:var(--display);font-weight:800;font-size:1.9rem;line-height:1.12;letter-spacing:-.015em;margin:4px 0 2px}
+.pp-hello{font-family:var(--display);font-weight:700;font-size:1.3rem;line-height:1.15;
+  letter-spacing:0;color:var(--accent-deep);margin-bottom:3px}
+.pp-title{font-family:var(--display);font-weight:700;font-size:1.9rem;line-height:1.12;letter-spacing:0;margin:4px 0 2px}
 .pp-sub{font-size:.85rem;color:var(--ink-soft);margin-bottom:16px}
 
 /* ticket */
@@ -67,7 +67,7 @@
 .coverage{margin:0 0 10px;font-size:.74rem;color:var(--ink-faint,#8a8272)}
 .tot{display:flex;justify-content:space-between;align-items:baseline}
 .tot .l{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
-.tot .v{font-family:var(--display);font-weight:800;font-size:2rem;letter-spacing:-.02em}
+.tot .v{font-family:var(--display);font-weight:700;font-size:2rem;letter-spacing:0}
 .tot.due{margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft,#f0ece1)}
 .tot.due .v{font-size:1.15rem;color:var(--accent-deep)}
 
@@ -86,7 +86,7 @@
 .st-badge{width:56px;height:56px;border-radius:50%;display:inline-grid;place-items:center;font-size:1.5rem;margin-bottom:12px}
 .st-badge.ok{background:#e6f4ec;color:#2f9558;box-shadow:0 0 0 8px rgba(47,149,88,.08)}
 .st-badge.warn{background:#fbf0d8;color:#c7841f}
-.st-title{font-family:var(--display);font-weight:800;font-size:1.55rem;line-height:1.15;margin:0 0 4px}
+.st-title{font-family:var(--display);font-weight:700;font-size:1.55rem;line-height:1.15;margin:0 0 4px}
 .st-sub{font-size:.85rem;color:var(--ink-soft)}
 .refchip{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-weight:600;font-size:.9rem;color:var(--accent-deep);background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:12px 0}
 .next{margin-top:14px;background:var(--cream);border-radius:11px;padding:11px 13px;text-align:left}
@@ -97,8 +97,8 @@
 .pp-loading{text-align:center;padding:44px 0 20px}
 .pp-spin{width:44px;height:44px;border-radius:50%;border:3.5px solid var(--line);border-top-color:var(--accent);margin:0 auto 16px;animation:ppspin .8s linear infinite}
 @keyframes ppspin{to{transform:rotate(360deg)}}
-.pp-loading h2{font-family:var(--display);font-weight:800;font-size:1.35rem;margin:0 0 4px}
-.pp-loading .amt{font-family:var(--display);font-weight:800;font-size:1.7rem;margin:10px 0 2px}
+.pp-loading h2{font-family:var(--display);font-weight:700;font-size:1.35rem;margin:0 0 4px}
+.pp-loading .amt{font-family:var(--display);font-weight:700;font-size:1.7rem;margin:10px 0 2px}
 .pp-loading p{font-size:.83rem;color:var(--ink-soft);margin:4px 0 0}
 
 /* ── First-paint skeleton ───────────────────────────────────────────────────────
@@ -131,7 +131,7 @@
 .hops{margin-top:10px}
 .hop{display:grid;grid-template-columns:16px 1fr;gap:9px}
 .hop-rail{display:flex;flex-direction:column;align-items:center}
-.hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+.hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.14)}
 .hop-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
 .hop-line{width:2px;flex:1;min-height:12px;background:var(--line)}
 .hop-t{font-weight:700;font-size:.88rem;line-height:1.25}

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b32f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="193" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b32k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="247" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M91.9 66.1 Q86.1 82.1 72.7 90.8 Q59.3 99.5 41.0 94.8 Q22.7 90.1 13.3 79.4 Q4.0 68.8 4.2 52.3 Q4.5 35.8 13.7 22.4 Q22.9 9.0 42.0 5.4 Q61.0 1.9 75.2 10.7 Q89.4 19.4 93.6 34.8 Q97.7 50.1 91.9 66.1Z" fill="#34C2D9"></path>
+<g transform="rotate(-2.72 50 50)">
+  <g class="pass-fill" filter="url(#b32f)"><path d="M70 8c9 20 3 54-22 72C39 58 45 26 70 8z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M62 22C52 38 47 54 47 68" fill="none" stroke="#F9A429" stroke-width="3.6" stroke-linecap="round"></path><path d="M48 80c-5-1-8-4-8-8 4 1 7 4 8 8z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M6 84c1-13 10-21 23-19 6 1 11 4 14 9-11-3-21 2-25 10z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="16" cy="70" r="2.6" fill="#FAF1E4"></circle><circle cx="26" cy="64" r="2" fill="#FAF1E4"></circle></g>
+  <g class="pass-ink" filter="url(#b32k)"><path d="M70 8c9 20 3 54-22 72C39 58 45 26 70 8z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M62 22C52 38 47 54 47 68" fill="none" stroke="#F9A429" stroke-width="3.6" stroke-linecap="round"></path><path d="M48 80c-5-1-8-4-8-8 4 1 7 4 8 8z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M6 84c1-13 10-21 23-19 6 1 11 4 14 9-11-3-21 2-25 10z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="16" cy="70" r="2.6" fill="#FAF1E4"></circle><circle cx="26" cy="64" r="2" fill="#FAF1E4"></circle></g>
+</g>
+</svg>

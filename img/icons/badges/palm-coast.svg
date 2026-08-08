@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b60f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="312" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b60k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="366" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M4.4 43.2 Q5.9 26.0 17.9 15.7 Q29.9 5.5 50.3 4.8 Q70.7 4.1 82.5 16.3 Q94.3 28.5 96.8 44.7 Q99.2 60.8 90.6 74.4 Q82.0 88.0 67.8 94.0 Q53.6 100.0 35.9 94.1 Q18.2 88.1 10.5 74.2 Q2.9 60.3 4.4 43.2Z" fill="#0DB9B6"></path>
+<g transform="rotate(0.59 50 50)">
+  <g class="pass-fill" filter="url(#b60f)"><path d="M50 78c-2-16-1-28 5-38" fill="none" stroke="#4A4648" stroke-width="10.1" stroke-linecap="round" stroke-linejoin="round"></path><path d="M50 78c-2-16-1-28 5-38" fill="none" stroke="#FAF1E4" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M55 40c-9-7-19-6-26 1M55 40c-3-11-11-17-22-16M55 40c3-10 12-15 22-12M55 40c9-4 18-1 22 8" fill="none" stroke="#4A4648" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M55 40c-9-7-19-6-26 1M55 40c-3-11-11-17-22-16M55 40c3-10 12-15 22-12M55 40c9-4 18-1 22 8" fill="none" stroke="#FAF1E4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="55" cy="40" r="4.6" fill="#F9A429" stroke="#4A4648" stroke-width="3"></circle></g>
+  <g class="pass-ink" filter="url(#b60k)"><path d="M50 78c-2-16-1-28 5-38" fill="none" stroke="#4A4648" stroke-width="10.1" stroke-linecap="round" stroke-linejoin="round"></path><path d="M50 78c-2-16-1-28 5-38" fill="none" stroke="#FAF1E4" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M55 40c-9-7-19-6-26 1M55 40c-3-11-11-17-22-16M55 40c3-10 12-15 22-12M55 40c9-4 18-1 22 8" fill="none" stroke="#4A4648" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M55 40c-9-7-19-6-26 1M55 40c-3-11-11-17-22-16M55 40c3-10 12-15 22-12M55 40c9-4 18-1 22 8" fill="none" stroke="#FAF1E4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="55" cy="40" r="4.6" fill="#F9A429" stroke="#4A4648" stroke-width="3"></circle></g>
+</g>
+</svg>

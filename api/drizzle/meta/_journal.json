@@ -295,6 +295,13 @@
       "when": 1786431200000,
       "tag": "0041_quote_offer_validity",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786517600000,
+      "tag": "0042_booking_legs",
+      "breakpoints": true
     }
   ]
 }
