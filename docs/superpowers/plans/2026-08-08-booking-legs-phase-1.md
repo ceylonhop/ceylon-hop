@@ -534,14 +534,20 @@ CREATE TABLE "booking_legs" (
 CREATE INDEX "booking_legs_booking_idx" ON "booking_legs" ("booking_id");
 ```
 
-Then append the journal entry. In `api/drizzle/meta/_journal.json`, add to the end of `entries`,
-keeping the existing formatting:
+Then append the journal entry. **The `when` value is not a clock reading** — entries 30-41 were
+hand-seeded roughly a day apart and now run into the future (41 is stamped 2026-08-11). Drizzle
+applies a migration only when its `when` exceeds the highest already recorded
+(`drizzle-orm/pg-core/dialect.js:62`, a single high-water mark), so a real `Date.now()` would be
+*lower* than 41's and this migration would be **silently skipped forever** — no error, no failed
+boot, just a table that never exists. Continue the seeded cadence instead: 41's value + 86,400,000.
+
+In `api/drizzle/meta/_journal.json`, add to the end of `entries`, keeping the existing formatting:
 
 ```json
     {
       "idx": 42,
       "version": "7",
-      "when": <epoch-ms, from `node -e "console.log(Date.now())"`>,
+      "when": 1786517600000,
       "tag": "0042_booking_legs",
       "breakpoints": true
     }
