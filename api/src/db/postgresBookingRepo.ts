@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
+import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
@@ -13,6 +13,7 @@ import {
 } from './bookingRepo';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
+import { deriveSingleLegs, deriveTripLegs, type DerivedLeg } from '../domain/bookingLegs';
 
 type BookingRow = typeof bookings.$inferSelect;
 
@@ -45,6 +46,24 @@ export function isReferenceCollision(err: unknown): boolean {
 export function isIdempotencyCollision(err: unknown): boolean {
   const v = pgUniqueViolation(err);
   return v !== null && v.constraint.includes('idempotency');
+}
+
+/** The leg rows a booking implies. Exported for test — see postgresBookingRepo.legs.test.ts. */
+export type NewLegRow = DerivedLeg & { bookingId: string };
+
+export function legRowsForBooking(
+  bookingId: string,
+  b: { mode: string; input: Record<string, unknown> },
+): NewLegRow[] {
+  const legs =
+    b.mode === 'single'
+      ? deriveSingleLegs(b.input as { from: string; to: string; date?: string; time?: string })
+      : b.mode === 'trip'
+        ? deriveTripLegs(
+            b.input as { stops: string[]; dates?: string[]; serviceType: 'private' | 'chauffeur' },
+          )
+        : [];
+  return legs.map((leg) => ({ ...leg, bookingId }));
 }
 
 export class PostgresBookingRepo implements BookingRepo {
@@ -259,6 +278,8 @@ export class PostgresBookingRepo implements BookingRepo {
           durationMin: b.durationMin ?? null,
         });
       }
+      const legs = legRowsForBooking(bk.id, b);
+      if (legs.length) await tx.insert(bookingLegs).values(legs);
       return bk;
     });
   }
