@@ -198,7 +198,7 @@ p{margin:0 0 1rem}
 .eyebrow::before{content:"";width:22px;height:2px;background:var(--accent);border-radius:2px}
 .lead{font-size:1.14rem;color:var(--ink-soft);max-width:54ch;line-height:1.6}
 .hand{font-family:var(--hand);font-weight:600}
-.serif-ital{font-family:var(--display);font-style:italic;font-weight:500}
+.serif-ital{font-family:var(--display);font-style:italic;font-weight:400}
 
 /* ---------- Layout ---------- */
 .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
