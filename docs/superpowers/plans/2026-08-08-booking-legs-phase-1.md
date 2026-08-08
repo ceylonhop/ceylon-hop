@@ -610,10 +610,12 @@ Add above the class (exported so it can be tested without a database):
 
 ```ts
 /** The leg rows a booking implies. Exported for test — see postgresBookingRepo.legs.test.ts. */
+export type NewLegRow = DerivedLeg & { bookingId: string };
+
 export function legRowsForBooking(
   bookingId: string,
   b: { mode: string; input: Record<string, unknown> },
-): (Omit<DerivedLeg, never> & { bookingId: string })[] {
+): NewLegRow[] {
   const legs =
     b.mode === 'single'
       ? deriveSingleLegs(b.input as { from: string; to: string; date?: string; time?: string })
@@ -710,8 +712,13 @@ describe('quote-born bookings derive the same legs', () => {
 cd api && npx vitest run src/db/postgresQuoteConversionRepo.legs.test.ts
 ```
 
-Expected: FAIL until Task 3 is merged; if Task 3 is already in, this file passes on the mapper and
-the remaining work is the insert below — run it again after Step 3 regardless.
+**This test cannot fail first, and that is stated deliberately rather than dressed up as TDD.**
+Task 3 already built the mapper it exercises; this repo has no database-backed harness, so the
+`tx.insert` in Step 3 has nothing to assert against. The test's job is to be a *regression guard* on
+the shared mapper — specifically that the pay-link shapes (no date, no time, chauffeur gaps) keep
+deriving correctly when someone later changes derivation for the website path.
+
+Expected: PASS immediately. If it does not, Task 3 is wrong and must be fixed before continuing.
 
 - [ ] **Step 3: Insert the legs in the conversion transaction**
 
@@ -859,7 +866,8 @@ import { config as loadEnv } from 'dotenv';
 import { eq, isNull } from 'drizzle-orm';
 import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
-import { deriveSingleLegs, deriveTripLegs, type DerivedLeg } from '../src/domain/bookingLegs';
+import { deriveSingleLegs, deriveTripLegs } from '../src/domain/bookingLegs';
+import type { NewLegRow } from '../src/db/postgresBookingRepo';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -889,7 +897,6 @@ export interface BackfillRow {
   trip?: { stops: string[]; dates: string[] | null; serviceType: string };
 }
 
-export type NewLegRow = DerivedLeg & { bookingId: string };
 export interface SkipReport {
   bookingId: string;
   reason: 'missing_request' | 'no_journey';
