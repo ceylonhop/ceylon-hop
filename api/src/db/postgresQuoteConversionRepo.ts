@@ -117,7 +117,9 @@ async function insertLockedBooking(
     .insert(customers)
     .values({
       firstName: customer.firstName,
-      lastName: customer.lastName,
+      // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+      // store the absence as empty, never as the string \"undefined\".
+      lastName: customer.lastName ?? '',
       email: customer.email,
       phoneCountryCode: customer.phoneCountryCode ?? null,
       phoneNumber: customer.phoneNumber ?? null,

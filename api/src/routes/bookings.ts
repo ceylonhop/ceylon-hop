@@ -680,7 +680,9 @@ function billingFrom(body: unknown): BillingParse {
         // payer told us they differ from the lead passenger. Email/phone stay the lead
         // passenger's: that is who gets the receipt and the driver's details.
         firstName: booking.billing?.firstName || cust.firstName,
-        lastName: booking.billing?.lastName || cust.lastName,
+        // PayHere itself substitutes '-' for a missing surname (adapters/payhere.ts), so an
+        // empty string here is carried, not invented.
+        lastName: booking.billing?.lastName || cust.lastName || '',
         email: cust.email,
         phone: cust.whatsapp,
         // Billing country when we have one; otherwise the lead passenger's, which is what
