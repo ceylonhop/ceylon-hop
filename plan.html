@@ -367,7 +367,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      sticky box taller than the screen can never show its own bottom (the CTA). Hence the
      viewport-fluid map, the 2-up stats and the split-off .summary-more card. */
   .sum-stats{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
-  .sum-stats .sum-stat{padding:8px 0}
+  /* Half-width cells can't always hold label + value on one line ("Driving 403 km · 9h 36m").
+     The label's min-width:0 lets its box squash under its own text, so it used to overrun the
+     nowrap value and the two collided. Wrap instead: the label keeps its min-content width and
+     the value drops to its own line, still right-aligned. Grid stretch keeps the dashed rules
+     level across the pair even when one cell runs to two lines. */
+  .sum-stats .sum-stat{padding:8px 0;flex-wrap:wrap}
+  .sum-stats .sum-stat span{min-width:auto}
+  .sum-stats .sum-stat b{margin-left:auto}
   .summary{--map-h:clamp(104px,17vh,180px)}
   /* short laptop windows: shave the map and the pin offset so the whole card — CTA included —
      still clears the fold rather than hanging 20-odd px under it */
