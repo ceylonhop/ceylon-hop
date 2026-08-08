@@ -2,24 +2,48 @@
 // says its route is against what its booking_legs rows say. No database access — reconcileBooking
 // takes already-fetched rows and returns human-readable problems; the script's main() is the thin
 // I/O half that queries, calls this, and prints.
+import type { BookingLegKind } from '../domain/bookingLegs';
 
 export interface LegEndpoints {
   seq: number;
+  // The script always selects this (bookingLegs.kind is NOT NULL) — optional here only so a
+  // caller that genuinely doesn't care (older tests) doesn't have to supply it. Needed to tell
+  // a trip whose rows are all `gap` — no journeys at all — from one with real journeys.
+  kind?: BookingLegKind;
   fromPlace: string;
   toPlace: string;
   // A `day` row's intermediate stops (see bookingLegs.ts). Absent/omitted is treated as [] —
   // true for `leg` and `gap` rows, which never have any.
   viaStops?: string[];
+  // Absent/omitted is treated as null. Needed to verify the backfill's central claim — that the
+  // leg becomes the source of truth for departure time.
+  pickupTime?: string | null;
 }
 
 export interface RequestData {
-  transfer?: { fromPlace: string; toPlace: string };
+  transfer?: { fromPlace: string; toPlace: string; travelTime?: string | null };
   trip?: { stops: string[] };
 }
 
+export type ProblemReason =
+  | 'shared_has_legs'
+  | 'missing_transfer_request'
+  | 'leg_count_mismatch'
+  | 'endpoint_mismatch'
+  | 'stale_pickup_time'
+  | 'missing_trip_request'
+  | 'no_legs'
+  | 'all_gap'
+  | 'route_mismatch';
+
 export interface Problem {
   ref: string;
+  reason: ProblemReason;
   message: string;
+}
+
+function pluralLegs(n: number): string {
+  return n === 1 ? 'leg' : 'legs';
 }
 
 /**
@@ -36,19 +60,45 @@ export function reconcileBooking(
 
   if (mode === 'shared') {
     if (legs.length) {
-      return [{ ref, message: `shared booking has ${legs.length} legs, expected 0` }];
+      return [
+        {
+          ref,
+          reason: 'shared_has_legs',
+          message: `shared booking has ${legs.length} ${pluralLegs(legs.length)}, expected 0`,
+        },
+      ];
     }
     return [];
   }
 
   if (mode === 'single') {
     const t = data.transfer;
-    if (!t) return [{ ref, message: 'single booking has no transfer_request' }];
-    if (legs.length !== 1) return [{ ref, message: `expected 1 leg, found ${legs.length}` }];
+    if (!t) {
+      return [{ ref, reason: 'missing_transfer_request', message: 'single booking has no transfer_request' }];
+    }
+    if (legs.length !== 1) {
+      return [{ ref, reason: 'leg_count_mismatch', message: `expected 1 leg, found ${legs.length}` }];
+    }
     const [leg] = legs;
     if (leg.fromPlace !== t.fromPlace || leg.toPlace !== t.toPlace) {
       return [
-        { ref, message: `leg ${leg.fromPlace}→${leg.toPlace} ≠ transfer ${t.fromPlace}→${t.toPlace}` },
+        {
+          ref,
+          reason: 'endpoint_mismatch',
+          message: `leg ${leg.fromPlace}→${leg.toPlace} ≠ transfer ${t.fromPlace}→${t.toPlace}`,
+        },
+      ];
+    }
+    // Verifies the backfill's central claim — that the leg becomes the source of truth for
+    // departure time. Nothing else checks this: a transfer_request with a recorded travel_time
+    // whose leg has no pickup_time means that claim doesn't hold for this booking.
+    if (t.travelTime && !leg.pickupTime) {
+      return [
+        {
+          ref,
+          reason: 'stale_pickup_time',
+          message: `transfer_request.travel_time is ${t.travelTime} but leg pickup_time is null`,
+        },
       ];
     }
     return [];
@@ -56,8 +106,24 @@ export function reconcileBooking(
 
   // trip (and anything that is neither 'shared' nor 'single' — mirrors the brief's fall-through).
   const t = data.trip;
-  if (!t) return [{ ref, message: 'trip booking has no trip_request' }];
-  if (!legs.length) return [{ ref, message: `trip with ${t.stops.length} stops has no legs` }];
+  if (!t) return [{ ref, reason: 'missing_trip_request', message: 'trip booking has no trip_request' }];
+  if (!legs.length) {
+    return [{ ref, reason: 'no_legs', message: `trip with ${t.stops.length} stops has no legs` }];
+  }
+
+  // A `gap` is explicitly never a journey we drive as one (bookingLegs.ts). A trip whose rows
+  // are ALL gap has no journeys at all — its customer would never be asked anything — even
+  // though its stop chain reconstructs perfectly below. That silent pass is exactly the hole
+  // this check exists to close, so it runs before the chain comparison, not instead of it.
+  if (legs.every((l) => l.kind === 'gap')) {
+    return [
+      {
+        ref,
+        reason: 'all_gap',
+        message: `trip has ${legs.length} ${pluralLegs(legs.length)}, all gap — no journeys`,
+      },
+    ];
+  }
 
   // Rebuild the full stop sequence the legs imply and compare it to trip_request.stops[]
   // element-for-element. Checking only the endpoints (as this used to) passes a booking whose
@@ -72,6 +138,7 @@ export function reconcileBooking(
   return [
     {
       ref,
+      reason: 'route_mismatch',
       message:
         `legs imply ${windowAround(implied, at)} (${implied.length} stops), ` +
         `trip stops are ${windowAround(t.stops, at)} (${t.stops.length} stops) — diverge at stop ${at + 1}`,

@@ -7,7 +7,8 @@ import { config as loadEnv } from 'dotenv';
 import { asc, eq } from 'drizzle-orm';
 import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
-import { reconcileBooking, type Problem } from '../src/db/checkBookingLegs';
+import { reconcileBooking, type LegEndpoints, type Problem, type ProblemReason } from '../src/db/checkBookingLegs';
+import type { BookingLegKind } from '../src/domain/bookingLegs';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -36,23 +37,28 @@ async function main(): Promise<void> {
   const problems: Problem[] = [];
 
   for (const b of all) {
-    const legs = await db
+    const rawLegs = await db
       .select({
         seq: bookingLegs.seq,
+        kind: bookingLegs.kind,
         fromPlace: bookingLegs.fromPlace,
         toPlace: bookingLegs.toPlace,
         viaStops: bookingLegs.viaStops,
+        pickupTime: bookingLegs.pickupTime,
       })
       .from(bookingLegs)
       .where(eq(bookingLegs.bookingId, b.id))
       .orderBy(asc(bookingLegs.seq));
+    // bookingLegs.kind is a plain text column (no DB-level enum) — cast to the derivation's
+    // BookingLegKind, same as row.status is cast to BookingStatus elsewhere in this codebase.
+    const legs: LegEndpoints[] = rawLegs.map((l) => ({ ...l, kind: l.kind as BookingLegKind }));
 
-    let transfer: { fromPlace: string; toPlace: string } | undefined;
+    let transfer: { fromPlace: string; toPlace: string; travelTime?: string | null } | undefined;
     let trip: { stops: string[] } | undefined;
 
     if (b.mode === 'single') {
       const [t] = await db.select().from(transferRequests).where(eq(transferRequests.bookingId, b.id));
-      transfer = t ? { fromPlace: t.fromPlace, toPlace: t.toPlace } : undefined;
+      transfer = t ? { fromPlace: t.fromPlace, toPlace: t.toPlace, travelTime: t.travelTime } : undefined;
     } else if (b.mode !== 'shared') {
       const [t] = await db.select().from(tripRequests).where(eq(tripRequests.bookingId, b.id));
       trip = t ? { stops: t.stops } : undefined;
@@ -65,7 +71,22 @@ async function main(): Promise<void> {
 
   console.log(`reconciled : ${ok}`);
   console.log(`problems   : ${problems.length}`);
-  for (const p of problems) console.log(`  ${p.ref}: ${p.message}`);
+
+  // Grouped by reason with counts, not a flat list: production can hold a historically
+  // malformed row that is known and accepted, and a flat list makes that indistinguishable from
+  // a fresh regression. Grouping doesn't change the gate (still a non-zero exit on any
+  // problem) — it just makes what's already known readable at a glance instead of requiring the
+  // owner to eyeball every ref.
+  const byReason = new Map<ProblemReason, Problem[]>();
+  for (const p of problems) {
+    const bucket = byReason.get(p.reason);
+    if (bucket) bucket.push(p);
+    else byReason.set(p.reason, [p]);
+  }
+  for (const [reason, group] of byReason) {
+    console.log(`  ${reason} (${group.length}):`);
+    for (const p of group) console.log(`    ${p.ref}: ${p.message}`);
+  }
 
   await sql.end();
   process.exit(problems.length ? 1 : 0);
