@@ -623,7 +623,12 @@ describe('a visitor cannot become the customer', () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const q = await readyQuote(quotes);
-    const { lastName, ...noSurname } = CUSTOMER as Record<string, string>;
+    // Built explicitly rather than destructured — a discarded `lastName` binding is an
+    // unused-var lint error, and this states the point of the test more plainly anyway.
+    const noSurname = {
+      firstName: CUSTOMER.firstName, email: CUSTOMER.email,
+      whatsapp: CUSTOMER.whatsapp, country: CUSTOMER.country,
+    };
     const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), noSurname as never);
     expect(res.status).toBe(201);
   });
