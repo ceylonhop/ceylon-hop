@@ -36,4 +36,15 @@ describe('icon slots', () => {
     const shared = about.filter(src => why.has(src));
     expect(shared).toEqual([]);
   });
+
+  // Each row must rotate teal / sky / saffron — the rule in img/icons/badges/README.md,
+  // and what the original PNG trio did. The disc is the first <path> fill in the badge.
+  it.each(VAL_PAGES)('%s: the value row rotates its disc colours', page => {
+    const discs = icoSrcs(read(page)).map(src => {
+      const svg = readFileSync(join(ROOT, src), 'utf8');
+      return (svg.match(/<path[^>]*fill="(#[0-9A-Fa-f]{6})"/) || [])[1];
+    });
+    expect(discs.filter(Boolean)).toHaveLength(discs.length);
+    expect(new Set(discs).size).toBe(discs.length);
+  });
 });
