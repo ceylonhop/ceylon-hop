@@ -6,12 +6,14 @@
 //
 // Idempotent: (booking_id, seq) is unique, and inserts are ON CONFLICT DO NOTHING, so a partial
 // run completes rather than duplicates.
+//
+// --dry-run: prints the full report (including the skip list) and writes nothing. Read this
+// before running for real against a production target.
 import { config as loadEnv } from 'dotenv';
 import { eq, isNull } from 'drizzle-orm';
 import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
-import { deriveSingleLegs, deriveTripLegs } from '../src/domain/bookingLegs';
-import type { NewLegRow } from '../src/db/postgresBookingRepo';
+import { deriveLegsForMode, type NewLegRow } from '../src/domain/bookingLegs';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -43,7 +45,7 @@ export interface BackfillRow {
 
 export interface SkipReport {
   bookingId: string;
-  reason: 'missing_request' | 'no_journey' | 'insert_failed';
+  reason: 'missing_request' | 'no_journey' | 'insert_failed' | 'unknown_mode';
   detail?: string;
 }
 
@@ -81,48 +83,63 @@ export function toBackfillRow(
   return { bookingId: booking.id, mode: booking.mode };
 }
 
-/** The pure half: what this run WOULD write. Exported for test. */
+/**
+ * The pure half: what this run WOULD write. Exported for test.
+ *
+ * Delegates the mode → deriver decision to deriveLegsForMode (domain/bookingLegs.ts) — the same
+ * dispatch legRowsForBooking uses at booking-insert time — rather than re-deciding what
+ * 'single'/'trip'/'shared' mean here. Unlike legRowsForBooking's `mode`, this one comes straight
+ * off the `bookings` table as a bare string, so it CAN be something neither writer has ever
+ * produced; that's reported as `unknown_mode`, never dropped silently (skips are counted, not
+ * silent — that's the whole point of this report).
+ */
 export function planBackfill(rows: BackfillRow[]): { legs: NewLegRow[]; skipped: SkipReport[] } {
   const legs: NewLegRow[] = [];
   const skipped: SkipReport[] = [];
   for (const row of rows) {
-    // A shared seat has no journey with editable ends. Not a problem — just not our business.
-    if (row.mode === 'shared') continue;
-    if (row.mode === 'single') {
-      if (!row.transfer) {
-        skipped.push({ bookingId: row.bookingId, reason: 'missing_request' });
-        continue;
-      }
-      const derived = deriveSingleLegs({
-        from: row.transfer.fromPlace,
-        to: row.transfer.toPlace,
-        date: row.transfer.travelDate,
-        time: row.transfer.travelTime,
-      });
-      legs.push(...derived.map((l) => ({ ...l, bookingId: row.bookingId })));
+    if (row.mode === 'single' && !row.transfer) {
+      skipped.push({ bookingId: row.bookingId, reason: 'missing_request' });
       continue;
     }
-    if (row.mode === 'trip') {
-      if (!row.trip) {
-        skipped.push({ bookingId: row.bookingId, reason: 'missing_request' });
-        continue;
-      }
-      const derived = deriveTripLegs({
-        stops: row.trip.stops ?? [],
-        dates: row.trip.dates,
-        serviceType: row.trip.serviceType === 'chauffeur' ? 'chauffeur' : 'private',
-      });
-      if (!derived.length) {
-        skipped.push({ bookingId: row.bookingId, reason: 'no_journey' });
-        continue;
-      }
-      legs.push(...derived.map((l) => ({ ...l, bookingId: row.bookingId })));
+    if (row.mode === 'trip' && !row.trip) {
+      skipped.push({ bookingId: row.bookingId, reason: 'missing_request' });
+      continue;
     }
+    const derived = deriveLegsForMode(row.mode, {
+      single: row.transfer
+        ? {
+            from: row.transfer.fromPlace,
+            to: row.transfer.toPlace,
+            date: row.transfer.travelDate,
+            time: row.transfer.travelTime,
+          }
+        : undefined,
+      trip: row.trip
+        ? {
+            stops: row.trip.stops ?? [],
+            dates: row.trip.dates,
+            serviceType: row.trip.serviceType === 'chauffeur' ? 'chauffeur' : 'private',
+          }
+        : undefined,
+    });
+    if (derived === undefined) {
+      skipped.push({ bookingId: row.bookingId, reason: 'unknown_mode', detail: row.mode });
+      continue;
+    }
+    // A shared seat has no journey with editable ends — [] is expected, not a problem. Any
+    // other mode with [] genuinely has no journey to derive (a trip whose stops array is too
+    // short, for instance).
+    if (row.mode !== 'shared' && !derived.length) {
+      skipped.push({ bookingId: row.bookingId, reason: 'no_journey' });
+      continue;
+    }
+    legs.push(...derived.map((l) => ({ ...l, bookingId: row.bookingId })));
   }
   return { legs, skipped };
 }
 
 async function main(): Promise<void> {
+  const dryRun = process.argv.includes('--dry-run');
   const { sql, db } = createDb(targetUrl());
   const rows: BackfillRow[] = [];
   const all = await db
@@ -148,6 +165,23 @@ async function main(): Promise<void> {
 
   const { legs, skipped } = planBackfill(rows);
 
+  // --dry-run prints the exact same report a real run would, minus the writing — the owner
+  // reads the production skip list BEFORE committing to the write, not after. planBackfill has
+  // already run against real production data above; only the insert loop below is skipped.
+  if (dryRun) {
+    console.log('DRY RUN — no rows will be written.');
+    console.log(`bookings examined          : ${rows.length}`);
+    console.log(`legs that would be written : ${legs.length}`);
+    console.log(`skipped                    : ${skipped.length}`);
+    for (const report of skipped) {
+      const detail = report.detail ? `: ${report.detail}` : '';
+      console.log(`  ${report.bookingId} — ${report.reason}${detail}`);
+    }
+    console.log('DRY RUN — nothing was written. Re-run without --dry-run to write these rows.');
+    await sql.end();
+    return;
+  }
+
   // Grouped and inserted PER BOOKING, not as one statement for the whole run: a multi-row INSERT
   // is atomic, so a single row tripping a NOT NULL/CHECK constraint would abort every other
   // booking's legs too (onConflictDoNothing only covers unique conflicts), and at ~8 bind
@@ -162,8 +196,15 @@ async function main(): Promise<void> {
   let written = 0;
   for (const [bookingId, bookingLegRows] of legsByBooking) {
     try {
-      await db.insert(bookingLegs).values(bookingLegRows).onConflictDoNothing();
-      written += bookingLegRows.length;
+      // onConflictDoNothing() can suppress some of the offered rows (e.g. a re-run over a
+      // partially backfilled set) — `written` must count what was actually inserted, not what
+      // was offered, or the owner reads a number that overstates what the run did.
+      const inserted = await db
+        .insert(bookingLegs)
+        .values(bookingLegRows)
+        .onConflictDoNothing()
+        .returning({ id: bookingLegs.id });
+      written += inserted.length;
     } catch (err) {
       skipped.push({
         bookingId,

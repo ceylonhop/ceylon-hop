@@ -23,6 +23,37 @@ export interface DerivedLeg {
   pickupTime: string | null;
 }
 
+/** A derived leg tied to the booking it belongs to — what actually gets inserted. Lives here
+ * (not in a db/ module) because it's exactly DerivedLeg plus an id: no Postgres or NewBooking
+ * coupling, so both writers below can depend on it without pulling in each other's world. */
+export type NewLegRow = DerivedLeg & { bookingId: string };
+
+/**
+ * The one place that decides which deriver a booking `mode` maps to. `legRowsForBooking`
+ * (postgresBookingRepo.ts — mode is always a known literal, straight off a NewBooking) and
+ * `planBackfill` (backfill-booking-legs.ts — mode is a bare string read off the `bookings`
+ * table, so it CAN be something neither writer has ever produced) both call this instead of
+ * each independently re-deciding what 'single'/'trip'/'shared' mean.
+ *
+ * Returns `undefined` for anything that isn't 'single'/'trip'/'shared' — an unknown mode is the
+ * caller's problem to report, not this function's to swallow silently. 'single'/'trip' also
+ * need their matching input; when it's missing (only possible for planBackfill, whose request
+ * row can be absent on a historical booking) this returns `[]` rather than throwing, and the
+ * caller decides whether "no legs" means "not our business" (shared) or something to report.
+ */
+export function deriveLegsForMode(
+  mode: string,
+  input: {
+    single?: Parameters<typeof deriveSingleLegs>[0];
+    trip?: Parameters<typeof deriveTripLegs>[0];
+  },
+): DerivedLeg[] | undefined {
+  if (mode === 'single') return input.single ? deriveSingleLegs(input.single) : [];
+  if (mode === 'trip') return input.trip ? deriveTripLegs(input.trip) : [];
+  if (mode === 'shared') return [];
+  return undefined;
+}
+
 export function deriveSingleLegs(input: {
   from: string;
   to: string;

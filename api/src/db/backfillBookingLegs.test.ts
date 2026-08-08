@@ -117,6 +117,18 @@ describe('planBackfill', () => {
     expect(skipped).toEqual([]);
   });
 
+  // Finding 2: legRowsForBooking, planBackfill and reconcileBooking each used to treat an
+  // unknown `mode` differently, and planBackfill's version was the worst — it fell through the
+  // if/else with no branch at all, so an unknown mode vanished with no skip report. `mode` here
+  // is a bare string read off the bookings table, not a NewBooking literal, so it genuinely can
+  // be something no writer has ever produced (a historical row, a future mode this script
+  // hasn't been taught about yet).
+  it('reports an unknown mode instead of silently dropping it', () => {
+    const { legs, skipped } = planBackfill([{ bookingId: 'b7', mode: 'gift-card' }]);
+    expect(legs).toEqual([]);
+    expect(skipped).toEqual([{ bookingId: 'b7', reason: 'unknown_mode', detail: 'gift-card' }]);
+  });
+
   it('carries the transfer time onto the leg, so the leg becomes the source of truth', () => {
     const { legs } = planBackfill([
       {

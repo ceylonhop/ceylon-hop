@@ -13,7 +13,7 @@ import {
 } from './bookingRepo';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
-import { deriveSingleLegs, deriveTripLegs, type DerivedLeg } from '../domain/bookingLegs';
+import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 
 type BookingRow = typeof bookings.$inferSelect;
 
@@ -48,9 +48,6 @@ export function isIdempotencyCollision(err: unknown): boolean {
   return v !== null && v.constraint.includes('idempotency');
 }
 
-/** The leg rows a booking implies. Exported for test — see postgresBookingRepo.legs.test.ts. */
-export type NewLegRow = DerivedLeg & { bookingId: string };
-
 // `booking_legs.from_place`/`to_place` are `text NOT NULL`, but `trip_request.stops` is a
 // Postgres `text[] NOT NULL` — an array that may legally contain a null or empty-string element.
 // A malformed stop reaching the insert would raise a not-null violation INSIDE insertBooking's
@@ -62,13 +59,16 @@ function isUsablePlace(v: string): boolean {
   return typeof v === 'string' && v.length > 0;
 }
 
+// Exported for test — see postgresBookingRepo.legs.test.ts. b.mode is always a known literal
+// here (it's a NewBooking), so deriveLegsForMode never actually returns undefined; `?? []`
+// exists only so a future NewBooking mode nobody's taught this dispatch about degrades to "no
+// legs" rather than a type error, same as before this was shared with planBackfill.
 export function legRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
   const legs =
-    b.mode === 'single'
-      ? deriveSingleLegs(b.input)
-      : b.mode === 'trip'
-        ? deriveTripLegs(b.input)
-        : [];
+    deriveLegsForMode(b.mode, {
+      single: b.mode === 'single' ? b.input : undefined,
+      trip: b.mode === 'trip' ? b.input : undefined,
+    }) ?? [];
   return legs
     .filter((leg) => isUsablePlace(leg.fromPlace) && isUsablePlace(leg.toPlace))
     .map((leg) => ({ ...leg, bookingId }));

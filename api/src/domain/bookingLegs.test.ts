@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveSingleLegs, deriveTripLegs } from './bookingLegs';
+import { deriveLegsForMode, deriveSingleLegs, deriveTripLegs } from './bookingLegs';
 
 describe('deriveSingleLegs', () => {
   it('produces exactly one leg carrying the date and time', () => {
@@ -125,6 +125,40 @@ describe('deriveTripLegs — chauffeur', () => {
       ['gap', 'A', 'B', null],
       ['day', 'B', 'C', '2026-08-23'],
     ]);
+  });
+});
+
+// Finding 2: legRowsForBooking (postgresBookingRepo.ts) and planBackfill
+// (backfill-booking-legs.ts) both used to independently decide what 'single'/'trip'/'shared'
+// mean. This is the one dispatch both now call.
+describe('deriveLegsForMode', () => {
+  it('derives a single leg for mode "single" when the single input is present', () => {
+    const legs = deriveLegsForMode('single', { single: { from: 'Ella', to: 'Kandy' } });
+    expect(legs).toHaveLength(1);
+    expect(legs?.[0].fromPlace).toBe('Ella');
+  });
+
+  it('returns no legs for mode "single" with no single input, rather than throwing', () => {
+    expect(deriveLegsForMode('single', {})).toEqual([]);
+  });
+
+  it('derives trip legs for mode "trip" when the trip input is present', () => {
+    const legs = deriveLegsForMode('trip', {
+      trip: { stops: ['A', 'B', 'C'], serviceType: 'private' },
+    });
+    expect(legs).toHaveLength(2);
+  });
+
+  it('returns no legs for mode "trip" with no trip input, rather than throwing', () => {
+    expect(deriveLegsForMode('trip', {})).toEqual([]);
+  });
+
+  it('returns no legs for mode "shared" — a corridor is not a journey with editable ends', () => {
+    expect(deriveLegsForMode('shared', {})).toEqual([]);
+  });
+
+  it('returns undefined for any mode that is not single/trip/shared, so the caller can report it', () => {
+    expect(deriveLegsForMode('gift-card', {})).toBeUndefined();
   });
 });
 
