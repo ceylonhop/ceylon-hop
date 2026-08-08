@@ -148,6 +148,63 @@ describe('ops UI shell', () => {
     expect(body).toContain('_lastRenderedRoute'); // focus only moves on an actual route transition
   });
 
+  // An open booking sheet is part of the address (2026-08-08). Refreshing with a sheet open used
+  // to drop it and land the operator back on the bare queue.
+  describe('the open booking sheet is addressable', () => {
+    const uiBody = async () => await (await createApp().request('/ops')).text();
+
+    it('reads and writes ?booking= alongside the existing ?quote=', async () => {
+      const body = await uiBody();
+      expect(body).toContain("searchParams.get('booking')");
+      expect(body).toContain("url.searchParams.set('booking',bookingId)");
+      expect(body).toContain("url.searchParams.delete('booking')");
+    });
+
+    // The half that is easy to leave out. Opening on arrival looks like the whole feature until
+    // you press Back and the sheet is still sitting there over the queue.
+    it('closes the sheet when the URL no longer names a booking', async () => {
+      const body = await uiBody();
+      expect(body).toContain("if(!next.routeBookingId)closeDetail('silent');");
+    });
+
+    // renderSheet() resolves its ticket out of `tickets`; opening before the queue lands finds
+    // nothing, hides the sheet, and drops the deep link silently.
+    it('waits for the queue before opening a deep-linked booking', async () => {
+      const body = await uiBody();
+      const fn = (body.split('async function resolveBookingDeepLink(')[1] ?? '').split('\nasync function')[0];
+      expect(fn).toContain('await loadQueue()');
+      expect(fn).toContain("openDetail(id,{fromUrl:true})");
+      expect(fn.indexOf('await loadQueue()')).toBeLessThan(fn.indexOf('openDetail(id,{fromUrl:true})'));
+      expect(fn.length).toBeLessThan(2000); // the slice is one function, not the rest of the file
+    });
+
+    // Boot reads the URL itself rather than going through applyRouteFromUrl, so it needs its own
+    // call — otherwise a REFRESH keeps the address and drops the sheet, which is the whole bug.
+    it('resolves the deep link on boot, not only on popstate', async () => {
+      const body = await uiBody();
+      expect(body).toContain('if(next.routeBookingId)void resolveBookingDeepLink(next.routeBookingId);');
+      expect(body).toContain("if(next.routeBookingId&&next.routeBookingId!==state.detail)void resolveBookingDeepLink");
+    });
+
+    // Six copies of the same three statements became one. Every close must now also drop the
+    // param, and a stray raw reset would leave the address describing a closed sheet.
+    it('funnels every close through closeDetail', async () => {
+      const body = await uiBody();
+      expect(body).toContain('function closeDetail(mode)');
+      expect(body).toContain("closeDetail('push')");   // operator-initiated: Back reopens
+      expect(body).toContain("closeDetail('replace')"); // the booking went away underneath them
+      expect(body).toContain("closeDetail('silent')");  // caller syncs the URL itself
+      // exactly one raw reset survives — the one inside closeDetail
+      expect(body.match(/state\.detail=null;state\.detailData=null/g)?.length).toBe(1);
+    });
+
+    it('never leaves ?booking= set on a surface that cannot show it', async () => {
+      const body = await uiBody();
+      expect(body).toContain("if(route==='tickets'&&bookingId)url.searchParams.set('booking',bookingId);");
+      expect(body).toContain("if(route!=='tickets')closeDetail('silent');");
+    });
+  });
+
   it('ships a client-error beacon so ops-dashboard JS errors are captured (M17 parity)', async () => {
     // The customer pages beacon uncaught JS errors to /errors/client; the ops UI did not, so a
     // render bug in the staff dashboard vanished silently. It must forward to the same sink.
