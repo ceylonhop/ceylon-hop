@@ -14,6 +14,7 @@ import { eq, isNull } from 'drizzle-orm';
 import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
 import { deriveLegsForMode, type NewLegRow } from '../src/domain/bookingLegs';
+import { requireConnectionUrl, redactConnectionString } from './lib/targetUrl';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -21,14 +22,7 @@ loadEnv({ path: '.env', quiet: true });
 // Supabase, so an implicit read would backfill prod from a laptop by accident. The operator must
 // name the target every time.
 function targetUrl(): string {
-  const url = process.env.BACKFILL_DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      'Set BACKFILL_DATABASE_URL to the database you mean to write to. ' +
-        'DATABASE_URL is not used here on purpose — api/.env points at production.',
-    );
-  }
-  return url;
+  return requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to');
 }
 
 export interface BackfillRow {
@@ -140,90 +134,104 @@ export function planBackfill(rows: BackfillRow[]): { legs: NewLegRow[]; skipped:
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
-  const { sql, db } = createDb(targetUrl());
-  const rows: BackfillRow[] = [];
-  const all = await db
-    .select({ id: bookings.id, mode: bookings.mode })
-    .from(bookings)
-    .leftJoin(bookingLegs, eq(bookingLegs.bookingId, bookings.id))
-    .where(isNull(bookingLegs.id));
+  const url = targetUrl();
+  const { sql, db } = createDb(url);
 
-  for (const b of all) {
-    if (b.mode === 'single') {
-      const [t] = await db
-        .select()
-        .from(transferRequests)
-        .where(eq(transferRequests.bookingId, b.id));
-      rows.push(toBackfillRow(b, t, undefined));
-    } else if (b.mode === 'trip') {
-      const [t] = await db.select().from(tripRequests).where(eq(tripRequests.bookingId, b.id));
-      rows.push(toBackfillRow(b, undefined, t));
-    } else {
-      rows.push(toBackfillRow(b, undefined, undefined));
+  // Everything below touches the driver, directly or via drizzle. A well-formed URL with a wrong
+  // password (or a dropped connection mid-run) can still produce a driver error, and nothing
+  // guarantees that error's message won't quote the connection string back — so every driver
+  // error, wherever it surfaces, gets sanitised before it's shown or rethrown. This does not
+  // swallow the failure: the operator still sees that the connection failed and why, just not
+  // the credential.
+  try {
+    const rows: BackfillRow[] = [];
+    const all = await db
+      .select({ id: bookings.id, mode: bookings.mode })
+      .from(bookings)
+      .leftJoin(bookingLegs, eq(bookingLegs.bookingId, bookings.id))
+      .where(isNull(bookingLegs.id));
+
+    for (const b of all) {
+      if (b.mode === 'single') {
+        const [t] = await db
+          .select()
+          .from(transferRequests)
+          .where(eq(transferRequests.bookingId, b.id));
+        rows.push(toBackfillRow(b, t, undefined));
+      } else if (b.mode === 'trip') {
+        const [t] = await db.select().from(tripRequests).where(eq(tripRequests.bookingId, b.id));
+        rows.push(toBackfillRow(b, undefined, t));
+      } else {
+        rows.push(toBackfillRow(b, undefined, undefined));
+      }
     }
-  }
 
-  const { legs, skipped } = planBackfill(rows);
+    const { legs, skipped } = planBackfill(rows);
 
-  // --dry-run prints the exact same report a real run would, minus the writing — the owner
-  // reads the production skip list BEFORE committing to the write, not after. planBackfill has
-  // already run against real production data above; only the insert loop below is skipped.
-  if (dryRun) {
-    console.log('DRY RUN — no rows will be written.');
-    console.log(`bookings examined          : ${rows.length}`);
-    console.log(`legs that would be written : ${legs.length}`);
-    console.log(`skipped                    : ${skipped.length}`);
+    // --dry-run prints the exact same report a real run would, minus the writing — the owner
+    // reads the production skip list BEFORE committing to the write, not after. planBackfill has
+    // already run against real production data above; only the insert loop below is skipped.
+    if (dryRun) {
+      console.log('DRY RUN — no rows will be written.');
+      console.log(`bookings examined          : ${rows.length}`);
+      console.log(`legs that would be written : ${legs.length}`);
+      console.log(`skipped                    : ${skipped.length}`);
+      for (const report of skipped) {
+        const detail = report.detail ? `: ${report.detail}` : '';
+        console.log(`  ${report.bookingId} — ${report.reason}${detail}`);
+      }
+      console.log('DRY RUN — nothing was written. Re-run without --dry-run to write these rows.');
+      await sql.end();
+      return;
+    }
+
+    // Grouped and inserted PER BOOKING, not as one statement for the whole run: a multi-row
+    // INSERT is atomic, so a single row tripping a NOT NULL/CHECK constraint would abort every
+    // other booking's legs too (onConflictDoNothing only covers unique conflicts), and at ~8
+    // bind params/row a whole-run statement can hit Postgres' 65,535-parameter ceiling past
+    // ~8,000 legs. Per-booking keeps "all its legs or none" true without an arbitrary chunk size.
+    const legsByBooking = new Map<string, NewLegRow[]>();
+    for (const leg of legs) {
+      const bucket = legsByBooking.get(leg.bookingId);
+      if (bucket) bucket.push(leg);
+      else legsByBooking.set(leg.bookingId, [leg]);
+    }
+    let written = 0;
+    for (const [bookingId, bookingLegRows] of legsByBooking) {
+      try {
+        // onConflictDoNothing() can suppress some of the offered rows (e.g. a re-run over a
+        // partially backfilled set) — `written` must count what was actually inserted, not what
+        // was offered, or the owner reads a number that overstates what the run did.
+        const inserted = await db
+          .insert(bookingLegs)
+          .values(bookingLegRows)
+          .onConflictDoNothing()
+          .returning({ id: bookingLegs.id });
+        written += inserted.length;
+      } catch (err) {
+        skipped.push({
+          bookingId,
+          reason: 'insert_failed',
+          detail:
+            err instanceof Error ? redactConnectionString(err.message, url) : String(err),
+        });
+      }
+    }
+
+    // Skips are REPORTED, never silent: a booking with no legs shows no card in Phase 2 and
+    // would otherwise be invisible.
+    console.log(`bookings examined : ${rows.length}`);
+    console.log(`legs written      : ${written}`);
+    console.log(`skipped           : ${skipped.length}`);
     for (const report of skipped) {
       const detail = report.detail ? `: ${report.detail}` : '';
       console.log(`  ${report.bookingId} — ${report.reason}${detail}`);
     }
-    console.log('DRY RUN — nothing was written. Re-run without --dry-run to write these rows.');
     await sql.end();
-    return;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Database operation failed: ${redactConnectionString(message, url)}`);
   }
-
-  // Grouped and inserted PER BOOKING, not as one statement for the whole run: a multi-row INSERT
-  // is atomic, so a single row tripping a NOT NULL/CHECK constraint would abort every other
-  // booking's legs too (onConflictDoNothing only covers unique conflicts), and at ~8 bind
-  // params/row a whole-run statement can hit Postgres' 65,535-parameter ceiling past ~8,000 legs.
-  // Per-booking keeps "all its legs or none" true without needing an arbitrary chunk size.
-  const legsByBooking = new Map<string, NewLegRow[]>();
-  for (const leg of legs) {
-    const bucket = legsByBooking.get(leg.bookingId);
-    if (bucket) bucket.push(leg);
-    else legsByBooking.set(leg.bookingId, [leg]);
-  }
-  let written = 0;
-  for (const [bookingId, bookingLegRows] of legsByBooking) {
-    try {
-      // onConflictDoNothing() can suppress some of the offered rows (e.g. a re-run over a
-      // partially backfilled set) — `written` must count what was actually inserted, not what
-      // was offered, or the owner reads a number that overstates what the run did.
-      const inserted = await db
-        .insert(bookingLegs)
-        .values(bookingLegRows)
-        .onConflictDoNothing()
-        .returning({ id: bookingLegs.id });
-      written += inserted.length;
-    } catch (err) {
-      skipped.push({
-        bookingId,
-        reason: 'insert_failed',
-        detail: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  // Skips are REPORTED, never silent: a booking with no legs shows no card in Phase 2 and would
-  // otherwise be invisible.
-  console.log(`bookings examined : ${rows.length}`);
-  console.log(`legs written      : ${written}`);
-  console.log(`skipped           : ${skipped.length}`);
-  for (const report of skipped) {
-    const detail = report.detail ? `: ${report.detail}` : '';
-    console.log(`  ${report.bookingId} — ${report.reason}${detail}`);
-  }
-  await sql.end();
 }
 
 if (process.argv[1]?.endsWith('backfill-booking-legs.ts')) {

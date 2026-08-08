@@ -6,6 +6,7 @@ import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { SendBudget } from './sendBudget';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -215,5 +216,47 @@ describe('pay links re-arm the abandoned-checkout watch', () => {
     });
     expect(res.stuckPending).toBe(0);
     expect(alerts.sent).toHaveLength(0);
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+describe('runWatchdog — burst cap', () => {
+  async function seedManyPending(n: number) {
+    const bookings = new InMemoryBookingRepo();
+    for (let i = 0; i < n; i++) {
+      const b = await bookings.create(sample);
+      await bookings.setStatus(b.id, 'payment_pending');
+    }
+    return bookings;
+  }
+
+  it('caps customer recovery emails', async () => {
+    const bookings = await seedManyPending(5);
+    const email = new FakeEmailAdapter();
+    const budget = new SendBudget(2);
+
+    const res = await runWatchdog(later(45), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts: new FakeAlertAdapter(),
+      email, baseUrl: 'https://ceylonhop.com', linkSecret: 's', budget,
+    });
+
+    expect(res.recoveryEmails).toBe(2);
+    expect(email.sent).toHaveLength(2);
+    expect(budget.report().kinds).toEqual({ payment_recovery: 3 });
+  });
+
+  it('never caps ops ALERTS — suppressing the page would hide the problem', async () => {
+    const bookings = await seedManyPending(5);
+    const alerts = new FakeAlertAdapter();
+
+    const res = await runWatchdog(later(45), {
+      bookings, log: new InMemoryNotificationLogRepo(), alerts,
+      email: new FakeEmailAdapter(), baseUrl: 'https://ceylonhop.com', linkSecret: 's',
+      budget: new SendBudget(0),
+    });
+
+    expect(res.stuckPending).toBe(5);
+    expect(alerts.sent).toHaveLength(5); // all five still paged
+    expect(res.recoveryEmails).toBe(0); // but no customer mail left the building
   });
 });
