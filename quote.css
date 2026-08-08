@@ -26,7 +26,7 @@
    ticket.css's pp-sub only ever had to lead into a single fact list. */
 .pp-sub{margin-bottom:10px}
 
-/* hero total — critique #1: the price leads. Newsreader money, same face as .tot .v */
+/* hero total — critique #1: the price leads. Bodoni money, same face as .tot .v */
 /* No .hero-tot rules: the hero carries no total (owner, 2026-08-06) — the option card below IS
    the price, and repeating it above read as a duplicate rather than a lead. */
 
@@ -89,7 +89,7 @@
    paper-and-hairline ghost read as inactive on cream next to the solid green. Teal ink and a
    firmer border keep the hierarchy while staying unmistakably tappable. */
 .opts .btn-ghost{color:var(--accent-deep);border:1.5px solid #9ed4d0}
-.opt-n{font-family:var(--display);font-weight:800;font-size:1.2rem;letter-spacing:-.01em;margin:0;color:var(--ink)}
+.opt-n{font-family:var(--display);font-weight:700;font-size:1.2rem;letter-spacing:0;margin:0;color:var(--ink)}
 .opt-d{font-size:.8rem;color:var(--ink-soft);margin:4px 0 0}
 /* Cancellation is reassurance, not a selling point (owner critique, 2026-08-06): quiet grey in
    the helper's voice — link-teal in the old slot out-shouted the blurb — sitting last on the
@@ -120,7 +120,7 @@
 
 /* lapsed banner — the .t-stat.wait palette, sized as a card */
 .lapse{background:#fbf0d8;border:1px solid #eeda9e;border-radius:var(--r);padding:13px 15px;margin-top:14px}
-.lapse b{display:block;font-family:var(--display);font-weight:800;font-size:1.05rem;color:#7a5210;margin-bottom:2px}
+.lapse b{display:block;font-family:var(--display);font-weight:700;font-size:1.05rem;color:#7a5210;margin-bottom:2px}
 .lapse p{margin:0;font-size:.8rem;color:#8a6520}
 .stale .ticket{opacity:.72}
 .stale .tot .v{color:var(--ink-faint)}
@@ -131,7 +131,7 @@
 .de-wrap{text-align:center;padding:18px 0 8px}
 .de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
 .de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
-.de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+.de-title{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:0;color:var(--ink);margin:.3rem 0 .5rem}
 .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
 .de-cta{margin-top:20px}
 .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}

@@ -110,6 +110,46 @@ describe('renderRoute route memo', () => {
     expect(calls).toHaveLength(2);
   });
 
+  // A quote's legs can be pinned to the toll-free road in ops (routeVariant: 'no_tolls').
+  // The customer's map must draw the road they were quoted, not the expressway.
+  it('asks for the toll-free route when a run says so', async () => {
+    await CH_MAP.renderRoute(host(), ['Kandy', 'Ella'], {
+      runs: [{ stops: ['Kandy', 'Ella'], avoidTolls: true }],
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].routeModifiers).toEqual({ avoidTolls: true });
+  });
+
+  it('sends no route modifiers without a run — the default route, unchanged', async () => {
+    await CH_MAP.renderRoute(host(), ['Kandy', 'Ella']);
+    expect(calls[0].routeModifiers).toBeUndefined();
+  });
+
+  // The memo is keyed on the stop list. Two quotes over the same stops that differ only in
+  // road choice would otherwise share one cached line, and the second would be drawn wrong.
+  it('does not serve a cached expressway line to a toll-free request', async () => {
+    await CH_MAP.renderRoute(host(), ['Kandy', 'Ella']);
+    await CH_MAP.renderRoute(host(), ['Kandy', 'Ella'], {
+      runs: [{ stops: ['Kandy', 'Ella'], avoidTolls: true }],
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1].routeModifiers).toEqual({ avoidTolls: true });
+  });
+
+  // avoidTolls is per REQUEST; routeVariant is per LEG. A journey whose legs disagree is
+  // drawn as one query per run — and only then, so the common all-agree case stays one call.
+  it('queries each run separately when the legs disagree', async () => {
+    await CH_MAP.renderRoute(host(), ['Ella', 'Kandy', 'Colombo City'], {
+      runs: [
+        { stops: ['Ella', 'Kandy'], avoidTolls: true },
+        { stops: ['Kandy', 'Colombo City'], avoidTolls: false, continues: true },
+      ],
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].routeModifiers).toEqual({ avoidTolls: true });
+    expect(calls[1].routeModifiers).toBeUndefined();
+  });
+
   it('does not cache a routeless response', async () => {
     // The Routes API expresses "no route found" as a successful response with an EMPTY
     // `routes` array — that's not a rejection, so it must be evicted on resolution too, or

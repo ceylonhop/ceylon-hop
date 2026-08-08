@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b68f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="346" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b68k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="400" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M91.7 34.5 Q98.0 50.5 93.2 65.8 Q88.4 81.1 71.0 89.6 Q53.6 98.1 39.7 96.2 Q25.8 94.4 14.7 79.6 Q3.5 64.9 4.9 46.5 Q6.3 28.1 18.2 17.1 Q30.2 6.2 45.3 3.7 Q60.4 1.1 73.0 9.8 Q85.5 18.4 91.7 34.5Z" fill="#0DB9B6"></path>
+<g transform="rotate(-3.46 50 50)">
+  <g class="pass-fill" filter="url(#b68f)"><path d="M50 20 76 34v30L50 80 24 64V34z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M50 34 64 42v14L50 66 36 56V42z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M24 34 36 42M76 34 64 42M24 64l12-8M76 64 64 56M50 20v14M50 66v14" fill="none" stroke="#4A4648" stroke-width="2.6" stroke-linecap="round"></path><path d="M42 46c2-3 5-4 8-4" fill="none" stroke="#F9A429" stroke-width="3.2" stroke-linecap="round"></path><path d="M79 20v9M75 24.5h9" stroke="#FAF1E4" stroke-width="3" stroke-linecap="round"></path></g>
+  <g class="pass-ink" filter="url(#b68k)"><path d="M50 20 76 34v30L50 80 24 64V34z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M50 34 64 42v14L50 66 36 56V42z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M24 34 36 42M76 34 64 42M24 64l12-8M76 64 64 56M50 20v14M50 66v14" fill="none" stroke="#4A4648" stroke-width="2.6" stroke-linecap="round"></path><path d="M42 46c2-3 5-4 8-4" fill="none" stroke="#F9A429" stroke-width="3.2" stroke-linecap="round"></path><path d="M79 20v9M75 24.5h9" stroke="#FAF1E4" stroke-width="3" stroke-linecap="round"></path></g>
+</g>
+</svg>

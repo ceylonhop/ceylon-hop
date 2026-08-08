@@ -10,9 +10,22 @@ import type { RideListWithMembers } from '../db/rideListRepo';
 --------------------------------------------------------------------------- */
 
 const C = {
-  teal: '#0AB9B6', tealDeep: '#08938f', saffron: '#F9A429', tomato: '#EC3A24',
-  ink: '#2C2A2B', inkSoft: '#6c6a6b', cream: '#F4F2EA', paper: '#fffdf8', line: '#ded7c4',
+  blue: '#63BFD6', teal: '#0AB9B6', tealDeep: '#08938f', saffron: '#F9A429', tomato: '#EC3A24',
+  ink: '#3A3739', inkSoft: '#6c6a6b', cream: '#F0EEE5', paper: '#fffdf8', line: '#ded7c4',
 } as const;
+
+/* Font families for the rasterised cards, shared by shareCardImage / quoteCard / payCard.
+
+   These are INTERNAL family names read out of the bundled TTFs, not file names or the
+   CSS family. Resvg runs with loadSystemFonts:false, so a name that does not match a
+   bundled face renders blank glyphs rather than falling back — and Google's static
+   Bodoni Moda reports itself as "Bodoni Moda 11pt", so plain "Bodoni Moda" silently
+   produces an empty card. Guarded by web-tests/unit/card-font-families.test.js. */
+export const DISPLAY = 'Bodoni Moda 11pt';
+export const BODY = 'Poppins';
+
+/** Neither bundled face has '→', and resvg blanks a whole run over one missing glyph. */
+export const deArrow = (s: string): string => s.replace(/\s*→\s*/g, ' – ');
 
 const SEAT_COLOURS = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c'];
 
@@ -77,12 +90,12 @@ export function cardSvg(m: CardModel): string {
     const cx = 89 + i * 56;
     if (i < m.taken.length) {
       return `<circle cx="${cx}" cy="478" r="23" fill="${SEAT_COLOURS[i % SEAT_COLOURS.length]}"/>` +
-        `<text x="${cx}" y="485" font-family="Hanken Grotesk" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">${xml(initials(m.taken[i]))}</text>`;
+        `<text x="${cx}" y="485" font-family="${BODY}" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">${xml(initials(m.taken[i]))}</text>`;
     }
     // the first open seat is the one on offer — ring it, that is the whole pitch
     const first = i === m.taken.length;
     return `<circle cx="${cx}" cy="478" r="22" fill="none" stroke="${first ? C.tomato : '#cbc3ad'}" stroke-width="${first ? 3 : 2.5}"${first ? '' : ' stroke-dasharray="6 5"'}/>` +
-      `<text x="${cx}" y="487" font-family="Hanken Grotesk" font-size="26" font-weight="600" fill="${first ? C.tomato : '#a9a08a'}" text-anchor="middle">+</text>`;
+      `<text x="${cx}" y="487" font-family="${BODY}" font-size="26" font-weight="700" fill="${first ? C.tomato : '#a9a08a'}" text-anchor="middle">+</text>`;
   }).join('');
 
   const caption = open === 0
@@ -116,37 +129,43 @@ export function cardSvg(m: CardModel): string {
 
 <!-- brand -->
 <circle cx="85" cy="70" r="19" fill="${C.saffron}"/>
-<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
-<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="${C.ink}">Ceylon Hop</text>
+<text x="85" y="79" font-family="${DISPLAY}" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="${DISPLAY}" font-size="27" font-weight="800" fill="${C.ink}">Ceylon Hop</text>
 
 <!-- ride -->
-<text x="66" y="250" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="${C.tealDeep}">SHARED VAN · THE RIDE BOARD</text>
-<text x="66" y="316" font-family="Newsreader" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.from)}</text>
-<text x="66" y="${316 + routeSize + 8}" font-family="Newsreader" font-size="${routeSize}" font-weight="800" fill="${C.ink}"><tspan fill="${C.teal}">→ </tspan>${xml(m.to)}</text>
-<text x="66" y="${316 + routeSize + 52}" font-family="Hanken Grotesk" font-size="21" font-weight="600" fill="${C.inkSoft}">${xml(m.when)}</text>
+<text x="66" y="250" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.8" fill="${C.tealDeep}">SHARED VAN · THE RIDE BOARD</text>
+<text x="66" y="316" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.from)}</text>
+<!-- The arrow is DRAWN, not typed. No bundled face has '→' (Bodoni Moda and Poppins both
+     lack it), and resvg has no system fonts to fall back to, so a literal arrow renders as
+     .notdef. A path also keeps it optically aligned to the cap height at any routeSize. -->
+<g transform="translate(66,${316 + routeSize + 8 - routeSize * 0.3})" stroke="${C.teal}" stroke-width="${routeSize * 0.09}" stroke-linecap="round" stroke-linejoin="round" fill="none">
+  <path d="M0 0 h${routeSize * 0.52}"/><path d="M${routeSize * 0.34} ${-routeSize * 0.16} L${routeSize * 0.54} 0 L${routeSize * 0.34} ${routeSize * 0.16}"/>
+</g>
+<text x="${66 + routeSize * 0.76}" y="${316 + routeSize + 8}" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.to)}</text>
+<text x="66" y="${316 + routeSize + 52}" font-family="${BODY}" font-size="21" font-weight="700" fill="${C.inkSoft}">${xml(m.when)}</text>
 
 <!-- seats -->
 ${seats}
-<text x="66" y="540" font-family="Hanken Grotesk" font-size="20" font-weight="700" fill="${C.ink}">${xml(caption)}${open > 0 ? `<tspan dx="8" fill="${C.inkSoft}" font-weight="600">· ${open} still open</tspan>` : ''}</text>
+<text x="66" y="540" font-family="${BODY}" font-size="20" font-weight="700" fill="${C.ink}">${xml(caption)}${open > 0 ? `<tspan dx="8" fill="${C.inkSoft}" font-weight="600">· ${open} still open</tspan>` : ''}</text>
 
 <!-- deadline -->
 <circle cx="76" cy="580" r="10" fill="none" stroke="${m.locked ? C.tealDeep : C.tomato}" stroke-width="2.4"/>
 <path d="M76 574 L76 580 L80 583" fill="none" stroke="${m.locked ? C.tealDeep : C.tomato}" stroke-width="2.4" stroke-linecap="round"/>
-<text x="95" y="588" font-family="Hanken Grotesk" font-size="20" font-weight="700" fill="${C.ink}">${xml(m.deadline)}</text>
+<text x="95" y="588" font-family="${BODY}" font-size="20" font-weight="700" fill="${C.ink}">${xml(m.deadline)}</text>
 
 <!-- stub content -->
-${leadLines.map((l, i) => `<text x="842" y="${228 + i * 46}" font-family="Newsreader" font-size="40" font-weight="800" fill="${m.hot ? C.tomato : C.tealDeep}">${xml(l)}</text>`).join('\n')}
-${subLines.map((l, i) => `<text x="842" y="${228 + leadLines.length * 46 + 14 + i * 26}" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="${C.inkSoft}">${xml(l)}</text>`).join('\n')}
+${leadLines.map((l, i) => `<text x="842" y="${228 + i * 46}" font-family="${DISPLAY}" font-size="40" font-weight="800" fill="${m.hot ? C.tomato : C.tealDeep}">${xml(l)}</text>`).join('\n')}
+${subLines.map((l, i) => `<text x="842" y="${228 + leadLines.length * 46 + 14 + i * 26}" font-family="${BODY}" font-size="18" font-weight="700" fill="${C.inkSoft}">${xml(l)}</text>`).join('\n')}
 <line x1="842" y1="410" x2="1158" y2="410" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="6 5"/>
-<text x="842" y="444" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="${C.inkSoft}">YOUR SEAT</text>
-<text x="842" y="500" font-family="Newsreader" font-size="54" font-weight="800" fill="${C.ink}">${xml(m.price)}<tspan dx="12" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="${C.inkSoft}">each</tspan></text>
+<text x="842" y="444" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.2" fill="${C.inkSoft}">YOUR SEAT</text>
+<text x="842" y="500" font-family="${DISPLAY}" font-size="54" font-weight="800" fill="${C.ink}">${xml(m.price)}<tspan dx="12" font-family="${BODY}" font-size="22" font-weight="700" fill="${C.inkSoft}">each</tspan></text>
 <line x1="842" y1="528" x2="1158" y2="528" stroke="${C.line}" stroke-width="1.5" stroke-dasharray="6 5"/>
 ${m.locked
-    ? `<text x="842" y="568" font-family="Hanken Grotesk" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · van locked in</text>`
-    : `<text x="842" y="568" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="${C.tealDeep}">$0 to join</text>
-<text x="842" y="594" font-family="Hanken Grotesk" font-size="16" font-weight="600" fill="${C.inkSoft}">pay only if it fills</text>`}
+    ? `<text x="842" y="568" font-family="${BODY}" font-size="19" font-weight="700" fill="${C.tealDeep}">Charged · van locked in</text>`
+    : `<text x="842" y="568" font-family="${BODY}" font-size="21" font-weight="700" fill="${C.tealDeep}">$0 to join</text>
+<text x="842" y="594" font-family="${BODY}" font-size="16" font-weight="700" fill="${C.inkSoft}">pay only if it fills</text>`}
 ${m.locked
-    ? `<g transform="rotate(38 1120 60)"><rect x="960" y="38" width="320" height="40" fill="${C.saffron}"/><text x="1120" y="65" font-family="Hanken Grotesk" font-size="17" font-weight="700" letter-spacing="2.4" fill="#fff" text-anchor="middle">IT'S ON!</text></g>`
+    ? `<g transform="rotate(38 1120 60)"><rect x="960" y="38" width="320" height="40" fill="${C.saffron}"/><text x="1120" y="65" font-family="${BODY}" font-size="17" font-weight="700" letter-spacing="2.4" fill="#fff" text-anchor="middle">IT'S ON!</text></g>`
     : ''}
 </svg>`;
 }

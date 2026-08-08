@@ -27,9 +27,9 @@ const SOC = {
   fb: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.78-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12z"/></svg>',
 };
 
-// Real Ceylon Hop logo glyph (the saffron 'C'); mirrors site.js's cmark.
+// Real Ceylon Hop logo glyph (the brand 'C', vector); mirrors site.js's cmark.
 // A cacheable file rather than ~8KB of base64 inlined twice into every generated page.
-const CMARK_LOGO = 'img/ceylon-hop-c.png';
+const CMARK_LOGO = 'img/brand-c.svg';
 export function cmark(size = 34, prefix = '') {
   return `<img class="cmark" src="${prefix}${CMARK_LOGO}" style="width:${size}px;height:${size}px;object-fit:contain;vertical-align:middle" alt="Ceylon Hop" aria-hidden="true">`;
 }
@@ -58,7 +58,7 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
 export function headAssets(p) {
-  return `<meta name="theme-color" content="#0AB9B6">
+  return `<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="${p}favicon.svg">
 <link rel="apple-touch-icon" href="${p}img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="${p}site.css">

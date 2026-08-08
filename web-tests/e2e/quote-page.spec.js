@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { installStubs } from './_stubs.js';
 
 // The customer quote page (quote.html, backed by GET /quote-view) — spec 2026-08-05 D6: a
 // READ-ONLY proposal, not a payment page. There is no pay button and no link to /p anywhere on
@@ -137,6 +138,100 @@ test('no pay button and no /p link exists anywhere on the page', async ({ page }
   await expect(page.locator('#paybtn')).toHaveCount(0);
   await expect(page.locator('a[href*="/p?t="]')).toHaveCount(0);
   await expect(page.locator('a[href*="/p.html"]')).toHaveCount(0);
+});
+
+// The customer must see the road the quote was PRICED on. Ops can pin a leg to the toll-free
+// road; before this the view never carried that choice and ch-map always asked Google for its
+// default, so a Local-road quote showed the customer an expressway line (2026-08-08).
+test('the map draws the toll-free road when the quote was quoted on it', async ({ page }) => {
+  await page.addInitScript(installStubs); // real ch-map path, offline — loadJs() short-circuits
+  const v = view({ options: [PRIVATE_OPT] });
+  v.mapStops = ['Ella', 'Colombo City'];
+  v.mapRuns = [{ stops: ['Ella', 'Colombo City'], avoidTolls: true, continues: false }];
+  await stubQuoteView(page, { state: 'live', view: v, validUntil: new Date(Date.now() + 7 * 864e5).toISOString() });
+  await page.goto(PAGE);
+
+  // The map is IntersectionObserver-deferred, so it only mounts once scrolled to.
+  await page.locator('#map').scrollIntoViewIfNeeded();
+  await expect(page.locator('#map .ch-map-wrap.ready')).toBeVisible({ timeout: 10000 });
+
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  expect(reqs).toHaveLength(1); // one run → one query, the same billing as before
+  expect(reqs[0].routeModifiers).toEqual({ avoidTolls: true });
+
+  // Expanding must not quietly switch roads — the modal draws what the card drew.
+  await page.locator('#map .ch-map-expand').click();
+  await expect(page.locator('.ch-map-modal-map .ch-map-wrap')).toBeVisible();
+  const after = await page.evaluate(() => window.__computeRoutesReqs || []);
+  expect(after.every((r) => r.routeModifiers && r.routeModifiers.avoidTolls === true)).toBe(true);
+});
+
+test('a default-road quote asks for no modifiers — one query, unchanged', async ({ page }) => {
+  await page.addInitScript(installStubs);
+  const v = view({ options: [PRIVATE_OPT] });
+  v.mapStops = ['Ella', 'Colombo City'];
+  v.mapRuns = [{ stops: ['Ella', 'Colombo City'], avoidTolls: false, continues: false }];
+  await stubQuoteView(page, { state: 'live', view: v, validUntil: new Date(Date.now() + 7 * 864e5).toISOString() });
+  await page.goto(PAGE);
+
+  await page.locator('#map').scrollIntoViewIfNeeded();
+  await expect(page.locator('#map .ch-map-wrap.ready')).toBeVisible({ timeout: 10000 });
+  const reqs = await page.evaluate(() => window.__computeRoutesReqs || []);
+  expect(reqs).toHaveLength(1);
+  expect(reqs[0].routeModifiers).toBeUndefined();
+});
+
+// A journey whose legs disagree on the road takes one query per run, and the two runs SHARE
+// the stop where they meet. Pinning it twice is the trap: mapPins merges pins within ~50 m and
+// the label reads "2·3" where the journey plainly has a stop 2.
+test('a split journey pins its join stop once, not twice', async ({ page }) => {
+  // Local stub, not the shared one: this needs a distinct route per request so the pins land in
+  // distinct places (the shared stub answers every request with the same two coordinates).
+  await page.addInitScript(() => {
+    const AT = {
+      'Ella, Sri Lanka': { lat: 6.87, lng: 81.05 },
+      'Kandy, Sri Lanka': { lat: 7.29, lng: 80.63 },
+      'Colombo City, Sri Lanka': { lat: 6.93, lng: 79.85 },
+    };
+    function MapCls() {}
+    MapCls.prototype.fitBounds = function () {};
+    MapCls.prototype.getZoom = function () { return 10; };
+    MapCls.prototype.addListener = function () { return { remove() {} }; };
+    function Marker(opts) { (window.__chMarkers = window.__chMarkers || []).push(opts || {}); }
+    Marker.prototype.setMap = function () {};
+    function Point() {}
+    function Polyline() {}
+    Polyline.prototype.setOptions = function () {};
+    Polyline.prototype.setMap = function () {};
+    const Route = {
+      computeRoutes: async (req) => ({
+        routes: [{
+          path: [],
+          viewport: {},
+          legs: [{ startLocation: AT[req.origin], endLocation: AT[req.destination] }],
+          createPolylines: () => [new Polyline()],
+        }],
+      }),
+    };
+    const libs = { maps: { Map: MapCls, Polyline }, routes: { Route }, marker: { Marker }, core: { Point } };
+    window.google = { maps: { importLibrary: async (n) => libs[n] || {}, event: { trigger() {} } } };
+  });
+
+  const v = view({ options: [PRIVATE_OPT] });
+  v.mapStops = ['Ella', 'Kandy', 'Colombo City'];
+  v.mapRuns = [
+    { stops: ['Ella', 'Kandy'], avoidTolls: true, continues: false },
+    { stops: ['Kandy', 'Colombo City'], avoidTolls: false, continues: true },
+  ];
+  await stubQuoteView(page, { state: 'live', view: v, validUntil: new Date(Date.now() + 7 * 864e5).toISOString() });
+  await page.goto(PAGE);
+
+  await page.locator('#map').scrollIntoViewIfNeeded();
+  await expect(page.locator('#map .ch-map-wrap.ready')).toBeVisible({ timeout: 10000 });
+
+  const labels = await page.evaluate(() =>
+    (window.__chMarkers || []).map((m) => m.label && m.label.text));
+  expect(labels).toEqual(['1', '2', '3']); // Kandy is stop 2 — once — not a merged "2·3"
 });
 
 test('a lapsed quote shows the expiry row and still renders the itinerary', async ({ page }) => {

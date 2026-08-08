@@ -71,7 +71,7 @@ describe('customer pay pages are served by the API host', () => {
       ['/consent.js', 'javascript'],
       ['/favicon.svg', 'image/svg+xml'],
       ['/img/ceylon-hop-touch-icon.png', 'image/png'],
-      ['/img/ceylon-hop-c.png', 'image/png'],
+      ['/img/brand-c.svg', 'image/svg+xml'],
     ];
     for (const [path, type] of cases) {
       const res = await get(path);
@@ -83,9 +83,9 @@ describe('customer pay pages are served by the API host', () => {
   it('pay.html uses the REAL logo file, not a hand-drawn C', async () => {
     // The first cut drew its own stroke-path "C" in a saffron square. It read as almost-right,
     // which is worse than obviously wrong (owner caught it, 2026-07-31). The brand mark is a
-    // file — img/ceylon-hop-c.png, the same one site.js's cmark() serves the header.
+    // file — img/brand-c.svg, the same one site.js's cmark() serves the header.
     const html = await (await get('/pay.html')).text();
-    expect(html).toContain('src="img/ceylon-hop-c.png"');
+    expect(html).toContain('src="img/brand-c.svg"');
     expect(html, 'no bespoke logo path drawing').not.toMatch(/pp-cmark"><svg/);
   });
 
