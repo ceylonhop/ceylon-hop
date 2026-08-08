@@ -67,3 +67,28 @@ describe('ResendEmailAdapter', () => {
     expect(body.reply_to).toBeUndefined();
   });
 });
+
+// A customer who reached out on WhatsApp has no email address, and since 2026-08-08 the booking
+// may legitimately carry none (spec 2026-08-08). Every sender reads `booking.input.customer.email`
+// straight into `to`, so the guard belongs here — one place, all ten senders.
+describe('a customer with no email address', () => {
+  const msg = { subject: 's', html: '<p>h</p>', text: 't' };
+
+  it('is skipped rather than sent to an empty address', async () => {
+    const fake = new FakeEmailAdapter();
+    await fake.send({ ...msg, to: '' });
+    await fake.send({ ...msg, to: '   ' });
+    expect(fake.sent).toHaveLength(0);
+  });
+
+  it('does not throw — a missing address is not an error', async () => {
+    const fake = new FakeEmailAdapter();
+    await expect(fake.send({ ...msg, to: '' })).resolves.toBeUndefined();
+  });
+
+  it('still sends to a real address', async () => {
+    const fake = new FakeEmailAdapter();
+    await fake.send({ ...msg, to: 'frank@example.com' });
+    expect(fake.sent).toHaveLength(1);
+  });
+});

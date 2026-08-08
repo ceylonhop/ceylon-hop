@@ -2794,6 +2794,10 @@ function refundRequestFor(t, d){
   if(!g.allowed) return '';
   const s = refundSummary(d);
   if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
+  /* Whether THIS operator can move money decides what the button is called and what it does — an
+     operator without payments:reverse can only file the request. Same capability the pending-row
+     controls gate on, read here because this is a different function. */
+  const mayFire = !!(state.caps && state.caps.includes('payments:reverse'));
   /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
      NOT do: it files an intent and moves no money, and the control that moves money is a separate
      press on the row it creates. The owner read it as done three times in one evening — twice
@@ -2811,7 +2815,7 @@ function refundRequestFor(t, d){
   return `<label class="reverse-reason">Reason <span class="req">required</span>
       <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
     </label>
-    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="Files a FULL refund request — no money moves until you complete it on the row below">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
+    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${mayFire?'Refunds through PayHere immediately — there is no undo':'Files a FULL refund request for someone who can move the money'}">${mayFire?'Refund':'Request refund'} ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
 }
 
 function reverseActionsFor(t, d){
@@ -3118,6 +3122,32 @@ async function refreshDetail(id){
   const d=await api.get('/bookings/'+id).catch(()=>null);
   if(d&&state.detail===id)state.detailData=d;
 }
+/* Fire a pending refund through PayHere's Refund API. ONE implementation, because there are now
+   two ways in — the one-click "Refund $X" button and the "Refund through PayHere now" button on an
+   already-pending row — and the failure handling below is the part that must never drift.
+
+   `refund_outcome_unknown` is the dangerous one: the row is api_processing, the money MAY have
+   moved, and the API has no idempotency key. The operator must go and look, never press again.
+
+   Returns true when the money moved, so each caller can word its own toast. */
+async function fireRefund(bookingId, refundId){
+  try{
+    await adminApi.post('/bookings/'+bookingId+'/refunds/'+refundId+'/execute',{});
+    /* A successful API refund flips the BOOKING to refunded, so the queue row must stop saying
+       "Paid" — reloadRefundDetail only repaints the sheet's detail payload. */
+    await reloadRefundDetail(bookingId);await refreshRow(bookingId);
+    return true;
+  }catch(err){
+    if(err.message==='auth')return false;
+    await reloadRefundDetail(bookingId);
+    if(err.message==='refund_outcome_unknown'){toast('PayHere did not answer — check PayHere before retrying','error');}
+    else if(err.message==='refund_declined'){toast('PayHere declined the refund — see the reason on the row','error');}
+    else if(err.message==='refund_api_unavailable'){toast('PayHere Refund API not configured — complete it on the row below','error');}
+    else{window.opsReportError&&window.opsReportError('refund execute',err);toast('Could not refund through PayHere — complete it on the row below','error');}
+    return false;
+  }
+}
+
 async function reloadRefundDetail(id){
   const detail=await api.get('/bookings/'+id);
   detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
@@ -3453,9 +3483,31 @@ document.addEventListener('click',async e=>{
       /* Says "below" because it now IS below: the completion controls appear on the pending row
          in this same block. The old wording ("you still have to make the refund in PayHere")
          predated the Refund API button and described the only route there used to be. */
-      if(!confirm(`Refund ${money({amount:amountCents,currency:s.currency})} in full?\n\nThis records the request — no money moves yet. Complete it on the row below, through PayHere or by hand.`))break;
+      /* One press, one refund (owner, 2026-08-08). The split flow filed a request and left the
+         money sitting there — which read as done and thrice wasn't. The request row is still
+         written first: it is the audit record AND it reserves the balance, so a double press
+         cannot refund twice. Only then is the money moved.
+
+         Without payments:reverse the operator cannot fire the API at all, so for them the button
+         keeps its old meaning — file the request for someone who can. The confirm says which of
+         the two is about to happen, in the words that matter: money moves now, or it doesn't. */
+      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
+      const amountLabel=money({amount:amountCents,currency:s.currency});
+      const ask=willFire
+        ?`Refund ${amountLabel} now?\n\nThis sends the money back through PayHere immediately. There is no undo.`
+        :`Request a refund of ${amountLabel}?\n\nYou cannot move money yourself — this files the request for someone who can.`;
+      if(!confirm(ask))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});clearInput(reasonEl);await reloadRefundDetail(id);toast('Refund requested — no money has moved yet, complete it below');}
+      try{
+        const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason});
+        clearInput(reasonEl);
+        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — no money has moved yet');break;}
+        /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the
+           manual route below still works — i.e. a failure lands exactly where the old two-step
+           flow left you, never somewhere new. */
+        if(await fireRefund(id,refund&&refund.id))toast('Refunded through PayHere — customer emailed');
+        else if(el.isConnected)el.disabled=false;
+      }
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund request',err);toast('Could not request refund','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
@@ -3488,21 +3540,8 @@ document.addEventListener('click',async e=>{
       if(!confirm(`Refund ${amount} through PayHere now?\n\nThis moves the money immediately — there is no dashboard step and no undo.`))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{
-        await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/execute',{});
-        /* refreshRow for the same reason as the manual confirm above — a successful API refund
-           flips the booking to refunded, and the queue row must stop saying "Paid". */
-        await reloadRefundDetail(id);await refreshRow(id);toast('Refunded through PayHere — customer emailed');
-      }catch(err){
-        /* Three failures worth telling apart. `refund_outcome_unknown` is the dangerous one:
-           the row is api_processing, the money MAY have moved, and the operator must go and
-           look rather than press the button again. */
-        if(err.message==='auth')break;
-        await reloadRefundDetail(id);
-        if(err.message==='refund_outcome_unknown'){toast('PayHere did not answer — check PayHere before retrying','error');}
-        else if(err.message==='refund_declined'){toast('PayHere declined the refund — see the reason on the row','error');}
-        else if(err.message==='refund_api_unavailable'){toast('The PayHere Refund API is not configured','error');}
-        else{window.opsReportError&&window.opsReportError('refund execute',err);toast('Could not refund through PayHere','error');}
-        if(el.isConnected)el.disabled=false;
+        if(await fireRefund(id,refundId))toast('Refunded through PayHere — customer emailed');
+        else if(el.isConnected)el.disabled=false;
       }
       finally{refundBusy.delete(busyKey);}
       break;
@@ -9316,27 +9355,51 @@ function loadMapsJs() {
 
    Pure: no Maps API, no DOM. Extracted by web-tests/unit/ops-map-pins.test.js — the Maps key
    rejects local origins, so this grouping is the only part that can be tested off staging. */
-function mapPins(pts) {
-  var TOL = 0.0005; // ~50 m in degrees at Sri Lankan latitudes
+function mapPins(pts, zoom) {
+  var SAME_PLACE = 0.0005;   // ~50 m — one place, merged at EVERY zoom (a round trip's start/end)
+  var MERGE_PX = 34;         // a pin head — closer than this and the labels collide on screen
+  // Web Mercator world pixels, so "do these collide?" is asked in the units the eye actually uses.
+  var px = function (p) {
+    var scale = 256 * Math.pow(2, zoom);
+    var s = Math.max(-0.9999, Math.min(0.9999, Math.sin(p.lat * Math.PI / 180)));
+    return {
+      x: (p.lng + 180) / 360 * scale,
+      y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale
+    };
+  };
+  var collide = function (a, b) {
+    if (Math.abs(a.lat - b.lat) < SAME_PLACE && Math.abs(a.lng - b.lng) < SAME_PLACE) return true;
+    if (typeof zoom !== 'number') return false;
+    var pa = px(a), pb = px(b), dx = pa.x - pb.x, dy = pa.y - pb.y;
+    return Math.sqrt(dx * dx + dy * dy) < MERGE_PX;
+  };
   var pins = [];
   (pts || []).forEach(function (loc, i) {
     var hit = null;
-    for (var k = 0; k < pins.length; k++) {
-      if (Math.abs(pins[k].lat - loc.lat) < TOL && Math.abs(pins[k].lng - loc.lng) < TOL) { hit = pins[k]; break; }
-    }
+    for (var k = 0; k < pins.length; k++) { if (collide(pins[k], loc)) { hit = pins[k]; break; } }
     if (hit) hit.stops.push(i + 1);
     else pins.push({ lat: loc.lat, lng: loc.lng, stops: [i + 1] });
   });
   var last = (pts || []).length;
   return pins.map(function (p) {
+    // A consecutive run reads as a range ("3–7"); a revisited place keeps its dots ("1·3").
+    var runs = p.stops.length > 2 && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1;
     return {
       lat: p.lat, lng: p.lng, stops: p.stops,
-      text: p.stops.join('\u00b7'),
-      // A merged start/end pin is BOTH — the tone picker below prefers the start colour.
+      text: p.stops.length === 1 ? String(p.stops[0])
+        : (runs || p.stops.length === 2) && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1
+          ? p.stops[0] + '–' + p.stops[p.stops.length - 1]
+          : p.stops.join('·'),
       isFirst: p.stops.indexOf(1) >= 0,
-      isLast: p.stops.indexOf(last) >= 0,
+      isLast: p.stops.indexOf(last) >= 0
     };
   });
+}
+
+function pinLabelsVisible(zoom) {
+  // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
+  // the story anyway — the expanded map's legend still carries the full numbered order.
+  return typeof zoom !== 'number' || zoom >= 9;
 }
 
 // The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
@@ -9422,6 +9485,7 @@ function itinMapAvailable() { return !!OPS_MAPS_KEY && itinChains().length >= 1;
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
+var _mapZoomListener = null; // pins are re-grouped on zoom; keep one listener, not one per render
 // Monotonic token for the async route draw below. computeRoutes() resolves out of order
 // (a shorter post-removal route can come back before an earlier longer one still in flight),
 // so without this the last response to *resolve* — not the last requested — wins the polyline
@@ -9569,19 +9633,35 @@ async function drawItinRoute(hostEl, chains) {
     // they line up with the itinerary's numbered legs: leg N runs from pin N to pin N+1.
     // One pin per PLACE, not per stop — a round trip revisits its start, and two pins on one
     // point means the later one hides the earlier (see mapPins).
-    mapPins(pts.map(at)).forEach(function (p) {
-      var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
-      _mapMarkers.push(new libs.Marker({
-        map: _mapMap, position: { lat: p.lat, lng: p.lng }, icon: pin(fill),
-        zIndex: (p.isFirst || p.isLast) ? 6 : 5,
-        // White on all three fills; the pin head is small, so bold and tight. A merged pin reads
-        // "1·3" — narrower than "1, 3" and it still fits the teardrop head.
-        label: { text: p.text, color: '#fff', fontSize: p.stops.length > 1 ? '9px' : '11px', fontWeight: '700' },
-        title: p.stops.length > 1
-          ? 'Stops ' + p.stops.join(' and ') + ' of ' + pts.length
-          : 'Stop ' + p.stops[0] + ' of ' + pts.length,
-      }));
-    });
+    // Redrawn on every zoom: which pins collide is a question about SCREEN distance, so the
+    // answer changes as you zoom. A 26-stop itinerary is a wall of overlapping digits at country
+    // view and resolves into individual numbered stops as you go in (owner-reported 2026-08-07).
+    var locs = pts.map(at);
+    var drawPins = function () {
+      _mapMarkers.forEach(function (m) { m.setMap(null); });
+      _mapMarkers = [];
+      var z = _mapMap.getZoom();
+      var showText = pinLabelsVisible(z);
+      mapPins(locs, z).forEach(function (p) {
+        var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
+        _mapMarkers.push(new libs.Marker({
+          map: _mapMap, position: { lat: p.lat, lng: p.lng }, icon: pin(fill),
+          zIndex: (p.isFirst || p.isLast) ? 6 : 5,
+          // White on all three fills; the pin head is small, so bold and tight. A merged pin
+          // reads "3–7" or "1·3" — both narrower than a comma list, and they fit the head.
+          label: showText
+            ? { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
+            : undefined,
+          // The title is always the full truth, even when the label is hidden.
+          title: p.stops.length > 1
+            ? 'Stops ' + p.stops.join(', ') + ' of ' + pts.length
+            : 'Stop ' + p.stops[0] + ' of ' + pts.length,
+        }));
+      });
+    };
+    drawPins();
+    if (_mapZoomListener) _mapZoomListener.remove();
+    _mapZoomListener = _mapMap.addListener('zoom_changed', drawPins);
   } catch (e) { /* markers are non-essential */ }
   // Fit to every chain: union the per-route viewports (LatLngBounds.union), so a
   // multi-chain itinerary frames all of its separate segments, not just the first.
