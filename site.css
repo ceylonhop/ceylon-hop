@@ -3,52 +3,124 @@
    "Postcard from Ceylon": editorial, playful, conversion-led
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..700&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Caveat:wght@600;700&display=swap');
+
+/* ---------- The brand display face ----------
+   'Bodoni 72' IS the book's typeface (ITC Bodoni Seventy-Two), and it ships with
+   macOS/iOS — so `local()` serves the genuine article to every Apple visitor at no
+   licensing cost. We may name a locally-installed font; we may NOT self-host or bundle
+   it. Everyone else falls through to Bodoni Moda, the Google Fonts stand-in.
+
+   The metric overrides are the point of this block. The two faces have materially
+   different boxes — Bodoni 72 is 0.94/0.27 ascent/descent, Bodoni Moda 1.13/0.40 — so
+   without normalising, every baseline-relative thing (the hero swash, line boxes, the
+   ops total's LKR sub-line) lands in a different place depending on which font the
+   visitor happens to have. Overriding to a single set of metrics makes layout identical
+   on both, so we tune offsets once instead of per-platform.
+
+   Values are Bodoni Moda's, since that is what non-Apple visitors get natively. */
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Bold'), local('BodoniSvtyTwoITCTT-Bold');
+  font-weight:700; font-style:normal; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Book'), local('BodoniSvtyTwoITCTT-Book');
+  font-weight:400; font-style:normal; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
+@font-face{
+  font-family:'CH Bodoni';
+  src:local('Bodoni 72 Book Italic'), local('BodoniSvtyTwoITCTT-BookIta');
+  font-weight:400; font-style:italic; font-display:swap;
+  ascent-override:113%; descent-override:40%; line-gap-override:0%;
+}
 
 :root{
-  /* Brand palette (from brand book) */
-  --blue:#63BFD6;        /* Bachelor Button — accent only (ride-board icons). NOT the
-                            primary; --accent is teal. Used once, in board.js. */
-  --teal:#0AB9B6;        /* Tiffany — brand/CTA */
+  /* Brand palette — docs/brand-book.md p4. Hexes are the book's, verbatim. */
+  --blue:#63BFD6;        /* Bachelor Button — THE PRIMARY. Owns brand surfaces, the
+                            hero and section washes, chrome and identity accents. */
+  --blue-deep:#24758A;   /* text/icon-safe Bachelor Button, 5.27:1 — see below */
+  --teal:#0AB9B6;        /* Tiffany — supporting accent */
   --teal-deep:#08938f;
   --saffron:#F9A429;     /* Saffron — warmth */
-  --tomato:#EC3A24;      /* Cherry Tomato — conversion CTA */
-  --ink:#2C2A2B;         /* Bristol Black-ish, slightly deeper for text */
+  --tomato:#EC3A24;      /* Cherry Tomato — conversion */
+  --ink:#3A3739;         /* Bristol Black */
   --ink-soft:#6c6a6b;
-  --cream:#F4F2EA;       /* Marshmallow, a touch warmer */
-  --cream-deep:#EAE6D8;
+  --cream:#F0EEE5;       /* Marshmallow */
+  --cream-deep:#E4E0D2;
   --paper:#fffdf8;       /* card white, warm */
   --white:#ffffff;
   --line:#e7e3d6;
 
-  /* Accent driver (Tweakable) */
-  --accent:var(--teal);
-  --accent-deep:var(--teal-deep);
+  /* Accent driver (Tweakable).
+     The book names Bachelor Button primary, so it drives brand surface. It cannot
+     drive TEXT or icon colour: at 2.11:1 on white it fails AA outright, which is why
+     --accent-deep is a darkened blue rather than var(--blue). Teal stays as the
+     supporting accent — it has not been demoted, it has been put in second place. */
+  --accent:var(--blue);
+  --accent-deep:var(--blue-deep);
+  --accent-2:var(--teal);
+  --accent-2-deep:var(--teal-deep);
   --cta:var(--tomato);
 
+  /* Bare channels, for the rgba() focus glows and tint fills that sit next to an
+     --accent border. Before this existed they were written out as literal teal
+     channels, so flipping the accent to blue left ~25 teal halos glowing around blue
+     borders. Always pair rgba(var(--accent-rgb),…) with var(--accent). */
+  --accent-rgb:99,191,214;
+  --accent-2-rgb:10,185,182;
+  --cta-rgb:236,58,36;
+
   /* Button fills — DELIBERATELY darker than the accent/cta they come from.
-     A solid button carries white body text, so it needs 4.5:1; the brand teal
-     is only 2.43:1 and the tomato 4.04:1 against white. These are the smallest
-     darkenings that clear 4.5:1, so the hues still read as the brand.
+     A solid button carries white body text, so it needs 4.5:1; the brand blue is
+     only 2.11:1, the teal 2.43:1 and the tomato 4.04:1 against white. These are the
+     smallest darkenings that clear 4.5:1, so the hues still read as the brand.
      Do NOT swap these back to var(--accent)/var(--cta) — the accent tokens are
      correct for hairlines, focus rings and icons, which carry no text on them.
      Guarded by web-tests/unit/button-contrast.test.js. */
-  --btn-accent:#07817F;        /* teal   4.71:1 on white */
-  --btn-accent-hover:#066F6D;  /*        6.00:1 */
+  --btn-accent:#24758A;        /* blue   5.27:1 on white, 4.53:1 on cream */
+  --btn-accent-hover:#1E6273;  /*        6.89:1 on white */
   --btn-cta:#D52812;           /* tomato 5.07:1 */
   --btn-cta-hover:#C82511;     /*        5.63:1 */
 
   /* Postcard palette — the hero wash, softened into site-wide background tones.
-     These are the basis for section + page backgrounds, not just placeholders. */
+     These are the basis for section + page backgrounds, not just placeholders.
+     --pc-sky leads now: it is the primary's wash, and the book asks for the primary
+     to be what you see most of. */
+  --pc-sky:#e4f2f7;      /* soft bachelor-button — the default wash */
   --pc-teal:#e3f4ef;     /* soft tiffany */
-  --pc-sky:#e8f3f6;      /* soft bachelor-button */
   --pc-green:#edf4e6;    /* soft tea-country green */
   --pc-saffron:#fbf0d8;  /* soft saffron */
-  --pc-line:#dfe9dd;     /* hairline that reads on washes */
+  --pc-line:#dde8ed;     /* hairline that reads on washes */
 
-  /* Type */
-  --display:'Newsreader', Georgia, 'Times New Roman', serif;
-  --body:'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  /* Type — brand book pp.7-8. Poppins is the book's body face, used as specified.
+
+     The display stack asks for the REAL specified face first. 'Bodoni 72' is ITC Bodoni
+     Seventy-Two, which ships with macOS/iOS at /System/Library/Fonts/Supplemental — so
+     every Apple visitor gets the actual brand typeface, in its actual Bold and Book
+     weights. Naming a locally-installed font in a stack is not embedding and needs no
+     licence; what we may NOT do is self-host or bundle it (© ITC/Monotype).
+
+     Bodoni Moda is the fallback for everyone else: same Bodoni-72 lineage, on Google
+     Fonts, and it holds its hairlines at screen sizes. It is a FALLBACK now, not the
+     default — put it first again and the real face never renders, including on the
+     machines that have it.
+
+     To get the genuine face everywhere, buy an ITC Bodoni Seventy-Two webfont licence
+     (Monotype/MyFonts, per-domain) and self-host Bold + Book — see docs/brand-book.md.
+
+     Bodoni 72 tops out at Bold: there is no ExtraBold, so display weights are 700, not
+     800, or the browser synthesises a fake bold and the hairlines clog.
+
+     The book's 35pt heading floor is a print number, honoured here as intent: --display
+     is DISPLAY-ONLY. Anything that would land under ~24px uses --body instead, which is
+     why .stamp b, .dp-head b and .pass-brand are on Poppins rather than Bodoni. Putting
+     Bodoni back on those will thin out to mush on a phone. */
+  --display:'CH Bodoni', 'Bodoni Moda', 'Didot', Georgia, serif;
+  --body:'Poppins', system-ui, -apple-system, sans-serif;
   --hand:'Caveat', 'Segoe Script', cursive;
 
   /* Shape */
@@ -77,8 +149,11 @@ body{
   font-family:var(--body);
   color:var(--ink);
   background:var(--cream);
-  font-size:16.5px;
-  line-height:1.62;
+  /* Poppins sets noticeably wider and with a taller x-height than the Hanken Grotesk it
+     replaced, so the same px value reads a size larger. 16px/1.7 keeps the measure and
+     colour of the old 16.5px/1.62 — and stays clear of the book's 12pt body floor. */
+  font-size:16px;
+  line-height:1.7;
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
@@ -87,7 +162,7 @@ body{
 body::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(125% 70% at 88% -2%, var(--pc-teal), transparent 55%),
+    radial-gradient(125% 70% at 88% -2%, var(--pc-sky), transparent 55%),
     radial-gradient(95% 55% at -4% 102%, var(--pc-saffron), transparent 52%),
     var(--cream);
 }
@@ -96,13 +171,24 @@ a{color:inherit;text-decoration:none}
 button{font-family:inherit;cursor:pointer}
 ::selection{background:var(--saffron);color:var(--ink)}
 
-/* ---------- Typography ---------- */
-h1,h2,h3,h4{font-family:var(--display);font-weight:700;line-height:1.07;margin:0;letter-spacing:-.005em}
+/* ---------- Typography ----------
+   Bodoni Moda is a didone: vertical stress, hairline thins, tight apertures. It wants
+   the opposite treatment to the Newsreader it replaced —
+     · no negative tracking (the old -.005em/-.012em closed the counters up),
+     · a touch more leading (hairlines need air or the lines vibrate),
+     · optical sizing pinned high so the display cut is used at display sizes.
+   `font-optical-sizing:auto` alone picks a text cut for headings on some engines. */
+h1,h2,h3,h4{
+  font-family:var(--display);font-weight:700;line-height:1.14;margin:0;letter-spacing:0;
+  font-optical-sizing:auto;font-variation-settings:"opsz" 72;
+}
 h2{margin-bottom:.5rem}
-.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:800;line-height:1.0;letter-spacing:-.012em;margin-bottom:0}
+.display{font-size:clamp(2.5rem,5.6vw,4.8rem);font-weight:700;line-height:1.06;letter-spacing:-.004em;margin-bottom:0;font-variation-settings:"opsz" 96}
 h1{font-size:clamp(2.2rem,5vw,3.8rem)}
 h2{font-size:clamp(1.9rem,3.6vw,3rem)}
-h3{font-size:clamp(1.3rem,2.2vw,1.7rem)}
+/* h3 bottoms out at 1.3rem ≈ 21px — under the ~24px floor where Bodoni's hairlines
+   start to break up, so it runs a heavier weight and a text-grade optical size. */
+h3{font-size:clamp(1.35rem,2.2vw,1.7rem);font-weight:700;font-variation-settings:"opsz" 24}
 p{margin:0 0 1rem}
 .eyebrow{
   font-family:var(--body);font-weight:600;font-size:.74rem;letter-spacing:.22em;
@@ -157,7 +243,7 @@ p{margin:0 0 1rem}
   display:inline-flex;align-items:center;gap:.45rem;font-size:.8rem;font-weight:600;
   padding:.4rem .8rem;border-radius:999px;background:var(--cream-deep);color:var(--ink);white-space:nowrap;
 }
-.pill-teal{background:rgba(10,185,182,.14);color:var(--teal-deep)}
+.pill-teal{background:rgba(var(--accent-2-rgb),.14);color:var(--teal-deep)}
 .pill-blue{background:rgba(99,191,214,.18);color:#2d7e93}
 .pill-saffron{background:rgba(249,164,41,.18);color:#a96b04}
 .pill-tomato{background:rgba(236,58,36,.12);color:#bb2c1a}
@@ -192,8 +278,46 @@ p{margin:0 0 1rem}
   background:linear-gradient(180deg, rgba(255,253,248,.86), rgba(255,253,248,.72));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.65), 0 1px 0 rgba(44,42,43,.08), 0 14px 34px -22px rgba(44,42,43,.35);
 }
-.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:800;font-size:1.5rem;letter-spacing:-.02em;white-space:nowrap}
+.brand{display:flex;align-items:center;gap:.6rem;font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:.005em;white-space:nowrap;font-variation-settings:"opsz" 36}
 .brand .cmark{width:34px;height:34px;flex:none}
+
+/* ---------- Brand marks (docs/brand-book.md pp.2-3, 5-6) ----------
+
+   THE LOCKUP — the book's logo is the STACKED wordmark, "Ceylon" over "Hop", not the
+   one-line treatment the nav uses for horizontal reasons. Clear space is 0.5x the
+   lockup's own height on every side, and nothing may enter that buffer.
+   Use .brand-lockup wherever there is room to give the logo its proper form. */
+.brand-lockup{
+  display:inline-flex;align-items:center;gap:.7em;
+  /* the 0.5x clear-space buffer, expressed against the lockup's own height */
+  padding:.5em;
+  font-family:var(--display);font-weight:700;line-height:.94;letter-spacing:.005em;
+  font-variation-settings:"opsz" 48;
+}
+.brand-lockup .cmark{width:1.9em;height:1.9em;flex:none}
+.brand-lockup .bl-words{display:flex;flex-direction:column}
+.brand-lockup .bl-words span:last-child{align-self:flex-end;padding-right:.06em}
+
+/* THE MARK OVER IMAGERY — p5's do's, as a utility rather than a convention nobody
+   remembers: centred on the image, 92% opacity, minimum 48px, no outline. p6's don'ts
+   are the reason for the min-size and the opacity: an under-sized or fully-opaque C
+   stops reading as a watermark and starts competing with the photograph.
+
+   Painted with a CSS mask rather than <img src>: the mark must recolour per photo, and
+   an external SVG in an <img> cannot inherit currentColor. background-color is the ink. */
+.brand-mark-photo{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;
+  width:clamp(48px,14%,132px);aspect-ratio:1;   /* 48px floor is the book's minimum */
+  opacity:.92;                                  /* the book's number, exactly */
+  background-color:var(--cream);                /* contrast against the photo */
+  -webkit-mask:url("img/brand-c.svg") no-repeat center/contain;
+  mask:url("img/brand-c.svg") no-repeat center/contain;
+  filter:none;                                  /* p6: no outlines, no effects */
+  pointer-events:none;user-select:none;
+}
+/* On a light or busy photo the cream mark loses contrast; this is the sanctioned
+   alternative colourway, not a shadow or stroke (both are p6 don'ts). */
+.brand-mark-photo.on-light{background-color:var(--ink)}
 .nav-links{display:flex;align-items:center;gap:26px;font-weight:500;font-size:.95rem}
 .nav-links a{position:relative;padding:.3rem 0;color:inherit;opacity:.92;white-space:nowrap}
 .nav-links a:hover{opacity:1}
@@ -332,11 +456,11 @@ body[data-page="home"] .nav:not(.scrolled) .brand{color:#fff}
   width:100%;padding:.85rem 1rem;border:1.5px solid var(--line);border-radius:var(--r-sm);
   font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink);transition:border .15s, box-shadow .15s;
 }
-.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.15)}
 .place-field{position:relative}
 .place-menu{position:fixed;z-index:1000;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:8px;max-height:min(280px,calc(100vh - 24px));overflow:auto}
 .place-option{width:100%;border:0;background:none;color:var(--ink);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;text-align:left;padding:10px 12px;border-radius:9px;font:inherit}
-.place-option:hover,.place-option.hi{background:rgba(10,185,182,.12)}
+.place-option:hover,.place-option.hi{background:rgba(var(--accent-rgb),.12)}
 .place-option.loading{cursor:default;color:var(--ink-soft)}
 .place-option.loading:hover{background:none}
 .place-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -360,13 +484,14 @@ select:not([multiple]){padding-right:2.4rem!important}
 .dp-btn span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dp-btn.empty span{color:var(--ink-soft)}
 .dp-btn:hover{border-color:var(--accent)}
-.dp-btn:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.15)}
+.dp-btn:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.15)}
 /* popover is portaled to <body> and fixed-positioned in JS, so it escapes
    every ancestor stacking context / overflow clip and never hides under
    later sections (e.g. the dark trust strip below the hero). */
 .dp-pop{position:fixed;z-index:1000;width:288px;max-width:92vw;background:var(--white);border:1px solid var(--line);border-radius:14px;box-shadow:0 22px 50px -16px rgba(20,40,38,.34);padding:14px}
 .dp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-.dp-head b{font-family:var(--display);font-size:1rem;white-space:nowrap}
+/* 16px — below the Bodoni floor (see --display), so this stays on the body face. */
+.dp-head b{font-family:var(--body);font-weight:600;font-size:1rem;white-space:nowrap}
 .dp-nav{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--white);color:var(--ink);font-size:1.15rem;line-height:1;display:grid;place-items:center}
 .dp-nav:disabled{opacity:.3}
 .dp-nav:hover:not(:disabled){border-color:var(--accent);color:var(--accent-deep)}
@@ -501,7 +626,8 @@ body::after{
   -webkit-mask:radial-gradient(circle 3px at center, transparent 96%, #000) ; /* fallback */
   border:2px dashed rgba(255,255,255,.85);border-radius:3px;
 }
-.stamp b{font-family:var(--display);font-size:1.15rem;font-weight:800;letter-spacing:0}
+/* 18px — below the Bodoni floor (see --display), so this stays on the body face. */
+.stamp b{font-family:var(--body);font-size:1.15rem;font-weight:700;letter-spacing:0}
 
 /* ticket / boarding-pass perforation edge */
 .ticket{position:relative;background:var(--paper);border-radius:var(--r-lg);box-shadow:var(--shadow)}
@@ -602,7 +728,7 @@ body::after{
 button, [role="button"], .btn, .chip, .dp-day, .dp-btn, .dp-nav, .place-option,
 .ac-item, .cal-day, .svc, .tpl-chip, .pax-pill, .lcard, .gbtn {
   touch-action: manipulation;
-  -webkit-tap-highlight-color: rgba(10,185,182,.12);
+  -webkit-tap-highlight-color: rgba(var(--accent-rgb),.12);
 }
 
 /* Buttons and button-like controls. :not(:disabled) so a blocked control stays
@@ -659,7 +785,8 @@ button:active:not(:disabled),
   @media(max-width:640px){.pass{grid-template-columns:1fr}}
   .pass-main{padding:26px 28px}
   .pass-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
-  .pass-brand{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:800;font-size:1.1rem;white-space:nowrap}
+  /* 17.6px — below the Bodoni floor (see --display), so this stays on the body face. */
+  .pass-brand{display:flex;align-items:center;gap:.5rem;font-family:var(--body);font-weight:700;font-size:1.1rem;white-space:nowrap}
   .pass-route{display:flex;align-items:center;gap:14px;margin:6px 0 20px}
   .pass-route .pt{font-family:var(--display);font-weight:700;font-size:1.5rem;line-height:1}
   .pass-route .pt small{display:block;font-family:var(--body);font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);margin-top:4px}
