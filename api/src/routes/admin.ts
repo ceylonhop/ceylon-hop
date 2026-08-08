@@ -544,7 +544,7 @@ export function adminRoutes(deps: {
       if (doDigest) {
         try {
           const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl });
-          await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text });
+          await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {
           console.error('ops digest failed:', err);

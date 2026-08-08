@@ -10,6 +10,7 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './ada
 import { rideBoardRoutes } from './routes/rideBoard';
 import { shareCardRoutes } from './routes/shareCard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
+import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
@@ -98,6 +99,9 @@ export interface AppDeps {
   // Notification blast-radius cap (R1). Defaults to config.NOTIFY_MAX_PER_RUN; tests set a
   // low value to exercise the cap without seeding twenty-five bookings.
   notifyMaxPerRun?: number;
+  // Outbound mail guard (R3). Defaults to the EMAIL_ALLOWLIST / NOTIFICATIONS_ENABLED env
+  // pair; tests pass it directly.
+  emailPolicy?: EmailPolicy;
   // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
   resendWebhookSecret?: string;
   // M17 — /health/deep runs this to prove DB connectivity (server passes SELECT 1;
@@ -129,7 +133,12 @@ export function createApp(deps: AppDeps = {}) {
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
   const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
-  const email = deps.email ?? new FakeEmailAdapter();
+  // Every outbound message — customer, ops and alert alike — goes through the guard, so
+  // there is one place that decides whether mail may leave this environment at all.
+  const email = new GuardedEmailAdapter(
+    deps.email ?? new FakeEmailAdapter(),
+    deps.emailPolicy ?? { enabled: config.NOTIFICATIONS_ENABLED, allowlist: parseAllowlist(config.EMAIL_ALLOWLIST) },
+  );
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();

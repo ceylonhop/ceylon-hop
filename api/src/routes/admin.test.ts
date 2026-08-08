@@ -875,3 +875,32 @@ describe('POST /admin/jobs/notifications — burst cap', () => {
     expect(alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed')).toHaveLength(0);
   });
 });
+
+// ── Outbound mail guard (notification safety rails, slice 2) ───────────────
+describe('EMAIL_ALLOWLIST is enforced end-to-end, not just in the adapter', () => {
+  it('a real customer address is dropped before it reaches the provider', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    // What staging will run: only ceylonhop.com addresses are reachable.
+    const app = createApp({
+      adminApiKey: KEY, auth, bookings, email,
+      emailPolicy: { allowlist: ['@ceylonhop.com'] },
+    });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    // The sweep ran and considered the booking handled — but nothing left the building.
+    // Suppression is deliberately invisible to the caller (see GuardedEmailAdapter): the
+    // send is ledgered, so a later run will NOT retry it.
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(0);
+  });
+});

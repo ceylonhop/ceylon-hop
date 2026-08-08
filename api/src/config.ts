@@ -107,6 +107,18 @@ const Env = z.object({
   // bookings newly eligible all at once. 25 is far above any legitimate tick at current
   // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
   NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
+  // Outbound mail guard (same spec, R3). Both default to "off" so production is unchanged.
+  // EMAIL_ALLOWLIST: when set, ONLY these recipients can be mailed — entries are exact
+  // addresses or an `@domain` suffix, comma-separated. STAGING SETS THIS (`@ceylonhop.com`),
+  // which is what makes it structurally unable to email a real customer instead of merely
+  // conventionally unable (docs/staging-environment-plan.md).
+  EMAIL_ALLOWLIST: z.string().default(''),
+  // NOTIFICATIONS_ENABLED: the lever to throw WHILE a burst is happening. Stops customer
+  // mail; ops alerts still go out, because silencing them would hide the incident.
+  NOTIFICATIONS_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('true')
+    .transform((value) => value === '1' || value === 'true'),
 });
 
 // Ops⇄quote merge T1: the founder ops-session cookie now unlocks /admin/quote (margin +
