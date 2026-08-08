@@ -296,7 +296,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* value icons */
   .val{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.7rem}
-  .val .ico{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;box-shadow:var(--shadow-s)}
+  /* No box-shadow: the badge disc is a hand-drawn blob, and a shadow on the element's
+     circular border-box draws a visible ring around it. The badge carries its own edge. */
+  .val .ico{width:62px;height:62px;border-radius:50%;display:grid;place-items:center}
   .val .ico svg{width:28px;height:28px;color:#fff}
   .val h3{font-size:1.15rem}
   .val p{font-size:.92rem;color:var(--ink-soft);max-width:26ch}
@@ -519,9 +521,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <h2 style="max-width:26ch;margin:0 auto .55rem;font-size:clamp(1.6rem,2.8vw,2.3rem)">Private transfers across Sri Lanka &mdash; share a seat when it suits you</h2>
     <p class="lead" style="margin:0 auto;max-width:50ch">Name your pickup and drop-off and we&rsquo;ll set you up with a private AC car or van, door to door &mdash; or grab a shared seat when we run your route.</p>
     <div class="grid cols-3" style="margin-top:36px">
-      <div class="val reveal"><img class="ico" src="img/icons/hop-on-hop-off.png" alt="" width="62" height="62" loading="lazy"><h3>Any two points</h3><p>Airport to Ella, Kandy to the coast, hotel to hotel &mdash; just name your pickup and drop-off.</p></div>
-      <div class="val reveal"><img class="ico" src="img/icons/change-the-route.png" alt="" width="62" height="62" loading="lazy"><h3>Private &amp; door-to-door</h3><p>Your own vetted driver and AC vehicle. Leave when you want, stop where you like.</p></div>
-      <div class="val reveal"><img class="ico" src="img/icons/book-your-seat.png" alt="" width="62" height="62" loading="lazy"><h3>Share &amp; save</h3><p>Travelling a popular route? Take a seat on our Wed & Sat service and pay a fraction.</p></div>
+      <div class="val reveal"><img class="ico" src="img/icons/badges/door-to-door.svg" alt="" width="62" height="62" loading="lazy"><h3>Any two points</h3><p>Airport to Ella, Kandy to the coast, hotel to hotel &mdash; just name your pickup and drop-off.</p></div>
+      <div class="val reveal"><img class="ico" src="img/icons/badges/pro-hopper.svg" alt="" width="62" height="62" loading="lazy"><h3>Private &amp; door-to-door</h3><p>Your own vetted driver and AC vehicle. Leave when you want, stop where you like.</p></div>
+      <div class="val reveal"><img class="ico" src="img/icons/badges/hop-van.svg" alt="" width="62" height="62" loading="lazy"><h3>Share &amp; save</h3><p>Travelling a popular route? Take a seat on our Wed & Sat service and pay a fraction.</p></div>
     </div>
   </div>
 </section>
