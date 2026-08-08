@@ -9509,36 +9509,55 @@ function routeLoc(name) {
   return (name || '').replace(/\s*\([^)]*\)/, '').replace(/\s*\/\s*/g, ' ').trim() + ', Sri Lanka';
 }
 
-// Group the travel legs into connected chains of stop names. A chain is a run of legs
-// where each leg's pick-up continues the previous leg's drop-off; a gap (leg N ends
-// somewhere leg N+1 doesn't start) begins a NEW chain. Each chain is drawn as its own
-// route — so disconnected legs never get a line stitched across the gap between them.
-// Stops within a chain are consecutive-deduplicated; chains too short to route are dropped.
-function itinChains() {
-  var chains = [];
+// Group the travel legs into RUNS — the unit the map draws with one route query. A run is a
+// stretch of legs where each leg's pick-up continues the previous leg's drop-off AND every leg
+// agrees on the road: a gap (leg N ends somewhere leg N+1 doesn't start) begins a new run, and
+// so does a change of route choice. Splitting on the road choice is forced: routeVariant is per
+// LEG but avoidTolls is a per-REQUEST modifier, so a chain whose legs disagree cannot be one
+// query. Legs that agree — the overwhelmingly common case — still make exactly one request, so
+// this costs no extra Maps billing on a normal itinerary.
+// Stops within a run are consecutive-deduplicated; runs too short to route are dropped.
+// `continues` marks a run that starts where the previous KEPT run ended, i.e. a road-choice
+// split rather than a gap. The two routes share that stop, and without the flag the map would
+// pin it twice (mapPins merges them and the pin reads "2·3" instead of "2").
+// Pure — takes legs, touches no state — so web-tests/unit/ops-itin-runs.test.js can load it.
+function itinRuns(legs) {
+  var runs = [];
   var cur = null;
-  state.legs.forEach(function (l) {
+  (legs || []).forEach(function (l) {
     if ((l.category || 'transfer') === 'stay_day') return;
-    // Ride model: a leg is an ordered stop list. Group legs into connected chains (#102) — a
-    // gap where one leg's last stop isn't the next leg's first opens a fresh chain, so
+    // Ride model: a leg is an ordered stop list. Group legs into connected runs (#102) — a
+    // gap where one leg's last stop isn't the next leg's first opens a fresh run, so
     // disconnected legs never get a line stitched across the gap.
     var stops = (l.stops || []).map(function (s) { return (s || '').trim(); }).filter(Boolean);
     if (!stops.length) return;
-    var from = stops[0];
-    if (cur && cur[cur.length - 1] === from) {
-      // Continues the current chain — append this ride's stops (dedup the shared join stop).
-      stops.forEach(function (s) { if (cur[cur.length - 1] !== s) cur.push(s); });
-    } else {
-      // First leg, or a gap the previous chain didn't reach → open a fresh chain.
-      cur = [];
-      stops.forEach(function (s) { if (cur[cur.length - 1] !== s) cur.push(s); });
-      chains.push(cur);
+    var avoidTolls = l.routeVariant === 'no_tolls';
+    var joins = !!(cur && cur.stops[cur.stops.length - 1] === stops[0]);
+    if (!joins || cur.avoidTolls !== avoidTolls) {
+      // First leg, a gap the previous run didn't reach, or a different road → open a fresh run.
+      cur = { stops: [], avoidTolls: avoidTolls };
+      runs.push(cur);
     }
+    // Append this ride's stops (dedup where one leg ends where the next begins).
+    var into = cur.stops;
+    stops.forEach(function (s) { if (into[into.length - 1] !== s) into.push(s); });
   });
-  return chains.filter(function (c) { return c.length >= 2; }); // need ≥2 stops to route
+  var kept = runs.filter(function (r) { return r.stops.length >= 2; }); // need ≥2 stops to route
+  // Resolve `continues` against the KEPT list, not the raw one: a one-stop leg can open a run
+  // that gets dropped here, and the run after it must not be told it joins something absent.
+  // Two runs can only meet at a stop when a road choice split them — the grouping above would
+  // have merged them otherwise — so equality here is exactly "this is a split, not a gap".
+  return kept.map(function (r, i) {
+    var prev = kept[i - 1];
+    return {
+      stops: r.stops,
+      avoidTolls: r.avoidTolls,
+      continues: !!(prev && prev.stops[prev.stops.length - 1] === r.stops[0]),
+    };
+  });
 }
-// Show the map once there's at least one routable chain and a key is configured.
-function itinMapAvailable() { return !!OPS_MAPS_KEY && itinChains().length >= 1; }
+// Show the map once there's at least one routable run and a key is configured.
+function itinMapAvailable() { return !!OPS_MAPS_KEY && itinRuns(state.legs).length >= 1; }
 
 var _mapOpen = true; // route map open by default (owner request); the toggle collapses it
 var _mapEl = null, _mapMap = null, _mapSig = null, _mapBounds = null, _mapMarkers = [], _mapPolylines = [];
@@ -9561,8 +9580,11 @@ function syncItinMap() {
       if (_mapBounds) _mapMap.fitBounds(_mapBounds, 30);
     }
   }
-  var chains = itinChains();
-  var sig = chains.map(function (c) { return c.join(' | '); }).join(' || ');
+  var runs = itinRuns(state.legs);
+  // The road choice is PART of the route, so it belongs in the signature. Without it, picking
+  // Local road changed the request we'd make but not the signature, so this returned early and
+  // the map kept showing the expressway it had already drawn (owner-reported 2026-08-08).
+  var sig = runs.map(function (r) { return (r.avoidTolls ? 'nt:' : 'fx:') + r.stops.join(' | '); }).join(' || ');
   // Route unchanged → nothing to do, whatever state the map is in: keep a live map,
   // keep a failure note (retrying identical stops can't succeed and re-billed a route
   // query on EVERY render — each date/price/checkbox edit), and let an in-flight draw
@@ -9570,7 +9592,7 @@ function syncItinMap() {
   // or in-flight route re-draws only when a stop actually changes.
   if (sig === _mapSig) return;
   _mapSig = sig;
-  drawItinRoute(_mapEl, chains);
+  drawItinRoute(_mapEl, runs);
 }
 
 // Route choice (2026-07-21): the modal's two-route map. Persistent map element re-parented into
@@ -9626,7 +9648,7 @@ async function drawRouteModalRoutes(hostEl, from, to, sel) {
   if (vp) _rcMapMap.fitBounds(vp, 20);
 }
 
-async function drawItinRoute(hostEl, chains) {
+async function drawItinRoute(hostEl, runs) {
   var reqId = ++_mapReqSeq;
   var ok = await loadMapsJs();
   var libs = ok ? await mapsLibs() : null;
@@ -9637,21 +9659,28 @@ async function drawItinRoute(hostEl, chains) {
     _mapMap = new libs.Map(hostEl, { center: { lat: 7.87, lng: 80.77 }, zoom: 7, disableDefaultUI: true, zoomControl: true, clickableIcons: false, gestureHandling: 'cooperative' });
     _mapMap.__host = hostEl;
   }
-  // Route each connected chain on its own — a disconnected leg is a separate query, so
-  // Google never stitches a driving line across the gap between two unconnected legs.
-  var routes = await Promise.all((chains || []).map(function (stops) {
+  // Route each run on its own — a disconnected leg is a separate query, so Google never
+  // stitches a driving line across the gap between two unconnected legs, and a leg pinned to
+  // the local road is asked for WITH avoidTolls so the line drawn is the road we quoted.
+  var drawn = await Promise.all((runs || []).map(function (run) {
+    var stops = run.stops;
     return libs.Route.computeRoutes({
       origin: routeLoc(stops[0]),
       destination: routeLoc(stops[stops.length - 1]),
       intermediates: stops.slice(1, -1).map(function (n) { return { location: routeLoc(n) }; }),
       travelMode: 'DRIVING',
       region: 'lk',
+      routeModifiers: run.avoidTolls ? { avoidTolls: true } : undefined,
       fields: ['path', 'legs', 'viewport'],
     }).then(function (res) { return res && res.routes && res.routes[0]; })
-      .catch(function () { return null; }); // unroutable chain → drop it, others still draw
+      .catch(function () { return null; }); // unroutable run → drop it, others still draw
   }));
   if (reqId !== _mapReqSeq) return; // stale response — a newer itinerary request has since fired; don't repaint
-  routes = routes.filter(Boolean);
+  // Keep each route paired with the run that asked for it: the pin pass below needs to know
+  // which surviving runs meet, and a dropped run would otherwise shift that alignment.
+  var kept = (runs || []).map(function (run, i) { return { run: run, route: drawn[i] }; })
+    .filter(function (k) { return !!k.route; });
+  var routes = kept.map(function (k) { return k.route; });
   if (!routes.length) {
     hostEl.innerHTML = '<div class="ch-itin-map-note">Couldn’t map this route — check the place names.</div>';
     _mapMap = null; return;
@@ -9678,11 +9707,18 @@ async function drawItinRoute(hostEl, chains) {
     // centres on `anchor` — the pin's tip, i.e. the map point — and the digit floats off the pin.
     var pin = function (fill) { return { path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z', fillColor: fill, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2, scale: 1.4, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10) }; };
     var at = function (loc) { return { lat: loc.lat, lng: loc.lng }; }; // DirectionalLocation → LatLngLiteral
-    var pts = []; // every stop, in itinerary order, across all chains
-    routes.forEach(function (route) {
-      var rlegs = route.legs || [];
+    var pts = []; // every stop, in itinerary order, across all runs
+    kept.forEach(function (k, i) {
+      var rlegs = k.route.legs || [];
       if (!rlegs.length) return;
-      pts.push(rlegs[0].startLocation);
+      // A run split off from the one before it (a road-choice change) SHARES its first stop
+      // with that run's last, so pinning it again would double-count the stop — mapPins merges
+      // the pair and the label reads "2·3". A gap between runs is a genuinely new stop and
+      // keeps its pin. Asked of the KEPT list rather than run.continues, because an unroutable
+      // run in between is dropped above and the join it carried goes with it.
+      var prev = kept[i - 1];
+      var joins = !!(prev && prev.run.stops[prev.run.stops.length - 1] === k.run.stops[0]);
+      if (!joins) pts.push(rlegs[0].startLocation);
       for (var li = 0; li < rlegs.length; li++) pts.push(rlegs[li].endLocation);
     });
     // Number every pin with its place in the journey (owner, 2026-07-26 — a 12-stop itinerary of

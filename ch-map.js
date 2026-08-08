@@ -79,7 +79,10 @@
       google.maps.importLibrary('marker'),
       google.maps.importLibrary('core'),
     ]).then(([m, r, mk, c]) => {
-      const libs = { Map: m.Map, Route: r.Route, Marker: mk.Marker, Point: c.Point };
+      // LatLngBounds is deliberately NOT in the required set below: only a journey split across
+      // several route queries needs it (to union their viewports), and that case degrades to the
+      // first viewport. Requiring it would turn a partial API load into an SVG fallback.
+      const libs = { Map: m.Map, Route: r.Route, Marker: mk.Marker, Point: c.Point, LatLngBounds: c.LatLngBounds };
       if (!libs.Map || !libs.Route || !libs.Marker || !libs.Point) throw new Error('maps_libs_missing');
       return libs;
     });
@@ -156,8 +159,11 @@
     return typeof zoom !== 'number' || zoom >= 9;
   }
 
-  function computeRouteCached(Route, stops) {
-    const key = JSON.stringify(stops.map(toLoc));
+  // avoidTolls is PART of the key. A quote pinned to the local road in ops and one over the
+  // same stops on the expressway are two different lines; sharing a cache entry would draw
+  // whichever was asked for first, for both.
+  function computeRouteCached(Route, stops, avoidTolls) {
+    const key = JSON.stringify([stops.map(toLoc), !!avoidTolls]);
     const hit = routeCache.get(key);
     if (hit) return hit;
     const p = Route.computeRoutes({
@@ -166,6 +172,7 @@
       intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
       travelMode: 'DRIVING',
       region: 'lk',
+      routeModifiers: avoidTolls ? { avoidTolls: true } : undefined,
       fields: ['path', 'legs', 'viewport'],
     });
     // Evict BOTH a rejection and a routeless resolution. The Routes API reports "no route
@@ -248,7 +255,7 @@
 
     // No expandable flag here — never nest a modal inside a modal. A failure closes back to
     // the inline card rather than stranding an empty box.
-    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close });
+    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close, runs: opts.runs });
     return close;
   }
 
@@ -262,6 +269,13 @@
     const keep = (names || []).map((n) => !!n);
     const stops = (names || []).filter(Boolean);
     const stopLabels = opts.stopLabels ? opts.stopLabels.filter((_, i) => keep[i]) : undefined;
+    // opts.runs: [{stops, avoidTolls, continues}] — the journey split into stretches that each
+    // need their own route query, because avoidTolls is a per-REQUEST modifier while the road
+    // choice is per LEG. Callers without a road choice pass none and get the single default run
+    // this has always drawn. Runs too short to route are dropped; if that leaves nothing, fall
+    // back to the whole stop list rather than showing no map at all.
+    const given = (opts.runs || []).filter((r) => r && (r.stops || []).length >= 2);
+    const runs = given.length ? given : [{ stops, avoidTolls: false, continues: false }];
     if (!key || stops.length < 2) {
       if (opts.onFail) opts.onFail();
       return;
@@ -297,14 +311,20 @@
         // and plain wheel zoom.
         gestureHandling: opts.greedy ? 'greedy' : 'cooperative',
       });
-      let route = null;
-      try {
-        const res = await computeRouteCached(libs.Route, stops);
-        route = res && res.routes && res.routes[0];
-      } catch (e) { /* unroutable → fail() below */ }
+      // One query per RUN. A run is a stretch of the journey drawn with one set of route
+      // modifiers; callers that know the quote's per-leg road choice (quote.html, from the
+      // view's mapRuns) pass them in, and everyone else gets the single default run this
+      // has always drawn — same one request, same line.
+      const settled = await Promise.all(runs.map((run) =>
+        computeRouteCached(libs.Route, run.stops, run.avoidTolls)
+          .then((res) => (res && res.routes && res.routes[0]) || null)
+          .catch(() => null)));
       if (done) return;
       clearTimeout(timer);
-      if (!route) {
+      // All or nothing, as this has always been: half a journey drawn with the rest silently
+      // missing reads as a complete route to a customer, and the SVG island is the honest
+      // failure. (The ops map makes the opposite call — it is a working surface, not a promise.)
+      if (settled.some((r) => !r)) {
         fail();
         return;
       }
@@ -321,14 +341,17 @@
           '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
           'stroke-linecap="round" stroke-linejoin="round">' +
           '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
-        btn.addEventListener('click', () => openExpanded(stops, { stopLabels }));
+        // The expanded map must draw the same roads as the card it expands — pass the runs on.
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels, runs: opts.runs }));
         wrap.appendChild(btn);
       }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh
       // map, so there's no previous line to clear).
-      route.createPolylines().forEach((p) => {
-        p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 });
-        p.setMap(map);
+      settled.forEach((r) => {
+        r.createPolylines().forEach((p) => {
+          p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 });
+          p.setMap(map);
+        });
       });
 
       // Brand pin at EVERY stop, not just the endpoints (createWaypointAdvancedMarkers
@@ -336,14 +359,22 @@
       // leg, then the end of each leg. Green = pick-up, orange = final drop-off, teal for
       // every stop in between — matches the summary's numbered route.
       try {
-        const rlegs = route.legs;
         const pin = (fill) => ({
           path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
           fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
           scale: 1.5, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
-        const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
+        const stopLocs = [];
+        settled.forEach((r, i) => {
+          const rlegs = r.legs || [];
+          if (!rlegs.length) return;
+          // A run split off from the one before it (a road-choice change) SHARES its first stop
+          // with that run's last, so pinning it again double-counts the stop — mapPins() merges
+          // the pair and the label reads "2·3" where the journey has a plain stop 2.
+          if (!(i > 0 && runs[i].continues)) stopLocs.push(at(rlegs[0].startLocation));
+          rlegs.forEach((l) => stopLocs.push(at(l.endLocation)));
+        });
         // One pin per PLACE, not per stop — see mapPins(). Redrawn on zoom, because whether two
         // pins collide is a question about SCREEN distance and the answer changes as you zoom.
         let drawn = [];
@@ -377,7 +408,20 @@
       // Fit the whole route in view, and re-fit if the container gains its size later:
       // the map can be created while its step panel is still collapsed (0-width), which
       // otherwise leaves grey tiles + a tiny un-fitted route.
-      const fit = () => { if (route.viewport) map.fitBounds(route.viewport, 36); };
+      // Across runs, union the viewports so a split journey isn't framed on its first stretch.
+      // LatLngBounds is guarded rather than required: loadLibs() has never demanded it, and a
+      // partial API load (or a test stub) must degrade to the first viewport, not throw.
+      const viewport = () => {
+        const vps = settled.map((r) => r.viewport).filter(Boolean);
+        if (vps.length < 2 || !libs.LatLngBounds) return vps[0];
+        try {
+          const b = new libs.LatLngBounds();
+          vps.forEach((v) => b.union(v));
+          return b;
+        } catch (e) { return vps[0]; }
+      };
+      const fitTo = viewport();
+      const fit = () => { if (fitTo) map.fitBounds(fitTo, 36); };
       fit();
       if (window.ResizeObserver) {
         let lastW = mapDiv.offsetWidth;
@@ -400,12 +444,11 @@
       // figure that matches the route on the map (not an offline estimate).
       if (opts.onRoute) {
         try {
-          const legs = route.legs || [];
           let meters = 0, ms = 0;
-          legs.forEach((l) => {
+          settled.forEach((r) => (r.legs || []).forEach((l) => {
             meters += l.distanceMeters || 0;
             ms += l.durationMillis || 0;
-          });
+          }));
           opts.onRoute({ km: Math.round(meters / 1000), durationMin: Math.round(ms / 60000) });
         } catch (e) { /* leave the estimate in place */ }
       }
