@@ -290,6 +290,15 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
   .an-skel{height:74px;border-radius:14px;background:linear-gradient(100deg,var(--line-soft),var(--cream-deep),var(--line-soft));background-size:200% 100%;animation:anshimmer 1.2s infinite linear}
   @keyframes anshimmer{to{background-position:-200% 0}}
+  /* Bulk close-out bar — sits under the Needs closing header, quiet until something is ticked. */
+  .bulkbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 2px 10px;padding:9px 12px;
+    border:1px solid var(--line);border-radius:11px;background:var(--paper);font-size:.82rem}
+  .bulkbar.on{border-color:#eeda9e;background:#fdf8ec}
+  .bulk-all{display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap}
+  .bulk-n{color:var(--muted);flex:1;min-width:0}
+  .bulkbar .btn[disabled]{opacity:.45;cursor:default}
+  .tk-tick{display:grid;place-items:center;padding:0 2px 0 0;cursor:pointer}
+  .tk-tick input{width:16px;height:16px;cursor:pointer}
   /* Role-aware queue sections */
   .qsection{margin-top:26px}
   .qsection-head{display:flex;align-items:baseline;gap:12px;margin:0 2px 11px;flex-wrap:wrap}
@@ -1942,6 +1951,9 @@ const boardSeats=t=>{
 };
 
 let tickets=[];
+/* Bulk close-out selection — ids ticked in the Needs closing section. Cleared on every
+   reload so a stale id can never be actioned. */
+let closeSel=new Set();
 let _bookingsLoaded=false; // false until the first /bookings fetch resolves — drives the loading state
 let state={route:'tickets',routeQuoteId:null,q:'',group:'all',chan:'',detail:null,detailData:null,role:null};
 const refundBusy=new Set(); // protects every money mutation from double-click/replayed DOM events
@@ -2093,8 +2105,15 @@ function ticketRow(t,i){
   const meta=board
     ?`${esc(boardSeats(t))}`
     :`${t.guests} guests${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+  /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
+     has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
+     advance. The box swallows its own click so ticking never opens the drawer. */
+  const closable=!board&&dayGroup(t)==='Needs closing';
+  const tick=closable
+    ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
+    :'';
   return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
-    ${lead}
+    ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span></div>
       <div class="tk-route"><b>${esc(t.route)}</b> <span class="md">· ${MODE[t.mode]||esc(t.mode)}</span></div>
@@ -2160,7 +2179,20 @@ function viewTickets(){
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
     if(!rows.length)return;
     const note=typeof groupNote[g]==='function'?groupNote[g]():groupNote[g];
-    html+=`<div class="sec${g==='Pending'||g==='Needs closing'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`+rows.map(ticketRow).join('');
+    html+=`<div class="sec${g==='Pending'||g==='Needs closing'?' warn':''}${g==='Today'?' now':''}"><h2>${g}${note?`<span class="secnote">${note}</span>`:''}</h2><span class="ln"></span><span class="tag">${rows.length}</span></div>`;
+    /* Bulk close-out bar. Completed ONLY — moving a booking to completed emails nobody
+       (ops.ts maybeEmailForStage sends on no_show alone), whereas a bulk no-show would tell
+       every one of these customers their fare is non-refundable. That stays a per-booking
+       decision, deliberately. */
+    if(g==='Needs closing'){
+      const n=rows.filter(r=>closeSel.has(r.id)).length;
+      html+=`<div class="bulkbar${n?' on':''}">
+        <label class="bulk-all"><input type="checkbox" data-act="closeall"${n&&n===rows.length?' checked':''}> Select all ${rows.length}</label>
+        <span class="bulk-n">${n?`${n} selected`:'Tick the trips that ran'}</span>
+        <button class="btn btn-sm" data-act="closedone"${n?'':' disabled'}>Mark ${n||''} completed</button>
+      </div>`;
+    }
+    html+=rows.map(ticketRow).join('');
   });
   if(!list.length){
     // Three cases: still loading (a skeleton — NOT the empty state, which is what this used to
@@ -3399,7 +3431,7 @@ document.addEventListener('click',async e=>{
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -3409,6 +3441,31 @@ document.addEventListener('click',async e=>{
   switch(act){
     case 'open':await openDetail(id);break;
     case 'close':state.detail=null;state.detailData=null;renderSheet();break;
+    case 'closesel':{const on=e.target&&e.target.checked;if(on)closeSel.add(id);else closeSel.delete(id);render();break;}
+    case 'closeall':{const ids=tickets.filter(x=>!isBoard(x)&&dayGroup(x)==='Needs closing').map(x=>x.id);
+      const allOn=ids.length&&ids.every(x=>closeSel.has(x));
+      ids.forEach(x=>allOn?closeSel.delete(x):closeSel.add(x));render();break;}
+    /* Bulk close-out. Sequential, not parallel: each call is the SAME audited endpoint a
+       single Complete press uses, and firing fifty at once at a free-tier API is how you get
+       half of them rate-limited with no record of which. A failure stops the run and leaves
+       the rest ticked, so a retry resumes rather than double-posting. */
+    case 'closedone':{
+      const ids=tickets.filter(x=>closeSel.has(x.id)&&dayGroup(x)==='Needs closing').map(x=>x.id);
+      if(!ids.length)break;
+      if(!confirm(`Mark ${ids.length} trip${ids.length===1?'':'s'} completed?\n\nUse this only for trips that actually ran. A no-show must be marked one at a time — that emails the customer.`))break;
+      let done=0;
+      for(const bid of ids){
+        try{await api.post(`/bookings/${bid}/status`,{to:'completed'});closeSel.delete(bid);done++;}
+        catch(err){
+          if(err.message!=='auth'){window.opsReportError&&window.opsReportError('bulk close-out',err);
+            toast(`Stopped after ${done} — ${ids.length-done} left, press again to resume`,'error');}
+          break;
+        }
+      }
+      if(done)toast(`Closed ${done} trip${done===1?'':'s'}`);
+      const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();
+      break;
+    }
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
