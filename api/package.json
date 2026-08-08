@@ -21,7 +21,8 @@
     "legs:backfill": "tsx scripts/backfill-booking-legs.ts",
     "legs:check": "tsx scripts/check-booking-legs.ts",
     "migrate": "drizzle-kit migrate",
-    "migrate:test": "tsx scripts/migrate.ts"
+    "migrate:test": "tsx scripts/migrate.ts",
+    "dump:shortplace": "tsx scripts/dump-shortplace.ts"
   },
   "dependencies": {
     "@fontsource/hanken-grotesk": "^5.3.0",
