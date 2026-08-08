@@ -178,7 +178,7 @@ async function insertLockedBooking(
     throw new QuoteConversionError('quote_invalid');
   }
 
-  const legs = legRowsForBooking(bookingRow.id, { mode: booking.mode, input: booking.input });
+  const legs = legRowsForBooking(bookingRow.id, booking);
   if (legs.length) await tx.insert(bookingLegs).values(legs);
   return bookingRow.id;
 }

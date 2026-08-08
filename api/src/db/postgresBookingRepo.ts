@@ -51,19 +51,27 @@ export function isIdempotencyCollision(err: unknown): boolean {
 /** The leg rows a booking implies. Exported for test — see postgresBookingRepo.legs.test.ts. */
 export type NewLegRow = DerivedLeg & { bookingId: string };
 
-export function legRowsForBooking(
-  bookingId: string,
-  b: { mode: string; input: Record<string, unknown> },
-): NewLegRow[] {
+// `booking_legs.from_place`/`to_place` are `text NOT NULL`, but `trip_request.stops` is a
+// Postgres `text[] NOT NULL` — an array that may legally contain a null or empty-string element.
+// A malformed stop reaching the insert would raise a not-null violation INSIDE insertBooking's
+// transaction, rolling back the customer, the booking and the request row that already validated
+// fine — turning a recoverable data gap into a failed payment. A dropped leg is fully
+// recoverable (the backfill and the reconciliation script both pick it up later); a failed
+// booking is not. So malformed legs are filtered out here, not thrown on.
+function isUsablePlace(v: string): boolean {
+  return typeof v === 'string' && v.length > 0;
+}
+
+export function legRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
   const legs =
     b.mode === 'single'
-      ? deriveSingleLegs(b.input as { from: string; to: string; date?: string; time?: string })
+      ? deriveSingleLegs(b.input)
       : b.mode === 'trip'
-        ? deriveTripLegs(
-            b.input as { stops: string[]; dates?: string[]; serviceType: 'private' | 'chauffeur' },
-          )
+        ? deriveTripLegs(b.input)
         : [];
-  return legs.map((leg) => ({ ...leg, bookingId }));
+  return legs
+    .filter((leg) => isUsablePlace(leg.fromPlace) && isUsablePlace(leg.toPlace))
+    .map((leg) => ({ ...leg, bookingId }));
 }
 
 export class PostgresBookingRepo implements BookingRepo {
