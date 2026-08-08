@@ -89,18 +89,21 @@ export async function runWatchdog(
     });
     // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
     // sweep (the ops alert above already fired). Idempotent via notification_log.
-    if (email && baseUrl && linkSecret && !(await log.wasSent(b.id, 'payment_recovery'))) {
+    // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
+    // a manual sweep. Every path that does not send hands the claim back.
+    if (email && baseUrl && linkSecret && (await log.claim(b.id, 'payment_recovery'))) {
       // Over the cap: the ops alert above still fired, so nothing is lost — only the
-      // customer email waits for the next run. Not ledgered, so that run still sends it.
+      // customer email waits for the next run.
       if (budget && !budget.tryClaim()) {
+        await log.release(b.id, 'payment_recovery');
         budget.suppress('payment_recovery', b.reference);
         continue;
       }
       try {
         await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
-        await log.markSent(b.id, 'payment_recovery');
         recoveryEmails += 1;
       } catch (err) {
+        await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);
       }
     }

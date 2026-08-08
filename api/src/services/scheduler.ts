@@ -62,18 +62,22 @@ export async function runScheduledNotifications(
 
     // Pre-trip reminder: trip STARTS within the lead window, and still active.
     if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
-      if (!(await log.wasSent(b.id, 'trip_reminder'))) {
-        // Over the cap: count it and move on. Deliberately NOT ledgered — an unsent
-        // reminder must stay unsent, so the next run still reaches this booking.
+      // Claim BEFORE sending: of two concurrent ticks exactly one wins the row, so exactly
+      // one email goes out. Everything after this point must hand the claim back if it
+      // does not actually send.
+      if (await log.claim(b.id, 'trip_reminder')) {
+        // Over the cap: release, count it, move on. An unsent reminder must stay unsent,
+        // so the next run still reaches this booking.
         if (budget && !budget.tryClaim()) {
+          await log.release(b.id, 'trip_reminder');
           budget.suppress('trip_reminder', b.reference);
           continue;
         }
         try {
           await sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) });
-          await log.markSent(b.id, 'trip_reminder');
           reminders++;
         } catch (err) {
+          await log.release(b.id, 'trip_reminder');
           console.error(`trip reminder failed for ${b.reference}:`, err);
         }
       }
@@ -84,16 +88,17 @@ export async function runScheduledNotifications(
     const sinceEnd = now.getTime() - end.getTime();
     const travelled = TRAVELLED_STATUSES.includes(b.status);
     if (travelled && (b.status === 'completed' || sinceEnd > REVIEW_DELAY_MS)) {
-      if (!(await log.wasSent(b.id, 'review_request'))) {
+      if (await log.claim(b.id, 'review_request')) {
         if (budget && !budget.tryClaim()) {
+          await log.release(b.id, 'review_request');
           budget.suppress('review_request', b.reference);
           continue;
         }
         try {
           await sendReviewRequest(b, email);
-          await log.markSent(b.id, 'review_request');
           reviews++;
         } catch (err) {
+          await log.release(b.id, 'review_request');
           console.error(`review request failed for ${b.reference}:`, err);
         }
       }

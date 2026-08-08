@@ -288,3 +288,56 @@ describe('runScheduledNotifications — burst cap', () => {
     expect((await runScheduledNotifications(NOW, d)).reminders).toBe(30);
   });
 });
+
+// ── Claim-then-send (notification safety rails, slice 3) ───────────────────
+// The race this closes: a manual POST /admin/jobs/notifications landing while the external
+// cron tick is mid-sweep. Both used to read wasSent=false and both sent.
+describe('runScheduledNotifications — concurrent ticks', () => {
+  it('sends exactly once when two ticks run against the same booking', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    const [r1, r2] = await Promise.all([
+      runScheduledNotifications(NOW, d),
+      runScheduledNotifications(NOW, d),
+    ]);
+
+    expect(r1.reminders + r2.reminders).toBe(1);
+    expect(d.email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(1);
+  });
+
+  it('sends each of many bookings exactly once across two concurrent ticks', async () => {
+    const d = deps();
+    for (let i = 0; i < 8; i++) await paidSingle(d.bookings, '2026-07-02');
+
+    const [r1, r2] = await Promise.all([
+      runScheduledNotifications(NOW, d),
+      runScheduledNotifications(NOW, d),
+    ]);
+
+    expect(r1.reminders + r2.reminders).toBe(8);
+    expect(d.email.sent).toHaveLength(8);
+  });
+
+  it('a failed send releases the claim, so the next tick retries it', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    let calls = 0;
+    const flaky = { send: async () => { calls++; if (calls === 1) throw new Error('provider down'); } };
+    await paidSingle(bookings, '2026-07-02');
+    const d = { bookings, log, email: flaky, baseUrl: 'https://ceylonhop.com', linkSecret: 's' };
+
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(0);
+    expect(await log.wasSent((await bookings.list())[0].id, 'trip_reminder')).toBe(false);
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+  });
+
+  it('a suppressed send releases the claim too — the cap must not consume it', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-02');
+
+    await runScheduledNotifications(NOW, { ...d, budget: new SendBudget(0) });
+    expect(await d.log.wasSent((await d.bookings.list())[0].id, 'trip_reminder')).toBe(false);
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+  });
+});
