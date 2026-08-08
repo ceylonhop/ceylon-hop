@@ -272,6 +272,62 @@ export const tripRequests = pgTable('trip_request', {
   driverNights: integer('driver_nights'),
 });
 
+// One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
+// than to a position in trip_request.stops[] — which silently follows the position when the trip
+// changes. See docs/superpowers/specs/2026-08-08-post-payment-trip-details-design.md §1.
+//
+// This table does NOT price anything. trip_request / transfer_request stay the priced record; the
+// two agree at booking time and may legitimately diverge afterwards, and flattening them would
+// erase why the price is what it is.
+export const bookingLegs = pgTable(
+  'booking_legs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    // Display order only. NEVER an identifier — that is the whole point of this table.
+    seq: integer('seq').notNull(),
+    kind: text('kind').notNull(),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    // A chauffeur day's intermediate stops: itinerary, not accommodation. Recorded for ops
+    // context, never prompted for.
+    viaStops: text('via_stops').array().notNull().default(sql`'{}'::text[]`),
+    travelDate: text('travel_date'),
+    // Resolved endpoints. Deliberately null until Phase 2: resolving a place inside booking
+    // creation would put a Google call in the payment path.
+    fromLat: doublePrecision('from_lat'),
+    fromLng: doublePrecision('from_lng'),
+    toLat: doublePrecision('to_lat'),
+    toLng: doublePrecision('to_lng'),
+    // ── everything below is written by Phase 2 only; created now so this table is migrated once,
+    // over already-paid bookings, rather than twice.
+    pickupSpot: text('pickup_spot'),
+    dropoffSpot: text('dropoff_spot'),
+    pickupLat: doublePrecision('pickup_lat'),
+    pickupLng: doublePrecision('pickup_lng'),
+    dropoffLat: doublePrecision('dropoff_lat'),
+    dropoffLng: doublePrecision('dropoff_lng'),
+    pickupTime: text('pickup_time'),
+    flightNo: text('flight_no'),
+    detailFlag: text('detail_flag'),
+    distanceCheck: text('distance_check'),
+    refusedSpot: text('refused_spot'),
+    refusedAt: timestamp('refused_at', { withTimezone: true }),
+    detailsHistory: jsonb('details_history'),
+    detailsUpdatedAt: timestamp('details_updated_at', { withTimezone: true }),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('booking_legs_booking_seq_unique').on(t.bookingId, t.seq),
+    index('booking_legs_booking_idx').on(t.bookingId),
+    check('booking_legs_kind_valid', sql`${t.kind} in ('leg', 'day', 'gap')`),
+    check('booking_legs_seq_positive', sql`${t.seq} > 0`),
+  ],
+);
+
 export const corridors = pgTable(
   'corridor',
   {
