@@ -560,9 +560,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
       + '<div class="ticket"><div class="t-main">'
       + '<div class="dt-kick">Lead passenger <span>· who&rsquo;s travelling</span></div>'
-      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
-      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
-      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
+      // autocomplete=off + unrecognised names (2026-08-08): a phone-only quote leaves the
+      // surname and email EMPTY, and Chrome offered a staff operator's saved identity for them —
+      // four live bookings were recorded under the owner's name. Mitigation, not a guarantee
+      // (Chrome classifies from id/label too), which is why /start also refuses a staff address.
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" name="ch-given" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" name="ch-family" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" name="ch-mail" type="email" value="' + esc(pre.email || '') + '" autocomplete="off" /></div>'
       + '<div class="dt-2col dt-phone">'
       +   '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
       +   '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'

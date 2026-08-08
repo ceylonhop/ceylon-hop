@@ -21,11 +21,11 @@ const createApp = (deps: AppDeps = {}): App =>
 
 const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
 
-async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number } = {}) {
+async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number; contact?: string } = {}) {
   const product = opts.product ?? 'private';
   const legs = opts.legs ?? [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 120, date: '2026-09-01', category: 'transfer' }];
   const q = await quotes.save({
-    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: '+94 77 000 1111',
+    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: opts.contact ?? '+94 77 000 1111',
     totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
     marginCents: opts.marginCents ?? 4300,
     request: {
@@ -572,5 +572,59 @@ describe('POST /quotes/pay/start for a partial link', () => {
     const a = await (await start(app, token)).json();
     const b = await (await start(app, token)).json();
     expect(b.bookingId).toBe(a.bookingId);
+  });
+});
+
+// Four live bookings were recorded under the owner's name because a pay link was opened in a
+// staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
+describe('a visitor cannot become the customer', () => {
+  const staffAuth = { opsUsers: 'f@x.com:founder,roshen@ceylonhop.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+  const appWithStaff = (deps: AppDeps = {}) =>
+    realCreateApp({ auth: staffAuth, adminApiKey: 'k', bookingLinkSecret: SECRET, ...deps });
+
+  it('refuses a staff email on someone else’s quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes); // contact is the customer's phone
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('staff_email_not_customer');
+    // …and nothing was created in their name.
+    expect((await quotes.get(q.id))!.convertedBookingId).toBeNull();
+  });
+
+  it('lets a staff member pay their OWN quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    // Built with the staff address as the quote's OWN contact. It cannot be set afterwards:
+    // customerContact is not patchable, and the in-memory get() returns a copy.
+    const q = await readyQuote(quotes, { contact: 'roshen@ceylonhop.com' });
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('leaves an ordinary customer completely alone', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    expect(res.status).toBe(201);
+  });
+
+  it('accepts a customer who gives no surname — the box that invited the autofill', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const { lastName, ...noSurname } = CUSTOMER as Record<string, string>;
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), noSurname as never);
+    expect(res.status).toBe(201);
   });
 });

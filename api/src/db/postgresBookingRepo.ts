@@ -187,7 +187,9 @@ export class PostgresBookingRepo implements BookingRepo {
         .insert(customers)
         .values({
           firstName: c.firstName,
-          lastName: c.lastName,
+          // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+          // store the absence as empty, never as the string \"undefined\".
+          lastName: c.lastName ?? '',
           email: c.email,
           phoneCountryCode: c.phoneCountryCode ?? null,
           phoneNumber: c.phoneNumber ?? null,
@@ -313,7 +315,9 @@ export class PostgresBookingRepo implements BookingRepo {
         .update(customers)
         .set({
           firstName: c.firstName,
-          lastName: c.lastName,
+          // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+          // store the absence as empty, never as the string \"undefined\".
+          lastName: c.lastName ?? '',
           email: c.email,
           phoneCountryCode: c.phoneCountryCode ?? null,
           phoneNumber: c.phoneNumber ?? null,
