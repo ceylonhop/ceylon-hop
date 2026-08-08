@@ -98,6 +98,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .plan .pl-r{position:relative;z-index:1}
   /* "How a tour works" steps — mirror why.html's .step-card/.num so both how-it-works sections share one look */
   .hiw{background:var(--paper);border-radius:var(--r);padding:24px;box-shadow:var(--shadow-s);height:100%}
+  .hiw{position:relative}
+  .hiw .hiw-ico{position:absolute;top:18px;right:18px;width:46px;height:46px}
+  @media (max-width:560px){ .hiw .hiw-ico{width:38px;height:38px;top:16px;right:16px} }
   .hiw-n{display:block;font-family:var(--display);font-size:2rem;font-weight:700;color:var(--accent);line-height:1}
   .hiw h3{font-size:1.1rem;margin:.3rem 0}
   .hiw p{font-size:.9rem;color:var(--ink-soft);margin:0}
@@ -141,16 +144,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="center"><span class="eyebrow" style="justify-content:center">How a Ceylon Hop tour works</span><h2 style="max-width:22ch;margin:.3rem auto 0">We drive every mile &mdash; you stay where you like</h2></div>
     <div class="grid cols-3" style="margin-top:36px">
       <div class="hiw">
+        <img class="hiw-ico" src="img/icons/badges/ella-train.svg" alt="" width="46" height="46" loading="lazy">
         <span class="hiw-n">1</span>
         <h3>Pick a route &amp; your dates</h3>
         <p>Choose a tour below, set your start date and how many of you are travelling. Tweak any day &mdash; add, drop or swap stops.</p>
       </div>
       <div class="hiw">
+        <img class="hiw-ico" src="img/icons/badges/ambalama.svg" alt="" width="46" height="46" loading="lazy">
         <span class="hiw-n">2</span>
         <h3>Book your own hotels</h3>
         <p>We send a hand-picked shortlist for every overnight stop &mdash; guesthouse to five-star. You book what suits your taste and budget, directly.</p>
       </div>
       <div class="hiw">
+        <img class="hiw-ico" src="img/icons/badges/chauffeur.svg" alt="" width="46" height="46" loading="lazy">
         <span class="hiw-n">3</span>
         <h3>We handle the road</h3>
         <p>A private AC vehicle does every transfer, door to door &mdash; point-to-point by default, or add a chauffeur-guide who stays with you the whole trip, priced per day.</p>
