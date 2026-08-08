@@ -18,6 +18,8 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "db:generate": "drizzle-kit generate",
     "db:preflight:money": "tsx scripts/preflight-money-constraints.ts",
+    "legs:backfill": "tsx scripts/backfill-booking-legs.ts",
+    "legs:check": "tsx scripts/check-booking-legs.ts",
     "migrate": "drizzle-kit migrate",
     "migrate:test": "tsx scripts/migrate.ts"
   },
