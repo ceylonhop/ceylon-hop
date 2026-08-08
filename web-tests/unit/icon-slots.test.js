@@ -56,15 +56,19 @@ describe('icon slots', () => {
     }
   }
 
-  // Each row must rotate teal / sky / saffron — the rule in img/icons/badges/README.md,
-  // and what the original PNG trio did. The disc is the first <path> fill in the badge.
-  // Scoped to the `.val` row itself: this is a rule about that three-card row, not the
-  // whole page, and there are only three brand disc colours to rotate through.
+  // Each row that uses badges must rotate teal / sky / saffron — the rule in
+  // img/icons/badges/README.md, and what the original PNG trio did visually. The disc is the
+  // first <path> fill in the badge. Scoped to the `.val` row itself: this is a rule about that
+  // three-card row, not the whole page, and there are only three brand disc colours to rotate
+  // through. index.html's row carries the original reference PNGs, not badges — a PNG has no
+  // <path> to read a disc colour from, so it's excluded rather than counted as a colour clash.
   it.each(VAL_PAGES)('%s: the value row rotates its disc colours', page => {
-    const discs = icoSrcs(valRowHtml(read(page))).map(src => {
-      const svg = readFileSync(join(ROOT, src), 'utf8');
-      return (svg.match(/<path[^>]*fill="(#[0-9A-Fa-f]{6})"/) || [])[1];
-    });
+    const discs = icoSrcs(valRowHtml(read(page)))
+      .filter(src => src.endsWith('.svg'))
+      .map(src => {
+        const svg = readFileSync(join(ROOT, src), 'utf8');
+        return (svg.match(/<path[^>]*fill="(#[0-9A-Fa-f]{6})"/) || [])[1];
+      });
     expect(discs.filter(Boolean)).toHaveLength(discs.length);
     expect(new Set(discs).size).toBe(discs.length);
   });

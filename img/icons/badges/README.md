@@ -60,16 +60,16 @@ places where the icon has a job to do (seat counters, bag counts, rate-card extr
 
 ## Colour variants
 
-Every three-card row rotates teal · sky · saffron, so a few badges exist in a second disc
-colour. Named `<badge>-<colour>.svg`:
+A three-card row that needs a badge in a second disc colour gets one. Named
+`<badge>-<colour>.svg`:
 
-`door-to-door-sky` · `pro-hopper-teal` · `rate-lock-sky`
+`rate-lock-sky`
 
-Recolouring a disc can swallow an inner accent that shares the new colour — `pro-hopper-teal`
-has its cap button in saffron for exactly that reason. Check the artwork after any recolour.
-`hop-van` carries both teal and sky inside and therefore has no variant: it stays saffron.
+Recolouring a disc can swallow an inner accent that happens to share the new colour — check
+the artwork after any recolour, badge by badge. `hop-van` carries both teal and sky inside and
+therefore has no variant: it stays saffron.
 
-These three variants do not appear in
+This variant does not appear in
 [`docs/prototypes/badge-icon-set.html`](../../../docs/prototypes/badge-icon-set.html) — that
 page only renders the base set.
 
