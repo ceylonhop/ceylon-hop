@@ -1149,8 +1149,24 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-leg.tone-blue { border-left: 3px solid var(--blue); }
 .qv .ch-leg.tone-stay { border-left: 3px dashed var(--muted-2); }
 
-/* main compact row (~56px) */
-.qv .ch-leg-main { display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 56px; }
+/* main compact row (~56px). flex-wrap is the card's overflow contract: content
+   that runs out of room WRAPS to the next line — it never clips off the card
+   edge (the "mm"-sliver / "Colo…" band bug, third recurrence; pinned by
+   e2e/ops-leg-card-layout.spec.js). */
+.qv .ch-leg-main { display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 56px; flex-wrap: wrap; }
+
+/* Two-zone compact legs (2026-08-08): the one-line row had accumulated controls
+   (date steppers, Day-N tag, same/next-day chips) until mid-width panes crushed
+   the route inputs to their 60px floor. Compact (non-multi-stop) legs now split:
+   row 1 = identity — number + From→To at the card's full width; row 2
+   (.ch-leg-sched) = schedule on the left, money + card actions on the right.
+   Multi-stop legs keep their header-band + stop-rail layout unchanged. */
+.qv .ch-leg:not(.is-multistop) .ch-leg-main { min-height: 46px; padding-bottom: 3px; }
+.qv .ch-leg-sched { display: flex; align-items: center; gap: 8px; row-gap: 6px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
+.qv .ch-leg-money { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+/* hairline above the tools row so the card reads as three quiet bands:
+   where → when/how-much → add-things */
+.qv .ch-leg:not(.is-multistop) .ch-leg-tools { border-top: 1px solid var(--line-soft); padding-top: 8px; margin-top: 2px; }
 .qv .ch-leg-reorder { display: flex; flex-direction: column; gap: 2px; flex: none; }
 .qv .ch-mini-btn { width: 22px; height: 20px; border: 1px solid var(--line); background: var(--surface); border-radius: 6px; cursor: pointer; font-size: 11px; color: var(--muted); display: grid; place-items: center; line-height: 1; padding: 0; transition: all .15s; }
 .qv .ch-mini-btn:hover { border-color: var(--blue); color: var(--blue-d); }
@@ -1353,24 +1369,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-seg-row { display: flex; align-items: center; gap: 6px; padding-left: 10px; min-height: 20px; }
 /* (stop-list + add-ons + route controls all live on the single .ch-leg-tools row above) */
 
-/* dense-row responsive: when the EDITOR PANE (not the viewport) is too narrow to
-   keep From→To readable alongside the date/distance/action controls, drop the
-   route onto its own full-width line below the controls. Keyed to the container
-   so it fires in the two-pane cockpit (editor ~590px) on any monitor size. */
-@container legs (max-width: 620px) {
-  .qv .ch-leg-main { flex-wrap: wrap; }
-  .qv .ch-leg-route { flex: 1 1 100%; order: 5; }}
-/* Chauffeur legs carry an extra Travel|Stay segment (~90px), so the row overflows and the
-   date input gets clipped in a width band ABOVE the 620px point-to-point threshold (the
-   "date shows only /09/" bug). Drop the route to its own line ~100px earlier for them. */
-@container legs (max-width: 720px) {
-  .qv .ch-leg.is-chauffeur .ch-leg-main { flex-wrap: wrap; }
-  .qv .ch-leg.is-chauffeur .ch-leg-route { flex: 1 1 100%; order: 5; }}
-/* Fallback for browsers without container queries: key off the viewport. */
-@supports not (container-type: inline-size) {
-  @media (max-width: 1180px) {
-    .qv .ch-leg-main { flex-wrap: wrap; }
-    .qv .ch-leg-route { flex: 1 1 100%; order: 5; }}}
+/* (The 620px/720px container-query "drop the route to its own line" rescues are
+   gone: they existed to save the one-line row, and their band kept reopening
+   every time the row gained a control. The route now has its own line always,
+   and .ch-leg-main/.ch-leg-sched wrap as the universal overflow behavior —
+   container-query support no longer needed for the leg cards.) */
 
 .qv .ch-legs-add { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
 
@@ -6213,19 +6216,31 @@ function renderLegCard(leg, idx, total) {
     : '';
 
   // Multi-stop: the stop chain renders in its own block BELOW the main row, so the main
-  // row can act as the leg's header band (see the route-rail CSS). Compact 2-stop legs
-  // keep the route inline in the main row, exactly as before.
+  // row can act as the leg's header band (see the route-rail CSS).
+  //
+  // Compact (2-stop and stay) legs are two-zone (2026-08-08): row 1 is identity —
+  // the number + route at the card's full width — and row 2 (.ch-leg-sched) carries
+  // schedule + money. The old everything-on-one-line row crushed the route inputs
+  // to their 60px floor in mid-width panes and clipped the date off the card edge
+  // ("Colo…" / the "mm" sliver — pinned by e2e/ops-leg-card-layout.spec.js).
+  var schedRow = isMulti ? '' : [
+    '  <div class="ch-leg-sched">',
+    dateHtml,
+    '    <div class="ch-leg-money">',
+    distHtml,
+    priceHtml,
+    actions,
+    '    </div>',
+    '  </div>',
+  ].join('');
   return [
     '<div class="ch-leg ch-tl-item ch-leg-quiet ' + legToneClass + (isChauffeur ? ' is-chauffeur' : '') + (isMulti ? ' is-multistop' : '') + '" data-leg-id="' + esc(leg.id) + '">',
     '  <div class="ch-leg-main">',
     reorder,
     '    <span class="ch-leg-dot tone-' + esc(dotTone) + '">' + (isStay ? '' : (idx + 1)) + '</span>',
-    (isMulti ? '' : routeHtml),
-    dateHtml,
-    distHtml,
-    priceHtml,
-    actions,
+    (isMulti ? dateHtml + distHtml + priceHtml + actions : routeHtml),
     '  </div>',
+    schedRow,
     (isMulti ? '<div class="ch-leg-stoplist">' + routeHtml + '</div>' : ''),
     toolsRow,
     '</div>',
