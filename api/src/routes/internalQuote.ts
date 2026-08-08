@@ -143,6 +143,47 @@ function customerNameFor(body: ToolRequest): string | null {
   return splitName || (body.name || '').trim() || null;
 }
 
+/* Did this save actually CHANGE the quote, or is it a no-op re-save?
+   Editing someone else's quote hands it to you (owner, 2026-08-01) — but only on a real edit.
+   Opening a quote to read it, and the save transition() fires just before a status change, must
+   not quietly take it off the person who built it.
+
+   Decided from the STORED row, never from a client flag: a flag the builder forgets to send, or
+   sends wrongly, would move ownership silently — the exact failure this guard prevents. Key order
+   is normalised because a reserialised-but-identical payload is not an edit. */
+type ComparableQuote = {
+  customerName?: string | null;
+  customerContact?: string | null;
+  totalCents?: number | null;
+  notes?: string | null;
+  internalNotes?: string | null;
+  requestedService?: string | null;
+  request?: unknown;
+} | null | undefined;
+
+function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
+}
+
+export function contentChanged(before: ComparableQuote, after: ComparableQuote): boolean {
+  // No stored row to compare against — never assume "no-op" on missing information.
+  if (!before || !after) return true;
+  const sig = (q: NonNullable<ComparableQuote>) => stableStringify({
+    customerName: q.customerName ?? null,
+    customerContact: q.customerContact ?? null,
+    totalCents: q.totalCents ?? null,
+    notes: q.notes ?? null,
+    internalNotes: q.internalNotes ?? null,
+    requestedService: q.requestedService ?? null,
+    // request.tool is the reopenable itinerary — the legs, vehicle, pax, dates and extras.
+    request: (q.request as { tool?: unknown } | null)?.tool ?? null,
+  });
+  return sig(before) !== sig(after);
+}
+
 // Thrown by resolveAndPrice so the route can map it to the right HTTP status.
 class PriceError extends Error {
   constructor(message: string, readonly status: 400 | 422) {
@@ -758,15 +799,17 @@ export function internalQuoteRoutes(deps: {
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
+    // Kept in scope past the editability check: the assignment rule below needs the stored row.
+    let existing: SavedQuote | null = null;
     // Maker-checker: a content re-save is only allowed while the quote is still editable.
     // Review lock (owner, 2026-07-17): SUBMISSION freezes content — pending_review is no longer
     // editable, so the founder approves exactly what they reviewed; the one door back in is the
     // explicit reopen-to-draft. ready/sent stay locked as before. changes_requested stays
     // editable — that state exists to be edited.
     if (existingId) {
-      const current = await deps.quotes.get(existingId);
-      if (current && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
-        return c.json({ error: 'not_editable', status: current.status }, 409);
+      existing = await deps.quotes.get(existingId);
+      if (existing && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(existing.status)) {
+        return c.json({ error: 'not_editable', status: existing.status }, 409);
       }
     }
     try {
@@ -811,8 +854,21 @@ export function internalQuoteRoutes(deps: {
         })),
       };
       if (existingId) {
-        const updated = await deps.quotes.update(existingId, content);
-        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status, ...priced }, 200);
+        /* Editing someone else's quote hands it to you (owner, 2026-08-01), reversing the
+           insert-only rule from spec 2026-07-22. Gated on a REAL change so that merely opening a
+           quote — or the save transition() fires just before a status change — never takes it off
+           the person who built it. contentChanged compares the stored row, not a client flag. */
+        const actor = c.get('identity').email;
+        const takeOver = contentChanged(existing, content) && existing?.assignedTo !== actor;
+        const updated = await deps.quotes.update(existingId, takeOver ? { ...content, assignedTo: actor } : content);
+        if (updated) {
+          return c.json({
+            id: updated.id, reference: updated.reference, status: updated.status,
+            // Echo it only when it MOVED, so the builder can repaint the picker without a reload.
+            ...(takeOver ? { assignedTo: actor } : {}),
+            ...priced,
+          }, 200);
+        }
         // update() refuses a soft-deleted (or absent) row. Falling through to the insert would
         // hand the operator a duplicate under a reference nobody has seen — tell them instead so
         // they can re-create the quote from what is still on their screen.

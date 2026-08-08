@@ -281,6 +281,55 @@ describe('internal quoting tool route', () => {
     expect(saved.legs[0].distanceKm).toBeGreaterThan(0);
   });
 
+  /* Editing someone else's quote hands it to you (owner, 2026-08-01), reversing the insert-only
+     rule from spec 2026-07-22. Gated on a REAL change: opening a quote to read it, and the save
+     transition() fires just before a status change, must not take it off whoever built it. */
+  describe('editing someone else\'s quote takes it over', () => {
+    const asOps = (app: App, path: string, body: unknown) => app.request(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookie('op@x.com') },
+      body: JSON.stringify(body),
+    });
+    const draft = (over: Record<string, unknown> = {}) => ({
+      firstName: 'Maya', contact: '+94770000000', vehicle: 'car', passengerCount: 2, luggageCount: 2,
+      requestedService: 'private', legs: [leg({ distanceKm: 80 })], ...over,
+    });
+
+    it('a real edit by another person moves the assignment to them', async () => {
+      const app = createApp();
+      // Founder creates it → auto-assigned to the founder.
+      const made = await (await post(app, '/admin/quote/save', draft())).json();
+      let got = await (await authedGet(app, `/admin/quote/${made.id}`)).json();
+      expect(got.assignedTo).toBe('f@x.com');
+
+      // Ops edits it (different distance) → it becomes theirs.
+      const res = await asOps(app, '/admin/quote/save', draft({ id: made.id, legs: [leg({ distanceKm: 140 })] }));
+      expect(res.status).toBe(200);
+      expect((await res.json()).assignedTo).toBe('op@x.com'); // echoed so the picker repaints
+      got = await (await authedGet(app, `/admin/quote/${made.id}`)).json();
+      expect(got.assignedTo).toBe('op@x.com');
+    });
+
+    it('an identical re-save does NOT steal it — this is what transition() fires', async () => {
+      const app = createApp();
+      const made = await (await post(app, '/admin/quote/save', draft())).json();
+      const res = await asOps(app, '/admin/quote/save', draft({ id: made.id }));
+      expect(res.status).toBe(200);
+      expect((await res.json()).assignedTo).toBeUndefined(); // nothing moved, nothing echoed
+      const got = await (await authedGet(app, `/admin/quote/${made.id}`)).json();
+      expect(got.assignedTo).toBe('f@x.com'); // still the person who built it
+    });
+
+    it('editing your OWN quote leaves the assignment alone', async () => {
+      const app = createApp();
+      const made = await (await post(app, '/admin/quote/save', draft())).json();
+      const res = await post(app, '/admin/quote/save', draft({ id: made.id, legs: [leg({ distanceKm: 200 })] }));
+      expect((await res.json()).assignedTo).toBeUndefined(); // already yours — no move to report
+      const got = await (await authedGet(app, `/admin/quote/${made.id}`)).json();
+      expect(got.assignedTo).toBe('f@x.com');
+    });
+  });
+
   it('POST /save is 400 for an unpriceable trip (no travel leg)', async () => {
     const res = await post(createApp(), '/admin/quote/save', {
       vehicle: 'car', passengerCount: 1, luggageCount: 0, legs: [{ category: 'stay_day', from: 'Kandy', to: '' }],

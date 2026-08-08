@@ -4860,6 +4860,7 @@ function resetToNew() {
     unpriced: false, // true while this row is a server-side shell (never priced) — spec 2026-07-29
     createdBy: null,
     updatedBy: null,
+    updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
   };
   lastEstimate = null;
@@ -5590,6 +5591,7 @@ async function reopenQuote(id) {
     state.assignedTo = q.assignedTo || null;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
+  state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
     // A shell carries no priced content, but the server DOES allow an internal note on one — and
     // savePayload() sends both fields unconditionally, so not restoring them would clobber a note
     // added via the internal-notes PATCH on the next real save.
@@ -5672,6 +5674,7 @@ async function reopenQuote(id) {
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
+  state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
 
   lastEstimate = null;
@@ -7709,6 +7712,35 @@ function renderSubmitBlockers() {
   ].join('');
 }
 
+/* Concurrent-edit notice (owner, 2026-08-01). Two people can open the same quote and quietly
+   overwrite each other. A hard lock was considered and deliberately NOT built first: a lock with
+   no heartbeat outlives a closed laptop, and a stuck lock means nobody can edit the quote at all
+   — worse than the problem. This is the soft version: say who was last in here and when, and let
+   the operator decide.
+
+   It reports the last SAVE, not "has it open", because that is the signal we actually have —
+   autosave fires 2.5s after a keystroke, so anyone genuinely working shows up fast, while someone
+   who merely looked leaves no trace and correctly raises no alarm. */
+var RECENT_EDIT_MS = 15 * 60 * 1000;
+function recentOtherEditor() {
+  if (!state.updatedBy || !state.updatedAt) return null;
+  if (state.updatedBy === window.opsEmail) return null; // your own last save is not a clash
+  var t = Date.parse(state.updatedAt);
+  if (isNaN(t)) return null;
+  var ago = Date.now() - t;
+  if (ago < 0 || ago > RECENT_EDIT_MS) return null;
+  var mins = Math.max(1, Math.round(ago / 60000));
+  return { email: state.updatedBy, mins: mins };
+}
+function renderConcurrentEditNotice() {
+  var e = recentOtherEditor();
+  if (!e) return '';
+  return '<div class="ch-review-banner tone-amber ch-concurrent">'
+    + '<b>' + esc(userLabel(e.email)) + ' was editing this ' + e.mins + ' minute' + (e.mins === 1 ? '' : 's') + ' ago</b>'
+    + '<span>You can still edit — but if you both save, the last one wins. Check with them first.</span>'
+    + '</div>';
+}
+
 function renderReviewBanner() {
   var s = state.status, note = state.notes ? String(state.notes).trim() : '';
   function banner(tone, title, body) {
@@ -8175,7 +8207,7 @@ function render() {
       '      </div>',
     ].join('') : ''),
     renderSubmitBlockers(),
-    renderReviewBanner(),
+    renderConcurrentEditNotice() + renderReviewBanner(),
 
     // Customer strip (one compact row)
     '      <div class="ch-cust-strip">',
