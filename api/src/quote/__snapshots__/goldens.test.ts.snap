@@ -76,6 +76,144 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): chauffeur_va
 }
 `;
 
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_all_extras 1`] = `
+{
+  "amountDueNowCents": 10400,
+  "currency": "USD",
+  "depositCents": 1040,
+  "lineItems": [
+    {
+      "amountCents": 3985,
+      "label": "Kandy → Sigiriya (car)",
+      "meta": {
+        "billableKm": 99,
+        "distanceKm": 90,
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": 1000,
+      "label": "Sightseeing stops (up to 3h)",
+    },
+    {
+      "amountCents": 1900,
+      "label": "Wait for Safari",
+    },
+    {
+      "amountCents": 500,
+      "label": "Luggage rack",
+    },
+    {
+      "amountCents": 800,
+      "label": "Child seat",
+    },
+    {
+      "amountCents": 1200,
+      "label": "Flexi ticket",
+    },
+    {
+      "amountCents": 1000,
+      "label": "Waiting fee",
+    },
+    {
+      "amountCents": 15,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 6935,
+  "priceAdjustmentCents": 15,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 10385,
+  "totalCents": 10400,
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_finishing_bps_rejects_charm 1`] = `
+{
+  "amountDueNowCents": 3100,
+  "currency": "USD",
+  "depositCents": 310,
+  "lineItems": [
+    {
+      "amountCents": 3099,
+      "label": "Matara → Tangalle (car)",
+      "meta": {
+        "billableKm": 77,
+        "distanceKm": 70,
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": 1,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 405,
+  "priceAdjustmentCents": 1,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 3099,
+  "totalCents": 3100,
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_multi_stop_ride 1`] = `
+{
+  "amountDueNowCents": 5550,
+  "currency": "USD",
+  "depositCents": 555,
+  "lineItems": [
+    {
+      "amountCents": 5555,
+      "label": "Colombo → Pinnawala → Kandy (car)",
+      "meta": {
+        "billableKm": 138,
+        "distanceKm": 125,
+        "segmentKms": [
+          85,
+          40,
+        ],
+        "stops": [
+          "Colombo",
+          "Pinnawala",
+          "Kandy",
+        ],
+        "vehicle": "car",
+      },
+    },
+    {
+      "amountCents": -5,
+      "label": "Final price adjustment",
+      "meta": {
+        "kind": "price_adjustment",
+        "strategy": "nearest_50_cents",
+      },
+    },
+  ],
+  "marginEstimateCents": 720,
+  "priceAdjustmentCents": -5,
+  "priceStrategy": "nearest_50_cents",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 5555,
+  "totalCents": 5550,
+  "warnings": [],
+}
+`;
+
 exports[`golden corpus — pre-ride-model engine outputs > quote(): private_car_single_floor 1`] = `
 {
   "amountDueNowCents": 2900,
@@ -241,6 +379,35 @@ exports[`golden corpus — pre-ride-model engine outputs > quote(): private_upgr
   "warnings": [
     "vehicle set to van for 6 pax / 4 bags",
     "Galle→Mirissa hit the $49.99 van minimum",
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quote(): private_van_single_floor 1`] = `
+{
+  "amountDueNowCents": 4999,
+  "currency": "USD",
+  "depositCents": 500,
+  "lineItems": [
+    {
+      "amountCents": 4999,
+      "label": "Galle → Unawatuna (van)",
+      "meta": {
+        "billableKm": 30,
+        "distanceKm": 25,
+        "vehicle": "van",
+      },
+    },
+  ],
+  "marginEstimateCents": 3589,
+  "priceAdjustmentCents": 0,
+  "priceStrategy": "unchanged",
+  "product": "private",
+  "rateCardVersion": "2026-07-14",
+  "subtotalCents": 4999,
+  "totalCents": 4999,
+  "warnings": [
+    "Galle→Unawatuna hit the $49.99 van minimum",
   ],
 }
 `;
@@ -437,6 +604,74 @@ exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): cha
 }
 `;
 
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_all_extras 1`] = `
+{
+  "km": {
+    "billableKm": 99,
+    "bufferKm": 9,
+    "distanceKm": 90,
+  },
+  "legs": [
+    {
+      "billableKm": 99,
+      "cls": "car",
+      "distanceKm": 90,
+      "from": "Kandy",
+      "minApplied": false,
+      "priceCents": 3985,
+      "to": "Sigiriya",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_finishing_bps_rejects_charm 1`] = `
+{
+  "km": {
+    "billableKm": 77,
+    "bufferKm": 7,
+    "distanceKm": 70,
+  },
+  "legs": [
+    {
+      "billableKm": 77,
+      "cls": "car",
+      "distanceKm": 70,
+      "from": "Matara",
+      "minApplied": false,
+      "priceCents": 3099,
+      "to": "Tangalle",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_multi_stop_ride 1`] = `
+{
+  "km": {
+    "billableKm": 138,
+    "bufferKm": 13,
+    "distanceKm": 125,
+  },
+  "legs": [
+    {
+      "billableKm": 138,
+      "cls": "car",
+      "distanceKm": 125,
+      "from": "Colombo",
+      "minApplied": false,
+      "priceCents": 5555,
+      "stops": [
+        "Colombo",
+        "Pinnawala",
+        "Kandy",
+      ],
+      "to": "Kandy",
+    },
+  ],
+}
+`;
+
 exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_car_single_floor 1`] = `
 {
   "km": {
@@ -546,6 +781,27 @@ exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): pri
       "minApplied": true,
       "priceCents": 4999,
       "to": "Mirissa",
+    },
+  ],
+}
+`;
+
+exports[`golden corpus — pre-ride-model engine outputs > quoteBreakdown(): private_van_single_floor 1`] = `
+{
+  "km": {
+    "billableKm": 30,
+    "bufferKm": 5,
+    "distanceKm": 25,
+  },
+  "legs": [
+    {
+      "billableKm": 30,
+      "cls": "van",
+      "distanceKm": 25,
+      "from": "Galle",
+      "minApplied": true,
+      "priceCents": 4999,
+      "to": "Unawatuna",
     },
   ],
 }
