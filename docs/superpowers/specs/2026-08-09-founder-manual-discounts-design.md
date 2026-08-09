@@ -1,8 +1,8 @@
 # Founder manual discounts on Ops quotes — design
 
 **Date:** 2026-08-09
-**Status:** design and its pricing assumption (§5.3) approved by the owner 2026-08-09. No open
-decisions. Build not started.
+**Status:** approved by the owner 2026-08-09. **Revised the same day (§5.2–§5.5): the cost cap is
+replaced by a 30% ceiling plus the vehicle fare floor.** No open decisions. Build not started.
 **Parent:** [`2026-07-15-discounts-design.md`](./2026-07-15-discounts-design.md) — the full
 discounts/promotions design. This document is **phase 1** of it: the manual arm only. Every
 decision here is drawn from the parent; where this document is silent, the parent governs.
@@ -36,7 +36,8 @@ every one of those actions is recorded.
 asked for, what was actually allowed, what the quote totalled before and after, and what it did
 to the margin.
 
-**As a founder**, I am stopped — not warned, stopped — from discounting below cost.
+**As a founder**, I am stopped — not warned, stopped — from taking more than 30% off, or from
+bringing the total below the vehicle's minimum fare.
 
 **As ops or finance**, I can see that a quote is discounted and the customer-facing amount, but I
 cannot apply, change, or remove one, and I never see cost or margin.
@@ -47,8 +48,9 @@ cannot apply, change, or remove one, and I never see cost or margin.
 
 - One manual discount per quote: `fixed` cents or `percentage` basis points.
 - Founder-only, via a new `discount:apply_manual` capability.
-- Eligible base is the **complete quote including extras** (parent §7.2).
-- Absolute cost cap. No override exists for any role.
+- Discount is taken off the **subtotal**, extras included.
+- Exactly two limits, neither overridable: **max 30% of subtotal**, and the final total may not
+  fall below the quote's **vehicle fare floor** (§5.2–§5.3). No cost estimate is involved.
 - Append-only history with full attribution and before/after money (§4).
 - A `Discounted` badge derived from the quote result, not a lifecycle status.
 - Rendering the stored discount on the Ops quote, the customer quote page, pay pages, and
@@ -69,7 +71,8 @@ Everything else in the parent spec:
 - **A discounted quote may not mint a partial-leg pay link.** Owner decision 2026-08-09, parent
   §18.1 option 1. Allocating one discount across a ticked subset of legs is undesigned; the link
   mint fails closed with `not_linkable` when an active discount exists.
-- Below-cost or complimentary quotes, by any role, by any route.
+- A total below the quote's vehicle minimum, a discount over 30%, or a complimentary quote — by
+  any role, by any route.
 
 ## 4. What gets stored
 
@@ -92,9 +95,9 @@ mutated in place — on replace or remove.
 | `requested_cents` | integer — what the founder asked for, before caps |
 | `applied_cents` | integer — what was actually removed after caps |
 | `total_after_cents` | integer — what the quote totals now, post-finishing |
-| `cap_reason` | text null — `'eligible_subtotal'` or `'estimated_cost'` |
-| `estimated_cost_cents` | integer — founder-only. Always present: a discount cannot exist without it (§6) |
-| `margin_before_cents`, `margin_after_cents` | integer — founder-only. **NOT NULL**, for the same reason |
+| `cap_reason` | text null — `'percentage_cap'` or `'vehicle_minimum'` (§5.2) |
+| `estimated_cost_cents` | integer — founder-only. **Reporting only**; the cap no longer uses it (§5.2) |
+| `margin_before_cents`, `margin_after_cents` | integer — founder-only, reporting only. Nullable: the engine returns `null` margin for shared, and although shared cannot be discounted today the column should not encode that as a constraint |
 | `applied_by` | text **NOT NULL** — staff email |
 | `applied_at` | timestamptz |
 | `status` | `'active'`, `'replaced'`, or `'removed'` |
@@ -127,7 +130,7 @@ Every question the owner asked, answerable from one table without a join:
 | What was the price before? | `total_before_cents` |
 | What is it now? | `total_after_cents` |
 | What did they ask for vs what were they allowed? | `requested_cents` vs `applied_cents` |
-| Did the cost cap bite? | `cap_reason` |
+| Which limit bound, if any? | `cap_reason` |
 | What did it cost us? | `margin_before_cents` − `margin_after_cents` |
 | Who took it away? | `superseded_by`, `superseded_at` |
 
@@ -149,84 +152,90 @@ core pricing → apply the manual discount → psychological finishing → amoun
 
 Unchanged from parent §7.5. Finishing runs exactly once, after the discount.
 
-### 5.2 Percentage and caps
+### 5.2 The whole rule — two limits, nothing else
+
+**Revised 2026-08-09 (owner). This supersedes the cost-cap design entirely.** The founder
+discounts the subtotal. Exactly two limits apply:
 
 ```text
-requestedCents          = method === 'fixed'
-                            ? value
-                            : floor((eligibleSubtotalCents * value + 5_000) / 10_000)
-maximumCostSafeDiscount = max(0, subtotalCents - estimatedCostCents)
-appliedCents            = min(requestedCents, eligibleSubtotalCents, maximumCostSafeDiscount)
+requestedCents = method === 'fixed'
+                   ? value
+                   : floor((subtotalCents * basisPoints + 5_000) / 10_000)
+
+percentageCap  = floor(subtotalCents * 30 / 100)          -- never more than 30% off
+floorHeadroom  = max(0, subtotalCents - protectedMinimumCents)
+
+appliedCents   = min(requestedCents, percentageCap, floorHeadroom)
 ```
 
-Round-half-up integer arithmetic throughout. `eligibleSubtotalCents` is the full quote subtotal
-including extras (parent §7.2). A zero-cent result does not create a discounted state.
+Round-half-up integer arithmetic. A zero-cent result does not create a discounted state.
 
-When the cost cap reduces the amount, `cap_reason = 'estimated_cost'` is recorded with both the
-requested and applied figures, and the founder sees the difference. **It cannot be overridden.**
+`cap_reason` records which limit bound: `'percentage_cap'`, `'vehicle_minimum'`, or `null`.
+Neither can be overridden by any role.
 
-### 5.3 Extras cost basis — owner-approved 2026-08-09
+**There is no cost estimate, no extras cost basis, and no `discount_cost_unavailable`.** Those are
+deleted from this design. Cost still exists in the engine and `marginEstimateCents` is still
+recorded on the history row (§4) — but as *reporting*, never as a control.
 
-Parent §17 requires owner-confirmed cost cents for the six chargeable extras (`sightseeing`,
-`safari-wait`, `luggage`, `front`, `flex`, `waiting`) before any cost cap can honestly protect a
-full-quote discount. That input has not arrived, and per-leg sightseeing attribution will
-restructure three of the six before it is worth collecting.
+### 5.3 Why the floor, and not cost
 
-**Owner decision (2026-08-09): treat every extra's cost as equal to its sell price** — zero
-incremental margin — until real figures exist:
+The owner's reason, recorded because it is not obvious from the code (2026-08-09):
 
-```text
-estimatedCostCents = transportCostCents + extrasSellCents
+> A per-kilometre cost estimate is meaningless exactly where discounting is most dangerous. In
+> Sri Lanka a driver does not charge by distance for a short job — they charge a minimum to take
+> the work at all. Roughly **$20–23 of a car's $29 minimum** and **about $40.43 of a van's $49.99**
+> goes straight to the driver. The engine's `costCents` for a 25 km van run is $14.10, which
+> implies $35 of headroom that does not exist.
+
+So the fare floor — not the modelled cost — is the real protection, because the floor *is* the
+driver minimum. The engine already computes exactly this:
+
+```ts
+protectedMinimumCents = rides.length * rateCard.floorCents[vehicle]   // engine.ts:58
 ```
 
-This is **strictly conservative**. It can never permit a below-cost total; it only caps the
-discount lower than strictly necessary on extras-heavy quotes, so the founder meets the cap
-slightly early. Tightening it later, when real extras costs land, only ever *increases* available
-headroom — it can never invalidate a discount already given.
+One driver minimum per leg, which is the right shape: a three-leg car day is three drivers each
+taking a minimum. The discounted total may never fall below it.
 
-`api/src/quote/rateCard.ts` gains no new sell-price fields and no existing arithmetic changes.
+Floors come from `rateCard.floorCents` and are **read, never hardcoded**, so this rule tracks the
+rate card and cannot drift from it:
 
-Worked example, for the reviewer. A $210 quote — $200 driving plus a $10 sightseeing fee —
-where the driving costs $174 (sell = cost × 1.15):
-
-| | Estimated cost | Max discount |
+| Vehicle | Minimum | Note |
 | --- | --- | --- |
-| This assumption (sightseeing costs $10) | $184 | **$26** |
-| Real figure, if sightseeing costs $4 | $178 | $32 |
+| `car` | $29.00 | owner-confirmed 2026-08-09 |
+| `van` | $49.99 | the existing floor; the owner said "49", and reading the card resolves it |
+| `van9` | $49.99 | tracks van, as the owner chose for the larger tiers |
+| `van14` | $85.00 | its own, higher — a bigger vehicle's driver minimum is higher |
+| `custom` | $110.00 | operator-priced; the 30% cap still applies |
 
-The founder loses $6 of headroom on that quote and no safety. Supplying real costs later only
-raises the ceiling; it can never invalidate a discount already given, which is why this is safe
-to ship ahead of the data.
+**Chauffeur has no `protectedMinimumCents`** — `engine.ts:58` sets it only on the private branch,
+so it stays `0`. A chauffeur quote is therefore bounded by the 30% cap alone, which is correct:
+chauffeur is day-rate priced and has no per-leg driver minimum to protect.
 
 ### 5.4 Shared quotes cannot be discounted
 
-`engine.ts:143` sets `marginEstimateCents = null` for shared, because shared cost is not modelled
-at all — the engine emits a `margin not modelled for shared` warning. Without a cost basis the
-absolute cost cap cannot be honoured, so a discount on a shared quote would be unprotected.
+Shared is per-seat corridor pricing with no vehicle and therefore no floor, and it is excluded
+from discounts in the parent design. A discount request against a shared Ops quote is rejected.
+This is stated explicitly, and tested, rather than left to be discovered.
 
-**A shared Ops quote rejects any discount request with `discount_cost_unavailable`.** This is a
-consequence of §6's fail-closed rule, not a separate policy, but it is stated explicitly here
-because it is the one product where the rejection is guaranteed rather than exceptional, and it
-must be covered by its own test rather than left to be discovered.
+### 5.5 Finishing needs no change at all
 
-This also keeps the `margin_before_cents` / `margin_after_cents` columns NOT NULL: the only
-product with a null margin can never produce a row.
-
-### 5.5 Finishing on a discounted quote
-
-`api/src/quote/engine.ts:123` currently calls:
+`engine.ts:123` stays exactly as it is:
 
 ```ts
 finishPrice(subtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
 ```
 
-For a **discounted** quote the downward minimum becomes `costCents` alone, because a founder may
-deliberately cross a sell-price fare floor but never cost (parent §3, "Fare floors"). The
-undiscounted path keeps `Math.max(costCents, protectedMinimumCents)` exactly as it is.
+with `rawCents` becoming the **discounted** subtotal on a discounted quote — the only change, and
+it follows from §5.1's ordering rather than from any new policy.
 
-Finishing's own limits are unchanged and apply to the **discounted** subtotal: the proportional
-`maxReductionBps` cap and the absolute `MAX_REDUCTION_CENTS` ($10) cap, on the fixed $10 charm
-grid (owner rule 2026-07-26).
+The minimum argument is left alone. That is safe by construction: `appliedCents` is already capped
+at `floorHeadroom`, so the discounted subtotal is `>= protectedMinimumCents` before finishing sees
+it, and `finishPrice` never returns below its minimum. The floor therefore holds through finishing
+without the call being touched.
+
+An earlier draft of this design changed that second argument to `costCents` alone, so a founder
+could cross the fare floor. **That is now exactly backwards** — the floor is the protection.
 
 ### 5.6 The discount line item
 
@@ -255,19 +264,19 @@ item**, never after.
   back both.
 - Any discount change invalidates prior approval, exactly as a price-input change does today.
 - Approval freezes the rate card, the discount snapshot, the calculation, and the FX basis.
-- If cost cannot be computed, the server rejects with `discount_cost_unavailable`. It never
-  trusts a browser-supplied amount.
+- The server never trusts a browser-supplied amount: it recomputes `appliedCents` from the stored
+  quote on every save.
 
-### 6.1 The rate lock governs the cost cap
+### 6.1 The rate lock governs both limits
 
-A quote priced against a locked rate card (`quotes.rate_card_json`, `rate_locked_until`) must
-compute `estimatedCostCents` — and therefore the cost cap — **from that locked card**, never from
-the live one. `rateCardFor()` already returns the live card once a lock expires, which is exactly
-the trap: a founder reopening a stale quote would otherwise cap against today's costs while the
-customer was quoted yesterday's.
+A quote priced against a locked rate card (`quotes.rate_card_json`, `rate_locked_until`) takes
+**both** its subtotal and its `floorCents` from that locked card, never from the live one.
+`rateCardFor()` returns the live card once a lock expires, which is exactly the trap: raise the
+van floor on the live card and a founder reopening a stale quote would be limited by a floor the
+customer's price was never built on.
 
 The rule is the one the engine already follows for pricing: whichever card priced the quote also
-costs it. This is the same class of bug the hot-zones design guards with its C2 rate-lock test,
+limits it. This is the same class of bug the hot-zones design guards with its C2 rate-lock test,
 and it gets an equivalent test here.
 
 ### 6.2 Concurrent edits — accepted, not solved
@@ -337,17 +346,23 @@ constants, before any production code changes: private vehicle classes and floor
 partial-leg pay link at `sold_cents`. Every later step proves an omitted discount leaves these
 cent-identical.
 
-**Discount arithmetic.** Fixed and percentage half-up boundaries; the optional maximum; extras
-included in the eligible base; exact-at-cost; cap diagnostics; sell-floor crossing permitted;
-cost-unavailable failing closed; zero-cent producing no discounted state.
+**Discount arithmetic.** Fixed and percentage half-up boundaries; extras included in the base;
+the 30% ceiling binding exactly at the boundary; the vehicle floor binding exactly at the
+boundary; both binding at once with the smaller winning; `cap_reason` naming the right one;
+zero-cent producing no discounted state; a request larger than the subtotal.
 
-**Shared.** A discount request against a shared Ops quote rejects with
-`discount_cost_unavailable`, and no `quote_discounts` row is written (§5.4).
+**The floor, per vehicle and per leg.** car $29.00, van and van9 $49.99, van14 $85.00, custom
+$110.00, each read from `rateCard.floorCents` rather than hardcoded — a fixture proving a card
+change moves the limit. A three-leg car quote floors at 3 × $29.00, not $29.00. Chauffeur has no
+floor (`protectedMinimumCents` stays 0) and is bounded by the 30% cap alone.
 
-**Rate lock.** A quote locked against a snapshot card computes its cost cap from that card, not
-the live one — including after `rate_locked_until` has passed, where `rateCardFor()` would
-otherwise hand back the live card (§6.1). Changing the live card must not move the cap on a
-locked quote.
+**Shared.** A discount request against a shared Ops quote is rejected and no `quote_discounts`
+row is written (§5.4).
+
+**Rate lock.** A quote locked against a snapshot card takes both its subtotal and its
+`floorCents` from that card, not the live one — including after `rate_locked_until` has passed,
+where `rateCardFor()` would otherwise hand back the live card (§6.1). Raising a floor on the live
+card must not move the limit on an already-locked quote.
 
 **Finishing.** Runs once, after the discount, off the discounted subtotal; never below cost;
 both the bps and the absolute $10 limit; a discount crossing a $10 grid boundary pins its

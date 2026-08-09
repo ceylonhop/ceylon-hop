@@ -4,7 +4,7 @@
 **Parent design:** [`2026-07-15-discounts-design.md`](../specs/2026-07-15-discounts-design.md)
 
 **Goal:** A founder can apply one fixed or percentage discount to an editable Ops quote, with a
-mandatory reason, an absolute cost cap, and an append-only history recording who, when, why, and
+mandatory reason, a 30% ceiling, a vehicle-minimum floor, and an append-only history of who, when, why, and
 the price and margin either side of the decision.
 
 **Architecture:** A pure arithmetic step inside the existing engine, between core pricing and
@@ -27,9 +27,14 @@ implementation, no promotion matching, no website change.
 
 ## Preconditions — all met
 
-The extras cost assumption (spec §5.3) — every extra's cost treated as equal to its sell price
-until real figures exist — was **approved by the owner on 2026-08-09**. There are no open
-decisions. Tasks 1, 2 and 3 can all start.
+**Revised 2026-08-09.** The cost-cap design (and with it the extras cost basis, which briefly
+gated this plan) was replaced by the owner with a far simpler rule: **max 30% off the subtotal,
+and the final total may not fall below the quote's vehicle fare floor.** No cost estimate is
+involved, so there is nothing left to confirm. See spec §5.2–§5.3 for the reasoning — in short, a
+per-km cost estimate understates a short trip badly, because the driver charges a fixed minimum
+to take the job at all.
+
+Tasks 1, 2 and 3 can all start. Task 1 is already done (`735eb85`).
 
 ## Scope decisions taken before writing this plan
 
@@ -120,16 +125,28 @@ export interface ResolvedDiscount {
   requestedCents: number;
   appliedCents: number;
   eligibleSubtotalCents: number;
-  capReason: 'eligible_subtotal' | 'estimated_cost' | null;
+  capReason: 'percentage_cap' | 'vehicle_minimum' | null;
 }
 ```
 
 `quote()` gains an optional third parameter. Omitted, **every existing code path is
 byte-identical** — that is what Task 1 proves.
 
-Implement per spec §5.2: half-up percentage, `min(requested, eligibleSubtotal,
-maximumCostSafeDiscount)`, extras costed at sell price (§5.3), `discount_cost_unavailable` when
-cost cannot be computed.
+Implement per spec §5.2 — and note how much smaller this is than the original draft:
+
+```ts
+const percentageCap = Math.floor(subtotalCents * 30 / 100);
+const floorHeadroom = Math.max(0, subtotalCents - protectedMinimumCents);
+const appliedCents  = Math.min(requestedCents, percentageCap, floorHeadroom);
+```
+
+`protectedMinimumCents` is already computed at `engine.ts:58` as
+`rides.length * rateCard.floorCents[vehicle]` — one driver minimum per leg. **Read it; do not
+recompute or hardcode floors**, so the rule tracks the rate card. It is `0` for chauffeur, which
+correctly leaves chauffeur bounded by the 30% cap alone.
+
+No cost estimate, no extras cost basis, no `discount_cost_unavailable`. Shared is rejected before
+arithmetic runs.
 
 Emit one line item `{ amountCents: -appliedCents, meta: { kind: 'discount' } }` after the extras
 and before the finishing item.
@@ -140,19 +157,18 @@ and before the finishing item.
 finishPrice(subtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
 ```
 
-**Two changes, both only on the discounted path:**
+**One change, and only on the discounted path:** `rawCents` becomes the **discounted** subtotal.
+That is all. It is easy to miss because the variable name does not change.
 
-1. `rawCents` becomes the **discounted** subtotal, not `subtotalCents`. Finishing must operate on
-   the post-discount figure — that is what §5.1's ordering means, and it is easy to miss because
-   the variable name does not change.
-2. `minimumAllowedCents` becomes `costCents` alone, dropping `protectedMinimumCents`, because a
-   founder may cross a sell-price fare floor but never cost.
+**Leave the second argument alone.** An earlier draft of this plan changed it to `costCents` so a
+founder could cross the fare floor — that is now exactly backwards, since the floor is the
+protection. Nothing needs changing there anyway: `appliedCents` is already capped at
+`floorHeadroom`, so the discounted subtotal is `>= protectedMinimumCents` before finishing sees
+it, and `finishPrice` never returns below its minimum. The floor holds through finishing for free.
 
-The undiscounted path keeps both arguments exactly as they are — Task 1's fixtures prove it.
-
-Cost is computed from the quote's **locked** rate card where one exists (spec §6.1), never the
-live card. `rateCardFor()` returns the live card once `rate_locked_until` has passed; the cost
-cap must not follow it.
+Subtotal and floors both come from the quote's **locked** rate card where one exists (spec §6.1),
+never the live card — `rateCardFor()` hands back the live card once `rate_locked_until` has
+passed, and the limit must not follow it.
 
 **In the same PR**, extend `paySelection.ts`'s filter to skip `meta.kind === 'discount'` as it
 already skips `price_adjustment`. Test that a discounted private quote's `extraIndexes` still
@@ -178,9 +194,9 @@ Columns exactly per spec §4.1. Constraints:
 
 - Partial unique index: one `status = 'active'` row per `quote_id`.
 - Non-negative checks on every money column.
-- `reason`, `applied_by`, `estimated_cost_cents`, `margin_before_cents` and `margin_after_cents`
-  all NOT NULL — a discount cannot exist without a cost basis, and the only product with a null
-  margin (shared) can never produce a row (spec §5.4).
+- `reason` and `applied_by` NOT NULL. `estimated_cost_cents` and the two margin columns are
+  **reporting only** and nullable — the cap no longer reads them (spec §5.2), and the engine
+  returns a null margin for shared.
 - `quote_revision` is a plain integer stamp with **no foreign key**: `quote_revisions` holds only
   superseded states, so the live revision has no row to reference.
 
@@ -252,7 +268,7 @@ invalidation; leak tests on both projections; the pay-link refusal; gated behind
 
 - Founder-only enabled controls: fixed/percentage toggle, value, **required** reason, apply,
   replace, remove. Other roles see a read-only discount row.
-- Requested-vs-applied display when the cost cap bit, with the founder-only margin.
+- Requested-vs-applied display when either limit bit, naming which one, with the founder-only margin.
 - Derived `Discounted` badge on queue and detail — from `discountCents > 0`, not a status.
 - A discount history panel, reusing the version-history panel's shape and its endpoint pattern.
 - **The outstanding-pay-link warning** (spec §6.3): applying, replacing, or removing a discount
@@ -344,8 +360,8 @@ applied cents, cost, margin, or an override flag. `ResolvedDiscount` is what the
 **There is a mapping layer, and Task 4 owns it.** `ResolvedDiscount` carries `requestedCents`,
 `appliedCents`, `eligibleSubtotalCents` and `capReason`, but **not** `total_before_cents`,
 `total_after_cents`, `margin_before_cents` or `margin_after_cents` — those come from the
-`QuoteResult` either side of the priced call, and `estimated_cost_cents` is derived inside the
-engine. Task 4 assembles the row from both. Test the assembly directly rather than assuming the
+`QuoteResult` either side of the priced call, and `estimated_cost_cents` comes from the engine's
+cost figure (reporting only — the limits never read it). Task 4 assembles the row from both. Test the assembly directly rather than assuming the
 shapes line up; an earlier draft of this plan claimed they did, and they do not.
 
 **Known gaps, accepted for phase 1:** concurrent quote edits can lose an update (spec §6.2) —
