@@ -941,9 +941,10 @@ describe('founder manual discount control', () => {
   it('renders the control under the total, and only while the quote is editable', async () => {
     const body = await shell();
     expect(body).toContain('discountControlHtml(est)');
-    expect(body).toContain('function discountEditable()');
-    // draft / changes_requested only — matching the save route, which refuses any other status.
-    expect(body).toContain("st === 'draft' || st === 'changes_requested'");
+    // ONE editability rule for the whole editor. An earlier version of this control keyed off
+    // state.savedStatus, which does not exist — so it fell through to 'draft' and offered an
+    // editable control on a quote in review that the save route would then refuse.
+    expect(body).toContain('function discountEditable() { return isEditableNow(); }');
     expect(body).toContain('Reopen to edit to change the discount.');
   });
 
@@ -978,6 +979,17 @@ describe('founder manual discount control', () => {
     expect(body).not.toContain('* 0.3');
     expect(body).toContain('data-testid="discount-applied"');
     expect(body).toContain('data-testid="discount-cap"');
+  });
+
+  it('REHYDRATES the stored discount when a quote is reopened', async () => {
+    const body = await shell();
+    // Observed on staging 2026-08-09: apply $10, refresh, and the pane showed $62.00 while the
+    // stored quote was $51.99. state.discount is client state and starts null, so without this
+    // the estimate reprices undiscounted and the operator reads a price nobody will be charged.
+    expect(body).toContain('async function apiActiveDiscount(id)');
+    expect(body).toContain('state.discount = activeDiscount');
+    // Rehydration is NOT the founder touching it — a later autosave must still mean "preserve".
+    expect(body).toContain('_discountTouched = false;');
   });
 
   it('uses the delegated dispatcher, so it survives a money-pane re-render', async () => {

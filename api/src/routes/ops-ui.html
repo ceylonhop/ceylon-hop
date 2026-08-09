@@ -4251,10 +4251,10 @@ var DRIVING_CATS = {
    computes no money at all.
    Editable only while the quote is (draft / changes_requested); elsewhere it is a read-only row,
    matching the save route, which refuses a discount on any other status. */
-function discountEditable() {
-  var st = state.savedStatus || 'draft';
-  return st === 'draft' || st === 'changes_requested';
-}
+/* The SAME rule the rest of the editor uses. An earlier version of this read state.savedStatus,
+   which does not exist — so it fell through to 'draft' and rendered an editable control on a
+   quote in review, which the save route would then refuse. One rule, one place. */
+function discountEditable() { return isEditableNow(); }
 
 function discountControlHtml(est) {
   if (!viewerCan('discount:apply_manual')) {
@@ -5109,6 +5109,20 @@ async function apiEstimate(payload) {
     var body = await jsonOrNull(r);
     return body || { error: 'Estimate failed' };
   } catch (e) { window.opsReportError && window.opsReportError('apiEstimate', e); return { error: 'Network error' }; }
+}
+
+/* The founder's stored discount, so a reopened quote reprices WITH it. Silent on failure: an
+   unreadable history must not block opening a quote — the pane then shows the stored total from
+   the server, which is still the right number. */
+async function apiActiveDiscount(id) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id) + '/discounts');
+    if (!r.ok) return null;
+    var body = await jsonOrNull(r);
+    var rows = (body && body.discounts) || [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].status === 'active') return rows[i];
+    return null;
+  } catch (e) { window.opsReportError && window.opsReportError('apiActiveDiscount', e); return null; }
 }
 
 async function apiRateCard() {
@@ -6007,6 +6021,16 @@ async function reopenQuote(id) {
     state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
     state.customerTotalVia = q.customerTotalVia || null;
     state.assignedTo = q.assignedTo || null;
+    /* Rehydrate the founder's stored discount. Without this state.discount is null after every
+       refresh, so the estimate reprices UNDISCOUNTED and the pane shows a price the customer will
+       never be charged while the stored quote is correct — observed on staging 2026-08-09: pane
+       $62.00, stored $51.99. _discountTouched stays FALSE so a later autosave still means
+       "preserve", not "re-apply". */
+    var activeDiscount = await apiActiveDiscount(q.id);
+    state.discount = activeDiscount
+      ? { method: activeDiscount.method, value: activeDiscount.value, reason: activeDiscount.reason }
+      : null;
+    _discountTouched = false;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
