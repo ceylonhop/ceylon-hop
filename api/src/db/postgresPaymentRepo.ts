@@ -85,6 +85,23 @@ export class PostgresPaymentRepo implements PaymentRepo {
 
   // Cheapest possible existence check — the watchdog asks this once per paid booking on every
   // ~15-min sweep, and nothing downstream wants the row itself.
+  async gatewayPaymentIdFor(paymentId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ gatewayPaymentId: payments.gatewayPaymentId })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.id, paymentId),
+          eq(payments.status, 'succeeded'),
+          // Gateway money only — a manual settlement's reference is a bank slip, not a
+          // PayHere payment id, and must never be sent to their Refund API.
+          eq(payments.settlementSource, 'webhook'),
+        ),
+      )
+      .limit(1);
+    return row?.gatewayPaymentId ?? null;
+  }
+
   async hasManualSettlement(bookingId: string): Promise<boolean> {
     const [row] = await this.db
       .select({ id: payments.id })

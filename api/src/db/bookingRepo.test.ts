@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InMemoryBookingRepo, type NewBooking } from './bookingRepo';
+import { InMemoryBookingRepo, type NewBooking, personKeyFor } from './bookingRepo';
 
 const sample: NewBooking = {
   mode: 'single',
@@ -77,5 +77,38 @@ describe('InMemoryBookingRepo', () => {
     ]);
     expect(a.id).toBe(b.id);
     expect((await repo.list()).length).toBe(1);
+  });
+});
+
+// Repeat customers, without merging their rows (owner, 2026-08-02). Prod held 10 customers
+// rows for 5 actual people, so any repeat-guest view or customer count was wrong.
+//
+// The obvious fix — dedupe by email and reuse the row — would CORRUPT EXISTING BOOKINGS. A
+// booking has no traveller of its own: the name is read off the linked customers row, and
+// transfer_request/trip_request store places and dates but no name. Merging two rows rewrites
+// the traveller on whichever booking wrote first. So we LINK instead: person_key groups them
+// (generated in Postgres by migration 0032) and every booking keeps its own snapshot.
+describe('personKeyFor — grouping people without merging rows', () => {
+  it('matches the same human across casing and stray whitespace', () => {
+    expect(personKeyFor('Roshen@CeylonHop.com')).toBe('roshen@ceylonhop.com');
+    expect(personKeyFor('  roshen@ceylonhop.com  ')).toBe('roshen@ceylonhop.com');
+    expect(personKeyFor('someone.else@x.com')).not.toBe(personKeyFor('roshen@ceylonhop.com'));
+  });
+
+  it('groups two bookings by one person while each KEEPS ITS OWN traveller name', async () => {
+    const repo = new InMemoryBookingRepo();
+    const base = {
+      mode: 'single' as const, total: 4900, amountDueNow: 4900, currency: 'USD',
+      input: { from: 'CMB', to: 'Galle', vehicleType: 'car' as const, adults: 1, children: 0, bags: 1,
+        customer: { firstName: 'Frank', lastName: 'W', email: 'Roshen@CeylonHop.com', whatsapp: '+94770001111', country: 'LK' } },
+    };
+    const first = await repo.create(base);
+    // Same person, booking for someone else this time — the name MUST NOT overwrite the first.
+    const second = await repo.create({ ...base,
+      input: { ...base.input, customer: { ...base.input.customer, firstName: 'Anja', email: 'roshen@ceylonhop.com  ' } } });
+
+    expect(personKeyFor(first.input.customer.email)).toBe(personKeyFor(second.input.customer.email));
+    expect((await repo.get(first.id))!.input.customer.firstName).toBe('Frank');
+    expect((await repo.get(second.id))!.input.customer.firstName).toBe('Anja');
   });
 });

@@ -43,8 +43,13 @@ export function issueSessionCookie(c: Context, email: string, sessionSecret: str
   });
 }
 
-// Resolve identity from (a) x-admin-key → system, or (b) session cookie → email → role
-// looked up FRESH from OPS_USERS every request. Never throws; guards enforce.
+// Resolve identity from (a) x-admin-key → system, or (b) session cookie → email → role.
+//
+// The role is resolved PER REQUEST from the OPS_USERS roster rather than read off the cookie
+// (spec D5) — that is what makes removing someone from OPS_USERS take effect immediately instead
+// of waiting out their 7-day session. The roster itself is parsed once, at construction: it comes
+// from the environment, which cannot change without restarting the process. Never throws; guards
+// enforce.
 export function opsIdentity(cfg: OpsAuthConfig): MiddlewareHandler {
   const users = parseOpsUsers(cfg.opsUsers);
   return async (c, next) => {

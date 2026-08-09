@@ -5,10 +5,12 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
-import type { QuoteRequest, QuoteResult, PrivateLeg, Ride } from '../quote/types';
-import type { ExtraCode, Vehicle, RateCard } from '../quote/rateCard';
+import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
+import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
-import { KNOWN_PLACES, type MapsAdapter } from '../adapters/maps';
+import { KNOWN_PLACES, canonPlace, haversineKm, type MapsAdapter } from '../adapters/maps';
+import { PlaceResolver, asLatLng } from '../services/placeResolver';
+import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
@@ -18,17 +20,22 @@ import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
+import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { BookingRepo, NewBooking } from '../db/bookingRepo';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
-import { signQuotePayToken } from '../lib/bookingToken';
-
-// Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
-const CATEGORIES: Record<string, { drives: boolean }> = {
-  transfer: { drives: true },
-  airport: { drives: true },
-  train_support: { drives: true },
-  stay_day: { drives: false },
-};
+import {
+  payLines,
+  selectionAmountCents,
+  isFullSelection,
+  NotLineablePriceError,
+  type PaySelection,
+} from '../quote/paySelection';
+import { changedFields } from '../quote/quoteDiff';
+import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
+import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+// CATEGORIES/drives moved to quote/legCategory.ts so quoteView.ts shares one definition —
+// a second copy here is how the customer page and the ops chooser drift on which legs drive.
+import { drives } from '../quote/legCategory';
 
 // Tool vehicle tiers → engine vehicle class. All tiers now have rates.
 const VEHICLE_MAP: Record<string, Vehicle | null> = {
@@ -136,6 +143,47 @@ function customerNameFor(body: ToolRequest): string | null {
   return splitName || (body.name || '').trim() || null;
 }
 
+/* Did this save actually CHANGE the quote, or is it a no-op re-save?
+   Editing someone else's quote hands it to you (owner, 2026-08-01) — but only on a real edit.
+   Opening a quote to read it, and the save transition() fires just before a status change, must
+   not quietly take it off the person who built it.
+
+   Decided from the STORED row, never from a client flag: a flag the builder forgets to send, or
+   sends wrongly, would move ownership silently — the exact failure this guard prevents. Key order
+   is normalised because a reserialised-but-identical payload is not an edit. */
+type ComparableQuote = {
+  customerName?: string | null;
+  customerContact?: string | null;
+  totalCents?: number | null;
+  notes?: string | null;
+  internalNotes?: string | null;
+  requestedService?: string | null;
+  request?: unknown;
+} | null | undefined;
+
+function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
+}
+
+export function contentChanged(before: ComparableQuote, after: ComparableQuote): boolean {
+  // No stored row to compare against — never assume "no-op" on missing information.
+  if (!before || !after) return true;
+  const sig = (q: NonNullable<ComparableQuote>) => stableStringify({
+    customerName: q.customerName ?? null,
+    customerContact: q.customerContact ?? null,
+    totalCents: q.totalCents ?? null,
+    notes: q.notes ?? null,
+    internalNotes: q.internalNotes ?? null,
+    requestedService: q.requestedService ?? null,
+    // request.tool is the reopenable itinerary — the legs, vehicle, pax, dates and extras.
+    request: (q.request as { tool?: unknown } | null)?.tool ?? null,
+  });
+  return sig(before) !== sig(after);
+}
+
 // Thrown by resolveAndPrice so the route can map it to the right HTTP status.
 class PriceError extends Error {
   constructor(message: string, readonly status: 400 | 422) {
@@ -160,6 +208,7 @@ async function resolveAndPrice(
   maps: MapsAdapter,
   serviceOverride?: 'private' | 'chauffeur',
   rateCard: RateCard = RATE_CARD,
+  resolver?: PlaceResolver,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
@@ -168,10 +217,10 @@ async function resolveAndPrice(
   for (const l of driving) {
     if (l.stops) {
       // Multi-stop leg: resolve each null/≤0 segment; mirror distanceKm = segment sum.
-      await resolveRideSegments(l, maps);
+      await resolveRideSegments(l, maps, resolver);
     } else if (!l.distanceKm || Number(l.distanceKm) <= 0) {
       // Old point-to-point path — untouched.
-      l.distanceKm = await resolveLegKm(l, maps);
+      l.distanceKm = await resolveLegKm(l, maps, resolver);
     }
   }
   try {
@@ -183,10 +232,47 @@ async function resolveAndPrice(
   }
 }
 
+// Positive location identification (spec 2026-08-02), STAGE 1 — non-blocking.
+//
+// When both endpoints are identified we hand the Distance Matrix exact coordinates rather than
+// names, which is what stops a string like "Yala, Sri Lanka" from being re-geocoded to the wrong
+// town, and what lets the implausibly-short floor guard apply to EVERY leg rather than only to
+// catalog pairs.
+//
+// When an endpoint is not yet identified we still price it the old way and report it as
+// unresolved, so ops can confirm it without being blocked mid-quote. Stage 2 turns that report
+// into a refusal; this stage exists so the backlog can be cleared first.
+async function distanceVia(
+  maps: MapsAdapter,
+  resolver: PlaceResolver | undefined,
+  from: string,
+  to: string,
+): Promise<{ d: Awaited<ReturnType<MapsAdapter['distance']>>; unresolved: string[] }> {
+  if (!resolver) return { d: await maps.distance(from, to), unresolved: [] };
+  const [rf, rt] = await Promise.all([resolver.resolve(from), resolver.resolve(to)]);
+  if (rf.kind === 'resolved' && rt.kind === 'resolved') {
+    return { d: await maps.distance(asLatLng(rf), asLatLng(rt)), unresolved: [] };
+  }
+  const unresolved = [rf, rt].flatMap((r) => (r.kind === 'needs_confirmation' ? [r.name] : []));
+  return { d: await maps.distance(from, to), unresolved };
+}
+
+// Both endpoints identified → their coordinate strings; otherwise null, meaning "fall back to
+// the names" (stage 1 is non-blocking).
+async function resolvePairForMaps(
+  resolver: PlaceResolver,
+  from: string,
+  to: string,
+): Promise<{ from: string; to: string } | null> {
+  const [rf, rt] = await Promise.all([resolver.resolve(from), resolver.resolve(to)]);
+  if (rf.kind !== 'resolved' || rt.kind !== 'resolved') return null;
+  return { from: asLatLng(rf), to: asLatLng(rt) };
+}
+
 // Resolve a driving leg's km via the maps adapter (a single from→to lookup).
 // Unresolvable → 400 naming the failing leg.
-async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
-  const d = await maps.distance(l.from, l.to);
+async function resolveLegKm(l: ToolLeg, maps: MapsAdapter, resolver?: PlaceResolver): Promise<number> {
+  const { d } = await distanceVia(maps, resolver, l.from, l.to);
   if (!d) {
     throw new PriceError(`couldn't find the distance for ${l.from || '?'} → ${l.to || '?'} — enter the km manually`, 400);
   }
@@ -197,7 +283,7 @@ async function resolveLegKm(l: ToolLeg, maps: MapsAdapter): Promise<number> {
 // sequential — mirrors resolveLegKm's per-PAIR error message, naming the failing stop pair).
 // A missing segmentKms array is treated as all-null. Mutates the leg: segmentKms → resolved
 // numbers, and distanceKm → the segment sum (legacy mirror, updated even when all were manual).
-async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void> {
+async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter, resolver?: PlaceResolver): Promise<void> {
   const stops = l.stops as string[];
   const segs: (number | null)[] = l.segmentKms ? [...l.segmentKms] : new Array<null>(stops.length - 1).fill(null);
   for (let i = 0; i < stops.length - 1; i++) {
@@ -205,7 +291,7 @@ async function resolveRideSegments(l: ToolLeg, maps: MapsAdapter): Promise<void>
     if (km == null || km <= 0) {
       const from = stops[i];
       const to = stops[i + 1];
-      const d = await maps.distance(from, to);
+      const { d } = await distanceVia(maps, resolver, from, to);
       if (!d) {
         throw new PriceError(`couldn't find the distance for ${from || '?'} → ${to || '?'} — enter the km manually`, 400);
       }
@@ -221,9 +307,6 @@ const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
 
-function drives(l: ToolLeg): boolean {
-  return CATEGORIES[l.category || 'transfer']?.drives ?? true;
-}
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
@@ -242,12 +325,18 @@ function toEngineLeg(l: ToolLeg): PrivateLeg | Ride {
   return { from: l.from, to: l.to, distanceKm: Number(l.distanceKm) };
 }
 
-function collectExtras(legs: ToolLeg[]): ExtraCode[] {
-  const out: ExtraCode[] = [];
+// legIndex must be the DRIVING index — toEngineRequest hands the engine
+// `req.legs.filter(drives)`, so a raw state.legs index drifts by one for every stay day
+// before it and would name the wrong leg. Non-driving legs still contribute their extras,
+// unattributed, exactly as before: dropping them would change a total.
+function collectExtras(legs: ToolLeg[]): ExtraInput[] {
+  const out: ExtraInput[] = [];
+  let drivingIndex = -1;
   for (const l of legs) {
-    if (l.addSightseeingFee) out.push('sightseeing');
-    if (l.addWaitingFee) out.push('waiting');
-    if (l.addSafariWait) out.push('safari-wait');
+    const legIndex = drives(l) ? ++drivingIndex : undefined;
+    if (l.addSightseeingFee) out.push({ code: 'sightseeing', legIndex });
+    if (l.addWaitingFee) out.push({ code: 'waiting', legIndex });
+    if (l.addSafariWait) out.push({ code: 'safari-wait', legIndex });
   }
   return out;
 }
@@ -322,6 +411,22 @@ function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string
   return Object.keys(rest).length ? rest : undefined;
 }
 
+// Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
+//
+// The ops builder composes the customer message from its own UNSAVED state, so a few rows (a
+// chauffeur "Stay in …") have no engine line item to read a label off. Rather than let the client
+// keep its own copy of the shortening rule — which is how ops, the pay page and emails drift
+// apart — the server hands over the answers and the client looks them up.
+function displayPlacesFor(toolLegs: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!Array.isArray(toolLegs)) return out;
+  for (const leg of toolLegs as { from?: string; to?: string; stops?: string[] }[]) {
+    const places = Array.isArray(leg?.stops) && leg.stops.length ? leg.stops : [leg?.from, leg?.to];
+    for (const p of places) if (typeof p === 'string' && p.trim()) out[p] = shortPlace(p);
+  }
+  return out;
+}
+
 function shape(result: QuoteResult, canMargin: boolean) {
   const base = {
     product: result.product,
@@ -331,7 +436,11 @@ function shape(result: QuoteResult, canMargin: boolean) {
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
     // The founder-only zone annotation is stripped for non-margin:view roles (D9).
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
+    // `displayLabel` is the ONE place a route row gets shortened (2026-08-06). Clients render
+    // what they are given rather than each keeping a copy of the rule — ops-ui had one, and
+    // manage.html and the drawer were about to grow two more. `label` stays exact for search,
+    // tooltips and anything that needs the address as stored.
+    lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   if (!canMargin) return base;
   return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
@@ -392,7 +501,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -417,6 +526,7 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
       ...base,
       breakdown: quoteBreakdown(engineReq, rateCard),
       services: serviceChooserData(toolReq, rateCard, selected, result),
+      displayPlaces: displayPlacesFor(toolReq.legs),
     };
   } catch {
     return null;
@@ -424,8 +534,32 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
 }
 type PlaceSuggestion = { label: string; source: 'known' | 'google' };
 
+// Body of POST /place-confirm. Coordinates are bounded to real values; the string itself is
+// canonicalised repo-side, so "Yala, Sri Lanka" and "yala" confirm the same row.
+const PlaceConfirmSchema = z
+  .object({
+    name: z.string().trim().min(1).max(300),
+    displayName: z.string().trim().min(1).max(300),
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+  })
+  .strict();
+
+// "6.37,81.52" → the point, for measuring candidates against the previous stop. null on anything else.
+function parseNear(raw: string | undefined): [number, number] | null {
+  if (!raw) return null;
+  const [a, b] = raw.split(',').map((n) => Number(n.trim()));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  if (a < -90 || a > 90 || b < -180 || b > 180) return null;
+  return [a, b];
+}
+
+// Dedupe key for the suggestion list. Uses the SAME canonical form the coords lookup uses,
+// so a Google description ("Yala, Sri Lanka") collides with the catalog entry it duplicates
+// ("Yala") and is dropped. Before this the two spellings were distinct keys, so the dropdown
+// offered both and picking the Google twin bypassed the coords pin — see canonPlace().
 function normPlace(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return canonPlace(s);
 }
 
 // Place suggestions via local known places first, then the maps adapter (Google/offline fallback lives there).
@@ -446,6 +580,16 @@ async function suggestPlaces(q: string, maps: MapsAdapter): Promise<PlaceSuggest
   return local.concat(remote).slice(0, 6);
 }
 
+// Canonical form of a selection: deduped and sorted, so [1,0] and [0,1] are ONE selection and
+// re-minting the same picks can't look like a change (which would retire the link ops just sent).
+function normalizeSel(sel: PaySelection | null | undefined): PaySelection | null {
+  if (!sel) return null;
+  return {
+    legIndexes: [...new Set(sel.legIndexes)].sort((a, b) => a - b),
+    extraIndexes: [...new Set(sel.extraIndexes)].sort((a, b) => a - b),
+  };
+}
+
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
@@ -463,10 +607,20 @@ export function internalQuoteRoutes(deps: {
   // link secret that signs it, and which PayHere mode the server is running — surfaced so
   // the ops UI can label a sandbox link instead of letting it pass for a live one.
   payBaseUrl?: string;
+  // Customer quote links (spec 2026-08-05): the public site origin the link points at. Falls
+  // back to payBaseUrl (see app.ts) so dev/staging keep working with one host.
+  quoteBaseUrl?: string;
   linkSecret?: string;
   payhereMode?: string;
+  // Positive location identification (spec 2026-08-02). Optional: with no repo injected there
+  // is no resolver, and every distance takes the legacy name path exactly as before — so this
+  // router keeps working unchanged in tests and keyless dev.
+  placeResolutions?: PlaceResolutionRepo;
 }) {
   const r = new Hono();
+  const resolver = deps.placeResolutions
+    ? new PlaceResolver(deps.placeResolutions, deps.maps)
+    : undefined;
 
   // The live rate card composed with the currently-active hot zones (spec D5). Built per request so
   // a zone edit is reflected on the next quote; frozen into the snapshot at approval (C2). Zero
@@ -515,6 +669,45 @@ export function internalQuoteRoutes(deps: {
     return c.json({ places: suggestions.map((p) => p.label), suggestions });
   });
 
+  // ── Positive location identification (spec 2026-08-02) ──────────────────────────────────
+  // Candidates for the ops "Confirm location" panel. Each carries its administrative area and,
+  // when `near` (the previous stop) is supplied, the straight-line distance from it — because
+  // Google's own labels do NOT distinguish the two Yalas: both render as plain "Sri Lanka",
+  // which is exactly how the wrong one got picked.
+  r.get('/place-candidates', requireCap('quote:manage'), async (c) => {
+    const q = (c.req.query('q') || '').trim();
+    if (q.length < 2) return c.json({ candidates: [] });
+    const near = parseNear(c.req.query('near'));
+    const raw = (await deps.maps.placeCandidates?.(q)) ?? [];
+    const candidates = raw.slice(0, 6).map((p) => ({
+      displayName: p.displayName,
+      lat: p.lat,
+      lng: p.lng,
+      area: p.area,
+      kmFromPrevious: near ? Math.round(haversineKm(near, [p.lat, p.lng])) : null,
+    }));
+    return c.json({ candidates });
+  });
+
+  // Record a human's identification of a string. Capability is quote:manage, not founder:
+  // identifying a place is not a pricing decision (a hot-zone surcharge on that place still is,
+  // and stays founder-only), and whoever is building the quote must be able to unblock it.
+  r.post('/place-confirm', csrf, requireCap('quote:manage'), async (c) => {
+    if (!deps.placeResolutions) return c.json({ error: 'not_configured' }, 503);
+    const parsed = PlaceConfirmSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: 'bad_request', details: parsed.error.flatten() }, 400);
+    const { name, displayName, lat, lng } = parsed.data;
+    const saved = await deps.placeResolutions.upsert({
+      canonKey: name,
+      displayName,
+      lat,
+      lng,
+      source: 'confirmed',
+      confirmedBy: c.get('identity').email,
+    });
+    return c.json(saved, 201);
+  });
+
   // Distance + duration between two places (Google Distance Matrix in prod, haversine in dev).
   // With compare:true (the ops "Compare routes" button) the response also carries the
   // expressway-vs-local-road variants when a materially different toll-free route exists;
@@ -523,7 +716,10 @@ export function internalQuoteRoutes(deps: {
     const b = (await c.req.json().catch(() => null)) as { from?: string; to?: string; compare?: boolean } | null;
     if (!b?.from || !b?.to) return c.json({ error: 'need from + to' }, 400);
     if (b.compare) {
-      const v = await deps.maps.distanceVariants(b.from, b.to);
+      // Same reasoning as below: resolve first so a compared variant is measured between the
+      // same identified points the quote is priced from.
+      const pair = resolver ? await resolvePairForMaps(resolver, b.from, b.to) : null;
+      const v = await deps.maps.distanceVariants(pair?.from ?? b.from, pair?.to ?? b.to);
       if (!v) return c.json({ error: 'unknown route' }, 404);
       return c.json({
         ...v.fastest,
@@ -531,8 +727,14 @@ export function internalQuoteRoutes(deps: {
         ...(v.hasChoice && v.noTolls ? { variants: { fastest: v.fastest, noTolls: v.noTolls } } : {}),
       });
     }
-    const d = await deps.maps.distance(b.from, b.to);
-    return d ? c.json(d) : c.json({ error: 'unknown route' }, 404);
+    // This is the path the ops builder's auto-distance actually uses, so it must resolve
+    // through the same identity check as server-side pricing — otherwise the km the operator
+    // sees (and saves onto the leg) is still a name-geocode, and stage 1 protects nothing they
+    // can see. `unresolved` names the endpoints nobody has identified yet, which is what the
+    // leg's "Confirm location" affordance keys off.
+    const { d, unresolved } = await distanceVia(deps.maps, resolver, b.from, b.to);
+    if (!d) return c.json({ error: 'unknown route' }, 404);
+    return c.json(unresolved.length ? { ...d, unresolved } : d);
   });
 
   r.post('/estimate', csrf, async (c) => {
@@ -545,7 +747,7 @@ export function internalQuoteRoutes(deps: {
       // ops quotes here; the website is a separate release — see the hot-zones spec §8).
       const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
@@ -557,6 +759,7 @@ export function internalQuoteRoutes(deps: {
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req, card),
         services,
+        displayPlaces: displayPlacesFor(body.legs),
       });
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
@@ -596,22 +799,24 @@ export function internalQuoteRoutes(deps: {
   r.post('/save', csrf, async (c) => {
     const raw = await c.req.json().catch(() => null);
     const existingId = raw && typeof (raw as { id?: unknown }).id === 'string' ? (raw as { id: string }).id : null;
+    // Kept in scope past the editability check: the assignment rule below needs the stored row.
+    let existing: SavedQuote | null = null;
     // Maker-checker: a content re-save is only allowed while the quote is still editable.
     // Review lock (owner, 2026-07-17): SUBMISSION freezes content — pending_review is no longer
     // editable, so the founder approves exactly what they reviewed; the one door back in is the
     // explicit reopen-to-draft. ready/sent stay locked as before. changes_requested stays
     // editable — that state exists to be edited.
     if (existingId) {
-      const current = await deps.quotes.get(existingId);
-      if (current && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(current.status)) {
-        return c.json({ error: 'not_editable', status: current.status }, 409);
+      existing = await deps.quotes.get(existingId);
+      if (existing && !(['draft', 'changes_requested'] as QuoteStatus[]).includes(existing.status)) {
+        return c.json({ error: 'not_editable', status: existing.status }, 409);
       }
     }
     try {
       const body = parseToolRequest(raw);
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard());
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver);
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
@@ -649,8 +854,21 @@ export function internalQuoteRoutes(deps: {
         })),
       };
       if (existingId) {
-        const updated = await deps.quotes.update(existingId, content);
-        if (updated) return c.json({ id: updated.id, reference: updated.reference, status: updated.status, ...priced }, 200);
+        /* Editing someone else's quote hands it to you (owner, 2026-08-01), reversing the
+           insert-only rule from spec 2026-07-22. Gated on a REAL change so that merely opening a
+           quote — or the save transition() fires just before a status change — never takes it off
+           the person who built it. contentChanged compares the stored row, not a client flag. */
+        const actor = c.get('identity').email;
+        const takeOver = contentChanged(existing, content) && existing?.assignedTo !== actor;
+        const updated = await deps.quotes.update(existingId, takeOver ? { ...content, assignedTo: actor } : content);
+        if (updated) {
+          return c.json({
+            id: updated.id, reference: updated.reference, status: updated.status,
+            // Echo it only when it MOVED, so the builder can repaint the picker without a reload.
+            ...(takeOver ? { assignedTo: actor } : {}),
+            ...priced,
+          }, 200);
+        }
         // update() refuses a soft-deleted (or absent) row. Falling through to the insert would
         // hand the operator a duplicate under a reference nobody has seen — tell them instead so
         // they can re-create the quote from what is still on their screen.
@@ -681,15 +899,14 @@ export function internalQuoteRoutes(deps: {
     }
 
     const idempotencyKey = `book:quote:${id}`;
-    // Already booked → return the existing booking; never create a second.
-    const prior = quote.convertedBookingId
-      ? await deps.bookings.get(quote.convertedBookingId)
-      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
-    if (prior) {
-      if (!quote.convertedBookingId) await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
-      return c.json(prior, 200);
-    }
 
+    // Read the form FIRST. This used to sit below the already-booked branch, so a re-book
+    // returned the existing booking without the submitted details ever being parsed — the
+    // operator's entry was discarded by a code path that then answered 200, which the ops UI
+    // cannot tell from a real save. On prod (2026-08-04) that left a live booking carrying a
+    // test's name and a staff email address, which is where the customer's mail would have
+    // gone. Same failure as #274/#279 on the pay side: the resume branch dropped the
+    // submission it had just been handed.
     const parsed = BookingDetailsSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       // `details` (flatten) keys only by the TOP-level field, so a bad customer.email
@@ -700,6 +917,36 @@ export function internalQuoteRoutes(deps: {
         .map((i) => `${i.path.join('.') || 'body'}: ${i.message}`)
         .join('; ');
       return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
+    }
+
+    // A quote is welded to at most one booking (idempotency key + a unique constraint on
+    // converted_booking_id), because a double-clicked Confirm must never bill one trip twice.
+    // So a re-book UPDATES that booking rather than making another.
+    const prior = quote.convertedBookingId
+      ? await deps.bookings.get(quote.convertedBookingId)
+      : await deps.bookings.findByIdempotencyKey(idempotencyKey);
+    if (prior) {
+      // Once money has moved the payer on the row is evidence, not a draft. Refuse, and NAME
+      // the booking — "already booked" with nothing to go on is how an operator ends up
+      // pressing the button again.
+      if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
+        return c.json(
+          {
+            error: 'already_booked',
+            reference: prior.reference,
+            status: prior.status,
+            // `message` is what the ops toast shows. Name the booking and say what to do with
+            // it, or the operator's only move is to press Confirm again.
+            message: `This quote is already booked as ${prior.reference}, and that booking is ${prior.status.replace(/_/g, ' ')} — its details can no longer be changed here. Open it from the Bookings queue.`,
+          },
+          409,
+        );
+      }
+      const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
+      // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
+      // booking attached because this only ran on the first pass.
+      await deps.quotes.patch(id, { convertedBookingId: prior.id, status: 'won' });
+      return c.json(updated, 200);
     }
 
     let mapped;
@@ -754,9 +1001,23 @@ export function internalQuoteRoutes(deps: {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }
     }
-    await deps.quotes.patch(id, { convertedBookingId: booking.id, status: 'won' });
+    await deps.quotes.patch(id, {
+      convertedBookingId: booking.id,
+      status: 'won',
+      // A full-quote booking contradicts any outstanding partial link, so retire it rather than
+      // leaving a live link that could mint a SECOND booking for the same quote (spec §10).
+      ...(quote.payLinkSelection
+        ? { payLinkSelection: null, soldCents: null, payLinkSeq: quote.payLinkSeq + 1 }
+        : {}),
+    });
     return c.json(booking, 201);
   });
+
+  // Partial-leg pay links (spec 2026-08-04). Indexes into engine.legs / engine.extras.
+  const PayLinkSelectionSchema = z.object({
+    legIndexes: z.array(z.number().int().min(0)),
+    extraIndexes: z.array(z.number().int().min(0)),
+  }).strict();
 
   // Mint a payment link for a ready|sent quote (spec 2026-07-31). STATELESS on purpose:
   // no booking, no DB row — the URL is a signed capability over {quoteId, revision}, so a
@@ -784,11 +1045,159 @@ export function internalQuoteRoutes(deps: {
       return c.json({ error: 'not_linkable', status: quote.status }, 409);
     }
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
-    const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret);
+
+    // No body — or a body that says nothing about a selection (e.g. `{}`) — is the full-total
+    // link, exactly as before this feature existed (spec §4). Only a body that ATTEMPTS a
+    // selection is validated: half a selection charging the wrong amount is the failure mode.
+    const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const attemptsSelection = raw != null && ('legIndexes' in raw || 'extraIndexes' in raw);
+    const parsedSel = attemptsSelection ? PayLinkSelectionSchema.safeParse(raw) : null;
+    if (parsedSel && !parsedSel.success) return c.json({ error: 'bad_request' }, 400);
+    let selection: PaySelection | null = parsedSel ? normalizeSel(parsedSel.data) : null;
+
+    let amountCents = quote.totalCents;
+    let coverage: { soldLegs: number; totalLegs: number } | null = null;
+
+    if (selection) {
+      // Private and priced, or nothing — payLines throws for chauffeur, shells and legacy rows.
+      let lines;
+      try {
+        lines = payLines(quote);
+      } catch (e) {
+        if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+        throw e;
+      }
+      if (isFullSelection(lines, selection)) {
+        // Nothing was unticked. Fall through to the STORED total so charm finishing survives —
+        // the leg lines alone sum to the subtotal, a few dollars under (spec §4).
+        selection = null;
+      } else {
+        if (!selection.legIndexes.length) return c.json({ error: 'not_linkable' }, 409);
+        if (!isQuoteBookable(quote, { legIndexes: selection.legIndexes })) {
+          return c.json({ error: 'not_linkable' }, 409);
+        }
+        amountCents = selectionAmountCents(lines, selection);
+        if (amountCents <= 0) return c.json({ error: 'not_linkable' }, 409);
+        // From the lines, not engine.legs: payLines has already established this is a private
+        // quote, and one source for "how many legs" is one fewer thing to disagree.
+        coverage = {
+          soldLegs: selection.legIndexes.length,
+          totalLegs: lines.filter((l) => l.kind === 'leg').length,
+        };
+      }
+    }
+
+    // The seq moves ONLY when the selection actually changes, so pressing the button twice still
+    // yields a byte-identical URL — the property ops relies on to re-copy a link it already sent.
+    const changed =
+      JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection);
+    const seq = changed ? quote.payLinkSeq + 1 : quote.payLinkSeq;
+
+    // Price-drift baseline (spec 2026-08-05 §9). Minting a link is a customer-facing moment — for
+    // many quotes the ONLY one, since a link can go out without Mark sent ever being pressed. It
+    // records the quote TOTAL, deliberately NOT `amountCents`: a partial link charges less than
+    // the total by design, and storing that would leave the indicator permanently lit on this
+    // quote. The charged amount is persisted as soldCents just above.
+    const customerTotal =
+      quote.customerTotalCents !== quote.totalCents
+        ? { cents: quote.totalCents, at: new Date(), via: 'pay_link' as const }
+        : undefined;
+
+    // `seq` is untouched by the stamp — bumping it would retire the link being minted.
+    if (changed || customerTotal) {
+      await deps.quotes.patch(quote.id, {
+        ...(changed
+          ? {
+              payLinkSelection: selection,
+              soldCents: selection ? amountCents : null,
+              payLinkSeq: seq,
+            }
+          : {}),
+        ...(customerTotal ? { customerTotal } : {}),
+      });
+    }
+
+    const token = signQuotePayToken(quote.id, quote.revision, deps.linkSecret, seq);
     return c.json({
-      url: `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?t=${token}`,
+      // `/p`, not `/pay.html` — see customerPages.ts. Eight characters off a link that a
+      // customer reads immediately before being asked for money.
+      url: `${deps.payBaseUrl.replace(/\/$/, '')}/p?t=${token}`,
       payhereMode: deps.payhereMode ?? 'off',
+      amountCents,
+      coverage,
     });
+  });
+
+  // The customer quote link (spec 2026-08-05). Same gate as the pay link — an approved quote —
+  // but it mints no state: the token pins nothing, so pressing this twice is byte-identical and
+  // ops can re-paste the link into the thread instead of making the customer scroll.
+  r.post('/:id/quote-link', csrf, async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    if (quote.channel !== 'ops' || (quote.status !== 'ready' && quote.status !== 'sent')) {
+      return c.json({ error: 'not_linkable', status: quote.status }, 409);
+    }
+    const base = deps.quoteBaseUrl || deps.payBaseUrl;
+    if (!deps.linkSecret || !base) return c.json({ error: 'quote_links_unavailable' }, 503);
+
+    // Same price-drift baseline the pay link stamps, for the same reason: minting is a
+    // customer-facing moment, and with a FOLLOWING link the number can move under a customer
+    // who has already looked.
+    if (quote.customerTotalCents !== quote.totalCents) {
+      await deps.quotes.patch(quote.id, {
+        customerTotal: { cents: quote.totalCents, at: new Date(), via: 'quote_link' as const },
+      });
+    }
+    return c.json({ url: `${base.replace(/\/$/, '')}/q?t=${signQuoteViewToken(quote.id, deps.linkSecret)}` });
+  });
+
+  // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as
+  // editing the quote, deliberately NOT founder-only: this response carries no margin, and ops
+  // are the people making the edits, so ops are the people who need to see what an edit did.
+  r.get('/:id/revisions', async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const history = await deps.quotes.listRevisions(id); // newest first
+
+    // Each entry is compared against the version that SUPERSEDED it. For the newest entry that
+    // successor is the CURRENT quote row — history holds only superseded states, so without this
+    // cross-table read the top (and most interesting) entry would come back with nothing changed.
+    const successors = [
+      { request: quote.request, totalCents: quote.totalCents },
+      ...history.map((h) => ({ request: h.request, totalCents: h.totalCents })),
+    ];
+
+    return c.json({
+      // Hand-picked projection: request/result never reach the wire — they carry margin and
+      // hot-zone annotations, exactly as the stored quote does.
+      revisions: history.map((h, i) => ({
+        revision: h.revision,
+        totalCents: h.totalCents,
+        currency: h.currency,
+        status: h.status,
+        updatedBy: h.updatedBy,
+        createdAt: h.createdAt,
+        changed: changedFields({ request: h.request, totalCents: h.totalCents }, successors[i]),
+      })),
+    });
+  });
+
+  // The charge lines of a quote, for the ops "Part of trip…" picker. Read-only: looking stores
+  // nothing. Registered next to the mint so the two can never disagree about what a line is.
+  r.get('/:id/pay-lines', async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    try {
+      return c.json({
+        lines: payLines(quote),
+        totalCents: quote.totalCents,
+        selection: quote.payLinkSelection,
+      });
+    } catch (e) {
+      if (e instanceof NotLineablePriceError) return c.json({ error: 'not_linkable' }, 409);
+      throw e;
+    }
   });
 
   // Read-only view of the locked rate card for the tool's Settings card.
@@ -918,6 +1327,7 @@ export function internalQuoteRoutes(deps: {
     // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
     // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
     let rateLock: QuotePatch['rateLock'] = undefined;
+    let offerValidUntil: Date | undefined;
     // Read the pre-patch row once when either path needs it: the status gate below, and the
     // notification's "did the assignee actually change?" test (re-assigning to the same person
     // is not news, so it must not re-mail them).
@@ -969,6 +1379,11 @@ export function internalQuoteRoutes(deps: {
         // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
         // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
+        // Offer validity (spec D9): the price is honoured for 7 days from approval. Re-approving
+        // resets it, so the fix for a lapsed quote is the thing ops was going to do anyway.
+        // Deliberately NOT rateLockedUntil, which stays null for ops quotes — that is precisely
+        // why this field exists.
+        offerValidUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000);
       } else if ((current.status === 'ready' || current.status === 'sent' || current.status === 'expired') && EDITABLE.includes(to)) {
         // Reopen-to-edit (from ready, sent, OR expired) unlocks; sending keeps the lock.
         // 'expired' matters most here: a quote can now sit closed for months before someone
@@ -999,6 +1414,14 @@ export function internalQuoteRoutes(deps: {
         }
       }
     }
+    // Price-drift baseline (spec 2026-08-05 §9). Sending a quote IS the moment a customer is
+    // quoted a number, so record the total as it stands right now. Read from the STORED row, never
+    // the body — only POST /save writes pricing, so a body value here would be a hole.
+    const customerTotal: QuotePatch['customerTotal'] =
+      body.status === 'sent' && current
+        ? { cents: current.totalCents, at: new Date(), via: 'sent' as const }
+        : undefined;
+
     const updated = await deps.quotes.patch(c.req.param('id'), {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
@@ -1007,6 +1430,8 @@ export function internalQuoteRoutes(deps: {
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
+      customerTotal,
+      offerValidUntil,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not

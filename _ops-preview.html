@@ -5,14 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ceylon Hop · Ops Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
+  /* the brand C, matching ops-ui.html */
+  .rail-logo{width:30px;height:30px;display:block;flex:0 0 auto;color:var(--saffron,#F9A429)}
+
+/* Brand display face — see site.css for the full rationale. 'Bodoni 72' is the book's
+   real typeface and ships with macOS/iOS, so local() serves it free; Bodoni Moda is the
+   fallback. The metric overrides normalise the two faces' very different boxes so
+   baseline-relative layout (notably .ch-total-usd's LKR sub-line) is identical on both. */
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Bold'),local('BodoniSvtyTwoITCTT-Bold');
+  font-weight:700;font-style:normal;font-display:swap;
+  ascent-override:113%;descent-override:40%;line-gap-override:0%}
+@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Book'),local('BodoniSvtyTwoITCTT-Book');
+  font-weight:400;font-style:normal;font-display:swap;
+  ascent-override:113%;descent-override:40%;line-gap-override:0%}
+
   :root{
     --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
-    --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
-    --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+    --ink:#3A3739;--ink-soft:#6b645f;--ink-faint:#a59d92;
+    --cream:#F0EEE5;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
     --espresso:#1b1714;
-    --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+    --display:'CH Bodoni','Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
     --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
@@ -26,7 +40,7 @@
   .app{display:grid;grid-template-columns:254px 1fr;height:100vh;height:100dvh;overflow:hidden}
   .rail{position:relative;background:linear-gradient(176deg,#221c18,#171310);color:#e9e1d3;display:flex;flex-direction:column;padding:22px 15px;gap:24px;border-right:1px solid #0e0b09;z-index:2}
   .rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.12),transparent 58%);pointer-events:none}
-  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:-.02em;color:#fbf6ea;padding:2px 6px;position:relative}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:1.36rem;letter-spacing:0;color:#fbf6ea;padding:2px 6px;position:relative}
   .brand small{display:block;font-family:var(--body);font-size:.57rem;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);margin-top:2px}
   .nav{display:flex;flex-direction:column;gap:3px;position:relative}
   .nav-label{font-size:.61rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#897f72;padding:0 10px 7px}
@@ -69,7 +83,7 @@
 
   .scroll{overflow-y:auto;padding:30px 32px 90px;position:relative;z-index:1}
   .scroll::-webkit-scrollbar{width:11px}.scroll::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
-  .pagehead h1{font-family:var(--display);font-weight:600;font-size:2.5rem;letter-spacing:-.025em;line-height:1}
+  .pagehead h1{font-family:var(--display);font-weight:700;font-size:2.5rem;letter-spacing:0;line-height:1}
   .pagesub{color:var(--ink-soft);margin:9px 0 22px;font-size:.95rem}.pagesub b{color:var(--ink);font-weight:700}.pagesub .a{color:var(--alert);font-weight:700}
   .filterbar{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
 
@@ -83,7 +97,7 @@
   .chan svg{width:16px;height:16px}
   .chan.wa{background:var(--wa-bg);color:var(--wa);border-color:#cdeedd}.chan.web{background:var(--web-bg);color:var(--web);border-color:#cce8e2}
   .tk-main{min-width:0}
-  .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:600;font-size:1.2rem;letter-spacing:-.015em;line-height:1.1;color:var(--ink)}
+  .tk-cust{display:flex;align-items:baseline;gap:10px;font-family:var(--display);font-weight:400;font-size:1.2rem;letter-spacing:0;line-height:1.1;color:var(--ink)}
   .tk-cust .id{font-family:var(--mono);font-size:.67rem;color:var(--ink-faint);font-weight:600;letter-spacing:0}
   .tk-route{font-size:.92rem;color:var(--ink-soft);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
   .tk-route b{color:var(--ink);font-weight:700}.tk-route .md{color:var(--ink-faint)}
@@ -95,10 +109,10 @@
   .pill .pd{width:7px;height:7px;border-radius:50%;background:var(--c,var(--ink-faint))}
   .tk-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
-  .tk-right .val{font-family:var(--display);font-weight:600;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1}
+  .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
   .sec{margin:30px 0 13px;display:flex;align-items:center;gap:12px}
-  .sec h2{font-family:var(--body);font-weight:800;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
+  .sec h2{font-family:var(--body);font-weight:700;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);display:flex;align-items:center;gap:9px}
   .sec.alert h2{color:var(--alert)}
   .sec.alert h2::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 4px var(--alert-bg)}
   .sec.warn h2{color:var(--wait)}
@@ -119,7 +133,7 @@
   .sheet-h .x{float:right;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:7px 10px;font-weight:700;color:var(--ink-soft);transition:.15s}
   .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft)}
   .sheet-h .ey{font-size:.67rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:9px}
-  .sheet-h h2{font-family:var(--display);font-size:1.78rem;font-weight:600;margin:9px 0 0;line-height:1.04;letter-spacing:-.02em}
+  .sheet-h h2{font-family:var(--display);font-size:1.78rem;font-weight:700;margin:9px 0 0;line-height:1.04;letter-spacing:0}
   .sheet-h .rf{font-family:var(--mono);font-size:.76rem;color:var(--ink-faint);font-weight:600;margin-top:6px;display:inline-block}
   .sheet-b{overflow-y:auto;padding:6px 28px 36px;flex:1}
   .sheet-b::-webkit-scrollbar{width:8px}.sheet-b::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
@@ -127,7 +141,7 @@
   .block:last-child{border-bottom:0}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
-  .block h4{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}
+  .block h4{font-size:.65rem;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 13px;display:flex;justify-content:space-between;align-items:center}
   .block h4 .lnk{font-size:.75rem;color:var(--teal-deep);font-weight:700;text-transform:none;letter-spacing:0;cursor:pointer}
   .kv{display:flex;justify-content:space-between;gap:14px;padding:5px 0;font-size:.92rem}.kv .k{color:var(--ink-soft)}.kv .v{font-weight:600;text-align:right}
   /* pipeline — connected stepper, current node glows */
@@ -182,11 +196,13 @@
 </style>
 </head>
 <body>
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute"><symbol id="ch-c" viewBox="0 0 1024 1024"><path fill="currentColor" d="M540 56.6C539.2 56.7 532.7 57.6 525.5 58.5C502.4 61.3 475.1 68.1 455.3 75.9C452.4 77.1 447.9 78.8 445.3 79.8C439.4 82.1 419.3 92 412.5 96C409.8 97.6 406.8 99.2 406 99.6C398.5 103.2 369.6 124.1 356.5 135.4C334.3 154.7 301.6 191.6 284 217.6C274.2 232 268.4 240.7 267.7 242C267.3 242.8 265.7 245.5 264 248C261.6 251.8 252.5 267.4 246.8 277.5C242.9 284.6 229.7 311.8 226 320.5C224.8 323.3 220.2 334.6 218 340C217 342.5 215.2 346.8 214.1 349.7C212.9 352.5 212 355.5 212 356.2C212 356.9 211.4 358.6 210.7 360C210 361.4 208.1 366.5 206.6 371.5C205.1 376.4 203.4 381.8 202.8 383.5C199 394.7 191.1 427.2 188.4 442.5C187.6 447.4 186.5 453.1 186 455C185.5 456.9 184.6 462.8 184 468C183.4 473.2 182.5 479.7 182 482.5C177.5 506.9 177.5 587.4 182 615.5C182.6 618.8 183.7 626.2 184.5 632C188.8 662.1 199.2 703.7 206.6 719.7C207.3 721.4 208 723.4 208 724.2C208 724.9 208.6 726.4 209.4 727.5C210.1 728.6 211.1 730.6 211.5 732C212.4 735 220.6 752 225.2 760.5C239.7 787.1 260.1 815.6 288.9 849.5C311 875.6 343.4 903.4 368.5 918C372.4 920.3 377.3 923.2 379.5 924.5C383.5 926.9 399.2 934.7 406.5 938C408.7 938.9 412.1 940.4 414 941.3C423.6 945.6 454 956 457 956C457.8 956 461.4 956.9 465 957.9C473.1 960.3 486.3 963 495.5 964.1C499.4 964.5 507.7 965.6 514 966.4C521.1 967.4 533.1 968 545.5 968C594.5 968.1 641.4 957.3 685 936C691.9 932.7 702.5 926.7 704.1 925.4C704.9 924.6 705.9 924 706.2 924C706.6 924 710.3 921.6 714.5 918.7C718.7 915.9 723.2 912.8 724.4 912C728.5 909.3 740.8 899 748.9 891.5C764.1 877.5 779 859.6 793.1 838.5C797.8 831.4 799.8 828 805.3 818C806.9 815 808.8 811.6 809.5 810.5C810.1 809.4 813 803.1 815.9 796.5C818.8 789.9 821.5 783.6 822 782.5C823.3 779.7 825.9 772.3 827.5 767C828.3 764.5 829.6 760.5 830.4 758C834.8 744.6 837.2 734.2 839.6 717C840.4 711.2 841.5 704.2 842.1 701.5C844.8 687.1 844.8 632.4 842.1 623.5C841.5 621.8 840.8 618.2 840.4 615.5C840 612.7 838.7 607.3 837.4 603.5C829.9 580.8 817.3 568 802.5 568C793.9 568 789.5 569.5 784.5 574.4C780.2 578.4 780 578.9 780 584.3C780 587.4 780.4 590.1 780.9 590.5C783.4 592 792 610.7 792 614.7C792 615.8 792.8 618.7 793.7 621.1C796.1 627.5 796.2 673.3 793.8 683.5C792.9 687.3 791.7 692.7 791.1 695.5C787.3 713 779.3 732.3 769.5 747.5C751 776.2 722.2 800.1 689.5 814.1C685.7 815.8 681.6 817.5 680.5 818C670.1 822.8 646.7 829 630 831.5C624.8 832.3 617.5 833.4 613.7 834C605 835.3 570.1 835.3 561.3 834C557.5 833.4 550 832.3 544.5 831.5C517.4 827.5 489.8 818.7 467 806.7C454.8 800.3 454.4 800.1 444.5 793.5C419.6 777.1 400.1 756.6 382.5 728.5C379.8 724.3 373.2 711.2 371.5 707C364.5 688.7 361.9 679.3 358.5 659.2C356.4 647.1 356 641.6 356 623.8C356 612.2 356.4 599.9 356.9 596.6C357.5 593.2 358.4 586.9 359 582.5C361.4 565.8 366.3 547.2 371.8 533.5C377.3 519.8 378.4 516.9 380.5 508.9C383 499.7 383.4 494.5 383.1 472.4C382.9 455.8 383.3 452 386.7 442C391.8 426.8 399.8 414.9 412.4 403.6L420 396.8L420 383.7C420 363.1 424.4 350 435.1 338.5C442.4 330.7 450.1 326.7 458.7 326.2C466.9 325.6 467.4 326.8 462.9 336.3C459.1 344.3 450.3 360.2 445.5 367.5C443.4 370.8 429 388.9 426.7 391.2C424.6 393.3 422 398.6 422 400.9C422 405 417.9 411.8 410.1 420.8C396.4 436.5 392.3 448.2 398.9 452.9C402.6 455.6 407.9 455.6 412.5 452.9C416.7 450.4 418.7 447 420 440.1C421.1 434 428.5 422 451.1 389C457.1 380.2 469.2 364.6 477.1 355.5C491.2 339.1 501.6 330.8 535 308.7C553.9 296.2 562.7 289.5 571 281.1C580.1 271.9 583.9 265.2 584.7 256.6C585.7 245.9 584.4 239.7 580 234.2C576.7 230 574.7 228.6 564.4 224C534.8 210.7 525.8 205.6 517.7 197.5C515 194.7 512.3 190.6 511.2 187.7C509.4 183 509.4 182.4 510.9 177.6C512.1 173.7 514.2 170.8 519.5 165.4C527.7 157.1 535.3 152.8 545.5 150.9C554.7 149.2 610 148.5 623 149.9C628.2 150.5 638.4 151.4 645.5 152C652.7 152.6 660.5 153.5 663 154C665.5 154.5 671.8 155.6 677 156.4C696.5 159.5 720.2 165.5 730.5 169.9C739.9 174 751.5 179.8 756 182.8C764 188 774.1 198.6 777.5 205.4C780.3 211 780.5 212 780.4 222.9C780.4 235.4 780.2 236 771.5 254.5C765.7 266.9 764.2 271.4 763.6 278.5C762.3 291.5 765.4 299.6 773.8 305.4C777.1 307.7 778.6 308 785.3 308C791.7 308 794 307.5 797.8 305.5C807.5 300.4 815.6 289.6 820.5 275.2C825.2 261.6 827.5 243.2 826 231.7C824.1 216.6 822.8 209.8 821.4 207.2C820.6 205.7 820 203.7 820 202.8C820 200.3 811.3 182.4 807.2 176.5C793.7 157 761.3 127.1 733.5 108.5C720.4 99.7 700 88.4 686.5 82.5C684.9 81.8 680.9 80 677.6 78.6C674.4 77.2 671.3 76 670.8 76C670.2 76 668.4 75.3 666.7 74.6C656.5 69.9 627.4 62.3 611 60C585.5 56.4 580.3 56 561.5 56.1C550.5 56.2 540.8 56.4 540 56.6Z"/></symbol></svg>
+
 <div class="app">
   <aside class="rail">
-    <div class="brand"><svg viewBox="0 0 32 32" width="30" height="30" fill="none"><circle cx="16" cy="16" r="13" stroke="#0AB9B6" stroke-width="3"/><path d="M16 7v9l6 4" stroke="#08938f" stroke-width="3" stroke-linecap="round"/></svg><span>Ceylon Hop<small>Ops control</small></span></div>
+    <div class="brand"><svg class="rail-logo" width="30" height="30" role="img" aria-label="Ceylon Hop"><use href="#ch-c"/></svg><span>Ceylon Hop<small>Ops control</small></span></div>
     <nav class="nav" id="nav">
-      <button data-route="tickets" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg> Bookings <span class="count" id="nav-attn">0</span></button>
+      <button data-route="tickets" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 5h16v6a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 5v14" stroke-dasharray="2 3"/></svg> Bookings <span class="count" id="nav-attn">0</span></button>
     </nav>
     <div class="rail-foot"><div class="avatar" style="background:#7a5cc0">RW</div><div><b>Roshen</b><span>Ops · Founder</span></div></div>
   </aside>
@@ -288,11 +304,11 @@ const inGroup=(t,g)=>{
 };
 const ICON={
   wa:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/></svg>',
-  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
-  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>',
-  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
+  web:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 5v14M5 12h14"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
   dots:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
 };
 const fmtDate=d=>d===TODAY?'Today':new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});
@@ -330,7 +346,7 @@ function ticketRow(t,i){
 
 function viewTickets(){
   $('#topbar').innerHTML=`
-    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…" value="${esc(state.q)}"></div>
     <div class="spacer"></div>
     <select class="sel" id="chansel"><option value="">All channels</option><option value="web" ${state.chan==='web'?'selected':''}>Website</option><option value="whatsapp" ${state.chan==='whatsapp'?'selected':''}>WhatsApp</option></select>`;
   const q=state.q.trim().toLowerCase();
@@ -368,7 +384,7 @@ function viewSchedule(){
 function viewCoordinators(){
   $('#topbar').innerHTML=`<div class="pagesub" style="margin:0;font-size:1rem"><b>${coordinators.length} coordinators</b></div><div class="spacer"></div><button class="btn btn-go" data-act="newcoord">${ICON.plus} Add</button>`;
   $('#view').innerHTML=`<div class="pagehead"><h1>Coordinators</h1></div><p class="pagesub">Send a coordinator the day's ride list; they confirm the vehicle. (Just one step inside a ticket.)</p>`+
-    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">`+coordinators.map(c=>{const n=tickets.filter(t=>t.coord===c.id).length;return `<div class="card"><div style="font-family:var(--display);font-size:1.3rem;font-weight:600;letter-spacing:-.01em">${c.name}</div><div style="font-family:var(--mono);font-size:.82rem;color:var(--ink-soft)">${c.whatsapp}</div><div style="font-size:.84rem;color:var(--ink-soft);margin:8px 0 12px">${c.regions}</div><div class="kv"><span class="k">Active rides</span><span class="v">${n}</span></div><button class="btn btn-go" style="width:100%;margin-top:10px" data-act="manifest" data-id="${c.id}">Build ride list ${ICON.arrow}</button></div>`;}).join('')+`</div>`;
+    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px">`+coordinators.map(c=>{const n=tickets.filter(t=>t.coord===c.id).length;return `<div class="card"><div style="font-family:var(--display);font-size:1.3rem;font-weight:700;letter-spacing:-.01em">${c.name}</div><div style="font-family:var(--mono);font-size:.82rem;color:var(--ink-soft)">${c.whatsapp}</div><div style="font-size:.84rem;color:var(--ink-soft);margin:8px 0 12px">${c.regions}</div><div class="kv"><span class="k">Active rides</span><span class="v">${n}</span></div><button class="btn btn-go" style="width:100%;margin-top:10px" data-act="manifest" data-id="${c.id}">Build ride list ${ICON.arrow}</button></div>`;}).join('')+`</div>`;
 }
 function viewTemplates(){
   $('#topbar').innerHTML=`<div class="pagesub" style="margin:0;font-size:1rem"><b>Message templates</b></div>`;

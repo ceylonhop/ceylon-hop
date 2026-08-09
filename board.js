@@ -498,8 +498,8 @@
       return '<i class="' + (i < Math.min(L.committed, min) ? 'f' : '') + '"></i>';
     }).join('');
     var clock = conf
-      ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
-      : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
+      ? '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>locked ✓</span>'
+      : '<span class="m countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + cdHtml(L.cutoffMs) + '</span>';
     var starter = L.members[0];
     return '<article class="lcard ' + (conf ? 'confirmed' : '') + ' ' + (hot ? 'hot' : '') + ' ' + (mine ? 'mine' : '') + ' reveal" data-code="' + esc(L.code) + '">' +
       (conf ? '<span class="stamp"><b>It\'s on!</b>van locked</span>' : '') +
@@ -507,7 +507,7 @@
       '<div class="lcard-top">' +
       '<div class="lcard-route">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</div>' +
       '<div class="lcard-meta">' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(whenLine(L)) + '</span>' +
+      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(whenLine(L)) + '</span>' +
       clock +
       '</div>' +
       '<div class="lcard-status">' +
@@ -526,13 +526,13 @@
       // second "See who's on" button only competed with the real primary.
       (full && !mine
         ? '<button class="btn btn-primary btn-sm" data-again="' + esc(L.code) + '">Start another van' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M12 5v14M5 12h14"/></svg></button>'
         : '<button class="btn ' + (conf || mine ? 'btn-ghost' : 'btn-primary') + ' btn-sm" data-view="' + esc(L.code) + '">' +
           (mine ? 'View your ride' : conf ? 'See ride · hop on' : 'See ride & join') +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>') +
       '</div>' +
       (L.note
-        ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
+        ? '<div class="started"><svg style="width:14px;height:14px;color:var(--accent-deep)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><b>' + esc(starter ? starter.name : '') + ':</b>&nbsp;"' + esc(L.note) + '"</div>'
         : (starter ? '<div class="started">started by ' + avatar(starter, 0) + ' <b>' + esc(starter.name) + '</b></div>' : '')) +
       '</article>';
   }
@@ -824,17 +824,17 @@
     var starterName = L.members[0] ? L.members[0].name : 'Someone';
 
     detailInner.innerHTML =
-      '<div class="d-head"><button class="d-back" id="d-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to the board</button></div>' +
+      '<div class="d-head"><button class="d-back" id="d-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to the board</button></div>' +
       '<div class="d-grid"><div>' +
       '<h1 class="d-title">' + esc(L.from) + ' <span class="arr">→</span> ' + esc(L.to) + '</h1>' +
       '<div class="d-meta">' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(L.whenLabel) + ' · ' + esc(s.label) + '</span>' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + clock + '</span>' +
-      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ' + cap + ' seats</span>' +
+      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' + esc(L.whenLabel) + ' · ' + esc(s.label) + '</span>' +
+      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' + clock + '</span>' +
+      '<span class="m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg>air-con van · ' + cap + ' seats</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px">' +
       '<span class="pill ' + sc.cls + '">' + sc.txt + '</span>' + taBadge('5.0 · ' + TA_REVIEWS + ' reviews') + '</div>' +
-      '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
+      '<div class="guarantee-banner"><span class="gb-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span>' +
       '<div><b>$0 unless it runs.</b> If three seats are taken, the van runs — a fraction of a private car. If not enough join by the cutoff, the ride\'s called off and <b>you\'re never charged</b>. Nothing to lose by adding your name.</div></div>' +
       '<div class="d-block"><h2>Who\'s in so far <span class="hand">— real travellers, verified</span></h2>' +
       '<div class="d-people">' + people + '</div>' +
@@ -845,18 +845,18 @@
       '<div class="rr-stop"><span class="rr-dot b"></span><div><b>Drop-off — ' + esc(pointFor(L.to, L.toId)) + '</b><p>Dropped right in ' + esc(L.to) + ', not a bus stand. ' + esc(CORRIDOR_TIME[L.corridorId] || '') + ' with a comfort stop on the way.</p></div></div>' +
       '</div></div>' +
       '<div class="d-block"><h2>How the money works</h2><div class="tl">' +
-      '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
+      '<div class="tl-row"><span class="tl-dot" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>' +
       '<div><h4>Now — you pay $0</h4><p>Adding your name places a hold on your card via PayHere. <b>Nothing is charged.</b> Scratch off anytime before it closes and the hold disappears.</p></div></div>' +
-      '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
+      '<div class="tl-row"><span class="tl-dot" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>' +
       '<div><h4>When the list closes</h4><p>The moment <b>' + min + ' seats</b> are up the van locks in and everyone\'s charged their share (≈ <b>' + money(L.cost) + '</b>). <b>If not enough join by the cutoff, the ride\'s called off and you\'re never charged.</b></p></div></div>' +
-      '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
+      '<div class="tl-row"><span class="tl-dot" style="background:var(--tomato)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17h2l2-6h10l2 6h2M6 17a2 2 0 1 0 4 0M14 17a2 2 0 1 0 4 0M7 11V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4"/></svg></span>' +
       '<div><h4>' + esc(L.whenLabel) + ' — the van rolls</h4><p>Licensed Ceylon Hop driver from ' + esc(pointFor(L.from, L.fromId)) + '. Your driver\'s name and WhatsApp arrive by email the evening before.</p></div></div>' +
       '</div></div>' +
       '<div class="d-block"><h2>Who\'s driving</h2><div class="d-trust">' +
-      '<div class="t"><span class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span><div><b>Ceylon Hop — a real operator</b><span>Licensed drivers, insured AC vans. The same fleet as our private transfers.</span></div></div>' +
+      '<div class="t"><span class="ico" style="background:var(--teal)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg></span><div><b>Ceylon Hop — a real operator</b><span>Licensed drivers, insured AC vans. The same fleet as our private transfers.</span></div></div>' +
       '<div class="t"><span class="ico" style="background:var(--saffron)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17l-6.2 3.9 1.6-7L2 9.2l7.1-.6L12 2z"/></svg></span><div><b>5.0 on Tripadvisor</b><span>Every review is from a real trip across the island.</span></div></div>' +
       '<div class="t"><span class="ico" style="background:#25D366"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2z"/></svg></span><div><b>Humans on WhatsApp</b><span>Question at 6am from a train platform? We answer.</span></div></div>' +
-      '<div class="t"><span class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><div><b>Verified travellers only</b><span>Everyone signs in with Google. First name + country is all anyone sees.</span></div></div>' +
+      '<div class="t"><span class="ico" style="background:var(--blue)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><div><b>Verified travellers only</b><span>Everyone signs in with Google. First name + country is all anyone sees.</span></div></div>' +
       '</div></div>' +
       '<div class="d-block d-faq faq"><h2>Quick answers</h2>' +
       '<details><summary>Can I cancel after adding my name?</summary><p>Yes — scratch off anytime <b>before the deadline</b>, no questions, hold released. After the list fills and everyone\'s charged, normal cancellation terms apply.</p></details>' +
@@ -866,7 +866,7 @@
       // ---- sticky join card ----
       '<aside class="d-join">' +
       (youIn
-        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if it fills. $0 held for now.') + '</span></div></div>'
+        ? '<div class="on-hero"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><div><b>You\'re on this list' + (mySeatsOn(L) > 1 ? ' — ' + mySeatsOn(L) + ' seats' : '') + '</b><span>' + (conf ? 'The van is locked — see you at pickup.' : 'We\'ll charge ≈' + money(Math.round(L.cost * Math.max(1, mySeatsOn(L)) * 100) / 100) + ' only if it fills. $0 held for now.') + '</span></div></div>'
         : '<div class="zero-hero"><b>$0</b><span>to add your name today</span></div><div class="zero-sub">You\'re only charged <b>≈ ' + money(L.cost) + '</b> if the van locks in. Never a cent before.</div>') +
       '<span class="pill ' + sc.cls + '" style="margin:4px 0 2px">' + sc.txt + '</span>' +
       '<div class="who-row">' + whoRow + '<span class="lbl">' + L.committed + ' of ' + min + ' in</span></div>' +
@@ -878,7 +878,7 @@
         : '<button class="btn btn-primary btn-block" data-detail-join>' + (conf ? 'Hop on — seats open' : 'Add my name — free') + '</button>' +
           '<p class="fine">Google sign-in · card held by PayHere, <b>never charged unless it runs</b> · scratch off anytime</p>') +
       (alt.priv ? '<div class="vs-strip"><b>≈' + money(L.cost) + '</b> shared seat · $' + alt.priv + ' private car · ' + esc(alt.bus) + '</div>' : '') +
-      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      '<div class="deadline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
       (conf ? 'van locked ✓' : '<span class="countdown ' + cdClass(L.cutoffMs) + '" data-cut="' + L.cutoffMs + '">' + cdHtml(L.cutoffMs) + '</span>') + '</div>' +
       '<div class="d-share"><span class="lbl">Know someone heading that way?</span><div class="row">' +
       '<a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText) + '">WhatsApp</a>' +
@@ -961,7 +961,7 @@
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function showDetailNotFound() {
-    detailInner.innerHTML = '<div class="d-head"><button class="d-back" id="d-back2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to the board</button></div>' +
+    detailInner.innerHTML = '<div class="d-head"><button class="d-back" id="d-back2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back to the board</button></div>' +
       '<div class="board-empty" style="margin:24px 0"><div class="plus">🔎</div><h3>This list has closed or moved on.</h3>' +
       '<p>It may have already run, or the link\'s expired. Browse the board for a ride going your way.</p>' +
       '<button class="btn btn-primary" id="nf-browse">Back to the board</button></div>';

@@ -3,6 +3,7 @@ import { InMemoryRideListRepo, type CreateListArgs } from '../db/rideListRepo';
 import { FakeTokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { FakeEmailAdapter } from '../adapters/email';
 import { runRideBoardCutoff } from './rideBoardCutoff';
+import { SendBudget } from './sendBudget';
 
 const PAST = new Date('2026-08-06T01:30:00Z');
 const NOW = new Date('2026-08-07T00:00:00Z'); // after PAST
@@ -92,5 +93,57 @@ describe('runRideBoardCutoff', () => {
     const second = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email });
     expect(second.processed).toBe(0);
     expect(paygw.charges).toHaveLength(4); // not charged again
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+// This sweep CHARGES CARDS, so the cap guards money, not just mail. A list is all-or-
+// nothing: rather than charge half a van and stop, the sweep declines to start a list it
+// cannot finish. The list stays gathering and is still due next run.
+describe('runRideBoardCutoff — burst cap', () => {
+  it('does not start a list it cannot finish: no charges, no emails, status untouched', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+
+    const budget = new SendBudget(2); // 4 travellers would need 4
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, budget });
+
+    expect(res.processed).toBe(0);
+    expect(paygw.charges).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+    expect((await repo.getByCode(list.code))?.list.status).toBe('gathering');
+    expect(budget.report().kinds).toEqual({ ride_board: 4 });
+  });
+
+  it('the skipped list is picked up whole by the next run', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+
+    await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, budget: new SendBudget(2) });
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, budget: new SendBudget(25) });
+
+    expect(res).toMatchObject({ processed: 1, confirmed: 1, charged: 4 });
+    expect((await repo.getByCode(list.code))?.list.status).toBe('confirmed');
+  });
+
+  it('processes a list that fits and spends the budget for it', async () => {
+    const repo = new InMemoryRideListRepo();
+    const paygw = new FakeTokenizedPaymentAdapter();
+    const email = new FakeEmailAdapter();
+    const list = await repo.createList(listArgs());
+    await fill(repo, list.id, 4);
+
+    const budget = new SendBudget(25);
+    const res = await runRideBoardCutoff(NOW, { rideLists: repo, paygw, email, budget });
+
+    expect(res.confirmed).toBe(1);
+    expect(budget.sent).toBe(4);
+    expect(budget.anySuppressed).toBe(false);
   });
 });

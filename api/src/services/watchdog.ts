@@ -1,8 +1,10 @@
 import type { BookingRepo } from '../db/bookingRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
+import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
+import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl } from './notifications';
 
 // M17 payments watchdog — the periodic sweep behind POST /admin/jobs/watchdog. Catches
@@ -19,6 +21,12 @@ const STUCK_PENDING_MS = 30 * 60_000;
 // payment_pending (only shared holds are swept), would re-alert on every ~15-min sweep forever.
 const STUCK_PENDING_MAX_MS = 6 * 3600_000;
 const UNCONFIRMED_PAID_MS = 15 * 60_000;
+// A refund call that has not resolved in this long did not resolve. The row is left in
+// api_processing on purpose (PayHere's Refund API has no idempotency key, so it can never be
+// retried), which means the ONLY way it clears is a human reading PayHere's dashboard — so
+// this alert is the entire mechanism by which anyone finds out. It re-raises every sweep,
+// deduped per refund, until someone resolves the row.
+const STUCK_REFUND_MS = 15 * 60_000;
 
 export async function runWatchdog(
   now: Date,
@@ -35,9 +43,20 @@ export async function runWatchdog(
     // out-of-band exemption below can't be evaluated and every manually settled booking alerts;
     // the one production mount (POST /admin/jobs/watchdog) always passes it.
     payments?: PaymentRepo;
+    // Optional like the rest; without it stuck refunds simply are not swept.
+    refunds?: RefundRepo;
+    // Blast-radius cap (R1) — bounds the CUSTOMER recovery emails only. Ops alerts below
+    // are never capped: they are how a human finds out anything is wrong, so throttling
+    // them would hide the very burst this budget exists to surface.
+    budget?: SendBudget;
   },
-): Promise<{ stuckPending: number; paidUnconfirmed: number; recoveryEmails: number }> {
-  const { bookings, log, alerts, email, baseUrl, linkSecret, payments } = deps;
+): Promise<{
+  stuckPending: number;
+  paidUnconfirmed: number;
+  recoveryEmails: number;
+  stuckRefunds: number;
+}> {
+  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
@@ -70,12 +89,21 @@ export async function runWatchdog(
     });
     // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
     // sweep (the ops alert above already fired). Idempotent via notification_log.
-    if (email && baseUrl && linkSecret && !(await log.wasSent(b.id, 'payment_recovery'))) {
+    // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
+    // a manual sweep. Every path that does not send hands the claim back.
+    if (email && baseUrl && linkSecret && (await log.claim(b.id, 'payment_recovery'))) {
+      // Over the cap: the ops alert above still fired, so nothing is lost — only the
+      // customer email waits for the next run.
+      if (budget && !budget.tryClaim()) {
+        await log.release(b.id, 'payment_recovery');
+        budget.suppress('payment_recovery', b.reference);
+        continue;
+      }
       try {
         await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
-        await log.markSent(b.id, 'payment_recovery');
         recoveryEmails += 1;
       } catch (err) {
+        await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);
       }
     }
@@ -106,5 +134,27 @@ export async function runWatchdog(
     });
   }
 
-  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails };
+  // Refunds that were sent to the gateway and never came back. Money may have left the account
+  // with nothing in our ledger saying so, and no automatic process will ever resolve it.
+  let stuckRefunds = 0;
+  if (refunds) {
+    for (const refund of await refunds.listStuckApi(new Date(now.getTime() - STUCK_REFUND_MS))) {
+      stuckRefunds += 1;
+      const booking = await bookings.get(refund.bookingId);
+      await alerts.send({
+        severity: 'critical',
+        kind: 'refund_stuck_processing',
+        title: `Refund still unresolved for ${booking?.reference ?? refund.bookingId}`,
+        body:
+          `A refund of ${refund.amountCents / 100} ${refund.currency} has been mid-call since ` +
+          `${refund.apiAttemptedAt?.toISOString() ?? 'unknown'} and never resolved. The money MAY ` +
+          `have moved.\n\nDo NOT retry — this API has no idempotency key. Open PayHere > Payments, ` +
+          `find the payment for booking ${booking?.reference ?? refund.bookingId}, and either confirm ` +
+          `this refund with its reference or, if no refund exists, cancel and re-request.`,
+        dedupeKey: refund.id,
+      });
+    }
+  }
+
+  return { stuckPending: stuck.length, paidUnconfirmed, recoveryEmails, stuckRefunds };
 }

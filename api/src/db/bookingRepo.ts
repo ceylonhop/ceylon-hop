@@ -1,8 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import type { SingleTransferInput } from '../domain/singleTransfer';
+import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import type { TripInput } from '../domain/trip';
 import type { SharedInput } from '../domain/shared';
 import { assertTransition, type BookingStatus } from '../domain/status';
+
+/**
+ * Groups bookings belonging to one human. MUST match the `person_key` generated column on
+ * customers (migration 0032, `lower(btrim(email))`) — the SQL repo reads the DB's value and
+ * the in-memory repo computes it here, so this is the one definition both agree on.
+ *
+ * Note what this deliberately is NOT: a merge. Every booking keeps its own customers row,
+ * because that row is the traveller snapshot for that booking — reusing one row across
+ * bookings would rewrite the name on the older ones.
+ */
+export function personKeyFor(email: string): string {
+  return email.trim().toLowerCase();
+}
 
 // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
 // payment-link tool will write 'whatsapp'.
@@ -26,6 +39,8 @@ export type NewBooking =
       durationMin?: number | null;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     }
   | {
       mode: 'trip';
@@ -38,6 +53,8 @@ export type NewBooking =
       durationMin?: number | null;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     }
   | {
       mode: 'shared';
@@ -47,12 +64,21 @@ export type NewBooking =
       currency: string;
       channel?: BookingChannel;
       needsPricing?: boolean;
+      billing?: BillingInput;
+      termsAcceptedAt?: Date;
     };
 
 // Omit that distributes over the NewBooking union, so each variant keeps its own fields.
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
-export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing'> & {
+export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 'needsPricing' | 'billing' | 'termsAcceptedAt'> & {
+  // Billing details for the card (2026-08-01). Absent on website bookings and on every row
+  // predating the pay page — the checkout adapter then OMITS the fields so PayHere collects
+  // them itself, rather than sending the placeholder it used to.
+  billing?: BillingInput | null;
+  // When they accepted the terms + cancellation policy. Null on website bookings and every
+  // row predating this — absence means "never recorded", never "declined".
+  termsAcceptedAt?: string | null;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -62,7 +88,19 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   channel: BookingChannel;
   // Null/absent on rows created before this existed — those are priced.
   needsPricing?: boolean | null;
+  // Why this booking was cancelled and by whom (owner rule 2026-08-02). Only a cancelled
+  // booking has them, and cancellations predating the rule have none.
+  cancellationReason?: string | null;
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
 };
+
+/** Who reversed a booking and why. Written only on a cancellation. */
+export interface StatusAudit {
+  reason: string;
+  by: string;
+  at?: Date;
+}
 
 export interface BookingPricingSnapshot {
   version: 1;
@@ -91,9 +129,32 @@ export interface BookingRepo {
   create(b: NewBooking, opts?: { idempotencyKey?: string }): Promise<Booking>;
   get(id: string): Promise<Booking | null>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
-  setStatus(id: string, to: BookingStatus): Promise<Booking>;
+  // `audit` records WHY, for the transitions where that matters. Optional so the many
+  // non-cancelling callers are untouched; the cancel route always supplies it.
+  setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking>;
   list(filter?: { status?: BookingStatus | BookingStatus[] }): Promise<Booking[]>;
+  // Re-record who is paying, for a booking that has not been paid yet.
+  //
+  // Every identity field we hand PayHere — name, email, phone, billing address — is read from
+  // the booking row, never from the request that opened the payment. So a payer who mistyped
+  // their address, was declined, and corrected it was still charged against the old details:
+  // the correction was validated and dropped. Since that data feeds the issuer's 3DS risk
+  // decision, the retry was arguably less likely to succeed than the first attempt.
+  //
+  // Implementations MUST make the not-yet-paid check part of the write itself, so a settlement
+  // landing concurrently cannot have its payer overwritten. Returns the booking unchanged when
+  // it is no longer chargeable.
+  // `termsAcceptedAt` is optional: an ops "Mark booked" re-book carries no acceptance, because
+  // nobody ticked a box — that customer agreed over WhatsApp. Absent leaves the column alone
+  // rather than stamping an acceptance that never happened.
+  refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+  ): Promise<Booking>;
 }
+
+// A booking's payer may only be rewritten while it is still awaiting money.
+export const PAYER_EDITABLE_STATUSES = ['draft', 'payment_pending'] as const;
 
 // No ambiguous characters (no 0/O/1/I), so a reference is easy to read over the phone.
 const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -132,6 +193,8 @@ export class InMemoryBookingRepo implements BookingRepo {
       status: 'draft',
       createdAt: new Date().toISOString(),
       channel: b.channel ?? 'website',
+      billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
+      termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
     };
     this.byId.set(booking.id, booking);
     this.refs.add(reference);
@@ -148,11 +211,39 @@ export class InMemoryBookingRepo implements BookingRepo {
     return id ? (this.byId.get(id) ?? null) : null;
   }
 
-  async setStatus(id: string, to: BookingStatus): Promise<Booking> {
+  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
     assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
-    const updated: Booking = { ...current, status: to };
+    const updated: Booking = {
+      ...current,
+      status: to,
+      ...(to === 'cancelled' && audit
+        ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: (audit.at ?? new Date()).toISOString() }
+        : {}),
+    };
+    this.byId.set(id, updated);
+    return updated;
+  }
+
+  async refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+  ): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return current;
+    const updated: Booking = {
+      ...current,
+      input: { ...current.input, customer: { ...details.customer } },
+      // Absent billing leaves what was captured before: a payer who filled the address on the
+      // first attempt and left it blank on a retry should not lose it.
+      billing: details.billing ? { ...details.billing } : current.billing,
+      // The acceptance belongs to whoever is actually paying. /start requires termsAccepted:true
+      // on EVERY call, so a resuming payer has just agreed — recording the earlier submitter's
+      // timestamp would leave a refund dispute holding evidence about the wrong person.
+      termsAcceptedAt: details.termsAcceptedAt ? details.termsAcceptedAt.toISOString() : current.termsAcceptedAt,
+    } as Booking;
     this.byId.set(id, updated);
     return updated;
   }

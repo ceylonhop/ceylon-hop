@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { fillBilling } from './_stubs.js';
 
 // The booking form has a dial-code selector + a phone field, split into phoneCountryCode /
 // phoneNumber / whatsapp in the payload (customers table + PayHere). Two real inputs used to
@@ -28,6 +29,9 @@ async function submitWithPhone(page, { country, phone }) {
   await page.fill('#f-email', 'maya@example.com');
   await page.selectOption('#f-country', country);
   await page.fill('#f-phone', phone);
+  // Billing is required before the page will submit (2026-08-03). Country is left alone so
+  // it keeps following the dial code under test.
+  await fillBilling(page, { country: '' });
   await page.check('#agree');
   await page.click('#pay-btn');
 }

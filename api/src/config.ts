@@ -18,6 +18,11 @@ const Env = z.object({
   PAYHERE_MERCHANT_SECRET: z.string().optional(),
   PAYHERE_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
   PAYHERE_NOTIFY_URL: z.string().optional(),
+  // Refund API (PayHere Settings -> API Keys, permission "Automated Charging API"). Optional
+  // and deliberately NOT required in production: without them the ops UI simply offers the
+  // manual dashboard refund, which is a supported flow rather than a degraded one.
+  PAYHERE_APP_ID: z.string().optional(),
+  PAYHERE_APP_SECRET: z.string().optional(),
   // Escape hatch for a NON-PRODUCTION deployment that still runs with NODE_ENV=production —
   // staging on Render is exactly that, and it deliberately uses the fake payment adapter.
   // Must be set deliberately: unset (the default) means real production fails closed.
@@ -39,6 +44,10 @@ const Env = z.object({
   // link reading ops.<domain> is what prompted this (owner, 2026-07-31).
   // Unset: falls back to APP_BASE_URL, i.e. exactly the behaviour before this existed.
   PAY_BASE_URL: z.string().default(''),
+  // Where customer QUOTE links point (spec 2026-08-05 D2) — e.g. https://quote.ceylonhop.com.
+  // A second custom domain on THIS service, so the page it serves is same-origin with the API.
+  // Unset falls back to PAY_BASE_URL, which keeps dev and staging working with one host.
+  QUOTE_BASE_URL: z.string().default(''),
   // Browser origins allowed to call the API (comma-separated). The live site + local dev.
   ALLOWED_ORIGINS: z
     .string()
@@ -92,6 +101,32 @@ const Env = z.object({
   SENTRY_DSN: z.string().optional(),
   // RESEND_WEBHOOK_SECRET: enables POST /webhooks/resend (bounce/complaint alerts).
   RESEND_WEBHOOK_SECRET: z.string().optional(),
+  // Notification blast-radius cap (docs/notification-safety-rails-spec.md, R1). The most
+  // outbound emails ONE cron tick may send before it stops and pages the founder. Guards the
+  // case notification_log cannot: a migration or status backfill making a batch of old
+  // bookings newly eligible all at once. 25 is far above any legitimate tick at current
+  // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
+  NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
+  // Outbound mail guard (same spec, R3). Both default to "off" so production is unchanged.
+  // EMAIL_ALLOWLIST: when set, ONLY these recipients can be mailed — entries are exact
+  // addresses or an `@domain` suffix, comma-separated. STAGING SETS THIS (`@ceylonhop.com`),
+  // which is what makes it structurally unable to email a real customer instead of merely
+  // conventionally unable (docs/staging-environment-plan.md).
+  EMAIL_ALLOWLIST: z.string().default(''),
+  // Relevance window (same spec, R6). Never notify about a trip that ended more than this
+  // many days ago — stateless, so an emptied or restored notification_log cannot resurrect
+  // an old booking. 30 days is well past any legitimate review request.
+  NOTIFY_MAX_TRIP_AGE_DAYS: z.coerce.number().default(30),
+  // Notification epoch (R6), ISO date. Never notify about a booking TAKEN before this.
+  // Unset by default; set it to the go-live date to fence off the pre-launch backlog
+  // permanently, in the direction the age window cannot cover (future-dated backfills).
+  NOTIFY_EPOCH: z.string().default(''),
+  // NOTIFICATIONS_ENABLED: the lever to throw WHILE a burst is happening. Stops customer
+  // mail; ops alerts still go out, because silencing them would hide the incident.
+  NOTIFICATIONS_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('true')
+    .transform((value) => value === '1' || value === 'true'),
 });
 
 // Ops⇄quote merge T1: the founder ops-session cookie now unlocks /admin/quote (margin +

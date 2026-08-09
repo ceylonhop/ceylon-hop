@@ -40,7 +40,12 @@ const BOOKINGS_TIMEOUT = 30000;
 // Secure, so only a browser on localhost sends it over http), and a real Sec-Fetch-Site:same-origin
 // header, which is what /admin/quote's CSRF guard checks.
 async function bookedQuoteAwaitingPayment(page) {
-  return page.evaluate(async () => {
+  // futureIsoDate is a NODE-side helper; the callback below runs in the BROWSER, where that import
+  // does not exist. Compute it here and pass it in — calling it inside the callback threw
+  // "ReferenceError: futureIsoDate is not defined" (docs/known-bugs.md, 2026-08-04), dormant
+  // because this spec only runs under CH_E2E_API=1, which CI never sets.
+  const travelDate = futureIsoDate(45);
+  return page.evaluate(async (travelDate) => {
     const json = async (path, method, body) => {
       const res = await fetch(path, {
         method,
@@ -83,11 +88,11 @@ async function bookedQuoteAwaitingPayment(page) {
       vehicleType: 'car',
       pax: 2,
       bags: 1,
-      date: futureIsoDate(45), // anchored to now: the booking API rejects a past travel date
+      date: travelDate, // anchored to now: the booking API rejects a past travel date
       time: '09:00',
     });
     return { id: booking.id, reference: booking.reference, status: booking.status };
-  });
+  }, travelDate);
 }
 
 test('marking an awaiting-payment booking paid in cash unblocks the pipeline', async ({ page }) => {

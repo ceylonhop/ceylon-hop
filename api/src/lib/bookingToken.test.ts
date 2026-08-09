@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import {
   CHECKOUT_TOKEN_TTL_MS,
   signBookingToken,
@@ -7,6 +8,10 @@ import {
   verifyCheckoutToken,
   signQuotePayToken,
   verifyQuotePayToken,
+  signPayReturnToken,
+  verifyPayReturnToken,
+  signQuoteViewToken,
+  verifyQuoteViewToken,
 } from './bookingToken';
 
 const S = 'test-secret';
@@ -83,7 +88,7 @@ describe('quote pay token', () => {
 
   it('round-trips quote id and revision', () => {
     const t = signQuotePayToken('q-1', 3, S);
-    expect(verifyQuotePayToken(t, S)).toEqual({ quoteId: 'q-1', revision: 3 });
+    expect(verifyQuotePayToken(t, S)).toEqual({ quoteId: 'q-1', revision: 3, seq: 0 });
   });
 
   it('rejects a wrong secret, tampering, and garbage', () => {
@@ -111,5 +116,168 @@ describe('quote pay token', () => {
     // The caller compares against quote.revision; a non-integer revision never verifies.
     const forged = signQuotePayToken('q-1', 1.5 as unknown as number, S);
     expect(verifyQuotePayToken(forged, S)).toBeNull();
+  });
+});
+
+// Short pay links (owner, 2026-08-02). The v1 JSON token made a 208-character URL — a base64
+// blob arriving right before a request for money, which is the visual grammar of phishing.
+describe('quote pay token v2 — compact, and back-compatible', () => {
+  const SECRET = 'test-link-secret';
+  const QUOTE = '48ebe678-8b5c-49c1-a7f8-5dc5005e347b';
+
+  it('is dramatically shorter than the v1 form it replaces', () => {
+    const v2 = signQuotePayToken(QUOTE, 13, SECRET);
+    const v1 = `${Buffer.from(JSON.stringify({ v: 1, purpose: 'quote-pay', q: QUOTE, r: 13 })).toString('base64url')}.${'a'.repeat(64)}`;
+    expect(v2.length).toBeLessThan(v1.length / 2);
+    expect(v2.length).toBeLessThan(55);
+  });
+
+  it('round-trips the quote id and revision exactly', () => {
+    for (const rev of [1, 13, 255, 256, 65535]) {
+      expect(verifyQuotePayToken(signQuotePayToken(QUOTE, rev, SECRET), SECRET))
+        .toEqual({ quoteId: QUOTE, revision: rev, seq: 0 });
+    }
+  });
+
+  // THE back-compat guard: links already sitting in customers' WhatsApp threads were minted
+  // in the v1 format. Breaking them would strand real people mid-payment.
+  it('still verifies a v1 token, so links already sent keep working', () => {
+    const body = Buffer.from(JSON.stringify({ v: 1, purpose: 'quote-pay', q: QUOTE, r: 13 })).toString('base64url');
+    const sig = createHmac('sha256', SECRET).update(body).digest('hex');
+    expect(verifyQuotePayToken(`${body}.${sig}`, SECRET)).toEqual({ quoteId: QUOTE, revision: 13, seq: 0 });
+  });
+
+  it('refuses a tampered v2 token and one signed with another secret', () => {
+    const t = signQuotePayToken(QUOTE, 13, SECRET);
+    const [body, sig] = t.split('.');
+    // flip a byte of the payload — the revision or quote id would change
+    const bad = Buffer.from(body, 'base64url'); bad.writeUInt16BE(99, 18);
+    expect(verifyQuotePayToken(`${bad.toString('base64url')}.${sig}`, SECRET)).toBeNull();
+    expect(verifyQuotePayToken(t, 'another-secret')).toBeNull();
+    expect(verifyQuotePayToken('garbage', SECRET)).toBeNull();
+  });
+
+  // The other two token kinds share the signing secret; a disjoint purpose byte is what stops
+  // a booking token being replayed as a pay token.
+  it('cannot be crossed with the booking token kind', () => {
+    expect(verifyQuotePayToken(signBookingToken('some-booking-id', SECRET), SECRET)).toBeNull();
+  });
+});
+
+describe('quote pay token v3 (selection seq, spec 2026-08-04)', () => {
+  const S3 = 'test-secret-v3';
+  const id = '11111111-2222-3333-4444-555555555555';
+
+  // Packs the OLD 20-byte v2 body, so the back-compat case is exercised against a real v2
+  // token rather than a hand-copied string.
+  function signV2(quoteId: string, revision: number, secret: string): string {
+    const buf = Buffer.alloc(20);
+    buf.writeUInt8(2, 0);
+    buf.writeUInt8(0x01, 1);
+    Buffer.from(quoteId.replace(/-/g, ''), 'hex').copy(buf, 2);
+    buf.writeUInt16BE(revision, 18);
+    const body = buf.toString('base64url');
+    const sig = createHmac('sha256', secret).update(body).digest().subarray(0, 16).toString('base64url');
+    return `${body}.${sig}`;
+  }
+
+  it('round-trips a seq', () => {
+    expect(verifyQuotePayToken(signQuotePayToken(id, 4, S3, 7), S3)).toEqual({ quoteId: id, revision: 4, seq: 7 });
+  });
+
+  it('is deterministic — the same inputs give a byte-identical URL', () => {
+    expect(signQuotePayToken(id, 4, S3, 7)).toBe(signQuotePayToken(id, 4, S3, 7));
+  });
+
+  it('a different seq is a different token', () => {
+    expect(signQuotePayToken(id, 4, S3, 7)).not.toBe(signQuotePayToken(id, 4, S3, 8));
+  });
+
+  it('defaults to seq 0 when the caller passes none', () => {
+    expect(verifyQuotePayToken(signQuotePayToken(id, 4, S3), S3)).toEqual({ quoteId: id, revision: 4, seq: 0 });
+  });
+
+  it('reads a legacy v2 token as seq 0 — links already in WhatsApp keep working', () => {
+    expect(verifyQuotePayToken(signV2(id, 4, S3), S3)).toEqual({ quoteId: id, revision: 4, seq: 0 });
+  });
+
+  it('rejects a tampered signature', () => {
+    const t = signQuotePayToken(id, 4, S3, 7);
+    const last = t.slice(-1);
+    expect(verifyQuotePayToken(t.slice(0, -1) + (last === 'A' ? 'B' : 'A'), S3)).toBeNull();
+  });
+});
+
+// The return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D4). PayHere is
+// handed this URL, so it must NOT carry the quote pay token — that one is a bearer credential for
+// the whole quote. This token authorises exactly one thing: reading the settlement status of one
+// booking.
+describe('pay-return token', () => {
+  const B = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+  it('round-trips a booking id', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(B, S), S)).toBe(B);
+  });
+
+  it('rejects a token signed with a different secret', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(B, S), 'other-secret')).toBeNull();
+  });
+
+  it('rejects a tampered signature', () => {
+    const t = signPayReturnToken(B, S);
+    const last = t.slice(-1);
+    expect(verifyPayReturnToken(t.slice(0, -1) + (last === 'A' ? 'B' : 'A'), S)).toBeNull();
+  });
+
+  it('rejects a missing or malformed token', () => {
+    expect(verifyPayReturnToken(undefined, S)).toBeNull();
+    expect(verifyPayReturnToken('', S)).toBeNull();
+    expect(verifyPayReturnToken('not-a-token', S)).toBeNull();
+  });
+
+  // The whole point of a disjoint purpose: no other token kind may be spent as a pay-return, and
+  // a pay-return may not be spent as any of them.
+  it('does not accept a checkout token', () => {
+    expect(verifyPayReturnToken(signCheckoutToken(B, S, Date.now()), S)).toBeNull();
+  });
+
+  it('does not accept a booking token', () => {
+    expect(verifyPayReturnToken(signBookingToken(B, S), S)).toBeNull();
+  });
+
+  it('does not accept a quote-pay token', () => {
+    expect(verifyPayReturnToken(signQuotePayToken(B, 1, S, 0), S)).toBeNull();
+  });
+
+  it('is not itself accepted as a checkout, booking, or quote-pay token', () => {
+    const t = signPayReturnToken(B, S);
+    expect(verifyCheckoutToken(t, B, S, Date.now())).toBe(false);
+    expect(verifyBookingToken(t, S)).toBeNull();
+    expect(verifyQuotePayToken(t, S)).toBeNull();
+  });
+});
+
+describe('quote view token', () => {
+  const S = 'test-secret';
+  const ID = '11111111-2222-4333-8444-555555555555';
+
+  it('round-trips the quote id', () => {
+    expect(verifyQuoteViewToken(signQuoteViewToken(ID, S), S)).toEqual({ quoteId: ID });
+  });
+
+  it('is deterministic, so re-copying a link yields a byte-identical URL', () => {
+    expect(signQuoteViewToken(ID, S)).toBe(signQuoteViewToken(ID, S));
+  });
+
+  it('rejects a wrong secret and a tampered body', () => {
+    const t = signQuoteViewToken(ID, S);
+    expect(verifyQuoteViewToken(t, 'other-secret')).toBeNull();
+    expect(verifyQuoteViewToken('AAAA' + t.slice(4), S)).toBeNull();
+    expect(verifyQuoteViewToken(undefined, S)).toBeNull();
+  });
+
+  it('cannot be spent as a pay token, and a pay token cannot be spent as a view token', () => {
+    expect(verifyQuotePayToken(signQuoteViewToken(ID, S), S)).toBeNull();
+    expect(verifyQuoteViewToken(signQuotePayToken(ID, 3, S, 1), S)).toBeNull();
   });
 });

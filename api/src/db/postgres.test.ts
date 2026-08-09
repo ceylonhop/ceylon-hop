@@ -893,6 +893,33 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await rideOps.listByBookingIds([b.id])).map((r) => r.bookingId)).toEqual([b.id]);
   });
 
+  // Owner rule 2026-08-02: a cancellation records WHY and WHO. In-memory agreeing is not
+  // enough — this is the column that has to survive a real round-trip.
+  it('persists the cancellation reason and actor through Postgres', async () => {
+    const b = await bookings.create(sample);
+    const cancelled = await bookings.setStatus(b.id, 'cancelled', {
+      reason: 'Customer flight cancelled by the airline',
+      by: 'op@x.com',
+    });
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.cancellationReason).toBe('Customer flight cancelled by the airline');
+    expect(cancelled.cancelledBy).toBe('op@x.com');
+    expect(cancelled.cancelledAt).toBeTruthy();
+
+    // And it is readable back, not just returned by the write.
+    const reread = await bookings.get(b.id);
+    expect(reread!.cancellationReason).toBe('Customer flight cancelled by the airline');
+    expect(reread!.cancelledBy).toBe('op@x.com');
+  });
+
+  it('leaves the cancellation columns alone on a non-cancelling transition', async () => {
+    const b = await bookings.create(sample);
+    // draft -> payment_pending is legal and is NOT a cancellation, so the audit is ignored.
+    const moved = await bookings.setStatus(b.id, 'payment_pending', { reason: 'ignored', by: 'x@y.com' });
+    expect(moved.cancellationReason).toBeNull();
+    expect(moved.cancelledBy).toBeNull();
+  });
+
   it('derives routeText from request_json legs in the list projection', async () => {
     const saved = await quotes.save({
       product: 'private', vehicle: 'car', totalCents: 12100, currency: 'USD',

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { SingleTransferInput } from '../domain/singleTransfer';
+import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
 import { isoToday, isPastIsoDate, firstPastDate, isoWeekday, serviceDaysLabel } from '../domain/dateRules';
@@ -24,7 +24,9 @@ import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import {
   signCheckoutToken,
+  signPayReturnToken,
   verifyBookingToken,
+  verifyPayReturnToken,
   verifyCheckoutToken,
 } from '../lib/bookingToken';
 
@@ -182,6 +184,11 @@ export function bookingRoutes(deps: {
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
+  /**
+   * Origin the customer pay page is served from. Only used to build the redirect checkout's
+   * return leg; unset simply means a pay-link checkout keeps the adapter's default URLs.
+   */
+  payBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const r = new Hono();
@@ -245,6 +252,37 @@ export function bookingRoutes(deps: {
     }
   }
 
+// Terms + cancellation acceptance (2026-08-01). The website checkbox was client-side ONLY and
+// recorded nothing, so a refund dispute had no evidence either way — the same gap the quote
+// pay-link path had. Read off the raw body rather than the domain input schemas, which are
+// shared with the ops/quote-conversion paths that have their own acceptance story.
+// RECORDED, not required. Requiring it here would be a breaking contract change on routes
+// with many existing callers, and the value asked for is the evidence, not the gate: booking.js
+// always sends it and the wizard already blocks submission without the tick. The quote pay
+// path DOES hard-gate — that endpoint was new, so requiring it there cost nothing.
+// Deliberately NOT applied to /shared: terms.html §7 defines no cancellation rule for a
+// shared seat, so there is nothing there for a customer to accept yet (docs/known-bugs.md).
+function termsAcceptedAt(body: unknown): Date | undefined {
+  return (body as { termsAccepted?: unknown } | null)?.termsAccepted === true ? new Date() : undefined;
+}
+
+// Billing details for the card, read off the raw body for the same reason as the terms above.
+// Optional — an older cached booking.js sends none, and PayHere then collects them in its own
+// step. But a billing object that IS sent must be complete: `BillingInput` requires
+// address/city/country together, because a half-filled one is how the adapter ends up
+// forwarding a city with no street, which is worse for the issuer's risk check than sending
+// nothing at all. Invalid => 400 at the door rather than a partial address banked on the row.
+type BillingParse =
+  | { ok: true; billing: BillingInput | undefined }
+  | { ok: false };
+
+function billingFrom(body: unknown): BillingParse {
+  const raw = (body as { billing?: unknown } | null)?.billing;
+  if (raw === undefined || raw === null) return { ok: true, billing: undefined };
+  const parsed = BillingInput.safeParse(raw);
+  return parsed.success ? { ok: true, billing: parsed.data } : { ok: false };
+}
+
   // 1.4 — create a single-transfer draft. Idempotent on the Idempotency-Key header.
   r.post('/single', async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -252,6 +290,8 @@ export function bookingRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     // No past dates — a trip can't be booked for a day that has already passed (Asia/Colombo).
     if (isPastIsoDate(parsed.data.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -291,6 +331,8 @@ export function bookingRoutes(deps: {
         currency: 'USD',
         distanceKm: distance?.km ?? null,
         durationMin: distance?.durationMin ?? null,
+        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
+        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
     );
@@ -306,6 +348,8 @@ export function bookingRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -362,6 +406,8 @@ export function bookingRoutes(deps: {
         currency: 'USD',
         distanceKm: tripKm === null ? null : Math.round(tripKm),
         durationMin: tripMin === null ? null : Math.round(tripMin),
+        billing: billing.billing, // what the card gateway is handed; absent => PayHere collects it
+        termsAcceptedAt: termsAcceptedAt(body), // evidence for a refund dispute; absent = never recorded
       },
       { idempotencyKey: key },
     );
@@ -377,6 +423,8 @@ export function bookingRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    const billing = billingFrom(body);
+    if (!billing.ok) return c.json({ error: 'invalid_billing' }, 400);
     const req = parsed.data;
     // No past dates — a seat can't be booked for a departure that has already passed.
     if (isPastIsoDate(req.date, isoToday())) {
@@ -451,7 +499,7 @@ export function bookingRoutes(deps: {
     let booking;
     try {
       booking = await bookings.create(
-        { mode: 'shared', input, total, amountDueNow, currency },
+        { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing },
         { idempotencyKey: key },
       );
     } catch (err) {
@@ -467,6 +515,38 @@ export function bookingRoutes(deps: {
       );
     }
     return c.json(withCheckoutToken(booking), 201);
+  });
+
+  // The return leg of a redirect checkout (spec: docs/checkout-redirect-spec.md §D5/§D6).
+  //
+  // PayHere documents that NO payment status is passed back on the redirect — "You need to
+  // update your database upon fetching payment status by your script on notify_url & then show
+  // the payment status to your customer in the page on return_url by fetching the status from
+  // your database." So this answers from OUR settlement state, which the webhook owns, and the
+  // returning page polls it. Nothing the browser arrives holding is trusted as a status.
+  //
+  // Three outcomes, because a decline must never read as an endless "confirming…": `paid` once
+  // the money is in, `failed` when the attempt reached a terminal refusal, `pending` while the
+  // webhook has not landed yet — which is also, correctly, the answer before any attempt.
+  //
+  // Deliberately returns TWO fields. The token authorises reading a settlement status, so that
+  // is all it may read: no customer details, no itinerary, no amounts. The reference is included
+  // because the page shows it and the customer already has it in their email and their link.
+  r.get('/pay-return', async (c) => {
+    const id = verifyPayReturnToken(c.req.query('rt'), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const rows = await payments.findByBookingId(booking.id);
+    // A settled payment is the answer whatever else is on the booking — including the ops
+    // lifecycle mirror having moved it on. Only then a terminal failure; anything else is
+    // still in flight.
+    const status = rows.some((p) => p.status === 'succeeded')
+      ? 'paid'
+      : rows.some((p) => p.status === 'failed')
+        ? 'failed'
+        : 'pending';
+    return c.json({ status, reference: booking.reference }, 200);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
@@ -559,18 +639,59 @@ export function bookingRoutes(deps: {
       if (booking.status === 'draft') await bookings.setStatus(booking.id, 'payment_pending');
     }
 
+    // Where the gateway sends the customer back to (spec: docs/checkout-redirect-spec.md §D3).
+    // A pay-link customer must land on the PAY page; the adapter's constructor URLs point at
+    // booking.html, which is the website checkout's own page and pure confusion for this payer.
+    //
+    // The client states INTENT ONLY — it never supplies a URL. A gateway that will redirect the
+    // customer wherever the request body says is a phishing primitive, and the request that
+    // reaches here has already crossed the network. So the origin comes from our own config and
+    // the token is minted here, over the booking this checkout is actually for.
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown } | null;
+    const returnUrls =
+      body?.returnTo === 'pay-link' && deps.payBaseUrl
+        ? (() => {
+            const rt = signPayReturnToken(booking.id, deps.linkSecret);
+            const base = `${deps.payBaseUrl.replace(/\/$/, '')}/pay.html?rt=${encodeURIComponent(rt)}`;
+            // Both legs land on the SAME page. PayHere documents return_url for an approved
+            // payment and cancel_url for a customer-cancelled one, but says nothing about where
+            // a DECLINED payment goes — so neither URL may be the only one that works. The page
+            // polls our own settlement state either way; `c=1` is a display hint, never truth.
+            return { returnUrl: base, cancelUrl: `${base}&c=1` };
+          })()
+        : {};
+
     const cust = booking.input.customer;
     const params = await adapter.createCheckout({
       orderId: payment.orderId,
       amount: payment.amount,
       currency: payment.currency,
-      items: `Ceylon Hop ${booking.reference}`,
+      ...returnUrls,
+      // What the payer sees named on the PayHere receipt. "Ceylon Hop Travel" rather than
+      // "Ceylon Hop" so an unfamiliar line is self-explaining, and the reference so a query
+      // about a charge arrives with the booking already identified.
+      //
+      // This is NOT the bank-statement descriptor, however much it looks like one. PayHere's
+      // Checkout API has no descriptor parameter at all — the statement text comes from the
+      // acquirer/merchant account and can only be changed by asking PayHere.
+      items: `Ceylon Hop Travel - ${booking.reference}`,
       customer: {
-        firstName: cust.firstName,
-        lastName: cust.lastName,
+        // The gateway's fields are BILLING fields, so the cardholder's name wins when the
+        // payer told us they differ from the lead passenger. Email/phone stay the lead
+        // passenger's: that is who gets the receipt and the driver's details.
+        firstName: booking.billing?.firstName || cust.firstName,
+        // PayHere itself substitutes '-' for a missing surname (adapters/payhere.ts), so an
+        // empty string here is carried, not invented.
+        lastName: booking.billing?.lastName || cust.lastName || '',
         email: cust.email,
         phone: cust.whatsapp,
-        country: cust.country,
+        // Billing country when we have one; otherwise the lead passenger's, which is what
+        // this has always been (derived from their phone country code).
+        country: booking.billing?.country || cust.country,
+        address: booking.billing?.address,
+        city: booking.billing?.city,
+        postcode: booking.billing?.postcode,
+        state: booking.billing?.state,
       },
     });
     if (params.amount !== dueNow) {

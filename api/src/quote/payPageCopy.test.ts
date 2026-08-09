@@ -31,6 +31,55 @@ function quoteOf(opts: {
   };
 }
 
+// What a transfer page promises has to match the trip it is selling. This was a live defect:
+// the sentence was a constant, so a Sigiriya → Kandy page told a paying customer we would meet
+// them at an airport their trip never touches (owner-caught 2026-08-07).
+describe('payPageCopy — what a single transfer says is included', () => {
+  const included = (from: string, to: string, category = 'transfer') =>
+    payPageCopy(quoteOf({ legs: [leg(from, to, '2026-08-08', category)] })).includedText;
+
+  it('promises the name board only when the customer is COLLECTED from an airport', () => {
+    expect(included('Colombo Airport (CMB)', 'Galle')).toBe(
+      'Driver, fuel and highway tolls. Airport pickup with a name board.',
+    );
+  });
+
+  // The board is an arrivals service. Flying home, the airport is where they are dropped —
+  // promising to meet them there with a sign would be a second wrong sentence, not a fix.
+  it('does not promise a name board when the airport is the DROP-OFF', () => {
+    const text = included('Kandy', 'Colombo Airport (CMB)');
+    expect(text).toBe('Driver, fuel and highway tolls. Hotel pickup and airport drop-off.');
+    expect(text).not.toMatch(/name board/i);
+  });
+
+  it('says hotel pickup and drop-off when no airport is involved', () => {
+    expect(included('Sigiriya / Dambulla', 'Kandy')).toBe(
+      'Driver, fuel and highway tolls. Hotel pickup and drop-off.',
+    );
+  });
+
+  it('never mentions an airport on a trip that has none', () => {
+    for (const [from, to] of [['Sigiriya / Dambulla', 'Kandy'], ['Galle', 'Mirissa'], ['Kandy', 'Ella']]) {
+      expect(included(from, to)).not.toMatch(/airport|name board/i);
+    }
+  });
+
+  // Katunayake is the airport's town and how operators often type it; CMB is the code.
+  it('recognises the airport however the operator wrote it', () => {
+    for (const spelling of ['Colombo Airport (CMB)', 'CMB', 'Katunayake', 'Bandaranaike Airport']) {
+      expect(included(spelling, 'Kandy')).toMatch(/name board/i);
+    }
+  });
+
+  // An operator-set airport category with no airport in either name says a terminal is involved
+  // but not which end. Say nothing rather than guess the direction wrong.
+  it('makes no pickup promise when the category says airport but the endpoints do not', () => {
+    const text = included('Some Hotel', 'Another Hotel', 'airport');
+    expect(text).toBe('Driver, fuel and highway tolls.');
+    expect(text).not.toMatch(/name board|hotel pickup/i);
+  });
+});
+
 describe('payPageCopy — single transfer', () => {
   it('titles with the route and carries the journey facts', () => {
     const c = payPageCopy(quoteOf({}));
@@ -155,5 +204,48 @@ describe('payPageCopy — reads the tool payload', () => {
       firstDate: '2026-08-12', lastDate: '2026-08-17',
     }));
     expect(c.facts.find((f) => f.k === 'Travellers')?.v).toBe('4 · Van');
+  });
+});
+
+// A partial-leg link (spec 2026-08-04) pays for SOME legs. Before this, every word on the page
+// still described the whole trip — the total line literally read "all 4 journeys" over a
+// two-leg payment. Owner-caught in PROD, 2026-08-05.
+describe('payPageCopy — partial link', () => {
+  const fourLegs = [
+    leg('Colombo Airport (CMB)', 'Unawatuna', '2026-08-07'),
+    leg('Unawatuna', 'Trincomalee', '2026-08-12'),
+    leg('Trincomalee', 'Sigiriya', '2026-08-14'),
+    leg('Sigiriya', 'Colombo Airport (CMB)', '2026-08-16'),
+  ];
+  const q = quoteOf({ legs: fourLegs, name: 'Kirsty' });
+  const covering = (legIndexes: number[]) => payPageCopy(q, { legIndexes, extraIndexes: [] });
+
+  it('never claims the payment covers all of them', () => {
+    const copy = covering([0, 2]);
+    expect(copy.totalLabel).not.toMatch(/all/i);
+    expect(copy.totalLabel).toContain('2 of');
+    expect(copy.title).not.toMatch(/^Four journeys/);
+  });
+
+  it('marks which journeys the payment covers', () => {
+    const copy = covering([0, 2]);
+    expect(copy.legs!.map((l) => l.covered)).toEqual([true, false, true, false]);
+    // Every journey still shown — the customer keeps sight of the whole trip.
+    expect(copy.legs).toHaveLength(4);
+  });
+
+  it('does not promise driver and fuel on journeys nobody paid for', () => {
+    expect(covering([0, 2]).includedText).not.toMatch(/every journey/i);
+  });
+
+  it('is unchanged when the selection covers everything', () => {
+    const full = payPageCopy(q, { legIndexes: [0, 1, 2, 3], extraIndexes: [] });
+    expect(full).toEqual(payPageCopy(q));
+  });
+
+  it('is unchanged with no selection at all', () => {
+    const copy = payPageCopy(q);
+    expect(copy.totalLabel).toBe('Total · all 4 journeys');
+    expect(copy.legs!.every((l) => l.covered === undefined)).toBe(true);
   });
 });

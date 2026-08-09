@@ -17,6 +17,7 @@ function mk(over: Partial<DemandQuoteRow> & { places?: string[]; km?: number } =
     product: 'private',
     vehicle: 'car',
     requestedService: 'private',
+    offerValidUntil: null,
     totalCents: 10000,
     currency: 'USD',
     createdAt: daysAgo(5),
@@ -91,6 +92,38 @@ describe('computeDemand', () => {
     expect(names).toContain('Galle');
     expect(names).not.toContain('Mirissa');
     expect(r.movers.find((m) => m.place === 'Ella')).toMatchObject({ prior: 3, recent: 6, changePct: 100 });
+  });
+
+  /* A place with NO prior half is not rising — it is new, and there is nothing to compare it
+     against. It used to pass both guards anyway: MOVER_MIN_TOUCHES tests the LARGER side, and
+     changePct divides by Math.max(prior, 1), so prior=0 yielded recent*100% and cleared the
+     ±50% filter automatically. On a dataset younger than the selected range that is every place
+     at once, and the card degenerated into a re-ranked copy of the top destinations wearing
+     green arrows — noise that reads exactly like signal (owner, 2026-08-01). */
+  it('movers: a place with no prior half is NOT a riser, however many recent touches', () => {
+    const at = (d: number, place: string) => mk({ createdAt: daysAgo(d), places: [place, 'Colombo City'] });
+    const rows = [
+      // Colombo Airport: 0 prior, 13 recent — the shape the whole card was showing.
+      ...[10, 9, 9, 8, 8, 7, 7, 6, 6, 5, 4, 3, 2].map((d) => at(d, 'Colombo Airport (CMB)')),
+      // A genuine riser alongside it, to prove the card still works when there IS history.
+      ...[20, 18, 16].map((d) => at(d, 'Ella')),
+      ...[10, 9, 8, 7, 6, 5].map((d) => at(d, 'Ella')),
+    ];
+    const r = computeDemand(rows, range(28));
+    const names = r.movers.map((m) => m.place);
+    expect(names).not.toContain('Colombo Airport (CMB)');
+    expect(names).toContain('Ella');
+    // Every surviving mover must have something to compare against.
+    r.movers.forEach((m) => expect(m.prior).toBeGreaterThan(0));
+  });
+
+  it('movers: the whole card stays empty when nothing has a prior half', () => {
+    const at = (d: number, place: string) => mk({ createdAt: daysAgo(d), places: [place, 'Colombo City'] });
+    // Every quote in the recent half — a dataset younger than the range, which is what a team
+    // that just started using the tool actually has.
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8].map((d) => at(d, 'Ella'));
+    const r = computeDemand(rows, range(28));
+    expect(r.movers).toEqual([]); // the UI's "needs more volume" empty state is the honest answer
   });
 
   it('shared/garbage rows are excluded from destination charts but kept in mix + coverage', () => {

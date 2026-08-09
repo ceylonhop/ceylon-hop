@@ -358,15 +358,10 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   const chBtn = page.locator('[data-action="setService"][data-service="chauffeur"]');
   await expect(chBtn).toBeDisabled();
 
-  // Point-to-point (default): the per-leg add-on control exists. In the cockpit
-  // layout the sightseeing/waiting/safari checkboxes live behind a per-leg popover
-  // (the ⧉ add-on button); open it, then the toggles are attached.
-  await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
-  await page.locator('[data-action="toggleAddons"]').first().click();
-  await expect(page.locator('input[data-field="addSightseeingFee"]').first()).toBeAttached();
-  await expect(page.locator('input[data-field="addSafariWait"]').first()).toBeAttached();
-  // Close the popover again so the later re-renders start clean.
-  await page.locator('[data-action="toggleAddons"]').first().click();
+  // Point-to-point (default): the per-leg fee controls exist — inline toggle chips on the
+  // leg tools row (the "+ Fees" popover + checkbox tray was replaced 2026-08-01).
+  await expect(page.locator('[data-action="toggleFee"][data-fee-field="addSightseeingFee"]').first()).toBeAttached();
+  await expect(page.locator('[data-action="toggleFee"][data-fee-field="addSafariWait"]').first()).toBeAttached();
 
   // Date both ends across two days → chauffeur becomes enabled and shows a price.
   await page.locator('input[type="date"][data-field="date"]').first().fill(D1);
@@ -379,19 +374,18 @@ test('service chooser: chauffeur gated by dates, add-ons only in point-to-point'
   await expect(chBtn).toBeEnabled({ timeout: 10000 });
   await expect(chBtn).toContainText('LKR', { timeout: 10000 }); // side-by-side price on the option
 
-  // Choose chauffeur → add-on control disappears entirely (no popover button either), caption shows.
+  // Choose chauffeur → fee chips disappear entirely (fees are included in chauffeur), caption shows.
   // (The "Add stay day" button was retired — chauffeur idle days derive from the leg dates.)
   await chBtn.click();
   await page.waitForTimeout(600);
-  await expect(page.locator('input[data-field="addSightseeingFee"]')).toHaveCount(0);
-  await expect(page.locator('[data-action="toggleAddons"]')).toHaveCount(0);
+  await expect(page.locator('[data-action="toggleFee"]')).toHaveCount(0);
   await expect(page.locator('.ch-svc-caption')).toContainText(/included/i);
   await expect(page.locator('[data-action="addLeg"][data-cat="stay_day"]')).toHaveCount(0); // no stay-day button anymore
 
-  // Back to point-to-point → per-leg add-on control returns.
+  // Back to point-to-point → per-leg fee chips return.
   await page.locator('[data-action="setService"][data-service="private"]').click();
   await page.waitForTimeout(600);
-  await expect(page.locator('[data-action="toggleAddons"]').first()).toBeAttached();
+  await expect(page.locator('[data-action="toggleFee"]').first()).toBeAttached();
 });
 
 test('point-to-point customer output can append the chauffeur option', async ({ page }) => {

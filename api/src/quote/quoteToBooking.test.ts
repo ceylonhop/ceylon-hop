@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { quoteToBooking, QuoteNotBookableError, type BookingDetails } from './quoteToBooking';
+import { quoteToBooking, isQuoteBookable, QuoteNotBookableError, type BookingDetails } from './quoteToBooking';
 import type { SavedQuote } from '../db/quoteRepo';
 
 const CUST = { firstName: 'A', lastName: 'B', email: 'a@b.com', whatsapp: '+94123456', country: 'LK' };
@@ -216,5 +216,120 @@ describe('a quote whose legs do not connect', () => {
     expect(m.mode).toBe('trip');
     if (m.mode !== 'trip') return;
     expect(m.input.dates).toBeUndefined();
+  });
+});
+
+describe('partial mapping (legIndexes, spec 2026-08-04)', () => {
+  const threeLegs = () => q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 }] });
+
+  it('maps only the selected legs and sums only their km', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [0, 1] });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+    expect(m.distanceKm).toBe(260);
+  });
+
+  it('a one-leg subset of a multi-leg quote is a single transfer', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [1] });
+    expect(m.mode).toBe('single');
+    if (m.mode === 'single') {
+      expect(m.input.from).toBe('Kandy');
+      expect(m.input.to).toBe('Ella');
+    }
+    expect(m.distanceKm).toBe(140);
+  });
+
+  // A dropped middle leg leaves two rides that do not chain — the same gap a disconnected quote
+  // produces today. The gap stop is kept, never silently dropped (GC-13).
+  it('keeps the gap stop when a middle leg is dropped', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [0, 2] });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
+    expect(m.distanceKm).toBe(320);
+  });
+
+  it('is order- and duplicate-insensitive', () => {
+    const a = quoteToBooking(threeLegs(), DETAILS, { legIndexes: [1, 0, 1] });
+    expect(a.mode).toBe('trip');
+    if (a.mode === 'trip') expect(a.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+  });
+
+  it('refuses an empty selection', () => {
+    expect(() => quoteToBooking(threeLegs(), DETAILS, { legIndexes: [] })).toThrow(QuoteNotBookableError);
+  });
+
+  it('leaves every existing caller alone when no option is passed', () => {
+    const m = quoteToBooking(threeLegs(), DETAILS);
+    if (m.mode === 'trip') expect(m.input.stops).toEqual(['Colombo', 'Kandy', 'Ella', 'Galle']);
+    expect(m.distanceKm).toBe(460);
+  });
+
+  it('isQuoteBookable answers for the subset', () => {
+    expect(isQuoteBookable(threeLegs(), { legIndexes: [2] })).toBe(true);
+    expect(isQuoteBookable(threeLegs(), { legIndexes: [] })).toBe(false);
+  });
+});
+
+// Per-leg dates died at conversion: only the modal's single date survived, so the ops drawer and
+// the customer's itinerary labelled later legs "Leg 2"/"Leg 3" instead of dating them
+// (docs/known-bugs.md, 2026-07-30). The dates the operator typed live in the TOOL payload.
+describe('per-leg dates survive the conversion (2026-08-08)', () => {
+  const dated = (legs: { from: string; to: string; date?: string; category?: string }[]) => ({
+    id: 'q1', reference: 'Q-1', channel: 'ops', status: 'sent', totalCents: 21900, currency: 'USD',
+    request: {
+      tool: { legs },
+      engine: {
+        product: 'private', vehicle: 'car', pax: 2, bags: 1,
+        legs: legs.filter((l) => (l.category ?? 'transfer') !== 'stay_day')
+          .map((l) => ({ from: l.from, to: l.to, distanceKm: 100 })),
+      },
+    },
+    result: {}, convertedBookingId: null,
+  } as unknown as SavedQuote);
+
+  const THREE = [
+    { from: 'Colombo', to: 'Kandy', date: '2026-09-01' },
+    { from: 'Kandy', to: 'Ella', date: '2026-09-04' },
+    { from: 'Ella', to: 'Galle', date: '2026-09-07' },
+  ];
+
+  it('carries every leg’s date, not just the first', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: undefined });
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '2026-09-04', '2026-09-07']);
+  });
+
+  // "if we get updated dates from the booking, update using that" — the booking modal's date is
+  // newer information than the quote's.
+  it('lets a date entered at booking time win', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: '2026-09-02' });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-02', '2026-09-04', '2026-09-07']);
+  });
+
+  it('leaves an undated leg blank rather than guessing', () => {
+    const m = quoteToBooking(dated([THREE[0], { from: 'Kandy', to: 'Ella' }, THREE[2]]), { ...DETAILS, date: undefined });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '', '2026-09-07']);
+  });
+
+  // Stay days sit in the tool payload but are NOT engine legs, so a naive index would shift
+  // every later date onto the wrong leg.
+  it('is not thrown off by a stay day in the tool payload', () => {
+    const withStay = [
+      THREE[0],
+      { from: 'Kandy', to: 'Kandy', date: '2026-09-02', category: 'stay_day' },
+      THREE[1],
+      THREE[2],
+    ];
+    const m = quoteToBooking(dated(withStay), { ...DETAILS, date: undefined });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '2026-09-04', '2026-09-07']);
+  });
+
+  // A partial pay link books a SUBSET of legs — the dates must follow the same filter.
+  it('follows a partial selection', () => {
+    const m = quoteToBooking(dated(THREE), { ...DETAILS, date: undefined }, { legIndexes: [0, 2] });
+    if (m.mode === 'trip') expect(m.input.dates).toEqual(['2026-09-01', '', '2026-09-07']);
   });
 });

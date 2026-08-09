@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from './client';
 import {
+  bookingLegs,
   bookings,
   customers,
   quotes,
@@ -23,7 +24,7 @@ import {
 } from './quoteConversionRepo';
 import { quoteRowToSaved } from './postgresQuoteRepo';
 import { digestAccessToken, safeDigestEqual } from '../quote/webQuoteV2';
-import { isReferenceCollision } from './postgresBookingRepo';
+import { isReferenceCollision, legRowsForBooking } from './postgresBookingRepo';
 
 const MAX_REFERENCE_ATTEMPTS = 5;
 type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -117,7 +118,9 @@ async function insertLockedBooking(
     .insert(customers)
     .values({
       firstName: customer.firstName,
-      lastName: customer.lastName,
+      // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+      // store the absence as empty, never as the string \"undefined\".
+      lastName: customer.lastName ?? '',
       email: customer.email,
       phoneCountryCode: customer.phoneCountryCode ?? null,
       phoneNumber: customer.phoneNumber ?? null,
@@ -174,5 +177,8 @@ async function insertLockedBooking(
   } else {
     throw new QuoteConversionError('quote_invalid');
   }
+
+  const legs = legRowsForBooking(bookingRow.id, booking);
+  if (legs.length) await tx.insert(bookingLegs).values(legs);
   return bookingRow.id;
 }

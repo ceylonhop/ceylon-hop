@@ -7,6 +7,9 @@ comes up, so launch is a clean, mechanical switch-over.
 
 > Convention: tick a box when done. Keep this in sync as the source of truth.
 
+> **This list is the ONE-TIME cutover to real money.** For the recurring `main → production`
+> deploy, see [promote-checklist.md](promote-checklist.md).
+
 ---
 
 ## 1. Render environment variables (`ceylon-hop-api` service)
@@ -16,7 +19,7 @@ comes up, so launch is a clean, mechanical switch-over.
 | `APP_BASE_URL` | `http://localhost:4173` | `https://ceylonhop.com` |
 | `PAYHERE_MODE` | `sandbox` | `live` |
 | `PAYHERE_MERCHANT_ID` / `_SECRET` / `_NOTIFY_URL` (+ return/cancel) | sandbox creds | **live** merchant creds for the `ceylonhop.com` account |
-| `EMAIL_FROM` | `Ceylon Hop <onboarding@resend.dev>` (test sender) | `Ceylon Hop <hello@send.ceylonhop.com>` |
+| `EMAIL_FROM` | ✅ `Ceylon Hop <hello@send.ceylonhop.com>` — verified domain, live since before 2026-08-02 | (already fine) |
 | `ALLOWED_ORIGINS` | dev origins | include `https://ceylonhop.com` |
 | `DATABASE_URL` | dev password (leaked in-session) | **rotated** password |
 | `GOOGLE_MAPS_API_KEY` | unset → fake/haversine distances | **real server key (required)** — the quote tool's live distances/autocomplete and server-side repricing of typed addresses depend on it. Restrict to Distance Matrix + Places, no referrer restriction (server-side) |
@@ -33,7 +36,7 @@ comes up, so launch is a clean, mechanical switch-over.
 
 - [ ] `APP_BASE_URL` → apex
 - [ ] PayHere → live mode + live credentials
-- [ ] `EMAIL_FROM` → verified domain sender
+- [x] `EMAIL_FROM` → verified domain sender — confirmed 2026-08-02 from a received email
 - [ ] `ALLOWED_ORIGINS` includes the apex
 - [ ] DB password rotated + `DATABASE_URL` updated
 - [ ] real server `GOOGLE_MAPS_API_KEY` (required — quote tool + server repricing)
@@ -119,6 +122,39 @@ Trigger each once against prod and confirm the branded email lands + reads corre
 - [ ] **Payment didn't complete (recovery)** — start a checkout, abandon it, wait >30 min, then run `POST /admin/jobs/watchdog` → one recovery email with a resume link; run the sweep again → **no second email** (idempotent).
 - [ ] **Pre-trip reminder + review request** — driven by `POST /admin/jobs/notifications` (needs a booking within the 48h reminder window / a completed trip); confirm each fires once.
 - [ ] Confirm none of the above emails fire **twice** on a repeated webhook/sweep/cron (idempotency).
+
+---
+
+## Customer quote links (spec 2026-08-05) — REQUIRED BEFORE SENDING A QUOTE LINK
+
+The build ships `quote.html` at `/q?t=…`, served by the API host exactly as `pay.html` is. It
+is read-only: no pay button, no route on it that writes or charges. Every one of these steps is
+an operator action — the code cannot do them, and skipping any of them breaks a link a customer
+has already been sent.
+
+- [ ] **`QUOTE_BASE_URL` set on the API service** to `https://quote.ceylonhop.com`.
+      Unset, the mint falls back to `PAY_BASE_URL`, so quote links go out on the **pay** domain —
+      it works, but a proposal arrives from a host that presumes the sale. Set it before minting
+      anything you intend to send: the URL is baked into whatever you paste into WhatsApp, and a
+      link already sent cannot be re-pointed.
+- [ ] **`quote.ceylonhop.com` added as a custom domain on the API service** — the SAME service
+      that already serves `pay.ceylonhop.com`, not a second deployment. Confirm the certificate
+      has issued and `https://quote.ceylonhop.com/q?t=test` answers before minting a real link.
+- [ ] **`quote.ceylonhop.com` added to the Google Maps browser-key referrer allow-list.**
+      This is the one that fails **silently**: the page falls back to the static island map with
+      no error anywhere. The page still works and still sells, so nothing will tell you it is
+      wrong — check it deliberately by opening a real link and confirming a live map appears.
+- [ ] **A muted Google map style applied** (cloud style ID: desaturated terrain, POI labels off).
+      Default tiles fight the cream-and-teal design. Cosmetic, not blocking.
+
+### Sending the first real link — do this once, end to end
+- [ ] Approve a quote (`→ ready`). Confirm it stamps a validity date: the page must read
+      **"Quote expires on <date>"**, seven days out.
+- [ ] Press **Quote link** in the ops builder, paste into WhatsApp, open it on a phone.
+- [ ] Confirm: your customer's name, the itinerary day by day, the right price, a live map,
+      and that every button opens WhatsApp — there must be **no way to pay from this page**.
+- [ ] Edit the quote in ops, reload the same link, and confirm it shows the NEW content. The
+      quote link deliberately follows its quote; only the pay link pins.
 
 ---
 

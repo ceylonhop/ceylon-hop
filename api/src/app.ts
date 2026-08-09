@@ -10,6 +10,7 @@ import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './ada
 import { rideBoardRoutes } from './routes/rideBoard';
 import { shareCardRoutes } from './routes/shareCard';
 import { FakeEmailAdapter, type EmailAdapter } from './adapters/email';
+import { GuardedEmailAdapter, parseAllowlist, type EmailPolicy } from './adapters/emailGuard';
 import { FakePaymentAdapter, type PaymentAdapter } from './adapters/payments';
 import { FakeMapsAdapter, type MapsAdapter } from './adapters/maps';
 import { bookingRoutes } from './routes/bookings';
@@ -28,6 +29,7 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
 import { track } from './observability/track';
@@ -45,6 +47,7 @@ import {
 } from './db/quoteConversionRepo';
 import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
+import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
 
 export interface AppDeps {
@@ -66,6 +69,7 @@ export interface AppDeps {
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
   zones?: ZonesRepo;
+  placeResolutions?: PlaceResolutionRepo;
   quoteV2Enabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
@@ -77,6 +81,8 @@ export interface AppDeps {
   bookingBaseUrl?: string;
   /** Origin the customer pay/manage links are built from; defaults to PAY_BASE_URL, then the site. */
   payBaseUrl?: string;
+  /** Origin the customer QUOTE links are built from; defaults to QUOTE_BASE_URL, then payBaseUrl. */
+  quoteBaseUrl?: string;
   // Public origin share links are built from — the ride domain (e.g. https://ride.ceylonhop.com),
   // which is a second custom domain on this same service. Unset = use the request's own host.
   shareBaseUrl?: string;
@@ -90,6 +96,15 @@ export interface AppDeps {
   // M17 — ops alerting seam. The server passes ThrottledAlerts(EmailAlertAdapter|LogAlertAdapter);
   // tests inject FakeAlertAdapter. Defaults to log-only so alerts are always at least visible.
   alerts?: AlertAdapter;
+  // Notification blast-radius cap (R1). Defaults to config.NOTIFY_MAX_PER_RUN; tests set a
+  // low value to exercise the cap without seeding twenty-five bookings.
+  notifyMaxPerRun?: number;
+  // Outbound mail guard (R3). Defaults to the EMAIL_ALLOWLIST / NOTIFICATIONS_ENABLED env
+  // pair; tests pass it directly.
+  emailPolicy?: EmailPolicy;
+  // Relevance window + epoch (R6); default to their env values.
+  notifyMaxTripAgeDays?: number;
+  notifyEpoch?: Date;
   // M17 — enables POST /webhooks/resend when set (tests inject; server uses config).
   resendWebhookSecret?: string;
   // M17 — /health/deep runs this to prove DB connectivity (server passes SELECT 1;
@@ -100,6 +115,9 @@ export interface AppDeps {
   digestTo?: string;
   // Pay links: override the served PayHere mode label ('sandbox'|'live'|'off'); tests use it.
   payhereMode?: string;
+  // The customer quote view's clock (spec 2026-08-05 D8) — tests use it to move past
+  // offerValidUntil without waiting on the real clock. Defaults to Date.now.
+  now?: () => number;
 }
 
 // createApp lets tests inject fresh repos/fakes for isolation; the server uses defaults.
@@ -118,7 +136,12 @@ export function createApp(deps: AppDeps = {}) {
   const departures = deps.departures ?? new InMemoryDepartureRepo();
   const rideLists = deps.rideLists ?? new InMemoryRideListRepo();
   const paygw = deps.paygw ?? new FakeTokenizedPaymentAdapter();
-  const email = deps.email ?? new FakeEmailAdapter();
+  // Every outbound message — customer, ops and alert alike — goes through the guard, so
+  // there is one place that decides whether mail may leave this environment at all.
+  const email = new GuardedEmailAdapter(
+    deps.email ?? new FakeEmailAdapter(),
+    deps.emailPolicy ?? { enabled: config.NOTIFICATIONS_ENABLED, allowlist: parseAllowlist(config.EMAIL_ALLOWLIST) },
+  );
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
@@ -126,6 +149,9 @@ export function createApp(deps: AppDeps = {}) {
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   const quotes = deps.quotes ?? new InMemoryQuoteRepo();
   const zones = deps.zones ?? new InMemoryZonesRepo();
+  // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
+  // starts from the same identified set production does.
+  const placeResolutions = deps.placeResolutions ?? new InMemoryPlaceResolutionRepo();
   const alerts = deps.alerts ?? new LogAlertAdapter();
   const adminApiKey = deps.adminApiKey ?? config.ADMIN_API_KEY;
   const opsAuthCfg = {
@@ -145,6 +171,19 @@ export function createApp(deps: AppDeps = {}) {
       ? new InMemoryQuoteConversionRepo(quotes, bookings)
       : undefined);
   const bookingLinkSecret = deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET;
+  // The one pay-origin resolution, shared by every customer-link mint: the ops drawer's
+  // manage.html payment link, the quote pay.html link in internalQuoteRoutes, and the redirect
+  // checkout's return leg in bookingRoutes.
+  // PAY_BASE_URL first: the pay domain when one is configured, else the customer site as
+  // before. Emails and the WEBSITE checkout's return_url still keep APP_BASE_URL — that split
+  // is the whole reason this is a separate variable. (A pay-LINK checkout is the exception, and
+  // deliberately so: its customer came from the pay domain and must be returned to it —
+  // docs/checkout-redirect-spec.md §D3.) Owner-caught (2026-08-01): #234 moved only the quote
+  // link; the drawer's payment link kept reading ops.<domain>/manage.html — the two must never
+  // resolve differently again.
+  // Declared HERE rather than at its first use: bookingRoutes is mounted well above and needs it.
+  const payBaseUrl = deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL;
+  const quoteBaseUrl = deps.quoteBaseUrl ?? (config.QUOTE_BASE_URL || undefined) ?? payBaseUrl;
   // Which PayHere the server would hand a customer: 'off' with no merchant creds (the
   // fake adapter), else the configured mode. Surfaced to ops so a sandbox link is
   // labelled as one (spec 2026-07-31) — a sandbox payment marks real bookings Paid.
@@ -162,6 +201,49 @@ export function createApp(deps: AppDeps = {}) {
     // a blank /gsi/transform page after account selection.
     crossOriginOpenerPolicy: 'same-origin-allow-popups',
   }));
+
+  // NOTHING this app serves may be indexed. pay./quote./ops. are all this one host, and between
+  // them they answer with customer names, prices, itineraries and an admin dashboard.
+  //
+  // The pay and quote PAGES already carry <meta name="robots">, but a meta tag only exists inside
+  // HTML — and /quotes/pay/view answers application/json with the customer's details in it. A
+  // header covers every response regardless of content type, including 404s.
+  //
+  // Preview bots ignore this by design: they are not indexing, they are rendering a card, which
+  // is exactly the named unfurl the quote links rely on (spec 2026-08-06).
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  });
+
+  // Served, not 404'd. Without it a crawler FETCHES before it learns not to index — and the
+  // fetch is the part that takes the data out of the building.
+  //
+  // The wildcard group sits LAST: robots.txt matching picks the most specific group, and a
+  // preview agent named above must not be shadowed by it. The AI crawlers are named one by one
+  // because several are documented to honour only their own token, not `*`.
+  app.get('/robots.txt', (c) =>
+    c.text(
+      [
+        '# pay./quote./ops.ceylonhop.com — customer and staff surfaces. Not for indexing.',
+        '',
+        '# Link-preview agents ARE allowed: the named unfurl card on a quote or pay link is',
+        '# deliberate, and blocking these turns every WhatsApp link into a bare URL.',
+        ...['facebookexternalhit', 'WhatsApp', 'Twitterbot', 'Slackbot-LinkExpanding', 'TelegramBot']
+          .flatMap((ua) => [`User-agent: ${ua}`, 'Allow: /', '']),
+        '# AI crawlers, named individually — several honour only their own token.',
+        ...['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'CCBot', 'ClaudeBot', 'anthropic-ai',
+          'Google-Extended', 'PerplexityBot', 'Bytespider', 'Amazonbot']
+          .flatMap((ua) => [`User-agent: ${ua}`, 'Disallow: /', '']),
+        '# Everyone else.',
+        'User-agent: *',
+        'Disallow: /',
+        '',
+      ].join('\n'),
+      200,
+      { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+    ),
+  );
 
   // Restrict cross-origin browser calls to the live site + local dev. Server-to-server
   // callers (e.g. the PayHere webhook) send no Origin and are unaffected by CORS.
@@ -245,6 +327,7 @@ export function createApp(deps: AppDeps = {}) {
       conciergeTasks,
       quotes,
       linkSecret: bookingLinkSecret,
+      payBaseUrl,
       checkoutNow: deps.checkoutNow,
       allowLegacyCheckoutWithoutToken:
         deps.allowLegacyCheckoutWithoutToken ?? config.CHECKOUT_TOKEN_COMPATIBILITY,
@@ -309,6 +392,7 @@ export function createApp(deps: AppDeps = {}) {
     quotes, bookings, payments,
     linkSecret: bookingLinkSecret,
     checkoutNow: deps.checkoutNow,
+    opsUsers: deps.auth?.opsUsers ?? config.OPS_USERS,
   }));
   app.route('/errors/client', clientErrorRoutes({ alerts }));
   // Founder analytics (spec 2026-07-23): read-only quote aggregates, analytics:view-gated.
@@ -316,14 +400,21 @@ export function createApp(deps: AppDeps = {}) {
   app.route('/admin/ops/analytics', opsAnalyticsRoutes({ quotes, auth: opsAuthCfg }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists,
-    baseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    email, notificationLog, rideLists, quotes,
+    baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
   }));
   // Customer pay pages, served from the API host so a link minted against APP_BASE_URL
   // resolves even where no customer site is deployed (staging). BEFORE the share-card root
   // mount below, whose /:code route would otherwise match /pay.html and answer 404.
-  app.route('/', customerPagesRoutes());
+  // `quotes` + the link secret enable the per-token WhatsApp share card on pay.html; without
+  // them every pay link still serves, just with the generic Ceylon Hop card (spec 2026-08-02).
+  // The customer quote page's read endpoint. Public and token-keyed like /quote-pay, but it
+  // READS ONLY — no route in it can start a payment (spec D6).
+  app.route('/quote-view', quoteViewRoutes({
+    quotes, bookings, linkSecret: bookingLinkSecret, appBaseUrl: payBaseUrl, now: deps.now,
+  }));
+  app.route('/', customerPagesRoutes({ quotes, linkSecret: bookingLinkSecret, payBaseUrl, quoteBaseUrl }));
   // The ops shell is a ~190KB self-contained HTML app (ops dashboard + embedded quote view),
   // served at /ops and — as a bare-root alias so https://ops.ceylonhop.com serves the tool
   // directly, not only /ops — at "/". Same-origin, same ch_ops cookie (path '/'); the client
@@ -342,15 +433,13 @@ export function createApp(deps: AppDeps = {}) {
   // quote:manage (403) — a leaked cron key cannot see customer PII or issue quotes.
   // allowedOrigins: CSRF allow-list for the tool's mutation routes (T2), unchanged.
   app.route('/admin/quote', internalQuoteRoutes({
-    maps, quotes, zones, bookings,
+    maps, quotes, zones, bookings, placeResolutions,
     auth: opsAuthCfg,
     allowedOrigins,
     email,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
-    // PAY_BASE_URL first: the pay domain when one is configured, else the customer site as
-    // before. Only the pay/manage links move — emails and the PayHere return_url keep
-    // APP_BASE_URL, which is the whole reason this is a separate variable.
-    payBaseUrl: deps.payBaseUrl ?? (config.PAY_BASE_URL || undefined) ?? deps.bookingBaseUrl ?? config.APP_BASE_URL,
+    payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
+    quoteBaseUrl,
     linkSecret: bookingLinkSecret,
     payhereMode,
   }));
@@ -375,6 +464,11 @@ export function createApp(deps: AppDeps = {}) {
       rideLists,
       ridePaygw: paygw,
       refunds,
+      notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
+      notifyMaxTripAgeDays: deps.notifyMaxTripAgeDays ?? config.NOTIFY_MAX_TRIP_AGE_DAYS,
+      notifyEpoch: deps.notifyEpoch ?? (config.NOTIFY_EPOCH ? new Date(config.NOTIFY_EPOCH) : undefined),
+      // The gateway itself, so a refund can be issued through PayHere's API rather than by hand.
+      paymentAdapter: adapter,
       // Manual settlement (mark-paid) records the money in the payment ledger and its audit
       // note on the ride-ops row.
       payments,

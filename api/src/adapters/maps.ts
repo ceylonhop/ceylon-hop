@@ -41,6 +41,26 @@ export interface MapsAdapter {
   distanceVariants(from: string, to: string): Promise<RouteVariants | null>;
   // Place suggestions for autocomplete. At most 6 display-name strings; [] when none/unavailable.
   places(query: string): Promise<string[]>;
+  // Where a string might be. Used ONLY by the place resolver, to test a candidate against places
+  // already trusted — never to adopt a coordinate directly. null when nothing/unavailable.
+  //
+  // OPTIONAL: an adapter without it simply cannot auto-link, so every unknown string falls
+  // through to human confirmation. That is the fail-closed direction, and it keeps the many
+  // existing test stubs of this interface valid.
+  geocode?(query: string): Promise<GeocodedPoint | null>;
+  // Distinguishable candidates for the ops "Confirm location" panel: same shape as geocode(),
+  // but several, so a human can choose between two places that share a name.
+  placeCandidates?(query: string): Promise<GeocodedPoint[]>;
+}
+
+// A point the geocoder believes a string refers to. `area` is the administrative area (e.g.
+// "Southern Province") — the thing that actually distinguishes two places sharing a name, since
+// Google's own autocomplete renders both "Yala" and "Yala National Park" as plain "Sri Lanka".
+export interface GeocodedPoint {
+  lat: number;
+  lng: number;
+  displayName: string;
+  area: string | null;
 }
 
 // Shared fetch timeout for outbound Google Maps calls, so a slow/hanging upstream never
@@ -96,7 +116,32 @@ export const KNOWN_PLACES: string[] = [
 
 const norm = (s: string): string => s.trim().toLowerCase();
 
-function haversineKm(a: [number, number], b: [number, number]): number {
+// Place identity for catalog lookups. Google's autocomplete hands back descriptions
+// ("Yala, Sri Lanka"), while the catalog is keyed on the bare name ("Yala") — an exact
+// match therefore MISSED, the coords pin below never applied, and the bare string went to
+// Google's geocoder, which resolved "Yala" to a village near Horana instead of the national
+// park. That priced a leg at 78 km instead of ~286 and sent a quote out $90 under
+// (incident 2026-08-02). Strip the country suffix so both spellings are the same place.
+export function canonPlace(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*,\s*sri lanka\s*$/, '')
+    .trim();
+}
+
+// A road can never be shorter than the straight line between its endpoints, so for a pair of
+// KNOWN places we hold an independent lower bound on any answer Google gives. This is the
+// guard MAX_SL_ROAD_KM cannot be: that one rejects a geocode that landed in another country
+// (too long), while a geocode that lands in the wrong Sri Lankan town comes back too SHORT —
+// and short is the direction that silently undercharges. 0.95 absorbs the imprecision of the
+// single-point coordinates below; it is not a tuning knob for "roughly right" answers.
+const MIN_ROAD_TO_CROW = 0.95;
+
+// Exported for the place resolver, which measures a candidate geocode against already-trusted
+// points, and for the implausibly-short guard below.
+export function haversineKm(a: [number, number], b: [number, number]): number {
   const R = 6371;
   const toRad = (d: number): number => (d * Math.PI) / 180;
   const dLat = toRad(b[0] - a[0]);
@@ -109,7 +154,21 @@ function haversineKm(a: [number, number], b: [number, number]): number {
 
 // A place name → its exact SL coordinates, when it's one of our known places.
 function knownCoords(name: string): [number, number] | null {
-  return COORDS[norm(name)] ?? null;
+  return parseLatLng(name) ?? COORDS[canonPlace(name)] ?? null;
+}
+
+// A literal "lat,lng" is already a positively-identified point — that is how the place resolver
+// hands a confirmed place to this adapter. Recognising it here is what makes the pin AND the
+// implausibly-short floor guard apply to every resolved stop, not just to catalog towns: without
+// it, passing coordinates would sail past the very check they exist to enable.
+function parseLatLng(s: string): [number, number] | null {
+  const m = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/.exec(s);
+  if (!m) return null;
+  const lat = Number(m[1]);
+  const lng = Number(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return [lat, lng];
 }
 // Offline road-distance estimate (crow-flies × 1.35, ~42 km/h) — only when BOTH endpoints
 // are known places. Used by the fake adapter, and as the real adapter's fallback so a known
@@ -129,9 +188,22 @@ const FAKE_VARIANT_PAIRS: [string, string, DistanceResult, DistanceResult][] = [
   ['colombo airport (cmb)', 'galle', { km: 148, durationMin: 120 }, { km: 130, durationMin: 205 }],
 ];
 
+// A catalog place now reaches the adapters as its exact "lat,lng" (the place resolver hands
+// over coordinates, never a re-geocodable name). The dev/e2e variant table is keyed on names,
+// so map an exact catalog coordinate back to its key — otherwise keyless dev silently loses the
+// scripted route-choice pairs the moment resolution is switched on.
+function coordKey(s: string): string {
+  const p = parseLatLng(s);
+  if (!p) return canonPlace(s);
+  for (const [key, c] of Object.entries(COORDS)) {
+    if (c[0] === p[0] && c[1] === p[1]) return key;
+  }
+  return canonPlace(s);
+}
+
 function fakeVariantPair(from: string, to: string): RouteVariants | null {
-  const a = norm(from);
-  const b = norm(to);
+  const a = coordKey(from);
+  const b = coordKey(to);
   for (const [x, y, fastest, noTolls] of FAKE_VARIANT_PAIRS) {
     if ((a === x && b === y) || (a === y && b === x)) {
       // Same gate as the real adapter, so keyless dev never shows a fork prod would suppress.
@@ -161,6 +233,23 @@ export class FakeMapsAdapter implements MapsAdapter {
   async places(query: string): Promise<string[]> {
     const ql = query.toLowerCase();
     return KNOWN_PLACES.filter((p) => p.toLowerCase().includes(ql)).slice(0, 6);
+  }
+
+  // Keyless dev/test: only a catalog place has a coordinate. Anything else is genuinely
+  // unknown here, which is the honest answer — and it exercises the confirmation path.
+  async geocode(query: string): Promise<GeocodedPoint | null> {
+    const c = knownCoords(query);
+    return c ? { lat: c[0], lng: c[1], displayName: query.trim(), area: null } : null;
+  }
+
+  async placeCandidates(query: string): Promise<GeocodedPoint[]> {
+    const names = await this.places(query);
+    return names
+      .map((n): GeocodedPoint | null => {
+        const c = knownCoords(n);
+        return c ? { lat: c[0], lng: c[1], displayName: n, area: null } : null;
+      })
+      .filter((p): p is GeocodedPoint => p !== null);
   }
 }
 
@@ -247,6 +336,19 @@ export class GoogleMapsAdapter implements MapsAdapter {
       console.error(`[maps] implausible distance ${km} km for "${from}" → "${to}" — treating as unresolved (likely a bad geocode outside Sri Lanka)`);
       return null;
     }
+    // Too SHORT to be real (see MIN_ROAD_TO_CROW). Only checkable when both endpoints are
+    // known places, because only then do we have coordinates Google didn't give us. Returning
+    // null hands the caller the offline estimate flagged `estimated`, so pricing declines to
+    // charge on it rather than quietly billing a wrong-town distance.
+    if (o && d) {
+      const crowKm = haversineKm(o, d);
+      if (km < crowKm * MIN_ROAD_TO_CROW) {
+        console.error(
+          `[maps] implausibly short distance ${km} km for "${from}" → "${to}" — below the ${Math.round(crowKm)} km straight line between them; treating as unresolved (likely a bad geocode inside Sri Lanka)`,
+        );
+        return null;
+      }
+    }
     return { km, durationMin: Math.round(el.duration.value / 60) };
   }
 
@@ -286,5 +388,61 @@ export class GoogleMapsAdapter implements MapsAdapter {
     const out = (data.predictions || []).slice(0, 6).map((p) => p.description);
     if (out.length) return out;
     return offlineFallback();
+  }
+
+  // Geocoding, used ONLY to test a string against places already trusted (see PlaceResolver).
+  // A catalog place short-circuits: we already hold its verified coordinate, and asking Google
+  // for one we have is both a wasted call and a chance to drift.
+  async geocode(query: string): Promise<GeocodedPoint | null> {
+    const known = knownCoords(query);
+    if (known) return { lat: known[0], lng: known[1], displayName: query.trim(), area: null };
+    const results = await this.geocodeAll(query);
+    return results[0] ?? null;
+  }
+
+  async placeCandidates(query: string): Promise<GeocodedPoint[]> {
+    return (await this.geocodeAll(query)).slice(0, 6);
+  }
+
+  private async geocodeAll(query: string): Promise<GeocodedPoint[]> {
+    const url =
+      'https://maps.googleapis.com/maps/api/geocode/json' +
+      `?address=${encodeURIComponent(query)}&region=lk&components=country:LK&key=${this.apiKey}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } catch {
+      console.error('[maps] geocode error: fetch failed or timed out');
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res.ok) {
+      console.error(`[maps] geocode error: HTTP ${res.status}`);
+      return [];
+    }
+    const data = (await res.json()) as {
+      status?: string;
+      results?: {
+        formatted_address?: string;
+        geometry?: { location?: { lat: number; lng: number } };
+        address_components?: { long_name: string; types: string[] }[];
+      }[];
+    };
+    if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error('[maps] geocode error: ' + data.status);
+      return [];
+    }
+    return (data.results || [])
+      .map((r): GeocodedPoint | null => {
+        const loc = r.geometry?.location;
+        if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return null;
+        const area =
+          r.address_components?.find((c) => c.types.includes('administrative_area_level_1'))?.long_name ?? null;
+        return { lat: loc.lat, lng: loc.lng, displayName: r.formatted_address || query.trim(), area };
+      })
+      .filter((p): p is GeocodedPoint => p !== null);
   }
 }

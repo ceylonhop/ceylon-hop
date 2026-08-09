@@ -211,6 +211,97 @@
       "when": 1785373428921,
       "tag": "0029_widen_payment_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0030_billing_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785603600000,
+      "tag": "0031_terms_accepted",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0032_customer_person_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785740000000,
+      "tag": "0033_billing_postcode",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785826400000,
+      "tag": "0034_place_resolutions",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785912800000,
+      "tag": "0035_cancellation_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1785999200000,
+      "tag": "0036_billing_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786085600000,
+      "tag": "0037_refund_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1786172000000,
+      "tag": "0038_pay_link_selection",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1786258400000,
+      "tag": "0039_customer_total_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1786344800000,
+      "tag": "0040_quote_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1786431200000,
+      "tag": "0041_quote_offer_validity",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786517600000,
+      "tag": "0042_booking_legs",
+      "breakpoints": true
     }
   ]
 }

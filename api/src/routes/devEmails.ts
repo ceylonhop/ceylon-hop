@@ -35,6 +35,8 @@ interface EmailDef {
 
 const EMAILS: EmailDef[] = [
   { name: 'confirmation', label: 'Booking confirmation', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage }) },
+  // Partial pay link variant (spec 2026-08-04): the coverage sentence above the itinerary.
+  { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 } }) },
   { name: 'details-needed', label: 'Awaiting details', run: (b, e) => sendDetailsNeeded(b, e, { manage: LINKS.manage }) },
   { name: 'booking-confirmed', label: 'Booking confirmed', run: (b, e) => sendBookingConfirmed(b, e, { manage: LINKS.manage }) },
   { name: 'cancellation', label: 'Cancellation', run: (b, e) => sendCancellationConfirmation(b, e) },

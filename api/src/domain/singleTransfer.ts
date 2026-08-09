@@ -13,7 +13,12 @@ const optionalPhonePart = z.preprocess(
 // The lead traveller — we send confirmation here and contact them about the booking.
 export const CustomerInput = z.object({
   firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  // Optional since 2026-08-08. A phone-only quote renders this box EMPTY, and requiring it meant
+  // the operator previewing a pay link had to fill something to continue — so Chrome's autofill
+  // filled it, and four live bookings were recorded under the owner's surname. The ops quote form
+  // has always treated it as optional; these two ends now agree. PayHere already tolerates it
+  // (`last_name: c?.lastName ?? '-'`), and names render as [first,last].filter(Boolean).
+  lastName: z.string().optional(),
   email: z.string().email(),
   phoneCountryCode: optionalPhonePart,
   phoneNumber: optionalPhonePart,
@@ -23,6 +28,26 @@ export const CustomerInput = z.object({
 });
 
 export type CustomerInput = z.infer<typeof CustomerInput>;
+
+// Billing details for the card, collected on the pay page (2026-08-01). Distinct from the
+// CustomerInput above, which is the LEAD PASSENGER — who is travelling and who we contact.
+// The cardholder name is optional: it is sent only when the payer ticked "billing details are
+// different from the lead passenger", and otherwise the lead passenger's name is used.
+// address/city/country are required whenever billing is sent at all — the whole point is to
+// stop the adapter fabricating them for the payment gateway.
+export const BillingInput = z.object({
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
+  address: z.string().min(1),
+  city: z.string().min(1),
+  // Optional so a cached older page keeps working; the form requires it client-side.
+  postcode: z.string().min(1).optional(),
+  // Optional in every sense: most countries have no state, and no payer is blocked on it.
+  state: z.string().min(1).optional(),
+  country: z.string().min(1),
+});
+
+export type BillingInput = z.infer<typeof BillingInput>;
 
 // The total the customer was quoted on the site, in minor units (cents). The booking
 // records THIS — the price they agreed to — instead of a recomputed server stub, so the

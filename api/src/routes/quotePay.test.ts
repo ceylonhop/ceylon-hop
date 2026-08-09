@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { quote as priceQuote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import { payLines, selectionAmountCents } from '../quote/paySelection';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
@@ -18,11 +21,11 @@ const createApp = (deps: AppDeps = {}): App =>
 
 const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
 
-async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number } = {}) {
+async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number; contact?: string } = {}) {
   const product = opts.product ?? 'private';
   const legs = opts.legs ?? [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 120, date: '2026-09-01', category: 'transfer' }];
   const q = await quotes.save({
-    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: '+94 77 000 1111',
+    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: opts.contact ?? '+94 77 000 1111',
     totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
     marginCents: opts.marginCents ?? 4300,
     request: {
@@ -41,10 +44,16 @@ async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private'
 }
 
 const view = (app: App, t: string) => app.request(`/quotes/pay/view?t=${encodeURIComponent(t)}`);
-const start = (app: App, t: string, customer = CUSTOMER) =>
+const start = (app: App, t: string, customer = CUSTOMER, billing?: Record<string, string>) =>
   app.request('/quotes/pay/start', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ t, customer }),
+    body: JSON.stringify(billing ? { t, customer, billing, termsAccepted: true } : { t, customer, termsAccepted: true }),
+  });
+
+// Raw poster for the terms gate — `start` always accepts, which is the point of these.
+const startRaw = (app: App, body: unknown) =>
+  app.request('/quotes/pay/start', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
   });
 
 describe('GET /quotes/pay/view — state derivation and the wire', () => {
@@ -89,6 +98,180 @@ describe('GET /quotes/pay/view — state derivation and the wire', () => {
     expect(body.copy.product).toBe('chauffeur');
     expect(body.copy.title).toBe('Six days across Sri Lanka');
     expect(body.copy.facts.map((f: { k: string }) => f.k)).toEqual(['Trip', 'Days', 'Travellers', 'Starts']);
+  });
+
+  // Billing details (owner, 2026-08-01). The gateway used to be handed a hardcoded
+  // `address: 'N/A', city: 'Colombo'` — fabricated billing data on a live card charge, and a
+  // plausible AVS decline on foreign-issued cards. These pin the whole path: form → /start →
+  // booking columns → checkout payload.
+  it('start stores the billing details on the booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands',
+    });
+    expect(res.status).toBe(201);
+    const booking = await bookings.get((await res.json()).bookingId);
+    expect(booking?.billing).toEqual({ address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands' });
+  });
+
+  it('start keeps the cardholder name when billing differs from the lead passenger', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      firstName: 'Anja', lastName: 'de Vries', address: 'Keizersgracht 1', city: 'Amsterdam', country: 'Netherlands',
+    });
+    const booking = await bookings.get((await res.json()).bookingId);
+    // The traveller is unchanged — billing is a property of the transaction, not the person.
+    expect(booking?.billing?.firstName).toBe('Anja');
+    expect(booking?.input.customer.firstName).toBe('Nimal');
+  });
+
+  it('start refuses a half-filled billing object rather than passing it to the gateway', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET), CUSTOMER, {
+      address: 'Prinsengracht 263',
+    } as never);
+    expect(res.status).toBe(400);
+  });
+
+  // OWNER-HIT IN PROD, 2026-08-02. Q-2J358 pointed at a CANCELLED booking, /start kept handing
+  // that booking back, /bookings/:id/checkout correctly refused it (409 not_chargeable), and the
+  // PayHere window never opened — the customer only saw "we couldn't start your payment".
+  // Permanently: the resume consults convertedBookingId BEFORE the revision-scoped key, so even
+  // a new quote revision returned the same dead booking.
+  it('a CANCELLED booking must not brick the quote — start mints a fresh one', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const first = (await (await start(app, token)).json()).bookingId;
+    await bookings.setStatus(first, 'cancelled');
+
+    const second = (await (await start(app, token)).json()).bookingId;
+    expect(second).not.toBe(first);                                   // not the dead one
+    const fresh = await bookings.get(second);
+    expect(fresh?.status).toBe('payment_pending');                    // chargeable again
+    // …and the quote now points at the live booking, not the corpse.
+    expect((await quotes.get(q.id))?.convertedBookingId).toBe(second);
+  });
+
+  it('a double tap after a cancellation still yields ONE booking, not two', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    await bookings.setStatus((await (await start(app, token)).json()).bookingId, 'cancelled');
+    const [a, b] = await Promise.all([start(app, token), start(app, token)]);
+    expect((await a.json()).bookingId).toBe((await b.json()).bookingId);
+  });
+
+  it('a PAYMENT_PENDING booking is still resumed, not duplicated', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    const first = (await (await start(app, token)).json()).bookingId;
+    expect((await (await start(app, token)).json()).bookingId).toBe(first);
+  });
+
+  // A resumed booking used to keep the payer captured on the FIRST attempt forever. Everything
+  // the gateway sees is read from the booking row, so a payer who mistyped their address, was
+  // declined, and corrected it was re-sent the bad address — and since those fields feed the
+  // issuer's 3DS risk decision, the retry was arguably worse off than the original attempt.
+  it('resuming re-records the payer, so a corrected address is the one that gets charged', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const typo = { address: '1 A St', city: 'Colombo', country: 'Sri Lanka' };
+    const first = (await (await start(app, token, CUSTOMER, typo)).json()).bookingId;
+
+    const fixed = { address: '31 River Court, Apt 105', city: 'Jersey City', country: 'United States', postcode: '07310' };
+    const corrected = { ...CUSTOMER, firstName: 'Roshen', lastName: 'Weliwatta', email: 'roshen@x.com' };
+    const again = (await (await start(app, token, corrected, fixed)).json()).bookingId;
+
+    expect(again).toBe(first); // still one booking — this is a resume, not a duplicate
+    const b = await bookings.get(first);
+    expect(b?.billing).toMatchObject(fixed);
+    expect(b?.input.customer).toMatchObject({ firstName: 'Roshen', lastName: 'Weliwatta', email: 'roshen@x.com' });
+  });
+
+  // The acceptance must belong to whoever is actually paying. This bit REAL MONEY on 2026-08-02:
+  // a stray /start created the booking, the owner then paid the link, and the row kept the first
+  // submitter's identity AND their terms timestamp — so the one field whose entire purpose is
+  // evidence of who agreed described a different person than the one who was charged.
+  it('resuming re-records the terms acceptance, not just the payer', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+
+    const id = (await (await start(app, token)).json()).bookingId;
+    const firstAccepted = (await bookings.get(id))?.termsAcceptedAt;
+    expect(firstAccepted).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 5)); // so a NEW timestamp is distinguishable
+    await start(app, token, { ...CUSTOMER, email: 'someone-else@x.com' });
+
+    const after = await bookings.get(id);
+    expect(after?.input.customer.email).toBe('someone-else@x.com');
+    expect(after?.termsAcceptedAt).not.toBe(firstAccepted);
+    expect(Date.parse(String(after?.termsAcceptedAt))).toBeGreaterThan(Date.parse(String(firstAccepted)));
+  });
+
+  it('a resume with no billing keeps what was already captured rather than blanking it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes, bookings });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    const billing = { address: 'Prinsengracht 263', city: 'Amsterdam', country: 'Netherlands' };
+    const id = (await (await start(app, token, CUSTOMER, billing)).json()).bookingId;
+    await start(app, token); // no billing this time
+    expect((await bookings.get(id))?.billing).toMatchObject(billing);
+  });
+
+  it('start still works with no billing at all — an older cached page must not break', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    expect(res.status).toBe(201);
+    expect((await bookings.get((await res.json()).bookingId))?.billing).toBeNull();
+  });
+
+  // Terms + cancellation (owner, 2026-08-01). The pay-link path had NO terms step at all: a
+  // customer could pay for a chauffeur trip without being shown that cancelling 9 days out
+  // caps their refund at 80%. booking.html's checkbox is client-side only and records nothing,
+  // so a refund dispute had no evidence either way — hence a server gate AND a timestamp.
+  it('start refuses without an explicit terms acceptance', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const app = createApp({ quotes });
+    const token = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await startRaw(app, { t: token, customer: CUSTOMER })).status).toBe(400);
+    expect((await startRaw(app, { t: token, customer: CUSTOMER, termsAccepted: false })).status).toBe(400);
+  });
+
+  it('start records WHEN the terms were accepted, not merely that they were', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(createApp({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    const booking = await bookings.get((await res.json()).bookingId);
+    expect(booking?.termsAcceptedAt).toBeTruthy();
+    expect(new Date(booking!.termsAcceptedAt!).getTime()).toBeGreaterThan(0);
   });
 
   it('revised: a stale revision renders the safe state, no quote details', async () => {
@@ -263,5 +446,190 @@ describe('mint → view round trip', () => {
     const { url } = await mint.json();
     const t = new URL(url, 'http://x').searchParams.get('t')!;
     expect((await (await view(app, t)).json()).state).toBe('payable');
+  });
+});
+
+// ── Partial-leg links (spec 2026-08-04) ────────────────────────────────────────────────
+const ENGINE3 = {
+  product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
+  legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 },
+  ],
+};
+
+// A REAL priced 3-leg quote plus a stored selection, minted through the repo the way the mint
+// route does. payLines reads result.lineItems, so a hand-written result would test nothing.
+async function partialQuote(
+  quotes: InMemoryQuoteRepo,
+  sel: { legIndexes: number[]; extraIndexes: number[] },
+  seq = 1,
+) {
+  const result = priceQuote(ENGINE3, RATE_CARD);
+  const q = await quotes.save({
+    channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+    customerContact: 'nimal@x.com', totalCents: result.totalCents, currency: 'USD',
+    rateCardVersion: RATE_CARD.version, result,
+    request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine: ENGINE3 },
+  });
+  await quotes.patch(q.id, { status: 'pending_review' });
+  await quotes.patch(q.id, { status: 'ready' });
+  const soldCents = selectionAmountCents(payLines(q), sel);
+  const saved = (await quotes.patch(q.id, { payLinkSelection: sel, soldCents, payLinkSeq: seq }))!;
+  return { quote: saved, soldCents, token: signQuotePayToken(saved.id, saved.revision, SECRET, seq) };
+}
+
+describe('GET /quotes/pay/view for a partial link', () => {
+  it('shows the picked lines, the coverage and the sold total', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, soldCents, quote: q } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const body = await (await view(createApp({ quotes }), token)).json();
+    expect(body.state).toBe('payable');
+    expect(body.totals.cents).toBe(soldCents);
+    expect(body.totals.cents).toBeLessThan(q.totalCents);
+    expect(body.coverage).toEqual({ soldLegs: 2, totalLegs: 3 });
+    expect(body.lines).toHaveLength(2);
+    expect(body.lines[0].label).toContain('Colombo');
+    // Hand-picked projection: label + amount only, never the internal kind/index.
+    expect(Object.keys(body.lines[0]).sort()).toEqual(['amountCents', 'label']);
+  });
+
+  it('leaks no margin, hot-zone or rate-card data', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const raw = await (await view(createApp({ quotes }), token)).text();
+    expect(raw).not.toMatch(/margin|hotZone|rateCardJson/i);
+  });
+
+  it('a link whose seq is stale renders revised, and cannot be started', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, quote: q } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] }, 1);
+    const app = createApp({ quotes, bookings: new InMemoryBookingRepo() });
+    // Ops re-picks: seq moves to 2, the customer is still holding the seq-1 link.
+    await quotes.patch(q.id, { payLinkSelection: { legIndexes: [1], extraIndexes: [] }, soldCents: 1000, payLinkSeq: 2 });
+    expect((await (await view(app, token)).json()).state).toBe('revised');
+    const res = await start(app, token);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_revised');
+  });
+
+  it('a full-quote link is unchanged — no lines, no coverage', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.state).toBe('payable');
+    expect(body.lines).toBeUndefined();
+    expect(body.coverage).toBeUndefined();
+    expect(body.totals.cents).toBe(q.totalCents);
+  });
+});
+
+describe('POST /quotes/pay/start for a partial link', () => {
+  it('creates a booking over the sold legs, at the sold amount', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const { token, soldCents } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const res = await start(createApp({ quotes, bookings }), token);
+    expect(res.status).toBe(201);
+    const booking = (await bookings.get((await res.json()).bookingId))!;
+    expect(booking.total).toBe(soldCents);
+    expect(booking.amountDueNow).toBe(soldCents);
+    expect(booking.mode).toBe('trip');
+    if (booking.mode === 'trip') expect(booking.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+  });
+
+  // THE bug this task exists to prevent (spec §9). Selection A leaves a payment_pending booking
+  // AND stamps convertedBookingId; ops re-picks; the new link must not resume A's booking and
+  // charge A's amount.
+  it('does not resume a booking minted under a different selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const a = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    const first = await (await start(app, a.token)).json();
+
+    // Ops re-picks — one cheaper leg — and sends the new link.
+    const q = (await quotes.get(a.quote.id))!;
+    const selB = { legIndexes: [2], extraIndexes: [] };
+    const soldB = selectionAmountCents(payLines(q), selB);
+    await quotes.patch(q.id, { payLinkSelection: selB, soldCents: soldB, payLinkSeq: 2 });
+    const tokenB = signQuotePayToken(q.id, q.revision, SECRET, 2);
+
+    const second = await (await start(app, tokenB)).json();
+    expect(second.bookingId).not.toBe(first.bookingId);
+    const b = (await bookings.get(second.bookingId))!;
+    expect(b.total).toBe(soldB);
+    expect(b.total).not.toBe(a.soldCents);
+    if (b.mode === 'single') expect(b.input.from).toBe('Ella');
+  });
+
+  it('a double tap on the SAME link still yields one booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const a = await (await start(app, token)).json();
+    const b = await (await start(app, token)).json();
+    expect(b.bookingId).toBe(a.bookingId);
+  });
+});
+
+// Four live bookings were recorded under the owner's name because a pay link was opened in a
+// staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
+describe('a visitor cannot become the customer', () => {
+  const staffAuth = { opsUsers: 'f@x.com:founder,roshen@ceylonhop.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+  const appWithStaff = (deps: AppDeps = {}) =>
+    realCreateApp({ auth: staffAuth, adminApiKey: 'k', bookingLinkSecret: SECRET, ...deps });
+
+  it('refuses a staff email on someone else’s quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes); // contact is the customer's phone
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('staff_email_not_customer');
+    // …and nothing was created in their name.
+    expect((await quotes.get(q.id))!.convertedBookingId).toBeNull();
+  });
+
+  it('lets a staff member pay their OWN quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    // Built with the staff address as the quote's OWN contact. It cannot be set afterwards:
+    // customerContact is not patchable, and the in-memory get() returns a copy.
+    const q = await readyQuote(quotes, { contact: 'roshen@ceylonhop.com' });
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('leaves an ordinary customer completely alone', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    expect(res.status).toBe(201);
+  });
+
+  it('accepts a customer who gives no surname — the box that invited the autofill', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    // Built explicitly rather than destructured — a discarded `lastName` binding is an
+    // unused-var lint error, and this states the point of the test more plainly anyway.
+    const noSurname = {
+      firstName: CUSTOMER.firstName, email: CUSTOMER.email,
+      whatsapp: CUSTOMER.whatsapp, country: CUSTOMER.country,
+    };
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), noSurname as never);
+    expect(res.status).toBe(201);
   });
 });

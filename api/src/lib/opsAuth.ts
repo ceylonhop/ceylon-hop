@@ -3,12 +3,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'margin:view' | 'bookings:operate'
-  | 'bookings:read' | 'payments:act' | 'admin:jobs' | 'analytics:view';
+  | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view';
 
 // The capability matrix as data (spec §3). Adding a capability is one row here.
 // quote:approve — the maker-checker gate: only the founder can mark a quote ready to send.
+// payments:reverse — UNDOING a sale: cancelling a booking or refunding money. Founder only
+// (owner, 2026-08-02). Split out of payments:act deliberately: finance still needs to RECORD
+// money (mark-paid) and read refund history, but calling a customer's trip off and giving
+// their money back are the two actions that cannot be undone by anyone else.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'admin:jobs', 'analytics:view']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
   ops: new Set(['quote:manage', 'bookings:operate', 'bookings:read']),
   system: new Set(['admin:jobs']),
@@ -17,6 +21,17 @@ const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
 export function can(role: OpsRole, action: OpsAction): boolean {
   return CAPABILITIES[role]?.has(action) ?? false;
 }
+
+// Every action the matrix grants to somebody — DERIVED from it, never hand-listed. /admin/ops/whoami
+// filters this by role to tell the client what it may offer, and ops-ui.html gates its actions on the
+// resulting strings (refund confirm/cancel read caps.includes('payments:reverse')). A hand-maintained
+// copy of this list is a silent-failure machine: omitting an action there does not fail a request or
+// a type check, it just makes the client hide a button from the role that holds it. That is precisely
+// what happened to payments:reverse — dead refund confirmation for the founder, the only role with it.
+// Deriving it means adding a capability to the matrix above is the whole change, as it should be.
+export const ALL_OPS_ACTIONS: readonly OpsAction[] = [
+  ...new Set(Object.values(CAPABILITIES).flatMap((actions) => [...actions])),
+];
 
 const ROLE_VALUES: ReadonlySet<string> = new Set(['founder', 'finance', 'ops']);
 
