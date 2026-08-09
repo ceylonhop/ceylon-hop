@@ -14,6 +14,8 @@ import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
 import type { NewBooking } from './bookingRepo';
 import { PostgresQuoteConversionRepo } from './postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './postgresRefundRepo';
+import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
+import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
 import { bookings as bookingRows } from './schema';
 import { eq } from 'drizzle-orm';
@@ -929,5 +931,22 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
     const listed = await quotes.list({});
     expect(listed.find((r) => r.id === saved.id)?.routeText).toBe('Colombo · Kandy · Ella');
+  });
+});
+
+// The same contract the in-memory fake satisfies, run against the real database — so the fake can
+// never drift into accepting states Postgres refuses (partial unique index, CHECK constraints).
+describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
+  const conn = () => createDb(TEST_URL as string);
+  quoteDiscountRepoContract('contract', async () => {
+    const { db } = conn();
+    const quotes = new PostgresQuoteRepo(db);
+    const q = await quotes.save({
+      product: 'private', vehicle: 'car', customerName: 'Discount Fixture', customerContact: '+94',
+      totalCents: 20000, currency: 'USD', rateCardVersion: '2026-07-14',
+      request: { product: 'private', legs: [{ from: 'A', to: 'B', distanceKm: 80 }] },
+      result: { totalCents: 20000, lineItems: [] },
+    });
+    return { repo: new PostgresQuoteDiscountRepo(db), quoteId: q.id };
   });
 });
