@@ -302,6 +302,13 @@
       "when": 1786517600000,
       "tag": "0042_booking_legs",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786604000000,
+      "tag": "0043_payment_settled_by",
+      "breakpoints": true
     }
   ]
 }

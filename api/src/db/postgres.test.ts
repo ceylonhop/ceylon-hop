@@ -622,7 +622,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       idempotencyKey: `manual-paid:${booking.id}`,
     });
     // Unique per run: (provider, gateway_payment_id) is UNIQUE, and the test DB persists.
-    await payments.markSucceededManually(cash.id, { reference: `slip-${booking.id}` });
+    await payments.markSucceededManually(cash.id, { reference: `slip-${booking.id}`, settledBy: 'finance@x.com' });
     await bookings.setStatus(booking.id, 'paid');
 
     const outcome = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent({
