@@ -30,15 +30,12 @@ import {
   NotLineablePriceError,
   type PaySelection,
 } from '../quote/paySelection';
-import { signQuotePayToken } from '../lib/bookingToken';
-
-// Design leg categories. `drives` = the vehicle moves that day (km-priced); stay_day is idle.
-const CATEGORIES: Record<string, { drives: boolean }> = {
-  transfer: { drives: true },
-  airport: { drives: true },
-  train_support: { drives: true },
-  stay_day: { drives: false },
-};
+import { changedFields } from '../quote/quoteDiff';
+import { shortenRouteLabel, shortPlace } from '../quote/shortPlace';
+import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
+// CATEGORIES/drives moved to quote/legCategory.ts so quoteView.ts shares one definition —
+// a second copy here is how the customer page and the ops chooser drift on which legs drive.
+import { drives } from '../quote/legCategory';
 
 // Tool vehicle tiers → engine vehicle class. All tiers now have rates.
 const VEHICLE_MAP: Record<string, Vehicle | null> = {
@@ -269,9 +266,6 @@ const toLkr = (cents: number): number => Math.round((cents * fxRate) / 100);
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 const lkr = (cents: number): string => `LKR ${toLkr(cents).toLocaleString('en-US')}`;
 
-function drives(l: ToolLeg): boolean {
-  return CATEGORIES[l.category || 'transfer']?.drives ?? true;
-}
 function isChauffeur(legs: ToolLeg[]): boolean {
   return legs.some((l) => (l.category || 'transfer') === 'stay_day');
 }
@@ -376,6 +370,22 @@ function stripZoneMeta(meta: Record<string, unknown> | undefined): Record<string
   return Object.keys(rest).length ? rest : undefined;
 }
 
+// Short labels for the places in a tool payload, keyed by the raw string (2026-08-06).
+//
+// The ops builder composes the customer message from its own UNSAVED state, so a few rows (a
+// chauffeur "Stay in …") have no engine line item to read a label off. Rather than let the client
+// keep its own copy of the shortening rule — which is how ops, the pay page and emails drift
+// apart — the server hands over the answers and the client looks them up.
+function displayPlacesFor(toolLegs: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!Array.isArray(toolLegs)) return out;
+  for (const leg of toolLegs as { from?: string; to?: string; stops?: string[] }[]) {
+    const places = Array.isArray(leg?.stops) && leg.stops.length ? leg.stops : [leg?.from, leg?.to];
+    for (const p of places) if (typeof p === 'string' && p.trim()) out[p] = shortPlace(p);
+  }
+  return out;
+}
+
 function shape(result: QuoteResult, canMargin: boolean) {
   const base = {
     product: result.product,
@@ -385,7 +395,11 @@ function shape(result: QuoteResult, canMargin: boolean) {
     warnings: result.warnings,
     // meta passes through so the client can zip travel-leg items (meta.billableKm) with the itinerary.
     // The founder-only zone annotation is stripped for non-margin:view roles (D9).
-    lineItems: result.lineItems.map((li) => ({ label: li.label, amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
+    // `displayLabel` is the ONE place a route row gets shortened (2026-08-06). Clients render
+    // what they are given rather than each keeping a copy of the rule — ops-ui had one, and
+    // manage.html and the drawer were about to grow two more. `label` stays exact for search,
+    // tooltips and anything that needs the address as stored.
+    lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
   if (!canMargin) return base;
   return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
@@ -446,7 +460,7 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData }) | null {
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -471,6 +485,7 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date): (ReturnTy
       ...base,
       breakdown: quoteBreakdown(engineReq, rateCard),
       services: serviceChooserData(toolReq, rateCard, selected, result),
+      displayPlaces: displayPlacesFor(toolReq.legs),
     };
   } catch {
     return null;
@@ -551,6 +566,9 @@ export function internalQuoteRoutes(deps: {
   // link secret that signs it, and which PayHere mode the server is running — surfaced so
   // the ops UI can label a sandbox link instead of letting it pass for a live one.
   payBaseUrl?: string;
+  // Customer quote links (spec 2026-08-05): the public site origin the link points at. Falls
+  // back to payBaseUrl (see app.ts) so dev/staging keep working with one host.
+  quoteBaseUrl?: string;
   linkSecret?: string;
   payhereMode?: string;
   // Positive location identification (spec 2026-08-02). Optional: with no repo injected there
@@ -700,6 +718,7 @@ export function internalQuoteRoutes(deps: {
         fxUsdToLkr: fxRate,
         breakdown: quoteBreakdown(req, card),
         services,
+        displayPlaces: displayPlacesFor(body.legs),
       });
     } catch (e) {
       if (e instanceof PriceError) return c.json({ error: e.message }, e.status);
@@ -1017,11 +1036,28 @@ export function internalQuoteRoutes(deps: {
     const changed =
       JSON.stringify(normalizeSel(quote.payLinkSelection)) !== JSON.stringify(selection);
     const seq = changed ? quote.payLinkSeq + 1 : quote.payLinkSeq;
-    if (changed) {
+
+    // Price-drift baseline (spec 2026-08-05 §9). Minting a link is a customer-facing moment — for
+    // many quotes the ONLY one, since a link can go out without Mark sent ever being pressed. It
+    // records the quote TOTAL, deliberately NOT `amountCents`: a partial link charges less than
+    // the total by design, and storing that would leave the indicator permanently lit on this
+    // quote. The charged amount is persisted as soldCents just above.
+    const customerTotal =
+      quote.customerTotalCents !== quote.totalCents
+        ? { cents: quote.totalCents, at: new Date(), via: 'pay_link' as const }
+        : undefined;
+
+    // `seq` is untouched by the stamp — bumping it would retire the link being minted.
+    if (changed || customerTotal) {
       await deps.quotes.patch(quote.id, {
-        payLinkSelection: selection,
-        soldCents: selection ? amountCents : null,
-        payLinkSeq: seq,
+        ...(changed
+          ? {
+              payLinkSelection: selection,
+              soldCents: selection ? amountCents : null,
+              payLinkSeq: seq,
+            }
+          : {}),
+        ...(customerTotal ? { customerTotal } : {}),
       });
     }
 
@@ -1033,6 +1069,61 @@ export function internalQuoteRoutes(deps: {
       payhereMode: deps.payhereMode ?? 'off',
       amountCents,
       coverage,
+    });
+  });
+
+  // The customer quote link (spec 2026-08-05). Same gate as the pay link — an approved quote —
+  // but it mints no state: the token pins nothing, so pressing this twice is byte-identical and
+  // ops can re-paste the link into the thread instead of making the customer scroll.
+  r.post('/:id/quote-link', csrf, async (c) => {
+    const quote = await deps.quotes.get(c.req.param('id'));
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    if (quote.channel !== 'ops' || (quote.status !== 'ready' && quote.status !== 'sent')) {
+      return c.json({ error: 'not_linkable', status: quote.status }, 409);
+    }
+    const base = deps.quoteBaseUrl || deps.payBaseUrl;
+    if (!deps.linkSecret || !base) return c.json({ error: 'quote_links_unavailable' }, 503);
+
+    // Same price-drift baseline the pay link stamps, for the same reason: minting is a
+    // customer-facing moment, and with a FOLLOWING link the number can move under a customer
+    // who has already looked.
+    if (quote.customerTotalCents !== quote.totalCents) {
+      await deps.quotes.patch(quote.id, {
+        customerTotal: { cents: quote.totalCents, at: new Date(), via: 'quote_link' as const },
+      });
+    }
+    return c.json({ url: `${base.replace(/\/$/, '')}/q?t=${signQuoteViewToken(quote.id, deps.linkSecret)}` });
+  });
+
+  // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as
+  // editing the quote, deliberately NOT founder-only: this response carries no margin, and ops
+  // are the people making the edits, so ops are the people who need to see what an edit did.
+  r.get('/:id/revisions', async (c) => {
+    const id = c.req.param('id');
+    const quote = await deps.quotes.get(id);
+    if (!quote) return c.json({ error: 'not_found' }, 404);
+    const history = await deps.quotes.listRevisions(id); // newest first
+
+    // Each entry is compared against the version that SUPERSEDED it. For the newest entry that
+    // successor is the CURRENT quote row — history holds only superseded states, so without this
+    // cross-table read the top (and most interesting) entry would come back with nothing changed.
+    const successors = [
+      { request: quote.request, totalCents: quote.totalCents },
+      ...history.map((h) => ({ request: h.request, totalCents: h.totalCents })),
+    ];
+
+    return c.json({
+      // Hand-picked projection: request/result never reach the wire — they carry margin and
+      // hot-zone annotations, exactly as the stored quote does.
+      revisions: history.map((h, i) => ({
+        revision: h.revision,
+        totalCents: h.totalCents,
+        currency: h.currency,
+        status: h.status,
+        updatedBy: h.updatedBy,
+        createdAt: h.createdAt,
+        changed: changedFields({ request: h.request, totalCents: h.totalCents }, successors[i]),
+      })),
     });
   });
 
@@ -1180,6 +1271,7 @@ export function internalQuoteRoutes(deps: {
     // Rate-lock (spec 2026-07-11 §3): approval freezes the card the customer will be quoted from;
     // reopening a locked (`ready`) quote back to an editable state drops to the live card again.
     let rateLock: QuotePatch['rateLock'] = undefined;
+    let offerValidUntil: Date | undefined;
     // Read the pre-patch row once when either path needs it: the status gate below, and the
     // notification's "did the assignee actually change?" test (re-assigning to the same person
     // is not news, so it must not re-mail them).
@@ -1231,6 +1323,11 @@ export function internalQuoteRoutes(deps: {
         // later zone edit (or deactivation) must never re-price this approved quote — it keeps the
         // zones it was locked with. lockedEstimate() reads hotZones straight back out of the snapshot.
         rateLock = { rateCardJson: await liveCard(), rateLockedUntil: null };
+        // Offer validity (spec D9): the price is honoured for 7 days from approval. Re-approving
+        // resets it, so the fix for a lapsed quote is the thing ops was going to do anyway.
+        // Deliberately NOT rateLockedUntil, which stays null for ops quotes — that is precisely
+        // why this field exists.
+        offerValidUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000);
       } else if ((current.status === 'ready' || current.status === 'sent' || current.status === 'expired') && EDITABLE.includes(to)) {
         // Reopen-to-edit (from ready, sent, OR expired) unlocks; sending keeps the lock.
         // 'expired' matters most here: a quote can now sit closed for months before someone
@@ -1261,6 +1358,14 @@ export function internalQuoteRoutes(deps: {
         }
       }
     }
+    // Price-drift baseline (spec 2026-08-05 §9). Sending a quote IS the moment a customer is
+    // quoted a number, so record the total as it stands right now. Read from the STORED row, never
+    // the body — only POST /save writes pricing, so a body value here would be a hole.
+    const customerTotal: QuotePatch['customerTotal'] =
+      body.status === 'sent' && current
+        ? { cents: current.totalCents, at: new Date(), via: 'sent' as const }
+        : undefined;
+
     const updated = await deps.quotes.patch(c.req.param('id'), {
       status: body.status as QuoteStatus | undefined,
       lostReason: body.lostReason,
@@ -1269,6 +1374,8 @@ export function internalQuoteRoutes(deps: {
       rateLock,
       assignedTo,
       updatedBy: c.get('identity').email,
+      customerTotal,
+      offerValidUntil,
     });
     if (!updated) return c.json({ error: 'not_found' }, 404);
     // Tell the new assignee (spec §6). Only on a real handover: not a self-assign (you know), not

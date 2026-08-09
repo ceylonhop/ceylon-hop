@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ceylon Hop — badge icons, drawn by hand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#0DB9B6; --sky:#34C2D9; --saffron:#F9A429; --cream:#FAF1E4; --ink:#4A4648;
+    --teal-deep:#08938f; --tomato:#EC3A24;
+    --page:#F0EFE7; --paper:#fffdf8; --line:#ded7c4; --text:#2C2A2B; --text-soft:#6c6a6b;
+    --display:'Newsreader',Georgia,serif; --body:'Hanken Grotesk',-apple-system,sans-serif; --hand:'Caveat',cursive;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text);font-family:var(--body);line-height:1.55}
+  .wrap{max-width:1120px;margin:0 auto;padding:52px 28px 90px}
+  .eyebrow{font-size:.7rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--teal-deep);margin:0 0 14px}
+  h1{font-family:var(--display);font-weight:800;font-size:clamp(2rem,4.4vw,2.9rem);letter-spacing:-.02em;margin:0 0 .4rem}
+  h1 em{font-style:italic;font-weight:500;color:var(--teal-deep)}
+  .lede{color:var(--text-soft);max-width:66ch;margin:0}
+  h2{font-family:var(--display);font-weight:800;font-size:1.5rem;margin:56px 0 3px}
+  h2 .hand{font-family:var(--hand);font-size:1.25rem;font-weight:700;color:var(--tomato);margin-left:10px}
+  .setsub{color:var(--text-soft);font-size:.92rem;margin:0 0 22px;max-width:70ch}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px 14px 14px;text-align:center;
+    transition:transform .3s cubic-bezier(.2,.9,.3,1.4)}
+  .card:hover{transform:rotate(-1.6deg) translateY(-4px)}
+  .card .big svg{width:100px;height:100px}
+  .card b{display:block;font-family:var(--display);font-size:1rem;font-weight:700;margin:6px 0 2px}
+  .card small{display:block;font-size:.75rem;color:var(--text-soft);line-height:1.45;min-height:2.9em}
+  .card .sizes{display:flex;align-items:flex-end;justify-content:center;gap:10px;margin-top:8px;padding-top:10px;border-top:1px dashed var(--line)}
+  .s62{width:62px;height:62px} .s34{width:34px;height:34px} .s22{width:22px;height:22px}
+
+  .rules{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:36px 0 0}
+  .rule{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:15px 17px}
+  .rule b{display:block;font-family:var(--display);font-size:1.02rem;margin-bottom:2px}
+  .rule span{font-size:.85rem;color:var(--text-soft)}
+
+  .compare{display:flex;gap:34px;align-items:center;flex-wrap:wrap;background:var(--paper);border:1px solid var(--line);
+    border-radius:18px;padding:26px 30px;margin-top:34px}
+  .compare div{text-align:center}
+  .compare svg{width:104px;height:104px}
+  .compare p{font-family:var(--hand);font-size:1.25rem;color:var(--text-soft);margin:2px 0 0}
+  .compare .arrow{font-family:var(--hand);font-size:1.5rem;color:var(--tomato)}
+
+  .ctx{margin-top:60px;background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:32px 30px 28px}
+  .ctx .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:26px;text-align:center;margin-top:8px}
+  .ctx .row svg{width:66px;height:66px}
+  .ctx .row h3{font-family:var(--display);font-size:1.12rem;font-weight:800;margin:10px 0 4px}
+  .ctx .row p{font-size:.85rem;color:var(--text-soft);margin:0}
+  .ctx .cap{font-size:.8rem;color:var(--text-soft);text-align:center;margin:24px 0 0;font-style:italic}
+  footer{margin-top:50px;font-size:.85rem;color:var(--text-soft)}
+  footer code{background:#e7e4d8;border-radius:5px;padding:1px 6px}
+
+  /* the two-pass trick: a stylesheet rule outranks a presentation attribute,
+     so the same artwork renders once as colour and once as line — each wobbled
+     by its own noise, which is what puts the colour outside the lines. */
+  .pass-fill *{ stroke:none }
+  .pass-ink  *{ fill:none }
+  .pass-ink text{ display:none }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">Badge icons · take two</p>
+<h1>Same six rules, <em>drawn by a person</em></h1>
+<p class="lede">The last set was geometrically perfect, which is exactly why it felt machine-made. This one keeps your palette and shapes but breaks the machine in four places: the disc is a wobbly blob rather than a circle, every line gets its own noise so nothing is quite straight, the cream is printed slightly off-register from the outline the way a hand-inked sticker misprints, and each badge sits at its own small tilt. Nothing is symmetrical, nothing repeats.</p>
+
+<div class="compare">
+  <div><div id="cmp-old"></div><p>machine</p></div>
+  <div class="arrow">→</div>
+  <div><div id="cmp-new"></div><p>hand</p></div>
+  <div style="text-align:left;flex:1;min-width:220px">
+    <p style="font-family:var(--body);font-size:.88rem;color:var(--text-soft);margin:0">
+      Same paths, same palette. The difference is entirely in the render: wobble, off-register colour,
+      a blob disc, and a tilt. Every badge draws its own noise seed, so no two wobbles match.
+    </p>
+  </div>
+</div>
+
+<div class="rules">
+  <div class="rule"><b>The disc wobbles</b><span>A twelve-point blob, never a circle — the single loudest tell that a person drew it.</span></div>
+  <div class="rule"><b>Colour off-register</b><span>The cream is displaced on its own seed, so it spills past the outline here and pulls short there.</span></div>
+  <div class="rule"><b>No straight lines</b><span>Every edge takes a small displacement. Chunky, slightly uneven, a bit overshot at corners.</span></div>
+  <div class="rule"><b>Everything tilts</b><span>Each badge leans a degree or three, its own way. Rows never line up perfectly.</span></div>
+</div>
+
+<h2>Getting around<span class="hand">$0 unless it runs</span></h2>
+<p class="setsub">The Ride Board loop, in island vehicles rather than generic ones.</p>
+<div class="grid" id="set-board"></div>
+
+<h2>Places worth the drive<span class="hand">where you’re actually going</span></h2>
+<p class="setsub">Route pages, corridor cards and blog headers — the island doing the selling.</p>
+<div class="grid" id="set-places"></div>
+
+<h2>The promise, island-style<span class="hand">no stock padlocks</span></h2>
+<p class="setsub">Trust and extras, drawn with local objects instead of the usual calendar-and-padlock kit.</p>
+<div class="grid" id="set-promise"></div>
+
+<h2>Utility set<span class="hand">the workhorses</span></h2>
+<p class="setsub">The earlier, non-scenic badges — kept because they do the functional jobs (seat counters, bag counts, rate-card extras) that a leopard paw cannot.</p>
+<div class="grid" id="set-utility"></div>
+
+<div class="ctx">
+  <p class="eyebrow" style="text-align:center">In place · the homepage value row</p>
+  <div class="row" id="ctx-row"></div>
+  <p class="cap">Same 62px slot as <code>hop-on-hop-off.png</code> — drop-in, no CSS change.</p>
+</div>
+
+<footer>Each badge is one self-contained <code>&lt;svg&gt;</code> of about 2 KB, wobble filters included. The noise is baked into the file, not animated — it renders identically every time, it just doesn’t look like it was measured.</footer>
+</div>
+
+<script>
+const T='#0DB9B6', S='#34C2D9', F='#F9A429', CR='#FAF1E4', K='#4A4648';
+
+/* deterministic noise so a badge looks the same on every render */
+function rng(seed){ let s = seed*9301+49297; return () => { s = (s*9301+49297) % 233280; return s/233280; }; }
+
+/* the disc: a twelve-point blob through smooth beziers. Never a circle. */
+function blob(seed, r=49){
+  const rand = rng(seed), n = 9, pts = [];
+  const off = rand()*Math.PI*2;
+  for (let i=0;i<n;i++){
+    const a = off + (i/n)*Math.PI*2 + (rand()-0.5)*0.18;   // uneven spacing too
+    const rr = r - 1.6 + rand()*3.2;
+    pts.push([50+Math.cos(a)*rr, 50+Math.sin(a)*rr]);
+  }
+  // smooth closed curve: quadratics from each vertex to the next edge midpoint
+  const mid = (a,b) => [(a[0]+b[0])/2, (a[1]+b[1])/2];
+  const f = v => v.toFixed(1);
+  let m0 = mid(pts[n-1], pts[0]);
+  let d = `M${f(m0[0])} ${f(m0[1])}`;
+  for (let i=0;i<n;i++){
+    const p = pts[i], m = mid(p, pts[(i+1)%n]);
+    d += ` Q${f(p[0])} ${f(p[1])} ${f(m[0])} ${f(m[1])}`;
+  }
+  return d + 'Z';
+}
+
+/* Drawing helpers — unchanged shapes from the machine set, so the comparison is honest. */
+const art  = d => `<path d="${d}" fill="${CR}" stroke="${K}" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+const line = (d,w=5.5) =>
+  `<path d="${d}" fill="none" stroke="${K}" stroke-width="${w+4.6}" stroke-linecap="round" stroke-linejoin="round"/>`+
+  `<path d="${d}" fill="none" stroke="${CR}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+const dash = d => `<path d="${d}" fill="none" stroke="${K}" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0.1 7.4"/>`;
+const circ = (x,y,r,fill=CR) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="${K}" stroke-width="3.4"/>`;
+const pin = (x,y,s,fill) => `<g transform="translate(${x} ${y}) scale(${s})">`+
+  `<path d="M0-18a11.5 11.5 0 0 0-11.5 11.5C-11.5 1 0 12 0 12s11.5-11 11.5-18.5A11.5 11.5 0 0 0 0-18z" fill="${fill}" stroke="${K}" stroke-width="3.4" stroke-linejoin="round"/>`+
+  `<circle cx="0" cy="-6.5" r="4.2" fill="${CR}" stroke="${K}" stroke-width="2.8"/></g>`;
+
+const ICONS = {
+board: [
+ /* the shared van, dressed the way island vans actually are — route board up front,
+    a pennant on the roof. A plain grey minibus is every airport transfer on earth. */
+ ['hop-van','The hop van','Ride Board · list cards',F,
+  art('M16 56V35a4 4 0 0 1 4-4h30l11 11h19a4 4 0 0 1 4 4v10z')+
+  `<path d="M26 35h18v7H26z" fill="${S}" stroke="${K}" stroke-width="3" stroke-linejoin="round"/>`+
+  circ(30,58,6.5)+circ(70,58,6.5)+
+  `<circle cx="30" cy="58" r="1.9" fill="${K}"/><circle cx="70" cy="58" r="1.9" fill="${K}"/>`+
+  `<path d="M24 31V13" stroke="${K}" stroke-width="3.2" stroke-linecap="round"/>`+
+  `<path d="M24 14l15 5-15 5z" fill="${T}" stroke="${K}" stroke-width="3" stroke-linejoin="round"/>`+
+  art('M26 72h48a6 6 0 0 1 0 12H26a6 6 0 0 1 0-12z')+
+  `<path d="M32 78h30" stroke="${K}" stroke-width="7.5" stroke-linecap="round"/>`],
+
+ /* an ambalama: the wayside pavilion where island travellers have waited together
+    for four hundred years. It IS the Ride Board. */
+ ['ambalama','The gathering','Ride Board · wait together',S,
+  `<path d="M50 22v-9" stroke="${K}" stroke-width="3.2" stroke-linecap="round"/>`+
+  `<circle cx="50" cy="11" r="3.6" fill="${F}" stroke="${K}" stroke-width="2.6"/>`+
+  art('M50 20 84 44c6 4 9 8 10 12H6c1-4 4-8 10-12z')+
+  `<path d="M24 47c17 4 35 4 52 0M33 38c11 3 23 3 34 0" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round" opacity=".55"/>`+
+  art('M27 56h8l-1 20h-6zM65 56h8l-1 20h-6z')+
+  art('M14 76h72a4 4 0 0 1 4 4v4H10v-4a4 4 0 0 1 4-4z')+
+  `<path d="M42 62h16" stroke="${F}" stroke-width="3.4" stroke-linecap="round"/>`],
+
+ /* thambili — the king coconut handed to you on arrival. Costs you nothing. */
+ ['thambili','$0 to join','Promise box · nothing to add your name',T,
+  art('M50 30c14 0 22 13 22 28 0 16-9 26-22 26s-22-10-22-26c0-15 8-28 22-28z')+
+  `<ellipse cx="50" cy="31" rx="13" ry="4.6" fill="${CR}" stroke="${K}" stroke-width="3.2"/>`+
+  `<path d="M57 28 71 10" stroke="${F}" stroke-width="5.5" stroke-linecap="round"/>`+
+  `<path d="M40 52c2 8 6 13 12 15" fill="none" stroke="${K}" stroke-width="2.8" stroke-linecap="round" opacity=".5"/>`],
+
+ /* the three-wheeler. Nothing says "getting around here" faster. */
+ ['tuk-tuk','Short hops','Town runs · last mile',S,
+  art('M20 68c-3-16 0-26 7-32l5-4h38a6 6 0 0 1 6 6v30z')+
+  art('M12 34h74a3.5 3.5 0 0 1 0 7H12a3.5 3.5 0 0 1 0-7z')+
+  `<path d="M13 41c4 5 8 5 12 0 4 5 8 5 12 0 4 5 8 5 12 0 4 5 8 5 12 0 4 5 8 5 12 0" fill="none" stroke="${F}" stroke-width="2.8" stroke-linejoin="round"/>`+
+  `<path d="M34 45h14v15H26c0-6 3-11 8-15z" fill="${S}" stroke="${K}" stroke-width="3" stroke-linejoin="round"/>`+
+  circ(26,74,6.5)+circ(66,71,9)+
+  `<circle cx="26" cy="74" r="1.8" fill="${K}"/><circle cx="66" cy="71" r="2.4" fill="${K}"/>`+
+  `<circle cx="17" cy="58" r="3.2" fill="${F}"/>`],
+
+ ['called-off','Called off','Nobody charged · soft no',T,
+  `<path d="M16 60V39a4 4 0 0 1 4-4h30l11 11h19a4 4 0 0 1 4 4v10z" fill="${CR}" fill-opacity=".28" stroke="${K}" stroke-width="3.4" stroke-linejoin="round" stroke-dasharray="7 6"/>`+
+  `<circle cx="30" cy="62" r="6.5" fill="none" stroke="${K}" stroke-width="3.2" stroke-dasharray="5 5"/>`+
+  `<circle cx="70" cy="62" r="6.5" fill="none" stroke="${K}" stroke-width="3.2" stroke-dasharray="5 5"/>`+
+  `<text x="50" y="86" font-family="Newsreader,Georgia,serif" font-size="17" font-weight="800" fill="${CR}" text-anchor="middle">$0</text>`],
+
+ ['invite','Bring a friend','Share moment · fill it faster',F,
+  circ(40,38,11)+ art('M18 72c0-12 10-19 22-19 4.5 0 8.6 1.1 12 3')+
+  line('M62 62h18', 5.5)+ line('M73 55l7 7-7 7', 5.5)],
+],
+places: [
+ /* the blue train over the Nine Arch — the single most photographed thing on the island */
+ ['ella-train','Ella &amp; the hills','Hill-country routes',T,
+  art('M10 56h80a3 3 0 0 1 3 3v25H7V59a3 3 0 0 1 3-3z')+
+  `<path d="M18 84V72a7 7 0 0 1 14 0v12zM43 84V72a7 7 0 0 1 14 0v12zM68 84V72a7 7 0 0 1 14 0v12z" fill="${T}" stroke="${K}" stroke-width="3.2" stroke-linejoin="round"/>`+
+  art('M26 56V40a5 5 0 0 1 5-5h38a5 5 0 0 1 5 5v16z')+
+  `<path d="M34 42h9v9h-9zM48 42h9v9h-9zM62 42h8v9h-8z" fill="${F}" stroke="${K}" stroke-width="2.6"/>`+
+  `<circle cx="24" cy="26" r="3.4" fill="${CR}"/><circle cx="16" cy="19" r="2.6" fill="${CR}"/>`],
+
+ ['sigiriya','Sigiriya','The rock · cultural triangle',T,
+  art('M24 84 26 32 33 24h34l7 8 2 52z')+
+  `<path d="M33 24h30" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`+
+  `<path d="M35 17h7v7h-7zM50 17h7v7h-7z" fill="${CR}" stroke="${K}" stroke-width="2.4"/>`+
+  `<path d="M32 32v50M44 30v54M56 30v54M67 40v44" fill="none" stroke="${K}" stroke-width="2.4" stroke-linecap="round" opacity=".3"/>`+
+  `<path d="M82 84V70h-8V56h-7V42" fill="none" stroke="${F}" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>`+
+  `<circle cx="14" cy="34" r="3.4" fill="${CR}"/><circle cx="21" cy="27" r="2.4" fill="${CR}"/>`],
+
+ ['surfer','Surf season','Arugam Bay · Weligama',S,
+  art('M70 8c9 20 3 54-22 72C39 58 45 26 70 8z')+
+  `<path d="M62 22C52 38 47 54 47 68" fill="none" stroke="${F}" stroke-width="3.6" stroke-linecap="round"/>`+
+  art('M48 80c-5-1-8-4-8-8 4 1 7 4 8 8z')+
+  art('M6 84c1-13 10-21 23-19 6 1 11 4 14 9-11-3-21 2-25 10z')+
+  `<circle cx="16" cy="70" r="2.6" fill="${CR}"/><circle cx="26" cy="64" r="2" fill="${CR}"/>`],
+
+ ['turtle','Turtle beaches','Rekawa · Hikkaduwa hatcheries',T,
+  art('M50 28c16 0 27 11 27 25S66 76 50 76 23 67 23 53s11-25 27-25z')+
+  `<path d="M50 34 39 46l6 15h10l6-15z" fill="none" stroke="${K}" stroke-width="2.8" stroke-linejoin="round"/>`+
+  `<circle cx="50" cy="48" r="4" fill="${F}"/>`+
+  art('M23 42c-8-5-15-3-16 3 0 6 7 10 16 8zM77 42c8-5 15-3 16 3 0 6-7 10-16 8z')+
+  art('M32 71c-6 5-6 11-1 13 5 1 9-4 10-10zM68 71c6 5 6 11 1 13-5 1-9-4-10-10z')+
+  art('M50 22a8 6 0 0 1 8 6 8 6 0 0 1-16 0 8 6 0 0 1 8-6z')+
+  `<circle cx="46" cy="26" r="1.8" fill="${K}"/><circle cx="54" cy="26" r="1.8" fill="${K}"/>`],
+
+ ['dagoba','Dagobas','Anuradhapura · Dambulla',F,
+  `<path d="M50 4v8" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`+
+  art('M50 10 58 36H42z')+
+  art('M41 36h18v10H41z')+
+  art('M24 66a26 26 0 0 1 52 0z')+
+  art('M17 66h66a4 4 0 0 1 0 8H17a4 4 0 0 1 0-8z')+
+  art('M13 74h74a4 4 0 0 1 0 8H13a4 4 0 0 1 0-8z')+
+  `<path d="M35 56c10-4 20-4 30 0" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round" opacity=".5"/>`+
+  `<circle cx="50" cy="41" r="2.6" fill="${F}"/>`],
+
+ /* the stilt fishermen of Koggala — nowhere else on earth */
+ ['stilt-fisher','South coast','Galle · Mirissa · Weligama',S,
+  line('M50 84V44', 5)+ line('M40 60h20', 4.5)+
+  circ(48,30,7)+
+  art('M43 37c-4 5-5 13-3 19h16c2-8 0-15-4-19')+
+  `<path d="M54 44 78 30" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`+
+  `<path d="M78 30v10" stroke="${F}" stroke-width="2.8" stroke-linecap="round"/>`+
+  dash('M10 76h80')+ dash('M10 86h80')],
+
+ ['tea-hills','Tea country','Nuwara Eliya · Haputale',T,
+  art('M6 84c8-13 15-13 22-5 7-12 15-17 25-9 6 5 9 9 15 14z')+
+  `<circle cx="76" cy="22" r="7" fill="${F}" stroke="${K}" stroke-width="3"/>`+
+  art('M50 66c-14-1-23-9-24-21 12-2 22 6 24 21z')+
+  art('M50 66c2-15 12-23 24-21-1 12-10 20-24 21z')+
+  art('M50 42c-6-4-8-11-5-18 7 2 10 9 5 18z')+
+  `<path d="M50 66v14" stroke="${K}" stroke-width="3.6" stroke-linecap="round"/>`],
+
+ ['paw','Leopard country','Yala · Udawalawe',S,
+  art('M50 46c11 0 20 8 20 16.5S61 76 50 76s-20-5-20-13.5S39 46 50 46z')+
+  art('M31 30a7.5 9.5 0 0 1 15 0 7.5 9.5 0 0 1-15 0z')+
+  art('M54 30a7.5 9.5 0 0 1 15 0 7.5 9.5 0 0 1-15 0z')+
+  art('M15 47a6.5 8.5 0 0 1 13 0 6.5 8.5 0 0 1-13 0z')+
+  art('M72 47a6.5 8.5 0 0 1 13 0 6.5 8.5 0 0 1-13 0z')+
+  `<circle cx="50" cy="60" r="4.6" fill="${F}"/>`],
+
+ /* blue whales off Mirissa — a fluke reads instantly where a whale does not */
+ ['whale','Blue whales','Mirissa · Dec–Apr runs',F,
+  art('M50 58C41 49 27 38 13 31c5 13 18 24 33 30z')+
+  art('M50 58C59 49 73 38 87 31c-5 13-18 24-33 30z')+
+  art('M44 54h12c1 9 1 18 0 26H44c-1-8-1-17 0-26z')+
+  dash('M8 80h84')+
+  `<circle cx="24" cy="72" r="3" fill="${CR}"/><circle cx="76" cy="70" r="2.6" fill="${CR}"/><circle cx="68" cy="79" r="2.2" fill="${CR}"/>`],
+
+ ['palm-coast','Beach days','Arugam Bay · Trinco',T,
+  line('M50 78c-2-16-1-28 5-38', 5.5)+
+  line('M55 40c-9-7-19-6-26 1M55 40c-3-11-11-17-22-16M55 40c3-10 12-15 22-12M55 40c9-4 18-1 22 8', 5)+
+  `<circle cx="55" cy="40" r="4.6" fill="${F}" stroke="${K}" stroke-width="3"/>`],
+
+ /* big ears forward — the friendly, cartoon read, not a wildlife plate */
+ ['elephant','Elephants','Pinnawala · park transfers',S,
+  art('M13 44a17 19 0 0 1 24-15v29a17 19 0 0 1-24-14z')+
+  art('M87 44a17 19 0 0 0-24-15v29a17 19 0 0 0 24-14z')+
+  art('M33 42a17 17 0 0 1 34 0v13a12 12 0 0 1-12 12h-10a12 12 0 0 1-12-12z')+
+  line('M50 67v7c0 7 5 11 12 9', 7)+
+  `<circle cx="42" cy="44" r="3" fill="${K}"/><circle cx="58" cy="44" r="3" fill="${K}"/>`+
+  `<path d="M41 68c-2 4-2 7 0 9M59 68c2 4 2 7 0 9" fill="none" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`],
+],
+promise: [
+ /* a Ceylon sapphire, not a padlock. The price is the precious thing. */
+ ['rate-lock','Price locked','Rate-lock · held until',T,
+  art('M50 20 76 34v30L50 80 24 64V34z')+
+  art('M50 34 64 42v14L50 66 36 56V42z')+
+  `<path d="M24 34 36 42M76 34 64 42M24 64l12-8M76 64 64 56M50 20v14M50 66v14" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round"/>`+
+  `<path d="M42 46c2-3 5-4 8-4" fill="none" stroke="${F}" stroke-width="3.2" stroke-linecap="round"/>`+
+  `<path d="M79 20v9M75 24.5h9" stroke="${CR}" stroke-width="3" stroke-linecap="round"/>`],
+
+ /* two monsoons a year — an umbrella says "we've got you" better than a calendar */
+ ['free-cancel','Free cancellation','Change your mind, up to 24h',F,
+  art('M50 18c-24 0-41 12-42 26 5-7 11-7 16 0 5-7 11-7 16 0 5-7 11-7 16 0 5-7 11-7 16 0 5-7 11-7 16 0-1-14-18-26-38-26z')+
+  `<path d="M50 20v24M30 25 40 44M70 25 60 44M15 34l12 10M85 34 73 44" fill="none" stroke="${K}" stroke-width="2.6" stroke-linecap="round"/>`+
+  `<path d="M50 44v38" stroke="${K}" stroke-width="6.5" stroke-linecap="round"/>`+
+  `<path d="M50 44v38" stroke="${CR}" stroke-width="3.2" stroke-linecap="round"/>`+
+  `<circle cx="50" cy="15" r="4" fill="${T}" stroke="${K}" stroke-width="2.8"/>`],
+
+ /* a cup of tea in the bubble — that's what answering looks like here */
+ ['we-answer','We answer','WhatsApp, 7 days a week',S,
+  art('M18 20h64a5 5 0 0 1 5 5v34a5 5 0 0 1-5 5H45L28 80V64h-10a5 5 0 0 1-5-5V25a5 5 0 0 1 5-5z')+
+  art('M39 32h22l-3 24a5 5 0 0 1-5 4h-6a5 5 0 0 1-5-4z')+
+  `<path d="M40 41h20" stroke="${F}" stroke-width="3.6" stroke-linecap="round"/>`+
+  art('M33 60h34a3 3 0 0 1 0 6H33a3 3 0 0 1 0-6z')+
+  `<path d="M45 27c-2-4 2-5 0-9M55 27c-2-4 2-5 0-9" fill="none" stroke="${F}" stroke-width="2.8" stroke-linecap="round"/>`],
+
+ /* the Pro Hopper — a face, not an ID card. People book people. */
+ ['pro-hopper','Your Pro Hopper','Licensed, vetted drivers',F,
+  circ(50,54,21)+
+  art('M31 46a19 12 0 0 1 38 0z')+
+  art('M24 46h52a3.5 3.5 0 0 1 0 7H24a3.5 3.5 0 0 1 0-7z')+
+  `<circle cx="42" cy="58" r="3.2" fill="${K}"/><circle cx="58" cy="58" r="3.2" fill="${K}"/>`+
+  `<path d="M50 68c-4-5-9-5-11-1 3 1 7 2 11 1 4 1 8 0 11-1-2-4-7-4-11 1z" fill="${K}" stroke="${K}" stroke-width="2.6" stroke-linejoin="round"/>`+
+  `<path d="M44 74c3 2.5 9 2.5 12 0" fill="none" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`+
+  `<circle cx="50" cy="38" r="3.6" fill="${T}" stroke="${K}" stroke-width="2.6"/>`],
+
+ /* the jeep waits while you watch — an elephant in front says which park */
+ ['safari-wait','Safari wait','Extras · the jeep holds',T,
+  art('M14 64V54a4 4 0 0 1 4-4h11l8-11h20l4 11h11a4 4 0 0 1 4 4v10z')+
+  `<path d="M37 39v11M53 39v11" stroke="${K}" stroke-width="3.2"/>`+
+  circ(29,66,7.5)+circ(63,66,7.5)+
+  `<circle cx="29" cy="66" r="2.2" fill="${K}"/><circle cx="63" cy="66" r="2.2" fill="${K}"/>`+
+  `<path d="M18 42h4M12 34h4M18 26h4" stroke="${F}" stroke-width="3.4" stroke-linecap="round"/>`+
+  art('M74 74a10 10 0 0 1 20 0v10H74z')+
+  line('M84 84v4', 4)],
+
+ ['bags','Luggage &amp; boards','Bag count · surfboards ride free',S,
+  art('M14 50h26a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V54a4 4 0 0 1 4-4z')+
+  art('M21 50v-5a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v5')+
+  `<path d="M21 59v13M33 59v13" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`+
+  art('M69 6c13 13 15 55 0 82-15-27-13-69 0-82z')+
+  `<path d="M69 20v54" stroke="${F}" stroke-width="3.4" stroke-linecap="round"/>`+
+  `<path d="M69 82v9" stroke="${K}" stroke-width="3" stroke-linecap="round"/>`],
+],
+utility: [
+ ['zero-coin','$0 hold','Promise box · the plain-money read',T,
+  circ(50,44,20) +
+  `<circle cx="50" cy="44" r="13.5" fill="none" stroke="${F}" stroke-width="3.4"/>`+
+  `<text x="50" y="52.5" font-family="Newsreader,Georgia,serif" font-size="23" font-weight="800" fill="${K}" text-anchor="middle">0</text>`+
+  dash('M23 74c9 5 18 7 27 7s18-2 27-7')],
+
+ ['van-fills','Seats filling','Seat counter · scarcity pill',F,
+  art('M16 54V33a4 4 0 0 1 4-4h30l11 11h19a4 4 0 0 1 4 4v10z')+
+  `<path d="M26 33h18v7H26z" fill="${S}" stroke="${K}" stroke-width="3" stroke-linejoin="round"/>`+
+  circ(30,56,6.5)+circ(70,56,6.5)+
+  `<circle cx="30" cy="56" r="1.9" fill="${K}"/><circle cx="70" cy="56" r="1.9" fill="${K}"/>`+
+  art('M26 74h48a6 6 0 0 1 0 12H26a6 6 0 0 1 0-12z')+
+  `<path d="M32 80h30" stroke="${K}" stroke-width="7.5" stroke-linecap="round"/>`],
+
+ ['locked-in','Locked in','Threshold met · confirmed',S,
+  circ(50,50,26)+ line('M38 51.5 46.5 60 63 41', 6)],
+
+ ['closes-soon','Closing soon','Cutoff countdown',S,
+  circ(50,53,24)+ line('M50 39v14l9 6', 5.5)+ art('M40 22h20')+
+  `<circle cx="50" cy="53" r="3.6" fill="${F}"/>`],
+
+ ['licensed','Licensed &amp; insured','Trust row · the document read',T,
+  art('M28 26h44a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4H28a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4z')+
+  circ(41,44,8)+ art('M30 66c0-6.5 5-10 11-10s11 3.5 11 10')+
+  `<path d="M58 40h13M58 50h13M58 60h9" stroke="${F}" stroke-width="3.4" stroke-linecap="round"/>`],
+
+ ['ac-comfort','Ice-cold AC','Comfort · every vehicle',S,
+  line('M50 22v56', 5.5)+ line('M25.8 36 74.2 64', 5.5)+ line('M74.2 36 25.8 64', 5.5)+
+  line('M50 34l-7-7M50 34l7-7M50 66l-7 7M50 66l7 7', 5)+
+  `<circle cx="50" cy="50" r="5.2" fill="${F}" stroke="${K}" stroke-width="3.2"/>`],
+
+ ['door-to-door','Door to door','Pick-up &amp; drop-off, exact',F,
+  dash('M31 62c8-14 30-14 38-28')+ pin(31,64,0.85,CR)+ pin(69,40,0.85,T)],
+
+ ['child-seat','Child seat','Extras · families',S,
+  art('M26 34a12 12 0 0 1 12-12h24a12 12 0 0 1 12 12v12a7 7 0 0 1-7 7h-5v9a8 8 0 0 1-8 8H43a8 8 0 0 1-8-8v-9h-5a7 7 0 0 1-7-7z')+
+  art('M30 70h40a5 5 0 0 1 5 5v7H25v-7a5 5 0 0 1 5-5z')+
+  `<path d="M42 30 50 48 58 30" fill="none" stroke="${F}" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>`+
+  `<circle cx="50" cy="52" r="4.8" fill="${F}" stroke="${K}" stroke-width="3"/>`],
+
+ ['sightseeing','Sightseeing stop','Extras · up to 3h',F,
+  art('M20 38h13l6-8h22l6 8h13a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V42a4 4 0 0 1 4-4z')+
+  circ(50,57,14)+ `<circle cx="50" cy="57" r="6.5" fill="${S}" stroke="${K}" stroke-width="3"/>`],
+
+ ['flexi','Flexi ticket','Extras · change your mind',S,
+  art('M22 34h56a4 4 0 0 1 4 4v9a7 7 0 0 0 0 14v9a4 4 0 0 1-4 4H22a4 4 0 0 1-4-4v-9a7 7 0 0 0 0-14v-9a4 4 0 0 1 4-4z')+
+  `<path d="M50 38v6M50 54v6M50 70v6" stroke="${K}" stroke-width="3.2" stroke-linecap="round"/>`+
+  `<path d="M31 50h-6M31 50l-4-4M31 50l-4 4M64 60h6M64 60l4-4M64 60l4 4" fill="none" stroke="${F}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>`],
+
+ ['chauffeur','Driver-guide','Multi-day chauffeur trips',F,
+  art('M24 50a26 26 0 0 1 52 0v4H24z')+
+  art('M18 54h64a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H18a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3z')+
+  `<circle cx="50" cy="36" r="6" fill="${T}" stroke="${K}" stroke-width="3"/>`+
+  dash('M30 74h40')],
+],
+};
+
+let uid = 0;
+/* rough=false renders the old machine version, for the side-by-side */
+function badge(bg, inner, seed, rough=true){
+  const id = 'b'+(uid++);
+  const rand = rng(seed);
+  const tilt = (rand()-0.5)*7;                      // every badge leans its own way
+  if (!rough)
+    return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">`+
+           `<circle cx="50" cy="50" r="50" fill="${bg}"/>${inner}</svg>`;
+
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<defs>
+  <filter id="${id}f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="${seed+37}" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="${id}k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="${seed+91}" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</defs>
+<path d="${blob(seed)}" fill="${bg}"/>
+<g transform="rotate(${tilt.toFixed(2)} 50 50)">
+  <g class="pass-fill" filter="url(#${id}f)">${inner}</g>
+  <g class="pass-ink"  filter="url(#${id}k)">${inner}</g>
+</g>
+</svg>`;
+}
+
+let seed = 3;
+for (const [set, items] of Object.entries(ICONS)) {
+  document.getElementById('set-'+set).innerHTML = items.map(([id,label,use,bg,inner]) => {
+    const sd = (seed += 17);
+    const svg = badge(bg, inner, sd);
+    return `<div class="card" title="${id}">
+      <div class="big">${svg}</div>
+      <b>${label}</b><small>${use}</small>
+      <div class="sizes">
+        <span class="s62">${badge(bg,inner,sd)}</span>
+        <span class="s34">${badge(bg,inner,sd)}</span>
+        <span class="s22">${badge(bg,inner,sd)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+document.querySelectorAll('.sizes span').forEach(s => s.querySelector('svg').setAttribute('class', s.className));
+
+const all = Object.values(ICONS).flat();
+const pick = id => all.find(x => x[0] === id);
+document.getElementById('cmp-old').innerHTML = badge(pick('hop-van')[3], pick('hop-van')[4], 5, false);
+document.getElementById('cmp-new').innerHTML = badge(pick('hop-van')[3], pick('hop-van')[4], 5, true);
+
+const show = [['thambili','$0 to join','Add your name for nothing — you’re only charged if the van actually fills.'],
+              ['ambalama','Wait together','Travellers have gathered at the ambalama for four hundred years. Same idea, better vans.'],
+              ['pro-hopper','Your Pro Hopper','A licensed local who knows the roads — and the best short eats on them.']];
+document.getElementById('ctx-row').innerHTML = show.map(([id,h,p],i) => {
+  const it = pick(id);
+  return `<div>${badge(it[3], it[4], 200+i*23)}<h3>${h}</h3><p>${p}</p></div>`;
+}).join('');
+</script>
+</body>
+</html>

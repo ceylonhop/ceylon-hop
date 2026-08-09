@@ -38,7 +38,7 @@ test('wears the same travel document as the pay page', async ({ page }) => {
   await stub(page, BOOKING);
   await page.goto(PAGE);
   // The real logo file, not a wordmark on its own — the header is pay.html's verbatim.
-  await expect(page.locator('.pp-cmark')).toHaveAttribute('src', 'img/ceylon-hop-c.png');
+  await expect(page.locator('.pp-cmark')).toHaveAttribute('src', 'img/brand-c.svg');
   await expect(page.locator('.pp-hello')).toHaveText('Hi Roshen,');
   await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Batticaloa, Sri Lanka');
   await expect(page.locator('.ticket')).toBeVisible();

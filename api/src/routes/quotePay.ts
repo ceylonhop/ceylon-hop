@@ -7,6 +7,7 @@ import { verifyQuotePayToken, signCheckoutToken } from '../lib/bookingToken';
 import { payPageCopy } from '../quote/payPageCopy';
 import { quoteToBooking, QuoteNotBookableError } from '../quote/quoteToBooking';
 import { payLines } from '../quote/paySelection';
+import { shortenRouteLabel } from '../quote/shortPlace';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
 // The customer half of quote pay links (spec 2026-07-31 §3). Public, bearer-token routes:
@@ -77,7 +78,8 @@ function partialView(
   );
   if (!ticked.length) return null;
   return {
-    lines: ticked.map((l) => ({ label: l.label, amountCents: l.amountCents })),
+    // Short labels (2026-08-06): the stored engine label is a full address pair.
+    lines: ticked.map((l) => ({ label: shortenRouteLabel(l.label), amountCents: l.amountCents })),
     coverage: {
       soldLegs: sel.legIndexes.length,
       totalLegs: all.filter((l) => l.kind === 'leg').length,
@@ -91,7 +93,31 @@ export function quotePayRoutes(deps: {
   payments: PaymentRepo;
   linkSecret: string;
   checkoutNow?: () => number;
+  // The staff address list, so a submission cannot record an operator as the customer
+  // (spec 2026-08-08 §4.4, as revised). Optional: absent = the guard is simply off.
+  opsUsers?: string;
 }) {
+  // Four live bookings were recorded under the owner's name because a pay link was opened in a
+  // staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
+  //
+  // Deliberately NOT a flat ban on staff addresses: the owner books trips for himself, and that
+  // submission is truthful. It is refused only when it would CONTRADICT the quote — i.e. the
+  // quote was raised against somebody else. A quote whose own contact is that address may be
+  // paid from it.
+  const opsEmails = new Set(
+    (deps.opsUsers ?? '')
+      .split(',')
+      .map((entry) => entry.split(':')[0].trim().toLowerCase())
+      .filter(Boolean),
+  );
+  function impersonatesStaff(quote: SavedQuote, email: string): boolean {
+    const submitted = email.trim().toLowerCase();
+    if (!opsEmails.has(submitted)) return false;
+    // The quote's own contact is the test: if the quote belongs to this address, it is not
+    // impersonation. Compared loosely — the contact field holds a phone OR an email.
+    return (quote.customerContact ?? '').trim().toLowerCase() !== submitted;
+  }
+
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
@@ -138,7 +164,9 @@ export function quotePayRoutes(deps: {
           reference: booking?.reference ?? null,
           firstName: prefillFor(quote).firstName || null,
           amountUsd: payment ? usd(payment.amount) : usd(quote.totalCents),
-          title: payPageCopy(quote).title,
+          // Selection-aware here too: a keepsake for a two-leg payment must not be headed
+          // "Four journeys" either.
+          title: payPageCopy(quote, quote.payLinkSelection).title,
         },
       });
     }
@@ -151,7 +179,9 @@ export function quotePayRoutes(deps: {
 
     return c.json({
       state,
-      copy: payPageCopy(quote),
+      // The copy must know about the selection, or the page describes the whole trip while the
+      // receipt below it describes two legs (owner-caught in prod, 2026-08-05).
+      copy: payPageCopy(quote, sel),
       totals: { cents: soldCents, usd: usd(soldCents) },
       prefill: prefillFor(quote),
       ...(partial ?? {}),
@@ -187,6 +217,10 @@ export function quotePayRoutes(deps: {
     // ready/sent, which is the business's own statement that it is payable. The lever for
     // "stop taking money" is moving the quote out of those statuses, which already renders the
     // sailed-off screen. So a dead prior is ignored and a fresh booking is minted.
+    if (impersonatesStaff(quote, body.data.customer.email)) {
+      return c.json({ error: 'staff_email_not_customer' }, 400);
+    }
+
     // Seq-scoped since partial links (spec §9): the key carries the revision AND the selection
     // seq, so a lookup can only ever return a booking minted for THIS selection.
     //

@@ -1,5 +1,10 @@
 # OS / tooling cruft
 .DS_Store
+# Trailing slash matches DIRECTORIES only — a node_modules SYMLINK (which local worktrees create
+# to share one install) slips past it and gets staged by `git add -A`. That has now broken the
+# Pages build twice: tar fails with "File removed before we read it" on a link pointing at a path
+# that only exists on one laptop. Match both forms.
+node_modules
 node_modules/
 
 # Personal Claude Code settings (shared config is .claude/settings.json)

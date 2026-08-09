@@ -56,7 +56,9 @@ async function stubView(page, body) {
     r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
   // The page also loads GTM/analytics; keep the suite offline-quiet.
   await page.route('https://www.googletagmanager.com/**', (r) => r.fulfill({ status: 200, body: '' }));
-  await page.route('https://www.payhere.lk/**', (r) => r.fulfill({ status: 200, contentType: 'application/javascript', body: 'window.payhere={startPayment:function(){}};' }));
+  // The SDK is deliberately NOT loaded any more (docs/checkout-redirect-spec.md): checkout is a
+  // top-level form POST. Blocked rather than stubbed, so a re-added <script> fails loudly here.
+  await page.route('https://www.payhere.lk/lib/**', (r) => r.abort());
 }
 
 test('single transfer: ticket, exact button copy, reassurance line', async ({ page }) => {
@@ -214,12 +216,15 @@ test('sailed-off screen animation is guarded for reduced motion', async ({ page 
   expect(anim).toBe('none');
 });
 
-test('continuing keeps the form on screen with a pending button; a failure restores it', async ({ page }) => {
+test('continuing hands off immediately; a failure restores the form with what was typed', async ({ page }) => {
   await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
-  // /start answers slowly, then with a named-field error — long enough for the pending
-  // state to be assertable, honest enough to exercise the recovery path. Owner call
-  // (2026-08-01): the full-screen interstitial must NOT appear during the start/checkout
-  // round-trips — on a cold API that blocked the customer behind a takeover for seconds.
+  // /start answers slowly, then with a named-field error — long enough for the hand-off screen
+  // to be assertable, honest enough to exercise the recovery path.
+  //
+  // REVERSES the 2026-08-01 rule this test used to enforce ("no takeover during the round-trips;
+  // the wait stays on the button"). Owner, 2026-08-05, after watching the real flow: pressing
+  // Continue must land on "Taking you to PayHere…" straight away. The old rule existed because
+  // the takeover then LIED — it claimed a window was opening over us. It no longer does.
   await page.route('**/quotes/pay/start', async (r) => {
     await new Promise((res) => setTimeout(res, 600));
     await r.fulfill({ status: 400, contentType: 'application/json',
@@ -237,13 +242,11 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
 
-  // While the API works: the FORM stays put, the button carries the wait — no takeover.
-  await expect(page.locator('#gobtn')).toBeDisabled();
-  await expect(page.locator('#gobtn')).toHaveText('Opening secure payment…');
-  await expect(page.locator('#f-email')).toBeVisible();
-  await expect(page.locator('.pp-loading')).toHaveCount(0);
+  // While the API works: the hand-off screen holds the stage, so the press is unmistakable.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
 
-  // The failure re-arms the same form WITH what the customer typed, plus the error.
+  // The failure drops them back on the same form WITH what they typed, plus the error — a dead
+  // API must never strand a payer behind a spinner.
   await expect(page.locator('#gobtn')).toBeEnabled();
   await expect(page.locator('#gobtn')).toHaveText('Continue to payment');
   await expect(page.locator('#f-email')).toHaveValue('nimal@@typo');
@@ -251,24 +254,46 @@ test('continuing keeps the form on screen with a pending button; a failure resto
   await expect(page.locator('#payerr')).toContainText('email');
 });
 
-test('the interstitial appears only when the PayHere window actually opens', async ({ page }) => {
+test('hands off to PayHere with a top-level form POST carrying the server’s fields', async ({ page }) => {
   await stubView(page, { state: 'payable', copy: COPY.chauffeur, totals: TOTALS, prefill: PREFILL });
   await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
     body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
-  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
-    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  let checkoutBody = null;
+  await page.route('**/bookings/b-1/checkout', async (r) => {
+    checkoutBody = JSON.parse(r.request().postData() || 'null');
+    await r.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout',
+        fields: { order_id: 'o-1', merchant_id: 'm-1', amount: '498.85', hash: 'HASHVALUE' } }) });
+  });
+  // Stand in for PayHere's hosted page. Fulfilled rather than aborted BECAUSE the assertion is
+  // that the browser really lands there: a top-level navigation is the entire point of this
+  // change, and it is what an iframe integration could never be caught doing.
+  let posted = null;
+  await page.route('https://sandbox.payhere.lk/**', async (r) => {
+    posted = r.request().postData();
+    await r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' });
+  });
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
   await page.locator('#f-addr').fill('Prinsengracht 263'); // billing is required since 2026-08-01
   await page.locator('#f-city').fill('Amsterdam');
-  await page.locator('#f-postcode').fill('1016 GV'); // required since 2026-08-02
+  await page.locator('#f-postcode').fill('1016 GV');
   await page.locator('#f-bcountry').selectOption('Netherlands');
   await page.locator('#f-terms').check(); // required since 2026-08-01
   await page.locator('#gobtn').click();
-  // payhere.startPayment is the page-load stub (a no-op): the popup "opened", so the
-  // interstitial must now hold the screen — this is the only moment it may appear.
-  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
-  await expect(page.locator('.pp-loading .amt')).toHaveText('$498.85');
+
+  // The customer LEFT our origin — not a modal over it, not an iframe inside it.
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+  await expect(page.locator('h1')).toHaveText('PayHere stub');
+
+  // Intent, never a URL — the server builds the return address (an open redirect on a payment
+  // page would be a phishing primitive).
+  expect(checkoutBody).toEqual({ returnTo: 'pay-link' });
+  // The server's fields, posted verbatim. `hash` is signed over merchant_id + order_id + amount
+  // + currency, so anything rewritten here would be refused by the real gateway.
+  expect(posted).toContain('order_id=o-1');
+  expect(posted).toContain('hash=HASHVALUE');
+  expect(posted).toContain('merchant_id=m-1');
 });
 
 test('billing details are collected and sent — never the old N/A / Colombo placeholder', async ({ page }) => {
@@ -513,6 +538,8 @@ test('coming back from PayHere gets the decline steps; a form typo does not', as
     body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
   await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  await page.route('https://sandbox.payhere.lk/**', (r) => r.fulfill({
+    status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
   await page.goto(PAGE);
   await page.locator('#paybtn').click();
 
@@ -524,17 +551,251 @@ test('coming back from PayHere gets the decline steps; a form typo does not', as
   await expect(page.locator('#payerr')).toContainText('city');
   await expect(page.locator('#payhelp')).toBeHidden();
 
-  // Now the real thing: PayHere opened, the issuer said no, the payer hit "Back to Site".
+  // Now the real thing. The payer completes the hand-off, the issuer says no, and PayHere sends
+  // them back to return_url — which carries a settlement-status token and NO payment status,
+  // because PayHere passes none. The page has to ask us what happened.
   await page.locator('#f-city').fill('Jersey City');
   await page.locator('#f-terms').check();
   await page.locator('#gobtn').click();
-  await expect(page.locator('.pp-loading h2')).toBeVisible();
-  await page.evaluate(() => window.payhere.onDismissed());
+  // Off to the gateway for real — a full top-level navigation away from our origin.
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'failed', reference: 'CH-TEST1' }) }));
+  // Same tab, same origin — which is exactly why sessionStorage can carry what they typed.
+  await page.goto('/pay.html?rt=return-token-1');
 
   await expect(page.locator('#payhelp')).toBeVisible();
   await expect(page.locator('#payhelp')).toContainText('banking app');
   await expect(page.locator('#payhelp')).toContainText('Sri Lanka');
   await expect(page.locator('#payhelp li')).toHaveCount(4);
-  // and the typed billing details survive, so "try again" is one tap and not a re-type
+  await expect(page.locator('#payerr')).toContainText('didn’t go through');
+  // and the typed billing details survive the ROUND TRIP, so "try again" is one tap and not a
+  // re-type of name, email, phone and a full billing address.
   await expect(page.locator('#f-city')).toHaveValue('Jersey City');
+  await expect(page.locator('#f-addr')).toHaveValue('31 River Court');
+});
+
+// The other side of the same journey: the money landed. The page must not strand a paid customer
+// on "confirming…" — and must never conclude "paid" from the redirect itself, only from us.
+test('coming back from a successful payment shows the full keepsake', async ({ page }) => {
+  await stubView(page, { state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  // The tab still remembers the quote, which is the ordinary case: the customer left from this
+  // very tab and came back to it.
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1');
+  await expect(page.locator('.st-title')).toContainText('booked');
+  await expect(page.locator('.ref')).toHaveText('CH-TEST1');
+});
+
+// Storage can be missing — a webview that discards it, or a customer who finished in another tab.
+// The money is still in, and saying so plainly beats stranding them on a spinner.
+test('confirms the payment even when the tab has lost the quote token', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  await page.goto('/pay.html?rt=return-token-1');
+  await expect(page.locator('.st-title')).toContainText('booked');
+  await expect(page.locator('.st-wrap')).toContainText('CH-TEST1');
+  // It must not fall back to the "sailed off" dead end, which would tell a customer who has just
+  // paid that their quote is gone.
+  await expect(page.locator('.de-title')).toHaveCount(0);
+});
+
+// A slow webhook is not a failure, and must not be reported as one.
+test('a webhook that has not landed yet keeps confirming rather than claiming an outcome', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.goto('/pay.html?rt=return-token-1');
+  await expect(page.locator('.st-title')).toHaveText('Confirming your payment…');
+  await expect(page.locator('#payhelp')).toHaveCount(0);
+});
+
+// "Back to Site" on PayHere's page. Nothing was attempted, so no notify is coming and the payment
+// sits at `pending` forever — polling the full budget would strand a customer who simply changed
+// their mind, then tell them "Payment received?", which is nonsense.
+test('coming back from Back to Site resumes the form instead of confirming forever', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+
+  // The form comes back fast with a truthful holding line, and settles on the cancel wording
+  // once polling gives up. Both must say plainly that no money moved.
+  await expect(page.locator('#payerr')).toContainText('nothing has been charged', { timeout: 8000 });
+  await expect(page.locator('#payerr')).toContainText('without finishing the payment', { timeout: 30000 });
+  // NOT asserted as a decline — no "your card was declined" headline, because we do not know
+  // that. The steps are reachable but collapsed (PayHere does not always notify us of a refusal;
+  // see the quiet-help tests below).
+  await expect(page.locator('#payhelp h3')).toHaveCount(0);
+  await expect(page.locator('#payhelp .pp-quiet summary')).toBeVisible();
+  await expect(page.locator('#payhelp ol')).toBeHidden();
+  // Their details survived, so retrying is one tap.
+  await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
+  await expect(page.locator('#gobtn')).toBeVisible();
+});
+
+// The race the short budget must still catch: they paid, then hit Back to Site before the webhook
+// landed. The cancel flag must not talk them out of a payment that actually succeeded.
+test('a cancel leg still reports a payment that really succeeded', async ({ page }) => {
+  await stubView(page, { state: 'paid', paid: { reference: 'CH-TEST1', firstName: 'Nimal', facts: [] } });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'paid', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+  await expect(page.locator('.st-title')).toContainText('booked');
+  await expect(page.locator('.ref')).toHaveText('CH-TEST1');
+});
+
+// Owner-reported 2026-08-05: payers pressed "Continue to payment" repeatedly because the wait for
+// /start + /checkout showed almost nothing. Two presses must never mean two checkouts.
+test('pressing Continue twice starts exactly one checkout', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  let starts = 0;
+  await page.route('**/quotes/pay/start', async (r) => {
+    starts++;
+    // Deliberately slow — this is the cold-API window the double-press happens in.
+    await new Promise((res) => setTimeout(res, 1200));
+    await r.fulfill({ status: 201, contentType: 'application/json',
+      body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) });
+  });
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  await page.route('https://sandbox.payhere.lk/**', (r) => r.fulfill({
+    status: 200, contentType: 'text/html', body: '<h1>PayHere stub</h1>' }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-bcountry').selectOption('United States');
+  await page.locator('#f-terms').check();
+
+  // Three clicks dispatched SYNCHRONOUSLY, in one task, before the browser can repaint. This is
+  // the real shape of the bug — a double-tap landing inside a single frame — and it is why
+  // `disabled` alone cannot be the guard: nothing has re-rendered yet when the second lands.
+  await page.evaluate(() => {
+    const b = document.getElementById('gobtn');
+    b.click(); b.click(); b.click();
+  });
+  // Pressing goes STRAIGHT to the hand-off screen (owner, 2026-08-05), so the feedback is
+  // unmistakable and the button is gone for any later press.
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('#gobtn')).toHaveCount(0);
+  await page.waitForURL(/sandbox\.payhere\.lk/);
+  expect(starts).toBe(1);
+});
+
+// The hand-off screen should tell the payer where they are going and what they will find, so
+// PayHere's very different-looking page reads as expected rather than alarming.
+test('the interstitial names PayHere, the amount, and the merchant line they will see', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 201, contentType: 'application/json',
+    body: JSON.stringify({ bookingId: 'b-1', checkoutToken: 'ct-1' }) }));
+  await page.route('**/bookings/b-1/checkout', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ checkoutUrl: 'https://sandbox.payhere.lk/pay/checkout', fields: { order_id: 'o-1' } }) }));
+  // Neutralise the hand-off itself so the page stays put and the interstitial can be read.
+  // (A hanging route does not work: Playwright blocks locator queries while a navigation is
+  // pending.) This also quietly asserts the code really does call form.submit().
+  await page.addInitScript(() => { HTMLFormElement.prototype.submit = function () {}; });
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-bcountry').selectOption('United States');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+
+  await expect(page.locator('.pp-loading h2')).toHaveText('Taking you to PayHere…');
+  await expect(page.locator('.pp-loading .lead').first()).toContainText('never see your card details');
+  // The hand-off drawn as well as described: us, a gap, them.
+  await expect(page.locator('.pp-hop .chip')).toHaveCount(2);
+  // PayHere parks the payer behind a manual "Back to Site"; not saying so loses confirmations.
+  await expect(page.locator('.pp-loading')).toContainText('Back to Site');
+  // The amount appears exactly once, in the preview card — not twice on one short screen.
+  await expect(page.locator('.pp-loading .amt')).toHaveCount(0);
+  // The merchant line as PayHere actually prints it — the anti-surprise cue.
+  await expect(page.locator('.pp-expect .who')).toHaveText('Ceylon Hop (PVT) LTD');
+  await expect(page.locator('.pp-expect .amt2')).toHaveText('$498.85');
+});
+
+// Owner-reported 2026-08-05: the return screen held the stage far too long before showing
+// anything useful. Waiting is now decoupled from what is on screen — the form comes back fast
+// and the polling continues underneath.
+test('the return screen gives the form back quickly instead of holding a spinner', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  // Never answers — the worst case for perceived speed.
+  await page.route('**/bookings/pay-return*', async () => { await new Promise(() => {}); });
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  const t0 = Date.now();
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+  await expect(page.locator('#gobtn')).toBeVisible({ timeout: 6000 });
+  expect(Date.now() - t0).toBeLessThan(6000);
+  await expect(page.locator('#f-city')).toHaveValue('Amsterdam');
+  await expect(page.locator('#payerr')).toContainText('nothing has been charged');
+});
+
+// PayHere does not always notify us of a decline — CH-R3ZBZ (2026-08-05) carries exactly one
+// payment_event, the later success, so the refusal never reached us at all. The payer who most
+// needs the four steps was the one least likely to be shown them. They are now reachable on the
+// no-verdict path — collapsed, because most people arriving here simply changed their mind.
+test('a return with no verdict offers the decline steps without asserting a decline', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'pending', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({
+      t: 'test-token',
+      typed: { firstName: 'Nimal', lastName: 'Perera', email: 'n@example.com', country: 'Netherlands',
+        phone: '612345678', address: 'Prinsengracht 263', city: 'Amsterdam', postcode: '1016 GV',
+        state: '', billCountry: 'Netherlands', billDiffers: false, billFirst: '', billLast: '', terms: true },
+    }));
+  });
+  await page.goto('/pay.html?rt=return-token-1&c=1');
+
+  const help = page.locator('#payhelp');
+  await expect(help).toBeVisible({ timeout: 8000 });
+  // NOT asserted: no "your card was declined" headline, because we do not know that.
+  await expect(help.locator('h3')).toHaveCount(0);
+  await expect(help.locator('.pp-quiet summary')).toContainText('Card refused?');
+  // Collapsed by default — the steps exist but do not shout at someone who changed their mind.
+  await expect(help.locator('ol')).toBeHidden();
+  await help.locator('summary').click();
+  await expect(help.locator('ol li')).toHaveCount(4);
+});
+
+// A CONFIRMED decline still states it plainly and opens the steps — the quiet variant must not
+// have softened the case where we actually know.
+test('a confirmed decline still shows the steps open, not hidden', async ({ page }) => {
+  await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
+  await page.route('**/bookings/pay-return*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ status: 'failed', reference: 'CH-TEST1' }) }));
+  await page.addInitScript(() => {
+    sessionStorage.setItem('ch_pay_v1', JSON.stringify({ t: 'test-token', typed: null }));
+  });
+  await page.goto('/pay.html?rt=return-token-1');
+  await expect(page.locator('#payhelp h3')).toContainText('declined');
+  await expect(page.locator('#payhelp li')).toHaveCount(4);
+  await expect(page.locator('#payhelp .pp-quiet')).toHaveCount(0);
 });

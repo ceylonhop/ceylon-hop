@@ -569,3 +569,155 @@ describe('pay-link selection (spec 2026-08-04)', () => {
     expect(updated!.payLinkSeq).toBe(3);
   });
 });
+
+describe('customer-facing price baseline (spec 2026-08-05)', () => {
+  it('defaults to no baseline', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    expect(q.customerTotalCents).toBeNull();
+    expect(q.customerTotalAt).toBeNull();
+    expect(q.customerTotalVia).toBeNull();
+  });
+
+  it('round-trips a baseline through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const at = new Date('2026-08-05T10:00:00.000Z');
+    const patched = await repo.patch(q.id, { customerTotal: { cents: 10900, at, via: 'sent' } });
+    expect(patched!.customerTotalCents).toBe(10900);
+    expect(patched!.customerTotalAt).toEqual(at);
+    expect(patched!.customerTotalVia).toBe('sent');
+  });
+
+  // The three fields move as ONE unit, like rateLock — a baseline amount with no date, or a date
+  // with no amount, would render an indicator that can't say when.
+  it('leaves the baseline alone when the patch does not mention it', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    await repo.patch(q.id, { customerTotal: { cents: 10900, at: new Date(), via: 'sent' } });
+    await repo.patch(q.id, { status: 'pending_review' });
+    expect((await repo.get(q.id))!.customerTotalCents).toBe(10900);
+  });
+
+  // An edit must NEVER move the baseline: the whole point is that it records what the customer
+  // saw, not what the quote currently says.
+  it('survives a content update', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    await repo.patch(q.id, { customerTotal: { cents: 10900, at: new Date(), via: 'sent' } });
+    const updated = await repo.update(q.id, sample({ totalCents: 9900 }));
+    expect(updated!.customerTotalCents).toBe(10900);
+    expect(updated!.totalCents).toBe(9900);
+  });
+});
+
+describe('quote revision history (spec 2026-08-05)', () => {
+  it('snapshots the PREVIOUS content, leaving the live row current', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 10900 }));
+    await repo.update(q.id, sample({ totalCents: 9900, request: { changed: true } }));
+
+    const revs = await repo.listRevisions(q.id);
+    expect(revs).toHaveLength(1);
+    expect(revs[0].revision).toBe(q.revision); // the superseded revision
+    expect(revs[0].totalCents).toBe(10900);    // …holding the OLD money
+    expect((await repo.get(q.id))!.totalCents).toBe(9900);
+  });
+
+  it('records nothing for a save that changes nothing, but still bumps revision', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample());
+    const after = await repo.update(q.id, sample());
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+    expect(after!.revision).toBe(q.revision + 1); // load-bearing: it retires pay links
+  });
+
+  it('is not fooled by JSON key order', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ request: { a: 1, b: { c: 2, d: 3 } } }));
+    await repo.update(q.id, sample({ request: { b: { d: 3, c: 2 }, a: 1 } }));
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  // result_json re-prices on every save, so comparing it would record phantom history.
+  it('is not fooled by a re-priced result', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ result: { totalCents: 1 } }));
+    await repo.update(q.id, sample({ result: { totalCents: 2 } }));
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  it('attributes an unedited first version to its creator', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ createdBy: 'maker@x.com' }));
+    await repo.update(q.id, sample({ request: { v: 2 } }));
+    expect((await repo.listRevisions(q.id))[0].updatedBy).toBe('maker@x.com');
+  });
+
+  it('returns newest first', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({ totalCents: 100, request: { v: 1 } }));
+    await repo.update(q.id, sample({ totalCents: 200, request: { v: 2 } }));
+    await repo.update(q.id, sample({ totalCents: 300, request: { v: 3 } }));
+    expect((await repo.listRevisions(q.id)).map((r) => r.totalCents)).toEqual([200, 100]);
+  });
+});
+
+describe('quote revision history — customer web-edit path', () => {
+  it('snapshots updateWebV2 too', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', totalCents: 100, request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    const res = await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'dig', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', totalCents: 200, request: { v: 2 } }),
+    });
+    expect(res.kind).toBe('updated');
+    const revs = await repo.listRevisions(q.id);
+    expect(revs).toHaveLength(1);
+    expect(revs[0].totalCents).toBe(100);
+  });
+
+  it('records nothing when the customer saves an identical quote', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'dig', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', request: { v: 1 } }),
+    });
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  // A rejected edit must not leave a snapshot behind — the quote never changed.
+  it('records nothing when the edit is refused', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const q = await repo.save(sample({
+      channel: 'web', accessTokenDigest: 'dig', request: { v: 1 },
+      rateLockedUntil: new Date(Date.now() + 60_000),
+    }));
+    const res = await repo.updateWebV2({
+      id: q.id, accessTokenDigest: 'WRONG', expectedRevision: q.revision, now: new Date(),
+      quote: sample({ channel: 'web', request: { v: 2 } }),
+    });
+    expect(res.kind).toBe('access_denied');
+    expect(await repo.listRevisions(q.id)).toHaveLength(0);
+  });
+});
+
+// Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured, as distinct from how
+// long the quote link works.
+describe('offerValidUntil', () => {
+  it('round-trips offerValidUntil through patch', async () => {
+    const repo = new InMemoryQuoteRepo();
+    const saved = await repo.save(sample());
+    expect(saved.offerValidUntil).toBeNull();
+    const when = new Date('2026-08-12T00:00:00Z');
+    const patched = await repo.patch(saved.id, { offerValidUntil: when });
+    expect(patched!.offerValidUntil?.toISOString()).toBe(when.toISOString());
+  });
+});

@@ -1,23 +1,31 @@
 import type { Booking } from '../db/bookingRepo';
+import { shortPlace } from '../quote/shortPlace';
 import type { EmailAdapter } from '../adapters/email';
 import { corridorRouteEnds } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
-// Brand palette — "concierge letter" direction: warm paper, deep teal, coral, editorial
-// serif. Colours are inline (email clients ignore external CSS); fonts are progressively
-// enhanced via a <head> @import in page() with safe Georgia/Helvetica fallbacks.
-const TEAL = '#0AB9B6';
-const TEAL_DEEP = '#0a7d6f';
-const TOMATO = '#cf5a2f'; // coral — route end + cancel/no-show eyebrows
-const INK = '#2b2621'; // warm near-black
+// Brand palette — "concierge letter" direction, held to docs/brand-book.md. Colours are
+// inline (email clients ignore external CSS); fonts are progressively enhanced via a
+// <head> @import in page() with safe Georgia/Helvetica fallbacks.
+//
+// Two colours here are DELIBERATELY not the book hex, for the same reason site.css has
+// --btn-* tokens: the book palette is chosen for print, and these strings land on 11px
+// uppercase text that needs 4.5:1. Book Cherry Tomato is 4.04:1 and book Tiffany 2.43:1.
+// Use the _TEXT variants for anything that carries type, the plain ones for graphics.
+const BLUE = '#63BFD6'; // Bachelor Button — the book's primary; brand band + rules
+const TEAL = '#0AB9B6'; // Tiffany — route markers (graphic only, never type)
+const TEAL_DEEP = '#0a7d6f'; // text-safe Tiffany, 5.03:1
+const TOMATO = '#EC3A24'; // Cherry Tomato — route end marker (graphic only)
+const TOMATO_TEXT = '#D52812'; // text-safe Cherry Tomato, 5.07:1 — cancel/no-show eyebrows
+const INK = '#3A3739'; // Bristol Black
 const MUTED = '#8d8272';
 const FAINT = '#a99b86';
-const PAPER = '#f4eee2'; // outer page tone
+const PAPER = '#F0EEE5'; // Marshmallow — outer page tone
 const CARD = '#fffefb'; // letter surface
 const HAIR = '#efe6d6'; // hairline dividers
 const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
-const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
-const SANS = "'Hanken Grotesk', Helvetica, Arial, sans-serif";
+const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
+const SANS = "'Poppins', Helvetica, Arial, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
@@ -74,7 +82,8 @@ function journey(booking: Booking): Stop[] {
       return {
         color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
         label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
-        place: s,
+        // Short labels (2026-08-06) — an email column is narrow, and a full address swamps it.
+        place: shortPlace(s),
         sub: parts.join(' · ') || undefined,
       };
     });
@@ -86,8 +95,8 @@ function journey(booking: Booking): Stop[] {
     return [{ color: TEAL, label: 'Service', place: ends ? `${ends.from} – ${ends.to} shared shuttle` : 'Shared ride' }];
   }
   return [
-    { color: TEAL_DEEP, label: 'Pickup', place: booking.input.from },
-    { color: TOMATO, label: 'Drop-off', place: booking.input.to },
+    { color: TEAL_DEEP, label: 'Pickup', place: shortPlace(booking.input.from) },
+    { color: TOMATO, label: 'Drop-off', place: shortPlace(booking.input.to) },
   ];
 }
 
@@ -139,12 +148,12 @@ function factRows(booking: Booking): [string, string][] {
 }
 
 export function routeText(booking: Booking): string {
-  if (booking.mode === 'trip') return booking.input.stops.join(' → ');
+  if (booking.mode === 'trip') return booking.input.stops.map(shortPlace).join(' → ');
   if (booking.mode === 'shared') {
     const ends = corridorRouteEnds(booking.input.corridorId);
     return ends ? `Shared shuttle · ${ends.from} – ${ends.to}` : 'Shared ride';
   }
-  return `${booking.input.from} → ${booking.input.to}`;
+  return `${shortPlace(booking.input.from)} → ${shortPlace(booking.input.to)}`;
 }
 
 function cancellationPolicy(booking: Booking): string {
@@ -182,7 +191,10 @@ export function needsDetails(booking: Booking): boolean {
 // this is a letter, not a dashboard). The monogram is a coloured cell, not a remote image,
 // so it survives images-off with no hosting dependency.
 function brandHeader(): string {
-  return `<tr><td style="padding:30px 34px 0">
+  // The Bachelor Button rule is the book's primary colour doing its one job in a
+  // transactional email: identifying the sender at a glance, above everything else.
+  return `<tr><td style="padding:0"><div style="height:5px;line-height:5px;font-size:0;background:${BLUE}">&nbsp;</div></td></tr>
+  <tr><td style="padding:26px 34px 0">
     <table role="presentation" cellpadding="0" cellspacing="0"><tr>
       <td valign="middle" style="padding-right:11px">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
@@ -357,7 +369,7 @@ function footer(): string {
 
 function page(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
@@ -466,7 +478,7 @@ export async function sendCancellationConfirmation(booking: Booking, email: Emai
     brandHeader() +
       introBlock(
         'Booking cancelled',
-        TOMATO,
+        TOMATO_TEXT,
         `Your booking is cancelled, ${first}`,
         'This booking has been cancelled. We&rsquo;ve kept the details below for your records.',
       ) +
@@ -777,7 +789,7 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
     brandHeader() +
       introBlock(
         'Missed pickup',
-        TOMATO,
+        TOMATO_TEXT,
         `We missed you, ${first}`,
         'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
       ) +

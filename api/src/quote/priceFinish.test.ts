@@ -109,3 +109,27 @@ describe('finishing never reduces a price by more than $10', () => {
     }
   });
 });
+
+// A minimum fare is a FINAL price (rateCard.ts: "no markup — the floor already covers the fixed
+// cost of a short trip"), so finishing must not move it. Without this, a $49.99 van floor was
+// rounded straight back up to $50.00 by the nearest-50¢ pass — the floor became decorative, and
+// a one-leg quote finished at 5000 while a two-leg one totalled 9998, so the same minimum showed
+// two different prices depending on leg count (owner-hit, 2026-08-07).
+describe('a price that IS the protected minimum is final', () => {
+  it('leaves the floor alone rather than rounding it up', () => {
+    const r = finishPrice(4999, 4999, { maxReductionBps: 250, roundToCents: 50 });
+    expect(r.finalCents).toBe(4999);
+    expect(r.adjustmentCents).toBe(0);
+    expect(r.strategy).toBe('unchanged');
+  });
+
+  it('leaves a multi-leg sum of floors alone too', () => {
+    const r = finishPrice(9998, 9998, { maxReductionBps: 250, roundToCents: 50 });
+    expect(r.finalCents).toBe(9998);
+  });
+
+  it('still finishes a price that merely sits above the minimum', () => {
+    const r = finishPrice(10_040, 4999, { maxReductionBps: 250, roundToCents: 50 });
+    expect(r.finalCents).toBeLessThan(10_040);
+  });
+});

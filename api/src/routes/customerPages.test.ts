@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
-import { signQuotePayToken } from '../lib/bookingToken';
+import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
 import { customerPagesRoutes } from './customerPages';
 
 // The staging 404 (owner report, 2026-07-31): a payment link minted against APP_BASE_URL
@@ -14,7 +14,7 @@ const get = (path: string) => app.request(path);
 
 describe('customer pay pages are served by the API host', () => {
   it('serves pay.html and manage.html as HTML, not 404', async () => {
-    for (const page of ['/pay.html', '/manage.html']) {
+    for (const page of ['/pay.html', '/manage.html', '/quote.html']) {
       const res = await get(page);
       expect(res.status, `${page} must not 404 — this is the staging bug`).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/html');
@@ -71,7 +71,7 @@ describe('customer pay pages are served by the API host', () => {
       ['/consent.js', 'javascript'],
       ['/favicon.svg', 'image/svg+xml'],
       ['/img/ceylon-hop-touch-icon.png', 'image/png'],
-      ['/img/ceylon-hop-c.png', 'image/png'],
+      ['/img/brand-c.svg', 'image/svg+xml'],
     ];
     for (const [path, type] of cases) {
       const res = await get(path);
@@ -83,9 +83,9 @@ describe('customer pay pages are served by the API host', () => {
   it('pay.html uses the REAL logo file, not a hand-drawn C', async () => {
     // The first cut drew its own stroke-path "C" in a saffron square. It read as almost-right,
     // which is worse than obviously wrong (owner caught it, 2026-07-31). The brand mark is a
-    // file — img/ceylon-hop-c.png, the same one site.js's cmark() serves the header.
+    // file — img/brand-c.svg, the same one site.js's cmark() serves the header.
     const html = await (await get('/pay.html')).text();
-    expect(html).toContain('src="img/ceylon-hop-c.png"');
+    expect(html).toContain('src="img/brand-c.svg"');
     expect(html, 'no bespoke logo path drawing').not.toMatch(/pp-cmark"><svg/);
   });
 
@@ -100,6 +100,21 @@ describe('customer pay pages are served by the API host', () => {
     const res = await get('/');
     expect(res.status).toBe(200);
     expect(await res.text()).toContain('<!doctype html>');
+  });
+
+  it('serves the quote page at /q and /quote.html with the API origin injected', async () => {
+    for (const path of ['/q', '/quote.html']) {
+      const res = await app.request(path);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('window.CEYLON_HOP_API=location.origin');
+      expect(html).toContain('quote.css');
+    }
+  });
+
+  it('serves quote.css and ch-map.js', async () => {
+    expect((await app.request('/quote.css')).status).toBe(200);
+    expect((await app.request('/ch-map.js')).status).toBe(200);
   });
 });
 
@@ -204,5 +219,101 @@ describe('og:image and og:url are always absolute https', () => {
     const r = customerPagesRoutes();
     const html = await (await r.request('/pay.html', { headers: { 'x-forwarded-proto': 'https' } })).text();
     expect(html).toMatch(/og:image" content="https:\/\//);
+  });
+});
+
+// ── WhatsApp share card for QUOTE links (spec 2026-08-05 D11) ────────────────────────────
+// The sibling of the pay card, and it exists for the same reason: the crawler runs no
+// JavaScript and quote.html renders from a fetch, so without server-rendered tags a quote link
+// unfurls as a bare token URL — the first thing a customer ever sees of a trip we planned.
+describe('quote links unfurl as a Ceylon Hop card', () => {
+  const SECRET = 'test-link-secret';
+  const cardApp = (quotes: InMemoryQuoteRepo) =>
+    createApp({ quotes, bookingLinkSecret: SECRET, auth: { opsUsers: 'f@x.com:founder', googleClientId: 'c', opsSessionSecret: 's' }, adminApiKey: 'k' });
+
+  async function readyQuote(quotes: InMemoryQuoteRepo) {
+    const q = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+      customerContact: '+94770001111', totalCents: 45800, currency: 'USD', rateCardVersion: 'v1',
+      request: {
+        tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1,
+          legs: [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 120, date: '2026-09-01', category: 'transfer' }] },
+        engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [{ from: 'CMB', to: 'Galle', distanceKm: 120 }] },
+      },
+      result: { totalCents: 45800 },
+    });
+    await quotes.patch(q.id, { status: 'pending_review' });
+    await quotes.patch(q.id, { status: 'ready' });
+    return quotes.get(q.id);
+  }
+
+  const headOf = (html: string) => html.slice(0, html.indexOf('</head>'));
+
+  it('puts the trip and the customer’s name in the card, and points at its own image', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const t = signQuoteViewToken(q!.id, SECRET);
+    const html = await (await cardApp(quotes).request(`/q?t=${encodeURIComponent(t)}`)).text();
+    expect(html).toContain('og:image');
+    expect(html).toContain('summary_large_image');
+    expect(html).toContain('Colombo Airport (CMB) → Galle');
+    expect(html).toContain('Nimal, your trip is ready');
+    expect(html).toContain('/quote/card.png'); // its own card, not the pay page's
+    expect(html).not.toContain('/pay/card.png');
+  });
+
+  // Rule 1 of the card: WhatsApp caches a preview against the URL for days, and a quote link
+  // FOLLOWS its quote — ops edits and re-pastes the same URL. A price baked in here would show
+  // the old number under a page showing the new one.
+  it('NEVER puts the amount in the preview', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const t = signQuoteViewToken(q!.id, SECRET);
+    const head = headOf(await (await cardApp(quotes).request(`/q?t=${encodeURIComponent(t)}`)).text());
+    expect(head).not.toContain('458');
+    expect(head).not.toContain('$');
+  });
+
+  // The card must FOLLOW the quote like the page does — unlike the pay card, whose token pins a
+  // revision. An edit must not silently demote a real card to the generic one.
+  it('still renders the real card after the quote is edited', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const t = signQuoteViewToken(q!.id, SECRET);
+    await quotes.patch(q!.id, { status: 'sent' }); // the quote moved on; the link must still card
+    const html = await (await cardApp(quotes).request(`/q?t=${encodeURIComponent(t)}`)).text();
+    expect(html).toContain('Colombo Airport (CMB) → Galle');
+  });
+
+  it('every dead state falls back to the SAME generic card, so validity cannot be probed', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const app = cardApp(quotes);
+    await quotes.patch(q!.id, { status: 'lost' });
+    const withdrawn = signQuoteViewToken(q!.id, SECRET);
+    const previews = await Promise.all([withdrawn, 'not-a-real-token'].map(async (t) => {
+      const res = await app.request(`/q?t=${encodeURIComponent(t)}`);
+      expect(res.status).toBe(200); // a crawler must never see 404/500
+      const html = await res.text();
+      expect(html).not.toContain('Colombo Airport (CMB) → Galle'); // no trip leaks
+      expect(html).not.toContain('Nimal');
+      return headOf(html).replace(/t=[^"&]*/g, '');
+    }));
+    expect(previews[0]).toBe(previews[1]); // identical — nothing to diff
+  });
+
+  it('declares the image dimensions, or WhatsApp renders no picture at all', async () => {
+    const html = await (await cardApp(new InMemoryQuoteRepo()).request('/q?t=x')).text();
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('property="og:image:height" content="630"');
+  });
+
+  it('serves the card image as a real PNG with the chat-app cache header', async () => {
+    const res = await cardApp(new InMemoryQuoteRepo()).request('/quote/card.png');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get('cache-control')).toContain('max-age=300');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]); // PNG magic
   });
 });
