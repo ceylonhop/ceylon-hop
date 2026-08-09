@@ -927,3 +927,63 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain("err.message==='trip_start_unknown'");
   });
 });
+
+describe('founder manual discount control', () => {
+  const shell = async () => (await createApp().request('/ops')).text();
+
+  it('gates the control on the capability, not on a hardcoded role', async () => {
+    const body = await shell();
+    expect(body).toContain("viewerCan('discount:apply_manual')");
+    // The same mistake the quote:approve gate was fixed for — never re-introduce a role string.
+    expect(body).not.toContain("state.role==='founder' && state.discount");
+  });
+
+  it('renders the control under the total, and only while the quote is editable', async () => {
+    const body = await shell();
+    expect(body).toContain('discountControlHtml(est)');
+    expect(body).toContain('function discountEditable()');
+    // draft / changes_requested only — matching the save route, which refuses any other status.
+    expect(body).toContain("st === 'draft' || st === 'changes_requested'");
+    expect(body).toContain('Reopen to edit to change the discount.');
+  });
+
+  it('offers both an amount and a percent, and demands a reason', async () => {
+    const body = await shell();
+    expect(body).toContain('data-discount-method');
+    expect(body).toContain('>$ off<');
+    expect(body).toContain('>% off<');
+    expect(body).toContain('Reason (required)');
+    expect(body).toContain("toast('A reason is required')");
+  });
+
+  it('converts dollars and percents to the WIRE units in exactly one place', async () => {
+    const body = await shell();
+    // A $10.00 discount must never be sent as 10 cents. One converter each way.
+    expect(body).toContain('function discountWireValue(method, typed)');
+    expect(body).toContain('function discountInputValue(d)');
+  });
+
+  it('sends null — not undefined — when the founder removes one', async () => {
+    const body = await shell();
+    // JSON.stringify DROPS undefined, and the server reads absent as "preserve": the opposite of
+    // remove. _discountTouched is what separates "changed it" from "never had one".
+    expect(body).toContain('_discountTouched');
+    expect(body).toContain('function removeDiscount()');
+  });
+
+  it('never computes an applied amount client-side — the server owns both limits', async () => {
+    const body = await shell();
+    // The pane renders what it is given. No 30% and no floor arithmetic in the browser.
+    expect(body).not.toContain('MAX_DISCOUNT_PCT');
+    expect(body).not.toContain('* 0.3');
+    expect(body).toContain('data-testid="discount-applied"');
+    expect(body).toContain('data-testid="discount-cap"');
+  });
+
+  it('uses the delegated dispatcher, so it survives a money-pane re-render', async () => {
+    const body = await shell();
+    expect(body).toContain("data-action=\"applyDiscount\"");
+    expect(body).toContain("action === 'applyDiscount'");
+    expect(body).toContain("action === 'removeDiscount'");
+  });
+});
