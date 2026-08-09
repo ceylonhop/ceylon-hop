@@ -18,12 +18,18 @@ export function initTracking(dsn: string | undefined, opts: { environment: strin
   enabled = true;
 }
 
-export function track(err: unknown, ctx?: { route?: string; tag?: string; extra?: Record<string, unknown> }): void {
+export function track(
+  err: unknown,
+  ctx?: { route?: string; tag?: string; property?: string; extra?: Record<string, unknown> },
+): void {
   if (!enabled) return;
   try {
     Sentry.withScope((scope) => {
       if (ctx?.route) scope.setTag('route', ctx.route);
       if (ctx?.tag) scope.setTag('source', ctx.tag);
+      // Which front-end threw it — `pay`, `quote`, `manage`, `board`, `ops` or `site`.
+      // Sentry can then alert on `property:pay` alone, which is the one that costs money.
+      if (ctx?.property) scope.setTag('property', ctx.property);
       if (ctx?.extra) scope.setExtras(ctx.extra);
       Sentry.captureException(err instanceof Error ? err : new Error(String(err)));
     });

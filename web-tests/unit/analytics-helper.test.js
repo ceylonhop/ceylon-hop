@@ -18,14 +18,17 @@ describe('chTrack', () => {
   let win;
   beforeEach(() => { win = { location: { hostname: 'ceylonhop.com' } }; loadInto(win); });
 
+  // dataLayer[0] is now the once-per-page `ch_context` push (property + env) that
+  // analytics.js publishes on load — see analytics-property.test.js. Everything a
+  // caller tracks lands after it, unchanged.
   it('creates dataLayer and pushes {event, ...params}', () => {
     win.chTrack('purchase', { value: 42, currency: 'USD' });
-    expect(win.dataLayer).toEqual([{ event: 'purchase', value: 42, currency: 'USD' }]);
+    expect(win.dataLayer[1]).toEqual({ event: 'purchase', value: 42, currency: 'USD' });
   });
 
   it('works with no params', () => {
     win.chTrack('begin_checkout');
-    expect(win.dataLayer[0]).toEqual({ event: 'begin_checkout' });
+    expect(win.dataLayer[1]).toEqual({ event: 'begin_checkout' });
   });
 
   it('never throws even if dataLayer.push is hostile', () => {

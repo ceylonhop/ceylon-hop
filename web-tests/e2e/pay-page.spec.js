@@ -480,9 +480,15 @@ test('the dial code and the number share one row, code first so it survives the 
   await expect(page.locator('#f-country option').nth(1)).toHaveText('+94 Sri Lanka');
 });
 
-test('the payment page shows no cookie banner', async ({ page }) => {
-  // Owner call (2026-08-01): a customer mid-payment is not the audience for a consent
-  // prompt. The GTM consent DEFAULT is denied (set in <head>), so no banner ≠ tracking.
+test('the payment page shows no floating cookie card', async ({ page }) => {
+  // Owner call (2026-08-01): consent.js floats a card that landed squarely on the pay CTA on
+  // a phone. It must not come back — that is what this guards.
+  //
+  // What it no longer claims is that the page asks for nothing. "No banner" had quietly become
+  // "no consent": nothing on this page ever granted, so Clarity recorded not one payment and
+  // GA4 saw only cookieless pings. consent-transactional.js now asks for analytics ONLY and
+  // reserves its own height rather than overlaying anything — see the CTA-overlap test in
+  // property-analytics.spec.js, which is the invariant the owner actually asked for.
   await stubView(page, { state: 'payable', copy: COPY.single, totals: TOTALS, prefill: PREFILL });
   await page.goto(PAGE);
   await expect(page.locator('#paybtn')).toBeVisible(); // page fully rendered first
