@@ -139,11 +139,15 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate 
     return route.fulfill(json(refund));
   });
   // The API path: POST .../execute calls PayHere's Refund API server-side. `store.executeOutcome`
-  // decides what PayHere "said", so one mock covers success, decline and the indeterminate 202.
+  // decides what PayHere "said", so one mock covers success, decline, the indeterminate 202,
+  // and the API simply not being configured (row stays pending, manual route takes over).
   await page.route(/\/admin\/bookings\/booking-1\/refunds\/([^/]+)\/execute$/, async (route) => {
     const match = new URL(route.request().url()).pathname.match(/refunds\/([^/]+)\/execute$/);
     const refund = store.refunds.find((item) => item.id === match[1]);
     store.executePosts = (store.executePosts || 0) + 1;
+    if (store.executeOutcome === 'unavailable') {
+      return route.fulfill(json({ error: 'refund_api_unavailable' }, 503));
+    }
     if (store.executeOutcome === 'failed') {
       Object.assign(refund, { status: 'api_failed', providerMessage: 'Error processing refund' });
       return route.fulfill(json({ error: 'refund_declined', refund }, 409));
@@ -170,7 +174,11 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate 
 }
 
 test('the founder requests, reloads, and confirms a refund exactly once with PayHere evidence', async ({ page }) => {
-  const store = { refunds: [] };
+  // Since #360 (2026-08-08) a founder's press writes the request row AND fires the Refund API in
+  // one go. This test pins the fallback that flow promises: with the API unavailable the row
+  // stays manual_pending — exactly where the old two-step flow left you — and the refund is
+  // completed by hand in the PayHere dashboard, evidence pasted, exactly once.
+  const store = { refunds: [], executeOutcome: 'unavailable' };
   // One handler for the whole test. Every confirm() here is meant to be accepted, and `once`
   // left the double-press's SECOND dialog unhandled — Playwright auto-dismissed it, and on a
   // slow pass that landed before the first request had rendered its row. The single-POST
@@ -192,6 +200,7 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
 
   await expect(page.locator('.refund-status-manual_pending')).toContainText('$100');
   expect(store.requestPosts).toBe(1);
+  expect(store.executePosts).toBe(1); // the API was tried once, said "not configured", never retried
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$0');
 
   await page.reload();
@@ -199,8 +208,9 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   // The reason is the operator's own words now, and it survives a reload because it is stored
   // on the refund rather than being a label the button supplied.
   await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer cancelled — airline strike');
-  // The manual dashboard-and-paste route is still here, but it is now the alternative to the
-  // API button rather than the only way through — hence "Or refund it by hand".
+  // The pending row still offers BOTH ways out: the API retry, and the manual dashboard-and-
+  // paste route — hence "Or refund it by hand".
+  await expect(page.locator('[data-act="refundexecute"]')).toBeVisible();
   await expect(page.getByText('Or refund it by hand in the PayHere dashboard')).toBeVisible();
 
   await page.locator('[data-refund-ref="refund-1"]').fill('PAYHERE-R-1001');
@@ -261,23 +271,23 @@ function apiRefund(status, extra = {}) {
 }
 
 test('the founder refunds through PayHere directly and the row reads Confirmed, not Cancelled', async ({ page }) => {
+  // One press, one refund (#360, 2026-08-08): the button writes the request row — the audit
+  // record, which reserves the balance — then fires PayHere's Refund API itself. No second press
+  // on the row it created.
   const store = { refunds: [] };
   page.on('dialog', (dialog) => dialog.accept());
   await boot(page, { role: 'founder', store });
 
   await page.locator('#refundreason').fill('Customer cancelled — airline strike');
-  await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
-  await expect(page.locator('.refund-status-manual_pending')).toBeVisible();
-
-  const execute = page.locator('[data-act="refundexecute"]');
-  await expect(execute).toBeVisible();
-  await execute.dispatchEvent('click');
-  await execute.dispatchEvent('click'); // refundBusy must collapse this to one call
+  const request = page.locator('[data-act="refundrequest"]');
+  await request.dispatchEvent('click');
+  await request.dispatchEvent('click'); // refundBusy must collapse this to one request, one execute
 
   const done = page.locator('.refund-status-api_confirmed');
   await expect(done).toContainText('Confirmed');
   await expect(done).toContainText('PH-API-778899');
   await expect(done).not.toContainText('Cancelled');
+  expect(store.requestPosts).toBe(1);
   expect(store.executePosts).toBe(1);
   // No dashboard-and-paste step: the API supplied the evidence itself.
   await expect(page.locator('[data-refund-ref="refund-1"]')).toHaveCount(0);
