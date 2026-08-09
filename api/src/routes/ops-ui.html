@@ -2954,16 +2954,30 @@ function reverseActionsFor(t, d){
     ${reasonBox}<div class="reverse-actions">${btn}</div>${note}</div>`;
 }
 
+/* Was this booking settled through the gateway, or by hand? mark-paid records the method AS the
+   provider ("a cash payment's provider is cash"), and the drawer already receives the payment
+   rows — it just never asked. Everything about the refund block keys off this: a cash booking has
+   no PayHere payment to refund, so the API button would fail, and every mention of a "PayHere
+   reference" or "the PayHere dashboard" is a lie the operator has to type past. That matters more
+   than the wording: the evidence field is the money trail (docs/known-bugs.md, 2026-07-30). */
+var MANUAL_PROVIDERS = { cash: 'cash', bank_transfer: 'bank transfer', manual_other: 'another method' };
+function settledByHand(d) {
+  var p = ((d && d.payments) || []).find(function (x) { return x.status === 'succeeded'; });
+  return p && MANUAL_PROVIDERS[p.provider] ? MANUAL_PROVIDERS[p.provider] : null;
+}
+
 function refundHtmlFor(t,d){
   if(!state.caps||!state.caps.includes('payments:act'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
+
   const mayFire=state.caps.includes('payments:reverse');
+  const byHand=settledByHand(d);
   const rows=refunds.slice().reverse().map(r=>{
     /* Fall back to the raw status rather than a label. The old ternary ended in :'Cancelled',
        so all three api_* statuses printed as "Cancelled" — including a successful refund, and
        including api_processing, the one row that most needs a human to look at it. */
     const label=REFUND_LABEL[r.status]||r.status;
-    const evidence=r.gatewayRef?` · PayHere ref ${esc(r.gatewayRef)}`:'';
+    const evidence=r.gatewayRef?` · ${byHand?'returned by':'PayHere ref'} ${esc(r.gatewayRef)}`:'';
     const confirmed=r.confirmedBy?` · confirmed by ${esc(r.confirmedBy)}`:'';
     /* PayHere's `msg`, so a decline explains itself instead of leaving a bare status in the
        ledger. Only api_failed carries one worth showing — a success needs no excuse. */
@@ -2974,14 +2988,21 @@ function refundHtmlFor(t,d){
        alert, which says the same thing in the same words. */
     const stuck=r.status==='api_processing'
       ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`:'';
+    /* A booking paid by hand has no gateway payment to reverse, so the API button is not offered
+       — pressing it could only fail — and the copy asks how the money actually went back. */
     const pendingActions=r.status==='manual_pending'&&mayFire?`
-      <div class="refund-confirm">
+      ${byHand?'':`<div class="refund-confirm">
         <button class="btn btn-go" data-act="refundexecute" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}" title="Refunds through PayHere's Refund API — no dashboard step">Refund through PayHere now</button>
         <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
-      </div>
-      <p class="refund-warning">Or refund it by hand in the PayHere dashboard, then paste the reference below.</p>
+      </div>`}
+      ${byHand?`<div class="refund-confirm">
+        <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
+      </div>` : ''}
+      <p class="refund-warning">${byHand
+        ?`This booking was paid by ${esc(byHand)}, so there is nothing to refund through PayHere. Return the money the same way, then record how below.`
+        :'Or refund it by hand in the PayHere dashboard, then paste the reference below.'}</p>
       <div class="refund-confirm">
-        <label>PayHere refund reference<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="Required evidence"></label>
+        <label>${byHand?'How it was returned':'PayHere refund reference'}<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="${byHand?'e.g. bank transfer ref, or who handed the cash back':'Required evidence'}"></label>
         <button class="btn btn-noshow" data-act="refundconfirm" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Confirm manual refund</button>
       </div>`:'';
     return `<div class="refund-row refund-status-${esc(r.status)}">
@@ -3661,8 +3682,13 @@ document.addEventListener('click',async e=>{
       const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
       const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
       const gatewayRef=refInput&&refInput.value.trim();
-      if(!gatewayRef){toast('Paste the PayHere refund reference first','error');break;}
-      if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
+      /* Same field, honest prompt: a cash booking has no PayHere reference to paste, and asking
+         for one is how the evidence trail ends up recording a fiction. */
+      const handMethod=settledByHand(state.detailData);
+      if(!gatewayRef){toast(handMethod?'Record how the money went back first':'Paste the PayHere refund reference first','error');break;}
+      if(!confirm(handMethod
+        ?`Confirm only after the money has actually gone back by ${handMethod}. This records the evidence and emails the customer.`
+        :'Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
       refundBusy.add(busyKey);el.disabled=true;
       /* refreshRow too: a full refund flips the BOOKING to refunded (refundRepo.confirm →
          setStatus), and reloadRefundDetail only repaints the sheet's detail payload. Without it
