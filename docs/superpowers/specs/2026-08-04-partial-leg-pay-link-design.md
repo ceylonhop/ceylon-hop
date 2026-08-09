@@ -1,7 +1,16 @@
 # Partial-leg payment links — design
 
 **Date:** 2026-08-04
-**Status:** design approved by owner; build not started
+**Status (corrected 2026-08-09): SHIPPED.** Migration `0038_pay_link_selection`
+(`quotes.pay_link_selection`, `sold_cents`, `pay_link_seq`), `api/src/quote/paySelection.ts`,
+the mint path in `internalQuote.ts`, and the hosted pay page in `quotePay.ts` (which charges
+`soldCents ?? totalCents`) are all merged. The previous line read "build not started" and was
+stale.
+**Interaction added 2026-08-09:** a quote carrying an active manual discount **cannot** mint a
+partial link — the mint fails closed with `not_linkable`. Allocating one discount across a ticked
+subset of legs is undesigned; see `2026-07-15-discounts-design.md` §18.1. Related: `payLines()`
+parses `result.lineItems` positionally, so the discount line item is tagged
+`meta.kind = 'discount'` and skipped there — §18.5.
 **Builds on:** `docs/superpowers/specs/2026-07-31-quote-payment-link-design.md`
 
 ## 1. Problem
