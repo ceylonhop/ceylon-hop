@@ -4,7 +4,7 @@
 // its `input` field, and Node prints that in full. requireConnectionUrl rejects anything that
 // doesn't look like a connection string BEFORE it reaches the driver, and never echoes it.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { requireConnectionUrl, redactConnectionString } from '../../scripts/lib/targetUrl';
+import { requireConnectionUrl, redactConnectionString, describeDbError } from '../../scripts/lib/targetUrl';
 
 const ENV_VAR = 'BACKFILL_DATABASE_URL';
 // A distinctive fake secret — if this string shows up in any assertion failure output, that IS
@@ -94,5 +94,59 @@ describe('redactConnectionString', () => {
     const url = `postgres://user:${FAKE_SECRET}@localhost:5432/db`;
     const message = 'relation "bookings" does not exist';
     expect(redactConnectionString(message, url)).toBe(message);
+  });
+});
+
+describe('describeDbError', () => {
+  const url = 'postgresql://postgres:s3cr3t@db.example.supabase.co:5432/postgres';
+
+  it('surfaces the real Postgres reason drizzle hides on .cause', () => {
+    // Drizzle's DrizzleQueryError says only which query failed; the reason is one level down.
+    const wrapped = new Error('Failed query: select "bookings"."id" from "bookings"');
+    (wrapped as { cause?: unknown }).cause = new Error('relation "booking_legs" does not exist');
+    expect(describeDbError(wrapped, url)).toContain('relation "booking_legs" does not exist');
+  });
+
+  it('still redacts the credential while unwrapping', () => {
+    const wrapped = new Error('Failed query');
+    (wrapped as { cause?: unknown }).cause = new Error(`could not connect to ${url}`);
+    const out = describeDbError(wrapped, url);
+    expect(out).not.toContain('s3cr3t');
+    expect(out).not.toContain(url);
+  });
+
+  it('handles a plain error with no cause', () => {
+    expect(describeDbError(new Error('timeout'), url)).toBe('timeout');
+  });
+});
+
+describe('requireConnectionUrl — paste artefacts', () => {
+  const clean = 'postgresql://postgres.ref:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres';
+
+  it.each([
+    ['surrounding whitespace', `  ${clean}  `],
+    ['a trailing newline', `${clean}\n`],
+    ['double quotes', `"${clean}"`],
+    ['single quotes', `'${clean}'`],
+  ])('accepts a value with %s', (_label, raw) => {
+    process.env.BACKFILL_DATABASE_URL = raw;
+    expect(requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to')).toBe(clean);
+  });
+
+  it('names the scheme it actually saw, so the operator can diagnose it', () => {
+    process.env.BACKFILL_DATABASE_URL = 'https://example.supabase.co/db';
+    expect(() => requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to')).toThrow(/starts with "https:\/\/"/);
+  });
+
+  it('reports only a length when there is no scheme, so a pasted secret cannot leak', () => {
+    process.env.BACKFILL_DATABASE_URL = 'SuperSecret123!@';
+    try {
+      requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to');
+      throw new Error('should have thrown');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('16 characters');
+      expect(msg).not.toContain('SuperSecret123');
+    }
   });
 });
