@@ -614,6 +614,39 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .nav-btns .btn{white-space:normal}
   }
 
+  /* ── Print ("Download / print pass") ──────────────────────────────────────────────────
+     The button is a bare window.print() and the repo had no print stylesheet at all, so the
+     browser printed the entire confirmation page: the hero, the concierge note, the buttons
+     themselves greyed out, a hollow ring where the tick's teal fill was dropped, a white
+     rectangle where the dark stub should be, and a second page carrying one stray button
+     (owner, 2026-08-09, with the PDF). Print the keepsake alone.
+     Styled for paper rather than recoloured: the print dialog has background graphics OFF by
+     default, so white-on-ink prints as white-on-white. Nothing here may depend on a
+     background to stay legible. Allow-list by structure, not by naming each piece of
+     furniture, so anything added to the page later is excluded by default. */
+  @media print{
+    @page{margin:14mm}
+    body > *{display:none!important}
+    body > #confirm{display:block!important;padding:0!important;margin:0!important}
+    #confirm > *{display:none!important}
+    #confirm > #pass{display:grid!important}
+    body{background:#fff!important}
+    /* the postcard wash and the grain overlay are fixed full-page layers, so they are not
+       children and survive the rule above — on paper they are a full sheet of ink */
+    body::before, body::after{display:none!important}
+    .pass{margin:0!important;box-shadow:none!important;border:1px solid #b9b4a8;border-radius:10px;
+      grid-template-columns:1fr 205px;break-inside:avoid;page-break-inside:avoid}
+    .pass-main{padding:20px 22px}
+    /* stub: ink-on-white with a tear line, instead of the screen's white-on-ink panel */
+    .pass-stub{background:transparent!important;border-left:1px dashed #b9b4a8;padding:20px 18px}
+    .pass-stub::before{display:none!important}
+    .pass-stub *{color:#3a3739!important}
+    /* the screen's .15em tracking wrapped the reference onto two lines in the narrower column */
+    .pass-stub .ref{letter-spacing:.08em}
+    /* decorative stripes, not a scannable code — they carry nothing onto paper */
+    .barcode{display:none!important}
+  }
+
   /* A multi-stop pass shows its whole chain (booking.js renderPassRoute) — three or more
      names where the shared .pass-route only ever had to fit two, which runs past the card on
      a phone. Stack it there instead: wrapping the row left an arrow dangling at the line
