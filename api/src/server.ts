@@ -18,6 +18,7 @@ import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
 import { PostgresZonesRepo } from './db/postgresZonesRepo';
+import { PostgresQuoteDiscountRepo } from './db/postgresQuoteDiscountRepo';
 import { PostgresPlaceResolutionRepo } from './db/postgresPlaceResolutionRepo';
 import { PostgresAlertLogRepo } from './db/postgresAlertLogRepo';
 import { EmailAlertAdapter, LogAlertAdapter, ThrottledAlerts } from './adapters/alerts';
@@ -111,6 +112,12 @@ const app = createApp({
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
+  // Founder manual discounts. WITHOUT this line app.ts falls back to the in-memory repo, and the
+  // failure is silent and confusing: PostgresQuoteRepo.update still writes the row inside the save
+  // transaction, so the discount really is in Postgres — but every READ goes to an empty object.
+  // The quote prices correctly on save and then shows undiscounted on the next load, which is how
+  // it reached staging (2026-08-09).
+  quoteDiscounts: new PostgresQuoteDiscountRepo(db),
   quoteConversions: new PostgresQuoteConversionRepo(db, bookings),
   zones: new PostgresZonesRepo(db),
   placeResolutions: new PostgresPlaceResolutionRepo(db),
