@@ -115,10 +115,27 @@
      Bodoni 72 tops out at Bold: there is no ExtraBold, so display weights are 700, not
      800, or the browser synthesises a fake bold and the hairlines clog.
 
-     The book's 35pt heading floor is a print number, honoured here as intent: --display
-     is DISPLAY-ONLY. Anything that would land under ~24px uses --body instead, which is
-     why .stamp b, .dp-head b and .pass-brand are on Poppins rather than Bodoni. Putting
-     Bodoni back on those will thin out to mush on a phone. */
+     WHERE THE DISPLAY FACE GOES. Two rules, and the second is the one that used to be
+     written down wrong.
+
+     1. Headings, always — h1-h4 take it from the rule below.
+
+     2. Route names, place names and money, down to a 1rem (16px) FLOOR. These are the
+        nouns of the product; a trip reads as one document only if the same string wears
+        the same face on every step of it. This clause is why .dr-route on plan.html and
+        .tr-leg-title on booking.html — the identical "A → B" one step apart — are both
+        Bodoni, and why .lcard-route, .rr-stop b, .sl-route, .lprice b and .tot .v are.
+
+     Everything else is Poppins. So is anything under the 1rem floor, whatever it says:
+     Bodoni's hairlines thin to mush below it, which is why .stamp b, .dp-head b,
+     .pass-brand, .s-row b and .leg-meta .lm-dist b stay on the body face even though
+     two of those are money. The floor wins over rule 2, not the other way round.
+
+     Earlier this comment claimed a ~24px floor, taken from the book's 35pt print
+     heading minimum. The code never honoured it — index.html and plan.html were
+     shipping Bodoni at 1.05-1.45rem the day it was written — so it described nothing
+     and the drift it was meant to prevent went unnoticed on the booking flow instead.
+     1rem is the number we actually hold to. */
   --display:'CH Bodoni', 'Bodoni Moda', 'Didot', Georgia, serif;
   --body:'Poppins', system-ui, -apple-system, sans-serif;
   --hand:'Caveat', 'Segoe Script', cursive;
