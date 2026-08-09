@@ -37,8 +37,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="datepicker.js"></script>
 <style>
   /* ---- plan hero ---- */
-  .plan-head{position:relative;margin-top:-74px;padding:116px 0 120px;overflow:hidden}
-  .plan-head::after{content:"";position:absolute;inset:0;z-index:0;background:
+  /* The tint has to reach the very top of the page. `margin-top:-74px` slides this section up
+     behind the sticky 74px header — the pattern index.html and tours.html use, where the hero is
+     the first thing after the header. Here the breadcrumb row and the stepper sit in between, so
+     the pull lands ~25px short and left a bare strip of page background under the header, with the
+     tint's hard top edge slicing the breadcrumb row (owner-spotted 2026-08-09).
+     Fixed by extending the fill upward, not by tuning the margin: the shortfall is however tall
+     the breadcrumb + stepper happen to be, which moves with viewport and text size, whereas any
+     overshoot past the page origin is simply never on screen. overflow-x:clip keeps the original
+     no-horizontal-scroll guard while letting the fill bleed up. */
+  .plan-head{position:relative;margin-top:-74px;padding:116px 0 120px;overflow-x:clip}
+  .plan-head::after{content:"";position:absolute;inset:-260px 0 0;z-index:0;background:
     radial-gradient(120% 90% at 88% -10%, var(--pc-teal), transparent 58%),
     radial-gradient(90% 80% at -6% 110%, var(--pc-saffron), transparent 54%),
     linear-gradient(160deg,#e9f5f0,#e7f0e7 55%,#eef4e5)}
