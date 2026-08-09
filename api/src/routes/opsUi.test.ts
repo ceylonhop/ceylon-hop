@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { gunzipSync } from 'node:zlib';
 import { createApp } from '../app';
+import { ALL_OPS_ACTIONS } from '../lib/opsAuth';
 
 describe('ops UI shell', () => {
   it('serves the ops UI shell without auth', async () => {
@@ -147,6 +148,63 @@ describe('ops UI shell', () => {
     expect(body).toContain('_lastRenderedRoute'); // focus only moves on an actual route transition
   });
 
+  // An open booking sheet is part of the address (2026-08-08). Refreshing with a sheet open used
+  // to drop it and land the operator back on the bare queue.
+  describe('the open booking sheet is addressable', () => {
+    const uiBody = async () => await (await createApp().request('/ops')).text();
+
+    it('reads and writes ?booking= alongside the existing ?quote=', async () => {
+      const body = await uiBody();
+      expect(body).toContain("searchParams.get('booking')");
+      expect(body).toContain("url.searchParams.set('booking',bookingId)");
+      expect(body).toContain("url.searchParams.delete('booking')");
+    });
+
+    // The half that is easy to leave out. Opening on arrival looks like the whole feature until
+    // you press Back and the sheet is still sitting there over the queue.
+    it('closes the sheet when the URL no longer names a booking', async () => {
+      const body = await uiBody();
+      expect(body).toContain("if(!next.routeBookingId)closeDetail('silent');");
+    });
+
+    // renderSheet() resolves its ticket out of `tickets`; opening before the queue lands finds
+    // nothing, hides the sheet, and drops the deep link silently.
+    it('waits for the queue before opening a deep-linked booking', async () => {
+      const body = await uiBody();
+      const fn = (body.split('async function resolveBookingDeepLink(')[1] ?? '').split('\nasync function')[0];
+      expect(fn).toContain('await loadQueue()');
+      expect(fn).toContain("openDetail(id,{fromUrl:true})");
+      expect(fn.indexOf('await loadQueue()')).toBeLessThan(fn.indexOf('openDetail(id,{fromUrl:true})'));
+      expect(fn.length).toBeLessThan(2000); // the slice is one function, not the rest of the file
+    });
+
+    // Boot reads the URL itself rather than going through applyRouteFromUrl, so it needs its own
+    // call — otherwise a REFRESH keeps the address and drops the sheet, which is the whole bug.
+    it('resolves the deep link on boot, not only on popstate', async () => {
+      const body = await uiBody();
+      expect(body).toContain('if(next.routeBookingId)void resolveBookingDeepLink(next.routeBookingId);');
+      expect(body).toContain("if(next.routeBookingId&&next.routeBookingId!==state.detail)void resolveBookingDeepLink");
+    });
+
+    // Six copies of the same three statements became one. Every close must now also drop the
+    // param, and a stray raw reset would leave the address describing a closed sheet.
+    it('funnels every close through closeDetail', async () => {
+      const body = await uiBody();
+      expect(body).toContain('function closeDetail(mode)');
+      expect(body).toContain("closeDetail('push')");   // operator-initiated: Back reopens
+      expect(body).toContain("closeDetail('replace')"); // the booking went away underneath them
+      expect(body).toContain("closeDetail('silent')");  // caller syncs the URL itself
+      // exactly one raw reset survives — the one inside closeDetail
+      expect(body.match(/state\.detail=null;state\.detailData=null/g)?.length).toBe(1);
+    });
+
+    it('never leaves ?booking= set on a surface that cannot show it', async () => {
+      const body = await uiBody();
+      expect(body).toContain("if(route==='tickets'&&bookingId)url.searchParams.set('booking',bookingId);");
+      expect(body).toContain("if(route!=='tickets')closeDetail('silent');");
+    });
+  });
+
   it('ships a client-error beacon so ops-dashboard JS errors are captured (M17 parity)', async () => {
     // The customer pages beacon uncaught JS errors to /errors/client; the ops UI did not, so a
     // render bug in the staff dashboard vanished silently. It must forward to the same sink.
@@ -178,9 +236,9 @@ describe('ops UI — manual refund workflow (SH9)', () => {
     expect(body).toContain("'/cancel'");
   });
 
-  it('requires PayHere dashboard completion and evidence before confirmation', async () => {
+  it('still offers the manual dashboard route, with evidence, alongside the API one', async () => {
     const body = await (await createApp().request('/ops')).text();
-    expect(body).toContain('Complete the refund in the PayHere dashboard first');
+    expect(body).toContain('Or refund it by hand in the PayHere dashboard');
     expect(body).toContain('PayHere refund reference');
     expect(body).toContain('gatewayRef');
   });
@@ -193,6 +251,36 @@ describe('ops UI — manual refund workflow (SH9)', () => {
     expect(body).toContain('requestedBy');
     expect(body).toContain('confirmedBy');
     expect(body).toContain('gatewayRef');
+  });
+
+  // The API path (PayHere Refund API, reachable since they whitelisted our egress 2026-08-07).
+  it('can fire the Refund API from the sheet, and labels all six statuses', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    expect(body).toContain('data-act="refundexecute"');
+    expect(body).toContain("'/refunds/'+refundId+'/execute'");
+    // Every status gets its own label. The old ternary ended in :'Cancelled', so a successful
+    // api_confirmed refund — and an api_processing one — both read as "Cancelled".
+    expect(body).toContain('api_processing:');
+    expect(body).toContain('api_confirmed:');
+    expect(body).toContain('api_failed:');
+    expect(body).not.toContain(
+      "r.status==='manual_pending'?'Pending':r.status==='manual_confirmed'?'Confirmed':'Cancelled'",
+    );
+  });
+
+  it('counts API refunds as money spoken for, exactly as the server does', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // Must mirror REFUNDED_STATUSES / RESERVING_STATUSES in db/refundRepo.ts. Counting only the
+    // manual statuses made a fully API-refunded booking read as fully refundable.
+    expect(body).toContain("const REFUND_SETTLED=['manual_confirmed','api_confirmed'];");
+    expect(body).toContain("const REFUND_IN_FLIGHT=['manual_pending','api_processing'];");
+  });
+
+  it('refuses to retry an indeterminate refund and says why', async () => {
+    const body = await (await createApp().request('/ops')).text();
+    // api_processing means the money MAY have moved and the API has no idempotency key.
+    expect(body).toContain('Check PayHere before doing anything else');
+    expect(body).toContain('refund_outcome_unknown');
   });
 });
 
@@ -715,7 +803,29 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     const body = await uiBody();
     expect(body).toContain('function mayReverseNow(');
     expect(body).toContain("state.caps.includes('payments:reverse')) return true;");
-    expect(body).toContain('const blocked = opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t);');
+    // The rule itself, now inside reverseGate() where the split refund and cancel blocks share
+    // it (2026-08-07). It reads the same as the line it replaced: only an ops agent is
+    // time-limited, and only when BOTH the fresh-intake grace and the trip window have closed.
+    expect(body).toContain('blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),');
+  });
+
+  // The other half of the contract these assertions rest on. Every test above proves the client
+  // ASKS for a capability; none proved the server ever ANSWERS with it. That gap is not
+  // theoretical — /whoami built its caps list by hand and omitted 'payments:reverse', so the
+  // guard asserted two tests up was permanently false and refund confirm/cancel were dead
+  // buttons for the founder, the only role that holds it. Every suite stayed green throughout.
+  //
+  // So: pull every capability the shipped HTML gates on straight out of the served body, and
+  // require the server to be able to emit each one. Reading the real artifact rather than a
+  // hand-kept list is the point — a new caps.includes('…') in the client is covered the moment
+  // it ships, with no second place to remember to update.
+  it('never gates on a capability /whoami cannot emit', async () => {
+    const body = await uiBody();
+    const gated = [...body.matchAll(/caps\.includes\('([^']+)'\)/g)].map((m) => m[1]);
+    expect(gated.length).toBeGreaterThan(0); // the regex still matches the shipped source
+    expect([...new Set(gated)].sort()).toEqual(
+      [...new Set(gated)].filter((cap) => (ALL_OPS_ACTIONS as readonly string[]).includes(cap)).sort(),
+    );
   });
 
   // Bookings frequently arrive inside 24h of travel, so ops must be able to undo fresh intake.
@@ -726,11 +836,89 @@ describe('the drawer mirrors the 24-hour reversal rule', () => {
     expect(body).toContain('if(!Number.isFinite(created)) return false;'); // unknown age fails closed
   });
 
-  it('requires a typed reason for both cancelling and refunding', async () => {
+  // Two fields, not one (2026-08-07). Cancel and refund used to share #reversereason because they
+  // shared a block. Now that they are separate blocks, one shared input would let a reason typed
+  // for a cancellation be submitted with a refund — and both are written to permanent audit
+  // records. The ids must stay distinct, and each handler must read its own.
+  it('requires a typed reason for both cancelling and refunding, from separate fields', async () => {
     const body = await uiBody();
-    expect(body).toContain("id=\"reversereason\"");
+    expect(body).toContain('id="cancelreason"');
+    expect(body).toContain('id="refundreason"');
+    expect(body).not.toContain('id="reversereason"'); // the shared field is gone
+    expect(body).toContain("$('#cancelreason')");
+    expect(body).toContain("$('#refundreason')");
     expect(body).toContain('it is saved against the booking');
     expect(body).toContain('it is saved against the refund');
+  });
+
+  // The 2026-08-07 consolidation. Requesting a refund HIDES the request button (a full-amount
+  // pending row drives `remaining` to 0), so if the controls that complete it live somewhere
+  // else, pressing Refund looks like a button that broke. Request and completion now share one
+  // block, and the block that starts a cancellation offers no refund control at all.
+  it('puts the refund request inside the Refunds block, not the cancel block', async () => {
+    const body = await uiBody();
+    // the request form is built by the Refunds block, via its `request` slot
+    expect(body).toContain('const request=refundRequestFor(t,d);');
+    expect(body).toContain('function refundRequestFor(');
+    // and the cancel block is now cancel-only, retitled to match
+    expect(body).toContain('<h4>Cancel booking</h4>');
+    expect(body).not.toContain('<h4>Cancel &amp; refund</h4>');
+  });
+
+  // The label must match what the press actually does. It once said "Refund $X in full" while
+  // moving no money, and the owner read it as completed three times in one evening. The button
+  // now DOES refund (2026-08-08), so the rule inverts but does not relax: an operator who can
+  // fire the API is promised a refund and gets one; an operator who cannot is promised a request
+  // and told plainly that no money moved.
+  it('never tells the operator a requested refund has been paid', async () => {
+    const body = await uiBody();
+    // One template, both wordings, chosen by the capability that decides which actually happens.
+    expect(body).toContain("${mayFire?'Refund':'Request refund'}");
+    expect(body).toContain("const mayFire = !!(state.caps && state.caps.includes('payments:reverse'))");
+    expect(body).not.toContain('in full</button>');          // the old over-promising label
+    expect(body).not.toContain('complete it in PayHere');    // predated the Refund API button
+    // The request-only path still says so, in the confirm and in the toast.
+    expect(body).toContain('no money has moved yet');
+    expect(body).toContain('files the request for someone who can');
+    // …and the old wording, which claimed nothing had moved when now it has, is gone.
+    expect(body).not.toContain('This records the request — no money moves yet');
+    // A one-press refund must warn that it is final.
+    expect(body).toContain('There is no undo.');
+  });
+
+  // Both blocks answer the same question about who may reverse and whether the ops window has
+  // closed. They were one function until the split; a divergence would offer a cancel where a
+  // refund is refused, or vice versa.
+  it('gates the split refund and cancel blocks through one shared reversal test', async () => {
+    const body = await uiBody();
+    expect(body).toContain('function reverseGate(');
+    // both call sites read the same helper rather than re-deriving the rule
+    expect(body.match(/reverseGate\(t, ?d\)/g)?.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // A refund that settles flips the BOOKING to refunded. reloadRefundDetail repaints only the
+  // sheet's detail payload, so without refreshRow the header chip and queue row keep reading
+  // "Paid" after the money went back — which reads as a refund that failed (owner, 2026-08-07).
+  it('refreshes the queue row on the refund actions that change booking status', async () => {
+    const body = await uiBody();
+    // Bounded to ONE case block: split on the label, then cut at the next one. Without the second
+    // cut the slice runs to the end of the file, so an assertion about refundconfirm would be
+    // satisfied by refundexecute's call — a test that cannot fail. Caught by deleting the call
+    // and watching it still pass.
+    const handler = (name: string) => (body.split(`case '${name}':`)[1] ?? '').split("case '")[0];
+
+    expect(handler('refundconfirm')).toContain('await refreshRow(id)');
+    // The API path moved into fireRefund() when the request button gained one-press refunding
+    // (2026-08-08) — so the repaint is asserted where it now lives, and BOTH ways in are checked
+    // to route through it. That is stronger than before: one implementation, not two to drift.
+    const fire = (body.split('async function fireRefund(')[1] ?? '').split('\nasync function ')[0];
+    expect(fire).toContain('await refreshRow(bookingId)');
+    expect(handler('refundexecute')).toContain('fireRefund(id,refundId)');
+    expect(handler('refundrequest')).toContain('fireRefund(id,refund&&refund.id)');
+    // Guard the guard: each slice must be a plausible single handler, not the rest of the file.
+    expect(handler('refundconfirm').length).toBeLessThan(3000);
+    expect(handler('refundexecute').length).toBeLessThan(3000);
+    expect(fire.length).toBeLessThan(3000);
   });
 
   it('translates the server refusal codes instead of saying "could not cancel"', async () => {

@@ -7,7 +7,7 @@
 <meta name="description" content="Compare a private AC transfer with a shared seat for your Sri Lanka route — fixed prices, free cancellation and WhatsApp support 7 days a week.">
 <meta name="robots" content="noindex, follow">
 <link rel="canonical" href="https://ceylonhop.com/search.html">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
@@ -59,7 +59,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .srch-locked{display:flex;align-items:center;gap:16px;background:var(--cream-deep);border-radius:var(--r);padding:14px 18px;flex-wrap:wrap}
   .srch-locked[hidden]{display:none}
   .srch-locked .sl-main{flex:1;min-width:200px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .srch-locked .sl-route{font-weight:700;font-size:1rem;color:var(--ink);display:inline-flex;align-items:center;gap:.5rem}
+  .srch-locked .sl-route{font-family:var(--display);font-weight:700;font-size:1rem;color:var(--ink);display:inline-flex;align-items:center;gap:.5rem}
   .srch-locked .sl-route .arr{color:var(--accent-deep);display:inline-flex}
   .srch-locked .sl-route .arr svg{width:18px;height:18px}
   .srch-locked .sl-dot{color:var(--ink-soft)}
@@ -137,7 +137,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* shared block */
   .shared-price{display:flex;align-items:baseline;gap:.5rem;margin:.2rem 0 .2rem}
-  .shared-price .amt{font-family:var(--display);font-size:2.6rem;font-weight:800;line-height:1}
+  .shared-price .amt{font-family:var(--display);font-size:2.6rem;font-weight:700;line-height:1}
   .shared-price .per{color:var(--ink-soft);font-weight:600}
   .shared-save{display:inline-flex;align-items:center;gap:.4rem;background:rgba(10,185,182,.12);color:var(--teal-deep);font-weight:700;font-size:.82rem;padding:.35rem .7rem;border-radius:999px;margin-bottom:14px}
   .shared-save svg{width:15px;height:15px;flex:none}
@@ -180,18 +180,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <section class="srch-top">
   <div class="wrap">
-    <a class="back-link" href="index.html"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Start a new search</a>
+    <a class="back-link" href="index.html"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg> Start a new search</a>
     <div class="srch-locked" id="srch-locked">
       <div class="sl-main">
         <span class="sl-route" id="sl-route"></span>
         <span class="sl-dot" aria-hidden="true">·</span>
         <span class="sl-meta" id="sl-meta"></span>
       </div>
-      <button type="button" class="sl-edit" id="sl-edit" onclick="editSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit search</button>
+      <button type="button" class="sl-edit" id="sl-edit" onclick="editSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit search</button>
     </div>
     <form class="srch-bar" id="srch-bar" hidden onsubmit="return updateSearch(event)">
       <div class="field place-field"><label for="e-from">Pick-up</label><input id="e-from" required placeholder="Where from?" autocomplete="off"></div>
-      <button type="button" class="swap2" id="e-swap" aria-label="Swap pick-up and drop-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button>
+      <button type="button" class="swap2" id="e-swap" aria-label="Swap pick-up and drop-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button>
       <div class="field place-field"><label for="e-to">Drop-off</label><input id="e-to" required placeholder="Where to?" autocomplete="off"></div>
       <div class="field"><label for="e-date">Date</label><input type="date" id="e-date" data-datepicker data-placeholder="Any date" aria-label="Travel date"></div>
       <div class="field"><label for="e-pax">Travellers</label><select id="e-pax"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6+ (group quote on WhatsApp)</option></select></div>
@@ -215,9 +215,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <p class="complex-route">Want a stop along the way, a day trip and back, or a longer route? <a href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%2C%20I%27d%20like%20a%20quote%20for%20a%20custom%20route%20with%20a%20few%20stops." target="_blank" rel="noopener">Message us</a> — we'll price it in minutes.</p>
     <div class="srch-help" id="srch-help"></div>
     <div class="reassure">
-      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured, vetted drivers</div>
-      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
-      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support, 7 days</div>
+      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured, vetted drivers</div>
+      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
+      <div class="ra"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support, 7 days</div>
     </div>
   </div>
 </section>

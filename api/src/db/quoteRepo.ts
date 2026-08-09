@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import { quoteTravelDate } from './quoteTravelDate';
 import type { PaySelection } from '../quote/paySelection';
 
 export type QuoteStatus =
@@ -66,8 +67,10 @@ export interface NewQuote {
   updatedBy?: string | null;
   // Assignment (spec 2026-07-22): a new quote is auto-assigned to its creator on save() so it
   // opens already showing a holder. Reassignment happens via the patch/picker (and, from
-  // 2026-07-26, automatically on the ready/sent transitions), and update() leaves assignment
-  // untouched — so this only takes effect on insert.
+  // 2026-07-26, automatically on the ready/sent transitions).
+  // 2026-08-01: update() now applies this too, but ONLY when explicitly provided — editing
+  // someone else's quote takes it over (internalQuote.ts decides what counts as an edit).
+  // Callers that omit the field are unaffected, which is every caller that came before.
   assignedTo?: string | null;
 }
 
@@ -141,6 +144,11 @@ export interface QuoteSummary {
   // gate refuses to move it out of draft. Derived from the request marker, NEVER from the price —
   // a $0 total is a symptom, the marker is the fact.
   unpriced: boolean;
+  // Last day of travel (spec 2026-08-01), derived per request from request_json.legs[].date —
+  // NOT a stored column. Null when no leg carries a usable date. The queue uses it to tell a
+  // live sent quote from one whose trip has already happened, which send age cannot do (see
+  // the sweep's note in api/src/services/quoteExpiry.ts).
+  travelDate: string | null;
   createdAt: Date;
 }
 
@@ -343,6 +351,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
     unpriced: isUnpricedShell(q),
+    travelDate: quoteTravelDate(requestLegs(q.request)),
     createdAt: q.createdAt,
   };
 }
@@ -566,6 +575,11 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.rateCardVersion = q.rateCardVersion;
     row.marginCents = q.marginCents ?? null;
     row.request = q.request;
+    // Only when explicitly provided (see NewQuote.assignedTo) — an ordinary content save omits it.
+    if (q.assignedTo !== undefined) {
+      row.assignedTo = q.assignedTo ?? null;
+      row.assignedAt = q.assignedTo ? new Date() : null;
+    }
     row.result = q.result;
     row.rateCardJson = q.rateCardJson ?? null;
     row.rateLockedUntil = q.rateLockedUntil ?? null;

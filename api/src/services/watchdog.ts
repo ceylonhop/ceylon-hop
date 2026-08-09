@@ -4,6 +4,7 @@ import type { PaymentRepo } from '../db/paymentRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { EmailAdapter } from '../adapters/email';
+import type { SendBudget } from './sendBudget';
 import { sendPaymentIncomplete, manageUrl } from './notifications';
 
 // M17 payments watchdog — the periodic sweep behind POST /admin/jobs/watchdog. Catches
@@ -44,6 +45,10 @@ export async function runWatchdog(
     payments?: PaymentRepo;
     // Optional like the rest; without it stuck refunds simply are not swept.
     refunds?: RefundRepo;
+    // Blast-radius cap (R1) — bounds the CUSTOMER recovery emails only. Ops alerts below
+    // are never capped: they are how a human finds out anything is wrong, so throttling
+    // them would hide the very burst this budget exists to surface.
+    budget?: SendBudget;
   },
 ): Promise<{
   stuckPending: number;
@@ -51,7 +56,7 @@ export async function runWatchdog(
   recoveryEmails: number;
   stuckRefunds: number;
 }> {
-  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds } = deps;
+  const { bookings, log, alerts, email, baseUrl, linkSecret, payments, refunds, budget } = deps;
 
   const pending = await bookings.list({ status: 'payment_pending' });
   const stuck: typeof pending = [];
@@ -84,12 +89,21 @@ export async function runWatchdog(
     });
     // One-shot customer recovery email. Best-effort: a mail hiccup must not abort the
     // sweep (the ops alert above already fired). Idempotent via notification_log.
-    if (email && baseUrl && linkSecret && !(await log.wasSent(b.id, 'payment_recovery'))) {
+    // Claim before sending (see NotificationLogRepo.claim) — the ~15-min cron can overlap
+    // a manual sweep. Every path that does not send hands the claim back.
+    if (email && baseUrl && linkSecret && (await log.claim(b.id, 'payment_recovery'))) {
+      // Over the cap: the ops alert above still fired, so nothing is lost — only the
+      // customer email waits for the next run.
+      if (budget && !budget.tryClaim()) {
+        await log.release(b.id, 'payment_recovery');
+        budget.suppress('payment_recovery', b.reference);
+        continue;
+      }
       try {
         await sendPaymentIncomplete(b, email, { resume: manageUrl(b, baseUrl, linkSecret) });
-        await log.markSent(b.id, 'payment_recovery');
         recoveryEmails += 1;
       } catch (err) {
+        await log.release(b.id, 'payment_recovery');
         console.error(`payment-recovery email failed for ${b.reference}:`, err);
       }
     }

@@ -1,4 +1,4 @@
-import { wrap } from './shareCardImage';
+import { wrap, DISPLAY, BODY, deArrow } from './shareCardImage';
 import { payPageCopy } from '../quote/payPageCopy';
 import type { SavedQuote } from '../db/quoteRepo';
 
@@ -23,7 +23,7 @@ import type { SavedQuote } from '../db/quoteRepo';
 
 const C = {
   teal: '#0AB9B6', tealDeep: '#08938f', saffron: '#F9A429',
-  ink: '#2C2A2B', inkSoft: '#6c6a6b', paper: '#fffdf8', line: '#ded7c4',
+  ink: '#3A3739', inkSoft: '#6c6a6b', paper: '#fffdf8', line: '#ded7c4',
 } as const;
 
 const xml = (s: string): string =>
@@ -70,17 +70,19 @@ export function quoteCardModel(quote: SavedQuote): QuoteCardModel {
 }
 
 export function quoteCardSvg(m: QuoteCardModel): string {
-  // '→' has no glyph in Newsreader-ExtraBold, and resvg falls the WHOLE text run back to Hanken
-  // Grotesk when one glyph is missing — so a routed title would silently render in sans while
-  // the generic card rendered in the brand serif. Swap it for an en dash HERE, in the renderer
-  // with the font limitation: the model keeps the arrow, and so does the OG description, which
-  // WhatsApp draws with its own fonts.
-  const routeLines = wrap(m.route.replace(/\s*→\s*/g, ' – '), 30, 2);
-  const detailLines = wrap(m.detail, 44, 2);
+  // '→' has no glyph in EITHER bundled face, and resvg blanks the whole text run when one
+  // glyph is missing. Under the old Newsreader/Hanken pairing only the serif lacked it, so
+  // guarding the route line was enough; Poppins lacks it too, so every rasterised string
+  // goes through deArrow now. Swap happens HERE, in the renderer with the font limitation:
+  // the model keeps the arrow, and so does the OG description, which WhatsApp draws itself.
+  const routeLines = wrap(deArrow(m.route), 30, 2);
+  const detailLines = wrap(deArrow(m.detail), 44, 2);
   const routeY = 300;
-  // Resvg runs with loadSystemFonts:false, so ONLY the bundled faces resolve: Newsreader-ExtraBold
-  // and HankenGrotesk Bold/SemiBold. Naming anything else renders blank glyphs.
-  const text = (t: string, y: number, size: number, family: 'Newsreader' | 'Hanken Grotesk', weight: number, fill: string) =>
+  // Resvg runs with loadSystemFonts:false, so ONLY the bundled faces resolve. Name them by
+  // their INTERNAL family string, not the file name — Google's static Bodoni Moda reports
+  // "Bodoni Moda 11pt", and naming plain "Bodoni Moda" renders blank glyphs. Guarded by
+  // web-tests/unit/card-font-families.test.js.
+  const text = (t: string, y: number, size: number, family: typeof DISPLAY | typeof BODY, weight: number, fill: string) =>
     `<text x="100" y="${y}" font-family="${family}" font-size="${size}" font-weight="${weight}" fill="${fill}">${xml(t)}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -96,20 +98,20 @@ export function quoteCardSvg(m: QuoteCardModel): string {
 <rect width="1200" height="630" fill="url(#glow)"/>
 
 <circle cx="128" cy="118" r="30" fill="${C.saffron}"/>
-<text x="128" y="131" font-family="Newsreader" font-size="34" font-weight="800" fill="${C.paper}" text-anchor="middle">C</text>
-<text x="176" y="131" font-family="Newsreader" font-size="30" font-weight="800" fill="${C.tealDeep}" letter-spacing="1.5">CEYLON HOP</text>
+<text x="128" y="131" font-family="${DISPLAY}" font-size="34" font-weight="800" fill="${C.paper}" text-anchor="middle">C</text>
+<text x="176" y="131" font-family="${DISPLAY}" font-size="30" font-weight="800" fill="${C.tealDeep}" letter-spacing="1.5">CEYLON HOP</text>
 
-${text(m.lead, 216, 40, 'Hanken Grotesk', 600, C.inkSoft)}
-${routeLines.map((l, i) => text(l, routeY + i * 62, 56, 'Newsreader', 800, C.ink)).join('\n')}
-${detailLines.map((l, i) => text(l, routeY + routeLines.length * 62 + 14 + i * 40, 30, 'Hanken Grotesk', 600, C.inkSoft)).join('\n')}
+${text(m.lead, 216, 40, BODY, 700, C.inkSoft)}
+${routeLines.map((l, i) => text(l, routeY + i * 62, 56, DISPLAY, 800, C.ink)).join('\n')}
+${detailLines.map((l, i) => text(l, routeY + routeLines.length * 62 + 14 + i * 40, 30, BODY, 700, C.inkSoft)).join('\n')}
 
 <line x1="100" y1="516" x2="1100" y2="516" stroke="${C.line}" stroke-width="2"/>
 <g transform="translate(100,544)" fill="none" stroke="${C.tealDeep}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
   <path d="M4 4 h18 a3 3 0 0 1 3 3 v14 a3 3 0 0 1 -3 3 h-18 a3 3 0 0 1 -3 -3 v-14 a3 3 0 0 1 3 -3 z"/>
   <path d="M6 11 h14 M6 17 h9"/>
 </g>
-<text x="140" y="566" font-family="Hanken Grotesk" font-size="26" font-weight="600" fill="${C.inkSoft}">Your quote · day by day, with prices</text>
-<text x="1100" y="566" font-family="Hanken Grotesk" font-size="26" font-weight="600" fill="${C.tealDeep}" text-anchor="end">ceylonhop.com</text>
+<text x="140" y="566" font-family="${BODY}" font-size="26" font-weight="700" fill="${C.inkSoft}">Your quote · day by day, with prices</text>
+<text x="1100" y="566" font-family="${BODY}" font-size="26" font-weight="700" fill="${C.tealDeep}" text-anchor="end">ceylonhop.com</text>
 </svg>`;
 }
 

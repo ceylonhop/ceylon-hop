@@ -13,7 +13,7 @@
 <meta name="description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, instant WhatsApp confirmation and a Pro Hopper driver.">
 <meta name="robots" content="noindex, follow">
 <link rel="canonical" href="https://ceylonhop.com/booking.html">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
@@ -112,13 +112,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     width:100%;padding:0;background:none;font-family:inherit;color:inherit;
     width:100%;padding:0;background:none;font-family:inherit;color:inherit}
   .cal-day:hover:not(.off):not(.no-svc):not(.sel){background:var(--cream-deep)}
-  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.3)}
+  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.3)}
   .cal-day.off{color:#c9c4b6;cursor:default}
   .cal-day.no-svc{color:#c9c4b6;cursor:default;text-decoration:line-through;text-decoration-color:#dcd7c8}
   .cal-day.sel{background:var(--accent);color:#fff;font-weight:600}
   .shared-cal-note{margin:.55rem 0 0;font-size:.8rem;color:#6b6456;line-height:1.45}
   .cal-day{position:relative}
-  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.35)}
+  .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35)}
   .cal-day:disabled{cursor:default}
   .when-blocked{margin:0 0 10px;font-size:.88rem;color:var(--ink-soft)}
   .rate-lock-note{margin:8px 0 0;font-size:.86rem;color:var(--teal-deep);display:flex;align-items:center;gap:6px}
@@ -134,7 +134,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     border:1.5px solid var(--line);border-radius:14px;padding:13px 15px;cursor:pointer;
     background:var(--white);transition:.15s;font:inherit;color:inherit}
   .dep:hover{border-color:var(--accent);transform:translateY(-1px)}
-  .dep.sel{border-color:var(--accent);background:rgba(10,185,182,.07);box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .dep.sel{border-color:var(--accent);background:rgba(var(--accent-rgb),.07);box-shadow:inset 0 0 0 1.5px var(--accent)}
   .dep .t{font-family:var(--display);font-weight:700;font-size:1.18rem;line-height:1}
   .dep .note{font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-deep)}
   .dep .veh{font-size:.8rem;color:var(--ink-soft)}
@@ -168,7 +168,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .loc-input{position:relative;display:flex;align-items:center;gap:8px;
     border:1.5px solid var(--line);border-radius:11px;background:var(--white);padding:0 12px;
     transition:border-color .15s,box-shadow .15s}
-  .loc-input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.14)}
+  .loc-input:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.14)}
   .loc-input-ic{width:16px;height:16px;flex:none;color:var(--ink-soft);transition:color .15s}
   .loc-input:focus-within .loc-input-ic{color:var(--accent-deep)}
   .loc-input input{flex:1;min-width:0;border:none;background:none;font-family:inherit;font-size:.95rem;
@@ -289,14 +289,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .single-dep-card{width:100%;max-width:340px;padding:.8rem 1rem;border:1.5px solid var(--line);border-radius:12px;
     font-family:inherit;font-size:1rem;background:var(--white);color:var(--ink);
     display:flex;align-items:center;gap:.5rem}
-  .time-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .time-select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
 
   /* service-type chooser (private transfer vs chauffeur-guide) */
   .svc-chooser{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px}
   @media(max-width:560px){.svc-chooser{grid-template-columns:1fr}}
   .svc{text-align:left;border:1.5px solid var(--line);border-radius:14px;padding:15px 16px;background:var(--white);cursor:pointer;transition:.15s;position:relative;display:flex;flex-direction:column}
   .svc:hover{border-color:var(--accent)}
-  .svc.on{border-color:var(--accent);background:rgba(10,185,182,.06);box-shadow:inset 0 0 0 1.5px var(--accent)}
+  .svc.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06);box-shadow:inset 0 0 0 1.5px var(--accent)}
   .svc.disabled,.svc:disabled{cursor:not-allowed;opacity:.62;background:var(--cream)}
   .svc.disabled:hover,.svc:disabled:hover{border-color:var(--line)}
   .svc .svc-ico{width:34px;height:34px;border-radius:9px;background:var(--cream-deep);display:grid;place-items:center;color:var(--accent-deep);margin-bottom:9px}
@@ -314,14 +314,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .tr-leg:last-child{border-bottom:none;padding-bottom:0}
   .trip-route .tr-leg-main{display:flex;align-items:center;gap:11px;min-width:0}
   .trip-route .tr-leg-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.65rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .trip-route .tr-leg-title{font-weight:800;color:var(--ink);line-height:1.22;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
-  .trip-route .tr-leg-title .tr-ar{color:var(--accent);margin:0 .22rem}
+  /* A leg title is a route name, so it carries the display face — the same call
+     plan.html's .dr-route makes for the identical string one step earlier. The arrow
+     between the two places stays on the body face: Bodoni has no → and would fall
+     through to a mismatched fallback mid-word. */
+  .trip-route .tr-leg-title{font-family:var(--display);font-weight:700;color:var(--ink);line-height:1.22;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .trip-route .tr-leg-title .tr-ar{color:var(--accent);margin:0 .22rem;font-family:var(--body);font-weight:600}
   .trip-route .tr-leg-meta{display:flex;flex-wrap:wrap;gap:8px 10px;margin-left:64px}
   .trip-route .tr-chip{display:inline-flex;align-items:center;gap:.38rem;font-size:.78rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px}
   .trip-route .tr-chip svg{width:13px;height:13px;flex:none}
   .trip-route .tr-chip.muted{color:var(--ink-soft);background:var(--cream-deep)}
   /* a self-arranged gap: shown for context, but not a booked/priced leg */
-  .trip-route .tr-leg.tr-gap .tr-leg-title{font-weight:600;color:var(--ink-soft)}
+  /* 400 not 600: the title is now Bodoni, which ships Book and Bold and nothing between. */
+  .trip-route .tr-leg.tr-gap .tr-leg-title{font-weight:400;color:var(--ink-soft)}
   .trip-route .tr-leg.tr-gap .tr-leg-meta{margin-left:0}
   .trip-route .tr-leg.tr-gap .tr-chip{color:#9a5b12;background:transparent;border:1px dashed #e6b980}
   @media(max-width:560px){.trip-route .tr-leg-main{align-items:flex-start}.trip-route .tr-leg-meta{margin-left:0}.trip-route .tr-leg-title{font-size:.95rem}}
@@ -331,7 +336,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .tr-stop.last .dot{background:var(--tomato);border-color:var(--tomato)}
   .trip-route .tr-stop.last .tr-name{font-weight:700}
   .trip-route .tr-stop.first .tr-name{font-weight:700}
-  .trip-route .tr-stop .tr-name{flex:1;min-width:0}
+  /* Place names, in the same card as the Bodoni leg titles above — 400 for the
+     intermediate stops, 700 for the two endpoints (rules above). */
+  .trip-route .tr-stop .tr-name{flex:1;min-width:0;font-family:var(--display);font-weight:400}
   .trip-route .tr-stop .nt{font-size:.74rem;font-weight:700;color:#a96b04;background:var(--pc-saffron);border-radius:999px;padding:2px 9px;white-space:nowrap;flex:none}
   /* wire between stops carries the leg's travel date */
   .trip-route .tr-wire{display:flex;align-items:center;gap:10px;margin:2px 0 2px 4px;min-height:24px}
@@ -366,7 +373,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-route .sr-pin{width:13px;height:13px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none;margin-top:4px}
   .shared-route .sr-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
   .shared-route .sr-lbl{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
-  .shared-route .sr-line b{font-size:1.05rem}
+  .shared-route .sr-line b{font-size:1.05rem;font-family:var(--display);font-weight:700}
   .shared-route .sr-wire{width:2px;height:16px;margin:1px 0 1px 5px;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5}
   .shared-route .sr-foot{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .shared-route .sr-fact{display:inline-flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink-soft)}
@@ -394,7 +401,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .ph-sub{font-size:.84rem;color:#666;margin-bottom:22px}
   .ph-spin{width:44px;height:44px;border-radius:50%;border:4px solid #e5e7eb;border-top-color:#0fa958;margin:0 auto 18px;animation:phspin 1s linear infinite}
   @keyframes phspin{to{transform:rotate(360deg)}}
-  .ph-amt{font-family:var(--display);font-weight:800;font-size:1.8rem;color:#1b1b1b}
+  .ph-amt{font-family:var(--display);font-weight:700;font-size:1.8rem;color:#1b1b1b}
   .ph-msg{font-size:.86rem;color:#444;margin-top:6px}
   .ph-msg.ph-msg-big{font-size:.98rem;color:#333;line-height:1.45;margin-top:2px}
   .ph-ico{width:56px;height:56px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
@@ -405,7 +412,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      but a numbered list of things to go and do is read, not glanced at. */
   .ph-help{margin:16px 0 0;padding:12px 14px;border:1px solid #e6e2dc;border-radius:12px;background:#faf8f5;text-align:left}
   .ph-help[hidden]{display:none}
-  .ph-help h3{margin:0 0 8px;font-size:.7rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep,#0a9d9a)}
+  .ph-help h3{margin:0 0 8px;font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep,#0a9d9a)}
   .ph-help ol{margin:0;padding-left:18px;font-size:.8rem;line-height:1.55;color:#444}
   .ph-help li+li{margin-top:6px}
   .ph-actions{display:flex;flex-direction:column;gap:9px;margin-top:22px}
@@ -420,11 +427,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-summary-row{display:flex;justify-content:space-between;align-items:baseline;background:var(--cream-deep);border-radius:12px;padding:14px 16px;margin-bottom:18px}
   .pay-summary-row .lbl{font-size:.86rem;color:var(--ink-soft)}
   .pay-summary-row .lbl b{display:block;color:var(--ink);font-size:.95rem}
-  .pay-summary-row .amt{font-family:var(--display);font-weight:800;font-size:1.5rem}
+  .pay-summary-row .amt{font-family:var(--display);font-weight:700;font-size:1.5rem}
   .pay-summary-row .amt small{display:block;font-family:var(--body);font-weight:500;font-size:.72rem;color:var(--ink-soft);text-align:right}
   .pay-choice{display:grid;gap:8px;margin-bottom:18px}
   .pay-choice .pc-opt{display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;transition:.15s}
-  .pay-choice .pc-opt.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .pay-choice .pc-opt.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .pay-choice .pc-opt input{margin-top:3px;accent-color:var(--accent)}
   .pay-choice .pc-opt b{font-size:.92rem}
   .pay-choice .pc-opt small{display:block;color:var(--ink-soft);font-size:.8rem;margin-top:1px}
@@ -437,8 +444,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     background-repeat:no-repeat;background-position:center;background-size:14px}
   .terms-consent input:checked{border-color:var(--accent);background-color:var(--accent);
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 5 5L20 7'/%3E%3C/svg%3E")}
-  .terms-consent:has(input:checked){border-color:var(--accent);background:rgba(10,185,182,.06)}
-  .terms-consent input:focus-visible{box-shadow:0 0 0 3px rgba(10,185,182,.35);outline:none}
+  .terms-consent:has(input:checked){border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
+  .terms-consent input:focus-visible{box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35);outline:none}
   .terms-consent > span:last-child{font-size:.85rem;color:var(--ink-soft);line-height:1.45}
 
   /* steppers / addons */
@@ -447,7 +454,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:1.15rem;color:var(--ink)}
   .stepper button:hover{border-color:var(--accent);color:var(--accent-deep)}
   .addon{display:flex;align-items:center;gap:.8rem;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s}
-  .addon.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .addon.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .addon .box{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
   .addon.on .box{background:var(--accent);border-color:var(--accent)}
   .addon .box svg{width:13px;height:13px;opacity:0}.addon.on .box svg{opacity:1}
@@ -461,7 +468,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .card-input{border:1.5px solid var(--line);border-radius:12px;padding:4px}
   .pay-methods{display:flex;gap:8px;margin-bottom:18px}
   .pay-methods .pm{border:1.5px solid var(--line);border-radius:10px;padding:.6rem 1rem;font-weight:600;font-size:.85rem;display:flex;align-items:center;gap:.5rem;cursor:pointer}
-  .pay-methods .pm.on{border-color:var(--accent);background:rgba(10,185,182,.06)}
+  .pay-methods .pm.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
 
   /* accepted cards */
   .pay-cards{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-6px 0 14px}
@@ -575,7 +582,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--paper);
       font:inherit;text-align:left;cursor:pointer;box-shadow:var(--shadow-s)}
     .mstrip[hidden]{display:none!important}
-    .mstrip .ms-route{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+    .mstrip .ms-route{font-family:var(--display);font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
     .mstrip .ms-date{color:var(--ink-soft);font-size:.85rem;white-space:nowrap;flex:none}
     .mstrip .ms-more{display:inline-flex;align-items:center;gap:3px;color:var(--accent-deep);font-weight:700;font-size:.85rem;flex:none}
     .mstrip .ms-more svg{width:14px;height:14px}
@@ -619,7 +626,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <header class="bk-head">
   <div class="wrap">
     <a href="index.html" class="brand" id="bk-brand"></a>
-    <div class="bk-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Secure booking · SSL encrypted</div>
+    <div class="bk-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Secure booking · SSL encrypted</div>
   </div>
 </header>
 
@@ -639,7 +646,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <span class="ms-route" id="ms-route">—</span>
   <span class="ms-date" id="ms-date"></span>
   <span class="ms-more">Details
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
   </span>
 </button>
 
@@ -654,13 +661,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <!-- service chooser (multi-day trips only) -->
       <div class="svc-chooser" id="svc-chooser" style="display:none">
         <button type="button" class="svc on" data-svc="private" onclick="pickSvc('private')">
-          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg></span>
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg></span>
           <b>I just want pick-up &amp; drop-off</b>
           <small>A private car &amp; driver moves you from each stop to the next, door to door. You don&rsquo;t keep the car in between — it&rsquo;s a fresh transfer each leg.</small>
           <span class="svc-tag" id="svc-private-tag"></span>
         </button>
         <button type="button" class="svc" data-svc="chauffeur" onclick="pickSvc('chauffeur')">
-          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg></span>
+          <span class="svc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z"/></svg></span>
           <b>Keep the car &amp; driver the whole trip</b>
           <small>Your own car &amp; driver-guide stays with you start to finish — same friendly face every day, flexible stops and local tips along the way.</small>
           <span class="svc-tag" id="svc-chauffeur-tag"></span>
@@ -678,15 +685,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <div class="ac-wrap">
               <div class="loc-cap">
                 <span class="loc-lab">Pick-up</span>
-                <span class="loc-area" id="loc-area-from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
+                <span class="loc-area" id="loc-area-from"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
               </div>
               <div class="loc-input">
-                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
                 <input id="loc-from" autocomplete="off" aria-label="Exact pick-up spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-from"></div>
               </div>
               <button type="button" class="loc-later" id="loc-later-from">I&rsquo;ll decide the exact spot later</button>
-              <p class="loc-later-note" id="loc-note-from" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact pick-up on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-from">Add it now</button></span></p>
+              <p class="loc-later-note" id="loc-note-from" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact pick-up on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-from">Add it now</button></span></p>
             </div>
           </div>
           <div class="loc-field to" id="loc-field-to">
@@ -694,15 +701,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             <div class="ac-wrap">
               <div class="loc-cap">
                 <span class="loc-lab">Drop-off</span>
-                <span class="loc-area" id="loc-area-to"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
+                <span class="loc-area" id="loc-area-to"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg><b></b></span>
               </div>
               <div class="loc-input">
-                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                <svg class="loc-input-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>
                 <input id="loc-to" autocomplete="off" aria-label="Exact drop-off spot (optional)" placeholder="Hotel or address (optional)">
                 <div class="ac-menu" id="ac-to"></div>
               </div>
               <button type="button" class="loc-later" id="loc-later-to">I&rsquo;ll decide the exact spot later</button>
-              <p class="loc-later-note" id="loc-note-to" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact drop-off on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-to">Add it now</button></span></p>
+              <p class="loc-later-note" id="loc-note-to" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>No rush — we&rsquo;ll confirm your exact drop-off on WhatsApp. <button type="button" class="loc-undo" id="loc-undo-to">Add it now</button></span></p>
             </div>
           </div>
         </div>
@@ -715,7 +722,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
       <!-- how private transfers work (clarity) -->
       <div class="info-note" id="pvt-note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
         <p id="pvt-note-tx"><b>It&rsquo;s a door-to-door pick-up &amp; drop-off.</b> A private transfer covers this one journey — we pick you up at your spot and drop you at your destination. On a multi-day trip each leg is booked fresh, so you may not have the exact same car or driver every day.</p>
       </div>
 
@@ -728,7 +735,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="sub" id="s2-sub">Pick your date and pick-up time — or leave either flexible and confirm with us later. You can change this any time before you travel.</p>
       <div class="when-inner">
         <div class="flex-banner">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
           <span id="flex-banner-tx"><b>Not sure of your timings yet?</b> No problem — book now and tell us your exact date &amp; time any time up to <b>12 hours before</b> departure.</span>
         </div>
         <div class="when-grid">
@@ -738,7 +745,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
               <label class="flex-chk"><input type="checkbox" id="flex-date" onchange="toggleFlexDate()"> Decide later</label>
             </div>
             <div class="cal" id="cal"></div>
-            <div class="flex-pill" id="flex-date-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No date locked in — we&rsquo;ll confirm it with you nearer the time.</div>
+            <div class="flex-pill" id="flex-date-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No date locked in — we&rsquo;ll confirm it with you nearer the time.</div>
           </div>
           <div class="when-time">
             <div class="when-head-row">
@@ -747,7 +754,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             </div>
             <div class="dep-hint" id="dep-hint">Choose any time of day — we run on your schedule.</div>
             <select id="dep-select" class="time-select" aria-label="Pick-up time" onchange="pickDepSel()"></select>
-            <div class="flex-pill" id="flex-time-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No time locked in — we&rsquo;ll confirm your pick-up time with you later.</div>
+            <div class="flex-pill" id="flex-time-pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> No time locked in — we&rsquo;ll confirm your pick-up time with you later.</div>
           </div>
         </div>
       </div>
@@ -815,7 +822,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="trust-line"><span class="ta-stars">★★★★★</span> <b>5.0/5</b> from 30 travellers on Tripadvisor</p>
       <div class="pay-summary-row" id="pay-due"></div>
       <div class="pay-methods">
-        <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card &middot; via PayHere secure checkout</div>
+        <div class="pm on"><svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg> Card &middot; via PayHere secure checkout</div>
       </div>
       <div class="pay-cards">
         <span class="pc-label">We accept all major cards</span>
@@ -830,7 +837,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <p class="muted" style="font-size:.85rem;margin:-6px 0 16px">You&rsquo;ll be taken to our secure PayHere checkout to complete payment, then brought right back here with your confirmation.</p>
       <label class="addon terms-consent"><input type="checkbox" id="agree"><span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a> and confirm my travel details are correct.</span></label>
       <div class="concierge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
         <div><b>A real person will reach out — fast</b><p>As soon as you book, our Ceylon Hop concierge team confirms your pickup details personally on WhatsApp. We&rsquo;re on during Sri&nbsp;Lanka hours (GMT+5:30, ~8am&ndash;9pm) — if you book overnight, you&rsquo;ll hear from us first thing.</p></div>
       </div>
       <div class="nav-btns"><button class="back-link" onclick="goStep(3)">← Back</button><button class="btn btn-cta btn-lg" id="pay-btn">Continue to secure payment →</button></div>
@@ -859,9 +866,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <div class="s-div"></div>
         <div class="s-total"><span class="muted">Total</span><b id="sum-total"></b></div>
         <div class="s-perks">
-          <div id="perk-cancel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
-          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Instant confirmation on WhatsApp</div>
-          <div id="perk-crew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Vetted Pro Hopper driver</div>
+          <div id="perk-cancel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24 hours before</div>
+          <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Instant confirmation on WhatsApp</div>
+          <div id="perk-crew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Vetted Pro Hopper driver</div>
         </div>
         <a class="s-wa" id="s-wa" href="https://wa.me/94779669662" target="_blank" rel="noopener">
           <span class="ic"></span>
@@ -874,13 +881,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
 <!-- CONFIRMATION (hidden until pay) -->
 <div class="confirm-wrap" id="confirm" style="display:none">
-  <div class="confirm-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 13 4 4L19 7"/></svg></div>
+  <div class="confirm-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 13 4 4L19 7"/></svg></div>
   <span class="eyebrow" style="justify-content:center">You&rsquo;re all set</span>
   <h1 id="confirm-title" style="font-size:clamp(2rem,4vw,2.8rem)">Your transfer is booked!</h1>
   <p class="lead" id="confirm-lead" style="margin:8px auto 0">We&rsquo;ve sent your confirmation and pick-up details. Our team will reach out on WhatsApp to lock in your exact pick-up.</p>
 
   <div class="concierge" style="max-width:560px;margin:22px auto 0;text-align:left">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18v11H7l-4 4z"/><path d="M8 9h8M8 12h5"/></svg>
     <div><b>Our concierge is already on it</b><p id="conf-concierge">A Ceylon Hop planner will message you on WhatsApp shortly to confirm your pickup. We work Sri&nbsp;Lanka hours (GMT+5:30) — booked overnight? You&rsquo;ll hear from us first thing in the morning.</p></div>
   </div>
 
@@ -892,7 +899,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       </div>
       <div class="pass-route">
         <div class="pt" id="pass-from">—<small>From</small></div>
-        <div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        <div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
         <div class="pt" id="pass-to" style="text-align:right">—<small>To</small></div>
       </div>
       <div class="pass-info">
@@ -927,7 +934,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <button type="button" class="mbar-total" id="mbar-total" aria-expanded="false" aria-controls="summary">
     <span class="mt-label">Total</span>
     <b id="mbar-amt">—</b>
-    <svg class="mt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 15-6-6-6 6"/></svg>
+    <svg class="mt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="m18 15-6-6-6 6"/></svg>
   </button>
   <button type="button" class="btn btn-primary btn-lg mbar-cta" id="mbar-cta">Continue</button>
 </div>
@@ -951,7 +958,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <button type="button" class="ph-btn ph-btn-primary" id="ph-retry">Try again</button>
       <button type="button" class="ph-btn ph-btn-ghost" id="ph-close">Close</button>
     </div>
-    <div class="ph-secure" id="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
+    <div class="ph-secure" id="ph-secure"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> 256-bit secure · Visa, Mastercard, Amex</div>
   </div>
 </div>
 

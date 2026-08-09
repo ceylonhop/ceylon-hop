@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pay for your trip · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css">
@@ -52,7 +52,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* the multi-leg rail now lives in ticket.css — shared with manage.html */
 
   /* details step */
-  .dt-h{font-family:var(--display);font-weight:800;font-size:1.15rem;margin:0 0 2px}
+  .dt-h{font-family:var(--display);font-weight:700;font-size:1.15rem;margin:0 0 2px}
   .dt-sub{font-size:.8rem;color:var(--ink-soft);margin:0 0 12px}
   .fld{margin-bottom:10px}
   .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
@@ -81,7 +81,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      space. Rendered only after a real attempt, never on the first paint. */
   .pp-help{margin:10px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--wash,#faf8f5)}
   .pp-help[hidden]{display:none}
-  .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
+  .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
   .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
   .pp-help li+li{margin-top:6px}
   /* Available, not asserted — see the `quiet` note on fail(). Same affordance as the cancellation
@@ -100,6 +100,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dt-pol summary:after{content:' \25BE'}
   .dt-pol[open] summary:after{content:' \25B4'}
   .dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
+  /* On the payable screen the policy is reassurance under the CTA, not the clause beside a
+     checkbox — so it sits centred and quiet, and only the ladder it opens is left-aligned. */
+  .pp-pol{margin-top:12px;text-align:center}
+  .pp-pol summary{color:var(--ink-soft);font-weight:600}
+  .pp-pol ul{margin:8px auto 0;padding-left:17px;max-width:34ch;text-align:left}
 
   /* The paid keepsake breaks out of the 470px ticket column. The pass is a 1fr+230px grid and
      would otherwise sit permanently in its stacked mobile form, so the WRAPPER widens for this
@@ -138,7 +143,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
   .pp-expect .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
   .pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
-  .pp-expect .amt2{font-family:var(--display);font-weight:800;font-size:1.3rem;color:var(--ink)}
+  .pp-expect .amt2{font-family:var(--display);font-weight:700;font-size:1.3rem;color:var(--ink)}
   .pp-loading .lead{font-size:.92rem;color:var(--ink-soft);max-width:38ch;margin:8px auto 0;line-height:1.55}
   .pp-loading h2{font-size:1.5rem;margin-bottom:2px}
   /* The hand-off, drawn rather than described: us → them, with something travelling the gap.
@@ -160,7 +165,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .de-wrap{text-align:center;padding:18px 0 8px}
   .de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
   .de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
-  .de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+  .de-title{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:0;color:var(--ink);margin:.3rem 0 .5rem}
   .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
   .de-cta{margin-top:20px}
   .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
@@ -180,7 +185,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <body>
 <header class="pp-top"><div class="pp-topin">
   <a class="pp-brand" href="index.html">
-    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <img class="pp-cmark" src="img/brand-c.svg" alt="" width="32" height="32">
     <span class="pp-word">Ceylon Hop</span>
   </a>
   <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
@@ -418,7 +423,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // trip has no single pair, and picking two of its stops would imply the rest don't exist.
     var route = p.from && p.to
       ? '<div class="pt">' + esc(p.from) + '<small>From</small></div>'
-        + '<div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>'
+        + '<div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>'
         + '<div class="pt" style="text-align:right">' + esc(p.to) + '<small>To</small></div>'
       : '<div class="pt">' + esc(p.title || 'Your trip') + '<small>Trip</small></div>';
 
@@ -429,7 +434,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="pass">'
       +   '<div class="pass-main">'
       +     '<div class="pass-top">'
-      +       '<div class="pass-brand"><img src="img/ceylon-hop-c.png" alt="" width="26" height="26">Ceylon Hop</div>'
+      +       '<div class="pass-brand"><img src="img/brand-c.svg" alt="" width="26" height="26">Ceylon Hop</div>'
       +       '<span class="pill pill-saffron" style="font-size:.72rem">Boarding pass</span>'
       +     '</div>'
       +     '<div class="pass-route">' + route + '</div>'
@@ -500,6 +505,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
       + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+      // The cancellation terms belong on the screen where the decision is made (owner,
+      // 2026-08-07). They used to appear only in renderDetails() — AFTER the customer had
+      // committed by tapping Pay — so the one page whose whole job is trust before a payment
+      // showed its most reassuring fact one screen too late. "Free cancellation until 24 hours
+      // before departure" is not fine print; it is a reason to press the button.
+      // The details step keeps its own copy: that is the last moment before money moves, and
+      // there it sits beside the terms checkbox as the thing being agreed to.
+      + payCancellationHtml()
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '<div class="pp-help" id="payhelp" hidden></div>'
       + '</div></div>' + waLine();
@@ -548,6 +561,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!coverage) return '';
     return 'This covers ' + coverage.soldLegs + ' of the ' + coverage.totalLegs
       + ' legs in your itinerary.';
+  }
+
+  /* The collapsed disclosure the payable screen shows under the CTA. Same source of truth as
+     the details step (cancellationPolicy) so the two can never disagree about a refund. */
+  function payCancellationHtml(){
+    var pol = cancellationPolicy(data.copy.product);
+    return '<details class="dt-pol pp-pol"><summary>' + esc(pol.headline) + '</summary><ul>'
+      + pol.rows.map(function(rw){ return '<li>' + esc(rw) + '</li>'; }).join('')
+      + '</ul></details>';
   }
 
   function cancellationPolicy(product){
@@ -644,9 +666,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
       + '<div class="ticket"><div class="t-main">'
       + '<div class="dt-kick">Lead passenger <span>· who&rsquo;s travelling</span></div>'
-      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
-      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
-      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
+      // autocomplete=off + unrecognised names (2026-08-08): a phone-only quote leaves the
+      // surname and email EMPTY, and Chrome offered a staff operator's saved identity for them —
+      // four live bookings were recorded under the owner's name. Mitigation, not a guarantee
+      // (Chrome classifies from id/label too), which is why /start also refuses a staff address.
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" name="ch-given" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" name="ch-family" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" name="ch-mail" type="email" value="' + esc(pre.email || '') + '" autocomplete="off" /></div>'
       + '<div class="dt-2col dt-phone">'
       +   '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
       +   '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
@@ -737,7 +763,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function renderLoading(){
     app.innerHTML = '<div class="pp-loading">'
       + '<div class="pp-hop">'
-      +   '<span class="chip"><img src="img/ceylon-hop-c.png" alt="" width="19" height="19">Ceylon Hop</span>'
+      +   '<span class="chip"><img src="img/brand-c.svg" alt="" width="19" height="19">Ceylon Hop</span>'
       +   '<span class="track"></span>'
       +   '<span class="chip">🔒 PayHere</span>'
       + '</div>'

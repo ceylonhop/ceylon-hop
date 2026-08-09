@@ -15,7 +15,7 @@
   };
   const CTAS={tomato:'#EC3A24',saffron:'#e7920f',teal:'#0AB9B6',ink:'#2C2A2B'};
   const FONTS={
-    'Newsreader':"'Newsreader', Georgia, serif",
+    'Bodoni Moda':"'Bodoni Moda', Didot, Georgia, serif",
     'Bricolage Grotesque':"'Bricolage Grotesque', system-ui, sans-serif",
     'Spectral':"'Spectral', Georgia, serif"
   };
@@ -33,7 +33,7 @@
   };
 
   function loadFont(name){
-    if(name==='Newsreader'||!FONTS[name])return;
+    if(name==='Bodoni Moda'||!FONTS[name])return; // the brand face is already in site.css
     const id='tf-'+name.replace(/\s/g,'');
     if(document.getElementById(id))return;
     const l=document.createElement('link');l.rel='stylesheet';l.id=id;

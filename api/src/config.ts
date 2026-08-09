@@ -101,6 +101,32 @@ const Env = z.object({
   SENTRY_DSN: z.string().optional(),
   // RESEND_WEBHOOK_SECRET: enables POST /webhooks/resend (bounce/complaint alerts).
   RESEND_WEBHOOK_SECRET: z.string().optional(),
+  // Notification blast-radius cap (docs/notification-safety-rails-spec.md, R1). The most
+  // outbound emails ONE cron tick may send before it stops and pages the founder. Guards the
+  // case notification_log cannot: a migration or status backfill making a batch of old
+  // bookings newly eligible all at once. 25 is far above any legitimate tick at current
+  // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
+  NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
+  // Outbound mail guard (same spec, R3). Both default to "off" so production is unchanged.
+  // EMAIL_ALLOWLIST: when set, ONLY these recipients can be mailed — entries are exact
+  // addresses or an `@domain` suffix, comma-separated. STAGING SETS THIS (`@ceylonhop.com`),
+  // which is what makes it structurally unable to email a real customer instead of merely
+  // conventionally unable (docs/staging-environment-plan.md).
+  EMAIL_ALLOWLIST: z.string().default(''),
+  // Relevance window (same spec, R6). Never notify about a trip that ended more than this
+  // many days ago — stateless, so an emptied or restored notification_log cannot resurrect
+  // an old booking. 30 days is well past any legitimate review request.
+  NOTIFY_MAX_TRIP_AGE_DAYS: z.coerce.number().default(30),
+  // Notification epoch (R6), ISO date. Never notify about a booking TAKEN before this.
+  // Unset by default; set it to the go-live date to fence off the pre-launch backlog
+  // permanently, in the direction the age window cannot cover (future-dated backfills).
+  NOTIFY_EPOCH: z.string().default(''),
+  // NOTIFICATIONS_ENABLED: the lever to throw WHILE a burst is happening. Stops customer
+  // mail; ops alerts still go out, because silencing them would hide the incident.
+  NOTIFICATIONS_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('true')
+    .transform((value) => value === '1' || value === 'true'),
 });
 
 // Ops⇄quote merge T1: the founder ops-session cookie now unlocks /admin/quote (margin +

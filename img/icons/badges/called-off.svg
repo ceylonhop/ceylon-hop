@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b16f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="125" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b16k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="179" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M59.5 95.6 Q43.5 99.1 30.0 92.7 Q16.4 86.3 8.4 67.5 Q0.3 48.7 5.4 33.6 Q10.6 18.5 25.2 11.1 Q39.8 3.6 54.3 5.0 Q68.8 6.4 81.9 17.1 Q95.1 27.8 95.9 46.4 Q96.8 64.9 86.2 78.5 Q75.6 92.1 59.5 95.6Z" fill="#0DB9B6"></path>
+<g transform="rotate(-1.61 50 50)">
+  <g class="pass-fill" filter="url(#b16f)"><path d="M16 60V39a4 4 0 0 1 4-4h30l11 11h19a4 4 0 0 1 4 4v10z" fill="#FAF1E4" fill-opacity=".28" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-dasharray="7 6"></path><circle cx="30" cy="62" r="6.5" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-dasharray="5 5"></circle><circle cx="70" cy="62" r="6.5" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-dasharray="5 5"></circle><text x="50" y="86" font-family="Newsreader,Georgia,serif" font-size="17" font-weight="800" fill="#FAF1E4" text-anchor="middle">$0</text></g>
+  <g class="pass-ink" filter="url(#b16k)"><path d="M16 60V39a4 4 0 0 1 4-4h30l11 11h19a4 4 0 0 1 4 4v10z" fill="#FAF1E4" fill-opacity=".28" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-dasharray="7 6"></path><circle cx="30" cy="62" r="6.5" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-dasharray="5 5"></circle><circle cx="70" cy="62" r="6.5" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-dasharray="5 5"></circle><text x="50" y="86" font-family="Newsreader,Georgia,serif" font-size="17" font-weight="800" fill="#FAF1E4" text-anchor="middle">$0</text></g>
+</g>
+</svg>

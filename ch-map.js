@@ -79,7 +79,10 @@
       google.maps.importLibrary('marker'),
       google.maps.importLibrary('core'),
     ]).then(([m, r, mk, c]) => {
-      const libs = { Map: m.Map, Route: r.Route, Marker: mk.Marker, Point: c.Point };
+      // LatLngBounds is deliberately NOT in the required set below: only a journey split across
+      // several route queries needs it (to union their viewports), and that case degrades to the
+      // first viewport. Requiring it would turn a partial API load into an SVG fallback.
+      const libs = { Map: m.Map, Route: r.Route, Marker: mk.Marker, Point: c.Point, LatLngBounds: c.LatLngBounds };
       if (!libs.Map || !libs.Route || !libs.Marker || !libs.Point) throw new Error('maps_libs_missing');
       return libs;
     });
@@ -97,8 +100,70 @@
   // ordered stop list. The PROMISE is cached so concurrent callers share one request; a
   // rejection is evicted so a transient failure isn't cached for the rest of the session.
   const routeCache = new Map();
-  function computeRouteCached(Route, stops) {
-    const key = JSON.stringify(stops.map(toLoc));
+  /* Group the journey's stops into PINS. A round trip's last stop lands on its first, so a pin
+     per STOP means the last is drawn over the first and hides it — the customer sees a map that
+     appears to start numbering at 2 (owner-reported on the ops map, 2026-08-06; this file had the
+     identical bug). One pin per PLACE, carrying every stop number that lands there: "1·3".
+
+     Tolerance ~50 m because Google snaps to the road network, so a return leg can finish metres
+     from where it started — tight enough that two hotels on one strip stay separate pins.
+
+     DELIBERATE SECOND COPY of mapPins() in api/src/routes/ops-ui.html. The ops shell is a
+     self-contained single-file app served from a different origin and cannot import this file;
+     there is no shared runtime to put this in. Change one, change both — the pair is covered by
+     web-tests/unit/ops-map-pins.test.js and web-tests/unit/ch-map-pins.test.js. */
+  function mapPins(pts, zoom) {
+    var SAME_PLACE = 0.0005;   // ~50 m — one place, merged at EVERY zoom (a round trip's start/end)
+    var MERGE_PX = 34;         // a pin head — closer than this and the labels collide on screen
+    // Web Mercator world pixels, so "do these collide?" is asked in the units the eye actually uses.
+    var px = function (p) {
+      var scale = 256 * Math.pow(2, zoom);
+      var s = Math.max(-0.9999, Math.min(0.9999, Math.sin(p.lat * Math.PI / 180)));
+      return {
+        x: (p.lng + 180) / 360 * scale,
+        y: (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * scale
+      };
+    };
+    var collide = function (a, b) {
+      if (Math.abs(a.lat - b.lat) < SAME_PLACE && Math.abs(a.lng - b.lng) < SAME_PLACE) return true;
+      if (typeof zoom !== 'number') return false;
+      var pa = px(a), pb = px(b), dx = pa.x - pb.x, dy = pa.y - pb.y;
+      return Math.sqrt(dx * dx + dy * dy) < MERGE_PX;
+    };
+    var pins = [];
+    (pts || []).forEach(function (loc, i) {
+      var hit = null;
+      for (var k = 0; k < pins.length; k++) { if (collide(pins[k], loc)) { hit = pins[k]; break; } }
+      if (hit) hit.stops.push(i + 1);
+      else pins.push({ lat: loc.lat, lng: loc.lng, stops: [i + 1] });
+    });
+    var last = (pts || []).length;
+    return pins.map(function (p) {
+      // A consecutive run reads as a range ("3–7"); a revisited place keeps its dots ("1·3").
+      var runs = p.stops.length > 2 && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1;
+      return {
+        lat: p.lat, lng: p.lng, stops: p.stops,
+        text: p.stops.length === 1 ? String(p.stops[0])
+          : (runs || p.stops.length === 2) && p.stops[p.stops.length - 1] - p.stops[0] === p.stops.length - 1
+            ? p.stops[0] + '–' + p.stops[p.stops.length - 1]
+            : p.stops.join('·'),
+        isFirst: p.stops.indexOf(1) >= 0,
+        isLast: p.stops.indexOf(last) >= 0
+      };
+    });
+  }
+
+  function pinLabelsVisible(zoom) {
+    // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
+    // the story anyway — the expanded map's legend still carries the full numbered order.
+    return typeof zoom !== 'number' || zoom >= 9;
+  }
+
+  // avoidTolls is PART of the key. A quote pinned to the local road in ops and one over the
+  // same stops on the expressway are two different lines; sharing a cache entry would draw
+  // whichever was asked for first, for both.
+  function computeRouteCached(Route, stops, avoidTolls) {
+    const key = JSON.stringify([stops.map(toLoc), !!avoidTolls]);
     const hit = routeCache.get(key);
     if (hit) return hit;
     const p = Route.computeRoutes({
@@ -107,6 +172,7 @@
       intermediates: stops.slice(1, -1).map((n) => ({ location: toLoc(n) })),
       travelMode: 'DRIVING',
       region: 'lk',
+      routeModifiers: avoidTolls ? { avoidTolls: true } : undefined,
       fields: ['path', 'legs', 'viewport'],
     });
     // Evict BOTH a rejection and a routeless resolution. The Routes API reports "no route
@@ -189,7 +255,7 @@
 
     // No expandable flag here — never nest a modal inside a modal. A failure closes back to
     // the inline card rather than stranding an empty box.
-    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close });
+    renderRoute(modal.querySelector('.ch-map-modal-map'), stops, { greedy: true, onFail: close, runs: opts.runs });
     return close;
   }
 
@@ -203,6 +269,13 @@
     const keep = (names || []).map((n) => !!n);
     const stops = (names || []).filter(Boolean);
     const stopLabels = opts.stopLabels ? opts.stopLabels.filter((_, i) => keep[i]) : undefined;
+    // opts.runs: [{stops, avoidTolls, continues}] — the journey split into stretches that each
+    // need their own route query, because avoidTolls is a per-REQUEST modifier while the road
+    // choice is per LEG. Callers without a road choice pass none and get the single default run
+    // this has always drawn. Runs too short to route are dropped; if that leaves nothing, fall
+    // back to the whole stop list rather than showing no map at all.
+    const given = (opts.runs || []).filter((r) => r && (r.stops || []).length >= 2);
+    const runs = given.length ? given : [{ stops, avoidTolls: false, continues: false }];
     if (!key || stops.length < 2) {
       if (opts.onFail) opts.onFail();
       return;
@@ -238,14 +311,20 @@
         // and plain wheel zoom.
         gestureHandling: opts.greedy ? 'greedy' : 'cooperative',
       });
-      let route = null;
-      try {
-        const res = await computeRouteCached(libs.Route, stops);
-        route = res && res.routes && res.routes[0];
-      } catch (e) { /* unroutable → fail() below */ }
+      // One query per RUN. A run is a stretch of the journey drawn with one set of route
+      // modifiers; callers that know the quote's per-leg road choice (quote.html, from the
+      // view's mapRuns) pass them in, and everyone else gets the single default run this
+      // has always drawn — same one request, same line.
+      const settled = await Promise.all(runs.map((run) =>
+        computeRouteCached(libs.Route, run.stops, run.avoidTolls)
+          .then((res) => (res && res.routes && res.routes[0]) || null)
+          .catch(() => null)));
       if (done) return;
       clearTimeout(timer);
-      if (!route) {
+      // All or nothing, as this has always been: half a journey drawn with the rest silently
+      // missing reads as a complete route to a customer, and the SVG island is the honest
+      // failure. (The ops map makes the opposite call — it is a working surface, not a promise.)
+      if (settled.some((r) => !r)) {
         fail();
         return;
       }
@@ -259,17 +338,20 @@
         btn.className = 'ch-map-expand';
         btn.setAttribute('aria-label', 'Expand map');
         btn.innerHTML =
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" ' +
           'stroke-linecap="round" stroke-linejoin="round">' +
           '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Expand</span>';
-        btn.addEventListener('click', () => openExpanded(stops, { stopLabels }));
+        // The expanded map must draw the same roads as the card it expands — pass the runs on.
+        btn.addEventListener('click', () => openExpanded(stops, { stopLabels, runs: opts.runs }));
         wrap.appendChild(btn);
       }
       // Route line styled like the old DirectionsRenderer line (each render gets a fresh
       // map, so there's no previous line to clear).
-      route.createPolylines().forEach((p) => {
-        p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 });
-        p.setMap(map);
+      settled.forEach((r) => {
+        r.createPolylines().forEach((p) => {
+          p.setOptions({ strokeColor: '#0AB9B6', strokeWeight: 5, strokeOpacity: 0.92 });
+          p.setMap(map);
+        });
       });
 
       // Brand pin at EVERY stop, not just the endpoints (createWaypointAdvancedMarkers
@@ -277,31 +359,69 @@
       // leg, then the end of each leg. Green = pick-up, orange = final drop-off, teal for
       // every stop in between — matches the summary's numbered route.
       try {
-        const rlegs = route.legs;
         const pin = (fill) => ({
           path: 'M12 2C7.6 2 4 5.6 4 10c0 5.6 8 12 8 12s8-6.4 8-12c0-4.4-3.6-8-8-8z',
           fillColor: fill, fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2,
           scale: 1.5, anchor: new libs.Point(12, 22), labelOrigin: new libs.Point(12, 10),
         });
         const at = (loc) => ({ lat: loc.lat, lng: loc.lng }); // DirectionalLocation → LatLngLiteral
-        const stopLocs = [at(rlegs[0].startLocation)].concat(rlegs.map((l) => at(l.endLocation)));
-        stopLocs.forEach((pos, i) => {
-          const first = i === 0, last = i === stopLocs.length - 1;
-          new libs.Marker({
-            map, position: pos, zIndex: 5,
-            icon: pin(first ? '#0a7d6f' : last ? '#e8623a' : '#0AB9B6'),
-            // The number ties each pin to the stops legend — without it the pins are
-            // anonymous and "is stop 3 the right place?" can't be answered.
-            label: { text: String(i + 1), color: '#ffffff', fontSize: '11px', fontWeight: '700' },
-            title: first ? 'Pick-up' : last ? 'Drop-off' : 'Stop ' + (i + 1),
-          });
+        const stopLocs = [];
+        settled.forEach((r, i) => {
+          const rlegs = r.legs || [];
+          if (!rlegs.length) return;
+          // A run split off from the one before it (a road-choice change) SHARES its first stop
+          // with that run's last, so pinning it again double-counts the stop — mapPins() merges
+          // the pair and the label reads "2·3" where the journey has a plain stop 2.
+          if (!(i > 0 && runs[i].continues)) stopLocs.push(at(rlegs[0].startLocation));
+          rlegs.forEach((l) => stopLocs.push(at(l.endLocation)));
         });
+        // One pin per PLACE, not per stop — see mapPins(). Redrawn on zoom, because whether two
+        // pins collide is a question about SCREEN distance and the answer changes as you zoom.
+        let drawn = [];
+        const drawPins = () => {
+          drawn.forEach((m) => m.setMap(null));
+          drawn = [];
+          const z = map.getZoom();
+          const showText = pinLabelsVisible(z);
+          mapPins(stopLocs, z).forEach((p) => {
+            drawn.push(new libs.Marker({
+              map, position: { lat: p.lat, lng: p.lng }, zIndex: 5,
+              icon: pin(p.isFirst ? '#0a7d6f' : p.isLast ? '#e8623a' : '#0AB9B6'),
+              // The number ties each pin to the stops legend — without it the pins are
+              // anonymous and "is stop 3 the right place?" can't be answered. Hidden at country
+              // zoom, where a long itinerary is an unreadable wall of digits and the legend
+              // carries the order anyway.
+              label: showText
+                ? { text: p.text, color: '#ffffff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
+                : undefined,
+              // The title is the full truth even when the label is hidden.
+              title: p.stops.length > 1
+                ? 'Stops ' + p.stops.join(', ')
+                : (p.isFirst ? 'Pick-up' : p.isLast ? 'Drop-off' : 'Stop ' + p.stops[0]),
+            }));
+          });
+        };
+        drawPins();
+        map.addListener('zoom_changed', drawPins);
       } catch (e) { /* markers are non-essential */ }
 
       // Fit the whole route in view, and re-fit if the container gains its size later:
       // the map can be created while its step panel is still collapsed (0-width), which
       // otherwise leaves grey tiles + a tiny un-fitted route.
-      const fit = () => { if (route.viewport) map.fitBounds(route.viewport, 36); };
+      // Across runs, union the viewports so a split journey isn't framed on its first stretch.
+      // LatLngBounds is guarded rather than required: loadLibs() has never demanded it, and a
+      // partial API load (or a test stub) must degrade to the first viewport, not throw.
+      const viewport = () => {
+        const vps = settled.map((r) => r.viewport).filter(Boolean);
+        if (vps.length < 2 || !libs.LatLngBounds) return vps[0];
+        try {
+          const b = new libs.LatLngBounds();
+          vps.forEach((v) => b.union(v));
+          return b;
+        } catch (e) { return vps[0]; }
+      };
+      const fitTo = viewport();
+      const fit = () => { if (fitTo) map.fitBounds(fitTo, 36); };
       fit();
       if (window.ResizeObserver) {
         let lastW = mapDiv.offsetWidth;
@@ -324,12 +444,11 @@
       // figure that matches the route on the map (not an offline estimate).
       if (opts.onRoute) {
         try {
-          const legs = route.legs || [];
           let meters = 0, ms = 0;
-          legs.forEach((l) => {
+          settled.forEach((r) => (r.legs || []).forEach((l) => {
             meters += l.distanceMeters || 0;
             ms += l.durationMillis || 0;
-          });
+          }));
           opts.onRoute({ km: Math.round(meters / 1000), durationMin: Math.round(ms / 60000) });
         } catch (e) { /* leave the estimate in place */ }
       }

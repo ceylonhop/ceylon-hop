@@ -23,6 +23,16 @@ export interface QuoteViewOption {
   waText: string;
 }
 
+// A stretch of the journey the map draws with ONE route query. Ops can pin a leg to the
+// toll-free road (routeVariant: 'no_tolls'), but avoidTolls is a per-REQUEST modifier, so a
+// journey whose legs disagree has to be split. `continues` marks a run that starts where the
+// previous one ended — a road-choice split, not a gap — so the shared stop isn't pinned twice.
+export interface MapRun {
+  stops: string[];
+  avoidTolls: boolean;
+  continues: boolean;
+}
+
 export interface CustomerQuoteView {
   reference: string;
   greetingName: string | null;
@@ -32,6 +42,7 @@ export interface CustomerQuoteView {
   heroTotalNote: string;
   days: QuoteDayRow[];
   mapStops: string[];
+  mapRuns: MapRun[];
   totalKm: number | null;
   travelDays: number;
   options: QuoteViewOption[];
@@ -49,6 +60,7 @@ interface ViewQuote {
 
 interface ToolLegLite {
   from?: string; to?: string; date?: string; category?: string; distanceKm?: number; stops?: string[];
+  routeVariant?: string;
 }
 
 // '$840' / '$1,180' when the total is an exact number of dollars, '$840.37' / '$1,180.37'
@@ -134,6 +146,39 @@ function mapStopsOf(quote: ViewQuote): string[] {
   return out;
 }
 
+// The same stops, grouped into the runs CH_MAP.renderRoute() queries: a new run wherever the
+// journey breaks (one leg doesn't start where the last ended) or the road choice changes.
+// Legs that agree — nearly every quote — still make exactly one request, so the common case
+// bills no extra Maps calls. Mirrors itinRuns() in api/src/routes/ops-ui.html, which draws the
+// same journey for ops; the two are separate because the ops shell is a self-contained
+// single-file app with no way to import this. Change one, change both.
+function mapRunsOf(quote: ViewQuote): MapRun[] {
+  const runs: { stops: string[]; avoidTolls: boolean }[] = [];
+  let cur: { stops: string[]; avoidTolls: boolean } | null = null;
+  for (const l of legsOf(quote).filter(drives)) {
+    const chain = (Array.isArray(l.stops) && l.stops.length >= 2 ? l.stops : [l.from ?? '', l.to ?? ''])
+      .map((s) => (s ?? '').trim())
+      .filter(Boolean);
+    if (!chain.length) continue;
+    const avoidTolls = l.routeVariant === 'no_tolls';
+    const joins = !!cur && cur.stops[cur.stops.length - 1] === chain[0];
+    if (!cur || !joins || cur.avoidTolls !== avoidTolls) {
+      cur = { stops: [], avoidTolls };
+      runs.push(cur);
+    }
+    for (const s of chain) if (s !== cur.stops[cur.stops.length - 1]) cur.stops.push(s);
+  }
+  // Resolve `continues` against the KEPT list: a one-stop leg can open a run dropped here, and
+  // the run after it must not be told it joins something that isn't drawn. Two kept runs can
+  // only meet at a stop when a road choice split them — the grouping above merges them otherwise.
+  const kept = runs.filter((r) => r.stops.length >= 2);
+  return kept.map((r, i) => ({
+    stops: r.stops,
+    avoidTolls: r.avoidTolls,
+    continues: i > 0 && kept[i - 1].stops[kept[i - 1].stops.length - 1] === r.stops[0],
+  }));
+}
+
 export function customerQuoteView(
   quote: ViewQuote,
   services: { pointToPoint: { totalCents: number } | null; chauffeur: { totalCents: number } | null },
@@ -212,6 +257,7 @@ export function customerQuoteView(
     heroTotalNote,
     days: quoteDays(quote),
     mapStops: mapStopsOf(quote),
+    mapRuns: mapRunsOf(quote),
     totalKm,
     travelDays: driving.length,
     options,

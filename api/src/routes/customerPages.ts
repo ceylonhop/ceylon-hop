@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 // Same bundled faces the ride card uses — Resvg runs with loadSystemFonts:false.
-const FONT_FILES = ['Newsreader-ExtraBold.ttf', 'HankenGrotesk-Bold.ttf', 'HankenGrotesk-SemiBold.ttf']
+const FONT_FILES = ['BodoniModa-ExtraBold.ttf', 'Poppins-Bold.ttf', 'Poppins-Regular.ttf']
   .map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
 
 export interface CustomerPagesDeps {
@@ -60,7 +60,7 @@ const ASSETS: [string, string][] = [
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
-  ['img/ceylon-hop-c.png', 'image/png'], // the header logo glyph — same file site.js's cmark() uses
+  ['img/brand-c.svg', 'image/svg+xml'], // the header logo glyph — same file site.js's cmark() uses
 ];
 
 // Read-through cache: these files never change within a deploy.
