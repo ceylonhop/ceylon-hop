@@ -462,8 +462,25 @@ function shape(result: QuoteResult, canMargin: boolean) {
     // tooltips and anything that needs the address as stored.
     lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
-  if (!canMargin) return base;
-  return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
+  // The discount SUMMARY, so the pane can say "you asked for X, you may have Y" without the
+  // client re-deriving either. The negative line item itself already rides in lineItems above and
+  // renders like any other row. Absent entirely when no discount was requested.
+  const withDiscount = result.discount
+    ? {
+        ...base,
+        discount: {
+          method: result.discount.method,
+          value: result.discount.value,
+          applied: money(result.discount.appliedCents),
+          requested: money(result.discount.requestedCents),
+          // capReason is a margin-class diagnostic — it tells you WHY you were stopped, which is
+          // a statement about cost and policy. Founder-only, like the margin line.
+          ...(canMargin ? { capReason: result.discount.capReason } : {}),
+        },
+      }
+    : base;
+  if (!canMargin) return withDiscount;
+  return { ...withDiscount, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
 }
 
 // Strip persisted margin from a stored quote for non-margin:view roles (spec §3.1) —
@@ -767,12 +784,28 @@ export function internalQuoteRoutes(deps: {
     try {
       const body = parseToolRequest(raw);
       const canMargin = can(c.get('identity').role, 'margin:view');
+
+      // Founder manual discount, PREVIEWED (spec §6: estimate stays side-effect free — it writes
+      // nothing, it only prices). Without this the money pane would price the undiscounted trip
+      // while the saved quote is discounted, and the operator would be reading a number the
+      // customer will never be charged.
+      const rawEstimate = raw as Record<string, unknown> | null;
+      let previewDiscount: DiscountRequest | undefined;
+      if (rawEstimate && rawEstimate.discount != null) {
+        const parsedPreview = DiscountBodySchema.safeParse(rawEstimate.discount);
+        if (!parsedPreview.success) return c.json({ error: 'bad_request' }, 400);
+        // Same two gates as the save path — a preview that ignored them would show a founder a
+        // price nobody is allowed to give.
+        if (!discountsEnabled) return c.json({ error: 'discounts_disabled' }, 403);
+        if (!can(c.get('identity').role, 'discount:apply_manual')) return c.json({ error: 'forbidden' }, 403);
+        previewDiscount = toDiscountRequest(parsedPreview.data);
+      }
       // Compose the live rate card with the active hot zones once, and price every pass against it
       // so the total, per-leg breakdown, and the service chooser all agree (a zone boost reaches
       // ops quotes here; the website is a separate release — see the hot-zones spec §8).
       const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver, previewDiscount);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —

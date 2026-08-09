@@ -151,3 +151,48 @@ describe('Discount history endpoint', () => {
     expect(body.discounts[0]).not.toHaveProperty('capReason');
   });
 });
+
+describe('Estimate previews a discount without writing anything', () => {
+  const estimate = (a: ReturnType<typeof app>, body: unknown, jar = FOUNDER) =>
+    a.request('/admin/quote/estimate', {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: jar }, body: JSON.stringify(body),
+    });
+
+  it('prices the discount into the pane the operator is reading', async () => {
+    const { a } = wired();
+    const plain = (await (await estimate(a, BODY)).json()) as { total: { cents: number } };
+    const res = (await (await estimate(a, { ...BODY, discount: { method: 'fixed', amountCents: 1000, reason: 'preview' } })).json()) as
+      { total: { cents: number }; discount: { applied: { cents: number }; capReason: string | null }; lineItems: { meta?: { kind?: string } }[] };
+
+    expect(res.total.cents).toBeLessThan(plain.total.cents);
+    expect(res.discount.applied.cents).toBe(1000);
+    // The negative row rides in lineItems and renders like any other line.
+    expect(res.lineItems.some((li) => li.meta?.kind === 'discount')).toBe(true);
+  });
+
+  it('writes NOTHING — estimate is a preview, not a save', async () => {
+    const { discounts, a } = wired();
+    const q = await seed(a);
+    await estimate(a, { ...BODY, id: q.id, discount: { method: 'fixed', amountCents: 1000, reason: 'preview' } });
+    expect(await discounts.activeFor(q.id)).toBeNull();
+    expect(await discounts.historyFor(q.id)).toHaveLength(0);
+  });
+
+  it('applies the same two gates as save', async () => {
+    const off = wired(false);
+    expect((await estimate(off.a, { ...BODY, discount: { method: 'fixed', amountCents: 1000, reason: 'x' } })).status).toBe(403);
+    const on = wired();
+    expect((await estimate(on.a, { ...BODY, discount: { method: 'fixed', amountCents: 1000, reason: 'x' } }, OPS)).status).toBe(403);
+  });
+
+  it('gives the founder the cap reason when a limit bites', async () => {
+    const { a } = wired();
+    const res = (await (await estimate(a, { ...BODY, discount: { method: 'percentage', basisPoints: 9000, reason: 'greedy' } })).json()) as
+      { discount: { capReason: string | null; applied: { cents: number }; requested: { cents: number } } };
+    // Asked for 90%, allowed 30% — and told which limit stopped it.
+    expect(res.discount.capReason).toBe('percentage_cap');
+    expect(res.discount.applied.cents).toBeLessThan(res.discount.requested.cents);
+    // NOTE: ops/finance cannot reach this path at all (403 above), so capReason stripping is not
+    // observable here. It is covered on the history endpoint, which every role CAN read.
+  });
+});
