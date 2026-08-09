@@ -154,3 +154,16 @@
 .tk-sk .sk-held{width:190px;height:16px;margin:6px 0 10px}
 .tk-sk .sk-map{width:100%;height:180px;border-radius:var(--r);margin-top:16px}
 .tk-sk .sk-opt{width:100%;height:190px;border-radius:var(--r);margin-top:16px}
+
+/* ── Follow-along footer ────────────────────────────────────────────────────────────────
+   Social links as a trust signal on the quote (owner, 2026-08-09: "so people might click
+   and check out our socials"). Static markup below .pp-wrap rather than rendered into
+   #app, so it survives every state the four render functions produce — live, lapsed,
+   booked, expired, and the catch() path where the fetch itself failed.
+   Deliberately quiet: this page's job is the green WhatsApp CTA, and a louder row would
+   compete with it for the same glance. Muted until hover, then it warms to the accent. ── */
+.pp-social{display:flex;align-items:center;justify-content:center;gap:14px;padding:22px 18px 34px;color:var(--ink-faint)}
+.pp-social span{font-size:.78rem;letter-spacing:.02em}
+.pp-social a{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);color:var(--ink-soft);background:var(--paper);transition:color .15s,border-color .15s}
+.pp-social a:hover{color:var(--accent-deep);border-color:var(--accent)}
+.pp-social svg{width:17px;height:17px}
