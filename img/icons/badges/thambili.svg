@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b8f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="91" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b8k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="145" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M63.2 5.3 Q78.2 10.5 88.2 25.9 Q98.2 41.3 95.1 57.8 Q92.1 74.4 81.9 84.3 Q71.7 94.2 53.4 95.4 Q35.1 96.7 22.4 86.6 Q9.6 76.4 5.3 61.4 Q1.0 46.3 8.4 30.8 Q15.8 15.3 32.0 7.7 Q48.3 0.0 63.2 5.3Z" fill="#0DB9B6"></path>
+<g transform="rotate(2.44 50 50)">
+  <g class="pass-fill" filter="url(#b8f)"><path d="M50 30c14 0 22 13 22 28 0 16-9 26-22 26s-22-10-22-26c0-15 8-28 22-28z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><ellipse cx="50" cy="31" rx="13" ry="4.6" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.2"></ellipse><path d="M57 28 71 10" stroke="#F9A429" stroke-width="5.5" stroke-linecap="round"></path><path d="M40 52c2 8 6 13 12 15" fill="none" stroke="#4A4648" stroke-width="2.8" stroke-linecap="round" opacity=".5"></path></g>
+  <g class="pass-ink" filter="url(#b8k)"><path d="M50 30c14 0 22 13 22 28 0 16-9 26-22 26s-22-10-22-26c0-15 8-28 22-28z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><ellipse cx="50" cy="31" rx="13" ry="4.6" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.2"></ellipse><path d="M57 28 71 10" stroke="#F9A429" stroke-width="5.5" stroke-linecap="round"></path><path d="M40 52c2 8 6 13 12 15" fill="none" stroke="#4A4648" stroke-width="2.8" stroke-linecap="round" opacity=".5"></path></g>
+</g>
+</svg>

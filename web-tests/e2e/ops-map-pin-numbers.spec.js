@@ -21,6 +21,11 @@ async function stub(page, legCount = 3) {
     window.OPS_MAPS_KEY = 'test-key';
     function Map(el) { this.__el = el; if (el) el.setAttribute('data-map', 'ready'); }
     Map.prototype.fitBounds = function () {};
+    // Required since pins became zoom-aware (2026-08-07): without getZoom/addListener the pin
+    // pass throws into its "markers are non-essential" catch and every assertion below sees an
+    // empty marker list — these tests were passing vacuously until they weren't.
+    Map.prototype.getZoom = function () { return 10; };
+    Map.prototype.addListener = function () { return { remove() {} }; };
     function Marker(opts) { (window.__markers = window.__markers || []).push(opts); }
     Marker.prototype.setMap = function () {};
     function Point(x, y) { this.x = x; this.y = y; }

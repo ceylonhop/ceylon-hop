@@ -1,8 +1,16 @@
+// Who a message is FOR, not what it says. The distinction earns its keep in exactly one
+// place — the kill switch (see adapters/emailGuard.ts), which stops customer mail while
+// letting ops alerts through, because silencing the alerts would hide the incident the
+// switch was thrown for. Defaults to 'customer': the safer side of the switch, and what
+// all ten customer senders mean without saying so.
+export type EmailAudience = 'customer' | 'ops';
+
 export interface EmailMessage {
   to: string;
   subject: string;
   html: string;
   text?: string;
+  audience?: EmailAudience;
 }
 
 // The swappable email seam. A real provider (Resend/Postmark) implements this later;

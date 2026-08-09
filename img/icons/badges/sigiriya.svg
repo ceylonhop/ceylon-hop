@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b28f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="176" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b28k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="230" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M75.2 11.0 Q88.1 18.5 94.1 35.5 Q100.1 52.4 91.4 69.8 Q82.8 87.2 68.2 92.3 Q53.7 97.4 38.4 94.8 Q23.2 92.2 12.8 78.2 Q2.5 64.2 4.8 45.6 Q7.0 26.9 16.8 17.5 Q26.6 8.0 44.4 5.7 Q62.3 3.5 75.2 11.0Z" fill="#0DB9B6"></path>
+<g transform="rotate(2.81 50 50)">
+  <g class="pass-fill" filter="url(#b28f)"><path d="M24 84 26 32 33 24h34l7 8 2 52z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M33 24h30" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path><path d="M35 17h7v7h-7zM50 17h7v7h-7z" fill="#FAF1E4" stroke="#4A4648" stroke-width="2.4"></path><path d="M32 32v50M44 30v54M56 30v54M67 40v44" fill="none" stroke="#4A4648" stroke-width="2.4" stroke-linecap="round" opacity=".3"></path><path d="M82 84V70h-8V56h-7V42" fill="none" stroke="#F9A429" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="14" cy="34" r="3.4" fill="#FAF1E4"></circle><circle cx="21" cy="27" r="2.4" fill="#FAF1E4"></circle></g>
+  <g class="pass-ink" filter="url(#b28k)"><path d="M24 84 26 32 33 24h34l7 8 2 52z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M33 24h30" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path><path d="M35 17h7v7h-7zM50 17h7v7h-7z" fill="#FAF1E4" stroke="#4A4648" stroke-width="2.4"></path><path d="M32 32v50M44 30v54M56 30v54M67 40v44" fill="none" stroke="#4A4648" stroke-width="2.4" stroke-linecap="round" opacity=".3"></path><path d="M82 84V70h-8V56h-7V42" fill="none" stroke="#F9A429" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="14" cy="34" r="3.4" fill="#FAF1E4"></circle><circle cx="21" cy="27" r="2.4" fill="#FAF1E4"></circle></g>
+</g>
+</svg>

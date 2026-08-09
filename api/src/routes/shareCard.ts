@@ -151,9 +151,9 @@ function page(opts: {
  * these the card renders as a blank rectangle.
  */
 const FONT_FILES = [
-  'Newsreader-ExtraBold.ttf',
-  'HankenGrotesk-Bold.ttf',
-  'HankenGrotesk-SemiBold.ttf',
+  'BodoniModa-ExtraBold.ttf',
+  'Poppins-Bold.ttf',
+  'Poppins-Regular.ttf',
 ].map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
 
 export function renderCard(model: Parameters<typeof cardSvg>[0]): Buffer {
