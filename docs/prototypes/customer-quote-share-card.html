@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Customer quote link — share card prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..800&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#0AB9B6; --teal-deep:#08938f; --saffron:#F9A429; --tomato:#EC3A24;
+    --ink:#2C2A2B; --ink-soft:#6c6a6b; --cream:#F4F2EA; --paper:#fffdf8; --line:#ded7c4;
+    --display:'Newsreader',Georgia,serif; --body:'Hanken Grotesk',-apple-system,Segoe UI,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#14181a;color:#e9e6df;font-family:var(--body);line-height:1.55}
+  .wrap{max-width:1160px;margin:0 auto;padding:40px 24px 90px}
+  h1{font-family:var(--display);font-weight:800;font-size:2.15rem;letter-spacing:-.02em;margin:0 0 .35rem;color:#fff}
+  h2{font-family:var(--display);font-weight:800;font-size:1.4rem;margin:60px 0 6px;color:#fff}
+  h3{font-size:.98rem;margin:26px 0 4px;color:#fff}
+  .sub{color:#9aa3a1;margin:0 0 10px;max-width:74ch}
+  .eyebrow{font-size:.7rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin:0 0 26px}
+  .note{background:#1c2225;border:1px solid #2b3336;border-left:3px solid var(--saffron);border-radius:0 10px 10px 0;padding:14px 18px;margin:16px 0;font-size:.92rem;color:#c9d0ce}
+  .note.good{border-left-color:var(--teal)}
+  .note.bad{border-left-color:var(--tomato)}
+  .note b{color:#fff}
+  .cardframe{background:#0f1315;border:1px solid #262d30;border-radius:14px;padding:18px;overflow-x:auto}
+  .cardframe svg{display:block;width:100%;height:auto;max-width:1100px;border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+
+  .wa{max-width:520px;background:#0b1418;border:1px solid #23292b;border-radius:14px;overflow:hidden}
+  .wa-top{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#1f2c33;border-bottom:1px solid #101a1e}
+  .wa-av{width:38px;height:38px;border-radius:50%;background:#2a3942;display:grid;place-items:center;font-size:1rem;font-weight:700;color:#c3d1d6}
+  .wa-top b{display:block;font-size:.95rem;color:#e9edef;font-weight:600}
+  .wa-top span{font-size:.76rem;color:#8696a0}
+  .wa-body{padding:16px;display:flex;flex-direction:column;gap:10px}
+  .bub{max-width:90%;padding:7px 9px 5px;border-radius:8px;font-size:.9rem;color:#e9edef}
+  .bub.in{align-self:flex-start;background:#202c33;border-top-left-radius:0}
+  .bub.out{align-self:flex-end;background:#005c4b;border-top-right-radius:0}
+  .bub .t{display:block;text-align:right;font-size:.67rem;color:#8696a0;margin-top:2px}
+  .bub.out .t{color:#a5c9bd}
+  .link{color:#a3e0d0;text-decoration:underline;word-break:break-all}
+  .unfurl{background:rgba(0,0,0,.22);border-radius:6px;overflow:hidden;margin-bottom:4px}
+  .unfurl svg{display:block;width:100%;height:auto}
+  .unfurl .meta{padding:8px 10px}
+  .unfurl .u-t{font-size:.85rem;font-weight:600;color:#e9edef;line-height:1.3}
+  .unfurl .u-d{font-size:.78rem;color:#8696a0;margin-top:2px;line-height:1.35}
+  .unfurl .u-h{font-size:.72rem;color:#8696a0;margin-top:3px}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px;align-items:start}
+  .var{background:#0f1315;border:1px solid #262d30;border-radius:12px;padding:12px}
+  .var svg{display:block;width:100%;height:auto;border-radius:6px}
+  .var p{margin:9px 2px 2px;font-size:.82rem;color:#9aa3a1}
+  .var p b{color:#fff;font-weight:600}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;margin-top:10px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid #262d30;vertical-align:top}
+  th{color:#8b9694;font-weight:600;font-size:.78rem;letter-spacing:.05em;text-transform:uppercase}
+  td b{color:#fff}
+  code{background:#1c2225;padding:1px 6px;border-radius:4px;font-size:.86em;color:#9fd7cf}
+  ul{color:#c9d0ce;max-width:80ch} li{margin:6px 0}
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-top:14px}
+  .step{flex:1 1 190px;background:#1a2023;border:1px solid #2b3336;border-radius:10px;padding:12px 14px}
+  .step .n{font-family:var(--display);font-weight:800;font-size:1.5rem;color:var(--teal);line-height:1}
+  .step b{display:block;color:#fff;font-size:.9rem;margin:4px 0 3px}
+  .step span{font-size:.82rem;color:#9aa3a1}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<p class="eyebrow">Prototype · not built</p>
+<h1>The quote link you send the customer</h1>
+<p class="sub">You’re right that the ops link is the wrong thing to share — it’s behind Google sign-in, and its URL is the app, not a document. The customer version is a <b>different link entirely</b>: a public, token-keyed page on <code>ceylonhop.com</code> that expires. Good news — that page and its token are already specified in the deposits design (Slice 1); what’s missing is the unfurl card on top of it.</p>
+
+<div class="note good"><b>Don’t make the ops link shareable.</b> Punching a hole in <code>ops.ceylonhop.com</code> auth would be the expensive, risky way to get this. The cheap way is the one already spec’d: when a quote flips to <b>sent</b>, mint a <code>payToken</code> and share <code>ceylonhop.com/quote.html?t=&lt;token&gt;</code>. Ops auth stays untouched.</p></div>
+
+<h2>1 · The card, full size (1200 × 630)</h2>
+<p class="sub">Everything that survives a chat thumbnail: route, dates, who/what/how much, and how long it’s good for. Note what is <em>not</em> here — the day-by-day itinerary. At 1200×630 it turns to mush; the itinerary’s job is to be the payoff when they tap.</p>
+<div class="cardframe"><div id="hero"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bghero" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tlhero" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wmhero" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#08938f" stop-opacity="0.2"/><stop offset="0.55" stop-color="#08938f" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bghero)"/>
+<rect width="1200" height="630" fill="url(#tlhero)"/>
+<rect width="1200" height="630" fill="url(#wmhero)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR PRICE, ALL IN</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">for the whole trip · no card fees</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#08938f" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#08938f" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#08938f">Held until Sat 3 Aug</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">The price is locked for you</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">until then.</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View &amp; book →</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-7F3KX</text>
+
+</svg></div></div>
+
+<h2>2 · In the customer’s thread</h2>
+<div class="grid2">
+  <div>
+    <div class="wa">
+      <div class="wa-top"><div class="wa-av">S</div><div><b>Shane W.</b><span>+44 7·· ··· ···</span></div></div>
+      <div class="wa-body">
+        <div class="bub in">Hi! Any update on the Ella trip?<span class="t">4:02 PM</span></div>
+        <div class="bub out">
+          <div class="unfurl"><div id="wa-card"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bgwa" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tlwa" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wmwa" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#08938f" stop-opacity="0.2"/><stop offset="0.55" stop-color="#08938f" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bgwa)"/>
+<rect width="1200" height="630" fill="url(#tlwa)"/>
+<rect width="1200" height="630" fill="url(#wmwa)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR PRICE, ALL IN</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">for the whole trip · no card fees</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#08938f" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#08938f" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#08938f">Held until Sat 3 Aug</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">The price is locked for you</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">until then.</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View &amp; book →</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-7F3KX</text>
+
+</svg></div>
+            <div class="meta">
+              <div class="u-t">Your Ceylon Hop quote · Colombo → Ella · $1,240</div>
+              <div class="u-d">4 days, 12–15 Aug · 4 travellers, 4 bags · AC van with driver. Held until Sat 3 Aug.</div>
+              <div class="u-h">ceylonhop.com</div>
+            </div>
+          </div>
+          Here’s your quote, Shane — full day-by-day and what’s included on the link. Held for you until Saturday. <a class="link">ceylonhop.com/quote?t=k7Qm…</a>
+          <span class="t">4:15 PM ✓✓</span>
+        </div>
+        <div class="bub in">Oh that looks great 😍<span class="t">4:18 PM</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <h3 style="margin-top:0">Why this beats pasting a PDF</h3>
+    <ul style="font-size:.92rem">
+      <li>The price and validity are <b>visible before they tap</b> — the two things that decide whether they reply.</li>
+      <li>It’s the same <code>CustomerQuoteView</code> the quote email already renders, so the card, the email and the page can never disagree.</li>
+      <li>It’s a live document: if you reprice, the link updates. A PDF forwarded to a partner is stale forever.</li>
+      <li>Forwardable — travelling groups decide in a group chat, and the card carries the pitch into it.</li>
+    </ul>
+    <div class="note" style="font-size:.88rem"><b>Bags is a new field on the view model.</b> It’s on the quote request (<code>req.bags</code>, and vehicle capacity is <code>maxPax</code>/<code>maxBags</code>) but <code>CustomerQuoteView</code> doesn’t carry it yet — one line to add, and worth it: “4 bags · fits 6” is the reassurance a family actually wants.</div>
+  </div>
+</div>
+
+<h2>3 · The link, and how it expires</h2>
+<p class="sub">Your instinct is right, and the spec already answers it — the expiry isn’t an arbitrary N days, it’s <b>the rate lock</b>. The price is only honest for as long as it’s locked, so the link dies with it. One rule, no second clock to explain.</p>
+<div class="flow">
+  <div class="step"><div class="n">1</div><b>Quote → Sent</b><span>Mints a 128-bit random <code>payToken</code>. Never the reference — that’s guessable.</span></div>
+  <div class="step"><div class="n">2</div><b>Ops copies the link</b><span><code>ceylonhop.com/quote.html?t=…</code> from the quote header. Paste into WhatsApp.</span></div>
+  <div class="step"><div class="n">3</div><b>Lives while locked</b><span>Valid until <code>rateLockedUntil</code> — 7 days on the current lock rules.</span></div>
+  <div class="step"><div class="n">4</div><b>Then it softens</b><span>Past the lock, the page shows “needs re-confirming” with a WhatsApp button. Never 404, never a stale price.</span></div>
+</div>
+<div class="note"><b>Two other ways a link dies,</b> both status-driven rather than time-driven: the quote is <b>won</b> (→ “you’re booked” state) or <b>lost/expired</b> (→ friendly terminal state). A shared link that’s already paid must never show a pay button again.</div>
+<div class="note bad"><b>The one real trade-off:</b> a token in a URL is a bearer key — anyone the customer forwards it to sees the quote and could pay it. The spec accepts that (WhatsApp transport is encrypted, and the link dies when the quote leaves the payable state). What follows from it: <b>no PII the customer wouldn’t forward themselves</b> — first name and initial, no phone, no email, no internal notes, and never the margin.</div>
+
+<h2>4 · The states a shared link has to render</h2>
+<div class="grid2" id="variants"><div class="var"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bga" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tla" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wma" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#08938f" stop-opacity="0.2"/><stop offset="0.55" stop-color="#08938f" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bga)"/>
+<rect width="1200" height="630" fill="url(#tla)"/>
+<rect width="1200" height="630" fill="url(#wma)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR PRICE, ALL IN</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">for the whole trip · no card fees</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#08938f" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#08938f" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#08938f">Held until Sat 3 Aug</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">The price is locked for you</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">until then.</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View &amp; book →</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-7F3KX</text>
+
+</svg><p><b>Live quote</b> — the everyday one. Price and “held until” are the two things visible before they tap.</p></div><div class="var"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bgb" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tlb" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wmb" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#08938f" stop-opacity="0.2"/><stop offset="0.55" stop-color="#08938f" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bgb)"/>
+<rect width="1200" height="630" fill="url(#tlb)"/>
+<rect width="1200" height="630" fill="url(#wmb)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · CHAUFFEUR TOUR</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Negombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Arugam Bay</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Sat 16 – Sat 23 Aug · 8 days, 7 nights</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">2 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">3 bags</text><rect x="315.20000000000005" y="398" width="133.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚗</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">Car + guide</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Negombo → Sigiriya → Kandy → Ella →</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">Yala → Arugam Bay · 6 stops</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR PRICE, ALL IN</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$2,480</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">8 days, driver-guide included</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#08938f" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#08938f" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#08938f">Held until Sat 3 Aug</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">The price is locked for you</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">until then.</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View &amp; book →</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-3M8QP</text>
+
+</svg><p><b>Multi-stop chauffeur trip</b> — endpoints stay big, the chain rides in the teaser. Long routes drop a size automatically.</p></div><div class="var"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bgc" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tlc" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wmc" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#F9A429" stop-opacity="0.2"/><stop offset="0.55" stop-color="#F9A429" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bgc)"/>
+<rect width="1200" height="630" fill="url(#tlc)"/>
+<rect width="1200" height="630" fill="url(#wmc)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR PRICE, ALL IN</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">for the whole trip · no card fees</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#F9A429" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#F9A429" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#F9A429">Held until tomorrow</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">After Sat 3 Aug we’ll need to</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">re-confirm the price.</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View &amp; book →</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-7F3KX</text>
+
+</svg><p><b>Last day</b> — saffron, and the phrasing goes plain-language. Still a fixed date underneath, never a countdown.</p></div><div class="var"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bgd" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tld" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wmd" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#EC3A24" stop-opacity="0.2"/><stop offset="0.55" stop-color="#EC3A24" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bgd)"/>
+<rect width="1200" height="630" fill="url(#tld)"/>
+<rect width="1200" height="630" fill="url(#wmd)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">PREVIOUS PRICE</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">no longer guaranteed</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#EC3A24" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#EC3A24" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#EC3A24">Needs re-confirming</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">This quote’s price has passed</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">its hold date. Message us and</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#ffffff" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#6c6a6b" text-anchor="middle">Message us on WhatsApp</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">QUOTE Q-7F3KX</text>
+
+</svg><p><b>Expired</b> — the link never 404s. It softens to a re-confirm state so an old forward still lands somewhere warm.</p></div><div class="var"><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+  <linearGradient id="bge" x1="0" y1="0" x2="0.6" y2="1">
+    <stop offset="0" stop-color="#f3f8f3"/><stop offset="0.58" stop-color="#f7f4ea"/><stop offset="1" stop-color="#f2f6e9"/>
+  </linearGradient>
+  <radialGradient id="tle" cx="0.88" cy="-0.12" r="1.2">
+    <stop offset="0" stop-color="#0AB9B6" stop-opacity="0.2"/><stop offset="0.58" stop-color="#0AB9B6" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="wme" cx="-0.08" cy="1.08" r="0.9">
+    <stop offset="0" stop-color="#08938f" stop-opacity="0.2"/><stop offset="0.55" stop-color="#08938f" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bge)"/>
+<rect width="1200" height="630" fill="url(#tle)"/>
+<rect width="1200" height="630" fill="url(#wme)"/>
+
+<rect x="792" y="0" width="408" height="630" fill="#fffdf8"/>
+<line x1="792" y1="0" x2="792" y2="630" stroke="#d9d3c0" stroke-width="2" stroke-dasharray="10 8"/>
+<circle cx="792" cy="0" r="19" fill="#F4F2EA"/>
+<circle cx="792" cy="630" r="19" fill="#F4F2EA"/>
+
+<circle cx="85" cy="70" r="19" fill="#F9A429"/>
+<text x="85" y="79" font-family="Newsreader" font-size="26" font-weight="800" fill="#fff" text-anchor="middle">C</text>
+<text x="114" y="80" font-family="Newsreader" font-size="27" font-weight="800" fill="#2C2A2B">Ceylon Hop</text>
+
+<text x="66" y="176" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.8" fill="#08938f">YOUR QUOTE · PRIVATE TRANSFER</text>
+<text x="66" y="242" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B">Colombo</text>
+<text x="66" y="310" font-family="Newsreader" font-size="62" font-weight="800" fill="#2C2A2B"><tspan fill="#0AB9B6">→ </tspan>Ella</text>
+<text x="66" y="354" font-family="Hanken Grotesk" font-size="22" font-weight="600" fill="#6c6a6b">Tue 12 – Fri 15 Aug · 4 days</text>
+
+<rect x="66" y="398" width="142.8" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="81" y="424" font-size="17">👥</text>
+<text x="104" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 travellers</text><rect x="218.8" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="233.8" y="424" font-size="17">🧳</text>
+<text x="256.8" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">4 bags</text><rect x="315.20000000000005" y="398" width="86.4" height="38" rx="19" fill="#ffffff" fill-opacity="0.72" stroke="#ded7c4" stroke-width="1.5"/>
+<text x="330.20000000000005" y="424" font-size="17">🚐</text>
+<text x="353.20000000000005" y="423" font-family="Hanken Grotesk" font-size="17" font-weight="700" fill="#2C2A2B">AC van</text>
+
+<!-- itinerary teaser: the tap-bait, one line only -->
+<text x="66" y="486" font-family="Hanken Grotesk" font-size="13" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">YOUR ROUTE</text>
+<text x="66" y="518" font-family="Hanken Grotesk" font-size="20" font-weight="600" fill="#2C2A2B">Colombo → Kandy → Nuwara Eliya → Ella</text>
+<text x="66" y="546" font-family="Hanken Grotesk" font-size="18" font-weight="600" fill="#08938f">4 stops · day-by-day on the link</text>
+
+<line x1="66" y1="572" x2="734" y2="572" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<text x="66" y="600" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Licensed Ceylon Hop driver · door to door · all fuel &amp; tolls in</text>
+
+<!-- stub -->
+<text x="834" y="140" font-family="Hanken Grotesk" font-size="14" font-weight="700" letter-spacing="2.2" fill="#6c6a6b">PAID</text>
+<text x="834" y="212" font-family="Newsreader" font-size="66" font-weight="800" fill="#2C2A2B">$1,240</text>
+<text x="834" y="244" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">for the whole trip · no card fees</text>
+<line x1="834" y1="286" x2="1152" y2="286" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+
+<circle cx="846" cy="336" r="11" fill="none" stroke="#08938f" stroke-width="2.4"/>
+<path d="M846 329 L846 336 L851 339" fill="none" stroke="#08938f" stroke-width="2.4" stroke-linecap="round"/>
+<text x="868" y="343" font-family="Hanken Grotesk" font-size="21" font-weight="800" fill="#08938f">Confirmed</text>
+<text x="834" y="378" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">Paid in full. Your driver’s</text>
+<text x="834" y="403" font-family="Hanken Grotesk" font-size="17" font-weight="600" fill="#6c6a6b">details land 48h before</text>
+
+<line x1="834" y1="452" x2="1152" y2="452" stroke="#ded7c4" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="834" y="482" width="318" height="58" rx="29" fill="#08938f" stroke="none" stroke-width="1.5"/>
+<text x="993" y="519" font-family="Hanken Grotesk" font-size="21" font-weight="700" fill="#fff" text-anchor="middle">View your trip</text>
+<text x="834" y="580" font-family="Hanken Grotesk" font-size="15" font-weight="700" letter-spacing="1.6" fill="#6c6a6b">BOOKING CH-7F3KX</text>
+<g transform="rotate(38 1120 60)"><rect x="960" y="38" width="320" height="40" fill="#08938f"/><text x="1120" y="65" font-family="Hanken Grotesk" font-size="17" font-weight="700" letter-spacing="2.4" fill="#fff" text-anchor="middle">YOU'RE BOOKED!</text></g>
+</svg><p><b>Already paid</b> — a forwarded link must never show a pay button again. Status-gated, not time-gated.</p></div></div>
+
+<h2>5 · What’s on the card vs. on the page</h2>
+<table>
+  <tr><th></th><th>Card (the thumbnail)</th><th>Page (the payoff)</th></tr>
+  <tr><td><b>Route</b></td><td>Endpoints big; <code>+2 stops</code> chip if multi-stop</td><td>Full timeline, every stop, nights per stop</td></tr>
+  <tr><td><b>Itinerary</b></td><td>One teaser line only</td><td>Day-by-day — reuses the email’s <code>quoteTimeline()</code></td></tr>
+  <tr><td><b>Party</b></td><td>Pax · bags · vehicle, one row</td><td>Same, plus “fits up to 6 / 6 bags”</td></tr>
+  <tr><td><b>Price</b></td><td>One all-in total</td><td>Total + what’s included. <b>No line-item breakdown</b> — the idle-day naming stays understated, per the existing rule</td></tr>
+  <tr><td><b>Validity</b></td><td>“Held until Sat 3 Aug” — a fixed date</td><td>Same date + what happens after</td></tr>
+  <tr><td><b>Action</b></td><td>Implied by the card</td><td>Pay in full (primary) · WhatsApp us (secondary)</td></tr>
+</table>
+<div class="note"><b>Never put a countdown on the card.</b> WhatsApp fetches a preview once and caches it against the URL for days — “expires in 3 days” would freeze and lie. The Ride Board card already learned this; same rule, fixed dates only.</div>
+
+<h2>6 · What it would take</h2>
+<ul>
+  <li>This is <b>deposits Slice 1</b>, already spec’d in <code>docs/superpowers/specs/2026-07-23-deposits-balance-payments-design.md</code> — <code>payToken</code>, <code>quote.html</code>, <code>GET /pay/quote/:token</code>, plus the parked <code>sendCustomerQuote</code> send-wiring. That build is currently on hold pending your go.</li>
+  <li>The card itself is small on top of it: a second renderer over <code>CustomerQuoteView</code>, reusing the SVG→PNG pipeline already written for the Ride Board (<code>shareCardImage.ts</code> + bundled fonts, on <code>feat/board-share-unfurl</code>).</li>
+  <li>Two open questions for you: <b>(a)</b> does the customer page need the pay button in the first cut, or is “view the quote” enough while payments are still on PayHere sandbox? <b>(b)</b> is 7 days (the rate lock) the right shelf life for a quote you’ve just WhatsApp’d, or do you want longer?</li>
+</ul>
+
+</div>
+
+
+</body>
+</html>

@@ -2053,16 +2053,22 @@ const queueSkeleton=(n=4)=>Array.from({length:n},()=>
 function routeStateFromUrl(canQuote){
   const url=new URL(window.location.href);
   const quoteId=(url.searchParams.get('quote')||'').trim()||null;
-  if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId };
-  if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null };
-  if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null };
-  if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null };
-  if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null };
+  // An open booking sheet is part of the address (2026-08-08). Before this, refreshing the page
+  // with a sheet open silently dropped it — the operator landed back on the bare queue and had to
+  // find the row again. `?booking=` implies the Bookings surface: a booking cannot be opened on
+  // the Quotes or Analytics surface, so the hash is not consulted when it is present.
+  const bookingId=(url.searchParams.get('booking')||'').trim()||null;
+  if(bookingId)return { route:'tickets', routeQuoteId:null, routeBookingId:bookingId };
+  if(quoteId&&canQuote)return { route:'quote', routeQuoteId:quoteId, routeBookingId:null };
+  if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
+  if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
+  if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  if(url.hash==='#bookings')return { route:'tickets', routeQuoteId:null, routeBookingId:null };
   // No (recognised) hash → the working home: Quotes for anyone who can quote, Bookings
   // otherwise. Bookings keeps its own #bookings hash so back/forward round-trips exactly.
-  return canQuote?{ route:'quotes', routeQuoteId:null }:{ route:'tickets', routeQuoteId:null };
+  return canQuote?{ route:'quotes', routeQuoteId:null, routeBookingId:null }:{ route:'tickets', routeQuoteId:null, routeBookingId:null };
 }
-function syncUrl(route, quoteId, mode){
+function syncUrl(route, quoteId, bookingId, mode){
   const url=new URL(window.location.href);
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
@@ -2070,6 +2076,10 @@ function syncUrl(route, quoteId, mode){
   else url.hash='#bookings';
   if(route==='quote'&&quoteId)url.searchParams.set('quote',quoteId);
   else url.searchParams.delete('quote');
+  // Only ever on the Bookings surface — leaving it set while the operator is looking at Quotes
+  // would reopen a sheet the moment they came back, which is not what they asked for.
+  if(route==='tickets'&&bookingId)url.searchParams.set('booking',bookingId);
+  else url.searchParams.delete('booking');
   const next=url.pathname+url.search+url.hash;
   if(mode==='push')history.pushState(null,'',next);
   else history.replaceState(null,'',next);
@@ -2078,16 +2088,44 @@ function setShellRoute(route, opts){
   opts=opts||{};
   state.route=route;
   state.routeQuoteId=(route==='quote'&&opts.quoteId)?opts.quoteId:null;
-  syncUrl(route,state.routeQuoteId,opts.replace?'replace':'push');
+  // Changing surface closes any open sheet — the sheet belongs to Bookings, and carrying it
+  // across would leave `?booking=` describing something the operator can no longer see.
+  if(route!=='tickets')closeDetail('silent');
+  syncUrl(route,state.routeQuoteId,state.detail,opts.replace?'replace':'push');
   render();
 }
 function applyRouteFromUrl(mode){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
-  syncUrl(state.route,state.routeQuoteId,mode==='push'?'push':'replace');
+  /* The sheet follows the URL in BOTH directions. Closing on an absent ?booking= is what makes
+     browser Back close the sheet instead of stranding it over the queue, and it is the half that
+     is easy to leave out — opening on arrival looks like the whole feature until you press Back. */
+  if(!next.routeBookingId)closeDetail('silent');
+  syncUrl(state.route,state.routeQuoteId,next.routeBookingId,mode==='push'?'push':'replace');
   render();
   if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);
+  if(next.routeBookingId&&next.routeBookingId!==state.detail)void resolveBookingDeepLink(next.routeBookingId);
+}
+
+/* Open the booking named in ?booking=, once the queue it renders from has landed.
+   renderSheet() resolves its ticket out of `tickets`, so opening before loadQueue() settles finds
+   nothing, hides the sheet and drops the deep link silently — which is the exact failure this
+   feature exists to prevent, arriving by a different door. loadQueue() shares one in-flight
+   request, so awaiting it here costs nothing when boot is already fetching. */
+async function resolveBookingDeepLink(id){
+  state.routeBookingId=id;
+  try{ await loadQueue(); }
+  catch(e){ return; }               // the queue's own handler has already reported it
+  if(state.routeBookingId!==id)return;   // operator navigated away while the queue loaded
+  if(!tickets.some(x=>x.id===id)){
+    /* A real id the queue does not carry: closed long ago, or someone else's link. Drop the
+       param rather than leaving the address bar describing a sheet that will never open. */
+    state.routeBookingId=null;
+    syncUrl(state.route,state.routeQuoteId,null,'replace');
+    return;
+  }
+  openDetail(id,{fromUrl:true});
 }
 
 let _queueInFlight=null;
@@ -2954,16 +2992,30 @@ function reverseActionsFor(t, d){
     ${reasonBox}<div class="reverse-actions">${btn}</div>${note}</div>`;
 }
 
+/* Was this booking settled through the gateway, or by hand? mark-paid records the method AS the
+   provider ("a cash payment's provider is cash"), and the drawer already receives the payment
+   rows — it just never asked. Everything about the refund block keys off this: a cash booking has
+   no PayHere payment to refund, so the API button would fail, and every mention of a "PayHere
+   reference" or "the PayHere dashboard" is a lie the operator has to type past. That matters more
+   than the wording: the evidence field is the money trail (docs/known-bugs.md, 2026-07-30). */
+var MANUAL_PROVIDERS = { cash: 'cash', bank_transfer: 'bank transfer', manual_other: 'another method' };
+function settledByHand(d) {
+  var p = ((d && d.payments) || []).find(function (x) { return x.status === 'succeeded'; });
+  return p && MANUAL_PROVIDERS[p.provider] ? MANUAL_PROVIDERS[p.provider] : null;
+}
+
 function refundHtmlFor(t,d){
   if(!state.caps||!state.caps.includes('payments:act'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
+
   const mayFire=state.caps.includes('payments:reverse');
+  const byHand=settledByHand(d);
   const rows=refunds.slice().reverse().map(r=>{
     /* Fall back to the raw status rather than a label. The old ternary ended in :'Cancelled',
        so all three api_* statuses printed as "Cancelled" — including a successful refund, and
        including api_processing, the one row that most needs a human to look at it. */
     const label=REFUND_LABEL[r.status]||r.status;
-    const evidence=r.gatewayRef?` · PayHere ref ${esc(r.gatewayRef)}`:'';
+    const evidence=r.gatewayRef?` · ${byHand?'returned by':'PayHere ref'} ${esc(r.gatewayRef)}`:'';
     const confirmed=r.confirmedBy?` · confirmed by ${esc(r.confirmedBy)}`:'';
     /* PayHere's `msg`, so a decline explains itself instead of leaving a bare status in the
        ledger. Only api_failed carries one worth showing — a success needs no excuse. */
@@ -2974,14 +3026,21 @@ function refundHtmlFor(t,d){
        alert, which says the same thing in the same words. */
     const stuck=r.status==='api_processing'
       ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`:'';
+    /* A booking paid by hand has no gateway payment to reverse, so the API button is not offered
+       — pressing it could only fail — and the copy asks how the money actually went back. */
     const pendingActions=r.status==='manual_pending'&&mayFire?`
-      <div class="refund-confirm">
+      ${byHand?'':`<div class="refund-confirm">
         <button class="btn btn-go" data-act="refundexecute" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}" title="Refunds through PayHere's Refund API — no dashboard step">Refund through PayHere now</button>
         <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
-      </div>
-      <p class="refund-warning">Or refund it by hand in the PayHere dashboard, then paste the reference below.</p>
+      </div>`}
+      ${byHand?`<div class="refund-confirm">
+        <button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button>
+      </div>` : ''}
+      <p class="refund-warning">${byHand
+        ?`This booking was paid by ${esc(byHand)}, so there is nothing to refund through PayHere. Return the money the same way, then record how below.`
+        :'Or refund it by hand in the PayHere dashboard, then paste the reference below.'}</p>
       <div class="refund-confirm">
-        <label>PayHere refund reference<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="Required evidence"></label>
+        <label>${byHand?'How it was returned':'PayHere refund reference'}<input data-refund-ref="${esc(r.id)}" autocomplete="off" placeholder="${byHand?'e.g. bank transfer ref, or who handed the cash back':'Required evidence'}"></label>
         <button class="btn btn-noshow" data-act="refundconfirm" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Confirm manual refund</button>
       </div>`:'';
     return `<div class="refund-row refund-status-${esc(r.status)}">
@@ -3206,8 +3265,28 @@ function renderSheet(){
   sc.classList.add('show');sh.classList.add('show');
 }
 
-async function openDetail(id){
-  state.detail=id;state.detailData=null;renderSheet();
+/* One way to close the sheet. This was six copies of the same three statements, which was
+   survivable until the sheet became addressable — now every close must also drop `?booking=`,
+   and six places to remember is six places to forget one.
+
+   mode: 'push'    a close the operator performed, so Back reopens what they just closed
+         'replace' the sheet is closing because the booking went away underneath them —
+                   not a navigation they made, so it must not earn a history entry
+         'silent'  the caller is changing route and will sync the URL itself */
+function closeDetail(mode){
+  if(!state.detail)return;
+  state.detail=null;state.detailData=null;state.routeBookingId=null;
+  if(mode!=='silent')syncUrl(state.route,state.routeQuoteId,null,mode==='replace'?'replace':'push');
+  renderSheet();
+}
+
+/* Open the sheet and say so in the address bar. `fromUrl` marks the reverse direction — the URL
+   already names this booking, so writing another history entry would make Back a no-op. */
+async function openDetail(id, opts){
+  opts=opts||{};
+  state.detail=id;state.detailData=null;state.routeBookingId=id;
+  if(!opts.fromUrl)syncUrl(state.route,state.routeQuoteId,id,'push');
+  renderSheet();
   /* fresh booking → fresh scroll; morphdom otherwise preserves the previous booking's position */
   const _sb=document.querySelector('#sheet .sheet-b');if(_sb)_sb.scrollTop=0;
   /* A ride-board van has no booking row — GET /bookings/board:XX-1234 would 404.
@@ -3278,7 +3357,7 @@ let toastT;function toast(m,kind){const t=$('#toast');const bad=kind==='error';t
 
 /* re-fetch the single row after a mutation and splice it in, then re-render */
 async function refreshRow(id){
-  try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)state.detail=null;render();}
+  try{const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);const still=tickets.find(x=>x.id===id);if(!still)closeDetail('replace');render();}
   catch(e){if(e.message!=='auth'){window.opsReportError&&window.opsReportError('refreshRow',e);toast('Refresh failed','error');}}
 }
 
@@ -3290,9 +3369,9 @@ async function refreshRow(id){
 
 /* ── quote view panel — mounts QuoteView into #quoteRoot: .ch-app render target + SIBLING #ch-toast (innerHTML swaps never destroy the toast) ── */
 function showQuoteView(){
-  if(!state.caps||!state.caps.includes('quote:manage')){state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,'replace');render();return;}
+  if(!state.caps||!state.caps.includes('quote:manage')){state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,state.detail,'replace');render();return;}
   /* close any open Bookings detail sheet + scrim so its fixed overlay doesn't float over the cockpit */
-  if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
+  closeDetail('silent');
   const qr=$('#quoteRoot');
   qr.hidden=false;$('#view').hidden=true;$('#topbar').hidden=true;
   if(!qr.querySelector('.ch-app')){
@@ -3340,7 +3419,7 @@ function render(){
     /* Quotes list lives in the ops shell #view (not the cockpit pane) so it reads as one
        console. Close any open Bookings detail sheet first. */
     hideQuoteView();
-    if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
+    closeDetail('silent');
     viewQuotes();
     if(entering){
       playRouteIn();
@@ -3350,7 +3429,7 @@ function render(){
     }
   }else if(state.route==='analytics'){
     hideQuoteView();
-    if(state.detail){state.detail=null;state.detailData=null;renderSheet();}
+    closeDetail('silent');
     viewAnalytics();
     if(entering){
       playRouteIn();
@@ -3502,7 +3581,7 @@ document.addEventListener('click',e=>{
   if(item){const a=kbarFiltered()[parseInt(item.dataset.kbar,10)];kbarClose();if(a)a.run();return;}
   if(!e.target.closest('.kbar-panel'))kbarClose();
 });
-$('#scrim').addEventListener('click',()=>{state.detail=null;state.detailData=null;renderSheet();});
+$('#scrim').addEventListener('click',()=>closeDetail('push'));
 document.addEventListener('input',e=>{if(e.target.id==='q'){const _pos=e.target.selectionStart;state.q=e.target.value;viewTickets();const _q=$('#q');if(_q){_q.focus();try{_q.setSelectionRange(_pos,_pos);}catch(_){}}}});
 document.addEventListener('change',e=>{if(e.target.id==='chansel'){state.chan=e.target.value;viewTickets();}});
 document.addEventListener('click',async e=>{
@@ -3526,7 +3605,7 @@ document.addEventListener('click',async e=>{
   try{
   switch(act){
     case 'open':await openDetail(id);break;
-    case 'close':state.detail=null;state.detailData=null;renderSheet();break;
+    case 'close':closeDetail('push');break;
     case 'closesel':{const on=e.target&&e.target.checked;if(on)closeSel.add(id);else closeSel.delete(id);render();break;}
     case 'closeall':{const ids=tickets.filter(x=>!isBoard(x)&&dayGroup(x)==='Needs closing').map(x=>x.id);
       const allOn=ids.length&&ids.every(x=>closeSel.has(x));
@@ -3661,8 +3740,13 @@ document.addEventListener('click',async e=>{
       const busyKey='confirm:'+refundId;if(refundBusy.has(busyKey))break;
       const refInput=document.querySelector(`[data-refund-ref="${CSS.escape(refundId||'')}"]`);
       const gatewayRef=refInput&&refInput.value.trim();
-      if(!gatewayRef){toast('Paste the PayHere refund reference first','error');break;}
-      if(!confirm('Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
+      /* Same field, honest prompt: a cash booking has no PayHere reference to paste, and asking
+         for one is how the evidence trail ends up recording a fiction. */
+      const handMethod=settledByHand(state.detailData);
+      if(!gatewayRef){toast(handMethod?'Record how the money went back first':'Paste the PayHere refund reference first','error');break;}
+      if(!confirm(handMethod
+        ?`Confirm only after the money has actually gone back by ${handMethod}. This records the evidence and emails the customer.`
+        :'Confirm only after the refund is complete in the PayHere dashboard. This records the evidence and emails the customer.'))break;
       refundBusy.add(busyKey);el.disabled=true;
       /* refreshRow too: a full refund flips the BOOKING to refunded (refundRepo.confirm →
          setStatus), and reloadRefundDetail only repaints the sheet's detail payload. Without it
@@ -3724,7 +3808,7 @@ document.addEventListener('keydown',e=>{
   quoteQuery='';
   viewQuotes();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){state.detail=null;state.detailData=null;renderSheet();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.detail){closeDetail('push');}});
 
 /* ── login / session ── */
 /* Avatar initials: first+last from the Google profile name ("Sandra Wolker"→"SW");
@@ -3770,7 +3854,11 @@ function bootApp(identity){
   const next=routeStateFromUrl(!!(state.caps&&state.caps.includes('quote:manage')));
   state.route=next.route;
   state.routeQuoteId=next.routeQuoteId;
-  syncUrl(state.route,state.routeQuoteId,'replace');
+  syncUrl(state.route,state.routeQuoteId,next.routeBookingId,'replace');
+  /* The refresh case, and the reason this feature exists: boot reads the URL itself rather than
+     going through applyRouteFromUrl, so without this a reloaded ?booking= would keep the address
+     bar and drop the sheet — the exact thing being fixed, arriving by the back door. */
+  if(next.routeBookingId)void resolveBookingDeepLink(next.routeBookingId);
   const initials=avatarInitials(identity.name,identity.email);
   const roleLabel=identity.role.charAt(0).toUpperCase()+identity.role.slice(1);
   $('#railfoot').innerHTML=`<div class="avatar">${initials}</div>
@@ -3822,7 +3910,7 @@ if(devLoginForm)devLoginForm.addEventListener('submit',async e=>{
 });
 
 $('#login').addEventListener('click',e=>{if(e.target.id==='logoutbtn'){}});
-document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,'replace');showLogin();}});
+document.addEventListener('click',async e=>{if(e.target.id==='logoutbtn'){QuoteView.teardown();/* T6: clear _inited/_dirty/timers + empty render target BEFORE resetting session state, so a re-login starts clean and no stale beforeunload fires */await fetch('/admin/ops/logout',{method:'POST',credentials:'same-origin'}).catch(()=>{});tickets=[];state.detail=null;state.route='tickets';state.routeQuoteId=null;syncUrl('tickets',null,null,'replace');showLogin();}});
 window.addEventListener('popstate',()=>{if(!$('#approot').hidden)applyRouteFromUrl('replace');});
 window.addEventListener('hashchange',()=>{if(!$('#approot').hidden)applyRouteFromUrl('replace');});
 
@@ -5003,6 +5091,7 @@ function resetToNew() {
     unpriced: false, // true while this row is a server-side shell (never priced) — spec 2026-07-29
     createdBy: null,
     updatedBy: null,
+    updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
   };
   lastEstimate = null;
@@ -5733,6 +5822,7 @@ async function reopenQuote(id) {
     state.assignedTo = q.assignedTo || null;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
+  state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
     // A shell carries no priced content, but the server DOES allow an internal note on one — and
     // savePayload() sends both fields unconditionally, so not restoring them would clobber a note
     // added via the internal-notes PATCH on the next real save.
@@ -5815,6 +5905,7 @@ async function reopenQuote(id) {
   state.assignedTo = q.assignedTo || null;
   state.createdBy = q.createdBy || null;
   state.updatedBy = q.updatedBy || null;
+  state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
 
   lastEstimate = null;
@@ -7864,6 +7955,35 @@ function renderSubmitBlockers() {
   ].join('');
 }
 
+/* Concurrent-edit notice (owner, 2026-08-01). Two people can open the same quote and quietly
+   overwrite each other. A hard lock was considered and deliberately NOT built first: a lock with
+   no heartbeat outlives a closed laptop, and a stuck lock means nobody can edit the quote at all
+   — worse than the problem. This is the soft version: say who was last in here and when, and let
+   the operator decide.
+
+   It reports the last SAVE, not "has it open", because that is the signal we actually have —
+   autosave fires 2.5s after a keystroke, so anyone genuinely working shows up fast, while someone
+   who merely looked leaves no trace and correctly raises no alarm. */
+var RECENT_EDIT_MS = 15 * 60 * 1000;
+function recentOtherEditor() {
+  if (!state.updatedBy || !state.updatedAt) return null;
+  if (state.updatedBy === window.opsEmail) return null; // your own last save is not a clash
+  var t = Date.parse(state.updatedAt);
+  if (isNaN(t)) return null;
+  var ago = Date.now() - t;
+  if (ago < 0 || ago > RECENT_EDIT_MS) return null;
+  var mins = Math.max(1, Math.round(ago / 60000));
+  return { email: state.updatedBy, mins: mins };
+}
+function renderConcurrentEditNotice() {
+  var e = recentOtherEditor();
+  if (!e) return '';
+  return '<div class="ch-review-banner tone-amber ch-concurrent">'
+    + '<b>' + esc(userLabel(e.email)) + ' was editing this ' + e.mins + ' minute' + (e.mins === 1 ? '' : 's') + ' ago</b>'
+    + '<span>You can still edit — but if you both save, the last one wins. Check with them first.</span>'
+    + '</div>';
+}
+
 function renderReviewBanner() {
   var s = state.status, note = state.notes ? String(state.notes).trim() : '';
   function banner(tone, title, body) {
@@ -8330,7 +8450,7 @@ function render() {
       '      </div>',
     ].join('') : ''),
     renderSubmitBlockers(),
-    renderReviewBanner(),
+    renderConcurrentEditNotice() + renderReviewBanner(),
 
     // Customer strip (one compact row)
     '      <div class="ch-cust-strip">',
