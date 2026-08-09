@@ -750,6 +750,18 @@ function setStat(id, next){
   if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
   else el.textContent = next;
 }
+// Places arrive from Google autocomplete as full addresses, so an untouched pick ("Jaffna, Sri
+// Lanka") sat in the route strip beside a hand-typed one ("Colombo city") and the trip read as
+// though it had been assembled by two different people. CH.shortPlace is the SAME shortener ops,
+// the pay page and the emails use — ch-shortplace.js is compiled from api/src/quote/shortPlace.ts
+// by `npm run generate`, so there is one implementation, not a per-surface copy.
+//
+// Falls back to the raw string: a missing script must cost a long label, never a blank itinerary.
+function shortPlaceLabel(place){
+  if(!place) return '';
+  return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
+}
+
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
   let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
@@ -773,12 +785,14 @@ function updateSummary(opts={}){
   // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
-  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None');
+  // "None" read as "this trip has no nights", when it only means no overnight stop has been ADDED
+  // yet. A bare 0 matches its sibling stats (Places 9, Transfer legs 8) and fits the narrow cell.
+  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : '0');
   setStat('st-legs', String(transferLegs));
   setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
-    seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
+    seq.map(s=>`<span>${shortPlaceLabel(s.place)||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
   routeEl.hidden = !seq.length; // an empty route rendered as a bare grey bar
 
   if(refreshMap) renderMap();
