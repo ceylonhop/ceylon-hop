@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b88f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="431" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b88k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="485" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M95.6 54.5 Q94.0 71.3 83.8 83.0 Q73.5 94.8 55.7 96.2 Q38.0 97.6 25.2 89.4 Q12.5 81.2 6.4 66.9 Q0.2 52.6 6.8 34.1 Q13.4 15.7 27.2 9.4 Q41.0 3.2 56.9 4.7 Q72.8 6.2 85.0 22.0 Q97.2 37.7 95.6 54.5Z" fill="#34C2D9"></path>
+<g transform="rotate(-3.10 50 50)">
+  <g class="pass-fill" filter="url(#b88f)"><path d="M14 50h26a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V54a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M21 50v-5a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v5" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M21 59v13M33 59v13" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path><path d="M69 6c13 13 15 55 0 82-15-27-13-69 0-82z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M69 20v54" stroke="#F9A429" stroke-width="3.4" stroke-linecap="round"></path><path d="M69 82v9" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path></g>
+  <g class="pass-ink" filter="url(#b88k)"><path d="M14 50h26a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H14a4 4 0 0 1-4-4V54a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M21 50v-5a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v5" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M21 59v13M33 59v13" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path><path d="M69 6c13 13 15 55 0 82-15-27-13-69 0-82z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M69 20v54" stroke="#F9A429" stroke-width="3.4" stroke-linecap="round"></path><path d="M69 82v9" stroke="#4A4648" stroke-width="3" stroke-linecap="round"></path></g>
+</g>
+</svg>

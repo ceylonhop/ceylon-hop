@@ -21,12 +21,28 @@ export interface CreateCheckoutArgs {
   amount: number; // minor units
   currency: string;
   items?: string;
+  /**
+   * Where the gateway sends the customer afterwards, for THIS checkout. Omitted, the adapter's
+   * constructor URLs apply — which are the website checkout's pages, and the wrong destination
+   * for a pay-link customer. Never part of the payment hash.
+   */
+  returnUrl?: string;
+  cancelUrl?: string;
   customer?: {
     firstName: string;
     lastName: string;
     email: string;
     phone: string;
     country: string;
+    // Billing address, when the booking captured one (pay page, 2026-08-01). Absent on
+    // website bookings — the adapter then omits the fields entirely so the gateway collects
+    // them, instead of sending the placeholder it used to.
+    address?: string;
+    city?: string;
+    /** Appended to the address line — PayHere has no postcode parameter of its own. */
+    postcode?: string;
+    /** Likewise: no state parameter exists, so it joins the postcode on the address line. */
+    state?: string;
   };
 }
 
@@ -61,11 +77,63 @@ interface WebhookBody extends FakeWebhookEvent {
 // The swappable payment seam. The real PayHere adapter implements the same interface
 // later (Phase 1.5); until then the fake drives the whole flow with a signed webhook,
 // so no real gateway is ever called.
+// Why a webhook body was refused. `parseWebhook` returns a bare null, which is enough to reject
+// the request and nowhere near enough to debug one: a genuine PayHere notify that trips a field
+// rule and a bot probing the public endpoint raised the identical "invalid signature —
+// misconfigured merchant secret or someone probing" alert (owner-reported, 2026-08-02). Only
+// `signature_mismatch` implicates the secret; every other reason means we refused something the
+// gateway may well have meant.
+//
+// The breadcrumbs are best-effort — a rejected body is by definition untrusted, so they are read
+// without verifying anything and must never drive control flow. They exist so the alert can say
+// WHICH order this was about. All non-PII: the notify's card_holder_name/card_no/card_expiry are
+// never read here, same stance as `sanitizedPayload`.
+export interface WebhookRejection {
+  /** Stable machine name, e.g. 'signature_mismatch', 'amount_malformed'. Safe as a dedupe key. */
+  reason: string;
+  /** Of the raw body, so two alerts can be told apart (or matched) without logging the body. */
+  bodySha256: string;
+  orderId?: string;
+  statusCode?: string;
+  amount?: string;
+  currency?: string;
+}
+
+// The outcome of asking the gateway to refund. `unknown` is the whole reason this type exists:
+// PayHere's Refund API has no idempotency key, so a call that times out CANNOT be retried — the
+// refund may already have happened. `unknown` means "a human must look", never "try again".
+export type RefundOutcome = 'succeeded' | 'failed' | 'unknown';
+
+export interface RefundResult {
+  outcome: RefundOutcome;
+  /** PayHere's refund number (`data`). Present only on 'succeeded'. */
+  gatewayRef?: string;
+  /** PayHere's `msg`, or our own description of an indefinite failure. Diagnostic only. */
+  providerMessage?: string;
+}
+
+export interface RefundArgs {
+  /** The GATEWAY's payment id (PayHere `payment_id`), not our payments.id. */
+  gatewayPaymentId: string;
+  amountCents: number;
+  currency: string;
+  /** Sent as `description`; the ops agent's reason, which is also our audit trail. */
+  description: string;
+  /** Full refunds omit `amount` entirely, per PayHere's docs. */
+  isFullRefund: boolean;
+}
+
 export interface PaymentAdapter {
   readonly provider: string;
   createCheckout(args: CreateCheckoutArgs): Promise<CheckoutParams>;
   // Verify + parse a raw webhook body. Returns null when the signature is invalid.
   parseWebhook(rawBody: string): VerifiedPaymentEvent | null;
+  // Optional: explain a body parseWebhook refused. Adapters that omit it stay opaque, and the
+  // caller falls back to the old undifferentiated alert.
+  describeWebhookRejection?(rawBody: string): WebhookRejection | null;
+  // Optional: refund through the gateway's API. An adapter without it means the ops UI offers
+  // the manual dashboard flow only, which is a supported state, not a degraded one.
+  refund?(args: RefundArgs): Promise<RefundResult>;
 }
 
 const DEFAULT_SECRET = process.env.FAKE_PAYMENT_SECRET ?? 'fake-secret';

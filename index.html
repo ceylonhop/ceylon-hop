@@ -6,7 +6,7 @@
 <title>Sri Lanka private transfers &amp; shared rides — Ceylon Hop</title>
 <meta name="description" content="Book a private AC car or van between any two points in Sri Lanka — your schedule, a fixed price. Share a seat on popular routes and pay a fraction. Rated 5.0 on Tripadvisor.">
 <link rel="canonical" href="https://ceylonhop.com/">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <meta property="og:type" content="website">
@@ -37,25 +37,50 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","description":"Shared rides & private transfers across Sri Lanka.","areaServed":"Sri Lanka","telephone":"+94779669662","priceRange":"$$","sameAs":["https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html"]}</script>
 <style>
   /* ---- Hero ---- */
-  .hero{position:relative;background:linear-gradient(160deg,#0d8f8c 0%, #0AB9B6 55%, #2aa9bf 100%);color:#fff;overflow:hidden;padding-top:74px;margin-top:-74px}
+  /* Bachelor Button leads the band — it is the book's primary, and this is the largest
+     brand surface on the site. Tiffany stays in it as the supporting hue, not the lead. */
+  .hero{position:relative;background:linear-gradient(160deg,#2f8fa8 0%, #63BFD6 52%, #0AB9B6 100%);color:#fff;overflow:hidden;padding-top:74px;margin-top:-74px}
   .hero::before{content:"";position:absolute;inset:0;background:
-     radial-gradient(60% 60% at 80% 10%, rgba(99,191,214,.5), transparent 70%),
-     radial-gradient(50% 50% at 10% 90%, rgba(8,120,118,.6), transparent 70%);}
-  .hero h1{color:#fff;font-weight:800}
+     radial-gradient(60% 60% at 80% 10%, rgba(99,191,214,.55), transparent 70%),
+     radial-gradient(50% 50% at 10% 90%, rgba(28,110,132,.55), transparent 70%);}
+  .hero h1{color:#fff;font-weight:700}
   .hero .lead{color:rgba(255,255,255,.92)}
 
   /* ---- Immersive full-bleed photo hero ---- */
   .hero-immersive{position:relative;color:#fff;overflow:hidden;background:#092523}
   .hero-immersive::before{content:none}
   .hero-immersive .hero-bg{position:absolute;inset:0;width:100%;height:100%;z-index:0;display:block;object-fit:cover}
-  /* cinematic grade, not a dim: a deep vignette anchors the copy lower-left, a whisper of
-     darkening up top keeps the nav legible, and the base fades into the trust strip below */
+  /* Legibility scrim, NOT a photo filter — brand book p11 ("avoid heavily edited or
+     manipulated photos with filters") and the p6 don't.
+     Two rules this has to satisfy at once:
+       · the photograph must still read as a photograph, so the wash is concentrated where
+         the copy actually sits (lower-left) and clears off the subject fast; and
+       · the white hero copy still needs 4.5:1, so the anchor stop stays dark.
+     The old build also laid a teal gradient across the whole frame, which tinted the
+     image rather than darkening it — that layer is gone; a scrim may darken, not grade. */
   .hero-immersive .hero-scrim,
   .hero-pc .hero-scrim{position:absolute;inset:0;z-index:1;display:block;background:
-     radial-gradient(130% 105% at 8% 72%, rgba(3,32,30,.88) 0%, rgba(4,42,39,.52) 40%, rgba(6,52,49,.12) 68%, rgba(6,52,49,0) 86%),
-     linear-gradient(180deg, rgba(3,26,24,.5) 0%, rgba(3,26,24,0) 24%),
-     linear-gradient(0deg, rgba(4,28,26,.62) 0%, rgba(4,28,26,0) 36%),
-     linear-gradient(115deg, rgba(8,74,70,.24), rgba(13,143,140,.06))}
+     radial-gradient(118% 98% at 6% 74%, rgba(4,26,25,.86) 0%, rgba(5,34,32,.40) 38%, rgba(6,44,42,.08) 64%, rgba(6,44,42,0) 82%),
+     linear-gradient(180deg, rgba(3,26,24,.34) 0%, rgba(3,26,24,0) 22%),
+     linear-gradient(0deg, rgba(4,28,26,.46) 0%, rgba(4,28,26,0) 32%)}
+
+  /* The desktop vignette is anchored lower-left, where the copy sits on a wide screen.
+     On a narrow one the copy stacks into the TOP THIRD (measured: 16%–43% of the hero)
+     and the radial's centre at 74% misses it entirely — white text over an unscrimmed
+     photo. So small screens get their own vertical scrim covering the copy band.
+     Measured against the Sigiriya hero at 375px: h1 3.0:1+ (large text, needs 3) and
+     lead 4.5:1+ (needs 4.5). The lead was 2.31:1 here before this block existed. */
+  @media(max-width:820px){
+    .hero-immersive .hero-scrim,
+    .hero-pc .hero-scrim{background:
+       linear-gradient(180deg,
+         rgba(3,26,24,.46) 0%,
+         rgba(4,28,26,.54) 20%,
+         rgba(4,28,26,.52) 46%,
+         rgba(4,28,26,.24) 68%,
+         rgba(4,28,26,.28) 86%,
+         rgba(4,28,26,.50) 100%)}
+  }
 
   /* shared hero scaffolding — used by both the default and full-bleed-tweak variants */
   .hero .hero-inner{position:relative;z-index:2;display:grid;
@@ -63,8 +88,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      column-gap:clamp(40px,5vw,84px);align-items:center;
      min-height:clamp(560px,76vh,760px);padding-top:36px;padding-bottom:80px}
   .hero .hero-copy{grid-area:copy;position:relative;z-index:2;display:flex;flex-direction:column;align-items:flex-start;gap:22px;max-width:37rem}
-  .hero .hero-title{color:#fff;font-size:clamp(2.55rem,4.85vw,4.15rem);line-height:1.02;letter-spacing:-.018em;
-     text-shadow:0 2px 30px rgba(0,0,0,.38);margin:0;text-wrap:balance}
+  /* Tuned for Bodoni, not for the grotesk-ish serif this replaced.
+     · letter-spacing was -.018em, the tightest value on the site. A didone's hairline
+       serifs are long and horizontal; pulling the letters together laps them over their
+       neighbours and the word turns into a picket fence. Bodoni wants 0 or positive.
+     · line-height was 1.02. Bodoni 72 has tall ascenders and deep descenders, so 1.02
+       put the 'y' of "Anywhere" into the cap-line of "in Sri Lanka" and left the swash
+       nowhere to sit. 1.14 matches the h1-h4 rule in site.css.
+     · the shadow was a single 30px blur — far too diffuse to hold a hairline. A tight
+       1-2px shadow is what actually keeps the thin strokes off a busy photograph; the
+       wide blur stays underneath it for overall separation. */
+  .hero .hero-title{color:#fff;font-size:clamp(2.55rem,4.85vw,4.15rem);line-height:1.14;letter-spacing:0;
+     text-shadow:0 1px 2px rgba(0,0,0,.42), 0 2px 30px rgba(0,0,0,.38);margin:0;text-wrap:balance}
   .hero .hero-sub{color:rgba(255,255,255,.93);max-width:46ch;font-size:1.12rem;line-height:1.6;font-weight:500;
      text-shadow:0 1px 16px rgba(0,0,0,.4);margin:0}
   .hero .hero-sub b{color:#fff;font-weight:700}
@@ -113,10 +148,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .hero-pc .pc-cap,.hero-pc .pc-stamp,.hero-pc .postmark,.hero-pc .route-doodle,.hero-pc .pc-pin{display:none}
   .pc-pin[hidden]{display:none}
 
-  /* hand-stitched underline on the headline's key word */
-  .hl-swash{position:relative}
-  .hl-swash::after{content:"";position:absolute;left:.02em;right:.05em;bottom:-.05em;height:.17em;pointer-events:none;
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 220 16' preserveAspectRatio='none'%3E%3Cpath d='M4 11 C 58 4, 150 3, 216 9' fill='none' stroke='%23F9A429' stroke-width='5' stroke-linecap='round' stroke-dasharray='.5 12'/%3E%3C/svg%3E") no-repeat center/100% 100%}
+  /* Dotted saffron underline on the headline's key word.
+
+     This was an absolutely-positioned SVG strip. That cannot work here: the word is
+     "Anywhere", whose 'y' descends ~0.26em, and at Bodoni's proportions there is no
+     offset that both clears that tail AND stays out of the next line's cap-line — the
+     two constraints overlap. The old offset split the difference and drew the dots
+     straight through the 'y', which read as a strikethrough.
+
+     A real underline solves it: text-decoration-skip-ink makes the browser break the
+     line around the descender automatically, and the position is derived from the
+     font's own baseline, so it stays correct whether the visitor gets Bodoni 72 or the
+     Bodoni Moda fallback. */
+  .hl-swash{
+    text-decoration-line:underline;
+    text-decoration-style:dotted;
+    text-decoration-color:var(--saffron);
+    text-decoration-thickness:.07em;
+    text-underline-offset:.17em;
+    text-decoration-skip-ink:auto;
+  }
 
   /* entrance choreography — auto-playing keyframes (fill:both) so the VISIBLE base
      style is what shows whenever motion is off or scripts fail; when motion is on,
@@ -146,7 +197,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      transition:transform .35s cubic-bezier(.3,1.3,.4,1), border-color .16s, box-shadow .16s, color .16s}
   .od-group.has-stops .swap{display:none}
   .od-group .swap svg{width:17px;height:17px}
-  .od-group .swap:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 4px 14px rgba(10,185,182,.28);transform:translateY(-50%) rotate(180deg)}
+  .od-group .swap:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 4px 14px rgba(var(--accent-rgb),.28);transform:translateY(-50%) rotate(180deg)}
   .od-group .swap:active{transform:translateY(-50%) rotate(180deg) scale(.92)}
   .od-group .swap:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   @media(prefers-reduced-motion:reduce){.od-group .swap{transition:none}}
@@ -178,7 +229,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      font-size:.98rem;font-weight:500;color:var(--ink);transition:border-color .16s, box-shadow .16s, background .16s}
   .hero-card .booker input::placeholder{color:#b6b2a6;font-weight:500}
   .hero-card .booker input:hover{border-color:#d5cfbd}
-  .hero-card .booker input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(10,185,182,.16);background:#fff}
+  .hero-card .booker input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px rgba(var(--accent-rgb),.16);background:#fff}
   /* confident CTA */
   .book-go{height:56px;grid-column:1/-1;margin-top:2px;border-radius:16px;font-size:1.03rem;font-weight:700;letter-spacing:.01em;
      /* Both stops must clear 4.5:1 with white — this is the site's most important
@@ -207,11 +258,35 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* trust strip — carries the hero's deep teal-ink base onward */
   .trust{background:#0c2422;color:#dcebe8;border-top:1px solid rgba(255,255,255,.06)}
-  .trust-row{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:19px 0;flex-wrap:wrap;font-size:.88rem;font-weight:600;letter-spacing:.01em}
-  .trust-row .item{display:flex;align-items:center;gap:.65rem}
-  .trust-row svg{width:32px;height:32px;padding:7px;flex:none;color:#39d6d0;background:rgba(10,185,182,.13);border-radius:50%}
+  /* Five items on ONE line at desktop. The margin here is thin and was blown by the
+     Hanken Grotesk → Poppins swap: Poppins sets ~11.6% wider, so the row needed ~1243px
+     against a 1152px inner .wrap and wrapped at every desktop size, orphaning the last
+     item. It fitted before only by ~7px, which was never real headroom.
+     Trimmed on three axes — 28px icons, 18px gaps, .82rem type — which brings it to
+     ~1135px. justify-content:center is the safety net: if a translation or a longer
+     label ever pushes it over again, the wrapped row centres and reads as deliberate
+     instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
+  .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
+  .trust-row .item{display:flex;align-items:center;gap:.55rem}
+  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
+     Set this lower and you get the worst case: a wrapped row still justified apart, so
+     the orphan hangs at the left edge — which is exactly how this bug looked. */
+  @media(min-width:1160px){ .trust-row{justify-content:space-between} }
+  /* Between the one-line width and the mobile scroll strip, free wrapping puts four
+     items up and one alone underneath. Three columns splits five as 3 + 2 instead, and
+     the aligned columns read as a deliberate grid rather than a broken row. */
+  @media(min-width:951px) and (max-width:1159px){
+    .trust-row{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 18px;padding-block:16px}
+  }
+  /* Below ~950 a third column squeezes cells under 280px and the longest label
+     ("Free cancellation up to 24h before") wraps to two lines inside its cell. Two
+     columns keeps every label on one line. */
+  @media(min-width:761px) and (max-width:950px){
+    .trust-row{display:grid;grid-template-columns:repeat(2,1fr);gap:13px 18px;padding-block:16px}
+  }
   @media(max-width:760px){
-    .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding:15px 0 17px;
+    .trust-row{flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;gap:24px;padding-block:15px 17px;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .trust-row::-webkit-scrollbar{display:none}
     .trust-row .item{flex:none;scroll-snap-align:start}
@@ -238,11 +313,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* add-a-stop control + mid stops in hero search */
   .add-stop{grid-column:1/-1;justify-self:start;display:inline-flex;align-items:center;gap:.45rem;white-space:nowrap;
-    background:rgba(10,185,182,.06);border:1.5px dashed rgba(8,147,143,.4);border-radius:999px;
+    background:rgba(var(--accent-rgb),.06);border:1.5px dashed rgba(8,147,143,.4);border-radius:999px;
     color:var(--accent-deep);font-weight:700;font-size:.85rem;
     padding:.5rem 1rem;margin-top:0;cursor:pointer;transition:background .15s,border-color .15s}
   .add-stop svg{width:14px;height:14px}
-  .add-stop:hover{background:rgba(10,185,182,.12);border-color:var(--accent)}
+  .add-stop:hover{background:rgba(var(--accent-rgb),.12);border-color:var(--accent)}
   .add-stop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   #mid-stops{display:grid;gap:10px}
   #mid-stops:empty{display:none}
@@ -271,7 +346,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .split .ph{aspect-ratio:4/3.2;border-radius:var(--r-lg)}
   .feat-list{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:14px}
   .feat-list li{display:flex;gap:.8rem;font-size:.98rem}
-  .feat-list .ck{flex:none;width:26px;height:26px;border-radius:50%;background:rgba(10,185,182,.14);color:var(--teal-deep);display:grid;place-items:center}
+  .feat-list .ck{flex:none;width:26px;height:26px;border-radius:50%;background:rgba(var(--accent-rgb),.14);color:var(--teal-deep);display:grid;place-items:center}
   .feat-list .ck svg{width:14px;height:14px}
   .feat-list b{display:block}
   .feat-list span small{color:var(--ink-soft);font-weight:400}
@@ -338,11 +413,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* reviews — postcard style */
   .rev{position:relative;display:flex;flex-direction:column;gap:12px;height:100%;padding:24px 24px 22px}
-  .rev .qmark{font-family:var(--display);font-weight:800;font-size:3.2rem;line-height:.6;color:var(--saffron);height:.5em}
+  .rev .qmark{font-family:var(--display);font-weight:700;font-size:3.2rem;line-height:.6;color:var(--saffron);height:.5em}
   .rev p{font-size:1rem;line-height:1.55;margin:0}
   .rev .stars{margin-top:auto}
   .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
-  .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:800;font-size:1.05rem;flex:none}
+  .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1.05rem;flex:none}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
   .rev .post-stamp{position:absolute;top:16px;right:16px}
 
@@ -392,20 +467,20 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
            inputs keep `required` for semantics and assistive tech. -->
       <form class="booker mode-single" id="form-go" novalidate onsubmit="return goBook(event)">
         <div class="bk-tabs" role="tablist" aria-label="Booking type">
-          <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
-          <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
+          <button type="button" class="bk-tab active" data-mode="single" role="tab" id="tab-single" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8.4 6H15a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h6.6"/></svg>Single transfer</button>
+          <button type="button" class="bk-tab" data-mode="multi" role="tab" id="tab-multi" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 5h6a3 3 0 0 1 3 3v2M7 19h6a3 3 0 0 0 3-3v-2"/></svg>Multi-stop trip</button>
         </div>
         <div class="od-group full" id="od-group">
           <div class="field pickup-field place-field"><label for="q-from">Pick-up</label>
             <input id="q-from" required placeholder="Where from?"></div>
           <button type="button" class="swap" id="swap" aria-label="Swap pick-up and drop-off" title="Swap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
           </button>
           <div class="field dropoff-field place-field"><label for="q-to" id="q-to-label">Drop-off</label>
             <input id="q-to" required placeholder="Where to?"></div>
           <div id="mid-stops"></div>
         </div>
-        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
+        <button type="button" class="add-stop" id="add-stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add a stop</button>
         <p class="bk-error full" id="bk-error" role="alert" hidden></p>
         <button class="btn btn-cta book-go" type="submit" id="go-btn">See prices &amp; book</button>
       </form>
@@ -429,11 +504,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <!-- TRUST -->
 <section class="trust">
   <div class="wrap trust-row">
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Shared seats every Wed &amp; Sat</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> Free cancellation up to 24h before</div>
-    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3z"/></svg> Fully insured &amp; safe drivers</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M6 17v2M18 17v2"/></svg> AC cars &amp; vans</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M12 7v5l3 2"/></svg> Shared seats every Wed &amp; Sat</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> Free cancellation 24h before</div>
+    <div class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> WhatsApp support 7 days</div>
   </div>
 </section>
 
@@ -474,9 +549,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <h2>Freedom of a backpacker, comfort of a private driver</h2>
       <p class="lead">You&rsquo;re never tied to a group or someone else&rsquo;s schedule. Travel on your own terms in a private vehicle &mdash; and skip the confusing public buses and the pricey one-off taxi quotes.</p>
       <ul class="feat-list">
-        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A private vehicle, door to door</b><small>Your own AC car or van, picking you up exactly where you are.</small></span></li>
-        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Or share &amp; save on popular routes</b><small>Shared seats on the island&rsquo;s busiest corridors &mdash; same comfort, split cost.</small></span></li>
-        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A local driver who knows the way</b><small>Friendly Pro&nbsp;Hoppers share the best food, stays and hidden gems.</small></span></li>
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A private vehicle, door to door</b><small>Your own AC car or van, picking you up exactly where you are.</small></span></li>
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg></span><span><b>Or share &amp; save on popular routes</b><small>Shared seats on the island&rsquo;s busiest corridors &mdash; same comfort, split cost.</small></span></li>
+        <li><span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg></span><span><b>A local driver who knows the way</b><small>Friendly Pro&nbsp;Hoppers share the best food, stays and hidden gems.</small></span></li>
       </ul>
       <div class="founder-note">
         <p class="q">“We started Ceylon Hop because we were tired of watching travellers overpay and stress over getting around. Every guest rides with a driver we’d trust with our own family.”</p>
@@ -491,7 +566,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="section" data-screen-label="Ready-made routes">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:12px">
-      <div><span class="eyebrow">Skip the planning</span><h2>Start from a ready-made route</h2></div>
+      <div><span class="eyebrow">Skip the spreadsheet</span><h2>Steal a route we already love</h2></div>
       <a href="tours.html" class="btn btn-ghost">See all tours</a>
     </div>
     <p class="lead" style="margin-bottom:34px">Our most-loved itineraries. Take one exactly as it is — or open it in the planner, swap stops, and make it yours.</p>
@@ -527,7 +602,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <section class="section bg-postcard wash-edge">
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
-      <div><span class="eyebrow">Travel blog</span><h2>Your guide to everywhere</h2></div>
+      <div><span class="eyebrow">Travel blog</span><h2>Your guide to everywhere worth going</h2></div>
       <a href="blog.html" class="btn btn-ghost">Read the blog</a>
     </div>
     <div class="grid cols-3" id="blog"></div>
@@ -578,12 +653,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <p class="ht-route">${t.stops.join(' → ')}</p>
         <div class="ht-foot"><span class="tc-price">from <b>$${p2p.toLocaleString()}</b> point-to-point</span><span class="tc-go">View tour ${ICON.arrow}</span></div>
       </a>
-      <a class="ht-custom" href="${planUrl}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Open in the planner &amp; make it yours</a>
+      <a class="ht-custom" href="${planUrl}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Open in the planner &amp; make it yours</a>
     </article>`;
   }).join('');
 
   // pro hoppers (drivers)
-  const PIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>';
+  const PIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 21s-7-4.5-7-10a7 7 0 0 1 14 0c0 5.5-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>';
   const hoppers=[
     ['Dinesh P.','Kandy','11 yrs','“If you’re hungry, just say — I know a kottu place that’ll ruin every other kottu for you.”',['English','Sinhala','Tamil'],'lead'],
     ['Nuwan R.','Ella','7 yrs','“I’ll stop at the viewpoints the buses speed past. Bring your camera and a little patience.”',['English','Sinhala']],
@@ -698,7 +773,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const row=document.createElement('div');
       row.className='field mid-stop place-field';
       row.innerHTML=`<label>Stop</label><input class="mid-select" required aria-label="Stop" placeholder="Where to next?">`+
-        `<button type="button" class="rm" aria-label="Remove this stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+        `<button type="button" class="rm" aria-label="Remove this stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
       const sel=row.querySelector('input');
       if(val) sel.value=val;
       attachLocalPlaceAutocomplete(sel,{onInput:update});

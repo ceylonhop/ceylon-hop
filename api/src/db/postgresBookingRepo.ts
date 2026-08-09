@@ -1,15 +1,20 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from './client';
-import { customers, bookings, transferRequests, tripRequests, sharedRequests } from './schema';
+import { customers, bookings, transferRequests, tripRequests, sharedRequests, bookingLegs } from './schema';
 import {
   type BookingRepo,
   type NewBooking,
   type Booking,
   type BookingChannel,
+  type StatusAudit,
   BookingNotFoundError,
   generateReference,
+  PAYER_EDITABLE_STATUSES,
 } from './bookingRepo';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
+import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
+import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
+import { track } from '../observability/track';
 
 type BookingRow = typeof bookings.$inferSelect;
 
@@ -44,6 +49,43 @@ export function isIdempotencyCollision(err: unknown): boolean {
   return v !== null && v.constraint.includes('idempotency');
 }
 
+// Exported for test — see postgresBookingRepo.legs.test.ts. b.mode is always a known literal
+// here (it's a NewBooking), so deriveLegsForMode never actually returns undefined; `?? []`
+// exists only so a future NewBooking mode nobody's taught this dispatch about degrades to "no
+// legs" rather than a type error, same as before this was shared with planBackfill.
+//
+// deriveLegsForMode already drops malformed places (a null/empty fromPlace or toPlace, or a
+// null/empty entry inside viaStops) before returning — see domain/bookingLegs.ts. That filtering
+// used to live here; it moved so legRowsForBooking and planBackfill (backfill-booking-legs.ts)
+// can't disagree about what "usable" means.
+export function legRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
+  const legs =
+    deriveLegsForMode(b.mode, {
+      single: b.mode === 'single' ? b.input : undefined,
+      trip: b.mode === 'trip' ? b.input : undefined,
+    }) ?? [];
+  return legs.map((leg) => ({ ...leg, bookingId }));
+}
+
+// legRowsForBooking guards VALUES (a null/empty place) but not SHAPES: a `stops` that isn't an
+// array, or a `dates` that isn't an array for a chauffeur trip, still throws inside
+// deriveTripLegs/chauffeurDays. None of these are reachable today — trip_request.stops is
+// `text[] NOT NULL`, quoteToBooking builds both arrays itself, and zod validates the website
+// path — but insertBooking calls this INSIDE its transaction, after the customer, booking and
+// request rows are already written, so "this insert cannot fail a payment" has to be literally
+// true for shapes too. A dropped set of legs is fully recoverable (the backfill and the
+// reconciliation script both pick it up); a failed payment is not. track() so the failure isn't
+// silent — something this basic reaching this deep is a bug worth knowing about, not a routine
+// data gap like the value-level drops above.
+export function safeLegRowsForBooking(bookingId: string, b: NewBooking): NewLegRow[] {
+  try {
+    return legRowsForBooking(bookingId, b);
+  } catch (err) {
+    track(err, { tag: 'booking-legs-derivation', extra: { bookingId, mode: b.mode } });
+    return [];
+  }
+}
+
 export class PostgresBookingRepo implements BookingRepo {
   constructor(private readonly db: Db) {}
 
@@ -67,8 +109,28 @@ export class PostgresBookingRepo implements BookingRepo {
       total: row.total,
       amountDueNow: row.amountDueNow, // null on pre-GL-3 rows
       needsPricing: row.needsPricing, // null on rows predating the column
+      // Cancellation audit (owner rule 2026-08-02); null on anything not cancelled, and on
+      // cancellations that predate the rule.
+      cancellationReason: row.cancellationReason,
+      cancelledBy: row.cancelledBy,
+      cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
       currency: row.currency,
       channel: row.channel as BookingChannel,
+      // Billing is all-or-nothing: address/city/country are validated together at /start, so
+      // a row either has the set or has none. Keyed off address to avoid handing checkout a
+      // half-filled object it would send to the gateway.
+      billing: row.billingAddress
+        ? {
+            firstName: row.billingFirstName ?? undefined,
+            lastName: row.billingLastName ?? undefined,
+            address: row.billingAddress,
+            city: row.billingCity ?? '',
+            postcode: row.billingPostcode ?? undefined,
+            state: row.billingState ?? undefined,
+            country: row.billingCountry ?? '',
+          }
+        : null,
+      termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
     };
     if (row.mode === 'trip') {
       const [tr] = await this.db
@@ -164,7 +226,9 @@ export class PostgresBookingRepo implements BookingRepo {
         .insert(customers)
         .values({
           firstName: c.firstName,
-          lastName: c.lastName,
+          // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+          // store the absence as empty, never as the string \"undefined\".
+          lastName: c.lastName ?? '',
           email: c.email,
           phoneCountryCode: c.phoneCountryCode ?? null,
           phoneNumber: c.phoneNumber ?? null,
@@ -186,6 +250,14 @@ export class PostgresBookingRepo implements BookingRepo {
           idempotencyKey: opts?.idempotencyKey ?? null,
           channel: b.channel ?? 'website',
           needsPricing: b.needsPricing ?? null,
+          billingFirstName: b.billing?.firstName ?? null,
+          billingLastName: b.billing?.lastName ?? null,
+          billingAddress: b.billing?.address ?? null,
+          billingCity: b.billing?.city ?? null,
+          billingCountry: b.billing?.country ?? null,
+          billingPostcode: b.billing?.postcode ?? null,
+          billingState: b.billing?.state ?? null,
+          termsAcceptedAt: b.termsAcceptedAt ?? null,
         })
         .returning();
       if (b.mode === 'trip') {
@@ -226,6 +298,8 @@ export class PostgresBookingRepo implements BookingRepo {
           durationMin: b.durationMin ?? null,
         });
       }
+      const legs = safeLegRowsForBooking(bk.id, b);
+      if (legs.length) await tx.insert(bookingLegs).values(legs);
       return bk;
     });
   }
@@ -240,7 +314,66 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
-  async setStatus(id: string, to: BookingStatus): Promise<Booking> {
+  async refreshPayerDetails(
+    id: string,
+    details: { customer: SingleTransferInput['customer']; billing?: BillingInput; termsAcceptedAt?: Date },
+  ): Promise<Booking> {
+    const c = details.customer;
+    const b = details.billing;
+    await this.db.transaction(async (tx) => {
+      // The status check is part of the UPDATE, not a read-then-write: a settlement landing
+      // between the two would otherwise let us rewrite the payer of a booking that has already
+      // been charged. No row returned → paid (or beyond) → touch nothing, not even the customer.
+      //
+      // Absent billing leaves what was captured before, matching the in-memory repo: a payer who
+      // filled the address on their first attempt and left it blank on a retry keeps it.
+      const set: Record<string, unknown> = {};
+      if (b) {
+        set.billingFirstName = b.firstName ?? null;
+        set.billingLastName = b.lastName ?? null;
+        set.billingAddress = b.address;
+        set.billingCity = b.city;
+        set.billingCountry = b.country;
+        set.billingPostcode = b.postcode ?? null;
+        set.billingState = b.state ?? null;
+      }
+      // The acceptance belongs to whoever is actually paying, so a payer submission always
+      // rewrites it. An ops re-book sends none — nobody ticked a box on a WhatsApp booking —
+      // and must leave the column as it found it.
+      if (details.termsAcceptedAt) set.termsAcceptedAt = details.termsAcceptedAt;
+      // The UPDATE has to SET something real or it returns no row, and the status guard below
+      // is the whole point of doing this as one statement. An ops re-book carries neither
+      // billing nor an acceptance, so assign status to itself: here the guard, not the value,
+      // is what the statement is for.
+      if (Object.keys(set).length === 0) set.status = bookings.status;
+      const [bk] = await tx
+        .update(bookings)
+        .set(set)
+        .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])))
+        .returning();
+      if (!bk) return;
+      await tx
+        .update(customers)
+        .set({
+          firstName: c.firstName,
+          // The column is NOT NULL and the schema now allows no surname (spec 2026-08-08) —
+          // store the absence as empty, never as the string \"undefined\".
+          lastName: c.lastName ?? '',
+          email: c.email,
+          phoneCountryCode: c.phoneCountryCode ?? null,
+          phoneNumber: c.phoneNumber ?? null,
+          whatsapp: c.whatsapp,
+          country: c.country,
+          marketingOptIn: c.marketingOptIn ?? null,
+        })
+        .where(eq(customers.id, bk.customerId));
+    });
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
+  }
+
+  async setStatus(id: string, to: BookingStatus, audit?: StatusAudit): Promise<Booking> {
     const [row] = await this.db.select().from(bookings).where(eq(bookings.id, id));
     if (!row) throw new BookingNotFoundError(id);
     const from = row.status as BookingStatus;
@@ -249,7 +382,13 @@ export class PostgresBookingRepo implements BookingRepo {
     // transitions (e.g. a double-cancel) can't both win and double-release seats.
     const [updated] = await this.db
       .update(bookings)
-      .set({ status: to })
+      .set({
+        status: to,
+        // Only a cancellation carries a reason; every other transition leaves these untouched.
+        ...(to === 'cancelled' && audit
+          ? { cancellationReason: audit.reason, cancelledBy: audit.by, cancelledAt: audit.at ?? new Date() }
+          : {}),
+      })
       .where(and(eq(bookings.id, id), eq(bookings.status, from)))
       .returning();
     if (!updated) {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { PaymentAdapter } from '../adapters/payments';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import type { PaymentAdapter, WebhookRejection } from '../adapters/payments';
 import type { EmailAdapter } from '../adapters/email';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
@@ -9,9 +9,63 @@ import {
   PaymentSettlementError,
   type PaymentSettlementRepo,
 } from '../db/paymentSettlementRepo';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, needsDetails, manageUrl, routeText } from '../services/notifications';
+import { money as fmtMoney } from '../services/opsEmail';
+import type { Booking } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { claimWonQuote } from '../services/quoteOutcome';
+
+const sha256 = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+// What the on-call reader needs in order to act: is this ours or a stranger's, and if it is
+// ours, which order. The body hash is here so two alerts can be compared (or matched against a
+// server log line) without the body itself — it can carry the payer's name and card number.
+function describeRejection(
+  reason: string,
+  isSignature: boolean,
+  rejection: WebhookRejection | null,
+): string {
+  if (isSignature) {
+    return [
+      'A payment notification arrived correctly shaped but with a signature we could not verify.',
+      'Either PAYHERE_MERCHANT_SECRET is wrong, or someone is probing the endpoint. If other',
+      'payments are settling normally the secret is fine and this is a probe.',
+      rejection?.orderId ? `\nClaimed order: ${rejection.orderId}` : '',
+      rejection ? `\nBody sha256: ${rejection.bodySha256}` : '',
+    ].join(' ').trim();
+  }
+  const facts = rejection
+    ? [
+        ['order', rejection.orderId],
+        ['status_code', rejection.statusCode],
+        ['amount', rejection.amount],
+        ['currency', rejection.currency],
+      ]
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}: ${v}`)
+    : [];
+  return [
+    `A payment notification was refused before verification: ${reason}.`,
+    'The signature was never reached, so this does NOT implicate the merchant secret — either a',
+    'stranger posted to the endpoint, or PayHere sent something our field rules do not accept.',
+    'If the fields below name a real order, treat it as the latter and reconcile that booking by hand.',
+    facts.length ? `\n${facts.join(' · ')}` : '\nNo recognisable PayHere fields in the body.',
+    rejection ? `\nBody sha256: ${rejection.bodySha256}` : '',
+  ].join(' ').trim();
+}
+
+// Plain-text body for the team's paid notification. Deliberately the few facts an operator
+// acts on — who, where, how much, which channel — and nothing that would make this email a
+// place anyone has to go looking for the rest.
+function teamPaidBody(b: Booking): string {
+  const c = b.input.customer;
+  return [
+    `${routeText(b)}`,
+    `${c.firstName} ${c.lastName} · ${c.email} · ${c.whatsapp}`,
+    `${fmtMoney(b.total, b.currency)} · booked via ${b.channel}`,
+    `Reference ${b.reference}`,
+  ].join('\n');
+}
 
 export function webhookRoutes(deps: {
   settlements: PaymentSettlementRepo;
@@ -41,14 +95,39 @@ export function webhookRoutes(deps: {
   r.post('/payments', async (c) => {
     const contentType = c.req.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     const isExpectedContentType = adapter.provider !== 'payhere' || contentType === 'application/x-www-form-urlencoded';
-    const event = isExpectedContentType ? adapter.parseWebhook(await c.req.text()) : null;
+    const rawBody = await c.req.text();
+    const event = isExpectedContentType ? adapter.parseWebhook(rawBody) : null;
     if (!event) {
+      // An EMPTY body is not a lost payment notification, and alerting on one is a false
+      // positive by construction: PayHere never sends an empty notify, and the promote
+      // checklist's own §5 liveness probe is literally `curl -X POST -d ''` against this route.
+      // Every "PayHere webhook rejected" CRITICAL email on 2026-08-02/03 was that probe — the
+      // checklist and the alerting were manufacturing pages for each other, which is exactly
+      // how a team learns to skim past a CRITICAL subject line.
+      //
+      // Still a 401: the request is refused as firmly as before. Only the page is dropped.
+      if (rawBody.length === 0) return c.json({ error: 'invalid_signature' }, 401);
+      // This alert used to say "invalid signature — misconfigured merchant secret or someone
+      // probing", for all eleven-odd ways a body can be refused. On 2026-08-02 it fired while a
+      // customer's card was being declined, and the owner had no way to tell whether PayHere's
+      // notify had been thrown away or a bot had poked the URL. Only `signature_mismatch` means
+      // what the old copy claimed; the rest mean we refused a body the gateway may have meant.
+      const rejection: WebhookRejection | null = isExpectedContentType
+        ? adapter.describeWebhookRejection?.(rawBody) ?? null
+        : { reason: 'content_type_unexpected', bodySha256: sha256(rawBody) };
+      const reason = rejection?.reason ?? 'unknown';
+      const isSignature = reason === 'signature_mismatch';
       void alerts.send({
         severity: 'critical',
-        kind: 'payhere_signature',
-        title: 'PayHere webhook signature failed',
-        body: 'A payment notification arrived with an invalid signature — misconfigured merchant secret or someone probing the endpoint.',
-        dedupeKey: new Date().toISOString().slice(0, 10), // one alert per day is enough signal
+        kind: isSignature ? 'payhere_signature' : 'payhere_webhook_rejected',
+        title: isSignature
+          ? 'PayHere webhook signature failed'
+          : `PayHere webhook rejected (${reason})`,
+        body: describeRejection(reason, isSignature, rejection),
+        // Was the bare date — one alert per DAY, so a real rejected notify and a scanner probe
+        // collapsed into each other and the second one was never seen. Per reason per day keeps
+        // distinct failures distinct while still capping a storm.
+        dedupeKey: `${new Date().toISOString().slice(0, 10)}:${reason}`,
       });
       return c.json({ error: 'invalid_signature' }, 401);
     }
@@ -147,7 +226,16 @@ export function webhookRoutes(deps: {
           await sendDepositReceived(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
           await notificationLog?.markSent(paid.id, 'deposit_received');
         } else {
-          await sendBookingConfirmation(paid, email, { manage: manageUrl(paid, baseUrl, linkSecret) });
+          // Partial pay link (spec 2026-08-04): if this booking was sold as part of a quote,
+          // say so in the email — the itinerary alone can't (its flat stop list renders a gap
+          // as a driven leg, docs/known-bugs.md 2026-07-30). Best-effort like everything here.
+          const srcQuote = await deps.quotes?.findByConvertedBookingId(paid.id).catch(() => null);
+          const sel = srcQuote?.payLinkSelection;
+          const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+          await sendBookingConfirmation(paid, email, {
+            manage: manageUrl(paid, baseUrl, linkSecret),
+            ...(sel && legCount ? { coverage: { soldLegs: sel.legIndexes.length, totalLegs: legCount } } : {}),
+          });
           // M17: log the send so the watchdog can spot paid-without-confirmation bookings.
           await notificationLog?.markSent(paid.id, 'confirmation');
         }
@@ -169,6 +257,26 @@ export function webhookRoutes(deps: {
           body: `Booking ${paid.reference} is PAID but the customer got no confirmation. Error: ${err instanceof Error ? err.message : String(err)}`,
           dedupeKey: paid.reference,
         });
+      }
+      // Tell the team money landed. Until now NOTHING did: no email, no Slack, no Sentry event
+      // — the only signals were a once-daily aggregate digest and a watchdog whose 15-minute
+      // cron was never scheduled. A real $39 payment settled on 2026-08-02 and the team found
+      // out because the owner went looking.
+      //
+      // Deliberately LAST and best-effort: the customer's confirmation comes first, and a
+      // failure here must cost neither their email nor the webhook (PayHere would retry, hit
+      // the idempotent return, and skip everything downstream forever). Severity 'info', so it
+      // does not read as an incident; dedupeKey is the reference, so a retry cannot re-notify.
+      try {
+        await alerts.send({
+          severity: 'info',
+          kind: 'booking_paid',
+          title: `Paid: ${paid.reference} — ${fmtMoney(paid.total, paid.currency)}`,
+          body: teamPaidBody(paid),
+          dedupeKey: paid.reference,
+        });
+      } catch (err) {
+        console.error(`team paid-notification failed for ${paid.reference}:`, err);
       }
     } else {
       // Money captured, but the booking is NOT awaiting payment (cancelled while the customer

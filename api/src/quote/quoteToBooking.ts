@@ -61,18 +61,42 @@ function daySpan(firstDate: string, lastDate: string): number {
   return Math.max(1, Math.round(ms / 86_400_000) + 1);
 }
 
+// Partial-leg pay links (spec 2026-08-04). `legIndexes` says which of `engine.legs` this booking
+// covers — the legs the customer actually paid for. Absent = the whole itinerary, which is every
+// pre-existing caller. Private only; a chauffeur quote never carries a selection.
+export interface MapOptions {
+  legIndexes?: number[];
+}
+
+// Deduped and sorted, so a selection is a SET of legs in itinerary order however ops clicked it.
+// Out-of-range indexes are dropped rather than throwing: the caller's own guard (an empty result
+// is not bookable) is the one that should speak, and it does so below.
+function selectRides<T>(rides: T[], legIndexes?: number[]): T[] {
+  if (!legIndexes) return rides;
+  return [...new Set(legIndexes)]
+    .sort((a, b) => a - b)
+    .filter((i) => i >= 0 && i < rides.length)
+    .map((i) => rides[i]);
+}
+
 // Map a stored ops quote's engine request + the modal details into a bookable input.
 // Private single-leg → single; private multi-leg or chauffeur → trip. Shared / engine-less
 // quotes throw (ops quotes are private/chauffeur; nothing else reaches this path).
-export function quoteToBooking(quote: SavedQuote, details: BookingDetails): MappedBooking {
+export function quoteToBooking(
+  quote: SavedQuote,
+  details: BookingDetails,
+  opts?: MapOptions,
+): MappedBooking {
   const engine = (quote.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engine || engine.product === 'shared') {
     throw new QuoteNotBookableError('quote has no bookable itinerary');
   }
 
   if (engine.product === 'private') {
-    if (!engine.legs.length) throw new QuoteNotBookableError('private quote has no legs');
-    const rides = engine.legs.map(normalizeRide);
+    // AFTER the filter, so an empty selection is refused by the same guard that refuses a
+    // legless quote — one rule, one error, no second copy to drift.
+    const rides = selectRides(engine.legs.map(normalizeRide), opts?.legIndexes);
+    if (!rides.length) throw new QuoteNotBookableError('private quote has no legs');
     const distanceKm = sumKm(rides);
     // A single 2-stop ride is a point-to-point transfer (today's behavior); a single 3+-stop
     // ride, or any multi-ride itinerary, is a trip.
@@ -93,21 +117,41 @@ export function quoteToBooking(quote: SavedQuote, details: BookingDetails): Mapp
         },
       };
     }
-    const { stops } = chainStops(rides);
-    const startDate = details.date;
+    const { stops, rideIndex } = chainStops(rides);
     const segmentCount = Math.max(0, stops.length - 1);
+
+    // Per-leg dates (2026-08-08, closing docs/known-bugs.md 2026-07-30). A PrivateLeg carries no
+    // date of its own — the operator's dates live in the quote's TOOL payload — so only the modal's
+    // single date used to survive, and the drawer and the customer's itinerary showed later legs
+    // as "Leg 2"/"Leg 3" instead of dating them.
+    //
+    // Tool legs include STAY DAYS; engine legs are the driving ones only. Filtering to driving
+    // legs is what makes the two line up — a raw index would shift every later date onto the
+    // wrong leg. `opts.legIndexes` is applied identically, so a partial pay link's booking keeps
+    // the dates of the legs it actually sold.
+    const drivingToolLegs = selectRides(
+      ((quote.request as { tool?: { legs?: { date?: string; category?: string }[] } } | null)?.tool?.legs ?? [])
+        .filter((l) => (l?.category ?? 'transfer') !== 'stay_day'),
+      opts?.legIndexes,
+    );
+    // Spined on RIDES, not on the tool legs: a legacy row carries no tool payload at all, and
+    // spining on that would drop the modal's date too — which an existing test caught.
+    // A date typed at booking time is newer information than the quote's, so it wins on the first
+    // leg, which is the one the modal asks about.
+    const legDates = rides.map((_, i) => (i === 0 && details.date ? details.date : drivingToolLegs[i]?.date ?? ''));
     return {
       mode: 'trip',
       distanceKm,
       input: {
         stops,
         nights: Array(segmentCount).fill(0),
-        // Per segment, like the chauffeur branch, so the two don't drift. A PrivateLeg carries
-        // no date of its own (the operator's per-leg dates live in the quote's TOOL payload,
-        // not the engine request we map from — logged as its own bug), so the only date we know
-        // is the trip start from the modal: it lands on the first segment and the rest stay
-        // blank — exactly what the old single-element array meant.
-        dates: startDate ? Array.from({ length: segmentCount }, (_, i) => (i === 0 ? startDate : '')) : undefined,
+        // One date per SEGMENT, rebuilt through rideIndex exactly as the chauffeur branch does:
+        // a multi-stop ride owns several segments and a gap stop shifts every later index, so a
+        // positional copy would put dates on the wrong hops. A gap gets '' (blank reads as
+        // "flexible" everywhere downstream).
+        dates: legDates.some(Boolean)
+          ? rideIndex.map((i) => (i < 0 ? '' : legDates[i] ?? ''))
+          : undefined,
         pax: details.pax,
         vehicleType: details.vehicleType,
         serviceType: 'private',
@@ -159,9 +203,9 @@ const BOOKABILITY_PROBE: BookingDetails = {
   bags: 0,
 };
 
-export function isQuoteBookable(quote: SavedQuote): boolean {
+export function isQuoteBookable(quote: SavedQuote, opts?: MapOptions): boolean {
   try {
-    quoteToBooking(quote, BOOKABILITY_PROBE);
+    quoteToBooking(quote, BOOKABILITY_PROBE, opts);
     return true;
   } catch (e) {
     if (e instanceof QuoteNotBookableError) return false;

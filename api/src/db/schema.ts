@@ -11,6 +11,12 @@ export const customers = pgTable('customers', {
   whatsapp: text('whatsapp').notNull(),
   country: text('country').notNull(),
   marketingOptIn: boolean('marketing_opt_in'),
+  // Groups the rows belonging to one human WITHOUT merging them (2026-08-02). Every booking
+  // inserts its own customers row — deliberately, because that row IS the traveller snapshot
+  // for that booking, and merging would rewrite the name on older ones. GENERATED ALWAYS in
+  // Postgres from lower(btrim(email)), so it can never drift and no insert path can forget it.
+  // NEVER write this column: the database owns it.
+  personKey: text('person_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -38,6 +44,31 @@ export const bookings = pgTable(
     // M12 Slice 2 — where the booking came from. Only 'website' is written today; a future
     // payment-link tool will write 'whatsapp'.
     channel: text('channel').notNull().default('website'),
+    // Billing details from the pay page (2026-08-01). On the BOOKING, not the customer:
+    // billing belongs to the transaction — the same traveller may pay with a different card,
+    // and a parent/company may pay for someone else. `customers` stays the lead passenger.
+    // Nullable: pre-existing rows have none, and the website flow doesn't collect them.
+    // Why this booking was cancelled, and by whom (owner rule 2026-08-02). Nullable: only a
+    // cancelled booking has them, and pre-existing cancellations have none.
+    cancellationReason: text('cancellation_reason'),
+    cancelledBy: text('cancelled_by'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    billingFirstName: text('billing_first_name'),
+    billingLastName: text('billing_last_name'),
+    billingAddress: text('billing_address'),
+    billingCity: text('billing_city'),
+    billingCountry: text('billing_country'),
+    // Strongest AVS signal most issuers check. PayHere has no postcode parameter, so it also
+    // rides on the address line — see the adapter (2026-08-02).
+    billingPostcode: text('billing_postcode'),
+    // US/CA payers were typing this into the city box ("Jersey City, NJ") because the form had
+    // nowhere else to put it. PayHere has no state parameter either — it joins the postcode on
+    // the address line (2026-08-02).
+    billingState: text('billing_state'),
+    // When the customer accepted the terms + the cancellation policy for their product
+    // (2026-08-01). A timestamp, not a boolean: a refund dispute asks *when*. Null on website
+    // bookings and every pre-existing row — back-filling would be inventing consent.
+    termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
     // The engine could not price this booking, so `total` is a placeholder and checkout must
     // refuse it until ops sets a real price. Nullable: pre-existing rows are priced.
     needsPricing: boolean('needs_pricing'),
@@ -140,6 +171,11 @@ export const refunds = pgTable(
     requestedAt: timestamp('requested_at', { withTimezone: true }).notNull(),
     confirmedBy: text('confirmed_by'),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    // PayHere's `msg` on an API refund, so "-1" in the ledger explains itself.
+    providerMessage: text('provider_message'),
+    // When we called the Refund API. A row still in api_processing well past this is the
+    // watchdog's signal that a human must reconcile it against PayHere's dashboard.
+    apiAttemptedAt: timestamp('api_attempted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -150,11 +186,13 @@ export const refunds = pgTable(
     check('refunds_currency_supported', sql`${t.currency} in ('USD')`),
     check(
       'refunds_status_valid',
-      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled')`,
+      sql`${t.status} in ('manual_pending', 'manual_confirmed', 'cancelled', 'api_processing', 'api_confirmed', 'api_failed')`,
     ),
+    // api_confirmed carries the same proof manual_confirmed does. api_processing carries none:
+    // we do not yet know PayHere's refund number, which is exactly what makes it dangerous.
     check(
       'refunds_confirmation_evidence_valid',
-      sql`(${t.status} = 'manual_confirmed' and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} <> 'manual_confirmed' and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
+      sql`(${t.status} in ('manual_confirmed', 'api_confirmed') and ${t.gatewayRef} is not null and ${t.confirmedBy} is not null and ${t.confirmedAt} is not null) or (${t.status} not in ('manual_confirmed', 'api_confirmed') and ${t.gatewayRef} is null and ${t.confirmedBy} is null and ${t.confirmedAt} is null)`,
     ),
   ],
 );
@@ -233,6 +271,62 @@ export const tripRequests = pgTable('trip_request', {
   days: integer('days'),
   driverNights: integer('driver_nights'),
 });
+
+// One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
+// than to a position in trip_request.stops[] — which silently follows the position when the trip
+// changes. See docs/superpowers/specs/2026-08-08-post-payment-trip-details-design.md §1.
+//
+// This table does NOT price anything. trip_request / transfer_request stay the priced record; the
+// two agree at booking time and may legitimately diverge afterwards, and flattening them would
+// erase why the price is what it is.
+export const bookingLegs = pgTable(
+  'booking_legs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    // Display order only. NEVER an identifier — that is the whole point of this table.
+    seq: integer('seq').notNull(),
+    kind: text('kind').notNull(),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    // A chauffeur day's intermediate stops: itinerary, not accommodation. Recorded for ops
+    // context, never prompted for.
+    viaStops: text('via_stops').array().notNull().default(sql`'{}'::text[]`),
+    travelDate: text('travel_date'),
+    // Resolved endpoints. Deliberately null until Phase 2: resolving a place inside booking
+    // creation would put a Google call in the payment path.
+    fromLat: doublePrecision('from_lat'),
+    fromLng: doublePrecision('from_lng'),
+    toLat: doublePrecision('to_lat'),
+    toLng: doublePrecision('to_lng'),
+    // ── everything below is written by Phase 2 only; created now so this table is migrated once,
+    // over already-paid bookings, rather than twice.
+    pickupSpot: text('pickup_spot'),
+    dropoffSpot: text('dropoff_spot'),
+    pickupLat: doublePrecision('pickup_lat'),
+    pickupLng: doublePrecision('pickup_lng'),
+    dropoffLat: doublePrecision('dropoff_lat'),
+    dropoffLng: doublePrecision('dropoff_lng'),
+    pickupTime: text('pickup_time'),
+    flightNo: text('flight_no'),
+    detailFlag: text('detail_flag'),
+    distanceCheck: text('distance_check'),
+    refusedSpot: text('refused_spot'),
+    refusedAt: timestamp('refused_at', { withTimezone: true }),
+    detailsHistory: jsonb('details_history'),
+    detailsUpdatedAt: timestamp('details_updated_at', { withTimezone: true }),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('booking_legs_booking_seq_unique').on(t.bookingId, t.seq),
+    index('booking_legs_booking_idx').on(t.bookingId),
+    check('booking_legs_kind_valid', sql`${t.kind} in ('leg', 'day', 'gap')`),
+    check('booking_legs_seq_positive', sql`${t.seq} > 0`),
+  ],
+);
 
 export const corridors = pgTable(
   'corridor',
@@ -424,6 +518,17 @@ export const quotes = pgTable('quotes', {
   intentJson: jsonb('intent_json'),
   intentFingerprint: text('intent_fingerprint'),
   revision: integer('revision').notNull().default(1),
+  // Partial-leg pay links (spec 2026-08-04). A NULL selection = the outstanding link is for the
+  // full quote. sold_cents is the FROZEN amount a partial link charges. pay_link_seq is
+  // monotonic per quote and never reset, so a retired link's seq is never reused.
+  payLinkSelection: jsonb('pay_link_selection'),
+  soldCents: integer('sold_cents'),
+  payLinkSeq: integer('pay_link_seq').notNull().default(0),
+  // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
+  // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
+  customerTotalCents: integer('customer_total_cents'),
+  customerTotalAt: timestamp('customer_total_at', { withTimezone: true }),
+  customerTotalVia: text('customer_total_via'),
   accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
@@ -438,6 +543,9 @@ export const quotes = pgTable('quotes', {
   // (internalQuote's PATCH), not a storage constraint. There is no 'legacy' sentinel — every
   // quote is gated, old ones included (spec I7).
   requestedService: text('requested_service'),
+  // Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured. Distinct from link
+  // liveness, which is status-driven and has no clock. Stamped on → ready as approval + 7 days.
+  offerValidUntil: timestamp('offer_valid_until', { withTimezone: true }),
   // Assignment + audit (spec 2026-07-16). assignedTo is the notification target: who HOLDS the
   // quote, set only by an explicit assign — never inferred from who last moved it. All nullable:
   // rows predating this can't be backfilled (we don't know who made them). Emails, not FKs —
@@ -468,11 +576,46 @@ export const quotes = pgTable('quotes', {
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
 ]);
 
+// Quote version history (spec 2026-08-05 §4). One row per SUPERSEDED state — see migration 0040.
+// The live state is never duplicated here: it lives in `quotes`.
+export const quoteRevisions = pgTable('quote_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id),
+  revision: integer('revision').notNull(),
+  requestJson: jsonb('request_json'),
+  resultJson: jsonb('result_json'),
+  totalCents: integer('total_cents').notNull(),
+  currency: text('currency').notNull(),
+  rateCardVersion: text('rate_card_version'),
+  status: text('status'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique('quote_revisions_quote_revision_unique').on(t.quoteId, t.revision),
+  index('idx_quote_revisions_quote').on(t.quoteId, t.revision),
+]);
+
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced
 // trip touches one (by name, per the D3 matching rules), its per-km rate is boosted by boost_pct.
 // place_name is a KNOWN_PLACES town (the match key). The optional lat/lng/radius_km trio is a geo
 // fallback for GPS pickups the names miss. created_by/updated_by are staff emails (pricing changes
 // are never anonymous), matching the audit pattern quotes gained in migration 0015.
+// Positive location identification (spec 2026-08-02). The identity record a distance is
+// allowed to be priced from: canon_key is canonPlace(name) — see adapters/maps.ts. Keyed on the
+// string rather than the leg because a stop is authored in five front-end paths that all
+// converge on one server-side distance call.
+export const placeResolutions = pgTable('place_resolutions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  canonKey: text('canon_key').notNull().unique(),
+  displayName: text('display_name').notNull(),
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
+  source: text('source').notNull().default('confirmed'),
+  confirmedBy: text('confirmed_by'),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const pricingZones = pgTable('pricing_zones', {
   id: uuid('id').primaryKey().defaultRandom(),
   placeName: text('place_name').notNull(),

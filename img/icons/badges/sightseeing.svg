@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b124f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="584" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b124k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="638" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M86.9 23.4 Q96.8 37.3 96.4 52.9 Q96.0 68.5 83.1 81.4 Q70.2 94.4 55.3 96.6 Q40.5 98.7 26.4 89.1 Q12.4 79.4 6.2 63.4 Q0.1 47.4 6.6 32.2 Q13.1 16.9 30.5 8.7 Q48.0 0.5 62.5 5.0 Q76.9 9.5 86.9 23.4Z" fill="#F9A429"></path>
+<g transform="rotate(3.16 50 50)">
+  <g class="pass-fill" filter="url(#b124f)"><path d="M20 38h13l6-8h22l6 8h13a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V42a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="50" cy="57" r="14" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><circle cx="50" cy="57" r="6.5" fill="#34C2D9" stroke="#4A4648" stroke-width="3"></circle></g>
+  <g class="pass-ink" filter="url(#b124k)"><path d="M20 38h13l6-8h22l6 8h13a4 4 0 0 1 4 4v30a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V42a4 4 0 0 1 4-4z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="50" cy="57" r="14" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><circle cx="50" cy="57" r="6.5" fill="#34C2D9" stroke="#4A4648" stroke-width="3"></circle></g>
+</g>
+</svg>

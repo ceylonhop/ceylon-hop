@@ -40,7 +40,7 @@ export const PLACE_IDS = [
 // Engine rate-card parity (owner update 2026-07-13, api/src/quote/rateCard.ts):
 //   billableKm = km + clamp(round(km × 0.10), 5, 15)
 //   fare       = max(floor, round(billableKm × rate))   — rate is SELL = cost × 1.15
-//   car: $0.4025/km, $29 floor · van: $0.5405/km, $50 floor
+//   car: $0.4025/km, $29 floor · van: $0.5405/km, $49.99 floor
 const billableKm = (km) => km + Math.min(15, Math.max(5, Math.round(km * 0.10)));
 export const carFare = (km) => Math.max(29, Math.round(billableKm(km) * (0.4025 * 100)) / 100);
-export const vanFare = (km) => Math.max(50, Math.round(billableKm(km) * (0.5405 * 100)) / 100);
+export const vanFare = (km) => Math.max(49.99, Math.round(billableKm(km) * (0.5405 * 100)) / 100);

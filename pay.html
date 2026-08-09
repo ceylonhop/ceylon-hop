@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pay for your trip · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0AB9B6">
+<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
 <link rel="stylesheet" href="site.css">
@@ -27,7 +27,12 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="phone-countries.js"></script>
-<script src="https://www.payhere.lk/lib/payhere.js"></script>
+<script src="decline-help.js"></script>
+<!-- PayHere's JS SDK is deliberately NOT loaded (2026-08-05, docs/checkout-redirect-spec.md).
+     It rendered the card form and the 3-D Secure challenge inside a cross-origin iframe, where a
+     failure reaches none of its callbacks — our page could not even tell it had happened, which is
+     exactly how CH-XKZL3 sat on a spinner. This page now does the top-level form POST that PayHere
+     documents as the primary Checkout API integration. Nothing here should re-add that script. -->
 <style>
   /* pay.html-only. The shared travel-document design lives in ticket.css, which BOTH
      customer pages load — see the note at the top of that file. */
@@ -35,18 +40,120 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* the multi-leg rail now lives in ticket.css — shared with manage.html */
 
   /* details step */
-  .dt-h{font-family:var(--display);font-weight:800;font-size:1.15rem;margin:0 0 2px}
+  .dt-h{font-family:var(--display);font-weight:700;font-size:1.15rem;margin:0 0 2px}
   .dt-sub{font-size:.8rem;color:var(--ink-soft);margin:0 0 12px}
   .fld{margin-bottom:10px}
   .fld label{display:block;font-size:.65rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:4px}
   .fld input,.fld select{width:100%;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:11px 12px;font:inherit;font-size:.9rem;color:var(--ink)}
   .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.12)}
+  /* billing block (2026-08-01) */
+  .dt-kick{font-size:.66rem;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--accent-deep);margin:2px 0 8px}
+  .dt-kick:not(:first-child){margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .dt-kick span{color:var(--ink-faint);font-weight:600;letter-spacing:0;text-transform:none}
+  .dt-chk{display:flex;gap:8px;align-items:flex-start;padding:0 2px 10px;cursor:pointer;font-size:.82rem;color:var(--ink)}
+  .dt-chk input{width:16px;height:16px;margin-top:2px;accent-color:var(--accent-deep);flex:none;cursor:pointer}
+  .dt-2col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .dt-2col[hidden]{display:none}
+  /* a grid child's default min-width:auto lets a long <option> ("United Arab Emirates +971")
+     push the column wider than its share — pin it so the select truncates instead. */
+  .dt-2col>.fld{min-width:0}
+  /* dial code + number read as one field, so they share a row (2026-08-02). */
+  .dt-phone{grid-template-columns:1.15fr 1fr}
+  /* "optional" rides in the label so the field reads as skippable at a glance — a postcode
+     the payer cannot supply must never look like a blocker (2026-08-02). */
+  .fld label span{float:right;font-weight:600;letter-spacing:0;text-transform:none;color:var(--ink-faint);opacity:.8}
+  /* What to actually DO about a decline (2026-08-02). A card refused by the issuer used to
+     leave the payer with one line — "the payment didn't go through" — and no next step, on a
+     page they had already decided to pay on. Most of these declines are a foreign-transaction
+     block the cardholder can clear themselves in under a minute, so the steps are worth the
+     space. Rendered only after a real attempt, never on the first paint. */
+  .pp-help{margin:10px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--wash,#faf8f5)}
+  .pp-help[hidden]{display:none}
+  .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
+  .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
+  .pp-help li+li{margin-top:6px}
+  /* Available, not asserted — see the `quiet` note on fail(). Same affordance as the cancellation
+     policy below it, so the page has one way of saying "there is more here if you want it". */
+  .pp-quiet summary{font-size:.8rem;font-weight:700;color:var(--accent-deep);cursor:pointer;list-style:none}
+  .pp-quiet summary::-webkit-details-marker{display:none}
+  .pp-quiet summary:after{content:' \25BE'}
+  .pp-quiet[open] summary:after{content:' \25B4'}
+  .pp-quiet ol{margin-top:9px}
+  .dt-terms{padding-top:12px;margin-top:2px;border-top:1px solid var(--line);align-items:flex-start}
+  .dt-terms a{color:var(--accent-deep);font-weight:700}
+  .dt-terms b{display:block;font-weight:600;font-size:.78rem;color:var(--ink-soft);margin-top:2px}
+  .dt-pol{margin:2px 2px 4px}
+  .dt-pol summary{font-size:.75rem;color:var(--accent-deep);font-weight:700;cursor:pointer;list-style:none}
+  .dt-pol summary::-webkit-details-marker{display:none}
+  .dt-pol summary:after{content:' \25BE'}
+  .dt-pol[open] summary:after{content:' \25B4'}
+  .dt-pol ul{margin:6px 0 0;padding-left:17px;font-size:.76rem;line-height:1.7;color:var(--ink-soft)}
+  /* On the payable screen the policy is reassurance under the CTA, not the clause beside a
+     checkbox — so it sits centred and quiet, and only the ladder it opens is left-aligned. */
+  .pp-pol{margin-top:12px;text-align:center}
+  .pp-pol summary{color:var(--ink-soft);font-weight:600}
+  .pp-pol ul{margin:8px auto 0;padding-left:17px;max-width:34ch;text-align:left}
+
+  /* The paid keepsake breaks out of the 470px ticket column. The pass is a 1fr+230px grid and
+     would otherwise sit permanently in its stacked mobile form, so the WRAPPER widens for this
+     state — a max-width on the inner div cannot exceed its parent. */
+  .pp-wrap.is-paid{max-width:780px}
+  .pp-paid{text-align:center}
+  .pp-paid .pass{margin-top:26px;text-align:left}
+  .pp-paid .next{text-align:left;margin-top:26px}
+  .pp-paid .pass-brand img{border-radius:6px}
+  /* The CTA reads as not-yet until the terms are ticked (owner-caught 2026-08-02). Dimmed via a
+     class rather than [disabled], so the button stays clickable and can name its own reason —
+     see the aria-disabled note in startPayment. It fades between the two states rather than
+     snapping, per the motion standard. */
+  .pp-cta.is-off{opacity:.45;box-shadow:none}
+  .pp-cta.is-off:hover{background:var(--btn-cta);transform:none}
+  .pp-cta{transition:opacity .22s ease,background .22s ease,box-shadow .22s ease,transform .18s ease}
+  @media (prefers-reduced-motion:reduce){ .pp-cta{transition:none} }
+  /* The BUSY state (2026-08-05). The owner's 2026-08-01 call keeps the wait for /start +
+     /checkout on the button rather than behind a full-screen takeover — right, but ticket.css's
+     `[disabled]{opacity:.6}` alone was too quiet to read as "working", so payers pressed again.
+     A moving spinner inside the button is the difference between "dimmed" and "busy". Full
+     opacity deliberately: this control is ACTIVE, not unavailable. */
+  .pp-cta.is-busy{opacity:1;cursor:progress}
+  .pp-cta.is-busy:hover{background:var(--btn-cta);transform:none}
+  .cta-spin{display:inline-block;width:15px;height:15px;margin-right:9px;vertical-align:-2px;
+    border-radius:50%;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;
+    animation:ppspin .7s linear infinite}
+  @media (prefers-reduced-motion:reduce){ .cta-spin{animation:none} }
+
+  /* What the payer is about to see. The single biggest wobble at a gateway hand-off is "is this
+     page even mine?" — PayHere's checkout is teal, branded PayHere, and looks nothing like us.
+     Naming the merchant line they will actually find there turns a surprise into a confirmation. */
+  .pp-expect{margin:22px auto 0;max-width:340px;border:1px solid var(--line);border-radius:12px;
+    background:var(--wash,#faf8f5);padding:12px 14px;text-align:left}
+  .pp-expect b{display:block;font-size:.63rem;font-weight:800;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--ink-faint);margin-bottom:6px}
+  .pp-expect .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .pp-expect .who{font-weight:700;font-size:.95rem;color:var(--ink)}
+  .pp-expect .amt2{font-family:var(--display);font-weight:700;font-size:1.3rem;color:var(--ink)}
+  .pp-loading .lead{font-size:.92rem;color:var(--ink-soft);max-width:38ch;margin:8px auto 0;line-height:1.55}
+  .pp-loading h2{font-size:1.5rem;margin-bottom:2px}
+  /* The hand-off, drawn rather than described: us → them, with something travelling the gap.
+     A payer who can SEE they are being passed to a named gateway does not have to read a
+     paragraph to know why the next page looks nothing like this one. Motion standard: the dot
+     travels, it does not blink. */
+  .pp-hop{display:flex;align-items:center;justify-content:center;gap:13px;margin:2px 0 20px}
+  .pp-hop .chip{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--paper);font-weight:700;font-size:.82rem;
+    color:var(--ink);white-space:nowrap;box-shadow:var(--shadow-s)}
+  .pp-hop .chip img{width:19px;height:19px;border-radius:5px;display:block}
+  .pp-hop .track{position:relative;width:64px;height:2px;background:var(--line);border-radius:2px;overflow:hidden;flex:none}
+  .pp-hop .track:after{content:'';position:absolute;top:0;left:-26px;width:26px;height:2px;
+    background:var(--accent);animation:pphop 1.25s cubic-bezier(.45,0,.35,1) infinite}
+  @keyframes pphop{0%{left:-26px}100%{left:64px}}
+  @media (prefers-reduced-motion:reduce){ .pp-hop .track:after{animation:none;left:19px} }
 
   /* ── dead-end screen (spec 2026-07-31): sibling of 404.html's island scene ── */
   .de-wrap{text-align:center;padding:18px 0 8px}
   .de-art{width:min(430px,86vw);height:auto;display:block;margin:0 auto 6px}
   .de-eyebrow{font-size:.68rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent-deep)}
-  .de-title{font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:-.015em;color:var(--ink);margin:.3rem 0 .5rem}
+  .de-title{font-family:var(--display);font-weight:700;font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.08;letter-spacing:0;color:var(--ink);margin:.3rem 0 .5rem}
   .de-lead{color:var(--ink-soft);font-size:.95rem;max-width:36ch;margin:0 auto}
   .de-cta{margin-top:20px}
   .de-cta .btn-wa{display:inline-block;background:#0B7A44;color:#fff;font-weight:700;border-radius:10px;padding:12px 22px;text-decoration:none}
@@ -66,7 +173,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <body>
 <header class="pp-top"><div class="pp-topin">
   <a class="pp-brand" href="index.html">
-    <img class="pp-cmark" src="img/ceylon-hop-c.png" alt="" width="32" height="32">
+    <img class="pp-cmark" src="img/brand-c.svg" alt="" width="32" height="32">
     <span class="pp-word">Ceylon Hop</span>
   </a>
   <span class="pp-wa"><a href="https://wa.me/94779669662">WhatsApp us</a></span>
@@ -78,12 +185,68 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   'use strict';
   var app = document.getElementById('app');
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
-  var t = new URLSearchParams(location.search).get('t');
+  var q = new URLSearchParams(location.search);
+  var t = q.get('t');
+  // Set only on the leg BACK from the gateway. Carries a settlement-status token and nothing
+  // else — deliberately not the pay token, which authorises the whole quote (spec §D4).
+  var rt = q.get('rt');
+  var cameFromCancel = q.get('c') === '1';
   var data = null;         // last /view payload
   var booking = null;      // { bookingId, checkoutToken } once /start succeeds
   var typed = null;        // raw form values, so a payment failure restores what they typed
+  var submitting = false;  // one checkout per press — see startPayment
+
+  // A press that is WORKING, not a control that is unavailable. Spinner + text, so the wait for
+  // /start + /checkout reads as progress on the button itself (the owner's 2026-08-01 call: no
+  // full-screen takeover until the gateway window is genuinely opening).
+  function setBusy(btn, busy, label){
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.classList.toggle('is-busy', busy);
+    if (busy) {
+      btn.innerHTML = '<span class="cta-spin" aria-hidden="true"></span>' + esc(label);
+      // Screen readers get the change announced rather than silently re-labelled mid-press.
+      btn.setAttribute('aria-busy', 'true');
+    } else {
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
+    }
+  }
 
   function esc(s){var d=document.createElement('div');d.textContent=String(s==null?'':s);return d.innerHTML;}
+
+  // ── surviving the round trip to the gateway ─────────────────────────────────────────────────
+  // The redirect leaves our origin entirely, so `typed` — a plain variable — dies with the page.
+  // sessionStorage is per-origin and per-tab and DOES survive navigating away and back, which is
+  // exactly the shape of this journey. Without it every declined payer re-types their name, email,
+  // phone and a full billing address on the screen where they are already frustrated.
+  //
+  // NO CARD DATA is ever on this page, and none may ever be put here.
+  var STORE = 'ch_pay_v1';
+  function remember(){
+    try { sessionStorage.setItem(STORE, JSON.stringify({ t: t, typed: typed })); }
+    catch (e) { /* private mode, quota, storage disabled — the flow must still work without it */ }
+  }
+  function recall(){
+    try { return JSON.parse(sessionStorage.getItem(STORE) || 'null'); } catch (e) { return null; }
+  }
+  function forget(){ try { sessionStorage.removeItem(STORE); } catch (e) {} }
+
+  // Every call gets a deadline. Without one, a stalled API leaves the button reading "Opening
+  // secure payment…" forever with no way back — a silent hang of our OWN making, and the one
+  // failure mode the redirect does not fix.
+  var NET_TIMEOUT_MS = 20000;
+  function fetchJson(url, opts){
+    opts = opts || {};
+    if (typeof AbortController === 'undefined') return fetch(url, opts);
+    var ctl = new AbortController();
+    var timer = setTimeout(function(){ ctl.abort(); }, NET_TIMEOUT_MS);
+    opts.signal = ctl.signal;
+    return fetch(url, opts).then(
+      function(r){ clearTimeout(timer); return r; },
+      function(){ clearTimeout(timer); throw new Error('The connection timed out — no charge was made. Please try again.'); }
+    );
+  }
   function waLine(){return '<div class="pp-note">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a> — we reply fast.</div>';}
 
   // ── states ──────────────────────────────────────────────────────────────────────────
@@ -157,12 +320,61 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   function renderUnavailable(){ renderSailedOff(); }
   function renderRevised(){ renderSailedOff(); }
+  // The keepsake is booking.html's boarding pass (owner, 2026-08-02) — the same CSS, now shared
+  // from site.css, and the same markup, rebuilt here as a template string because booking.js
+  // drives its copy from wizard globals this page does not have.
+  //
+  // A cell is only rendered when the quote actually states it. The pass on booking.html can say
+  // "Departs 09:00" because the wizard asked; a quote pay link never records a departure time,
+  // so rather than print "To confirm" into a keepsake, the row is simply not there.
+  function passCell(k, v){
+    return v ? '<div><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>' : '';
+  }
+
   function renderPaid(p){
-    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
-      + '<h1 class="st-title">You’re booked' + (p && p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
-      + (p && p.title ? '<p class="st-sub">' + esc(p.title) + '</p>' : '')
-      + (p && p.reference ? '<div><span class="refchip">' + esc(p.reference) + '</span></div>' : '')
-      + (p && p.amountUsd ? '<p class="st-sub">Paid ' + esc(p.amountUsd) + ' · confirmation emailed.</p>' : '')
+    p = p || {};
+    var wrap = document.querySelector('.pp-wrap');
+    if (wrap) wrap.classList.add('is-paid');
+    var fact = function(k){
+      var f = (p.facts || []).filter(function(x){ return x.k === k; })[0];
+      return f ? f.v : '';
+    };
+    // Two endpoints when the quote names a route, otherwise the title whole — a six-journey
+    // trip has no single pair, and picking two of its stops would imply the rest don't exist.
+    var route = p.from && p.to
+      ? '<div class="pt">' + esc(p.from) + '<small>From</small></div>'
+        + '<div class="dash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>'
+        + '<div class="pt" style="text-align:right">' + esc(p.to) + '<small>To</small></div>'
+      : '<div class="pt">' + esc(p.title || 'Your trip') + '<small>Trip</small></div>';
+
+    app.innerHTML = '<div class="pp-paid">'
+      + '<div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">You’re booked' + (p.firstName ? ', ' + esc(p.firstName) : '') + '.</h1>'
+      + '<p class="st-sub">Confirmation emailed. Keep this pass for your records.</p>'
+      + '<div class="pass">'
+      +   '<div class="pass-main">'
+      +     '<div class="pass-top">'
+      +       '<div class="pass-brand"><img src="img/brand-c.svg" alt="" width="26" height="26">Ceylon Hop</div>'
+      +       '<span class="pill pill-saffron" style="font-size:.72rem">Boarding pass</span>'
+      +     '</div>'
+      +     '<div class="pass-route">' + route + '</div>'
+      +     '<div class="pass-info">'
+      +       passCell('Date', fact('Starts') || fact('Date'))
+      +       passCell('Travellers', fact('Travellers'))
+      +       passCell('Vehicle', fact('Vehicle'))
+      +       passCell('Days', fact('Days'))
+      +       passCell('Lead guest', p.leadName || '')
+      +       passCell('Paid', p.amountUsd || '')
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="pass-stub">'
+      +     '<div>'
+      +       '<div style="font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:#bdbab2">Booking ref</div>'
+      +       '<div class="ref">' + esc(p.reference || '—') + '</div>'
+      +     '</div>'
+      +     '<div class="barcode"></div>'
+      +   '</div>'
+      + '</div>'
       + '<div class="next"><b>What happens next</b><ul>'
       + '<li>We confirm your driver &amp; vehicle and send their details.</li>'
       + '<li>A reminder arrives 2 days before pick-up.</li>'
@@ -175,10 +387,18 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (c.legs && c.legs.length) {
       var rows = c.legs.map(function(l, i){
         var last = i === c.legs.length - 1;
-        return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
+        /* Partial links (2026-08-05): `covered` is present ONLY when this payment buys some but
+           not all journeys. The uncovered ones stay listed — the customer keeps sight of the whole
+           trip — but must READ as not bought, or the itinerary silently implies the payment covers
+           everything. That is exactly what went wrong in prod. */
+        var uncovered = l.covered === false;
+        return '<div class="hop' + (uncovered ? ' is-uncovered' : '') + '">'
+          + '<div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
           + (last ? '' : '<span class="hop-line"></span>') + '</div>'
           + '<div><div class="hop-t">' + esc(l.route) + '</div>'
-          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed') + '</div></div></div>';
+          + '<div class="hop-d">' + (l.date ? esc(l.date) : 'date to be confirmed')
+          + (uncovered ? '<span class="hop-x">not in this payment</span>' : '')
+          + '</div></div></div>';
       }).join('');
       return '<div class="hops">' + rows + '</div>';
     }
@@ -198,12 +418,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + ticketBody(c)
       + '<div class="included"><b>Included</b>' + esc(c.includedText) + '</div>'
       + '</div><div class="perf"></div><div class="t-stub">'
+      + linesHtml(data.lines)
+      + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
       + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
       + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
       + '<span class="card-badge">MASTERCARD</span><span class="card-badge">AMEX</span></div>'
+      // The cancellation terms belong on the screen where the decision is made (owner,
+      // 2026-08-07). They used to appear only in renderDetails() — AFTER the customer had
+      // committed by tapping Pay — so the one page whose whole job is trust before a payment
+      // showed its most reassuring fact one screen too late. "Free cancellation until 24 hours
+      // before departure" is not fine print; it is a reason to press the button.
+      // The details step keeps its own copy: that is the last moment before money moves, and
+      // there it sits beside the terms checkbox as the thing being agreed to.
+      + payCancellationHtml()
       + '<p class="pp-err" id="payerr" hidden></p>'
+      + '<div class="pp-help" id="payhelp" hidden></div>'
       + '</div></div>' + waLine();
     document.getElementById('paybtn').addEventListener('click', renderDetails);
   }
@@ -224,38 +455,104 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return best;
   }
   // Split a prefilled international number into { country, number } for the widget.
+  // Cancellation policy, per product (terms.html §7). The two ladders are genuinely different
+  // — a chauffeur trip is already capped at 80% ten days out, where a transfer is still fully
+  // refundable up to 24 hours before. Showing the wrong one at the moment of payment would be
+  // worse than showing none, so this switches on the product the server told us about.
+  // The headline rule is ALWAYS visible; the full ladder is one tap away (native <details>,
+  // which works on touch, with a keyboard, and in a screen reader — a tooltip does none).
+  /* Partial pay links (spec 2026-08-04). The page becomes a RECEIPT: the customer sees the
+     lines they are paying for, and the total is visibly their sum. Excluded legs are
+     deliberately not listed — the coverage sentence prevents "I thought this was the whole
+     trip" without reading as an inventory of what they didn't buy. Both are no-ops on a
+     full-quote link, which sends neither field. Extracted by web-tests/unit/pay-page-lines.test.js. */
+  function linesHtml(lines) {
+    if (!lines || !lines.length) return '';
+    return '<ul class="paid-lines">' + lines.map(function (l) {
+      return '<li><span class="l">' + esc(l.label) + '</span>'
+        + '<span class="v">$' + (l.amountCents / 100).toFixed(2) + '</span></li>';
+    }).join('') + '</ul>';
+  }
+  function coverageSentence(coverage) {
+    if (!coverage) return '';
+    return 'This covers ' + coverage.soldLegs + ' of the ' + coverage.totalLegs
+      + ' legs in your itinerary.';
+  }
+
+  /* The collapsed disclosure the payable screen shows under the CTA. Same source of truth as
+     the details step (cancellationPolicy) so the two can never disagree about a refund. */
+  function payCancellationHtml(){
+    var pol = cancellationPolicy(data.copy.product);
+    return '<details class="dt-pol pp-pol"><summary>' + esc(pol.headline) + '</summary><ul>'
+      + pol.rows.map(function(rw){ return '<li>' + esc(rw) + '</li>'; }).join('')
+      + '</ul></details>';
+  }
+
+  function cancellationPolicy(product){
+    if (product === 'chauffeur') {
+      return {
+        headline: 'Free cancellation until 10 days before your trip starts.',
+        rows: ['10–8 days before: 80% refund',
+               '7–3 days before: 60% refund',
+               '2 days–24 hours before: 40% refund',
+               'Within 24 hours, a no-show, or after the trip begins: no refund'],
+      };
+    }
+    return {
+      headline: 'Free cancellation until 24 hours before departure.',
+      rows: ['More than 24 hours before departure: full refund, unlimited changes',
+             'Within 24 hours, a no-show, or after departure: no refund'],
+    };
+  }
+
+  // Billing country options. Reuses the phone list's country NAMES (not dial codes) so the
+  // two selects can't disagree about spelling, and defaults to the phone country — right far
+  // more often than not, and still editable.
+  function billingCountryOptions(selected){
+    var names = COUNTRIES.map(function(c){ return c[1]; }).sort(function(a, b){ return a.localeCompare(b); });
+    return '<option value="">Choose…</option>' + names.map(function(n){
+      return '<option value="' + esc(n) + '"' + (n === selected ? ' selected' : '') + '>' + esc(n) + '</option>';
+    }).join('');
+  }
+
+  // Returns country '' when the prefill doesn't SAY what the country is. Falling back to
+  // Sri Lanka guessed on the payer's behalf: most of them are not Sri Lankan, and a wrong
+  // dial code silently rewrites the number we'd reach them on — and rides along to the
+  // gateway, where payer data feeds the issuer's 3DS decision (owner-caught, 2026-08-02).
   function splitPrefill(whatsapp){
     var raw = String(whatsapp || '').trim();
-    if (!raw) return { country: 'Sri Lanka', number: '' };
+    if (!raw) return { country: '', number: '' };
     var digits = raw.replace(/[^\d]/g, '');
     var dc = /^\s*\+/.test(raw) ? matchDialCode(digits) : '';
-    if (!dc) return { country: 'Sri Lanka', number: raw };
+    if (!dc) return { country: '', number: raw };
     for (var i = 0; i < COUNTRIES.length; i++) {
       if ((COUNTRIES[i][2] || '').replace(/[^\d]/g, '') === dc) {
         return { country: COUNTRIES[i][1], number: digits.slice(dc.length) };
       }
     }
-    return { country: 'Sri Lanka', number: digits };
+    return { country: '', number: digits };
   }
   // booking.js phoneParts, ported: the select's dial code + the typed number → one whatsapp.
+  // No country selected means no dial code to prefix — startPayment blocks on `noCountry`
+  // rather than inventing one.
   function phoneParts(){
     var countryEl = document.getElementById('f-country');
     var phoneEl = document.getElementById('f-phone');
-    var country = (countryEl && countryEl.value ? countryEl.value : 'Sri Lanka').trim();
-    var selCode = '+94';
+    var country = (countryEl && countryEl.value ? countryEl.value : '').trim();
+    var selCode = '';
     for (var i = 0; i < COUNTRIES.length; i++) if (COUNTRIES[i][1] === country) { selCode = COUNTRIES[i][2]; break; }
     var selDigits = selCode.replace(/[^\d]/g, '');
     var raw = (phoneEl && phoneEl.value ? phoneEl.value : '').trim();
     var digits = raw.replace(/[^\d]/g, '');
     if (/^\s*\+/.test(raw)) {
       var dc = matchDialCode(digits);
-      return { country: country, whatsapp: '+' + digits, empty: !digits, _dc: dc };
+      return { country: country, whatsapp: '+' + digits, empty: !digits, noCountry: !country, _dc: dc };
     }
     var number = digits.replace(/^0+/, '');
     if (selDigits && number.indexOf(selDigits) === 0 && number.length > selDigits.length) {
       number = number.slice(selDigits.length); // typed the code too — don't double it
     }
-    return { country: country, whatsapp: selCode + number, empty: !number };
+    return { country: country, whatsapp: selCode + number, empty: !number, noCountry: !country };
   }
 
   function renderDetails(){
@@ -267,53 +564,189 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       pre = { firstName: typed.firstName, lastName: typed.lastName, email: typed.email };
       split = { country: typed.country, number: typed.phone };
     }
+    var pol = cancellationPolicy(data.copy.product);
     var ordered = [COUNTRIES[0]].concat(COUNTRIES.slice(1).sort(function(a, b){ return a[1].localeCompare(b[1]); }));
-    var options = ordered.map(function(c){
-      return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
-        + esc(c[1]) + ' ' + esc(c[2]) + '</option>';
-    }).join('');
+    // "Choose…" first, and selected unless the prefill actually told us the country — the
+    // same contract as the billing select. Sri Lanka stays pinned above the alphabet as a
+    // convenience for the payers who need it, but it is no longer anybody's default.
+    var options = '<option value=""' + (split.country ? '' : ' selected') + '>Choose…</option>'
+      + ordered.map(function(c){
+        // Dial code FIRST: the select shares a row with the number, so a long country ("United
+        // Arab Emirates +971") clips — and the one thing this field exists to show is the code.
+        // Name-first ("Sri Lanka +94", as in booking.html) clipped the +971 away (2026-08-02).
+        return '<option value="' + esc(c[1]) + '"' + (c[1] === split.country ? ' selected' : '') + '>'
+          + esc(c[2]) + ' ' + esc(c[1]) + '</option>';
+      }).join('');
     app.innerHTML =
       '<h2 class="dt-h">Nearly there' + (data.copy.greetingName ? ', ' + esc(data.copy.greetingName) : '') + '</h2>'
       + '<p class="dt-sub">We need these for your booking confirmation — then it’s straight to secure payment.</p>'
       + '<div class="ticket"><div class="t-main">'
-      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="given-name" /></div>'
-      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="family-name" /></div>'
-      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" type="email" value="' + esc(pre.email || '') + '" autocomplete="email" /></div>'
-      + '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
-      + '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '<div class="dt-kick">Lead passenger <span>· who&rsquo;s travelling</span></div>'
+      // autocomplete=off + unrecognised names (2026-08-08): a phone-only quote leaves the
+      // surname and email EMPTY, and Chrome offered a staff operator's saved identity for them —
+      // four live bookings were recorded under the owner's name. Mitigation, not a guarantee
+      // (Chrome classifies from id/label too), which is why /start also refuses a staff address.
+      + '<div class="fld"><label for="f-firstName">First name</label><input id="f-firstName" name="ch-given" type="text" value="' + esc(pre.firstName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-lastName">Last name</label><input id="f-lastName" name="ch-family" type="text" value="' + esc(pre.lastName || '') + '" autocomplete="off" /></div>'
+      + '<div class="fld"><label for="f-email">Email</label><input id="f-email" name="ch-mail" type="email" value="' + esc(pre.email || '') + '" autocomplete="off" /></div>'
+      + '<div class="dt-2col dt-phone">'
+      +   '<div class="fld"><label for="f-country">Country code</label><select id="f-country" autocomplete="country-name">' + options + '</select></div>'
+      +   '<div class="fld"><label for="f-phone">WhatsApp number</label><input id="f-phone" type="tel" inputmode="tel" value="' + esc(split.number) + '" placeholder="77 123 4567" autocomplete="tel" /></div>'
+      + '</div>'
+      // Billing (2026-08-01). Address/city/country are ALWAYS asked — we have never held them
+      // for anyone, and the gateway was previously sent a hardcoded 'N/A'/'Colombo'. The
+      // cardholder name is only asked when the payer says it differs from the lead passenger.
+      + '<div class="dt-kick">Billing details <span>· as they appear on the card</span></div>'
+      + '<label class="dt-chk"><input id="f-diffbill" type="checkbox"' + (typed && typed.billDiffers ? ' checked' : '') + ' />'
+      +   '<span>Billing details are different from the lead passenger</span></label>'
+      + '<div id="billnames" class="dt-2col"' + (typed && typed.billDiffers ? '' : ' hidden') + '>'
+      +   '<div class="fld"><label for="f-bfirst">Cardholder first name</label><input id="f-bfirst" type="text" value="' + esc((typed && typed.billFirst) || '') + '" autocomplete="billing given-name" /></div>'
+      +   '<div class="fld"><label for="f-blast">Cardholder last name</label><input id="f-blast" type="text" value="' + esc((typed && typed.billLast) || '') + '" autocomplete="billing family-name" /></div>'
+      + '</div>'
+      + '<div class="fld"><label for="f-bcountry">Country</label><select id="f-bcountry" autocomplete="billing country">' + billingCountryOptions((typed && typed.billCountry) || split.country) + '</select></div>'
+      + '<div class="fld"><label for="f-addr">Billing address</label><input id="f-addr" type="text" value="' + esc((typed && typed.address) || '') + '" placeholder="Street and number" autocomplete="billing street-address" /></div>'
+      + '<div class="dt-2col">'
+      +   '<div class="fld"><label for="f-city">City</label><input id="f-city" type="text" value="' + esc((typed && typed.city) || '') + '" placeholder="e.g. Amsterdam" autocomplete="billing address-level2" /></div>'
+      // State/province, added 2026-08-02: without it US and Canadian payers wrote "Jersey
+      // City, NJ" into the city box, and city is exactly what gets forwarded as the city.
+      // Optional in the label because most of the world has no such thing.
+      +   '<div class="fld"><label for="f-state">State / Province <span>optional</span></label><input id="f-state" type="text" value="' + esc((typed && typed.state) || '') + '" placeholder="e.g. NJ" autocomplete="billing address-level1" /></div>'
+      + '</div>'
+      + '<div class="fld"><label for="f-postcode" id="f-postcode-label">Postcode / ZIP <span>optional</span></label><input id="f-postcode" type="text" value="' + esc((typed && typed.postcode) || '') + '" autocomplete="billing postal-code" /></div>'
+      + '<label class="dt-chk dt-terms"><input id="f-terms" type="checkbox"' + (typed && typed.terms ? ' checked' : '') + ' />'
+      +   '<span>I agree to the <a href="terms.html#refunds" target="_blank" rel="noopener">Terms &amp; cancellation policy</a>.'
+      +   '<b>' + esc(pol.headline) + '</b></span></label>'
+      + '<details class="dt-pol"><summary>See the full cancellation policy</summary><ul>'
+      +   pol.rows.map(function(rw){ return '<li>' + esc(rw) + '</li>'; }).join('')
+      + '</ul></details>'
       + '</div>'
       + '<div class="perf"></div><div class="t-stub">'
+      + linesHtml(data.lines)
+      + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
       + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
-      + '<button class="btn btn-cta pp-cta" id="gobtn">Continue to payment</button>'
+      + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
+      + '<div class="pp-help" id="payhelp" hidden></div>'
       + '</div></div>' + waLine();
     // Focus the first empty box — usually email, or the number for email-contact quotes.
-    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-phone'];
+    var order = ['f-firstName', 'f-lastName', 'f-email', 'f-country', 'f-phone', 'f-addr'];
     for (var i = 0; i < order.length; i++) {
       var el = document.getElementById(order[i]);
       if (el && !el.value) { el.focus(); break; }
     }
-    document.getElementById('gobtn').addEventListener('click', startPayment);
+    // The billing country was set ONCE from the phone prefill and then never moved, so
+    // changing the dial code to United States left the billing country reading Sri Lanka
+    // (owner-caught, 2026-08-02). It now FOLLOWS the phone country — until the payer picks a
+    // billing country themselves, after which their choice is never overwritten.
+    var phoneSel = document.getElementById('f-country'), billSel = document.getElementById('f-bcountry');
+    var billTouched = false;
+    billSel.addEventListener('change', function(){ billTouched = true; });
+    phoneSel.addEventListener('change', function(){
+      if (billTouched) return;
+      var name = (phoneSel.value || '').trim();
+      // Only if that country exists in the billing list — the two are built from one source,
+      // so this is belt-and-braces rather than an expected miss.
+      for (var i = 0; i < billSel.options.length; i++) {
+        if (billSel.options[i].value === name) { billSel.value = name; return; }
+      }
+    });
+
+    var diff = document.getElementById('f-diffbill'), names = document.getElementById('billnames');
+    diff.addEventListener('change', function(){
+      names.hidden = !diff.checked;
+      if (diff.checked) document.getElementById('f-bfirst').focus();
+    });
+    // The CTA is dimmed until the terms are ticked, so consent reads as a precondition instead of
+    // an error you discover after committing (owner-caught 2026-08-02).
+    //
+    // Dimmed only — NOT disabled, and deliberately not aria-disabled either. Both make the button
+    // inert: the click is swallowed and nothing explains why, so a payer who hasn't spotted the
+    // checkbox two rows up reads a dead button as a broken page and leaves, on the last screen
+    // before the money. Every other requirement on this form (address, city, email) is enforced
+    // the same way — press, and it tells you what's missing — and the terms are no different.
+    // Pressing also drops focus on the checkbox, so the fix is one keystroke away.
+    var terms = document.getElementById('f-terms'), go = document.getElementById('gobtn');
+    terms.addEventListener('change', function(){ go.classList.toggle('is-off', !terms.checked); });
+    go.addEventListener('click', startPayment);
   }
 
-  // "We're loading PayHere" — shown the moment the customer commits, so a slow network
-  // never reads as a dead button. PayHere's own modal replaces it when ready.
+  // Shown in the instant between form.submit() and the browser leaving for payhere.lk. It is
+  // usually on screen for a blink, but on a slow connection it is the difference between "this
+  // is working" and a dead button.
+  //
+  // It no longer says "don't close this page": the customer is being sent TO PayHere, not shown
+  // a window on top of us, and telling them to stay here would be a lie about where they are.
   function renderLoading(){
-    app.innerHTML = '<div class="pp-loading"><div class="pp-spin"></div>'
+    app.innerHTML = '<div class="pp-loading">'
+      + '<div class="pp-hop">'
+      +   '<span class="chip"><img src="img/brand-c.svg" alt="" width="19" height="19">Ceylon Hop</span>'
+      +   '<span class="track"></span>'
+      +   '<span class="chip">🔒 PayHere</span>'
+      + '</div>'
       + '<h2>Taking you to PayHere…</h2>'
-      + '<p>Complete your payment in the PayHere window. Don’t close this page.</p>'
-      + '<div class="amt">' + esc(data.totals.usd) + '</div>'
-      + '<p>🔒 PayHere · Central Bank approved · no extra fees</p></div>';
+      + '<p class="lead">You’ll finish paying on PayHere’s own secure page, then come '
+      +   'straight back here. We never see your card details.</p>'
+      // The amount lives ONLY in the preview card. It was above this as a big standalone figure
+      // too, and the same number twice on one short screen reads as a bug rather than emphasis.
+      //
+      // The merchant line is quoted as PayHere actually prints it — verified against the live
+      // checkout 2026-08-05. If the gateway customization name is ever changed in the PayHere
+      // dashboard, change it here too: a reassurance that does not match what they land on is
+      // worse than no reassurance at all.
+      + '<div class="pp-expect"><b>On the next screen you should see</b>'
+      +   '<div class="row"><span class="who">Ceylon Hop (PVT) LTD</span>'
+      +   '<span class="amt2">' + esc(data.totals.usd) + '</span></div></div>'
+      // "come straight back here" already appears in the lead — repeating it here was the same
+      // reassurance twice in six lines, which reads as padding rather than emphasis.
+      + '<p>Central Bank approved · no extra fees</p>'
+      // What PayHere makes them do on the way back. Owner-observed 2026-08-05: the gateway does
+      // NOT redirect on its own — it parks the payer on "Payment Approved" (or "Payment
+      // Declined") behind a manual "Back to Site" link. A payer who is not told that closes the
+      // tab, and never sees their confirmation.
+      + '<p class="lead" style="margin-top:12px">When PayHere is done, tap <strong>Back to '
+      +   'Site</strong> to get your confirmation.</p></div>';
   }
 
-  function fail(msg){
+  // Shared with booking.html — see decline-help.js for why this copy says what it says.
+  var DECLINE_HELP = window.CH_DECLINE_HELP || [];
+
+  // `quiet` collapses the decline steps behind a summary instead of printing them open.
+  //
+  // Why it exists (2026-08-05, from a real decline on CH-R3ZBZ): PayHere does NOT always send a
+  // notify when a card is refused — that order carries exactly ONE payment_event, the later
+  // success, so the decline itself never reached us. When that happens our payment row stays
+  // `pending`, /bookings/pay-return answers `pending`, and the confident "your card was declined"
+  // branch never fires. The payer who most needs these four steps was the one least likely to see
+  // them. But most people arriving with no verdict simply changed their mind, and four paragraphs
+  // about phoning a bank would be noise — hence available, not asserted.
+  function fail(msg, help, quiet){
     // If the interstitial (or PayHere) is on screen, rebuild the details step first —
     // with the customer's typed values — then surface the error on it.
     if (!document.getElementById('gobtn') && !document.getElementById('paybtn')) renderDetails();
     var e = document.getElementById('payerr');
     if (e) { e.textContent = msg; e.hidden = false; }
+    // Only after a real attempt at the gateway. A validation miss ("enter your billing city")
+    // must not hand the payer four paragraphs about phoning their bank.
+    var h = document.getElementById('payhelp');
+    if (h) {
+      if (help && help.length) {
+        var steps = '<ol>' + help.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ol>';
+        h.innerHTML = quiet
+          ? '<details class="pp-quiet"><summary>Card refused? Here’s what usually fixes it</summary>'
+            + steps + '</details>'
+          : '<h3>If your card was declined</h3>' + steps;
+        h.hidden = false;
+      } else {
+        h.innerHTML = '';
+        h.hidden = true;
+      }
+    }
+    // Release the latch. Without this a refused card, a validation miss or a timeout would leave
+    // the button locked and the payer with no way to retry at all — strictly worse than the
+    // double-click it guards against.
+    submitting = false;
     var b = document.getElementById('gobtn') || document.getElementById('paybtn');
-    if (b) { b.disabled = false; b.textContent = b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere'; }
+    if (b) setBusy(b, false, b.id === 'gobtn' ? 'Continue to payment' : 'Pay with PayHere');
   }
 
   function startPayment(){
@@ -322,10 +755,46 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       firstName: (document.getElementById('f-firstName').value || '').trim(),
       lastName: (document.getElementById('f-lastName').value || '').trim(),
       email: (document.getElementById('f-email').value || '').trim(),
-      country: (document.getElementById('f-country').value || 'Sri Lanka').trim(),
+      country: (document.getElementById('f-country').value || '').trim(),
       phone: (document.getElementById('f-phone').value || '').trim(),
+      address: (document.getElementById('f-addr').value || '').trim(),
+      city: (document.getElementById('f-city').value || '').trim(),
+      postcode: (document.getElementById('f-postcode').value || '').trim(),
+      state: (document.getElementById('f-state').value || '').trim(),
+      billCountry: (document.getElementById('f-bcountry').value || '').trim(),
+      billDiffers: document.getElementById('f-diffbill').checked,
+      billFirst: (document.getElementById('f-bfirst').value || '').trim(),
+      billLast: (document.getElementById('f-blast').value || '').trim(),
+      terms: document.getElementById('f-terms').checked,
     };
+    // The country is asked, never assumed — and the server requires it (customer.country is
+    // min(1)), so a blank one would 400 at the gateway door instead of here.
+    if (parts.noCountry) { fail('Please choose your country code.'); return; }
     if (parts.empty) { fail('Please enter your WhatsApp number.'); return; }
+    // Billing is required: it goes to the card gateway, which used to be handed a hardcoded
+    // placeholder. Name each empty box rather than a generic "check the form".
+    if (!typed.address) { fail('Please enter your billing address.'); return; }
+    if (!typed.city) { fail('Please enter your billing city.'); return; }
+    if (!typed.billCountry) { fail('Please choose your billing country.'); return; }
+    if (!typed.terms) {
+      fail('Please accept the terms & cancellation policy to continue.');
+      // fail() rebuilds the step, so re-find the box; focus is what turns "you must" into "here".
+      var box = document.getElementById('f-terms');
+      if (box) { box.focus(); }
+      return;
+    }
+    if (typed.billDiffers && (!typed.billFirst || !typed.billLast)) {
+      fail('Please enter the cardholder’s first and last name.'); return;
+    }
+    var billing = {
+      address: typed.address, city: typed.city, country: typed.billCountry,
+    };
+    // OMIT rather than send '': BillingInput requires a non-empty string when the key is
+    // present, so an empty postcode would 400 — the same block on a Hong Kong or UAE payer,
+    // just moved to the server. Caught by the e2e, not by reading the code.
+    if (typed.postcode) billing.postcode = typed.postcode;
+    if (typed.state) billing.state = typed.state;
+    if (typed.billDiffers) { billing.firstName = typed.billFirst; billing.lastName = typed.billLast; }
     var customer = {
       firstName: typed.firstName,
       lastName: typed.lastName,
@@ -333,16 +802,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       whatsapp: parts.whatsapp,
       country: parts.country,
     };
-    // Owner call (2026-08-01): the wait for /start + /checkout stays ON THE BUTTON — the
-    // form remains visible and the customer keeps their context. On a cold API the old
-    // full-screen interstitial blocked them behind a takeover for seconds. The takeover
-    // now appears only at the moment the PayHere window actually opens (below), where
-    // "don't close this page" is true and the amount belongs.
-    var goBtn = document.getElementById('gobtn');
-    if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Opening secure payment…'; }
-    fetch(A + '/quotes/pay/start', {
+    // SUPERSEDES the 2026-08-01 owner call ("keep the wait on the button"). That decision was
+    // made when the takeover said "don't close this page" and lied about a modal opening over
+    // us. Now the takeover is TRUE the moment it appears — we are leaving for PayHere — and the
+    // owner's 2026-08-05 call, watching the real flow, is that pressing Continue must land on
+    // "Taking you to PayHere…" straight away rather than on a button that merely dims.
+    //
+    // A failure still rebuilds the form: fail() re-renders the details step when neither button
+    // is on screen, so a dead API drops them back where they were rather than stranding them
+    // behind a spinner.
+    // Belt AND braces against a second checkout. `disabled` alone is not enough: fail() re-enables
+    // the button, a stray re-render would hand back a fresh one, and a double-tap on mobile can
+    // land two clicks before the first repaint. `submitting` is the one that cannot be undone by
+    // the DOM — and two checkouts means two PayHere hand-offs for one booking.
+    if (submitting) return;
+    submitting = true;
+    // Straight to the hand-off screen. The button latch stays because a double-tap can land two
+    // clicks in the same frame, before this repaint removes the button at all.
+    setBusy(document.getElementById('gobtn'), true, 'Opening secure payment…');
+    renderLoading();
+    fetchJson(A + '/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t: t, customer: customer }),
+      body: JSON.stringify({ t: t, customer: customer, billing: billing, termsAccepted: true }),
     }).then(function(r){
       if (r.ok) return r.json();
       return r.json().catch(function(){ return {}; }).then(function(x){
@@ -352,8 +833,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       });
     }).then(function(st){
       booking = st;
-      return fetch(A + '/bookings/' + st.bookingId + '/checkout', {
-        method: 'POST', headers: { authorization: 'Bearer ' + st.checkoutToken },
+      // `returnTo` states INTENT, never a URL: the server builds the return address from its own
+      // config, because a gateway that redirects wherever the request body says is a phishing
+      // primitive. See api/src/routes/bookings.ts.
+      return fetchJson(A + '/bookings/' + st.bookingId + '/checkout', {
+        method: 'POST',
+        headers: { authorization: 'Bearer ' + st.checkoutToken, 'content-type': 'application/json' },
+        body: JSON.stringify({ returnTo: 'pay-link' }),
       }).then(function(r){
         if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.');
         return r.json();
@@ -364,50 +850,182 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // Dev/fake gateway: be honest rather than simulate a payment that never happened.
         throw new Error('Payments aren’t enabled on this environment yet — nothing was charged.');
       }
-      if (!window.payhere) throw new Error('We couldn’t open the secure payment window — please turn off any ad-blocker for this page and try again. No charge was made.');
-      var payment = Object.assign({ sandbox: /sandbox\.payhere\.lk/.test(checkout.checkoutUrl) }, checkout.fields);
-      payhere.onCompleted = function(){ awaitSettle(); };
-      payhere.onDismissed = function(){ fail('Payment window closed — nothing was charged. Tap to try again.'); };
-      payhere.onError = function(){ fail('The payment didn’t go through. No charge was made.'); };
-      // NOW the takeover is honest: the PayHere window is opening this instant.
-      renderLoading();
-      payhere.startPayment(payment);
+      if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
+      // Remember the link before leaving our origin: the return trip lands on a URL that carries
+      // only a settlement-status token, so this is how the page finds its way back to the quote.
+      remember();
+      // A TOP-LEVEL form POST — the whole point of this page's redesign. PayHere's checkout takes
+      // ~16 POST fields, so it cannot be a location assignment. The fields are the server's
+      // verbatim: `hash` covers merchant_id + order_id + amount + currency and is signed server
+      // side, so reordering, renaming or adding anything here would be refused by the gateway.
+      var form = document.createElement('form');
+      form.method = 'POST';
+      form.action = checkout.checkoutUrl;
+      Object.keys(checkout.fields).forEach(function(k){
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = k;
+        input.value = checkout.fields[k];
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      // (The hand-off screen is already up — painted the instant they pressed, above.)
+      form.submit();
     }).catch(function(e){ if (!e || !e.handled) fail(e && e.message ? e.message : 'Something went wrong — no charge was made.'); });
   }
 
-  // The webhook is the source of truth: poll until it lands, then show the keepsake.
-  function awaitSettle(){
+  // (The old awaitSettle() lived here. It existed to poll after PayHere's SDK fired onCompleted
+  // in-page; with the redirect there is no in-page completion to hear, and renderReturn() below
+  // does the polling on the way back instead.)
+
+  // ── the return leg ──────────────────────────────────────────────────────────────────────────
+  // PayHere passes NO payment status back on the redirect — their Checkout API docs say so
+  // outright: "You need to update your database upon fetching payment status by your script on
+  // notify_url & then show the payment status to your customer in the page on return_url by
+  // fetching the status from your database." So nothing in this URL is read as an outcome. We ask
+  // our own server, which the webhook owns.
+  //
+  // `c=1` only means the gateway used cancel_url. It is a display hint, NEVER truth: PayHere
+  // documents return_url for an approved payment and cancel_url for a cancelled one, and says
+  // nothing at all about where a DECLINED payment lands — so both legs poll identically.
+  var RETURN_TRIES = 30;
+  // Owner-observed on the live gateway (2026-08-05): PayHere does NOT redirect by itself. It
+  // parks the payer on "Payment Approved" / "Payment Declined" behind a manual "Back to Site"
+  // link — so a DECLINE arrives here on the cancel leg too, not only a change of mind. The
+  // cancel budget therefore has to be long enough for a decline's notify to land, not merely
+  // long enough to be polite.
+  var CANCEL_TRIES = 8;
+  // ...and none of that may cost the payer a stare. Waiting is decoupled from what is ON SCREEN:
+  // after this long we put their form back and keep checking underneath, upgrading the moment an
+  // answer arrives. Owner-reported: "Checking where that left things…" held the screen far too
+  // long before showing anything useful.
+  var FIRST_PAINT_MS = 1400;
+
+  function renderReturn(){
     app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
-      + '<h1 class="st-title">Confirming your payment…</h1>'
+      + '<h1 class="st-title">' + (cameFromCancel ? 'Checking where that left things…' : 'Confirming your payment…') + '</h1>'
       + '<p class="st-sub">This usually takes a few seconds.</p></div>';
     var tries = 0;
+    var budget = cameFromCancel ? CANCEL_TRIES : RETURN_TRIES;
+    var settled = false;   // a terminal answer arrived; stop everything
+    var fellBack = false;  // the form is already on screen, polling continues underneath
+
+    // Stop making them watch a spinner. Their details are restored and the page is usable again;
+    // if an answer lands later it simply replaces this.
+    var fallback = setTimeout(function(){
+      if (settled || !t) return;
+      fellBack = true;
+      resumeAfterFailure('Just checking your payment with the bank — nothing has been charged unless you completed it on PayHere.', DECLINE_HELP, true);
+    }, FIRST_PAINT_MS);
+
+    function stop(){ settled = true; clearTimeout(fallback); }
+
     (function poll(){
       tries++;
-      fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){ return r.json(); }).then(function(v){
-        if (v.state === 'paid') { renderPaid(v.paid); return; }
-        if (tries < 30) { setTimeout(poll, 2000); return; }
-        app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
-          + '<h1 class="st-title">Payment received?</h1>'
-          + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
-          + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
-      }).catch(function(){ if (tries < 30) setTimeout(poll, 2000); });
+      fetchJson(A + '/bookings/pay-return?rt=' + encodeURIComponent(rt)).then(function(r){
+        if (!r.ok) throw new Error('pay-return ' + r.status);
+        return r.json();
+      }).then(function(v){
+        if (v.status === 'paid') { stop(); forget(); return t ? load() : renderPaidMinimal(v.reference); }
+        // A refusal must never read as an endless "confirming" — the whole point of asking our
+        // own server rather than trusting the redirect.
+        if (v.status === 'failed') {
+          stop();
+          return resumeAfterFailure('The payment didn’t go through — no charge was made. You can try again below.', DECLINE_HELP);
+        }
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        stop();
+        // Nothing terminal ever arrived. If the form is already up, just retire the "checking"
+        // line in place — re-rendering underneath someone who has started typing again is worse
+        // than a stale sentence.
+        if (fellBack) {
+          var e = document.getElementById('payerr');
+          if (e) {
+            e.textContent = cameFromCancel
+              ? 'You came back without finishing the payment — nothing was charged. Your details are still here.'
+              : 'We haven’t had confirmation yet — nothing was charged unless you completed the payment. We’ll email you if it lands.';
+          }
+          return;
+        }
+        if (cameFromCancel) {
+          return resumeAfterFailure('You came back without finishing the payment — nothing was charged. Your details are still here.', DECLINE_HELP, true);
+        }
+        renderStillWaiting();
+      }).catch(function(){
+        if (tries < budget) { setTimeout(poll, 2000); return; }
+        stop();
+        if (!fellBack) renderStillWaiting();
+      });
     })();
   }
 
-  // ── boot ────────────────────────────────────────────────────────────────────────────
-  function load(){
-    fetch(A + '/quotes/pay/view?t=' + encodeURIComponent(t || '')).then(function(r){
+  // Paid, but this tab lost the pay token (storage cleared, or they finished in another tab).
+  // The money is in and saying so plainly beats a keepsake we cannot faithfully build.
+  function renderPaidMinimal(reference){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">You’re booked.</h1>'
+      + '<p class="st-sub">Payment received. Your confirmation is on its way by email.</p>'
+      + (reference ? '<p class="st-sub">Booking ref <strong>' + esc(reference) + '</strong></p>' : '')
+      + '</div>' + waLine();
+  }
+
+  function renderStillWaiting(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">⏳</div>'
+      + '<h1 class="st-title">Payment received?</h1>'
+      + '<p class="st-sub">Confirmation is taking longer than usual. Your bank may still be processing — '
+      + 'we’ll email you the moment it lands, or just WhatsApp us.</p></div>' + waLine();
+  }
+
+  // Put them back on the form they left, with what they typed. The caller says WHY they are back
+  // — a refusal (with the decline steps) or their own change of mind (without) — because the two
+  // deserve different words and the wrong one is worse than none.
+  function resumeAfterFailure(message, help, quiet){
+    if (!t) return renderCannotResume();
+    fetchJson(A + '/quotes/pay/view?t=' + encodeURIComponent(t)).then(function(r){
       if (!r.ok) throw new Error('view ' + r.status);
       return r.json();
     }).then(function(v){
       data = v;
-      if (v.state === 'paid') return renderPaid(v.paid);
+      if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
+      if (v.state === 'revised') return renderRevised();
+      if (v.state !== 'payable') return renderUnavailable();
+      renderDetails();
+      fail(message, help, quiet);
+    }).catch(function(){ renderCannotResume(); });
+  }
+
+  function renderCannotResume(){
+    app.innerHTML = '<div class="st-wrap"><div class="st-badge ok">!</div>'
+      + '<h1 class="st-title">That payment didn’t go through</h1>'
+      + '<p class="st-sub"><strong>Nothing has been charged.</strong> Open your payment link again to retry, '
+      + 'or message us on WhatsApp and we’ll sort it out.</p></div>' + waLine();
+  }
+
+  // ── boot ────────────────────────────────────────────────────────────────────────────
+  function load(){
+    fetchJson(A + '/quotes/pay/view?t=' + encodeURIComponent(t || '')).then(function(r){
+      if (!r.ok) throw new Error('view ' + r.status);
+      return r.json();
+    }).then(function(v){
+      data = v;
+      if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
       if (v.state === 'revised') return renderRevised();
       if (v.state === 'payable') return renderPayable();
       return renderUnavailable();
     }).catch(function(){ renderUnavailable(); });
   }
-  if (!t) { renderUnavailable(); } else { load(); }
+
+  if (rt) {
+    // Coming back from the gateway. The pay token is not in this URL by design, so recover it —
+    // and what they typed — from the tab's own storage.
+    var saved = recall();
+    if (saved) { if (!t && saved.t) t = saved.t; if (saved.typed) typed = saved.typed; }
+    renderReturn();
+  } else if (!t) {
+    renderUnavailable();
+  } else {
+    load();
+  }
 })();
 </script>
 </body>

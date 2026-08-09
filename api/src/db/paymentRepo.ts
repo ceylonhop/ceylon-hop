@@ -46,6 +46,15 @@ export interface PaymentRepo {
   // cash/bank settlement (no confirmation email is ever sent, by design) from gateway money that
   // silently failed to confirm. A predicate rather than a row read: no caller wants the rows.
   hasManualSettlement(bookingId: string): Promise<boolean>;
+  // The GATEWAY's own payment id, which the PayHere Refund API takes as `payment_id`. Same
+  // reasoning as hasManualSettlement: the narrow Payment shape drops it on purpose, and the
+  // refund path wants exactly this one field rather than the whole provenance record.
+  //
+  // Returns null unless the money actually arrived through the gateway. markSucceededManually()
+  // also writes gatewayPaymentId — with whatever the operator could cite, typically a bank slip
+  // number — and a numeric-looking slip handed to PayHere's Refund API would ask them to refund
+  // a payment that is not theirs. Cash and bank transfers are refunded the way they were taken.
+  gatewayPaymentIdFor(paymentId: string): Promise<string | null>;
 }
 
 export class InMemoryPaymentRepo implements PaymentRepo {
@@ -121,6 +130,12 @@ export class InMemoryPaymentRepo implements PaymentRepo {
     return [...this.byId.values()].some(
       (p) => p.bookingId === bookingId && p.status === 'succeeded' && p.settlementSource === 'manual',
     );
+  }
+
+  async gatewayPaymentIdFor(paymentId: string): Promise<string | null> {
+    const row = this.byId.get(paymentId);
+    if (!row || row.status !== 'succeeded' || row.settlementSource !== 'webhook') return null;
+    return row.gatewayPaymentId ?? null;
   }
 
   getForSettlement(id: string): InternalPaymentRecord | null {

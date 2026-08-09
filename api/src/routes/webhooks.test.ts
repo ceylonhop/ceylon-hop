@@ -262,7 +262,10 @@ describe('POST /webhooks/payments', () => {
 });
 
 describe('payment webhook ops alerts (M17)', () => {
-  it('alerts on an invalid signature', async () => {
+  // The fake adapter cannot diagnose itself, so the alert declines to guess rather than
+  // asserting a signature failure it has no evidence for — that guess is exactly what sent the
+  // owner looking at the merchant secret on 2026-08-02 while a customer's card was declining.
+  it('alerts without blaming the signature when the adapter cannot say why', async () => {
     const alerts = new FakeAlertAdapter();
     const app = createApp({ alerts });
     await app.request('/webhooks/payments', {
@@ -270,7 +273,7 @@ describe('payment webhook ops alerts (M17)', () => {
       body: '{"orderId":"x","amount":1,"currency":"USD","status":"succeeded","providerTxnId":"t","signature":"bad"}',
     });
     expect(alerts.sent).toHaveLength(1);
-    expect(alerts.sent[0].kind).toBe('payhere_signature');
+    expect(alerts.sent[0].kind).toBe('payhere_webhook_rejected');
     expect(alerts.sent[0].severity).toBe('critical');
   });
 
@@ -284,6 +287,42 @@ describe('payment webhook ops alerts (M17)', () => {
     expect(alerts.sent).toHaveLength(1);
     expect(alerts.sent[0].kind).toBe('payhere_amount');
     expect(alerts.sent[0].dedupeKey).toBe(b.reference);
+  });
+
+  // Owner-reported 2026-08-02: a real $39 payment settled and nobody on the team was told.
+  // Nothing notified on a paid booking — no email, no Slack, no Sentry event. The only signals
+  // were a once-daily aggregate digest and a watchdog whose 15-minute cron was never set up.
+  // Money arriving is the one event the team must not learn about by accident.
+  it('tells the team when a booking is paid', async () => {
+    const adapter = new FakePaymentAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+    await app.request('/webhooks/payments', { method: 'POST', body });
+
+    const paid = alerts.sent.find((a) => a.kind === 'booking_paid');
+    expect(paid).toBeTruthy();
+    expect(paid?.severity).toBe('info'); // good news, not a failure — must not read as an incident
+    expect(paid?.title).toContain(b.reference);
+    expect(paid?.dedupeKey).toBe(b.reference); // a PayHere retry must not re-notify
+  });
+
+  it('the team notification never costs the customer their confirmation', async () => {
+    // The customer's email comes first and the team's is best-effort behind it: a failure in
+    // ours must not cost them theirs, and must not fail the webhook (PayHere would retry).
+    const adapter = new FakePaymentAdapter();
+    const alerts = { send: async () => { throw new Error('alert channel down'); } };
+    const email = new FakeEmailAdapter();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ adapter, alerts, email, bookings });
+    const b = await bookAndCheckout(app);
+    const body = adapter.simulateWebhook({ orderId: b.reference, amount: b.total, currency: b.currency });
+
+    const res = await app.request('/webhooks/payments', { method: 'POST', body });
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('paid');
+    expect(email.sent.length).toBeGreaterThan(0);
   });
 
   it('alerts when the booking is paid but the confirmation email fails', async () => {
@@ -511,7 +550,7 @@ describe('settlement claims the quote (pay links)', () => {
     const t = signQuotePayToken(q.id, (await quotes.get(q.id))!.revision, 'test-link-secret');
     const started = await (await app.request('/quotes/pay/start', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ t, customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' } }),
+      body: JSON.stringify({ t, customer: { firstName: 'Nimal', lastName: 'Perera', email: 'n@x.com', whatsapp: '+94770001111', country: 'LK' }, termsAccepted: true }),
     })).json();
     await app.request(`/bookings/${started.bookingId}/checkout`, {
       method: 'POST', headers: { authorization: `Bearer ${started.checkoutToken}` },
@@ -543,5 +582,126 @@ describe('settlement claims the quote (pay links)', () => {
       body: adapter.simulateNotify({ orderId: b.reference, amount: b.total, currency: 'USD' }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+// 2026-08-02: a [CRITICAL] "PayHere webhook signature failed — misconfigured merchant secret or
+// someone probing" landed in the owner's inbox at the same moment a Chase Visa was being
+// declined. The secret was fine (Amex settled all day). The alert could not distinguish a real
+// notify we refused on a field rule from a bot poking a public URL, and it kept none of the body.
+describe('payment webhook rejection alerts', () => {
+  const payhere = () =>
+    new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox',
+      notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return',
+      cancelUrl: 'https://example.com/cancel',
+    });
+  const post = (app: ReturnType<typeof createApp>, body: string) =>
+    app.request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+
+  it('still calls a genuine signature failure what it is', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await post(createApp({ adapter, alerts }), signed.replace(/md5sig=[A-F0-9]{32}/, `md5sig=${'A'.repeat(32)}`));
+    expect(alerts.sent[0]).toMatchObject({ kind: 'payhere_signature', severity: 'critical' });
+    expect(alerts.sent[0].body).toContain('PAYHERE_MERCHANT_SECRET');
+  });
+
+  it('does not blame the secret for a body refused before the signature was reached', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD', statusCode: '-2' });
+    await post(createApp({ adapter, alerts }), signed.replace('status_code=-2', 'status_code=-9'));
+    expect(alerts.sent[0].kind).toBe('payhere_webhook_rejected');
+    expect(alerts.sent[0].title).toContain('status_code_unknown');
+    expect(alerts.sent[0].body).not.toContain('PAYHERE_MERCHANT_SECRET');
+  });
+
+  // The one fact that turns the alert into an action: go and reconcile THIS booking.
+  it('names the order the refused notify was about', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD', statusCode: '-2' });
+    await post(createApp({ adapter, alerts }), signed.replace('status_code=-2', 'status_code=-9'));
+    expect(alerts.sent[0].body).toContain('CH-MCF8D');
+  });
+
+  it('never puts the raw body in the alert — a notify carries the payer name and card number', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-MCF8D', amount: 2900, currency: 'USD' });
+    await post(createApp({ adapter, alerts }), `${signed}&card_holder_name=Roshen+Weliwatta&card_no=************2478&status_code=-9`);
+    const alert = alerts.sent[0];
+    expect(alert.body).not.toContain('Roshen');
+    expect(alert.body).not.toContain('2478');
+    expect(alert.body).toMatch(/Body sha256: [0-9a-f]{64}/);
+  });
+
+  // Was `new Date().toISOString().slice(0,10)` — one alert per DAY across every cause, so a
+  // rejected notify and a scanner probe on the same day collapsed and the second was never seen.
+  it('dedupes per reason per day, not per day', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adapter, alerts });
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await post(app, signed.replace('status_code=2', 'status_code=9'));
+    await post(app, signed.replace(/md5sig=[A-F0-9]{32}/, `md5sig=${'A'.repeat(32)}`));
+    const keys = alerts.sent.map((a) => a.dedupeKey);
+    expect(new Set(keys).size).toBe(2);
+    expect(keys.every((k) => k?.startsWith(new Date().toISOString().slice(0, 10)))).toBe(true);
+  });
+
+  it('reports an unexpected content type as itself', async () => {
+    const adapter = payhere();
+    const alerts = new FakeAlertAdapter();
+    const signed = adapter.simulateNotify({ orderId: 'CH-ABC12', amount: 4000, currency: 'USD' });
+    await createApp({ adapter, alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: signed,
+    });
+    expect(alerts.sent[0].title).toContain('content_type_unexpected');
+  });
+});
+
+// The promote checklist (§5) verifies this route is alive with `curl -X POST -d ''`, expecting
+// 401 — proof the route exists and refuses unsigned callers. Before this, that probe raised a
+// CRITICAL "webhook rejected" email every single promote, and all four alerts on 2026-08-02/03
+// turned out to be exactly that. A monitoring check must not page on itself.
+describe('the promote checklist’s own liveness probe', () => {
+  const payhere = () =>
+    new PayHerePaymentAdapter('1234567', 'test-secret', {
+      mode: 'sandbox', notifyUrl: 'https://example.com/webhooks/payments',
+      returnUrl: 'https://example.com/return', cancelUrl: 'https://example.com/cancel',
+    });
+
+  it('still refuses an empty body, but no longer pages anyone about it', async () => {
+    const alerts = new FakeAlertAdapter();
+    const res = await createApp({ adapter: payhere(), alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: '',
+    });
+    expect(res.status).toBe(401);
+    expect(alerts.sent).toHaveLength(0);
+  });
+
+  // The exemption is for EMPTINESS, not for being unparseable — a body that claims to be a
+  // notify and fails is still the thing worth waking someone for.
+  it('still pages on a non-empty body that cannot be verified', async () => {
+    const alerts = new FakeAlertAdapter();
+    await createApp({ adapter: payhere(), alerts }).request('/webhooks/payments', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'merchant_id=1234567&order_id=CH-ABC12',
+    });
+    expect(alerts.sent).toHaveLength(1);
+    expect(alerts.sent[0].severity).toBe('critical');
   });
 });

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import type { PaySelection } from '../quote/paySelection';
 
 export type QuoteStatus =
   | 'draft' | 'pending_review' | 'changes_requested' | 'ready' | 'sent' | 'won' | 'lost' | 'expired';
@@ -93,11 +94,21 @@ export interface SavedQuote {
   intent: unknown;
   intentFingerprint: string | null;
   revision: number;
+  // Partial-leg pay links (spec 2026-08-04). null selection = the outstanding link is for the
+  // full quote; soldCents is the frozen amount a partial link charges; payLinkSeq is monotonic.
+  payLinkSelection: PaySelection | null;
+  soldCents: number | null;
+  payLinkSeq: number;
+  // Price-drift baseline (spec 2026-08-05): the quote total when the customer was last quoted.
+  customerTotalCents: number | null;
+  customerTotalAt: Date | null;
+  customerTotalVia: 'sent' | 'pay_link' | 'quote_link' | null;
   accessTokenDigest: string | null;
   convertedBookingId: string | null;
   notes: string | null;
   internalNotes: string | null;
   requestedService: string | null;
+  offerValidUntil: Date | null;
   assignedTo: string | null;
   assignedAt: Date | null;
   createdBy: string | null;
@@ -161,6 +172,18 @@ export interface QuotePatch {
   // Back-link to the booking a won quote became. System-set only — POST /admin/quote/:id/book
   // writes it; the ops PATCH route's zod schema deliberately does not accept it.
   convertedBookingId?: string;
+  // Partial-leg pay links (spec 2026-08-04). Tri-state like rateLock: `undefined` = leave alone,
+  // an object = store, `null` = clear. payLinkSeq is set explicitly by the mint; it is monotonic
+  // and the repo never resets it.
+  payLinkSelection?: PaySelection | null;
+  soldCents?: number | null;
+  payLinkSeq?: number;
+  // Price-drift baseline (spec 2026-08-05). Moves as a UNIT, like rateLock: `undefined` = leave
+  // alone, an object = stamp all three. There is no clear case — a quote that has been shown to a
+  // customer has been shown to a customer.
+  customerTotal?: { cents: number; at: Date; via: 'sent' | 'pay_link' | 'quote_link' };
+  // Offer validity (spec 2026-08-05 D9). Stamped on → ready; null = no validity recorded.
+  offerValidUntil?: Date | null;
 }
 
 // Analytics projections (spec 2026-07-23 founder analytics). Two BOUNDED fetches so analytics
@@ -176,6 +199,10 @@ export interface FunnelQuoteRow {
   status: QuoteStatus;
   product: string;
   totalCents: number;
+  // Partial-leg pay links (spec 2026-08-04): the amount actually sold when only some legs were
+  // bought, else null. wonValue uses it; sent/pipeline/aging keep using totalCents, because what
+  // was OFFERED is still the whole quote.
+  soldCents: number | null;
   currency: string;
   marginCents: number | null;
   lostReason: string | null;
@@ -190,6 +217,7 @@ export interface DemandQuoteRow {
   product: string;
   vehicle: string | null;
   requestedService: string | null;
+  offerValidUntil: Date | null;
   totalCents: number;
   currency: string;
   createdAt: Date;
@@ -199,6 +227,38 @@ export interface DemandQuoteRow {
 // Statuses that are "live" right now — the pipeline/aging/in-review snapshots need this whole
 // set regardless of age, so listFunnelRows includes them outside the time window too.
 export const LIVE_STATUSES: readonly QuoteStatus[] = ['sent', 'pending_review', 'changes_requested', 'ready'];
+
+// Quote version history (spec 2026-08-05 §4). One superseded state.
+export interface QuoteRevision {
+  revision: number;
+  totalCents: number;
+  currency: string;
+  rateCardVersion: string | null;
+  status: string | null;
+  updatedBy: string | null;
+  createdAt: Date;
+  // Raw content, for the route's field-level diff. NEVER echoed to the wire — it carries margin.
+  request: unknown;
+  result: unknown;
+}
+
+// Key-order-stable, so re-serialising identical content can't fake a change.
+function stableStringify(v: unknown): string {
+  return JSON.stringify(v, (_k, val) =>
+    val && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(
+          Object.entries(val as Record<string, unknown>).sort(([x], [y]) => x.localeCompare(y)),
+        )
+      : val,
+  );
+}
+
+// Did a save actually change the quote? Compares REQUEST only: `result` is re-priced server-side
+// on every save, so a rate-card move would look like an operator edit and record phantom history.
+// A wrong answer here must fail benignly — an extra revision row, never a missing one.
+export function sameQuoteContent(a: unknown, b: unknown): boolean {
+  return stableStringify(a) === stableStringify(b);
+}
 
 export interface QuoteRepo {
   save(q: NewQuote): Promise<SavedQuote>;
@@ -213,6 +273,8 @@ export interface QuoteRepo {
   // Rows created in [from, to]. Ordered createdAt desc so a truncation keeps the most recent.
   listDemandRows(from: Date, to: Date, limit: number, channel?: AnalyticsChannel): Promise<{ rows: DemandQuoteRow[]; truncated: boolean }>;
   patch(id: string, patch: QuotePatch): Promise<SavedQuote | null>;
+  // Superseded versions, newest first. Empty for a quote never edited.
+  listRevisions(quoteId: string): Promise<QuoteRevision[]>;
   // Rewrite an existing quote's priced CONTENT in place (re-priced server-side on save).
   // Leaves the lifecycle alone — status/reference/createdAt and the sent/decided stamps are
   // untouched — so a founder editing a quote mid-review corrects the same row, never a
@@ -289,6 +351,8 @@ function toSummary(q: SavedQuote): QuoteSummary {
 
 export class InMemoryQuoteRepo implements QuoteRepo {
   private rows = new Map<string, SavedQuote>();
+  // Superseded versions, oldest-first per quote (listRevisions reverses).
+  private revisions = new Map<string, QuoteRevision[]>();
   private usedReferences = new Set<string>();
 
   private nextReference(): string {
@@ -321,11 +385,20 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       intent: q.intent ?? null,
       intentFingerprint: q.intentFingerprint ?? null,
       revision: q.revision ?? 1,
+      payLinkSelection: null,
+      soldCents: null,
+      payLinkSeq: 0,
+      customerTotalCents: null,
+      customerTotalAt: null,
+      customerTotalVia: null,
       accessTokenDigest: q.accessTokenDigest ?? null,
       convertedBookingId: null,
       notes: q.notes ?? null,
       internalNotes: q.internalNotes ?? null,
       requestedService: q.requestedService ?? null,
+      // Offer validity (spec 2026-08-05 D9): never set at save() — a new quote isn't approved
+      // yet. Stamped later via patch() on the → ready transition.
+      offerValidUntil: null,
       assignedTo: q.assignedTo ?? null, // auto-assigned to the creator on save (spec 2026-07-22)
       assignedAt: q.assignedTo ? now : null,
       createdBy: q.createdBy ?? null,
@@ -386,7 +459,7 @@ export class InMemoryQuoteRepo implements QuoteRepo {
         !isUnpricedShell(r))
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): FunnelQuoteRow => ({
-      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents,
+      id: r.id, status: r.status, product: r.product, totalCents: r.totalCents, soldCents: r.soldCents,
       currency: r.currency, marginCents: r.marginCents, lostReason: r.lostReason,
       createdAt: r.createdAt, sentAt: r.sentAt, decidedAt: r.decidedAt,
     }));
@@ -403,10 +476,14 @@ export class InMemoryQuoteRepo implements QuoteRepo {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     const rows = all.slice(0, limit).map((r): DemandQuoteRow => ({
       id: r.id, status: r.status, product: r.product, vehicle: r.vehicle,
-      requestedService: r.requestedService, totalCents: r.totalCents,
+      requestedService: r.requestedService, offerValidUntil: r.offerValidUntil, totalCents: r.totalCents,
       currency: r.currency, createdAt: r.createdAt, request: r.request,
     }));
     return { rows, truncated: all.length > limit };
+  }
+
+  async listRevisions(quoteId: string): Promise<QuoteRevision[]> {
+    return [...(this.revisions.get(quoteId) ?? [])].reverse().map((r) => ({ ...r }));
   }
 
   async patch(id: string, patch: QuotePatch): Promise<SavedQuote | null> {
@@ -440,6 +517,17 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     }
     if (patch.updatedBy !== undefined) row.updatedBy = patch.updatedBy;
     if (patch.convertedBookingId !== undefined) row.convertedBookingId = patch.convertedBookingId;
+    if (patch.payLinkSelection !== undefined) row.payLinkSelection = patch.payLinkSelection;
+    if (patch.soldCents !== undefined) row.soldCents = patch.soldCents;
+    if (patch.payLinkSeq !== undefined) row.payLinkSeq = patch.payLinkSeq;
+    // All three together or none: a baseline amount without its date would render an indicator
+    // that cannot say when the customer was quoted it.
+    if (patch.customerTotal !== undefined) {
+      row.customerTotalCents = patch.customerTotal.cents;
+      row.customerTotalAt = patch.customerTotal.at;
+      row.customerTotalVia = patch.customerTotal.via;
+    }
+    if (patch.offerValidUntil !== undefined) row.offerValidUntil = patch.offerValidUntil;
     row.updatedAt = now;
     return { ...row };
   }
@@ -450,6 +538,26 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     // can delete a shell an operator still has open, and their next autosave would otherwise
     // write the real priced quote into the deleted row — invisible in the queue forever.
     if (!row || row.deletedAt) return null; // unknown or deleted
+    // Snapshot the state being SUPERSEDED (spec 2026-08-05 §4) — before a single field moves, and
+    // only when the content really changed. A no-op flush (transition() saves even a clean quote)
+    // would otherwise fill the timeline with rows carrying no information.
+    if (!sameQuoteContent(row.request, q.request)) {
+      const list = this.revisions.get(id) ?? [];
+      list.push({
+        revision: row.revision,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        rateCardVersion: row.rateCardVersion,
+        status: row.status,
+        // An unedited revision 1 has no updatedBy — fall back to its author rather than showing
+        // a version nobody wrote.
+        updatedBy: row.updatedBy ?? row.createdBy,
+        createdAt: new Date(),
+        request: row.request,
+        result: row.result,
+      });
+      this.revisions.set(id, list);
+    }
     // Content only — id/reference/channel/status/createdAt and the sent/decided stamps stay put.
     row.product = q.product;
     row.vehicle = q.vehicle ?? null;
@@ -471,6 +579,12 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     row.notes = q.notes ?? null;
     row.internalNotes = q.internalNotes ?? null;
     row.requestedService = q.requestedService ?? null;
+    // The stored pay-link selection dies with the content it described. legIndexes are POSITIONAL,
+    // so an edit that reorders or deletes a leg leaves them pointing at legs nobody chose — the
+    // revision bump already retires the token, this stops the stale selection driving the ops
+    // display or a re-mint. payLinkSeq is monotonic and deliberately NOT reset (spec §6).
+    row.payLinkSelection = null;
+    row.soldCents = null;
     // createdBy is deliberately NOT touched here — a re-save by another staff member must not
     // rewrite authorship. Assignment is likewise untouched: it moves only via patch().
     if (q.updatedBy !== undefined) row.updatedBy = q.updatedBy ?? null;
@@ -514,6 +628,24 @@ export class InMemoryQuoteRepo implements QuoteRepo {
     if (row.convertedBookingId) return { kind: 'converted' };
     if (!row.rateLockedUntil || row.rateLockedUntil <= args.now) return { kind: 'expired' };
     if (row.revision !== args.expectedRevision) return { kind: 'stale_revision' };
+
+    // Snapshot the superseded state (spec 2026-08-05 §5). AFTER every guard above: a refused edit
+    // changed nothing, so recording a version for it would claim history that never happened.
+    if (!sameQuoteContent(row.request, args.quote.request)) {
+      const list = this.revisions.get(args.id) ?? [];
+      list.push({
+        revision: row.revision,
+        totalCents: row.totalCents,
+        currency: row.currency,
+        rateCardVersion: row.rateCardVersion,
+        status: row.status,
+        updatedBy: row.updatedBy ?? row.createdBy,
+        createdAt: new Date(),
+        request: row.request,
+        result: row.result,
+      });
+      this.revisions.set(args.id, list);
+    }
 
     row.product = args.quote.product;
     row.vehicle = args.quote.vehicle ?? null;

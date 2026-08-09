@@ -15,7 +15,7 @@ document.getElementById('conf-wa').innerHTML = ICON.wa + ' Message us on WhatsAp
 })();
 
 // put check icons in addon boxes
-const CK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5L20 7"/></svg>';
+const CK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg>';
 document.querySelectorAll('.addon .box').forEach(b=>b.innerHTML=CK);
 
 const PHONE_COUNTRIES = [
@@ -32,8 +32,57 @@ function populateCountryFields(){
     country.innerHTML=ordered.map(([,name,code])=>`<option value="${optionText(name)}">${optionText(name)} ${optionText(code)}</option>`).join('');
     country.value=[...country.options].some(o=>o.value===current) ? current : 'Sri Lanka';
   }
+  // The billing country reads from the SAME list — a second hand-kept list of countries is
+  // how the two selects end up disagreeing about how to spell one. Names only: this is an
+  // address field, so a dial code beside it would be noise.
+  const bcountry=document.getElementById('f-bcountry');
+  if(bcountry){
+    const names=PHONE_COUNTRIES.map(c=>c[1]).sort((a,b)=>a.localeCompare(b));
+    const keep=bcountry.value;
+    bcountry.innerHTML='<option value="">Choose…</option>'
+      + names.map(n=>`<option value="${optionText(n)}">${optionText(n)}</option>`).join('');
+    // Deliberately NOT seeded from the phone select. That one defaults to Sri Lanka as a
+    // convenience, which says nothing about where a traveller banks — and a wrong billing
+    // country is a weaker AVS check, the very thing this block exists to strengthen. It
+    // starts unanswered and follows the dial code the moment the payer sets one.
+    bcountry.value=[...bcountry.options].some(o=>o.value===keep) ? keep : '';
+  }
 }
 populateCountryFields();
+
+/* Billing block wiring (2026-08-03), mirroring pay.html.
+
+   The billing country FOLLOWS the phone country until the payer touches it — a traveller who
+   sets their dial code to United States and then finds "Sri Lanka" sitting in the billing
+   country has been handed a wrong answer to correct, and the pay page shipped exactly that
+   bug on 2026-08-02. After they choose for themselves, their choice is never overwritten. */
+(function(){
+  const phone=document.getElementById('f-country'), bill=document.getElementById('f-bcountry');
+  if(phone && bill){
+    let touched=false;
+    bill.addEventListener('change',()=>{ touched=true; });
+    phone.addEventListener('change',()=>{
+      if(touched) return;
+      const name=(phone.value||'').trim();
+      if([...bill.options].some(o=>o.value===name)) bill.value=name;
+    });
+  }
+  // Cardholder name: asked only when the payer says it differs from the lead traveller, and
+  // it travels in rather than appearing fully-formed (CH.motion — nothing on this site snaps).
+  const diff=document.getElementById('f-diffbill'), names=document.getElementById('billnames');
+  if(diff && names){
+    diff.addEventListener('change',()=>{
+      if(diff.checked){
+        names.hidden=false;
+        if(window.CH && CH.motion) CH.motion.enter(names);
+        const f=document.getElementById('f-bfirst'); if(f) f.focus();
+      } else {
+        const done=()=>{ names.hidden=true; };
+        if(window.CH && CH.motion) CH.motion.exit(names).then(done); else done();
+      }
+    });
+  }
+})();
 
 // ---- params + state ----
 const params=new URLSearchParams(location.search);
@@ -290,7 +339,7 @@ wireDecideLater('from'); wireDecideLater('to');
 // built-in list of known places so the field still works offline.
 function attachAC(input, menu, which){
   let active=-1, els=[], data=[], seq=0, committed=false, openedAt=0;
-  const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+  const pinIco='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
   function close(invalidate=true){ menu.classList.remove('open'); menu.innerHTML=''; active=-1; els=[]; data=[]; if(invalidate) seq++; }
   function paint(){ els.forEach((it,i)=>it.classList.toggle('active',i===active)); }
 
@@ -435,8 +484,8 @@ function renderRouteMap(){
 
   // distance/time bar — shows the REAL Google route once it resolves, falling
   // back to the offline straight-line estimate while loading / if routing fails.
-  const truck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg>';
-  const info='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
+  const truck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg>';
+  const info='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
   const minsToText=mins=>{ const h=Math.floor(mins/60), m=mins%60; if(h<=0) return `${Math.max(5,m)} min`; return m>=8?`${h}h ${m}m`:`${h}h`; };
   const setBar=(km,durText)=>{
     const meta = km!=null
@@ -516,7 +565,7 @@ if(isTrip){
     html+=`<div class="tr-leg">`+
       `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${leg.from} <span class="tr-ar">→</span> ${leg.to}</span></div>`+
       `<div class="tr-leg-meta">`+
-        (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
+        (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted">${drive}</span>`+
       `</div></div>`;
   });
@@ -528,7 +577,7 @@ if(isTrip){
   // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
-  html+=`<div class="tr-foot"><button type="button" class="tr-edit" onclick="location.href='${editUrl}'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
+  html+=`<div class="tr-foot"><button type="button" class="tr-edit" onclick="location.href='${editUrl}'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
   tr.innerHTML=html;
   tripEditUrl=datesUrl;
   // a clear way back to the planner from the booking flow (task: no way back)
@@ -579,9 +628,9 @@ if(isTrip){
       const bagCap=document.getElementById('bag-cap'); const bagStepper=bagCap?bagCap.closest('.stepper'):null; if(bagStepper) bagStepper.style.display='none';
       // Offer BOTH vehicles here so travellers can switch car ⇄ van. A car seats 3, so it's
       // only selectable when the group fits (4+ travellers ⇒ van only). Switching re-prices the trip.
-      const carSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m0 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m10 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m0 0v-4M7 17h.01M17 17h.01"/></svg>';
-      const vanSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14V7a2 2 0 0 1 2-2h9v9M14 9h3l3 3.5V14M3 14h17"/><circle cx="7" cy="17" r="1.6"/><circle cx="17" cy="17" r="1.6"/></svg>';
-      const tickSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>';
+      const carSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m0 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m10 0v1a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1v-1m0 0v-4M7 17h.01M17 17h.01"/></svg>';
+      const vanSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14V7a2 2 0 0 1 2-2h9v9M14 9h3l3 3.5V14M3 14h17"/><circle cx="7" cy="17" r="1.6"/><circle cx="17" cy="17" r="1.6"/></svg>';
+      const tickSvg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg>';
       const vehChoose=document.createElement('div'); vehChoose.className='trip-veh-choose';
       function vehOptHtml(key,label,cap,ico){
         const disabled = key==='car' && pax>3;
@@ -652,9 +701,9 @@ if(!isTrip && r.type==='shared'){
   const fmtT=function(t){var p=String(t).split(':');var H=+p[0];return (((H+11)%12)+1)+':'+p[1]+' '+(H<12?'am':'pm');};
   const times=(r.times&&r.times.length)?r.times:['07:30'];
   const timesTxt=times.map(fmtT).join(' & ');
-  const ICO_CLOCK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-  const ICO_SEAT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5m-8 0h12a2 2 0 0 1 2 2v3M5 11a2 2 0 0 0-2 2v3m0 0h18"/></svg>';
-  const ICO_INFO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
+  const ICO_CLOCK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  const ICO_SEAT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5m-8 0h12a2 2 0 0 1 2 2v3M5 11a2 2 0 0 0-2 2v3m0 0h18"/></svg>';
+  const ICO_INFO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>';
 
   // STEP 1 — confirm the fixed ride (no editable pick-up/drop-off)
   const locWrap=document.getElementById('loc-wrap'); if(locWrap) locWrap.style.display='none';
@@ -1217,13 +1266,13 @@ function render(){
     if(cx){
       if(!datesOK){
         cx.className='cx-inline warn'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
+        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
           '<p>A driver-guide is charged by calendar days, so we can only quote it once every transfer leg has a date.</p>'+
           '<button type="button" class="cx-btn" onclick="location.href=\''+tripEditUrl+'\'">Add your dates →</button>';
       } else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg><b>Your car &amp; driver-guide stays with you all '+days.length+' day'+(days.length>1?'s':'')+'</b></div>'+
+        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg><b>Your car &amp; driver-guide stays with you all '+days.length+' day'+(days.length>1?'s':'')+'</b></div>'+
           '<p>Same friendly face the whole trip — your driver-guide&rsquo;s daily rate is included in your trip total.</p>';
       } else { cx.style.display='none'; cx.innerHTML=''; }
     }
@@ -1253,7 +1302,7 @@ function render(){
               ? `${pax} travellers won’t fit an AC car (up to ${VEH_CAP.car.pax})`
               : `${state.bags} large bags won’t fit an AC car (up to ${VEH_CAP.car.bags})`);
         note.innerHTML=`<b>${reason}.</b> An AC van seats up to ${VEH_CAP.van.pax} with room for ${VEH_CAP.van.bags} bags.`+
-          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${money(vanP)}`:''}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToVan()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 13h18M5 13V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v5M6 17v2M18 17v2"/></svg> Switch to AC van${vanP?` · ${money(vanP)}`:''}</button>`;
       } else {
         const waMsg=encodeURIComponent(`Hi Ceylon Hop — I need a larger vehicle for ${state.ad+state.ch} travellers${r&&r.name?` (${r.name})`:''}.`);
         note.innerHTML=`That’s over an AC van’s limit too (up to ${VEH_CAP.van.pax} travellers · ${VEH_CAP.van.bags} bags) — <a href="https://wa.me/94779669662?text=${waMsg}" target="_blank" rel="noopener">message us on WhatsApp</a> and we’ll arrange a larger vehicle.`;
@@ -1265,7 +1314,7 @@ function render(){
       if(carP!=null && save!=null && save>0){
         note.className='cap-note show ok';
         note.innerHTML=`<b>An AC car fits your group</b> — ${pax} traveller${pax>1?'s':''}${state.bags>0?` · ${state.bags} bag${state.bags>1?'s':''}`:''}. Downgrade and save.`+
-          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ${money(save)}</button>`;
+          `<button type="button" class="cap-switch" onclick="switchToCar()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-5.5A2 2 0 0 1 6.9 6h10.2a2 2 0 0 1 1.9 1.5L21 13v4a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H6v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 13h18"/></svg> Switch to AC car · save ${money(save)}</button>`;
       } else { note.className='cap-note'; note.textContent=''; }
     } else if(isShared && state.bags>freeBags){
       const extra=state.bags-freeBags;
@@ -1332,7 +1381,7 @@ function render(){
 
   // cancellation language adapts to the service (24h transfers · 10 days chauffeur-guide)
   const perk=document.getElementById('perk-cancel');
-  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg> ${cancelText()}`;
+  if(perk) perk.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="m5 12 5 5L20 7"/></svg> ${cancelText()}`;
   const paySub=document.getElementById('pay-sub');
   if(paySub) paySub.textContent=`Pay securely to confirm. ${cancelText()}.`;
 
@@ -1433,6 +1482,25 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
   if(!emailRe.test(email.value.trim())) return fail(email,'Enter a valid email so we can send your confirmation.');
   if(phoneParts().number.length<7) return fail(phone,'Enter a valid WhatsApp number.');
+
+  // Billing goes to the card gateway, so it is required in the same way the email is —
+  // named box by named box, never a generic "check the form". Postcode and state are
+  // deliberately absent from this list: most of the world has no state, and a field nobody
+  // can fill must never block a payment.
+  const addr=document.getElementById('f-addr'), city=document.getElementById('f-city'),
+        bcountry=document.getElementById('f-bcountry');
+  [addr,city,bcountry].forEach(el=>el && el.classList.remove('inp-bad'));
+  if(!addr.value.trim()) return fail(addr,'Please enter your billing address — the one on your card statement.');
+  if(!city.value.trim()) return fail(city,'Please enter your billing city.');
+  if(!bcountry.value.trim()) return fail(bcountry,'Please choose your billing country.');
+  const diffbill=document.getElementById('f-diffbill');
+  if(diffbill && diffbill.checked){
+    const bfirst=document.getElementById('f-bfirst'), blast=document.getElementById('f-blast');
+    [bfirst,blast].forEach(el=>el && el.classList.remove('inp-bad'));
+    if(!bfirst.value.trim()) return fail(bfirst,'Please enter the cardholder’s first name.');
+    if(!blast.value.trim()) return fail(blast,'Please enter the cardholder’s last name.');
+  }
+
   const agree=document.getElementById('agree');
   if(!agree.checked){
     // Was a red border and nothing else: colour-only, no message, and it never reset.
@@ -1474,7 +1542,14 @@ async function runPayment(){
   const _amt=document.getElementById('ph-amt'); if(_amt) _amt.textContent=money(amountDueNow());
 
   // Ask the API for checkout params; if it's real PayHere, open the hosted checkout.
-  let checkout=null;
+  //
+  // A refusal here is a 409 that SAYS why — awaiting_price (ops is pricing this by hand),
+  // already_paid, not_chargeable — and each needs different words. Reading only res.ok
+  // collapsed all three into "try again in a moment", which for every one of them is advice
+  // that cannot work: the price isn't coming back in a moment, and a paid booking will never
+  // become unpaid. So read the body, and only fall back to the generic line when the server
+  // didn't explain itself.
+  let checkout=null, refusal=null;
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken }
@@ -1484,12 +1559,13 @@ async function runPayment(){
       {method:'POST',headers:checkoutHeaders}
     );
     if(res.ok) checkout = await res.json();
+    else refusal = await res.json().catch(()=>null);
   }catch(e){}
 
-  // No checkout params (network error, 5xx, or the backend's amount-mismatch guard)
-  // → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
+  // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
+  // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
   if(!checkout || !checkout.checkoutUrl){
-    return phShowEnd('error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.');
+    return phShowEnd(...checkoutRefusal(refusal));
   }
   // Real PayHere gateway.
   if(/payhere\.lk/.test(checkout.checkoutUrl)){
@@ -1505,6 +1581,28 @@ async function runPayment(){
   return simulatePayThenConfirm(booking);
 }
 
+/* Turn a refused POST /bookings/:id/checkout into words + an honest retry button.
+   Returns the phShowEnd(kind, msg, opts) argument list.
+
+   `awaiting_price` carries the server's own customer-facing copy, written where the rule
+   lives; repeating it here is how the two drift. The others are named because their message
+   is about THIS page's state, not the pricing rule. */
+function checkoutRefusal(body){
+  const err = body && body.error;
+  if(err==='awaiting_price'){
+    return ['error', body.message
+      || 'We’re confirming the price for this trip by hand — we’ll message you shortly with the final amount.',
+      {retry:false}];
+  }
+  if(err==='already_paid'){
+    return ['error','This booking is already paid — nothing more is owed. Check your email for the confirmation, or message us on WhatsApp if it hasn’t arrived.',{retry:false}];
+  }
+  if(err==='not_chargeable'){
+    return ['error','This booking can no longer be paid for. Message us on WhatsApp and we’ll sort it out — no charge was made.',{retry:false}];
+  }
+  return ['error','We couldn’t start your payment just now — no charge was made. Please try again in a moment.'];
+}
+
 // ---- payment overlay states (loading / problem) ----
 function phShowLoading(msg){
   const amt=document.getElementById('ph-amt'); if(amt){ amt.style.display=''; amt.textContent=money(amountDueNow()); }
@@ -1513,11 +1611,18 @@ function phShowLoading(msg){
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='';
   const sec=document.getElementById('ph-secure'); if(sec) sec.style.display='';
   const m=document.getElementById('ph-msg'); m.className='ph-msg'; m.textContent=msg||'Processing your payment securely…';
+  // Clear the previous attempt's end-state, or a second try inherits the first's decline
+  // steps and its suppressed retry button.
+  const help=document.getElementById('ph-help'); if(help){ help.innerHTML=''; help.hidden=true; }
+  const retry=document.getElementById('ph-retry'); if(retry) retry.hidden=false;
   document.getElementById('ph-actions').hidden=true;
   document.getElementById('ph-overlay').classList.add('show');
 }
 // kind: 'error' (red, something went wrong) | 'cancelled' (amber, user backed out)
-function phShowEnd(kind, msg){
+// opts.help  — decline steps (decline-help.js). Pass ONLY after a real attempt at the
+//              gateway; a booking that never reached a card gets no bank advice.
+// opts.retry — false when trying again cannot possibly work (an already-paid booking).
+function phShowEnd(kind, msg, opts){
   document.getElementById('ph-spin').style.display='none';
   const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
@@ -1526,10 +1631,21 @@ function phShowEnd(kind, msg){
   if(ico){
     ico.hidden=false; ico.className='ph-ico '+(kind==='error'?'err':'warn');
     ico.innerHTML = kind==='error'
-      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
-      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
   }
   const m=document.getElementById('ph-msg'); m.className='ph-msg ph-msg-big'; m.textContent=msg;
+  const o=opts||{};
+  const help=document.getElementById('ph-help');
+  if(help){
+    if(o.help && o.help.length){
+      help.innerHTML='<h3>If your card was declined</h3><ol>'
+        + o.help.map(t=>`<li>${optionText(t)}</li>`).join('') + '</ol>';
+      help.hidden=false;
+    } else { help.innerHTML=''; help.hidden=true; }
+  }
+  const retry=document.getElementById('ph-retry');
+  if(retry) retry.hidden = o.retry === false;
   document.getElementById('ph-actions').hidden=false;
   document.getElementById('ph-overlay').classList.add('show');
 }
@@ -1559,15 +1675,21 @@ function startPayHere(checkout, booking){
   payhere.startPayment(payment);
 }
 
+// PayHere's SDK reports a decline and a plain "I closed the window" through two different
+// callbacks, but neither one says WHICH — a declined card also closes the window. So both
+// outcomes carry the decline steps, and the heading asks rather than asserts ("if your card
+// was declined"). Guessing wrong in either direction is worse than letting the payer pick.
+function declineHelp(){ return window.CH_DECLINE_HELP || []; }
+
 function showPayFailed(){
   // Same dimensions as payment_initiated, so a failure can be compared against
   // its own initiation — otherwise GA4 shows a count with nothing to divide by.
   if(typeof window.chTrack==='function') window.chTrack('payment_failed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('error','Your payment didn’t go through — no charge was made. Please try again.');
+  phShowEnd('error','Your payment didn’t go through — no charge was made.',{help:declineHelp()});
 }
 function showPayDismissed(){
   if(typeof window.chTrack==='function') window.chTrack('payment_dismissed',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
-  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.');
+  phShowEnd('cancelled','Payment cancelled — your booking isn’t confirmed yet. You can try again when you’re ready.',{help:declineHelp()});
 }
 
 // Rate-lock (spec 2026-07-11 §5): mint — or reuse — a 7-day locked quote for the current
@@ -1693,6 +1815,29 @@ async function createApiBooking(){
       extras: state.addons.size ? Array.from(state.addons) : undefined
     };
   }
+  // Terms + cancellation acceptance travels WITH the booking (2026-08-01). The checkbox was
+  // client-side only and recorded nothing, so a refund dispute had no evidence either way;
+  // the API now requires this and stamps terms_accepted_at on the booking. The #agree gate
+  // above already blocks submission, so reaching here means it is ticked.
+  payload.termsAccepted = true;
+  // Billing details for the card (2026-08-03). Sent for every mode, because every mode goes
+  // through the same PayHere checkout. The empty optionals are OMITTED rather than sent as
+  // '': BillingInput requires a non-empty string when the key is present, so a blank postcode
+  // would 400 — the same block on a Hong Kong or UAE payer, just moved to the server.
+  const bill = {
+    address: document.getElementById('f-addr').value.trim(),
+    city: document.getElementById('f-city').value.trim(),
+    country: document.getElementById('f-bcountry').value.trim(),
+  };
+  const bpost = document.getElementById('f-postcode').value.trim();
+  const bstate = document.getElementById('f-state').value.trim();
+  if(bpost) bill.postcode = bpost;
+  if(bstate) bill.state = bstate;
+  if(document.getElementById('f-diffbill').checked){
+    bill.firstName = document.getElementById('f-bfirst').value.trim();
+    bill.lastName  = document.getElementById('f-blast').value.trim();
+  }
+  payload.billing = bill;
   // A backend IS configured, so a failure here must surface — never fake a confirmation.
   // (Returning null is reserved for "no backend configured" = intentional demo mode.)
   const body = JSON.stringify(payload);

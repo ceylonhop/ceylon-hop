@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b132f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="618" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b132k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="672" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M30.1 90.8 Q13.9 83.9 7.0 69.1 Q0.1 54.2 5.2 37.1 Q10.2 20.1 24.3 11.9 Q38.3 3.8 53.4 4.0 Q68.4 4.1 80.4 14.5 Q92.4 25.0 94.5 42.1 Q96.6 59.3 89.5 73.6 Q82.4 88.0 64.4 92.9 Q46.4 97.7 30.1 90.8Z" fill="#F9A429"></path>
+<g transform="rotate(-0.89 50 50)">
+  <g class="pass-fill" filter="url(#b132f)"><path d="M24 50a26 26 0 0 1 52 0v4H24z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M18 54h64a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H18a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="50" cy="36" r="6" fill="#0DB9B6" stroke="#4A4648" stroke-width="3"></circle><path d="M30 74h40" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0.1 7.4"></path></g>
+  <g class="pass-ink" filter="url(#b132k)"><path d="M24 50a26 26 0 0 1 52 0v4H24z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><path d="M18 54h64a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H18a3 3 0 0 1-3-3v-3a3 3 0 0 1 3-3z" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"></path><circle cx="50" cy="36" r="6" fill="#0DB9B6" stroke="#4A4648" stroke-width="3"></circle><path d="M30 74h40" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0.1 7.4"></path></g>
+</g>
+</svg>

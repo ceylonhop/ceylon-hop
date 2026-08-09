@@ -274,14 +274,18 @@ describe('distanceVariants', () => {
     });
   });
 
+  // The two variants must be near-identical AND physically possible: Colombo City → Ella is
+  // ~132 km apart in a straight line, so the 90 km this once stubbed is a distance no road
+  // can have. The implausibly-short guard now rejects it (correctly), so the placeholder is
+  // 150 km — still near-identical across variants, which is all this test is about.
   it('reports NO choice when routes are near-identical', async () => {
     global.fetch = (async (url: string) => {
-      if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(90, 155);
-      return distanceMatrixResponse(90, 150);
+      if (String(url).includes('avoid=tolls')) return distanceMatrixResponse(150, 155);
+      return distanceMatrixResponse(150, 150);
     }) as typeof fetch;
     const r = await new GoogleMapsAdapter('test-key').distanceVariants('Colombo City', 'Ella');
     expect(r).toEqual({
-      fastest: { km: 90, durationMin: 150 },
+      fastest: { km: 150, durationMin: 150 },
       noTolls: null,
       hasChoice: false,
     });
@@ -442,5 +446,116 @@ describe('distanceVariants', () => {
       const fake = new FakeMapsAdapter();
       expect(await fake.distanceVariants('Galadari Hotel, Colombo', 'Galle')).toBeNull();
     });
+  });
+});
+
+// ── Ambiguous place labels (incident 2026-08-02) ──────────────────────────────
+// A quote priced Yala → Colombo Airport at 78 km instead of ~286 km and went out
+// $90 under. The leg's stop was stored as the Google autocomplete label
+// "Yala, Sri Lanka", which missed the exact-match COORDS key "yala", so the
+// coords pin never applied and Google geocoded the bare string to a village near
+// Horana (6.664, 80.071) instead of the national park (6.37, 81.52). The only
+// sanity check was `km > MAX_SL_ROAD_KM`, which catches a geocode that lands in
+// another country but never one that lands in the wrong Sri Lankan town — the
+// direction that undercharges.
+describe('ambiguous place labels resolve to the catalog coordinate', () => {
+  const origFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = origFetch;
+    vi.restoreAllMocks();
+  });
+
+  const captureOrigins = (): { get: () => string } => {
+    let url = '';
+    global.fetch = (async (u: string) => {
+      url = String(u);
+      return new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 286000 }, duration: { value: 18000 } }] }] }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    return { get: () => url };
+  };
+
+  it('sends "Yala, Sri Lanka" to Google as the pinned coords, not the bare name', async () => {
+    const cap = captureOrigins();
+    await new GoogleMapsAdapter('test-key').distance('Yala, Sri Lanka', 'Colombo Airport (CMB)');
+    // 6.37,81.52 is the catalog's Yala (the national park).
+    expect(decodeURIComponent(cap.get())).toContain('origins=6.37,81.52');
+    expect(decodeURIComponent(cap.get())).not.toContain('origins=Yala, Sri Lanka');
+  });
+
+  it('applies to every catalog place, not just Yala', async () => {
+    const cap = captureOrigins();
+    await new GoogleMapsAdapter('test-key').distance('Trincomalee, Sri Lanka', 'Kandy, Sri Lanka');
+    const u = decodeURIComponent(cap.get());
+    expect(u).toContain('origins=8.59,81.21');
+    expect(u).toContain('destinations=7.29,80.63');
+  });
+
+  it('is unfazed by casing and spacing around the suffix', async () => {
+    const cap = captureOrigins();
+    await new GoogleMapsAdapter('test-key').distance('  yala ,  SRI LANKA ', 'Galle');
+    expect(decodeURIComponent(cap.get())).toContain('origins=6.37,81.52');
+  });
+
+  it('leaves a genuinely unknown address as a bare string', async () => {
+    const cap = captureOrigins();
+    await new GoogleMapsAdapter('test-key').distance('Galadari Hotel, Colombo', 'Galle');
+    expect(decodeURIComponent(cap.get())).toContain('origins=Galadari Hotel, Colombo');
+  });
+
+  it('the offline estimate also honours the suffixed label', async () => {
+    const fake = new FakeMapsAdapter();
+    const suffixed = await fake.distance('Yala, Sri Lanka', 'Colombo Airport (CMB)');
+    const bare = await fake.distance('Yala', 'Colombo Airport (CMB)');
+    expect(suffixed).not.toBeNull();
+    expect(suffixed).toEqual(bare);
+  });
+});
+
+// Layer 3: a geocode that lands in the wrong Sri Lankan town is an UNDERCHARGE, and
+// MAX_SL_ROAD_KM cannot see it. When both endpoints are known places we have an
+// independent crow-flies estimate — if Google disagrees wildly, distrust it.
+describe('implausibly short distance between two known places', () => {
+  const origFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = origFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('rejects a Google answer far below the crow-flies floor for a known pair', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Yala → CMB is ~236 km crow-flies-derived; 78 km is the bad-geocode answer.
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 78000 }, duration: { value: 7000 } }] }] }),
+        { status: 200 },
+      )) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distance('Yala', 'Colombo Airport (CMB)');
+    // Falls back to the offline estimate rather than charging on 78 km.
+    expect(r).not.toBeNull();
+    expect(r!.km).toBeGreaterThan(150);
+    expect(r!.estimated).toBe(true);
+  });
+
+  it('accepts a normal Google answer that beats the crow-flies estimate slightly', async () => {
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 286000 }, duration: { value: 18000 } }] }] }),
+        { status: 200 },
+      )) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distance('Yala', 'Colombo Airport (CMB)');
+    expect(r).toEqual({ km: 286, durationMin: 300 });
+  });
+
+  it('does not second-guess a pair it has no estimate for', async () => {
+    global.fetch = (async () =>
+      new Response(
+        JSON.stringify({ status: 'OK', rows: [{ elements: [{ status: 'OK', distance: { value: 3000 }, duration: { value: 400 } }] }] }),
+        { status: 200 },
+      )) as typeof fetch;
+    const r = await new GoogleMapsAdapter('test-key').distance('Galadari Hotel, Colombo', 'Some Villa, Galle');
+    expect(r).toEqual({ km: 3, durationMin: 7 });
   });
 });

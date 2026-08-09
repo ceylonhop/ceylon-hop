@@ -157,7 +157,7 @@ ${headAssets}
   .route-hero{position:relative;color:#fff;padding:104px 0 44px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
   .route-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 80% 10%,rgba(99,191,214,.5),transparent 70%),radial-gradient(50% 50% at 10% 90%,rgba(8,120,118,.6),transparent 70%)}
   .route-hero .wrap{position:relative}
-  .route-hero h1{color:#fff;font-weight:800;max-width:16ch;margin:0 0 .5rem}
+  .route-hero h1{color:#fff;font-weight:700;max-width:16ch;margin:0 0 .5rem}
   .route-hero .sub{color:rgba(255,255,255,.92);max-width:52ch;margin:0 0 1.4rem}
   .price-chips{display:flex;flex-wrap:wrap;gap:12px;margin:0 0 1.4rem}
   .pc{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);border-radius:14px;padding:10px 14px;min-width:120px}
@@ -261,7 +261,7 @@ function tripIndex(T, content) {
 ${headAssets}
 <style>
   .trip-hero{background:linear-gradient(160deg,#0d8f8c,#0AB9B6 60%,#2aa9bf);color:#fff;padding:104px 0 40px;margin-top:-74px}
-  .trip-hero h1{color:#fff;font-weight:800;max-width:20ch}
+  .trip-hero h1{color:#fff;font-weight:700;max-width:20ch}
   .trip-hero p{color:rgba(255,255,255,.9);max-width:54ch}
   .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
   .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e2d8);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}

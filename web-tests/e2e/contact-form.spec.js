@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { fillBilling } from './_stubs.js';
 
 test('contact form submits split phone fields while preserving WhatsApp', async ({ page }) => {
   let captured = null;
@@ -41,6 +42,7 @@ test('contact form submits split phone fields while preserving WhatsApp', async 
   await page.fill('#f-email', 'maya@example.com');
   await page.selectOption('#f-country', 'Sri Lanka');
   await page.fill('#f-phone', '77 123 4567');
+  await fillBilling(page, { country: '' });
   await page.check('#agree');
 
   await page.click('#pay-btn');

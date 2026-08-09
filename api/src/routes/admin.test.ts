@@ -6,8 +6,9 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { FakeEmailAdapter } from '../adapters/email';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { issueSessionCookie } from '../lib/opsMiddleware';
-import { nextIsoWeekday } from '../testSupport/dates';
+import { nextIsoWeekday, futureIsoDate } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
 import { Hono } from 'hono';
 
@@ -76,11 +77,15 @@ function makeApp() {
 }
 
 describe('POST /admin/bookings/:id/cancel', () => {
-  it('cancels the booking for a founder/finance session, transitions it to cancelled, and emails the customer', async () => {
+  // Cancelling moved to payments:reverse — founder only (owner, 2026-08-02). Calling a
+  // customer's trip off is not something finance should be able to do alone.
+  it('cancels the booking for a FOUNDER session, transitions it to cancelled, and emails the customer', async () => {
     const { app, bookings, email } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(200);
     expect((await res.json()).status).toBe('cancelled');
@@ -88,6 +93,16 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const sent = email.sent.filter((m) => /cancel/i.test(m.subject));
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe('maya@example.com');
+  });
+
+  it('refuses a finance session — cancelling is founder-only', async () => {
+    const { app, bookings } = makeApp();
+    const b = await book(app);
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(403);
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled'); // untouched
   });
 
   it('401 without any identity', async () => {
@@ -103,21 +118,129 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(403);
   });
 
-  it('403 for an ops session (no payments:act)', async () => {
-    const { app } = makeApp();
+  // Ops MAY cancel now (owner rule 2026-08-02): more than 24h before the trip, OR within 24h of
+  // taking the booking. Every booking created through the API in these tests is seconds old, so
+  // the grace applies and ops is allowed even with no trip date — which is the point of the
+  // grace, since bookings frequently arrive inside 24h of travel. The AGED cases (grace expired,
+  // trip imminent) need a controlled clock and live in domain/reversalWindow.test.ts.
+  it('an ops session may cancel a booking it just took, even with no trip date', async () => {
+    const { app, bookings } = makeApp();
     const b = await book(app);
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('op@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('op@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.cancelledBy).toBe('op@x.com');
   });
 
   it('404 for an unknown booking', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/bookings/no-such/cancel', {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(404);
+  });
+
+  // ── Owner rule, 2026-08-02: ops may reverse up to 24h before the trip ───────────────────
+  // Dates come from futureIsoDate(), never a literal — see docs/known-bugs.md on date bombs.
+  const bookOn = async (app: ReturnType<typeof createApp>, date: string, time = '09:00') => {
+    const res = await app.request('/bookings/single', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...valid, date, time }),
+    });
+    return res.json();
+  };
+  const cancelAs = async (app: ReturnType<typeof createApp>, id: string, who: string, reason = 'Customer called it off') =>
+    app.request(`/admin/bookings/${id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie(who), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+
+  it('an OPS agent may cancel a trip that is more than 24 hours away', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'op@x.com');
+    expect(res.status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  // A trip inside 24h is still reversible by ops HERE only because the booking is fresh. That
+  // combination is exactly the same-day intake case the grace exists for.
+  it('an OPS agent may cancel an imminent trip it just took', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    expect((await cancelAs(app, b.id, 'op@x.com')).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  it('finance may not cancel at all, however fresh the booking', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'fin@x.com');
+    expect(res.status).toBe(403);
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled');
+  });
+
+  it('a FOUNDER may cancel inside 24 hours — never time-limited', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(1), '00:00');
+    expect((await cancelAs(app, b.id, 'f@x.com')).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('cancelled');
+  });
+
+  it('stores the reason and who gave it', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    await cancelAs(app, b.id, 'op@x.com', 'Flight cancelled by the airline');
+    const saved = (await bookings.get(b.id))!;
+    expect(saved.cancellationReason).toBe('Flight cancelled by the airline');
+    expect(saved.cancelledBy).toBe('op@x.com');
+    expect(saved.cancelledAt).toBeTruthy();
+  });
+
+  it('refuses a cancellation with no reason, and changes nothing', async () => {
+    const { app, bookings } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('cancellation_reason_required');
+    expect((await bookings.get(b.id))!.status).not.toBe('cancelled');
+  });
+
+  it('refuses a blank reason — whitespace is not an explanation', async () => {
+    const { app } = makeApp();
+    const b = await bookOn(app, futureIsoDate(30));
+    const res = await cancelAs(app, b.id, 'f@x.com', '   ');
+    expect(res.status).toBe(400);
+  });
+
+  it('the ops time window applies to refunds too, not just cancellation', async () => {
+    const { app } = makeApp();
+    const near = await bookOn(app, futureIsoDate(1), '00:00');
+    const far = await bookOn(app, futureIsoDate(30));
+    const refund = (id: string, who: string) => cookie(who).then((ck) =>
+      app.request(`/admin/bookings/${id}/refunds`, {
+        method: 'POST',
+        headers: { cookie: ck, 'content-type': 'application/json' },
+        body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
+      }));
+    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
+    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
+    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
+    expect((await refund(near.id, 'op@x.com')).status).toBe(409);
+    expect((await refund(far.id, 'op@x.com')).status).toBe(409);
+    // finance has no bookings:operate, so it never reaches the ledger at all.
+    expect((await refund(far.id, 'fin@x.com')).status).toBe(403);
   });
 
   it('409 when the booking cannot be cancelled (already cancelled)', async () => {
@@ -125,7 +248,9 @@ describe('POST /admin/bookings/:id/cancel', () => {
     const b = await book(app);
     await bookings.setStatus(b.id, 'cancelled');
     const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(409);
   });
@@ -166,7 +291,9 @@ describe('POST /admin/jobs/notifications', () => {
   it('200 for a founder session (founder also has admin:jobs)', async () => {
     const { app } = makeApp();
     const res = await app.request('/admin/jobs/notifications', {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(200);
   });
@@ -303,7 +430,11 @@ describe('shared seat release on cancel/refund', () => {
     const { app } = makeSharedApp();
     const b = await (await bookShared(app)).json();
     expect((await bookShared(app)).status).toBe(409); // full while held
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     expect((await bookShared(app)).status).toBe(201); // freed by the cancel
   });
 
@@ -329,7 +460,11 @@ describe('shared seat release on cancel/refund', () => {
     await bookings.setStatus(b.id, 'paid');
     const refund = await captureAndRequestFullRefund(app, payments, b);
     // another traveller takes 3 of the freed seats between the cancel and the refund
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     const other = await departures.holdSeats({ corridorId: 'hill-line', date: shared.date, time: shared.time, seats: 3 });
     expect(other?.seatsBooked).toBe(3);
     const confirmed = await app.request(`/admin/bookings/${b.id}/refunds/${refund.id}/confirm`, {
@@ -347,7 +482,11 @@ describe('shared seat release on cancel/refund', () => {
     const { app, departures } = makeSharedApp();
     const b = await book(app); // a single transfer
     const spy = vi.spyOn(departures, 'releaseSeats');
-    await app.request(`/admin/bookings/${b.id}/cancel`, { method: 'POST', headers: { cookie: await cookie('f@x.com') } });
+    await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
+    });
     expect(spy).not.toHaveBeenCalled();
   });
 });
@@ -405,7 +544,9 @@ describe('POST /admin/bookings/:id/confirm', () => {
     const { app } = makeApp();
     const b = await book(app); // still draft
     const res = await app.request(`/admin/bookings/${b.id}/confirm`, {
-      method: 'POST', headers: { cookie: await cookie('f@x.com') },
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Customer called it off' }),
     });
     expect(res.status).toBe(409);
   });
@@ -684,5 +825,146 @@ describe('mark-paid claims the linked quote', () => {
     });
     expect(res.status).toBe(200);
     expect((await quotes.get(q.id))?.status).toBe('won');
+  });
+});
+
+// ── Burst cap (notification safety rails, slice 1) ─────────────────────────
+describe('POST /admin/jobs/notifications — burst cap', () => {
+  async function seedDueReminders(bookings: InMemoryBookingRepo, n: number) {
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    for (let i = 0; i < n; i++) {
+      const b = await bookings.create({
+        mode: 'single',
+        input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+        total: 5000, amountDueNow: 5000, currency: 'USD',
+      });
+      await bookings.setStatus(b.id, 'payment_pending');
+      await bookings.setStatus(b.id, 'paid');
+    }
+  }
+
+  it('stops at the cap, pages the founder, and reports what it held back', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email, alerts, notifyMaxPerRun: 3 });
+    await seedDueReminders(bookings, 9);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reminders).toBe(3);
+    expect(body.suppressed).toBe(6);
+    expect(email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(3);
+
+    const burst = alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed');
+    expect(burst).toHaveLength(1);
+    expect(burst[0].severity).toBe('critical');
+    expect(burst[0].body).toMatch(/trip_reminder: 6/);
+  });
+
+  it('raises no burst alert on a normal tick', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, notifyMaxPerRun: 25 });
+    await seedDueReminders(bookings, 2);
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect((await res.json()).suppressed).toBe(0);
+    expect(alerts.sent.filter((a) => a.kind === 'notification_burst_suppressed')).toHaveLength(0);
+  });
+});
+
+// ── Outbound mail guard (notification safety rails, slice 2) ───────────────
+describe('EMAIL_ALLOWLIST is enforced end-to-end, not just in the adapter', () => {
+  it('a real customer address is dropped before it reaches the provider', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    // What staging will run: only ceylonhop.com addresses are reachable.
+    const app = createApp({
+      adminApiKey: KEY, auth, bookings, email,
+      emailPolicy: { allowlist: ['@ceylonhop.com'] },
+    });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    // The sweep ran and considered the booking handled — but nothing left the building.
+    // Suppression is deliberately invisible to the caller (see GuardedEmailAdapter): the
+    // send is ledgered, so a later run will NOT retry it.
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(0);
+  });
+});
+
+// ── Dry run (notification safety rails, slice 5) ───────────────────────────
+describe('POST /admin/jobs/notifications?dryRun=1', () => {
+  it('reports the plan and mutates nothing — not the ledger, not the other sweeps', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, departures, email });
+
+    // A reminder that a real tick would send…
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const due = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(due.id, 'payment_pending');
+    await bookings.setStatus(due.id, 'paid');
+
+    // …and a stale shared hold the same tick would normally cancel.
+    await departures.holdSeats({ corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12 });
+    const hold = await bookings.create({
+      mode: 'shared',
+      input: { corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 12, customer: valid.customer },
+      total: 25200, amountDueNow: 25200, currency: 'USD',
+    });
+    (await bookings.get(hold.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+
+    const res = await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.dryRun).toBe(true);
+    expect(body.plan).toEqual([{ reference: due.reference, kind: 'trip_reminder' }]);
+    expect(email.sent).toHaveLength(0);
+    // A dry run is READ-ONLY across the whole tick, not just the mail part.
+    expect((await bookings.get(hold.id))!.status).toBe('draft');
+  });
+
+  it('the real tick still sends afterwards — a dry run consumes nothing', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const email = new FakeEmailAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email });
+    const tomorrow = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const b = await bookings.create({
+      mode: 'single',
+      input: { ...valid, vehicleType: 'car' as const, date: tomorrow, time: '09:00' },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+
+    await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+
+    expect((await res.json()).reminders).toBe(1);
+    expect(email.sent).toHaveLength(1);
+  });
+
+  it('still requires admin:jobs', async () => {
+    const { app } = makeApp();
+    expect((await app.request('/admin/jobs/notifications?dryRun=1', { method: 'POST' })).status).toBe(401);
   });
 });

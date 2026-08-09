@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b92f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="448" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b92k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="502" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M59.0 94.9 Q44.4 97.4 29.3 89.4 Q14.1 81.3 8.1 65.7 Q2.0 50.1 5.8 37.2 Q9.6 24.3 22.5 14.6 Q35.3 4.9 53.7 5.1 Q72.1 5.4 82.7 17.1 Q93.3 28.8 94.4 47.1 Q95.4 65.4 84.5 78.8 Q73.6 92.3 59.0 94.9Z" fill="#0DB9B6"></path>
+<g transform="rotate(-1.62 50 50)">
+  <g class="pass-fill" filter="url(#b92f)"><circle cx="50" cy="44" r="20" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><circle cx="50" cy="44" r="13.5" fill="none" stroke="#F9A429" stroke-width="3.4"></circle><text x="50" y="52.5" font-family="Newsreader,Georgia,serif" font-size="23" font-weight="800" fill="#4A4648" text-anchor="middle">0</text><path d="M23 74c9 5 18 7 27 7s18-2 27-7" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0.1 7.4"></path></g>
+  <g class="pass-ink" filter="url(#b92k)"><circle cx="50" cy="44" r="20" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><circle cx="50" cy="44" r="13.5" fill="none" stroke="#F9A429" stroke-width="3.4"></circle><text x="50" y="52.5" font-family="Newsreader,Georgia,serif" font-size="23" font-weight="800" fill="#4A4648" text-anchor="middle">0</text><path d="M23 74c9 5 18 7 27 7s18-2 27-7" fill="none" stroke="#4A4648" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="0.1 7.4"></path></g>
+</g>
+</svg>

@@ -463,9 +463,9 @@ function syncPlanUrl(){
 // ordered list of place names along the whole route
 function points(){ return routeSeq().map(s=>s.place); }
 
-const PIN_GOOGLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
-const CAR_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg>';
-const VAN_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>';
+const PIN_GOOGLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+const CAR_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4M7 17h.01M17 17h.01"/></svg>';
+const VAN_ICO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10a3 3 0 0 1 3 3v3h1.5a1.5 1.5 0 0 1 1.5 1.5V17H4V7z"/><path d="M14 9h2.4l2.1 3H14V9zM4 12h10"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>';
 function vehiclePriceIcon(){
   const isVan=state.vehicle==='van';
   return `<span class="lm-veh" title="${isVan?'Private AC van':'Private AC car'}" aria-label="${isVan?'Private AC van':'Private AC car'}">${isVan?VAN_ICO:CAR_ICO}</span>`;
@@ -536,7 +536,7 @@ function render(){
           <div class="rb-fields">
             <div class="rb-field"><label>Pick-up</label>
               <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>
-            <div class="rb-divider"><button type="button" class="rb-swap" aria-label="Swap pick-up and drop-off" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></div>
+            <div class="rb-divider"><button type="button" class="rb-swap" aria-label="Swap pick-up and drop-off" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></div>
             <div class="rb-field"><label>Drop-off</label>
               <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>
           </div>
@@ -555,7 +555,7 @@ function render(){
           </div>
         </div>
         <div class="stay-note">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
           <span><b>No intercity travel.</b> With a <b>chauffeur-guide</b>, your car &amp; driver stay with you — at your disposal for local trips (about ${money(DAY_FEE)}/day). With <b>point-to-point transfers</b>, there’s no car needed on these days.</span>
         </div>`;
 
@@ -569,7 +569,7 @@ function render(){
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
             ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(km,price)}</div>`}
-          <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+          <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
         ${isStay?stayBody:transferBody}
@@ -750,6 +750,18 @@ function setStat(id, next){
   if(window.CH && CH.motion) CH.motion.tweenNumber(el, el.textContent, next);
   else el.textContent = next;
 }
+// Places arrive from Google autocomplete as full addresses, so an untouched pick ("Jaffna, Sri
+// Lanka") sat in the route strip beside a hand-typed one ("Colombo city") and the trip read as
+// though it had been assembled by two different people. CH.shortPlace is the SAME shortener ops,
+// the pay page and the emails use — ch-shortplace.js is compiled from api/src/quote/shortPlace.ts
+// by `npm run generate`, so there is one implementation, not a per-surface copy.
+//
+// Falls back to the raw string: a missing script must cost a long label, never a blank itinerary.
+function shortPlaceLabel(place){
+  if(!place) return '';
+  return (window.CH && CH.shortPlace) ? CH.shortPlace(place) : place;
+}
+
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
   let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
@@ -773,12 +785,14 @@ function updateSummary(opts={}){
   // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
-  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : 'None');
+  // "None" read as "this trip has no nights", when it only means no overnight stop has been ADDED
+  // yet. A bare 0 matches its sibling stats (Places 9, Transfer legs 8) and fits the narrow cell.
+  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : '0');
   setStat('st-legs', String(transferLegs));
   setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
   routeEl.innerHTML =
-    seq.map(s=>`<span>${s.place||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
+    seq.map(s=>`<span>${shortPlaceLabel(s.place)||'…'}${s.nights?` <small class="rt-n">${s.nights}n</small>`:''}</span>`).join('<span class="hop"> → </span>');
   routeEl.hidden = !seq.length; // an empty route rendered as a bare grey bar
 
   if(refreshMap) renderMap();
@@ -858,7 +872,7 @@ function renderDatesStep(){
   clearLegDatePops();
   const list=document.getElementById('dates-list');
   list.innerHTML='';
-  const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+  const WARN_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
   const flags=outOfOrderFlags();
   const driveIssue=sameDayDrivingIssue();
   state.legs.forEach((leg,i)=>{
@@ -898,7 +912,7 @@ function renderDatesStep(){
     driveHint.hidden=!driveIssue;
     driveHint.classList.toggle('is-blocking', !!hardDriveBlock);
     if(driveIssue){
-      driveHint.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> `+
+      driveHint.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> `+
         (hardDriveBlock
           ? `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers \u2014 more than is safe or enjoyable in one go. Move one of them to another date and you\u2019re all set.`
           : `That day has about ${minutesText(driveIssue.minutes)} of driving across ${driveIssue.count} transfers. It is a long travel day, so we recommend splitting it if your schedule allows.`);
