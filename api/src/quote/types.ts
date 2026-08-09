@@ -92,7 +92,7 @@ export interface QuoteResult {
   // `discount` is present whenever a discount was REQUESTED, even if both limits reduced it to
   // zero, so a caller can tell "capped to nothing" from "never asked".
   discountCents?: number;
-  discountedSubtotalCents?: number;
+  totalBeforeDiscountCents?: number;
   discount?: ResolvedDiscount;
   rateCardVersion: string;
   warnings: string[];

@@ -31,19 +31,25 @@ describe('quote() with a manual discount', () => {
   it('emits one tagged negative line item and leaves subtotalCents gross', () => {
     const base = quote(CAR_200KM);
     const r = quote(CAR_200KM, undefined, ask(1000));
-    expect(r.subtotalCents).toBe(base.subtotalCents); // still the PRE-discount subtotal
+    expect(r.subtotalCents).toBe(base.subtotalCents); // untouched by the discount
     expect(r.discountCents).toBe(1000);
-    expect(r.discountedSubtotalCents).toBe(base.subtotalCents - 1000);
+    // The quoted price, then the discount off it — these reconcile EXACTLY, which is the whole
+    // point of finishing before rather than after.
+    expect(r.totalBeforeDiscountCents).toBe(base.totalCents);
+    expect(r.totalCents).toBe(base.totalCents - 1000);
     expect(r.lineItems).toContainEqual({
       label: 'Discount', amountCents: -1000, meta: { kind: 'discount' },
     });
   });
 
-  it('finishes from the DISCOUNTED subtotal, not the gross one', () => {
+  it('leaves the undiscounted price completely untouched', () => {
+    // Finishing sees exactly what it always saw, so the founder's figure comes off the quoted
+    // price verbatim: $10.00 off $62.00 is $52.00, not $51.99.
+    const base = quote(CAR_200KM);
     const r = quote(CAR_200KM, undefined, ask(1000));
     const sum = r.lineItems.reduce((s, li) => s + li.amountCents, 0);
     expect(sum).toBe(r.totalCents); // line items still reconcile to the total
-    expect(r.totalCents).toBeLessThan(quote(CAR_200KM).totalCents);
+    expect(base.totalCents - r.totalCents).toBe(1000); // exactly what was typed
   });
 
   it('refuses to take a van below its $49.99 minimum', () => {

@@ -26,8 +26,8 @@ export interface ResolvedDiscount {
   /** Cents for `fixed`, basis points for `percentage` — the founder's input, kept for the audit row. */
   value: number;
   reason: string;
-  /** The gross subtotal this was resolved against. */
-  subtotalCents: number;
+  /** The finished total this was resolved against — what the customer was quoted. */
+  quotedTotalCents: number;
   /** What the founder asked for, before either limit. */
   requestedCents: number;
   /** What actually comes off. Always `0 <= appliedCents <= requestedCents`. */
@@ -51,10 +51,12 @@ function assertCents(n: number): void {
  */
 export function resolveDiscount(
   req: DiscountRequest,
-  subtotalCents: number,
+  /** The FINISHED total — the price the customer was actually quoted. Finishing runs before the
+   *  discount (owner, 2026-08-09) so the founder negotiates off the number that was sent. */
+  quotedTotalCents: number,
   protectedMinimumCents: number,
 ): ResolvedDiscount {
-  assertCents(subtotalCents);
+  assertCents(quotedTotalCents);
   assertCents(protectedMinimumCents);
   if (typeof req.reason !== 'string' || req.reason.trim() === '') throw new Error('INVALID_DISCOUNT');
 
@@ -64,10 +66,10 @@ export function resolveDiscount(
   // Round half up, in integer cents — never floating point money.
   const requestedCents = req.method === 'fixed'
     ? value
-    : Math.floor((subtotalCents * value + 5_000) / 10_000);
+    : Math.floor((quotedTotalCents * value + 5_000) / 10_000);
 
-  const percentageCap = Math.floor((subtotalCents * MAX_DISCOUNT_PCT) / 100);
-  const floorHeadroom = Math.max(0, subtotalCents - protectedMinimumCents);
+  const percentageCap = Math.floor((quotedTotalCents * MAX_DISCOUNT_PCT) / 100);
+  const floorHeadroom = Math.max(0, quotedTotalCents - protectedMinimumCents);
   const appliedCents = Math.min(requestedCents, percentageCap, floorHeadroom);
 
   // Only report a limit when one actually reduced the request. On a tie the floor is named: it is
@@ -80,7 +82,7 @@ export function resolveDiscount(
     method: req.method,
     value,
     reason: req.reason.trim(),
-    subtotalCents,
+    quotedTotalCents,
     requestedCents,
     appliedCents,
     capReason,

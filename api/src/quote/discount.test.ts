@@ -2,7 +2,11 @@
 // Task 2 of docs/superpowers/plans/2026-08-09-founder-manual-discounts.md.
 //
 // Unlike goldens.test.ts — which SNAPSHOTS what the engine already does — every expectation here
-// is a hand-computed constant asserting what the rule SHOULD do (spec §5.2). The arithmetic is
+// is a hand-computed constant asserting what the rule SHOULD do (spec §5.2).
+//
+// The second argument is the FINISHED total — the price the customer was quoted. Finishing runs
+// BEFORE the discount (owner, 2026-08-09) so a founder negotiates off the number that was sent,
+// and quoted − discount === charged exactly. The arithmetic is
 // written out in each case so a reviewer can check it without running anything.
 import { describe, it, expect } from 'vitest';
 import { resolveDiscount, MAX_DISCOUNT_PCT } from './discount';
@@ -105,7 +109,7 @@ describe('resolveDiscount() — the whole rule is two limits', () => {
     const r = resolveDiscount(pct(1500), 20000, 2900);
     expect(r.method).toBe('percentage');
     expect(r.value).toBe(1500);
-    expect(r.subtotalCents).toBe(20000);
+    expect(r.quotedTotalCents).toBe(20000);
   });
 
   it('rejects malformed input rather than pricing it', () => {
