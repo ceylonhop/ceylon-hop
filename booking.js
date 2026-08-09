@@ -1858,6 +1858,50 @@ async function createApiBooking(){
   return await res.json();
 }
 
+// The pass used to print stops[0] → stops[last], so everything between them vanished: a
+// Colombo city · Horton Plains · Peliyagoda booking read "Colombo city → Peliyagoda" on the
+// customer's own keepsake (owner, 2026-08-09 — "feels wrong and deceptive"). pay.html had
+// already refused to do this and fell back to the trip title, reasoning that "picking two of
+// its stops would imply the rest don't exist"; the confirmation email lists every stop. This
+// shows the real chain instead of either compromise.
+// Past two intermediate stops the names stop fitting on one line, so the middle collapses to
+// a count — still honest that there is more, which dropping them silently was not.
+// Built as DOM nodes rather than an innerHTML template because stop names come straight from
+// the URL's ?stops= parameter.
+function renderPassRoute(stops, trip){
+  const row = document.querySelector('#pass .pass-route');
+  if(!row || !stops || !stops.length) return;
+  const mid = stops.slice(1,-1);
+  const cells = [{ name: stops[0], label: trip?'Trip start':'From', id: 'pass-from' }];
+  if(mid.length && mid.length<=2) mid.forEach(s=>cells.push({ name:s, label:'Stop' }));
+  else if(mid.length>2) cells.push({ name:'+'+mid.length+' stops', label:'Along the way' });
+  if(stops.length>1) cells.push({ name: stops[stops.length-1], label: trip?'Trip end':'To', id:'pass-to', end:true });
+
+  row.innerHTML='';
+  // marks the >2-cell layout so the page-local narrow-screen rule can wrap it; a plain
+  // two-endpoint pass keeps exactly the shared styling it has always had, here and on pay.html
+  row.classList.toggle('is-chain', cells.length>2);
+  cells.forEach((c,i)=>{
+    if(i){
+      const d=document.createElement('div');
+      d.className='dash';
+      d.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+      row.appendChild(d);
+    }
+    const el=document.createElement('div');
+    el.className='pt';
+    if(c.id) el.id=c.id;
+    if(c.end) el.style.textAlign='right';
+    // two endpoints keep the original 1.5rem; a longer chain gives up some size to stay on one line
+    if(cells.length>2) el.style.fontSize='1.15rem';
+    el.appendChild(document.createTextNode(c.name));
+    const s=document.createElement('small');
+    s.textContent=c.label;
+    el.appendChild(s);
+    row.appendChild(el);
+  });
+}
+
 // Render the confirmation / boarding pass. Takes the created booking (or null in demo
 // mode). Booking creation + payment happen in the pay-btn handler before this runs.
 function finalizeBooking(apiBooking){
@@ -1868,8 +1912,7 @@ function finalizeBooking(apiBooking){
   const dateText = state.flexDate ? 'To confirm' : (state.date?state.date.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}):'To confirm');
   const timeText = state.flexTime ? 'To confirm' : (state.dep?fmtTime(state.dep):'To confirm');
   document.getElementById('pass-brand').innerHTML=cmark(26,'var(--accent)')+'<span>Ceylon Hop</span>';
-  document.getElementById('pass-from').innerHTML=`${r.stops[0]}<small>${isTrip?'Trip start':'From'}</small>`;
-  document.getElementById('pass-to').innerHTML=`${r.stops[r.stops.length-1]}<small>${isTrip?'Trip end':'To'}</small>`;
+  renderPassRoute(r.stops, isTrip);
   document.getElementById('pass-date').textContent=dateText;
   document.getElementById('pass-time').textContent=timeText;
   document.getElementById('pass-pax').textContent=`${state.ad} adult${state.ad>1?'s':''}${state.ch?', '+state.ch+' '+(state.ch>1?'children':'child'):''}`;

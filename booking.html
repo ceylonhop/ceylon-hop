@@ -613,6 +613,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     .nav-btns{align-items:stretch}
     .nav-btns .btn{white-space:normal}
   }
+
+  /* A multi-stop pass shows its whole chain (booking.js renderPassRoute) — three or more
+     names where the shared .pass-route only ever had to fit two, which runs past the card on
+     a phone. Stack it there instead: wrapping the row left an arrow dangling at the line
+     break, pointing at nothing, and the column reads the way the confirmation email's
+     start/stop/end list already does.
+     Page-local and gated on .is-chain, so a two-endpoint pass — every pass on pay.html —
+     keeps the shared styling untouched. */
+  @media(max-width:640px){
+    #pass .pass-route.is-chain{flex-direction:column;align-items:flex-start;gap:10px}
+    #pass .pass-route.is-chain .dash{display:none}
+    #pass .pass-route.is-chain .pt{font-size:1.15rem!important;text-align:left!important}
+  }
 </style>
 </head>
 <body>
