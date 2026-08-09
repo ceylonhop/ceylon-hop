@@ -3,16 +3,20 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export type OpsRole = 'founder' | 'finance' | 'ops' | 'system';
 export type OpsAction =
   | 'quote:manage' | 'quote:approve' | 'margin:view' | 'bookings:operate'
-  | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view';
+  | 'bookings:read' | 'payments:act' | 'payments:reverse' | 'admin:jobs' | 'analytics:view'
+  | 'discount:apply_manual';
 
 // The capability matrix as data (spec §3). Adding a capability is one row here.
 // quote:approve — the maker-checker gate: only the founder can mark a quote ready to send.
+// discount:apply_manual — reducing a price the customer will be charged. Founder only: it is the
+// same class of authority as quote:approve and payments:reverse, and no other role may give money
+// away. Deliberately NOT bundled into quote:manage, which ops and finance both hold.
 // payments:reverse — UNDOING a sale: cancelling a booking or refunding money. Founder only
 // (owner, 2026-08-02). Split out of payments:act deliberately: finance still needs to RECORD
 // money (mark-paid) and read refund history, but calling a customer's trip off and giving
 // their money back are the two actions that cannot be undone by anyone else.
 const CAPABILITIES: Record<OpsRole, ReadonlySet<OpsAction>> = {
-  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view']),
+  founder: new Set(['quote:manage', 'quote:approve', 'margin:view', 'bookings:operate', 'bookings:read', 'payments:act', 'payments:reverse', 'admin:jobs', 'analytics:view', 'discount:apply_manual']),
   finance: new Set(['quote:manage', 'bookings:read', 'payments:act']),
   ops: new Set(['quote:manage', 'bookings:operate', 'bookings:read']),
   system: new Set(['admin:jobs']),
