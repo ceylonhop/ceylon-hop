@@ -73,6 +73,41 @@ describe('POST /errors/client', () => {
     expect(inner.sent).toHaveLength(1);
   });
 
+  // ── property attribution (2026-08-07) ────────────────────────────────────────────────
+  // Five customer-facing properties beacon into this one endpoint. Until now every alert
+  // read "Front-end error: …" with no way to tell a broken PAYMENT page from a broken blog
+  // post — so the one that costs money looked exactly like the one that doesn't.
+  it('names the property in the alert title so a payment break is obvious at a glance', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({ property: 'pay', message: 'checkout start failed' }));
+    expect(inner.sent[0].title).toContain('[pay]');
+  });
+
+  it('accepts a beacon with no property — older cached pages are still in the wild', async () => {
+    const { inner, app } = mk();
+    const res = await post(app, JSON.stringify({ message: 'from a cached page' }));
+    expect(res.status).toBe(204);
+    expect(inner.sent).toHaveLength(1);
+    expect(inner.sent[0].title).toContain('[site]');
+  });
+
+  it('rejects a property outside the known set rather than tagging on whatever arrives', async () => {
+    // This value becomes a Sentry tag and an alert subject; an open string field is a way to
+    // write arbitrary text into both from an unauthenticated public endpoint.
+    const { inner, app } = mk();
+    expect((await post(app, JSON.stringify({ property: 'ceo@example.com', message: 'x' }))).status).toBe(400);
+    expect(inner.sent).toHaveLength(0);
+  });
+
+  it('keeps the same property separate in the throttle, so one noisy page cannot mask another', async () => {
+    const { inner, app } = mk();
+    await post(app, JSON.stringify({ property: 'site', message: 'shared boom' }));
+    await post(app, JSON.stringify({ property: 'pay', message: 'shared boom' }));
+    // Identical message, different property: both must get through. Otherwise a chatty
+    // marketing-page error silently swallows the same error on the payment page.
+    expect(inner.sent).toHaveLength(2);
+  });
+
   it('is rate limited per IP like other public write endpoints', async () => {
     const { app } = mk();
     let limited = false;

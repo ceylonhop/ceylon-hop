@@ -1,12 +1,29 @@
 # Discounts and promotions across quotes, bookings, and customer surfaces
 
 **Date:** 2026-07-15
-**Status:** Product decisions complete; one cost-data input required before M18.2.
+**Status:** Product decisions complete for the original scope; **two owner decisions and one
+cost-data input are open before M18.2** — see §18.
+**Revision 3 (2026-08-09) — codebase reconciliation, NOT owner-approved.** Amends the spec to
+match what shipped between 2026-07-16 and 2026-08-09. No original owner decision is reversed
+here. Changes: psychological finishing rewritten to the two-limit / $10-grid rule the owner set
+on 2026-07-26 (§7.5); route identity moved off never-built place IDs onto `canonPlace` canon
+keys (§5.1, §11.1); via-stops identity settled (§5.1); partial-leg pay links recorded as a
+second money path out of a quote and marked OPEN (§6, §9.4, §18); parts of M19.2 and all of
+M21.2 marked **already delivered** by SH4/SH5 and quote version history (§11.4, §12.3); the
+new customer surfaces added to the parity set (§13.4, §14.1); §17 resequenced behind per-leg
+sightseeing attribution; hot zones corrected from "unbuilt" to half-shipped, with Phase 3 made
+a prerequisite for public automatic promotions (§18.2); `estimatedCostCents` recorded as not
+being a field (§6); new §18 collects the open items.
 Amended 2026-07-16 (owner-approved, pre-implementation): quote-shape conditions
 (minimum trip km, minimum leg count) and per-family total redemption budgets.
-**Milestones:** M18-M22
+**Milestones:** M18-M22 (M19.2 and M21.2 substantially delivered already — see §11.4/§12.3;
+the build plan needs re-cutting before M18.1 starts)
 **Depends on:** M11 authoritative pricing, M12 Ops/RBAC, the seven-day quote lock, and
 the psychological-pricing contract
+**Superseded dependency:** M17.5 money & checkout security hardening was the release gate for
+this feature. SH1–SH8 merged (PRs #192–#200); the refund half landed separately (#351, #352,
+#357, #360, #404 and `2026-08-07-ops-refund-methods-design.md`). Treat the gate as met pending
+a formal pass over that plan's final checklist.
 
 ## 1. Problem
 
@@ -73,7 +90,8 @@ and founders can stop new promotion creation without invalidating already locked
 | Public lock duration | Seven days, fixed from creation and never extended by edits |
 | Redemption limits | Optional total budget per rule family (revised 2026-07-16; supersedes the launch deferral); still no per-customer or per-device limits |
 | Quote state | Discounted is derived display state, not a lifecycle status |
-| Payment policy | Full payment remains unchanged |
+| Payment policy | Full payment of whatever is sold remains unchanged — no deposits, no instalments (see the amended row below) |
+| Partial-leg pay links (2026-08-09) | **OPEN — owner decision required (§18.1).** Partial-leg links shipped after this spec was written. Whether a discounted quote may mint a partial link, and how a discount behaves over a subset of legs, is undecided. Until it is decided, a discounted quote must refuse to mint a partial link. |
 
 Only founders can create, version, or deactivate promotion rules; apply, replace, or
 remove a manual discount; or approve a discounted Ops quote. A customer triggering a
@@ -116,6 +134,13 @@ valid rule is using a founder-authorized rule and receives no staff capability.
 - Gift cards, account credits, referrals, loyalty balances, and stored-value vouchers.
 - Surge pricing, partial-refund allocation, and accounting integration.
 - A generic organization-wide audit framework. This feature records its own events.
+- **Discounted partial-leg pay links (added 2026-08-09).** Allocating one discount across a
+  ticked subset of legs is not designed. A discounted quote refuses to mint a partial link
+  until §18.1 is decided. This is a hard gate in the code, not a UI omission.
+- **Deposits and balance payments.** `2026-07-23-deposits-balance-payments-design.md` is an
+  approved, unbuilt design that deliberately breaks the same `amountDueNowCents = totalCents`
+  invariant this spec relies on (§6). The two features must not be built concurrently; see
+  §18.2 for the sequencing decision.
 
 ## 5. Product and route identity
 
@@ -123,18 +148,38 @@ Promotion matching must not depend on free-text place labels.
 
 ### 5.1 Route context
 
-A single private route carries canonical `fromPlaceId` and `toPlaceId` separately from
-the customer's exact pickup and drop-off addresses. A one-way rule matches only the
-ordered pair. A both-directions rule matches either ordering.
+**Amended 2026-08-09.** The original text specified canonical `fromPlaceId` / `toPlaceId`.
+**No place-ID concept exists in the codebase and none is planned.** What shipped instead is
+`canonPlace(s)` string canonicalisation in `api/src/adapters/maps.ts` plus the `KNOWN_PLACES`
+table, hardened by positive location identification
+(`2026-08-02-positive-location-identification-design.md`, the `place_resolutions` table keyed
+on `canon_key`) and one server-side source of short place labels (PRs #321/#322). Route
+identity is therefore built on **canon keys**, not IDs. Introducing place IDs solely for
+promotions is explicitly rejected: it would be a second identity system alongside the one the
+pricing path already trusts.
+
+A single private route carries a canonical `fromCanonKey` and `toCanonKey` — `canonPlace()` of
+the resolved place — separately from the customer's exact pickup and drop-off addresses. A
+one-way rule matches only the ordered pair. A both-directions rule matches either ordering.
 
 The route context originates from the route/search selection and survives entry of an
 exact hotel or airport address. If the customer changes the logical origin or
 destination, the website clears or replaces that context and the server reprices.
-Arbitrary free-text trips without recognized place IDs do not qualify for an automatic
-route rule; a founder may still discount them manually.
+Trips whose endpoints do not resolve to a `KNOWN_PLACES` canon key — free text, or a raw
+lat/lng pickup — do not qualify for an automatic route rule; a founder may still discount them
+manually. This is the same fail-closed posture as the km condition (§7.1): an unresolved
+endpoint suppresses the promotion rather than guessing.
 
 A route promotion targets a one-leg route quote. It does not become a full-tour discount
 merely because the same ordered pair appears inside a custom multi-leg itinerary.
+
+**Via stops break route identity (added 2026-08-09).** Multi-stop rides
+(`2026-07-20-multi-stop-rides-design.md`) shipped after this spec was written, so a *single*
+leg can now carry `via_stops`. A leg with any via stop is **not** a match for a route rule on
+its endpoints: Colombo → Kandy *via Pinnawala* is a different, longer, more expensive trip than
+Colombo → Kandy, and a founder advertising a discount on the latter did not offer it on the
+former. A rule intended to cover a detour is authored as a tour, or applied manually. The
+matcher compares the full ordered stop chain, not just first and last.
 
 ### 5.2 Named-tour context
 
@@ -162,7 +207,7 @@ clients do not independently derive a second monetary result.
 | --- | --- |
 | Gross subtotal | Existing engine subtotal after core fares and extras, before discount and finishing |
 | Eligible subtotal | Portion against which the chosen discount may be calculated |
-| Estimated cost | Existing engine cost estimate for the complete quote, never exposed publicly |
+| Estimated cost | Existing engine cost estimate for the complete quote, never exposed publicly. **Amended 2026-08-09: this is not a field.** `engine.ts` computes `costCents` locally and exposes only `marginEstimateCents = totalCents - costCents` on `QuoteResult` — which is `null` for shared and is stripped server-side for non-founders (`stripQuoteMargin()`). The cost cap needs cost itself, inside the engine, before finishing. M18.2 surfaces it as a first-class internal value rather than back-deriving it from a founder-only, nullable field |
 | Requested discount | Amount produced by the rule or manual request before caps |
 | Applied discount | Actual positive cents removed after all caps |
 | Discounted subtotal | Gross subtotal minus applied discount |
@@ -178,6 +223,23 @@ amountDueNowCents = totalCents
 totalCents >= estimatedCostCents
 ```
 
+**Amended 2026-08-09 — `amountDueNowCents = totalCents` is no longer universally true.**
+The engine still hard-codes it (`api/src/quote/engine.ts:142`), but two paths sit outside the
+engine and already do, or will, charge less than the quote total:
+
+- **Partial-leg pay links (shipped).** `quotes.sold_cents` freezes a trimmed-sale amount and
+  `api/src/routes/quotePay.ts` books at `total = amountDueNow = soldCents`. This is a *smaller
+  sale*, not a part-payment — the unticked legs are never sold — so the equation still holds
+  for the booking that results, but it holds against a `totalCents` the discount engine never
+  produced. See §9.4 and the open item at §18.1.
+- **Deposits (approved, unbuilt).** These deliberately introduce `amountDueNow < total` for a
+  booking that is genuinely part-paid. See §18.2.
+
+The invariant as written therefore scopes to **one engine-priced quote converting in full**.
+Any path that charges an amount the engine did not author must state its own equation and
+prove the below-cost guard (`totalCents >= estimatedCostCents`) separately — the cost floor is
+the one part of the contract that admits no exception on any path.
+
 `QuoteResult.subtotalCents` keeps its current pre-finishing meaning and becomes the
 gross, pre-discount subtotal. Existing interfaces gain only additive optional fields
 until the migration is fully deployed:
@@ -192,6 +254,24 @@ The internal line-item order is existing core items, existing extras, one negati
 customer-facing discount item, then the existing internal finishing item. The complete
 line-item sum equals `totalCents`. Customer renderers show the friendly discount row but
 continue hiding the internal finishing-policy label.
+
+> **⚠ Amended 2026-08-09 — this ordering, as written, breaks a shipped money path.**
+> `api/src/quote/paySelection.ts` parses `result.lineItems` **positionally**: the first
+> `engine.legs.length` items are legs, "everything after the legs is an extra, except the
+> finishing adjustment," which it drops by matching `meta.kind === 'price_adjustment'`. Its own
+> comment states "position is the contract."
+>
+> A negative discount item placed between the extras and the finishing item therefore falls
+> inside that slice, survives the filter, and is mapped as an **extra** with a positional index
+> that no longer aligns with `engine.extras`. Consequences on a private quote: the hosted pay
+> page (`quotePay.ts:72`) shows a negative, tickable "extra"; `extraIndexes` in a stored
+> `pay_link_selection` silently refer to the wrong charge; unticking the discount makes a
+> partial link charge **more** than the quote; and `isFullSelection` mis-decides whether to use
+> the verbatim total. This reaches the customer, not just link minting.
+>
+> §18.5 records the decision. Whatever is chosen, M18.2 may not emit a discount line item into
+> `lineItems` until `paySelection.ts` has been made explicitly aware of it, with a test that
+> mints and prices a partial link on a discounted quote.
 
 ## 7. Eligibility, calculation, and winner selection
 
@@ -292,11 +372,33 @@ The order is fixed:
 core pricing -> select/apply one discount -> psychological finishing -> amount due
 ```
 
-Finishing's 2.5% reduction limit is calculated from the discounted subtotal. For an
-explicit discount, its downward minimum is estimated cost rather than the ordinary
-sell-price fare floor, because the founder may intentionally cross the sell floor.
-Finishing may round upward. It may never reduce the final total below estimated cost;
-at cost it returns unchanged.
+**Rewritten 2026-08-09.** The original text — "finishing's 2.5% reduction limit is calculated
+from the discounted subtotal" — describes a rule the owner replaced on 2026-07-26, after a
+$1,842.77 chauffeur quote finished at $1,799.00 and gave away $43.77 because 2.5% of a large
+number is a lot of money. `api/src/quote/priceFinish.ts` now enforces **two** limits, and a
+downward finish must clear both:
+
+- the proportional cap, `maxReductionBps` (which protects small totals); and
+- an absolute cap, `MAX_REDUCTION_CENTS = $10` (which protects large ones).
+
+The charm target is the "…9.00" price on a **fixed $10 grid**, not a grid that widens with
+magnitude. Owner rule, 2026-07-26: *round to the nearest $10 and never give away more than $10.*
+
+For discounts this is strictly good news — the giveaway below the discounted subtotal is
+bounded by construction at $10 regardless of quote size — but three consequences must be built
+and tested deliberately:
+
+- Both limits are computed from the **discounted** subtotal, not the gross. A discount that
+  moves the subtotal across a $10 grid boundary changes which charm candidate finishing picks;
+  that is expected, and the golden fixtures must pin it rather than treat it as drift.
+- For an explicit discount, finishing's downward minimum is estimated cost rather than the
+  ordinary sell-price fare floor, because the founder may intentionally cross the sell floor.
+  This is unchanged, and is passed as `minimumAllowedCents`.
+- Finishing may round upward. It may never reduce the final total below estimated cost; at cost
+  it returns unchanged.
+
+Any M18.1 fixture asserting the old 2.5%-only behaviour, or a magnitude-widening charm
+interval, is asserting behaviour that no longer exists.
 
 Shared remains outside both public promotions and psychological finishing.
 
@@ -443,6 +545,17 @@ authoritative result has `discountCents > 0`; no `discounted` lifecycle state is
   one idempotent Postgres transaction.
 - Existing `quotes.converted_booking_id` is made unique and remains the sole
   quote-to-booking link; no duplicate `bookings.source_quote_id` is added.
+  **Delivered** — the unique constraint shipped with SH5 (§11.4).
+- **There is a second conversion path (added 2026-08-09).** `api/src/routes/quotePay.ts`
+  converts an Ops quote to a booking through a pay link, independently of
+  `POST /bookings/from-quote-v2`. It charges `soldCents ?? totalCents` and does not consult a
+  discount snapshot. Every guarantee in this section — frozen snapshot adoption, the
+  `promotion_exhausted` budget re-check under the family advisory lock, one idempotent
+  transaction, unique conversion link — must hold on **both** paths or the pay-link path must
+  refuse discounted quotes outright. Until §18.1 is decided, it refuses: minting a pay link
+  from a quote with an active `quote_discounts` row fails closed. Silently charging a
+  discounted quote its undiscounted total, or its discounted total without consuming budget,
+  are both unacceptable outcomes and both are reachable if this is left implicit.
 - Checkout charges the booking's stored `amountDueNow`; discounts are never recalculated
   at checkout or webhook time.
 - PayHere, payment row, confirmation, email, and customer view must equal the frozen
@@ -488,7 +601,7 @@ Each row is an immutable rule version:
 | `activation` | `automatic` or `code` |
 | `code_normalized` | nullable; required only for code activation |
 | `scope` | `sitewide`, `route`, or `tour` |
-| `route_from_place_id`, `route_to_place_id` | nullable canonical IDs; required for route |
+| `route_from_canon_key`, `route_to_canon_key` | nullable `canonPlace()` keys; required for route. **Renamed 2026-08-09** from `route_from_place_id`/`route_to_place_id` — no place-ID concept exists (§5.1) |
 | `route_direction` | nullable `one_way` or `both_ways` |
 | `tour_id`, `tour_route_fingerprint` | nullable; required for tour |
 | `customer_label` | non-empty public label |
@@ -543,10 +656,31 @@ customer PII, and signed access tokens are not written to logs.
 
 ### 11.4 Existing tables
 
+**Amended 2026-08-09 — every schema change in this subsection has already shipped**, built by
+other features between 2026-07-27 and 2026-08-08. M19.2 must be re-cut to what actually
+remains: `quote_discounts` (§11.2) and the discount-aware projections. Do not re-propose the
+columns below.
+
 Add to `quotes`:
 
-- `revision integer not null default 1` for optimistic concurrency.
-- A unique index on nullable `converted_booking_id`.
+- ~~`revision integer not null default 1` for optimistic concurrency.~~ **Delivered** —
+  `api/src/db/schema.ts`, shipped by quote version history (`2026-08-05-quote-history-design.md`,
+  PRs #308/#311). Verify it is actually enforced as an optimistic-concurrency token on the Ops
+  save path before M20.2 depends on it; the history feature needed a counter, which is a weaker
+  requirement than a 409-on-stale gate.
+- ~~A unique index on nullable `converted_booking_id`.~~ **Delivered** —
+  `quotes_converted_booking_id_unique`, shipped by SH5.
+
+`quotes` also gained, from features this spec did not anticipate: `pay_link_selection`,
+`sold_cents`, `pay_link_seq` (partial-leg links — §18.1); `customer_total_cents`,
+`customer_total_at`, `customer_total_via` (price-drift indicator); `offer_valid_until`; and
+`access_token_digest`. The price-drift columns record *the total the customer was last quoted*
+— once discounts exist, that figure is a discounted total, and the drift indicator will compare
+a discounted total against a fresh undiscounted one unless it is made discount-aware. Add that
+to M22.
+
+A sibling table `quote_revisions` now stores one row per superseded quote state. `discount_events`
+(§11.3) must be reconciled against it rather than duplicating the quote-side audit trail.
 
 Canonical intent/fingerprint, promotion snapshot, locked FX, and server engine I/O stay
 inside the existing request/result snapshots unless query requirements later justify a
@@ -554,14 +688,18 @@ column. The web edit credential is signed and is never stored in plaintext.
 
 Add nullable, legacy-compatible fields to `bookings`:
 
-- `subtotal integer`.
-- `discount_total integer`.
-- `pricing_snapshot_json jsonb`.
+- ~~`subtotal integer`.~~ **Delivered** — migration `0026`, SH5.
+- ~~`discount_total integer`.~~ **Delivered** — migration `0026`, SH5. Currently hard-coded to
+  `0` at `api/src/db/quoteConversionRepo.ts:169` with a comment reserving it for this feature.
+  That constant is the seam M19 writes to.
+- ~~`pricing_snapshot_json jsonb`.~~ **Delivered** — migration `0026`, SH5.
 
 Existing `total`, `amount_due_now`, and `currency` remain the payment contract. A null
 snapshot means legacy/no-discount. Money checks are non-negative; application and
 integration tests enforce the cross-field equation. The booking pricing snapshot is
-immutable after creation.
+immutable after creation. A `bookings` check constraint already enforces
+`amount_due_now is null or (amount_due_now >= 0 and amount_due_now <= total)`; the
+discount equation constraint is added alongside it, not instead of it.
 
 No `discount_redemptions` table is added. Budget enforcement (§7.6) counts committed
 conversions — converted quotes whose active `quote_discounts` row references a version
@@ -606,6 +744,15 @@ applied amounts are never trusted.
 POST /quote/v2/lock
 PUT  /quote/v2/:id
 ```
+
+**Amended 2026-08-09 — both endpoints already exist.** SH4 built them
+(`api/src/routes/quote.ts:161` and `:199`), with the signed access token
+(`digestAccessToken`, `quotes.access_token_digest`), the `revision` column, and the seven-day
+expiry fixed at creation (`quote.ts:173`), behind the `QUOTE_V2_ENABLED` flag. **M21.2 is
+delivered.** What remains of M21.2 is additive: accept an optional promo code on create,
+evaluate candidates on each edit, and return the applied-promotion label and the discount
+errors below. The build plan's note that "SH4/SH5 must be reconciled with M21.2/M21.4"
+resolves in SH4's favour — extend it, do not rebuild it.
 
 Create accepts canonical private/chauffeur intent plus optional promo code, never
 client-authored distance, cost, or totals. Update requires signed bearer token and
@@ -700,6 +847,21 @@ Ops booking detail, checkout, PayHere, confirmation, customer booking view, and 
 render from the frozen booking snapshot. No surface recalculates a discount or accepts a
 client-authored amount.
 
+**Amended 2026-08-09 — the surface list above is incomplete.** Five customer-facing money
+renderers shipped after this spec was written, and the "agree to the cent from one stored
+snapshot" goal (§2) now spans all of them:
+
+| Surface | File | Note |
+| --- | --- | --- |
+| Customer quote page `/q` | `api/src/routes/quoteView.ts`, `api/src/quote/customerQuoteView.ts` | Read-only proposal page (PR #327). Renders the quote total, or `soldCents` on a partial link |
+| Quote card | `api/src/routes/quoteCard.ts` | |
+| Pay card | `api/src/routes/payCard.ts` | |
+| Share card (image) | `api/src/routes/shareCard.ts`, `shareCardImage.ts` | **Renders money into a PNG.** A stale or wrong figure here cannot be corrected by a reload, and it is the surface most likely to be forwarded |
+| Hosted pay page | `api/src/routes/quotePay.ts` | The second conversion path — see §9.4 |
+
+Each is added to the cross-surface golden-fixture set (§14.1). The share-card image needs its
+own assertion on the rendered figure, not just on the data passed to the renderer.
+
 ## 14. Accuracy and anti-drift gates
 
 ### 14.1 Permanent zero-discount compatibility
@@ -717,6 +879,27 @@ Before production behavior changes, commit independent golden fixtures for curre
 Expected values are reviewed constants, not generated by the implementation under test.
 Every later step proves that omitting a discount leaves existing fields and totals
 cent-identical.
+
+**Amended 2026-08-09 — baseline moved; fixtures must be written against current values.**
+M18.1 freezes today's behaviour, so it has to freeze *today's*, not 2026-07-15's:
+
+- **Finishing** — the two-limit / fixed-$10-grid rule of 2026-07-26 (§7.5), not the old
+  2.5%-only, magnitude-widening one.
+- **Van minimum fare is $49.99**, not $50.00 (PR #349). Any floor fixture carried over from
+  before 2026-08-07 is wrong by a cent, which is exactly the class of error this gate exists
+  to catch.
+- **Product labelling** — the chauffeur product was renamed twice in two days (PR #336
+  "Chauffeur & guide" → "Chauffeur Service", then PR #346 → "Chauffeur-guide"). Settle the
+  label before fixtures encode it; a fixture that pins customer copy will churn otherwise.
+- **Multi-stop legs with `via_stops`**, and a leg-count/km case per §5.1's via-stop rule.
+- **The five surfaces added in §13.4**, including the share-card image.
+- **Partial-leg pay link at `sold_cents`** — the undiscounted baseline for §18.1, so that
+  whatever is decided there can be proved cent-identical for the no-discount case.
+
+Reconcile the leg-count definition (§7.1) against `api/src/db/checkBookingLegs.ts` rather than
+deriving a second count. Booking legs shipped 2026-08-08 with an explicit note that leg
+*counts* are never compared across derivations — a promotion condition that silently invents a
+third counting rule will disagree with the reconciliation gate.
 
 ### 14.2 Required promotion and discount tests
 
@@ -812,3 +995,165 @@ creation flags remain off and discounted requests fail closed.
 Finite redemption limits, cross-device quote access, arbitrary-address geofencing, and
 discount-aware refunds remain explicit future design steps rather than launch
 improvisations.
+
+**Status check 2026-08-09: still open, and now sequenced.** `api/src/quote/rateCard.ts` has
+`costPerKmCents` and `dayRateCostCents` but extras remain sell-only (`extras: { sightseeing:
+1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 }`). Nothing has
+moved in three and a half weeks.
+
+**Collect the cost basis *after* per-leg sightseeing attribution ships, not before.**
+`2026-08-01-per-leg-sightseeing-attribution-design.md` (approved, unbuilt) restructures how
+`sightseeing`, `waiting` and `safari-wait` are emitted through `collectExtras` → `priceExtras`
+— three of the six extras this section needs costs for. Costing them now means costing a shape
+that is about to change, and re-asking the owner is worse than asking once, late.
+
+`luggage`, `front` and `flex` are unaffected by that refactor and can be costed at any time.
+If the owner wants to unblock incrementally, those three are the safe half.
+
+## 18. Open items (added 2026-08-09 — owner decisions required)
+
+These arose from features that shipped after this spec was written. Each blocks a specific
+milestone. None can be resolved by an implementer choosing a default.
+
+### 18.1 Discounts and partial-leg pay links — blocks M19.3, M20.4, M22
+
+Partial-leg pay links shipped in early August: an Ops quote can mint a link for a ticked
+subset of legs, charging `sold_cents` — the sum of those legs' line prices as already quoted.
+Its governing rule is *a price that has been quoted is not changed*.
+
+A discount does not compose with that rule, because the per-leg lines sum to the **subtotal**
+while the discount sits between subtotal and total, alongside finishing. Three options:
+
+1. **Refuse.** A quote with an active discount cannot mint a partial link. Simplest, safe,
+   and losing nothing that exists today. *This is the interim behaviour the spec now assumes
+   (§4.2, §9.4) so that implementation can proceed without pre-empting the decision.*
+2. **Pro-rate.** Allocate the discount across ticked legs by line share. Honest, but it
+   invents a per-leg discount concept the whole spec is built to avoid, and it interacts with
+   the cost cap per leg rather than per quote.
+3. **Whole discount on the subset.** Simple to state, but a founder who discounted a four-leg
+   trip by $80 did not offer $80 off two legs; on a small subset it can breach the cost floor,
+   which no option may do.
+
+Recommendation: **option 1 at launch**, revisited only if it actually bites. Options 2 and 3
+are each their own design.
+
+Related: budget accounting. If a partial link ever converts a discounted quote, does it spend
+a redemption (§7.6)? Under option 1 the question does not arise, which is a further argument
+for it.
+
+### 18.2 Hot zones are half-shipped, and the halves price differently — blocks M18.1 and §2
+
+The hot-zones design header read "No code written" until it was corrected on 2026-08-09.
+Phases 1+2 merged
+(PRs #116, #126): `api/src/quote/hotZones.ts`, the `pricing_zones` table, `postgresZonesRepo`,
+founder admin, and an ops-visible premium chip. The engine's **cost basis is already
+zone-aware** — `perRideBoost` in `engine.ts:63` and `boostedBillableKm` in `engine.ts:96`,
+byte-identical at zero active zones, per owner decision D6 (the boost books into cost, not
+margin).
+
+Two consequences, and the second is the serious one.
+
+**Good news for the cost cap.** `maximumCostSafeDiscount = subtotalCents - estimatedCostCents`
+already moves correctly on a zone trip, because both sides of that subtraction are zone-aware.
+No fixture rebuild is needed on the Ops path, provided M18.1 fixtures are recorded with a known
+zone configuration and pin the zero-zone case explicitly.
+
+**Bad news for §2's cross-surface promise.** Phase 3 has **not** shipped: `generate-pricing.mjs`
+dumps no zones, the front-end mirror has no zone code, and per the hot-zones design only
+`internalQuote.ts` composes zones — `bookings.ts` joins in Phase 3. So with any zone active,
+**an Ops quote and a website quote for the same trip already price differently today.** This
+spec's goal — "a qualifying website or Ops quote receives the same deterministic automatic
+promotion" (§2) — cannot hold across that split: a different subtotal is a different eligible
+subtotal, which can select a different winner (§7.4 picks the greatest *applied* cents) and
+certainly a different applied amount for any percentage rule.
+
+Therefore: **hot-zones Phase 3 is a prerequisite for public automatic promotions**, not an
+independent track. Manual Ops discounts (M20) are unaffected and can proceed. Add Phase 3 to
+the §15 rollout sequence ahead of step 7 (`PUBLIC_AUTOMATIC_PROMOTIONS_ENABLED`).
+
+Note also the hot-zones drift-guard constraint: the guard's tolerance must stay ≥ the maximum
+active `boost_pct`. A discount widens the legitimate gap between the front-end's computed
+`quotedTotal` and the server's price, so whatever tolerance Phase 3 sets has to account for
+discount magnitude too, or discounted website bookings will start tripping the guard.
+
+**Deposits** (`2026-07-23-deposits-balance-payments-design.md`, approved, unbuilt) remain a
+genuine sequencing decision. They break `amountDueNowCents = totalCents` (§6) — the same line
+discounts rely on. Whichever ships second pays the integration cost; they must not be built
+concurrently.
+
+Decision needed: the order of hot-zones Phase 3, deposits, and M18.
+
+### 18.3 Which clock governs an Ops quote's locked promotion — blocks M20.2
+
+§3 says a promotion valid when a quote was locked stays valid for that quote's full lock, and
+§9.3 fixes the web lock at seven days from creation. There are now **two** clocks:
+
+- the seven-day web quote-v2 expiry (`quote.ts:173`), and
+- `quotes.offer_valid_until` — approval + 7 days, stamped on the Ops → ready transition
+  (`2026-08-05` D9), which the spec's §9.2 approval-freeze language predates.
+
+An Ops quote approved on day 1 and sent on day 5 has a different promotion-durability window
+depending on which clock governs. State it explicitly: the Ops-side answer is almost certainly
+`offer_valid_until`, since that is what the customer was told the price is honoured until, but
+it needs saying rather than inferring.
+
+### 18.4 Automatic promotions on front-end-priced pages — blocks M22
+
+§1 asserts the website "never calculates an authoritative discount independently." That is
+achievable only on the quote-v2 path. Route and tour pages still recompute prices in the
+browser from constants dumped by `tools/generate-pricing.mjs` — the codegen never calls the
+engine — and `booking.js` submits a client `quotedTotal` that the server re-prices behind a
+drift guard (verified in the hot-zones design, §2/C1).
+
+So an automatic promotion cannot appear on a route or tour card until either the rule set is
+dumped alongside the other pricing constants (a second implementation of the matcher in
+front-end JS, with parity tests — the C1 problem again, and a bad trade for this feature), or
+promotions are shown **only after a v2 lock**, on the booking summary.
+
+Recommendation: the latter. §13.1 already scopes the promo-code input to booking summaries;
+extend the same restriction to automatic promotion display, and say so, so nobody later reads
+"sitewide promotion" as "shows on every route card."
+
+### 18.5 Where the discount line item goes — blocks M18.2
+
+§6's line-item ordering (core, extras, **discount**, finishing) is incompatible with
+`api/src/quote/paySelection.ts`, which reads `result.lineItems` positionally and treats
+everything after the legs as an extra unless it is the `price_adjustment`. See the warning box
+in §6 for the failure modes. Three ways out:
+
+1. **Tag it and filter it.** Emit the discount with `meta.kind = 'discount'` and extend
+   `paySelection.ts` to exclude it exactly as it excludes `price_adjustment`. Smallest change,
+   keeps §6's customer-facing ordering, and is the only option that leaves the rendered order
+   as the spec intended. Requires touching a shipped money module — one test, red→green.
+2. **Move it last.** Emit the discount after the finishing item. Avoids editing
+   `paySelection.ts` at all, but the filter still has to skip it, so it does not actually avoid
+   the change — and it puts the internal finishing line above the customer-facing discount
+   line, which every renderer then has to reorder.
+3. **Keep it out of `lineItems` entirely.** Carry the discount only in the structured
+   `discountCents` / `AppliedDiscountSnapshot` fields (§6) and let renderers compose the row.
+   Cleanest separation and zero risk to the positional contract, but it breaks the "complete
+   line-item sum equals `totalCents`" invariant, which several surfaces rely on to self-check.
+
+Recommendation: **option 1.** It is the only one that preserves both the sum invariant and the
+customer-facing order, and the change to `paySelection.ts` is two lines plus a test.
+
+Note this is *not* resolved by choosing §18.1 option 1 (refusing partial links on discounted
+quotes). `payLines()` is also called on the full-link path and by the Ops line display, so a
+discounted quote is mis-parsed whether or not a partial selection exists.
+
+### 18.6 A discount edit silently kills outstanding pay links — blocks M20.2
+
+`internalQuote.ts:1064` signs a pay-link capability over `{quoteId, revision}`:
+`signQuotePayToken(quote.id, quote.revision, deps.linkSecret, seq)`. §9.2 requires every
+discount mutation to reprice and save the quote, which bumps `revision` — so **applying,
+replacing, or removing a discount invalidates every live pay link for that quote.**
+
+That is arguably correct behaviour: a link minted at the old price should not keep charging it.
+But it is currently silent, and a founder discounting a quote to close a deal has no idea the
+link they already sent has just died. M20.4 must warn at the point of applying a discount when
+an outstanding link exists, and say what will happen to it.
+
+Note also that `quotes.revision` is **not** an optimistic-concurrency token today. Despite the
+column existing (§11.4), `internalQuote.ts` returns no `quote_conflict` — its 409s are
+`not_editable`, `quote_deleted`, `not_bookable`, and `not_linkable`. M20.2's stale-edit 409 is
+unbuilt work, not a wiring-up of something already there.

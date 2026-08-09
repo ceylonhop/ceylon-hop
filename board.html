@@ -39,11 +39,14 @@ window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
+<script>window.CH_PROPERTY='board';</script>
 <script src="analytics.js"></script>
 <script src="consent.js" defer></script>
 <script>
-(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:P,message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
@@ -180,7 +183,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 .lcard-foot{padding:12px 24px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .lcard-foot .btn{flex:0 0 auto}
 .lprice{font-size:.86rem;color:var(--ink-soft);line-height:1.35;font-weight:600;flex:1 1 auto;min-width:0}
-.lprice b{color:var(--ink);font-size:1.05rem;font-weight:800}
+.lprice b{color:var(--ink);font-size:1.05rem;font-family:var(--display);font-weight:700}
 .lcard .started{padding:0 24px 18px;display:flex;align-items:center;gap:.55rem;font-size:.82rem;color:var(--ink-soft)}
 .lcard .started .avatar{width:26px;height:26px;font-size:.6rem}
 .lcard .started b{color:var(--ink);font-weight:700}
@@ -360,7 +363,7 @@ body.detail-open .detail{display:block}
 .rr-dot{width:18px;height:18px;border-radius:50%;flex:none;margin-top:2px;z-index:1}
 .rr-dot.a{border:3.5px solid var(--teal);background:#fff}
 .rr-dot.b{background:var(--cta)}
-.rr-stop b{font-size:1rem}
+.rr-stop b{font-size:1rem;font-family:var(--display);font-weight:700}
 .rr-stop p{font-size:.84rem;color:var(--ink-soft);margin:.1rem 0 0;line-height:1.45}
 /* trust grid */
 .d-trust{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}

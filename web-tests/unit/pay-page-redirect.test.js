@@ -94,11 +94,20 @@ describe('pay page survives the round trip and never hangs silently', () => {
     expect(js).toMatch(/remember\(\)/);
   });
 
-  // Card data never reaches this origin and must never be written here.
-  it('stores only the pay token and the typed form values', () => {
-    const m = js.match(/setItem\(STORE,\s*JSON\.stringify\(([^)]*)\)/);
+  // Card data never reaches this origin and must never be written here. The allowed keys are
+  // enumerated rather than pattern-matched, so adding a fourth is a deliberate edit to this
+  // list and not something that slips through in a diff.
+  //
+  // `cents` joined t/typed on 2026-08-07: the return leg renders before /view has been
+  // re-fetched, so without the trip's own total a real `purchase` reports a value of zero.
+  // It is the quote's price — the same number already printed on the page — not PII.
+  it('stores only the pay token, the typed form values, and the amount', () => {
+    const m = js.match(/setItem\(STORE,\s*JSON\.stringify\(([\s\S]*?)\)\s*\)\s*;/);
     expect(m, 'expected a single STORE write').toBeTruthy();
-    expect(m[1]).toMatch(/^\s*\{\s*t:\s*t,\s*typed:\s*typed\s*\}\s*$/);
+    const keys = [...m[1].matchAll(/(^|[{,\s])([A-Za-z_$][\w$]*)\s*:/g)].map((x) => x[2]);
+    expect(keys.sort()).toEqual(['cents', 't', 'typed']);
+    // Whatever the shape, these must never appear in the persisted object.
+    expect(m[1]).not.toMatch(/card|cvv|cvc|pan\b|checkoutToken|hash/i);
   });
 
   // A stalled API used to leave the button reading "Opening secure payment…" forever — a silent

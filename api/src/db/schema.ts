@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, unique, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -124,6 +124,9 @@ export const payments = pgTable(
     gatewayPaymentId: text('gateway_payment_id'),
     settledAt: timestamp('settled_at', { withTimezone: true }),
     settlementSource: text('settlement_source'),
+    // Who recorded an out-of-band payment. Immutable by contract: the free-text ops note that
+    // used to carry this is editable by the `ops` role, which is denied payments:act (0043).
+    settledBy: text('settled_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -574,6 +577,42 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
+]);
+
+// Founder manual discounts (spec 2026-08-09 §4.1) — migration 0044. One row per DECISION, never
+// mutated in place: apply inserts, replace/remove supersedes. `quote_revision` is a stamp, NOT a
+// foreign key — quote_revisions holds only superseded states, so the live revision has no row
+// there. The before/after totals and margins are stored rather than derived: finishing runs after
+// the discount, so total_after is not total_before - applied, and a margin recomputed against a
+// later rate card would rewrite history. estimated_cost/margin are REPORTING only — the limits are
+// the 30% ceiling and the vehicle fare floor, never cost.
+export const quoteDiscounts = pgTable('quote_discounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id),
+  quoteRevision: integer('quote_revision').notNull(),
+  source: text('source').notNull().default('manual'),
+  method: text('method').notNull(),
+  value: integer('value').notNull(),
+  reason: text('reason').notNull(),
+  subtotalBeforeCents: integer('subtotal_before_cents').notNull(),
+  totalBeforeCents: integer('total_before_cents').notNull(),
+  requestedCents: integer('requested_cents').notNull(),
+  appliedCents: integer('applied_cents').notNull(),
+  totalAfterCents: integer('total_after_cents').notNull(),
+  capReason: text('cap_reason'),
+  estimatedCostCents: integer('estimated_cost_cents'),
+  marginBeforeCents: integer('margin_before_cents'),
+  marginAfterCents: integer('margin_after_cents'),
+  appliedBy: text('applied_by').notNull(),
+  appliedAt: timestamp('applied_at', { withTimezone: true }).defaultNow().notNull(),
+  status: text('status').notNull().default('active'),
+  supersededBy: text('superseded_by'),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }),
+}, (t) => [
+  // Partial: superseded rows accumulate freely, but only one may be live. This is what makes
+  // "replace" safe under concurrency.
+  uniqueIndex('quote_discounts_one_active_per_quote').on(t.quoteId).where(sql`${t.status} = 'active'`),
+  index('quote_discounts_quote_idx').on(t.quoteId, t.appliedAt),
 ]);
 
 // Quote version history (spec 2026-08-05 §4). One row per SUPERSEDED state — see migration 0040.

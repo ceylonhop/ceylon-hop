@@ -16,15 +16,24 @@ window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
 </script>
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
+<!-- Declare the property BEFORE analytics.js — see docs/analytics/property-tracking.md. -->
+<script>window.CH_PROPERTY='quote';</script>
 <script src="analytics.js"></script>
-<!-- No consent.js here (owner, 2026-08-06), same call pay.html made on 2026-08-01: a customer
-     reading a proposal we sent them privately is not the audience for a cookie banner, and it
-     overlaid the map. The head's Consent Mode default above is 'denied' and nothing on this
-     page grants, so no banner ≠ tracking. -->
+<!-- Still no consent.js (owner, 2026-08-06, the same call pay.html made on 2026-08-01): a
+     customer reading a proposal we sent them privately is not the audience for a floating
+     cookie card, and it overlaid the map. But "no banner" had become "no consent" — nothing
+     here ever granted, so we have no replay of anyone reading a quote and no way to see which
+     option they looked at. consent-transactional.js keeps the owner's rule (it reserves its
+     own height rather than covering the map) and asks for analytics ONLY. -->
+<script src="consent-transactional.js" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
-(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
-function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+(function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
+function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({property:P,message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
+// Published so the page can report HANDLED failures too — a 500 from /quote-view used to be
+// swallowed into the friendly "this quote has sailed off" screen, indistinguishable to us
+// from a genuinely dead token. The n>=5 cap is shared, so a hot loop still cannot flood it.
+window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
@@ -42,6 +51,17 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <span class="pp-wa">Questions? <a href="https://wa.me/94779669662">WhatsApp us</a></span>
 </div></header>
 <div class="pp-wrap"><div id="app"><p style="color:var(--ink-soft)">Loading your quote…</p></div></div>
+<!-- Follow-along footer (owner, 2026-08-09). Outside #app on purpose: the four render
+     functions replace #app wholesale, so anything inside it disappears on the expired and
+     fetch-failed paths — the two states where a real brand mark is worth the most. Icons are
+     inlined because this page never loads site.js, which is where the shared ICON set lives.
+     The TikTok URL came from the owner directly; it appears nowhere else in the repo, unlike
+     the Instagram one which matches the shared footer site.js already renders. -->
+<footer class="pp-social">
+  <span>Follow along</span>
+  <a href="https://www.instagram.com/ceylonhop" aria-label="Ceylon Hop on Instagram" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41a3.7 3.7 0 0 1-1.38-.9 3.7 3.7 0 0 1-.9-1.38c-.16-.42-.36-1.06-.41-2.23C2.17 15.58 2.16 15.2 2.16 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68A6.16 6.16 0 1 0 18.16 12 6.16 6.16 0 0 0 12 5.84zm0 10.16A4 4 0 1 1 16 12a4 4 0 0 1-4 4zm6.41-10.4a1.44 1.44 0 1 0 1.44 1.44 1.44 1.44 0 0 0-1.44-1.44z"/></svg></a>
+  <a href="https://www.tiktok.com/@ceylonhop" aria-label="Ceylon Hop on TikTok" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.6 5.82a4.28 4.28 0 0 1-1.06-2.82h-3.3v12.6a2.34 2.34 0 1 1-2.34-2.34c.23 0 .46.04.67.1V9.98a5.66 5.66 0 0 0-.67-.04 5.66 5.66 0 1 0 5.66 5.66V9.01a7.52 7.52 0 0 0 4.4 1.4V7.1a4.28 4.28 0 0 1-3.36-1.28z"/></svg></a>
+</footer>
 <script src="ch-map.js"></script>
 <script>
 (function(){
@@ -57,8 +77,26 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var token = new URLSearchParams(location.search).get('t') || '';
 
   function waHref(text){ return 'https://wa.me/' + WA + '?text=' + encodeURIComponent(text); }
+
+  // ── funnel + failure reporting (2026-08-07) ─────────────────────────────────────────
+  // This page pushed nothing, so a quote we sent and a quote nobody opened looked identical.
+  // Guarded, and never carrying a name, a token or anything else from the quote itself.
+  function track(event, params){
+    if (typeof window.chTrack === 'function') window.chTrack(event, params || {});
+  }
+  function report(what, err){
+    var x = err || {};
+    if (typeof window.chReportError === 'function') {
+      window.chReportError('[quote] ' + what + (x.message ? ' — ' + x.message : ''), x.stack);
+    }
+  }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(m){
     return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]; }); }
+
+  // Clarity masks form INPUTS by default, not rendered text — and this page renders the
+  // customer's first name straight into the greeting. Mask the person, keep the trip: an
+  // itinerary and two prices are exactly what a replay is worth watching for.
+  var MASK = ' data-clarity-mask="true"';
 
   // Every path that replaces the first-paint skeleton goes through here, same as manage.html's
   // paint() — clearing aria-busy matters as much as clearing the class.
@@ -260,7 +298,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // "Confirm on WhatsApp" on both cards (owner, 2026-08-06): "Book" over-promised — tapping
       // books nothing — and naming the channel makes the app-switch exactly what the label said.
       // Which option is being confirmed is carried by the card and the wa.me prefill.
-      + '<a class="btn ' + (opt.lead ? 'btn-wa' : 'btn-ghost') + ' pp-cta" href="' + waHref(opt.waText) + '">'
+      // data-opt is the analytics hook, and nothing else: which of the two ways to travel the
+      // customer actually tapped. analytics.js's delegated wa.me listener already counts the
+      // contact, but it cannot say WHICH option produced it — and "which option do people
+      // choose when we offer both" is the question this page exists to answer.
+      + '<a class="btn ' + (opt.lead ? 'btn-wa' : 'btn-ghost') + ' pp-cta" href="' + waHref(opt.waText) + '"'
+      + ' data-opt="' + esc(opt.service || opt.name || '') + '"'
+      + ' data-opt-cents="' + Number(opt.totalCents || 0) + '">'
       + 'Confirm on WhatsApp</a>'
       + '<p class="paysub">Nothing is charged yet.</p>'
       + '<details class="dt-pol"><summary>' + esc(pol.headline) + '</summary><ul>' + ladder + '</ul></details>'
@@ -274,7 +318,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // ── states ──────────────────────────────────────────────────────────────────────────
   function renderLive(d, lapsed){
     var v = d.view;
-    var html = '<div class="pp-hello">' + (v.greetingName ? 'Hi ' + esc(v.greetingName) + ',' : 'Hello,') + '</div>'
+    var html = '<div class="pp-hello"' + (v.greetingName ? MASK : '') + '>' + (v.greetingName ? 'Hi ' + esc(v.greetingName) + ',' : 'Hello,') + '</div>'
       + '<h1 class="pp-title">' + esc(v.title) + '</h1>'
       + '<p class="pp-sub">' + esc(v.subtitle) + '</p>'
       // No total in the hero (owner, 2026-08-06). The option card below IS the price, and
@@ -304,6 +348,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<p class="pp-note">Anything you’d like changed — dates, stops, a bigger vehicle —<br>'
       + '<a href="' + waHref(v.waText) + '">just message us</a> and we’ll update this page.</p>';
     paint(html);
+    // What we put in front of them, and at what price. `lapsed` rides along because an
+    // expired price is a different offer from a live one even when the itinerary is identical.
+    var opts = v.options || [];
+    track('view_item_list', {
+      item_list_id: 'customer_quote',
+      currency: 'USD',
+      lapsed: !!lapsed,
+      items: opts.map(function(o, i){
+        return {
+          item_id: String(o.service || o.name || ('option_' + (i + 1))),
+          item_name: String(o.name || ''),
+          index: i,
+          price: Math.round(Number(o.totalCents || 0)) / 100,
+        };
+      }),
+    });
+    if (lapsed) track('quote_lapsed_shown', { item_list_id: 'customer_quote' });
     mountMap(v.mapStops || [], v.mapRuns || []);
   }
 
@@ -315,7 +376,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     var waMsg = 'Hi! I have a question about my booking' + (b.reference ? ' ' + b.reference : '') + '.';
     paint('<div class="st-wrap">'
       + '<div class="st-badge ok">✓</div>'
-      + '<h2 class="st-title">You’re booked' + (b.firstName ? ', ' + esc(b.firstName) : '') + '</h2>'
+      + '<h2 class="st-title"' + (b.firstName ? MASK : '') + '>You’re booked' + (b.firstName ? ', ' + esc(b.firstName) : '') + '</h2>'
       + '<p class="st-sub">' + esc(b.title || '') + '</p>'
       + (b.reference ? '<span class="refchip">' + esc(b.reference) + '</span>' : '')
       + '</div>'
@@ -396,14 +457,42 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     fetchJson(API + '/quote-view?t=' + encodeURIComponent(token)).then(function(r){
       return r.json();
     }).then(function(body){
+      // Counted with the state it arrived in. "How many quotes get opened" and "how many get
+      // opened after the price has already lapsed" are two different questions about how fast
+      // ops needs to follow up, and neither had an answer.
+      track('quote_link_opened', { state: String(body.state || 'unknown') });
       if (body.state === 'live') return renderLive(body, false);
       if (body.state === 'lapsed') return renderLive(body, true);
       if (body.state === 'booked') return renderBooked(body);
       renderUnavailable();
-    }).catch(function(){ renderUnavailable(); });
+    }).catch(function(e){
+      // Previously silent: a 500 from /quote-view showed the customer the same "this quote has
+      // sailed off" screen a genuinely dead token gets, and told us nothing at all.
+      report('quote-view failed', e);
+      track('quote_link_opened', { state: 'error' });
+      renderUnavailable();
+    });
   }
 
-  if (!token) renderUnavailable(); else load();
+  // One delegated listener, bound once, rather than re-binding on every paint. Capture phase
+  // and never preventDefault — the link must still open WhatsApp exactly as before.
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[data-opt]') : null;
+    if (!a) return;
+    track('select_item', {
+      item_list_id: 'customer_quote',
+      currency: 'USD',
+      items: [{
+        item_id: a.getAttribute('data-opt') || '',
+        price: Math.round(Number(a.getAttribute('data-opt-cents') || 0)) / 100,
+      }],
+    });
+  }, true);
+
+  if (!token) {
+    track('quote_link_opened', { state: 'no_token' });
+    renderUnavailable();
+  } else load();
 })();
 </script>
 </body>

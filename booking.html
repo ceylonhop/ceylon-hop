@@ -314,14 +314,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .tr-leg:last-child{border-bottom:none;padding-bottom:0}
   .trip-route .tr-leg-main{display:flex;align-items:center;gap:11px;min-width:0}
   .trip-route .tr-leg-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.65rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .trip-route .tr-leg-title{font-weight:800;color:var(--ink);line-height:1.22;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
-  .trip-route .tr-leg-title .tr-ar{color:var(--accent);margin:0 .22rem}
+  /* A leg title is a route name, so it carries the display face — the same call
+     plan.html's .dr-route makes for the identical string one step earlier. The arrow
+     between the two places stays on the body face: Bodoni has no → and would fall
+     through to a mismatched fallback mid-word. */
+  .trip-route .tr-leg-title{font-family:var(--display);font-weight:700;color:var(--ink);line-height:1.22;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .trip-route .tr-leg-title .tr-ar{color:var(--accent);margin:0 .22rem;font-family:var(--body);font-weight:600}
   .trip-route .tr-leg-meta{display:flex;flex-wrap:wrap;gap:8px 10px;margin-left:64px}
   .trip-route .tr-chip{display:inline-flex;align-items:center;gap:.38rem;font-size:.78rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px}
   .trip-route .tr-chip svg{width:13px;height:13px;flex:none}
   .trip-route .tr-chip.muted{color:var(--ink-soft);background:var(--cream-deep)}
   /* a self-arranged gap: shown for context, but not a booked/priced leg */
-  .trip-route .tr-leg.tr-gap .tr-leg-title{font-weight:600;color:var(--ink-soft)}
+  /* 400 not 600: the title is now Bodoni, which ships Book and Bold and nothing between. */
+  .trip-route .tr-leg.tr-gap .tr-leg-title{font-weight:400;color:var(--ink-soft)}
   .trip-route .tr-leg.tr-gap .tr-leg-meta{margin-left:0}
   .trip-route .tr-leg.tr-gap .tr-chip{color:#9a5b12;background:transparent;border:1px dashed #e6b980}
   @media(max-width:560px){.trip-route .tr-leg-main{align-items:flex-start}.trip-route .tr-leg-meta{margin-left:0}.trip-route .tr-leg-title{font-size:.95rem}}
@@ -331,7 +336,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .trip-route .tr-stop.last .dot{background:var(--tomato);border-color:var(--tomato)}
   .trip-route .tr-stop.last .tr-name{font-weight:700}
   .trip-route .tr-stop.first .tr-name{font-weight:700}
-  .trip-route .tr-stop .tr-name{flex:1;min-width:0}
+  /* Place names, in the same card as the Bodoni leg titles above — 400 for the
+     intermediate stops, 700 for the two endpoints (rules above). */
+  .trip-route .tr-stop .tr-name{flex:1;min-width:0;font-family:var(--display);font-weight:400}
   .trip-route .tr-stop .nt{font-size:.74rem;font-weight:700;color:#a96b04;background:var(--pc-saffron);border-radius:999px;padding:2px 9px;white-space:nowrap;flex:none}
   /* wire between stops carries the leg's travel date */
   .trip-route .tr-wire{display:flex;align-items:center;gap:10px;margin:2px 0 2px 4px;min-height:24px}
@@ -366,7 +373,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-route .sr-pin{width:13px;height:13px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none;margin-top:4px}
   .shared-route .sr-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
   .shared-route .sr-lbl{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
-  .shared-route .sr-line b{font-size:1.05rem}
+  .shared-route .sr-line b{font-size:1.05rem;font-family:var(--display);font-weight:700}
   .shared-route .sr-wire{width:2px;height:16px;margin:1px 0 1px 5px;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5}
   .shared-route .sr-foot{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .shared-route .sr-fact{display:inline-flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink-soft)}
@@ -575,7 +582,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--paper);
       font:inherit;text-align:left;cursor:pointer;box-shadow:var(--shadow-s)}
     .mstrip[hidden]{display:none!important}
-    .mstrip .ms-route{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+    .mstrip .ms-route{font-family:var(--display);font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
     .mstrip .ms-date{color:var(--ink-soft);font-size:.85rem;white-space:nowrap;flex:none}
     .mstrip .ms-more{display:inline-flex;align-items:center;gap:3px;color:var(--accent-deep);font-weight:700;font-size:.85rem;flex:none}
     .mstrip .ms-more svg{width:14px;height:14px}
