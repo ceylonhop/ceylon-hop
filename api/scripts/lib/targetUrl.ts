@@ -25,15 +25,28 @@ export function requireConnectionUrl(envVarName: string, verb: string): string {
         'DATABASE_URL is not used here on purpose — api/.env points at production.',
     );
   }
-  if (!CONNECTION_STRING_PATTERN.test(url)) {
+  // Paste artefacts, not operator error: a copied env-var value routinely arrives with
+  // surrounding whitespace or a stray newline, and a value copied out of a shell snippet or a
+  // config file arrives wrapped in quotes. Rejecting those taught the operator nothing except
+  // that the tool was fussy, so normalise them instead of failing.
+  const cleaned = url.trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
+  if (!CONNECTION_STRING_PATTERN.test(cleaned)) {
+    // Naming the scheme we DID see turns "it doesn't look right" into something diagnosable.
+    // Everything before "://" is a scheme, never a credential; when there is no "://" at all we
+    // report only the length, which cannot leak content.
+    const marker = cleaned.indexOf('://');
+    const saw =
+      marker > 0 && marker <= 20
+        ? `it starts with "${cleaned.slice(0, marker)}://"`
+        : `the value is ${cleaned.length} characters and contains no "://"`;
     throw new Error(
-      `${envVarName} does not look like a Postgres connection string (expected it to start ` +
-        'with "postgres://" or "postgresql://"). If you pasted a password — or anything else ' +
-        'that is not a connection string — by mistake, it is now sitting in your shell history ' +
-        'in the clear. Rotate it.',
+      `${envVarName} does not look like a Postgres connection string — ${saw}, but it must ` +
+        'start with "postgres://" or "postgresql://". Copy the whole DATABASE_URL value, not ' +
+        'just the password. If you did paste a password by mistake, it is now in your shell ' +
+        'history in the clear — rotate it.',
     );
   }
-  return url;
+  return cleaned;
 }
 
 /**
@@ -42,6 +55,26 @@ export function requireConnectionUrl(envVarName: string, verb: string): string {
  * well-formed URL with a wrong password can still produce a driver error, and nothing guarantees
  * that error's message never quotes the connection string back.
  */
+/**
+ * The operator-facing text for a thrown driver error, redacted.
+ *
+ * Drizzle wraps a failed query in a `DrizzleQueryError` whose own message is only the SQL it
+ * tried — the actual Postgres reason ("relation ... does not exist", "password authentication
+ * failed") lives on `.cause`. Reporting `.message` alone leaves the operator staring at their own
+ * query with no idea why it failed, which is exactly what happened the first time these scripts
+ * were run against staging. Walk the chain.
+ */
+export function describeDbError(err: unknown, url: string): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    if (current.message) parts.push(current.message);
+    current = (current as { cause?: unknown }).cause;
+  }
+  if (!parts.length) parts.push(String(err));
+  return redactConnectionString(parts.join(' — caused by: '), url);
+}
+
 export function redactConnectionString(text: string, url: string): string {
   let result = text.split(url).join('[connection string redacted]');
   try {

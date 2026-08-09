@@ -9,7 +9,7 @@ import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
 import { reconcileBooking, type LegEndpoints, type Problem, type ProblemReason } from '../src/db/checkBookingLegs';
 import type { BookingLegKind } from '../src/domain/bookingLegs';
-import { requireConnectionUrl, redactConnectionString } from './lib/targetUrl';
+import { requireConnectionUrl, describeDbError } from './lib/targetUrl';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -92,8 +92,7 @@ async function main(): Promise<void> {
     await sql.end();
     process.exit(problems.length ? 1 : 0);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Database operation failed: ${redactConnectionString(message, url)}`);
+    throw new Error(`Database operation failed: ${describeDbError(err, url)}`);
   }
 }
 
