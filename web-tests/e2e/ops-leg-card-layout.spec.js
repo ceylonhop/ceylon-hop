@@ -16,6 +16,15 @@ import { test, expect } from '@playwright/test';
 //  webServer — same pattern as ops-addleg-date.spec.js.
 // ────────────────────────────────────────────────────────────────────────────
 
+// Builder specs run serially: the quote view re-renders ~350ms after each mutation
+// and can swallow interactions mid-morph — same opt-out as ops-fee-chips.spec.js.
+test.describe.configure({ mode: 'default' });
+
+// These specs assert GEOMETRY (collapsed vs expanded), not motion. Reduced motion
+// makes the toolbelt collapse/expand instantly (the CSS carve-out still collapses),
+// so a starved animation frame under full-suite load can't fail a height poll.
+test.use({ reducedMotion: 'reduce' });
+
 const OPS_FILE = '/api/src/routes/ops-ui.html';
 
 async function stubOps(page) {
@@ -73,7 +82,9 @@ async function buildTwoLegs(page) {
   await setLegField(page, 0, 'pickupLocation', 'Colombo Fort');
   await setLegField(page, 0, 'dropoffLocation', 'Nuwara Eliya');
   await setLegField(page, 0, 'date', legDate);
-  await page.getByText('Add leg').click();
+  // dispatchEvent, not click: leaving the dated leg collapses its toolbelt and the
+  // Add-leg pill shifts up mid-animation — a pointer click races the reflow.
+  await page.getByText('Add leg').dispatchEvent('click');
   await page.waitForTimeout(120);
   await setLegField(page, 1, 'dropoffLocation', 'Trincomalee');
 
@@ -127,6 +138,46 @@ test('leg cards stay readable in the mid-width pane band (the "Colo…" bug)', a
   const widths = await page.evaluate(() =>
     [...document.querySelectorAll('.ch-leg .ch-leg-in')].map((el) => el.getBoundingClientRect().width));
   for (const w of widths) expect(w, 'route input crushed unreadably narrow').toBeGreaterThan(120);
+});
+
+test('the actions-only toolbelt collapses at rest and expands on hover', async ({ page }) => {
+  // Owner call 2026-08-08: at rest the tools row's reserved blank band read as
+  // wasted space at the foot of every card — so an ACTIONS-ONLY row now gives
+  // its height back and expands on hover/focus. A row holding an applied fee is
+  // money on the quote and must stay expanded at rest (same rule that keeps it
+  // from fading — see ops-fee-chips.spec.js).
+  await stubOps(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await buildTwoLegs(page);
+  const card = page.locator('.ch-leg').first();
+  const row = card.locator('.ch-leg-tools');
+  const rowHeight = () => row.evaluate((el) => el.getBoundingClientRect().height);
+  const atRest = async () => {
+    await page.mouse.move(10, 860);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  };
+
+  await atRest();
+  await expect.poll(rowHeight, { timeout: 3000 }).toBeLessThan(1);
+
+  // Hover expands it.
+  await card.hover();
+  await expect.poll(rowHeight, { timeout: 3000 }).toBeGreaterThan(20);
+
+  // The collapse keys on .is-actions-only alone. A row that loses that class —
+  // which is what an applied fee or a route chip does (pinned end-to-end by
+  // ops-fee-chips.spec.js) — must stay expanded at rest: money and state are
+  // never hidden. Asserted by toggling the class directly rather than racing
+  // the builder's ~350ms morphdom re-render on a real fee click.
+  await row.evaluate((el) => el.classList.remove('is-actions-only'));
+  await atRest();
+  await page.waitForTimeout(350);
+  await expect.poll(rowHeight, { timeout: 3000 }).toBeGreaterThan(20);
+
+  // Class restored (fee back off), the row collapses again at rest.
+  await row.evaluate((el) => el.classList.add('is-actions-only'));
+  await atRest();
+  await expect.poll(rowHeight, { timeout: 3000 }).toBeLessThan(1);
 });
 
 test('leg cards stay clean in the narrow single-pane layout', async ({ page }) => {

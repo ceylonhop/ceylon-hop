@@ -1272,38 +1272,65 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
    as a state readout — picked reads as a set decision, not another add. */
 .qv .ch-leg-tools { display: flex; align-items: center; gap: 8px; padding: 2px 12px 10px 44px; flex-wrap: wrap; }
 
-/* ── Quiet cards (2026-07-31) ────────────────────────────────────────────────────────────
+/* ── Quiet cards (2026-07-31; collapse 2026-08-08) ───────────────────────────────────────
    A 4-leg quote was rendering ~24 controls at rest — reorder arrows, +Stop, Return to
    start, +Fees, duplicate, remove on every card — none of which the operator is reaching
-   for while reading. They now fade in for the card under the cursor, the card holding
-   keyboard focus, or the card the operator last touched. Nothing is removed and nothing
-   moves: the row keeps its height at rest (visibility, not display), so revealing a
-   toolbelt never reflows the itinerary under a click.
+   for while reading. They reveal for the card under the cursor, the card holding
+   keyboard focus, or the card the operator last touched.
+
+   The reorder arrows and ⧉ ✕ actions fade in place (they sit inside rows that must not
+   move). The actions-only toolbelt goes further — owner call 2026-08-08: it COLLAPSES
+   at rest instead of merely fading, because the reserved blank band read as wasted
+   space at the foot of every card. Expansion is always downward, so the card under the
+   pointer never shifts — only cards below it move, animated. height 0↔auto animates in
+   Chrome via interpolate-size; elsewhere it snaps open/closed, which still functions.
 
    `.ch-leg-tools` is NOT hidden when it holds the route chip — that chip is a state
    readout ("via the toll road"), not an action, and hiding state would lose information.
+   Same rule keeps a row with an APPLIED fee expanded: that is money on the quote
+   (neither row carries .is-actions-only — see renderLeg).
 
    Guarded by (hover: hover): on a touch device there is no hover, so everything stays
    visible exactly as before rather than becoming unreachable. */
 @media (hover: hover) and (pointer: fine) {
   .qv .ch-leg-quiet .ch-leg-reorder,
-  .qv .ch-leg-quiet .ch-leg-actions,
-  .qv .ch-leg-quiet .ch-leg-tools.is-actions-only {
+  .qv .ch-leg-quiet .ch-leg-actions {
     opacity: 0;
     transition: opacity .18s ease;
   }
+  .qv .ch-leg-quiet .ch-leg-tools.is-actions-only {
+    interpolate-size: allow-keywords;
+    height: 0;
+    padding-top: 0; padding-bottom: 0; margin-top: 0; border-top-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: height .22s cubic-bezier(.2,.7,.3,1), padding .22s cubic-bezier(.2,.7,.3,1),
+                margin-top .22s cubic-bezier(.2,.7,.3,1), border-top-width .22s cubic-bezier(.2,.7,.3,1),
+                opacity .16s ease;
+  }
   .qv .ch-leg-quiet:hover .ch-leg-reorder,
   .qv .ch-leg-quiet:hover .ch-leg-actions,
-  .qv .ch-leg-quiet:hover .ch-leg-tools.is-actions-only,
   .qv .ch-leg-quiet:focus-within .ch-leg-reorder,
   .qv .ch-leg-quiet:focus-within .ch-leg-actions,
-  .qv .ch-leg-quiet:focus-within .ch-leg-tools.is-actions-only,
   .qv .ch-leg-quiet.is-revealed .ch-leg-reorder,
-  .qv .ch-leg-quiet.is-revealed .ch-leg-actions,
-  .qv .ch-leg-quiet.is-revealed .ch-leg-tools.is-actions-only {
+  .qv .ch-leg-quiet.is-revealed .ch-leg-actions {
     opacity: 1;
   }
-  /* Reduced motion: still reveal, just without the fade. */
+  .qv .ch-leg-quiet:hover .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet:focus-within .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet.is-revealed .ch-leg-tools.is-actions-only {
+    height: auto;
+    padding-top: 2px; padding-bottom: 10px;
+    opacity: 1;
+  }
+  /* Two-zone compact cards carry the hairline + its spacing (see the dense-row block);
+     restore those on reveal so the expanded row matches the touch/always-visible look. */
+  .qv .ch-leg-quiet:not(.is-multistop):hover .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet:not(.is-multistop):focus-within .ch-leg-tools.is-actions-only,
+  .qv .ch-leg-quiet.is-revealed:not(.is-multistop) .ch-leg-tools.is-actions-only {
+    padding-top: 8px; margin-top: 2px; border-top-width: 1px;
+  }
+  /* Reduced motion: still reveal/expand, just without the travel. */
   @media (prefers-reduced-motion: reduce) {
     .qv .ch-leg-quiet .ch-leg-reorder,
     .qv .ch-leg-quiet .ch-leg-actions,

@@ -38,6 +38,18 @@ Compact (2-stop and stay) legs become **two-zone**:
 Cost: compact cards ~28px taller. Accepted by owner (clipped controls are worse
 than scroll).
 
+## Toolbelt collapse (owner follow-up, same day)
+
+The quiet-cards fade (2026-07-31) reserved the toolbelt's height at rest, and that blank
+band read as wasted space at the foot of every card. Owner call: the **actions-only**
+toolbelt now **collapses** at rest (height 0, padding/border/hairline gone) and expands on
+hover / focus-within / `.is-revealed` — `height: 0 ↔ auto`, animated in Chrome via
+`interpolate-size: allow-keywords`, an instant snap elsewhere. Expansion is always
+downward, so the hovered card never shifts under the pointer; cards below move, animated.
+The exceptions are unchanged and load-bearing: a row holding an **applied fee** or a
+**route chip** never carries `.is-actions-only`, so money and state stay expanded at rest
+(end-to-end pinned by `ops-fee-chips.spec.js`); touch devices keep everything visible.
+
 ## Verification
 
 `web-tests/e2e/ops-leg-card-layout.spec.js` (offline stub harness, no DB):
