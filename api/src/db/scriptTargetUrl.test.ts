@@ -4,7 +4,7 @@
 // its `input` field, and Node prints that in full. requireConnectionUrl rejects anything that
 // doesn't look like a connection string BEFORE it reaches the driver, and never echoes it.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { requireConnectionUrl, redactConnectionString } from '../../scripts/lib/targetUrl';
+import { requireConnectionUrl, redactConnectionString, describeDbError } from '../../scripts/lib/targetUrl';
 
 const ENV_VAR = 'BACKFILL_DATABASE_URL';
 // A distinctive fake secret — if this string shows up in any assertion failure output, that IS
@@ -94,5 +94,28 @@ describe('redactConnectionString', () => {
     const url = `postgres://user:${FAKE_SECRET}@localhost:5432/db`;
     const message = 'relation "bookings" does not exist';
     expect(redactConnectionString(message, url)).toBe(message);
+  });
+});
+
+describe('describeDbError', () => {
+  const url = 'postgresql://postgres:s3cr3t@db.example.supabase.co:5432/postgres';
+
+  it('surfaces the real Postgres reason drizzle hides on .cause', () => {
+    // Drizzle's DrizzleQueryError says only which query failed; the reason is one level down.
+    const wrapped = new Error('Failed query: select "bookings"."id" from "bookings"');
+    (wrapped as { cause?: unknown }).cause = new Error('relation "booking_legs" does not exist');
+    expect(describeDbError(wrapped, url)).toContain('relation "booking_legs" does not exist');
+  });
+
+  it('still redacts the credential while unwrapping', () => {
+    const wrapped = new Error('Failed query');
+    (wrapped as { cause?: unknown }).cause = new Error(`could not connect to ${url}`);
+    const out = describeDbError(wrapped, url);
+    expect(out).not.toContain('s3cr3t');
+    expect(out).not.toContain(url);
+  });
+
+  it('handles a plain error with no cause', () => {
+    expect(describeDbError(new Error('timeout'), url)).toBe('timeout');
   });
 });

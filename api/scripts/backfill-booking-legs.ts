@@ -14,7 +14,7 @@ import { eq, isNull } from 'drizzle-orm';
 import { createDb } from '../src/db/client';
 import { bookings, bookingLegs, transferRequests, tripRequests } from '../src/db/schema';
 import { deriveLegsForMode, type NewLegRow } from '../src/domain/bookingLegs';
-import { requireConnectionUrl, redactConnectionString } from './lib/targetUrl';
+import { requireConnectionUrl, describeDbError } from './lib/targetUrl';
 
 loadEnv({ path: '.env', quiet: true });
 
@@ -212,8 +212,7 @@ async function main(): Promise<void> {
         skipped.push({
           bookingId,
           reason: 'insert_failed',
-          detail:
-            err instanceof Error ? redactConnectionString(err.message, url) : String(err),
+          detail: describeDbError(err, url),
         });
       }
     }
@@ -229,8 +228,7 @@ async function main(): Promise<void> {
     }
     await sql.end();
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Database operation failed: ${redactConnectionString(message, url)}`);
+    throw new Error(`Database operation failed: ${describeDbError(err, url)}`);
   }
 }
 

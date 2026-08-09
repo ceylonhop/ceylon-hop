@@ -42,6 +42,26 @@ export function requireConnectionUrl(envVarName: string, verb: string): string {
  * well-formed URL with a wrong password can still produce a driver error, and nothing guarantees
  * that error's message never quotes the connection string back.
  */
+/**
+ * The operator-facing text for a thrown driver error, redacted.
+ *
+ * Drizzle wraps a failed query in a `DrizzleQueryError` whose own message is only the SQL it
+ * tried — the actual Postgres reason ("relation ... does not exist", "password authentication
+ * failed") lives on `.cause`. Reporting `.message` alone leaves the operator staring at their own
+ * query with no idea why it failed, which is exactly what happened the first time these scripts
+ * were run against staging. Walk the chain.
+ */
+export function describeDbError(err: unknown, url: string): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    if (current.message) parts.push(current.message);
+    current = (current as { cause?: unknown }).cause;
+  }
+  if (!parts.length) parts.push(String(err));
+  return redactConnectionString(parts.join(' — caused by: '), url);
+}
+
 export function redactConnectionString(text: string, url: string): string {
   let result = text.split(url).join('[connection string redacted]');
   try {
