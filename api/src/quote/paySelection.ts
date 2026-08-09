@@ -33,6 +33,9 @@ export interface PayLine {
   legIndex?: number;
 }
 
+/** Engine rows that are not customer charge lines and can never be part of a selection. */
+const NON_CHARGE_KINDS = new Set(['price_adjustment', 'discount']);
+
 /** Thrown when a quote can't produce charge lines — chauffeur, shell, or a legacy row. */
 export class NotLineablePriceError extends Error {}
 
@@ -59,12 +62,17 @@ export function payLines(quote: SavedQuote): PayLine[] {
     amountCents: item.amountCents,
   }));
 
-  // Everything after the legs is an extra, except the finishing adjustment the engine appends
-  // last. An UNATTRIBUTED extra carries no meta at all, so extras cannot be identified by meta —
+  // Everything after the legs is an extra, except the engine's own non-charge rows. An
+  // UNATTRIBUTED extra carries no meta at all, so extras cannot be identified by meta —
   // position is the contract, and it matches `engine.extras` one-for-one.
+  //
+  // NON_CHARGE_KINDS is why the discount row is tagged. Without the tag it would land in this
+  // slice, survive the filter, and be mapped as an extra — putting a NEGATIVE, tickable line on
+  // the hosted pay page and shifting every extraIndex a stored pay_link_selection points at.
+  // See the discounts design §5.6 / parent §18.5.
   const extraLines: PayLine[] = items
     .slice(legCount)
-    .filter((item) => (item.meta as { kind?: string } | undefined)?.kind !== 'price_adjustment')
+    .filter((item) => !NON_CHARGE_KINDS.has((item.meta as { kind?: string } | undefined)?.kind ?? ''))
     .map((item, i) => {
       const legIndex = (item.meta as { legIndex?: number } | undefined)?.legIndex;
       return {

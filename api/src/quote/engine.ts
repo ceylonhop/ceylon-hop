@@ -8,6 +8,7 @@ import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
 import { priceExtras, depositCents } from './extrasDeposit';
 import { finishPrice } from './priceFinish';
+import { resolveDiscount, type DiscountRequest, type ResolvedDiscount } from './discount';
 
 // GL-1d: van14/custom are custom-priced per quote (owner decision 2026-07-02) — the operator
 // supplies the per-km rate. Any other tier has an owner-confirmed rate that must not be
@@ -21,7 +22,11 @@ function validateCustomRate(customPerKmCents: number | undefined, pricedVehicle:
 
 // `rateCard` defaults to the current RATE_CARD; a quote priced against its LOCKED snapshot passes
 // that card in (rate-lock spec: docs/superpowers/specs/2026-07-11-quote-rate-lock-design.md).
-export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteResult {
+export function quote(
+  req: QuoteRequest,
+  rateCard: RateCard = RATE_CARD,
+  discountRequest?: DiscountRequest,
+): QuoteResult {
   const lineItems: LineItem[] = [];
   const warnings: string[] = [];
   let subtotalCents = 0;
@@ -117,11 +122,32 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     }
   }
 
+  // Founder manual discount (spec 2026-08-09 §5.2). Sits between core pricing and finishing, so
+  // finishing tidies the price the customer actually pays. The two limits are the 30% ceiling and
+  // protectedMinimumCents — the sum of per-leg vehicle floors, which is what really protects the
+  // margin because a driver charges a fixed minimum to take a short job (§5.3).
+  let resolvedDiscount: ResolvedDiscount | undefined;
+  let discountedSubtotalCents = subtotalCents;
+  if (discountRequest) {
+    // Shared is per-seat corridor pricing: no vehicle, so no floor to protect it.
+    if (req.product === 'shared') throw new Error('DISCOUNT_NOT_SUPPORTED');
+    resolvedDiscount = resolveDiscount(discountRequest, subtotalCents, protectedMinimumCents);
+    discountedSubtotalCents = subtotalCents - resolvedDiscount.appliedCents;
+    // A zero-cent outcome is NOT a discounted quote — no row for a renderer to show.
+    if (resolvedDiscount.appliedCents > 0) {
+      lineItems.push({
+        label: 'Discount',
+        amountCents: -resolvedDiscount.appliedCents,
+        meta: { kind: 'discount' },
+      });
+    }
+  }
+
   // Final-price policy is deliberately downstream of every core calculation and runs once.
   // Shared-seat prices stay fixed. Legacy locked rate cards without the policy remain unchanged.
   const finished = req.product !== 'shared' && rateCard.priceFinishing
-    ? finishPrice(subtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
-    : { rawCents: subtotalCents, finalCents: subtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
+    ? finishPrice(discountedSubtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
+    : { rawCents: discountedSubtotalCents, finalCents: discountedSubtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
   if (finished.adjustmentCents !== 0) {
     lineItems.push({
       label: 'Final price adjustment',
@@ -153,6 +179,15 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     depositCents: deposit,
     amountDueNowCents,
     marginEstimateCents,
+    // Spread so the keys are ABSENT, not undefined, when nothing was requested — an undiscounted
+    // result must serialize exactly as it did before this feature (see goldens.test.ts).
+    ...(resolvedDiscount
+      ? {
+          discountCents: resolvedDiscount.appliedCents,
+          discountedSubtotalCents,
+          discount: resolvedDiscount,
+        }
+      : {}),
     rateCardVersion: rateCard.version,
     warnings,
   };
