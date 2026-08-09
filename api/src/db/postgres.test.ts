@@ -950,3 +950,78 @@ describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
     return { repo: new PostgresQuoteDiscountRepo(db), quoteId: q.id };
   });
 });
+
+// Task 4 — the transaction boundary. This is the ONLY place atomicity is a real property: the
+// in-memory fake has no transaction, so a rollback assertion against it would prove nothing.
+describe.skipIf(!TEST_URL)('Ops save + discount is one transaction', () => {
+  const conn = () => createDb(TEST_URL as string);
+
+  const quoteInput = (totalCents: number) => ({
+    product: 'private' as const, vehicle: 'car', customerName: 'Rollback Fixture',
+    totalCents, currency: 'USD', rateCardVersion: '2026-07-14',
+    request: { product: 'private', legs: [{ from: 'A', to: 'B', distanceKm: 80 + totalCents / 1000 }] },
+    result: { totalCents, lineItems: [] },
+  });
+
+  const goodRow = {
+    source: 'manual' as const, method: 'fixed' as const, value: 1000, reason: 'closing the deal',
+    subtotalBeforeCents: 20000, totalBeforeCents: 20000, requestedCents: 1000, appliedCents: 1000,
+    totalAfterCents: 19000, capReason: null, estimatedCostCents: 17400,
+    marginBeforeCents: 2600, marginAfterCents: 1600, appliedBy: 'founder@ceylonhop.com',
+  };
+
+  it('writes the quote and its discount together', async () => {
+    const { db } = conn();
+    const quotes = new PostgresQuoteRepo(db);
+    const discounts = new PostgresQuoteDiscountRepo(db);
+    const q = await quotes.save(quoteInput(20000));
+
+    const saved = await quotes.update(q.id, quoteInput(19000), {
+      kind: 'apply', by: 'founder@ceylonhop.com', row: goodRow,
+    });
+    expect(saved!.totalCents).toBe(19000);
+    const active = await discounts.activeFor(q.id);
+    expect(active!.appliedCents).toBe(1000);
+    // Stamped with the revision the save produced, not the one it superseded.
+    expect(active!.quoteRevision).toBe(saved!.revision);
+  });
+
+  it('ROLLS BACK the content write when the discount row is rejected', async () => {
+    const { db } = conn();
+    const quotes = new PostgresQuoteRepo(db);
+    const discounts = new PostgresQuoteDiscountRepo(db);
+    const q = await quotes.save(quoteInput(20000));
+
+    // A real injected failure, using the table\'s own CHECK: the engine can only ever REDUCE a
+    // request, so applied > requested is a state the database refuses.
+    await expect(quotes.update(q.id, quoteInput(19000), {
+      kind: 'apply', by: 'founder@ceylonhop.com',
+      row: { ...goodRow, requestedCents: 500, appliedCents: 9999 },
+    })).rejects.toThrow();
+
+    // The whole save is gone: price, revision, and version snapshot all unmoved.
+    const after = await quotes.get(q.id);
+    expect(after!.totalCents).toBe(20000);
+    expect(after!.revision).toBe(q.revision);
+    expect(await discounts.activeFor(q.id)).toBeNull();
+    expect(await quotes.listRevisions(q.id)).toHaveLength(0);
+  });
+
+  it('rolls back a REMOVE too, leaving the discount live', async () => {
+    const { db } = conn();
+    const quotes = new PostgresQuoteRepo(db);
+    const discounts = new PostgresQuoteDiscountRepo(db);
+    const q = await quotes.save(quoteInput(20000));
+    await quotes.update(q.id, quoteInput(19000), { kind: 'apply', by: 'founder@ceylonhop.com', row: goodRow });
+
+    // Force the failure after the supersede has already run inside the transaction.
+    await expect(quotes.update(q.id, quoteInput(18000), {
+      kind: 'apply', by: 'founder@ceylonhop.com',
+      row: { ...goodRow, appliedCents: -1 },
+    })).rejects.toThrow();
+
+    const active = await discounts.activeFor(q.id);
+    expect(active).not.toBeNull();
+    expect(active!.appliedCents).toBe(1000);
+  });
+});

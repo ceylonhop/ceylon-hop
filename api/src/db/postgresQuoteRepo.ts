@@ -1,10 +1,11 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
-import { quotes, quoteRevisions } from './schema';
+import { quotes, quoteRevisions, quoteDiscounts } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell, sameQuoteContent } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import { quoteTravelDate } from './quoteTravelDate';
 import type {
+  DiscountIntent,
   QuoteRepo,
   QuoteRevision,
   NewQuote,
@@ -415,7 +416,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
     return row ? quoteRowToSaved(row) : null;
   }
 
-  async update(id: string, q: NewQuote): Promise<SavedQuote | null> {
+  async update(id: string, q: NewQuote, discount: DiscountIntent = { kind: 'preserve' }): Promise<SavedQuote | null> {
     // Content only — status/reference/createdAt, the sent/decided stamps, createdBy and the
     // assignment are all left as-is. (createdBy is write-once; assignment moves only via patch.)
     // Soft-delete guard (same as softDelete's): a deleted row is off-limits. The shell sweep can
@@ -493,7 +494,34 @@ export class PostgresQuoteRepo implements QuoteRepo {
       })
       .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)))
       .returning();
-      return row ? quoteRowToSaved(row) : null;
+      if (!row) return null;
+
+      // The discount rides in the SAME transaction as the content it applies to. A quote priced
+      // one way with an audit row claiming another is precisely the failure this boundary exists
+      // to prevent, so anything that throws below takes the whole save down with it.
+      if (discount.kind !== 'preserve') {
+        // Supersede first, always: the partial unique index permits one live row per quote, so an
+        // apply that skipped this would be refused by the database rather than replacing.
+        await tx
+          .update(quoteDiscounts)
+          .set({
+            status: discount.kind === 'remove' ? 'removed' : 'replaced',
+            supersededBy: discount.by,
+            supersededAt: new Date(),
+          })
+          .where(and(eq(quoteDiscounts.quoteId, id), eq(quoteDiscounts.status, 'active')));
+
+        if (discount.kind === 'apply') {
+          await tx.insert(quoteDiscounts).values({
+            ...discount.row,
+            quoteId: id,
+            // The revision this save PRODUCES — `row.revision` is post-increment, so the discount
+            // is stamped with the state it actually belongs to, not the one it replaced.
+            quoteRevision: row.revision,
+          });
+        }
+      }
+      return quoteRowToSaved(row);
     });
   }
 
