@@ -22,6 +22,7 @@ function mk(over: Partial<FunnelQuoteRow> = {}): FunnelQuoteRow {
     totalCents: 10000,
     currency: 'USD',
     marginCents: null,
+    soldCents: null,
     lostReason: null,
     createdAt: daysAgo(5),
     sentAt: null,
@@ -165,5 +166,25 @@ describe('computeFunnel series & lost reasons', () => {
     const r = computeFunnel(rows, range(28));
     expect(r.lostReasons[0]).toEqual({ reason: 'price', count: 2, valueCents: { USD: 12000 } });
     expect(r.lostReasons[1].reason).toBeNull();
+  });
+});
+
+describe('partial sales (spec 2026-08-04)', () => {
+  it('books a won partial sale at the amount actually sold, not the quote total', () => {
+    const out = computeFunnel(
+      [mk({ status: 'won', sentAt: daysAgo(10), decidedAt: daysAgo(5), totalCents: 90000, soldCents: 31000 })],
+      range(28),
+    );
+    expect(out.tiles.wonValue.USD).toBe(31000);
+    // What was OFFERED is still the whole quote — sent value must not follow the sale down.
+    expect(out.tiles.sentValue.USD).toBe(90000);
+  });
+
+  it('falls back to the quote total when nothing partial was sold', () => {
+    const out = computeFunnel(
+      [mk({ status: 'won', sentAt: daysAgo(10), decidedAt: daysAgo(5), totalCents: 90000 })],
+      range(28),
+    );
+    expect(out.tiles.wonValue.USD).toBe(90000);
   });
 });

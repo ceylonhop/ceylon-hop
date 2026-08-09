@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true">
+<defs>
+  <filter id="b100f" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="482" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+  <filter id="b100k" x="-15%" y="-15%" width="130%" height="130%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.034" numOctaves="2" seed="536" result="n"></feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.9" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+  </filter>
+</defs>
+<path d="M20.8 14.8 Q32.3 4.6 50.3 5.0 Q68.2 5.5 80.6 16.0 Q93.0 26.5 95.8 41.3 Q98.7 56.1 89.4 72.5 Q80.1 88.8 63.7 93.9 Q47.3 99.0 35.1 95.1 Q22.9 91.3 12.6 74.4 Q2.2 57.6 5.8 41.3 Q9.3 25.1 20.8 14.8Z" fill="#34C2D9"></path>
+<g transform="rotate(1.32 50 50)">
+  <g class="pass-fill" filter="url(#b100f)"><circle cx="50" cy="50" r="26" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><path d="M38 51.5 46.5 60 63 41" fill="none" stroke="#4A4648" stroke-width="10.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M38 51.5 46.5 60 63 41" fill="none" stroke="#FAF1E4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></g>
+  <g class="pass-ink" filter="url(#b100k)"><circle cx="50" cy="50" r="26" fill="#FAF1E4" stroke="#4A4648" stroke-width="3.4"></circle><path d="M38 51.5 46.5 60 63 41" fill="none" stroke="#4A4648" stroke-width="10.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M38 51.5 46.5 60 63 41" fill="none" stroke="#FAF1E4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></g>
+</g>
+</svg>

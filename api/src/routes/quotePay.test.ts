@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createApp as realCreateApp, type AppDeps } from '../app';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
+import { quote as priceQuote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import { payLines, selectionAmountCents } from '../quote/paySelection';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { signQuotePayToken } from '../lib/bookingToken';
@@ -18,11 +21,11 @@ const createApp = (deps: AppDeps = {}): App =>
 
 const CUSTOMER = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@x.com', whatsapp: '+94770001111', country: 'LK' };
 
-async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number } = {}) {
+async function readyQuote(quotes: InMemoryQuoteRepo, opts: { product?: 'private' | 'chauffeur'; legs?: unknown[]; status?: 'ready' | 'sent'; marginCents?: number; contact?: string } = {}) {
   const product = opts.product ?? 'private';
   const legs = opts.legs ?? [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 120, date: '2026-09-01', category: 'transfer' }];
   const q = await quotes.save({
-    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: '+94 77 000 1111',
+    channel: 'ops', product, vehicle: 'car', customerName: 'Nimal Perera', customerContact: opts.contact ?? '+94 77 000 1111',
     totalCents: 21900, currency: 'USD', rateCardVersion: 'v1',
     marginCents: opts.marginCents ?? 4300,
     request: {
@@ -443,5 +446,190 @@ describe('mint → view round trip', () => {
     const { url } = await mint.json();
     const t = new URL(url, 'http://x').searchParams.get('t')!;
     expect((await (await view(app, t)).json()).state).toBe('payable');
+  });
+});
+
+// ── Partial-leg links (spec 2026-08-04) ────────────────────────────────────────────────
+const ENGINE3 = {
+  product: 'private' as const, vehicle: 'car' as const, pax: 2, bags: 1,
+  legs: [
+    { from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+    { from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    { from: 'Ella', to: 'Galle', distanceKm: 200 },
+  ],
+};
+
+// A REAL priced 3-leg quote plus a stored selection, minted through the repo the way the mint
+// route does. payLines reads result.lineItems, so a hand-written result would test nothing.
+async function partialQuote(
+  quotes: InMemoryQuoteRepo,
+  sel: { legIndexes: number[]; extraIndexes: number[] },
+  seq = 1,
+) {
+  const result = priceQuote(ENGINE3, RATE_CARD);
+  const q = await quotes.save({
+    channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Nimal Perera',
+    customerContact: 'nimal@x.com', totalCents: result.totalCents, currency: 'USD',
+    rateCardVersion: RATE_CARD.version, result,
+    request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [] }, engine: ENGINE3 },
+  });
+  await quotes.patch(q.id, { status: 'pending_review' });
+  await quotes.patch(q.id, { status: 'ready' });
+  const soldCents = selectionAmountCents(payLines(q), sel);
+  const saved = (await quotes.patch(q.id, { payLinkSelection: sel, soldCents, payLinkSeq: seq }))!;
+  return { quote: saved, soldCents, token: signQuotePayToken(saved.id, saved.revision, SECRET, seq) };
+}
+
+describe('GET /quotes/pay/view for a partial link', () => {
+  it('shows the picked lines, the coverage and the sold total', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, soldCents, quote: q } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const body = await (await view(createApp({ quotes }), token)).json();
+    expect(body.state).toBe('payable');
+    expect(body.totals.cents).toBe(soldCents);
+    expect(body.totals.cents).toBeLessThan(q.totalCents);
+    expect(body.coverage).toEqual({ soldLegs: 2, totalLegs: 3 });
+    expect(body.lines).toHaveLength(2);
+    expect(body.lines[0].label).toContain('Colombo');
+    // Hand-picked projection: label + amount only, never the internal kind/index.
+    expect(Object.keys(body.lines[0]).sort()).toEqual(['amountCents', 'label']);
+  });
+
+  it('leaks no margin, hot-zone or rate-card data', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const raw = await (await view(createApp({ quotes }), token)).text();
+    expect(raw).not.toMatch(/margin|hotZone|rateCardJson/i);
+  });
+
+  it('a link whose seq is stale renders revised, and cannot be started', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const { token, quote: q } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] }, 1);
+    const app = createApp({ quotes, bookings: new InMemoryBookingRepo() });
+    // Ops re-picks: seq moves to 2, the customer is still holding the seq-1 link.
+    await quotes.patch(q.id, { payLinkSelection: { legIndexes: [1], extraIndexes: [] }, soldCents: 1000, payLinkSeq: 2 });
+    expect((await (await view(app, token)).json()).state).toBe('revised');
+    const res = await start(app, token);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_revised');
+  });
+
+  it('a full-quote link is unchanged — no lines, no coverage', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const q = await readyQuote(quotes);
+    const body = await (await view(createApp({ quotes }), signQuotePayToken(q.id, q.revision, SECRET))).json();
+    expect(body.state).toBe('payable');
+    expect(body.lines).toBeUndefined();
+    expect(body.coverage).toBeUndefined();
+    expect(body.totals.cents).toBe(q.totalCents);
+  });
+});
+
+describe('POST /quotes/pay/start for a partial link', () => {
+  it('creates a booking over the sold legs, at the sold amount', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const { token, soldCents } = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] });
+    const res = await start(createApp({ quotes, bookings }), token);
+    expect(res.status).toBe(201);
+    const booking = (await bookings.get((await res.json()).bookingId))!;
+    expect(booking.total).toBe(soldCents);
+    expect(booking.amountDueNow).toBe(soldCents);
+    expect(booking.mode).toBe('trip');
+    if (booking.mode === 'trip') expect(booking.input.stops).toEqual(['Colombo', 'Kandy', 'Ella']);
+  });
+
+  // THE bug this task exists to prevent (spec §9). Selection A leaves a payment_pending booking
+  // AND stamps convertedBookingId; ops re-picks; the new link must not resume A's booking and
+  // charge A's amount.
+  it('does not resume a booking minted under a different selection', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const a = await partialQuote(quotes, { legIndexes: [0, 1], extraIndexes: [] }, 1);
+    const first = await (await start(app, a.token)).json();
+
+    // Ops re-picks — one cheaper leg — and sends the new link.
+    const q = (await quotes.get(a.quote.id))!;
+    const selB = { legIndexes: [2], extraIndexes: [] };
+    const soldB = selectionAmountCents(payLines(q), selB);
+    await quotes.patch(q.id, { payLinkSelection: selB, soldCents: soldB, payLinkSeq: 2 });
+    const tokenB = signQuotePayToken(q.id, q.revision, SECRET, 2);
+
+    const second = await (await start(app, tokenB)).json();
+    expect(second.bookingId).not.toBe(first.bookingId);
+    const b = (await bookings.get(second.bookingId))!;
+    expect(b.total).toBe(soldB);
+    expect(b.total).not.toBe(a.soldCents);
+    if (b.mode === 'single') expect(b.input.from).toBe('Ella');
+  });
+
+  it('a double tap on the SAME link still yields one booking', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const { token } = await partialQuote(quotes, { legIndexes: [0], extraIndexes: [] });
+    const a = await (await start(app, token)).json();
+    const b = await (await start(app, token)).json();
+    expect(b.bookingId).toBe(a.bookingId);
+  });
+});
+
+// Four live bookings were recorded under the owner's name because a pay link was opened in a
+// staff browser and Chrome autofilled the empty surname and email boxes (spec 2026-08-08).
+describe('a visitor cannot become the customer', () => {
+  const staffAuth = { opsUsers: 'f@x.com:founder,roshen@ceylonhop.com:founder', googleClientId: 'cid', opsSessionSecret: 'sek' };
+  const appWithStaff = (deps: AppDeps = {}) =>
+    realCreateApp({ auth: staffAuth, adminApiKey: 'k', bookingLinkSecret: SECRET, ...deps });
+
+  it('refuses a staff email on someone else’s quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes); // contact is the customer's phone
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('staff_email_not_customer');
+    // …and nothing was created in their name.
+    expect((await quotes.get(q.id))!.convertedBookingId).toBeNull();
+  });
+
+  it('lets a staff member pay their OWN quote', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    // Built with the staff address as the quote's OWN contact. It cannot be set afterwards:
+    // customerContact is not patchable, and the in-memory get() returns a copy.
+    const q = await readyQuote(quotes, { contact: 'roshen@ceylonhop.com' });
+    const res = await start(
+      appWithStaff({ quotes, bookings }),
+      signQuotePayToken(q.id, q.revision, SECRET),
+      { ...CUSTOMER, email: 'roshen@ceylonhop.com' },
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('leaves an ordinary customer completely alone', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET));
+    expect(res.status).toBe(201);
+  });
+
+  it('accepts a customer who gives no surname — the box that invited the autofill', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const q = await readyQuote(quotes);
+    // Built explicitly rather than destructured — a discarded `lastName` binding is an
+    // unused-var lint error, and this states the point of the test more plainly anyway.
+    const noSurname = {
+      firstName: CUSTOMER.firstName, email: CUSTOMER.email,
+      whatsapp: CUSTOMER.whatsapp, country: CUSTOMER.country,
+    };
+    const res = await start(appWithStaff({ quotes, bookings }), signQuotePayToken(q.id, q.revision, SECRET), noSurname as never);
+    expect(res.status).toBe(201);
   });
 });

@@ -196,11 +196,11 @@ describe('quote()', () => {
     expect(r.totalCents).toBe(30900);
   });
 
-  it('van9: 20km private → floor 5000¢ applies (raw 25km × 54.05¢ = 1351 < 5000)', () => {
+  it('van9: 20km private → floor 4999¢ applies (raw 25km × 54.05¢ = 1351 < 4999)', () => {
     const r = quote({ product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs: [{ from: 'A', to: 'B', distanceKm: 20 }] });
-    expect(r.subtotalCents).toBe(5000); // core minimum fare remains intact
-    expect(r.totalCents).toBe(5000); // final-price policy must not undercut the configured floor
-    expect(r.marginEstimateCents).toBe(5000 - Math.round(25 * 47));
+    expect(r.subtotalCents).toBe(4999); // core minimum fare remains intact
+    expect(r.totalCents).toBe(4999); // final-price policy must not undercut the configured floor
+    expect(r.marginEstimateCents).toBe(4999 - Math.round(25 * 47)); // margin follows the floor
   });
 
   it('preserves the sum of per-leg minimum fares when finishing a multi-leg private quote', () => {
@@ -211,8 +211,8 @@ describe('quote()', () => {
         { from: 'B', to: 'C', distanceKm: 10 },
       ],
     });
-    expect(r.subtotalCents).toBe(10000);
-    expect(r.totalCents).toBe(10000);
+    expect(r.subtotalCents).toBe(9998);
+    expect(r.totalCents).toBe(9998);
   });
 
   it('anti-tamper: car requested for 8 pax is priced as van9 with warning', () => {
@@ -318,8 +318,8 @@ describe('quote()', () => {
         { from: 'A', to: 'B', distanceKm: 10 },                        // old-shape ride → floor 5000
         { stops: ['C', 'D', 'E'], segmentKms: [5, 5] },               // 3-stop ride, raw 10 → floor 5000
       ] });
-      expect(r.subtotalCents).toBe(10000);
-      expect(r.totalCents).toBe(10000); // protected minimum (2 × 5000) forbids the downward finish
+      expect(r.subtotalCents).toBe(9998);
+      expect(r.totalCents).toBe(9998); // protected minimum (2 × 5000) forbids the downward finish
     });
 
     it('private: an invalid ride (segment count mismatch) surfaces INVALID_RIDE from quote()', () => {

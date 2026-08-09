@@ -13,7 +13,12 @@ const optionalPhonePart = z.preprocess(
 // The lead traveller — we send confirmation here and contact them about the booking.
 export const CustomerInput = z.object({
   firstName: z.string().min(1),
-  lastName: z.string().min(1),
+  // Optional since 2026-08-08. A phone-only quote renders this box EMPTY, and requiring it meant
+  // the operator previewing a pay link had to fill something to continue — so Chrome's autofill
+  // filled it, and four live bookings were recorded under the owner's surname. The ops quote form
+  // has always treated it as optional; these two ends now agree. PayHere already tolerates it
+  // (`last_name: c?.lastName ?? '-'`), and names render as [first,last].filter(Boolean).
+  lastName: z.string().optional(),
   email: z.string().email(),
   phoneCountryCode: optionalPhonePart,
   phoneNumber: optionalPhonePart,

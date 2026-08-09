@@ -55,6 +55,7 @@ export class EmailAlertAdapter implements AlertAdapter {
       subject: `[${sev}] ${alert.title} — Ceylon Hop ops`,
       html: `<pre style="font:14px/1.5 monospace">${text.replace(/</g, '&lt;')}</pre>`,
       text,
+      audience: 'ops',
     });
   }
 }

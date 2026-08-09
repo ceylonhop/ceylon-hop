@@ -272,6 +272,62 @@ export const tripRequests = pgTable('trip_request', {
   driverNights: integer('driver_nights'),
 });
 
+// One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
+// than to a position in trip_request.stops[] — which silently follows the position when the trip
+// changes. See docs/superpowers/specs/2026-08-08-post-payment-trip-details-design.md §1.
+//
+// This table does NOT price anything. trip_request / transfer_request stay the priced record; the
+// two agree at booking time and may legitimately diverge afterwards, and flattening them would
+// erase why the price is what it is.
+export const bookingLegs = pgTable(
+  'booking_legs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    // Display order only. NEVER an identifier — that is the whole point of this table.
+    seq: integer('seq').notNull(),
+    kind: text('kind').notNull(),
+    fromPlace: text('from_place').notNull(),
+    toPlace: text('to_place').notNull(),
+    // A chauffeur day's intermediate stops: itinerary, not accommodation. Recorded for ops
+    // context, never prompted for.
+    viaStops: text('via_stops').array().notNull().default(sql`'{}'::text[]`),
+    travelDate: text('travel_date'),
+    // Resolved endpoints. Deliberately null until Phase 2: resolving a place inside booking
+    // creation would put a Google call in the payment path.
+    fromLat: doublePrecision('from_lat'),
+    fromLng: doublePrecision('from_lng'),
+    toLat: doublePrecision('to_lat'),
+    toLng: doublePrecision('to_lng'),
+    // ── everything below is written by Phase 2 only; created now so this table is migrated once,
+    // over already-paid bookings, rather than twice.
+    pickupSpot: text('pickup_spot'),
+    dropoffSpot: text('dropoff_spot'),
+    pickupLat: doublePrecision('pickup_lat'),
+    pickupLng: doublePrecision('pickup_lng'),
+    dropoffLat: doublePrecision('dropoff_lat'),
+    dropoffLng: doublePrecision('dropoff_lng'),
+    pickupTime: text('pickup_time'),
+    flightNo: text('flight_no'),
+    detailFlag: text('detail_flag'),
+    distanceCheck: text('distance_check'),
+    refusedSpot: text('refused_spot'),
+    refusedAt: timestamp('refused_at', { withTimezone: true }),
+    detailsHistory: jsonb('details_history'),
+    detailsUpdatedAt: timestamp('details_updated_at', { withTimezone: true }),
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('booking_legs_booking_seq_unique').on(t.bookingId, t.seq),
+    index('booking_legs_booking_idx').on(t.bookingId),
+    check('booking_legs_kind_valid', sql`${t.kind} in ('leg', 'day', 'gap')`),
+    check('booking_legs_seq_positive', sql`${t.seq} > 0`),
+  ],
+);
+
 export const corridors = pgTable(
   'corridor',
   {
@@ -462,6 +518,17 @@ export const quotes = pgTable('quotes', {
   intentJson: jsonb('intent_json'),
   intentFingerprint: text('intent_fingerprint'),
   revision: integer('revision').notNull().default(1),
+  // Partial-leg pay links (spec 2026-08-04). A NULL selection = the outstanding link is for the
+  // full quote. sold_cents is the FROZEN amount a partial link charges. pay_link_seq is
+  // monotonic per quote and never reset, so a retired link's seq is never reused.
+  payLinkSelection: jsonb('pay_link_selection'),
+  soldCents: integer('sold_cents'),
+  payLinkSeq: integer('pay_link_seq').notNull().default(0),
+  // Price-drift indicator (spec 2026-08-05). The quote TOTAL when the customer was last quoted —
+  // via mark-sent or a pay-link mint. Never the amount a partial link charged (see migration 0039).
+  customerTotalCents: integer('customer_total_cents'),
+  customerTotalAt: timestamp('customer_total_at', { withTimezone: true }),
+  customerTotalVia: text('customer_total_via'),
   accessTokenDigest: text('access_token_digest'),
   convertedBookingId: uuid('converted_booking_id').references(() => bookings.id),
   notes: text('notes'),
@@ -476,6 +543,9 @@ export const quotes = pgTable('quotes', {
   // (internalQuote's PATCH), not a storage constraint. There is no 'legacy' sentinel — every
   // quote is gated, old ones included (spec I7).
   requestedService: text('requested_service'),
+  // Offer validity (spec 2026-08-05 D9): how long the PRICE is honoured. Distinct from link
+  // liveness, which is status-driven and has no clock. Stamped on → ready as approval + 7 days.
+  offerValidUntil: timestamp('offer_valid_until', { withTimezone: true }),
   // Assignment + audit (spec 2026-07-16). assignedTo is the notification target: who HOLDS the
   // quote, set only by an explicit assign — never inferred from who last moved it. All nullable:
   // rows predating this can't be backfilled (we don't know who made them). Emails, not FKs —
@@ -504,6 +574,25 @@ export const quotes = pgTable('quotes', {
   index('idx_quotes_decided_at').on(t.decidedAt),
   index('idx_quotes_live_status').on(t.status).where(sql`${t.deletedAt} is null`),
   unique('quotes_converted_booking_id_unique').on(t.convertedBookingId),
+]);
+
+// Quote version history (spec 2026-08-05 §4). One row per SUPERSEDED state — see migration 0040.
+// The live state is never duplicated here: it lives in `quotes`.
+export const quoteRevisions = pgTable('quote_revisions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  quoteId: uuid('quote_id').notNull().references(() => quotes.id),
+  revision: integer('revision').notNull(),
+  requestJson: jsonb('request_json'),
+  resultJson: jsonb('result_json'),
+  totalCents: integer('total_cents').notNull(),
+  currency: text('currency').notNull(),
+  rateCardVersion: text('rate_card_version'),
+  status: text('status'),
+  updatedBy: text('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  unique('quote_revisions_quote_revision_unique').on(t.quoteId, t.revision),
+  index('idx_quote_revisions_quote').on(t.quoteId, t.revision),
 ]);
 
 // Rate-card HOT ZONES (spec 2026-07-22): a founder-editable list of premium towns. When a priced

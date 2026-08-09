@@ -197,6 +197,76 @@ test('disconnected legs draw as separate routes — no line bridging the gap', a
   expect(errors).toEqual([]);
 });
 
+// The route map must draw the road ops PICKED, not the one Google prefers. Picking "Local road"
+// used to change the km and the chip while the map kept showing the expressway: the redraw is
+// gated on a signature built from stop names only, so the choice didn't register as a change,
+// and the request carried no routeModifiers even when it did (owner-reported 2026-08-08).
+test('picking Local road redraws the map with the toll-free route', async ({ page }) => {
+  test.slow(); // heavy ops SPA boot — headroom under parallel load
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await stub(page, { key: 'test-browser-key' });
+  // Registered AFTER stub()'s catch-all so these win (Playwright matches newest route first):
+  // a Colombo City → Ella pair that forks, and an autocomplete that echoes what was typed.
+  await page.route('**/admin/quote/places**', (r) => {
+    const q = new URL(r.request().url()).searchParams.get('q') || '';
+    r.fulfill(json({ places: [q], suggestions: [{ label: q, source: 'known' }] }));
+  });
+  await page.route('**/admin/quote/distance', (r) => {
+    const b = r.request().postDataJSON() || {};
+    if (b.compare && b.from === 'Colombo City' && b.to === 'Ella') {
+      return r.fulfill(json({
+        km: 292, durationMin: 330, hasChoice: true,
+        variants: { fastest: { km: 292, durationMin: 330 }, noTolls: { km: 205, durationMin: 390 } },
+      }));
+    }
+    return r.fulfill(json({ km: 292, durationMin: 330, hasChoice: false }));
+  });
+
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await page.locator('[data-action="setVehicle"][data-veh="car"]').click();
+  await page.fill('#f-firstName', 'Karen');
+  await page.fill('#f-lastName', 'Silva');
+  await page.fill('#f-contact', '+94771234567');
+  await page.dispatchEvent('#f-contact', 'change');
+  // Commit through the autocomplete (acPick) — the path real ops take, and the one that
+  // reliably schedules the compare query that forks the leg.
+  const pick = async (stop, name) => {
+    const input = page.locator(`.ch-tl-title[data-field="stop"][data-stop="${stop}"]`).first();
+    await expect(input).toBeVisible({ timeout: 10000 });
+    await input.click();
+    await input.fill('');
+    await page.keyboard.type(name, { delay: 10 });
+    await expect(page.locator('.ch-ac-menu').first()).toBeVisible({ timeout: 5000 });
+    await page.locator('.ch-ac-menu .ch-ac-item', { hasText: name }).first().click();
+  };
+  await pick(0, 'Colombo City');
+  await pick(1, 'Ella');
+
+  await expect(page.locator('.ch-rc-modal')).toBeVisible({ timeout: 10000 });
+  // The open modal draws BOTH candidate routes, so an avoidTolls request already exists — it
+  // just isn't the itinerary map's. Tell them apart by what they ask for: only the itinerary
+  // map requests 'legs' (it needs each stop's location to place its numbered pins).
+  const itinReqs = () => page.evaluate(() =>
+    (window.__computeRoutesReqs || []).filter((r) => (r.fields || []).indexOf('legs') >= 0));
+  const before = await itinReqs();
+  expect(before.length).toBeGreaterThan(0);
+  expect(before.every((r) => r.routeModifiers === undefined)).toBe(true); // drawn on the default route
+
+  await page.locator('.ch-rc-card[data-route="local"]').click();       // select
+  await page.locator('[data-action="routeModalPickLocal"]').click();   // Use local road
+  await expect(page.locator('.ch-route-chip').first()).toContainText('Local road');
+
+  // The itinerary map re-queries, and this time it asks Google for the road we sold.
+  await expect
+    .poll(async () => (await itinReqs()).some((r) => r.routeModifiers && r.routeModifiers.avoidTolls === true),
+      { timeout: 10000 })
+    .toBe(true);
+  await expect(page.locator('.ch-itin-map[data-map="ready"]')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('without a maps key the itinerary shows no route map toggle', async ({ page }) => {
   test.slow(); // heavy ops SPA boot — headroom under parallel load
   await stub(page); // no key → OPS_MAPS_KEY stays the untemplated placeholder → treated as none
