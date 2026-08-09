@@ -41,6 +41,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      falls back to the static SVG below when it can't load (missing key, wrong referrer, or
      the route fails), so a blocked key degrades the page instead of breaking it. -->
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
+  <style>
+    /* A negotiated price shows its two ends above the figure that is actually paid. Muted and
+       smaller so the final total stays the number the eye lands on. .tot supplies the row layout. */
+    .tot.tot-sub{font-size:.95rem;opacity:.72;padding-bottom:2px}
+    .tot.tot-sub .v{font-weight:600}
+    .tot.tot-disc .v{color:#0f8a80}
+  </style>
 </head>
 <body>
 <header class="pp-top"><div class="pp-topin">
@@ -294,7 +301,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="t-head"><h3 class="opt-n">' + esc(opt.name) + '</h3></div>'
       + '<p class="opt-d">' + esc(opt.blurb) + '</p>'
       + '<div class="included"><b>Included</b>' + esc(opt.includedText) + '</div>'
-      + '<div class="tot"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
+      // A negotiated price shows its two ends. These reconcile exactly — finishing runs before the
+      // discount — so the customer can check the arithmetic and it holds.
+      + (opt.discount
+          ? '<div class="tot tot-sub"><span class="l">Total</span><span class="v">' + esc(opt.discount.totalBeforeUsd) + '</span></div>'
+            + '<div class="tot tot-sub tot-disc"><span class="l">Discount</span><span class="v">&minus;' + esc(opt.discount.discountUsd) + '</span></div>'
+            + '<div class="tot"><span class="l">Final total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
+          : '<div class="tot"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>')
       // "Confirm on WhatsApp" on both cards (owner, 2026-08-06): "Book" over-promised — tapping
       // books nothing — and naming the channel makes the app-switch exactly what the label said.
       // Which option is being confirmed is carried by the card and the wa.me prefill.
