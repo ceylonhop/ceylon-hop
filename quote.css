@@ -60,7 +60,8 @@
    for a boarding pass's one short fact, not a sentence. */
 .hop-dot.stay{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ink-faint)}
 .hop-line.dash{background:repeating-linear-gradient(to bottom,var(--line) 0 4px,transparent 4px 8px)}
-.hop.is-stay .hop-t{font-weight:600;color:var(--ink-soft)}
+/* 400 not 600: .hop-t is Bodoni now, which ships Book and Bold and nothing between. */
+.hop.is-stay .hop-t{font-weight:400;color:var(--ink-soft)}
 .hop-d{margin:1px 0 0} /* the bottom margin moves to .hop-m below it */
 .hop-m{font-size:.78rem;color:var(--ink-soft);margin:1px 0 10px}
 .hop.is-stay .hop-d{margin-bottom:10px}
