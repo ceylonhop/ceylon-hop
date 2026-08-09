@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leg card — proposed states · Ceylon Hop Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Ceylon Hop ops palette (verbatim from ops-ui.html) ─────────────────── */
+:root{
+  --teal:#0AB9B6;--teal-d:#08938f;--saffron:#F9A429;--red:#EC3A24;
+  --ink:#241f1d;--muted:#6b645f;--muted-2:#a59d92;
+  --cream:#F1EEE4;--cream-d:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+  --surface:#fff;--espresso:#1b1714;
+  --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
+  --blue:#0AB9B6;--blue-d:#08938f;
+  --r-lg:18px;--r-md:13px;
+  --shadow-card:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);
+  --shadow-pop:0 8px 26px -12px rgba(40,33,28,.20);
+  --serif:'Newsreader',Georgia,serif;--sans:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --amber:#e0a33e;
+}
+:root[data-theme="dark"]{
+  --cream:#141313;--cream-d:#232221;--paper:#1c1b1a;--line:#302e2b;--line-soft:#282624;
+  --ink:#eceae5;--muted:#b3afa7;--muted-2:#807b73;--surface:#262523;
+  --ok:#4fbf7e;--ok-bg:#132a1c;--wait:#e0a33e;--wait-bg:#2e2410;--go:#2fbfb4;--go-bg:#0e2a27;
+  --shadow-card:0 1px 2px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.3);
+  --shadow-pop:0 8px 26px -12px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--cream);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;transition:background .3s ease,color .3s ease}
+button{font-family:inherit;cursor:pointer;color:inherit;background:none;border:0}
+
+/* ── Review-sheet chrome ────────────────────────────────────────────────── */
+.sheet{max-width:880px;margin:0 auto;padding:0 22px 90px}
+.masthead{background:var(--espresso);color:#fbf6ea;margin:0 -22px;padding:44px 34px 38px;border-radius:0 0 26px 26px;position:relative;overflow:hidden}
+.masthead::after{content:'';position:absolute;inset:0;background:radial-gradient(120% 140% at 85% -20%, rgba(10,185,182,.22), transparent 55%),radial-gradient(90% 120% at 10% 120%, rgba(249,164,41,.14), transparent 60%);pointer-events:none}
+.masthead .kicker{font-size:.62rem;font-weight:800;letter-spacing:.28em;text-transform:uppercase;color:var(--teal);margin-bottom:12px}
+.masthead h1{font-family:var(--serif);font-weight:600;font-size:2.35rem;letter-spacing:-.02em;line-height:1.08;max-width:560px}
+.masthead p{margin-top:12px;color:#c9c2b6;font-size:.86rem;max-width:520px}
+.masthead .meta{margin-top:18px;display:flex;gap:14px;align-items:center;font-family:var(--mono);font-size:.66rem;color:#8d867b;flex-wrap:wrap}
+.masthead .meta b{color:#fbf6ea;font-weight:600}
+.theme-flip{position:absolute;top:22px;right:24px;z-index:2;border:1px solid rgba(251,246,234,.25);color:#fbf6ea;border-radius:999px;padding:6px 14px;font-size:.7rem;font-weight:700;letter-spacing:.06em;transition:background .2s ease,border-color .2s ease}
+.theme-flip:hover{background:rgba(251,246,234,.1);border-color:rgba(251,246,234,.5)}
+
+section.prop{margin-top:52px}
+.prop-head{display:flex;gap:14px;align-items:baseline;margin-bottom:6px}
+.prop-num{flex:none;font-family:var(--mono);font-size:.68rem;font-weight:700;color:var(--teal-d);border:1.5px solid var(--teal);border-radius:999px;padding:3px 10px;letter-spacing:.08em;transform:translateY(-2px)}
+.prop-head h2{font-family:var(--serif);font-weight:600;font-size:1.55rem;letter-spacing:-.015em}
+.prop-why{color:var(--muted);font-size:.88rem;max-width:640px;margin:2px 0 20px 0}
+.prop-why b{color:var(--ink);font-weight:700}
+
+.stage{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:20px 20px 22px;position:relative;transition:background .3s ease,border-color .3s ease}
+.stage + .stage{margin-top:16px}
+.stage-tag{position:absolute;top:-9px;left:18px;font-size:.6rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;padding:3px 10px;border-radius:999px;background:var(--cream-d);color:var(--muted)}
+.stage-tag.now{background:var(--cream-d);color:var(--muted)}
+.stage-tag.new{background:var(--teal);color:#fff}
+.stage-note{font-size:.76rem;color:var(--muted-2);margin-top:12px;line-height:1.5}
+.stage-note b{color:var(--muted);font-weight:700}
+.try{display:inline-flex;align-items:center;gap:6px;font-size:.68rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--saffron);margin-bottom:12px}
+.try::before{content:'▸'}
+
+/* ── Faithful leg card (subset of ops-ui.html rules) ────────────────────── */
+.leg{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-card);transition:border-color .15s,box-shadow .15s,opacity .35s ease,transform .35s ease}
+.leg:hover{border-color:var(--cream-d)}
+.leg.tone-teal{border-left:3px solid var(--teal)}
+.leg.tone-red{border-left:3px solid var(--red)}
+.leg-main{display:flex;align-items:center;gap:10px;padding:9px 12px;min-height:56px}
+.leg-dot{width:18px;height:18px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600}
+.tone-teal>.leg-main .leg-dot{background:var(--teal)}
+.tone-red>.leg-main .leg-dot{background:var(--red)}
+.leg-route{display:flex;align-items:center;gap:7px;flex:1 1 auto;min-width:0}
+.leg-ac{position:relative;flex:1 1 0;min-width:60px}
+.leg-in{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 9px;font-size:14px;font-weight:500;color:var(--ink);outline:none;font-family:var(--sans);min-width:0}
+.leg-in:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(10,185,182,.16)}
+.leg-arrow{color:var(--muted-2);font-size:14px;flex:none}
+.leg-date{flex:none;display:flex;align-items:center;gap:4px}
+.leg-date input{border:1px solid var(--line);background:var(--cream);border-radius:7px;padding:6px 8px;font-size:12px;font-family:inherit;color:var(--ink);outline:none}
+.leg-date input:focus{border-color:var(--blue);background:var(--surface)}
+.date-step{flex:none;width:22px;height:28px;border:1px solid var(--line);background:var(--surface);border-radius:7px;font-size:13px;font-weight:700;color:var(--muted);line-height:1;transition:background .15s,color .15s,border-color .15s}
+.date-step:hover{background:var(--cream);color:var(--ink);border-color:var(--muted-2)}
+.date-step:focus-visible{outline:2px solid var(--saffron);outline-offset:2px}
+.day-tag{flex:none;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--go);background:var(--go-bg);border-radius:6px;padding:3px 6px;white-space:nowrap}
+.leg-dist{flex:none;display:flex;align-items:center;gap:4px}
+.dist-pill{display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--cream);border-radius:999px;padding:4px 10px;font-size:11.5px;color:var(--ink)}
+.dist-pill b{font-weight:700}
+.dist-time{color:var(--muted);font-weight:400;margin-left:5px;padding-left:6px;border-left:1px solid currentColor;opacity:.55;font-size:11px}
+.leg-price{flex:none;font-family:var(--serif);font-size:16px;font-weight:700;color:var(--ink);min-width:54px;text-align:right;transition:transform .25s cubic-bezier(.2,.7,.3,1)}
+.leg-price.bump{transform:translateY(-2px)}
+.leg-actions{display:flex;gap:4px;flex:none}
+.mini-btn{width:24px;height:24px;border:1px solid var(--line);background:var(--surface);border-radius:7px;font-size:12px;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s}
+.mini-btn:hover{background:var(--cream);color:var(--ink)}
+.mini-btn.danger:hover{background:rgba(236,58,36,.08);color:var(--red);border-color:rgba(236,58,36,.35)}
+.leg-tools{display:flex;align-items:center;gap:8px;padding:2px 12px 10px 44px;flex-wrap:wrap}
+.tool-chip{display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--cream-d);background:transparent;color:var(--muted);border-radius:999px;padding:3.5px 11px;font-size:11.5px;font-weight:600;line-height:1.35;transition:color .15s ease,border-color .15s ease,background-color .15s ease,transform .1s ease}
+.tool-chip:hover{color:var(--ink);border-color:var(--line);border-style:solid;background:var(--surface)}
+.tool-chip:active{transform:translateY(1px)}
+.addon-pill{display:inline-flex;align-items:center;gap:4px;border:1px solid transparent;background:rgba(249,164,41,.13);color:#b9760f;border-radius:999px;padding:3.5px 11px;font-size:11.5px;font-weight:600}
+:root[data-theme="dark"] .addon-pill{color:#e8b45a}
+/* current checkbox tray */
+.leg-addons{padding:8px 12px 10px 44px;border-top:1px solid var(--line-soft);display:flex;gap:16px;flex-wrap:wrap;align-items:center;overflow:hidden}
+.tray-wrap{display:grid;grid-template-rows:0fr;transition:grid-template-rows .28s cubic-bezier(.2,.7,.3,1)}
+.tray-wrap.open{grid-template-rows:1fr}
+.tray-wrap>div{min-height:0;overflow:hidden}
+.check{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;user-select:none}
+.check input{position:absolute;opacity:0;width:0}
+.check-box{width:17px;height:17px;border:1.5px solid var(--line);border-radius:5px;background:var(--surface);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:background .15s,border-color .15s}
+.check input:checked+.check-box{background:var(--teal);border-color:var(--teal)}
+
+/* ── P1: fee toggle chips (proposed) ────────────────────────────────────── */
+.fee-chip{display:inline-flex;align-items:center;gap:6px;border:1px dashed var(--cream-d);background:transparent;color:var(--muted);border-radius:999px;padding:3.5px 12px;font-size:11.5px;font-weight:600;line-height:1.35;transition:color .18s ease,border-color .18s ease,background-color .18s ease,box-shadow .18s ease,transform .1s ease}
+.fee-chip .price{font-family:var(--mono);font-size:10px;font-weight:600;opacity:.75}
+.fee-chip:hover{color:var(--ink);border-color:var(--line);border-style:solid;background:var(--surface)}
+.fee-chip:active{transform:translateY(1px)}
+.fee-chip[aria-pressed="true"]{border:1px solid transparent;background:rgba(249,164,41,.15);color:#b9760f;box-shadow:0 0 0 1px rgba(185,118,15,.25) inset}
+:root[data-theme="dark"] .fee-chip[aria-pressed="true"]{color:#e8b45a}
+.fee-chip[aria-pressed="true"] .tick{display:inline}
+.fee-chip .tick{display:none;font-size:10px}
+
+/* ── P2: undo toast ─────────────────────────────────────────────────────── */
+.leg.removing{opacity:0;transform:scale(.985)}
+.leg-slot{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s cubic-bezier(.2,.7,.3,1)}
+.leg-slot.gone{grid-template-rows:0fr}
+.leg-slot>div{min-height:0;overflow:hidden}
+.toastbar{position:relative;margin-top:14px;display:flex;align-items:center;gap:12px;background:var(--espresso);color:#fbf6ea;border-radius:12px;padding:10px 14px;font-size:12.5px;font-weight:600;box-shadow:var(--shadow-pop);opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .28s ease,transform .28s cubic-bezier(.2,.7,.3,1)}
+.toastbar.show{opacity:1;transform:none;pointer-events:auto}
+.toastbar .undo{margin-left:auto;border:1px solid rgba(251,246,234,.3);border-radius:999px;padding:4px 14px;font-size:11.5px;font-weight:700;color:#fbf6ea;transition:background .15s,border-color .15s}
+.toastbar .undo:hover{background:rgba(251,246,234,.12);border-color:rgba(251,246,234,.6)}
+.toast-ring{flex:none;width:16px;height:16px;border-radius:50%;background:conic-gradient(var(--teal) calc(var(--p,1)*360deg), rgba(251,246,234,.15) 0)}
+.reset-link{font-size:.72rem;font-weight:700;color:var(--teal-d);text-decoration:underline;text-underline-offset:3px;margin-top:10px;display:none}
+.reset-link.show{display:inline-block}
+
+/* ── P3: manual km states ───────────────────────────────────────────────── */
+.km-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+.km-cell{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);padding:14px 14px 12px;transition:border-color .3s ease}
+.km-cell h4{font-size:.62rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.km-cell h4 .pill{font-size:.56rem;padding:2px 7px;border-radius:999px;letter-spacing:.08em}
+.km-cell h4 .pill.now{background:var(--cream-d);color:var(--muted)}
+.km-cell h4 .pill.new{background:var(--teal);color:#fff}
+.km-row{display:flex;align-items:center;gap:6px;min-height:34px}
+.km-input-wrap{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:8px;background:var(--surface);padding:0 8px;width:96px;transition:background .25s ease,border-color .25s ease}
+.km-input-wrap input{width:52px;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:var(--ink);outline:none;padding:6px 0}
+.km-suffix{font-size:11px;color:var(--muted-2)}
+.km-link{font-size:11.5px;font-weight:600;color:var(--teal-d);text-decoration:underline;text-underline-offset:3px}
+/* proposed manual state */
+.km-input-wrap.manual{background:var(--wait-bg);border-color:var(--amber)}
+.km-input-wrap.manual input{color:var(--wait)}
+.manual-tag{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--wait);background:var(--wait-bg);border:1px solid var(--amber);border-radius:5px;padding:2px 6px}
+.auto-chip{display:inline-flex;align-items:center;gap:4px;border:1px dashed var(--cream-d);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;color:var(--muted);transition:color .15s,border-color .15s,background .15s}
+.auto-chip:hover{color:var(--teal-d);border-color:var(--teal);border-style:solid;background:var(--go-bg)}
+.km-cap{font-size:.72rem;color:var(--muted-2);margin-top:10px;line-height:1.5}
+.km-cap b{color:var(--muted)}
+
+/* ── P4: tab order demo ─────────────────────────────────────────────────── */
+.tab-demo :focus-visible{outline:2.5px solid var(--saffron);outline-offset:2px;border-radius:7px}
+.tab-count{font-family:var(--mono);font-size:.66rem;color:var(--muted-2);margin-top:8px}
+.tab-count b{color:var(--saffron)}
+
+/* footer note */
+.parked{margin-top:56px;border:1px dashed var(--line);border-radius:var(--r-lg);padding:18px 20px;color:var(--muted);font-size:.82rem;line-height:1.6}
+.parked h3{font-family:var(--serif);font-size:1.05rem;color:var(--ink);margin-bottom:6px}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header class="masthead">
+    <button class="theme-flip" id="themeFlip">☾ dark</button>
+    <div class="kicker">Ceylon Hop · Ops cockpit · Design review</div>
+    <h1>Leg card — the four proposed fixes, live</h1>
+    <p>Every card below is interactive and rendered in the real ops palette. Each proposal shows the current state next to the proposed one — click around.</p>
+    <div class="meta"><span>Sheet <b>2026-08-01</b></span><span>·</span><span>From the leg-card UX review</span><span>·</span><span>Two-zone redesign <b>not included</b> (on hold)</span></div>
+  </header>
+
+  <!-- ═══════════════ P1 — Fees as inline toggle chips ═══════════════ -->
+  <section class="prop">
+    <div class="prop-head"><span class="prop-num">P1</span><h2>Fees: inline toggle chips, tray retired</h2></div>
+    <p class="prop-why">Today a fee is <b>two clicks and a whole extra card band</b>, and once on, it renders twice (orange pill + ticked checkbox). Proposed: the three fees are the chips — one click, price at the point of decision, one source of truth.</p>
+
+    <div class="stage">
+      <span class="stage-tag now">Today</span>
+      <div class="try">Click “+ Fees”, then tick “Waiting” — watch the duplication appear</div>
+      <div class="leg tone-teal">
+        <div class="leg-main">
+          <span class="leg-dot">2</span>
+          <div class="leg-route">
+            <div class="leg-ac"><input class="leg-in" value="Ella" title="Ella"></div>
+            <span class="leg-arrow">→</span>
+            <div class="leg-ac"><input class="leg-in" value="Colombo Airport (CMB)" title="Colombo Airport (CMB)"></div>
+          </div>
+          <div class="leg-date"><button class="date-step">−</button><input type="date" value="2026-07-28"><button class="date-step">+</button><span class="day-tag">Day 5</span></div>
+          <div class="leg-dist"><span class="dist-pill"><b>334 km</b><span class="dist-time">5h 10m</span></span></div>
+          <div class="leg-price" id="p1nowPrice">$140.47</div>
+          <div class="leg-actions"><button class="mini-btn" title="Duplicate">⧉</button><button class="mini-btn danger" title="Remove">×</button></div>
+        </div>
+        <div class="leg-tools">
+          <button class="tool-chip">+ Stop</button>
+          <button class="tool-chip">↩ Return to start</button>
+          <span id="p1nowFeeSlot"><button class="tool-chip" id="p1nowFeesBtn">+ Fees</button></span>
+          <button class="tool-chip" style="margin-left:auto;border-style:solid;border-color:var(--line);background:var(--surface)">Route: Expressway <span style="font-size:9px;opacity:.6">▾</span></button>
+        </div>
+        <div class="tray-wrap" id="p1tray"><div>
+          <div class="leg-addons">
+            <label class="check"><input type="checkbox" data-fee="Sightseeing"><span class="check-box"></span>Sightseeing</label>
+            <label class="check"><input type="checkbox" data-fee="Waiting"><span class="check-box"></span>Waiting</label>
+            <label class="check"><input type="checkbox" data-fee="Safari wait"><span class="check-box"></span>Safari wait</label>
+          </div>
+        </div></div>
+      </div>
+      <p class="stage-note"><b>What to notice:</b> the tray is a third band that never closes on its own, no fee shows its cost, and “Waiting” ends up on screen twice — pill and checkbox.</p>
+    </div>
+
+    <div class="stage">
+      <span class="stage-tag new">Proposed</span>
+      <div class="try">Click the fee chips directly — price updates, nothing else appears</div>
+      <div class="leg tone-teal">
+        <div class="leg-main">
+          <span class="leg-dot">2</span>
+          <div class="leg-route">
+            <div class="leg-ac"><input class="leg-in" value="Ella" title="Ella"></div>
+            <span class="leg-arrow">→</span>
+            <div class="leg-ac"><input class="leg-in" value="Colombo Airport (CMB)" title="Colombo Airport (CMB)"></div>
+          </div>
+          <div class="leg-date"><button class="date-step">−</button><input type="date" value="2026-07-28"><button class="date-step">+</button><span class="day-tag">Day 5</span></div>
+          <div class="leg-dist"><span class="dist-pill"><b>334 km</b><span class="dist-time">5h 10m</span></span></div>
+          <div class="leg-price" id="p1newPrice">$140.47</div>
+          <div class="leg-actions"><button class="mini-btn" title="Duplicate">⧉</button><button class="mini-btn danger" title="Remove">×</button></div>
+        </div>
+        <div class="leg-tools">
+          <button class="tool-chip">+ Stop</button>
+          <button class="tool-chip">↩ Return to start</button>
+          <button class="fee-chip" aria-pressed="false" data-cents="1000"><span class="tick">✓</span>Sightseeing · 3h <span class="price">$10</span></button>
+          <button class="fee-chip" aria-pressed="false" data-cents="1000"><span class="tick">✓</span>Waiting <span class="price">$10</span></button>
+          <button class="fee-chip" aria-pressed="false" data-cents="2500"><span class="tick">✓</span>Safari wait <span class="price">$25</span></button>
+          <button class="tool-chip" style="margin-left:auto;border-style:solid;border-color:var(--line);background:var(--surface)">Route: Expressway <span style="font-size:9px;opacity:.6">▾</span></button>
+        </div>
+      </div>
+      <p class="stage-note"><b>Grammar unchanged:</b> dashed = adds something, solid saffron = money on the leg — the same rule the route chip and “+ Add leg” already follow. Chip prices would read from the rate card at render (figures here illustrative). Off-chips fade with the quiet-card reveal exactly like +Stop; active ones stay legible at rest, same as today’s pill.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ P2 — Undo toast on remove ═══════════════ -->
+  <section class="prop">
+    <div class="prop-head"><span class="prop-num">P2</span><h2>Remove leg: undo toast, not a confirm</h2></div>
+    <p class="prop-why">A fully-priced leg currently vanishes in <b>one unconfirmed click with no way back</b> — while deleting a quote, marking a no-show and an unusual premium all confirm. A confirm dialog would tax every intentional removal; an undo toast keeps the click cheap and makes the mistake free.</p>
+
+    <div class="stage">
+      <span class="stage-tag new">Proposed</span>
+      <div class="try">Click the × on the card — then change your mind</div>
+      <div class="leg-slot" id="p2slot"><div>
+        <div class="leg tone-red" id="p2leg">
+          <div class="leg-main">
+            <span class="leg-dot">3</span>
+            <div class="leg-route">
+              <div class="leg-ac"><input class="leg-in" value="Colombo Airport (CMB)" title="Colombo Airport (CMB)"></div>
+              <span class="leg-arrow">→</span>
+              <div class="leg-ac"><input class="leg-in" value="Pasikuda Beach, Sri Lanka" title="Pasikuda Beach"></div>
+            </div>
+            <div class="leg-date"><input type="date"></div>
+            <div class="leg-dist"><span class="dist-pill"><b>273 km</b></span></div>
+            <div class="leg-price">$127.51</div>
+            <div class="leg-actions"><button class="mini-btn" title="Duplicate">⧉</button><button class="mini-btn danger" id="p2remove" title="Remove">×</button></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="toastbar" id="p2toast">
+        <span class="toast-ring" id="p2ring"></span>
+        <span>Leg removed — <b>Colombo Airport → Pasikuda Beach</b>, $127.51</span>
+        <button class="undo" id="p2undo">Undo</button>
+      </div>
+      <button class="reset-link" id="p2reset">reset demo</button>
+      <p class="stage-note"><b>Behaviour:</b> the card collapses exactly as it does today (same ease, legs below rise to fill), the toast holds for 8 s with a draining ring, and Undo restores the leg in place with every field intact. After 8 s the removal is final — same as now, just with a grace window.</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ P3 — Manual km honesty ═══════════════ -->
+  <section class="prop">
+    <div class="prop-head"><span class="prop-num">P3</span><h2>Manual km: make the risky state look risky</h2></div>
+    <p class="prop-why">A manual distance renders as a solid input — it <b>looks more authoritative than the auto pill</b>, but it’s the state where the price stops tracking the route. Every leg of every reopened quote comes back manual, so this is the stale-km underpricing shape. Proposed: manual wears amber and says so; “auto” becomes a real chip.</p>
+
+    <div class="stage">
+      <span class="stage-tag new">The three states, side by side</span>
+      <div class="km-grid">
+        <div class="km-cell">
+          <h4>Auto <span class="pill now">unchanged</span></h4>
+          <div class="km-row">
+            <span class="dist-pill"><b>273 km</b><span class="dist-time">4h 05m</span></span>
+            <button class="km-link" title="Edit distance">✎</button>
+          </div>
+          <p class="km-cap">Resolved from the route. Quiet pill — <b>this stays exactly as it is.</b></p>
+        </div>
+        <div class="km-cell">
+          <h4>Manual — today <span class="pill now">problem</span></h4>
+          <div class="km-row">
+            <span class="km-input-wrap"><input type="number" value="273"><span class="km-suffix">km</span></span>
+            <button class="km-link">auto</button>
+          </div>
+          <p class="km-cap">Reads as the <b>most solid</b> element on the card. Nothing says the price is frozen to a typed number; the way back is a tiny link.</p>
+        </div>
+        <div class="km-cell">
+          <h4>Manual — proposed <span class="pill new">new</span></h4>
+          <div class="try" style="margin-bottom:8px">Click “auto” to release it</div>
+          <div class="km-row" id="p3row">
+            <span class="km-input-wrap manual"><input type="number" value="273"><span class="km-suffix">km</span></span>
+            <span class="manual-tag">manual</span>
+            <button class="auto-chip" data-p3="auto">↺ auto</button>
+          </div>
+          <p class="km-cap">Amber = “a human overrode this” — the same warning tone the trip calendar already uses for suspicious gaps. One glance down a reopened quote finds every frozen leg.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ P4 — Stepper tab stops ═══════════════ -->
+  <section class="prop">
+    <div class="prop-head"><span class="prop-num">P4</span><h2>Steppers out of the tab order</h2></div>
+    <p class="prop-why">The − / + steppers are a mouse affordance; keyboard users already step dates with ↑/↓ inside the input. Today they add <b>two tab stops per dated leg</b> — twelve extra stops on a six-leg quote.</p>
+
+    <div class="stage tab-demo">
+      <span class="stage-tag new">Try both — click a From field, then press Tab repeatedly</span>
+      <div style="display:grid;gap:14px;margin-top:6px">
+        <div>
+          <div style="font-size:.62rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:8px">Today — 6 stops to cross the card</div>
+          <div class="leg tone-teal" id="p4now">
+            <div class="leg-main">
+              <span class="leg-dot">1</span>
+              <div class="leg-route">
+                <div class="leg-ac"><input class="leg-in" value="Colombo Airport (CMB)"></div>
+                <span class="leg-arrow">→</span>
+                <div class="leg-ac"><input class="leg-in" value="Pelmadulla"></div>
+              </div>
+              <div class="leg-date"><button class="date-step">−</button><input type="date" value="2026-07-24"><button class="date-step">+</button><span class="day-tag">Day 1</span></div>
+              <div class="leg-dist"><span class="dist-pill"><b>119 km</b></span></div>
+              <div class="leg-price">$61.99</div>
+            </div>
+          </div>
+          <div class="tab-count" id="p4nowCount">tab stops crossed: <b>0</b></div>
+        </div>
+        <div>
+          <div style="font-size:.62rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:8px">Proposed — 4 stops, steppers skipped (still clickable)</div>
+          <div class="leg tone-teal" id="p4new">
+            <div class="leg-main">
+              <span class="leg-dot">1</span>
+              <div class="leg-route">
+                <div class="leg-ac"><input class="leg-in" value="Colombo Airport (CMB)"></div>
+                <span class="leg-arrow">→</span>
+                <div class="leg-ac"><input class="leg-in" value="Pelmadulla"></div>
+              </div>
+              <div class="leg-date"><button class="date-step" tabindex="-1">−</button><input type="date" value="2026-07-24"><button class="date-step" tabindex="-1">+</button><span class="day-tag">Day 1</span></div>
+              <div class="leg-dist"><span class="dist-pill"><b>119 km</b></span></div>
+              <div class="leg-price">$61.99</div>
+            </div>
+          </div>
+          <div class="tab-count" id="p4newCount">tab stops crossed: <b>0</b></div>
+        </div>
+      </div>
+      <p class="stage-note"><b>Zero visual change</b> — the buttons still work with the mouse; the keyboard path just goes route → date → km. Inside the date input, ↑/↓ already steps the focused segment natively.</p>
+    </div>
+  </section>
+
+  <div class="parked">
+    <h3>Deliberately not in this sheet</h3>
+    The two-zone card layout (fixes the “Colombo Airp…” truncation and the ragged column scan) is <b>on hold by your call from this morning</b> — the reference design is recorded and ready whenever you want it. “Shift whole trip” date control stays on the backlog.
+  </div>
+</div>
+
+<script>
+// theme flip
+var flip=document.getElementById('themeFlip');
+flip.addEventListener('click',function(){
+  var r=document.documentElement,d=r.getAttribute('data-theme')==='dark';
+  if(d){r.removeAttribute('data-theme');flip.textContent='☾ dark';}
+  else{r.setAttribute('data-theme','dark');flip.textContent='☀ light';}
+});
+
+// P1 today: tray toggle + duplicated pill
+var tray=document.getElementById('p1tray'),feesBtn=document.getElementById('p1nowFeesBtn'),
+    feeSlot=document.getElementById('p1nowFeeSlot'),nowPrice=document.getElementById('p1nowPrice');
+var NOW_BASE=14047;
+function p1nowSync(){
+  var on=[].slice.call(tray.querySelectorAll('input:checked')).map(function(c){return c.dataset.fee;});
+  tray.querySelectorAll('.check-box').forEach(function(b){b.textContent=b.previousElementSibling.checked?'✓':'';});
+  feeSlot.innerHTML=on.length
+    ? '<button class="addon-pill" id="p1nowFeesBtn2">'+on.join(' · ')+'</button>'
+    : '<button class="tool-chip" id="p1nowFeesBtn">+ Fees</button>';
+  var btn=feeSlot.firstChild;btn.addEventListener('click',function(){tray.classList.toggle('open');});
+  var cents=NOW_BASE+on.length*1000+(on.indexOf('Safari wait')>=0?1500:0);
+  nowPrice.textContent='$'+(cents/100).toFixed(2);
+}
+feesBtn.addEventListener('click',function(){tray.classList.toggle('open');});
+tray.addEventListener('change',p1nowSync);
+
+// P1 proposed: fee chips
+var newPrice=document.getElementById('p1newPrice'),NEW_BASE=14047;
+document.querySelectorAll('.fee-chip').forEach(function(ch){
+  ch.addEventListener('click',function(){
+    ch.setAttribute('aria-pressed',ch.getAttribute('aria-pressed')==='true'?'false':'true');
+    var cents=NEW_BASE;
+    document.querySelectorAll('.fee-chip[aria-pressed="true"]').forEach(function(c){cents+=parseInt(c.dataset.cents,10);});
+    newPrice.textContent='$'+(cents/100).toFixed(2);
+    newPrice.classList.add('bump');setTimeout(function(){newPrice.classList.remove('bump');},250);
+  });
+});
+
+// P2: remove → collapse → toast with draining ring → undo/reset
+var slot=document.getElementById('p2slot'),leg2=document.getElementById('p2leg'),
+    toast=document.getElementById('p2toast'),ring=document.getElementById('p2ring'),
+    reset=document.getElementById('p2reset');
+var t2=null,raf=null;
+function p2drain(start){
+  var DUR=8000;
+  function step(now){
+    var p=Math.max(0,1-(now-start)/DUR);
+    ring.style.setProperty('--p',p);
+    if(p>0&&toast.classList.contains('show')){raf=requestAnimationFrame(step);}
+  }
+  raf=requestAnimationFrame(step);
+}
+document.getElementById('p2remove').addEventListener('click',function(){
+  leg2.classList.add('removing');
+  setTimeout(function(){slot.classList.add('gone');},120);
+  toast.classList.add('show');
+  p2drain(performance.now());
+  t2=setTimeout(function(){toast.classList.remove('show');reset.classList.add('show');},8000);
+});
+function p2restore(){
+  clearTimeout(t2);cancelAnimationFrame(raf);
+  toast.classList.remove('show');reset.classList.remove('show');
+  slot.classList.remove('gone');
+  setTimeout(function(){leg2.classList.remove('removing');},80);
+}
+document.getElementById('p2undo').addEventListener('click',p2restore);
+reset.addEventListener('click',p2restore);
+
+// P3: manual ↔ auto, any number of round-trips
+var p3row=document.getElementById('p3row');
+var P3_MANUAL='<span class="km-input-wrap manual"><input type="number" value="273"><span class="km-suffix">km</span></span>'+
+  '<span class="manual-tag">manual</span><button class="auto-chip" data-p3="auto">↺ auto</button>';
+var P3_AUTO='<span class="dist-pill"><b>273 km</b><span class="dist-time">4h 05m</span></span>'+
+  '<button class="km-link" data-p3="edit" title="Edit distance">✎</button>';
+p3row.addEventListener('click',function(e){
+  var t=e.target.closest('[data-p3]');if(!t)return;
+  p3row.innerHTML=t.dataset.p3==='auto'?P3_AUTO:P3_MANUAL;
+});
+
+// P4: tab-stop counters
+function tabCounter(cardId,countId){
+  var card=document.getElementById(cardId),el=document.getElementById(countId),n=0;
+  card.addEventListener('focusin',function(){n++;el.innerHTML='tab stops crossed: <b>'+n+'</b>';});
+  card.addEventListener('focusout',function(e){if(!card.contains(e.relatedTarget)){n=0;setTimeout(function(){el.innerHTML='tab stops crossed: <b>0</b>';},400);}});
+}
+tabCounter('p4now','p4nowCount');
+tabCounter('p4new','p4newCount');
+</script>
+</body>
+</html>
