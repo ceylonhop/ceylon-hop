@@ -122,32 +122,11 @@ export function quote(
     }
   }
 
-  // Founder manual discount (spec 2026-08-09 §5.2). Sits between core pricing and finishing, so
-  // finishing tidies the price the customer actually pays. The two limits are the 30% ceiling and
-  // protectedMinimumCents — the sum of per-leg vehicle floors, which is what really protects the
-  // margin because a driver charges a fixed minimum to take a short job (§5.3).
-  let resolvedDiscount: ResolvedDiscount | undefined;
-  let discountedSubtotalCents = subtotalCents;
-  if (discountRequest) {
-    // Shared is per-seat corridor pricing: no vehicle, so no floor to protect it.
-    if (req.product === 'shared') throw new Error('DISCOUNT_NOT_SUPPORTED');
-    resolvedDiscount = resolveDiscount(discountRequest, subtotalCents, protectedMinimumCents);
-    discountedSubtotalCents = subtotalCents - resolvedDiscount.appliedCents;
-    // A zero-cent outcome is NOT a discounted quote — no row for a renderer to show.
-    if (resolvedDiscount.appliedCents > 0) {
-      lineItems.push({
-        label: 'Discount',
-        amountCents: -resolvedDiscount.appliedCents,
-        meta: { kind: 'discount' },
-      });
-    }
-  }
-
   // Final-price policy is deliberately downstream of every core calculation and runs once.
   // Shared-seat prices stay fixed. Legacy locked rate cards without the policy remain unchanged.
   const finished = req.product !== 'shared' && rateCard.priceFinishing
-    ? finishPrice(discountedSubtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
-    : { rawCents: discountedSubtotalCents, finalCents: discountedSubtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
+    ? finishPrice(subtotalCents, Math.max(costCents, protectedMinimumCents), rateCard.priceFinishing)
+    : { rawCents: subtotalCents, finalCents: subtotalCents, adjustmentCents: 0, strategy: 'unchanged' as const };
   if (finished.adjustmentCents !== 0) {
     lineItems.push({
       label: 'Final price adjustment',
@@ -155,7 +134,39 @@ export function quote(
       meta: { kind: 'price_adjustment', strategy: finished.strategy },
     });
   }
-  const totalCents = finished.finalCents;
+
+  // Founder manual discount (spec 2026-08-09 §5.1). AFTER finishing, deliberately — owner
+  // decision 2026-08-09: a quote goes to the customer at its finished price and the customer then
+  // negotiates off THAT. So the discount comes off the number they were actually shown, and the
+  // three figures a customer sees reconcile exactly: $62.00 quoted − $10.00 off = $52.00 to pay.
+  //
+  // Discounting BEFORE finishing (the original design) re-finished the reduced subtotal, so a
+  // $10.00 discount off $62.00 landed at $51.99 — the founder's own figure no longer appeared
+  // anywhere, and no customer-facing breakdown could be made to add up without exposing the
+  // internal finishing row.
+  //
+  // It also means the undiscounted path is now byte-identical to pre-feature behaviour by
+  // construction: finishing sees exactly what it always saw.
+  let resolvedDiscount: ResolvedDiscount | undefined;
+  let discountCents = 0;
+  if (discountRequest) {
+    // Shared is per-seat corridor pricing: no vehicle, so no floor to protect it.
+    if (req.product === 'shared') throw new Error('DISCOUNT_NOT_SUPPORTED');
+    // Both limits now apply to the FINISHED total — the price that was quoted — rather than to a
+    // pre-finishing subtotal the customer never saw.
+    resolvedDiscount = resolveDiscount(discountRequest, finished.finalCents, protectedMinimumCents);
+    discountCents = resolvedDiscount.appliedCents;
+    // A zero-cent outcome is NOT a discounted quote — no row for a renderer to show.
+    if (discountCents > 0) {
+      lineItems.push({
+        label: 'Discount',
+        amountCents: -discountCents,
+        meta: { kind: 'discount' },
+      });
+    }
+  }
+
+  const totalCents = finished.finalCents - discountCents;
   const deposit = depositCents(totalCents, rateCard);
   // amountDueNow is the FULL total for EVERY product, deposit-eligible ones (chauffeur) included.
   // Deliberate owner decision "Charge full amount for all bookings" (2026-07-07, commit 4d58f5a)
@@ -183,8 +194,10 @@ export function quote(
     // result must serialize exactly as it did before this feature (see goldens.test.ts).
     ...(resolvedDiscount
       ? {
-          discountCents: resolvedDiscount.appliedCents,
-          discountedSubtotalCents,
+          discountCents,
+          // What the customer was quoted BEFORE negotiating — the finished price. This is the
+          // "Total" line on the customer quote page, and totalBefore − discount === total exactly.
+          totalBeforeDiscountCents: finished.finalCents,
           discount: resolvedDiscount,
         }
       : {}),

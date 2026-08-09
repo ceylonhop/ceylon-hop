@@ -147,10 +147,32 @@ Deferred to phase 2, deliberately.
 ### 5.1 Order of operations
 
 ```text
-core pricing → apply the manual discount → psychological finishing → amount due
+core pricing → psychological finishing → apply the manual discount → amount due
 ```
 
-Unchanged from parent §7.5. Finishing runs exactly once, after the discount.
+**Reversed 2026-08-09 (owner), and this supersedes parent §7.5.** Finishing runs BEFORE the
+discount. The owner's reason:
+
+> "We usually send these quotes to customers and then customers negotiate."
+
+A quote goes out at its finished price, and the customer negotiates off **that**. So the founder's
+figure comes off the number the customer was actually shown, and the three figures on a customer
+breakdown reconcile exactly:
+
+```text
+$62.00 quoted − $10.00 off = $52.00 to pay
+```
+
+Discounting first (the original design) re-finished the reduced subtotal, so $10.00 off $62.00
+landed at **$51.99** — the founder's own figure appeared nowhere, and no customer-facing breakdown
+could be made to add up without exposing the internal finishing row.
+
+Two consequences worth stating:
+
+- **Both limits now apply to the finished total**, not to a pre-finishing subtotal the customer
+  never saw. `resolveDiscount` takes `quotedTotalCents`.
+- **The undiscounted path is byte-identical to pre-feature behaviour by construction** — finishing
+  sees exactly what it always saw. The golden corpus proves it without a single snapshot changing.
 
 ### 5.2 The whole rule — two limits, nothing else
 
@@ -218,7 +240,7 @@ Shared is per-seat corridor pricing with no vehicle and therefore no floor, and 
 from discounts in the parent design. A discount request against a shared Ops quote is rejected.
 This is stated explicitly, and tested, rather than left to be discovered.
 
-### 5.5 Finishing needs no change at all
+### 5.5 Finishing is untouched by the discount
 
 `engine.ts:123` stays exactly as it is:
 
