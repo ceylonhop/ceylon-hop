@@ -119,3 +119,34 @@ describe('describeDbError', () => {
     expect(describeDbError(new Error('timeout'), url)).toBe('timeout');
   });
 });
+
+describe('requireConnectionUrl — paste artefacts', () => {
+  const clean = 'postgresql://postgres.ref:pw@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres';
+
+  it.each([
+    ['surrounding whitespace', `  ${clean}  `],
+    ['a trailing newline', `${clean}\n`],
+    ['double quotes', `"${clean}"`],
+    ['single quotes', `'${clean}'`],
+  ])('accepts a value with %s', (_label, raw) => {
+    process.env.BACKFILL_DATABASE_URL = raw;
+    expect(requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to')).toBe(clean);
+  });
+
+  it('names the scheme it actually saw, so the operator can diagnose it', () => {
+    process.env.BACKFILL_DATABASE_URL = 'https://example.supabase.co/db';
+    expect(() => requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to')).toThrow(/starts with "https:\/\/"/);
+  });
+
+  it('reports only a length when there is no scheme, so a pasted secret cannot leak', () => {
+    process.env.BACKFILL_DATABASE_URL = 'SuperSecret123!@';
+    try {
+      requireConnectionUrl('BACKFILL_DATABASE_URL', 'write to');
+      throw new Error('should have thrown');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('16 characters');
+      expect(msg).not.toContain('SuperSecret123');
+    }
+  });
+});

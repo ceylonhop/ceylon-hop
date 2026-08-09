@@ -25,15 +25,28 @@ export function requireConnectionUrl(envVarName: string, verb: string): string {
         'DATABASE_URL is not used here on purpose — api/.env points at production.',
     );
   }
-  if (!CONNECTION_STRING_PATTERN.test(url)) {
+  // Paste artefacts, not operator error: a copied env-var value routinely arrives with
+  // surrounding whitespace or a stray newline, and a value copied out of a shell snippet or a
+  // config file arrives wrapped in quotes. Rejecting those taught the operator nothing except
+  // that the tool was fussy, so normalise them instead of failing.
+  const cleaned = url.trim().replace(/^(['"])(.*)\1$/s, '$2').trim();
+  if (!CONNECTION_STRING_PATTERN.test(cleaned)) {
+    // Naming the scheme we DID see turns "it doesn't look right" into something diagnosable.
+    // Everything before "://" is a scheme, never a credential; when there is no "://" at all we
+    // report only the length, which cannot leak content.
+    const marker = cleaned.indexOf('://');
+    const saw =
+      marker > 0 && marker <= 20
+        ? `it starts with "${cleaned.slice(0, marker)}://"`
+        : `the value is ${cleaned.length} characters and contains no "://"`;
     throw new Error(
-      `${envVarName} does not look like a Postgres connection string (expected it to start ` +
-        'with "postgres://" or "postgresql://"). If you pasted a password — or anything else ' +
-        'that is not a connection string — by mistake, it is now sitting in your shell history ' +
-        'in the clear. Rotate it.',
+      `${envVarName} does not look like a Postgres connection string — ${saw}, but it must ` +
+        'start with "postgres://" or "postgresql://". Copy the whole DATABASE_URL value, not ' +
+        'just the password. If you did paste a password by mistake, it is now in your shell ' +
+        'history in the clear — rotate it.',
     );
   }
-  return url;
+  return cleaned;
 }
 
 /**
