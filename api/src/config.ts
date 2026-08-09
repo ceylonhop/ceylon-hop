@@ -80,6 +80,13 @@ const Env = z.object({
   BOOKING_LINK_SECRET: z.string().default('dev-booking-link-secret-change-me'),
   // Quote engine internal key — passed to quoteRoutes to gate marginEstimateCents.
   INTERNAL_QUOTE_KEY: z.string().default(''),
+  // Founder manual discounts (spec 2026-08-09 §11). Gates CREATION only: reading and honouring an
+  // already-stored discount is unconditional, so turning this off never rewrites a price a
+  // customer has already been shown.
+  OPS_MANUAL_DISCOUNTS_ENABLED: z
+    .enum(['0', '1', 'false', 'true'])
+    .default('false')
+    .transform((value) => value === '1' || value === 'true'),
   QUOTE_V2_ENABLED: z
     .enum(['0', '1', 'false', 'true'])
     .default('false')

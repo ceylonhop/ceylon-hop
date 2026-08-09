@@ -29,6 +29,7 @@ import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUse
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
 import { InMemoryZonesRepo, type ZonesRepo } from './db/zonesRepo';
+import { InMemoryQuoteDiscountRepo, type QuoteDiscountRepo } from './db/quoteDiscountRepo';
 import { InMemoryPlaceResolutionRepo, type PlaceResolutionRepo } from './db/placeResolutionRepo';
 import { LogAlertAdapter, type AlertAdapter } from './adapters/alerts';
 import type { AlertLogRepo } from './db/alertLogRepo';
@@ -68,9 +69,11 @@ export interface AppDeps {
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
+  quoteDiscounts?: QuoteDiscountRepo;
   zones?: ZonesRepo;
   placeResolutions?: PlaceResolutionRepo;
   quoteV2Enabled?: boolean;
+  opsManualDiscountsEnabled?: boolean;
   quoteConversions?: QuoteConversionRepo;
   adminApiKey?: string;
   // Signs/verifies customers' view-only "manage my booking" links (GET /bookings/view).
@@ -147,7 +150,11 @@ export function createApp(deps: AppDeps = {}) {
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
   const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
-  const quotes = deps.quotes ?? new InMemoryQuoteRepo();
+  // Constructed BEFORE the quote repo so the in-memory pair share one store: the fake quote repo
+  // writes the audit row through the very object the routes read from. Get this order wrong and a
+  // discount saves into an object nothing ever queries.
+  const quoteDiscounts = deps.quoteDiscounts ?? new InMemoryQuoteDiscountRepo();
+  const quotes = deps.quotes ?? new InMemoryQuoteRepo(quoteDiscounts);
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Seeded with the 21 catalog places, mirroring drizzle/0034 — so a keyless/in-memory app
   // starts from the same identified set production does.
@@ -442,6 +449,9 @@ export function createApp(deps: AppDeps = {}) {
     quoteBaseUrl,
     linkSecret: bookingLinkSecret,
     payhereMode,
+    discounts: quoteDiscounts,
+    // Gates CREATION only; an already-applied discount keeps pricing its quote regardless.
+    discountsEnabled: deps.opsManualDiscountsEnabled ?? config.OPS_MANUAL_DISCOUNTS_ENABLED,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay
