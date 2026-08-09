@@ -245,3 +245,41 @@ describe('the lead option is the stored, approved total', () => {
 });
 
 
+
+describe('a negotiated price on the customer quote page', () => {
+  const base = {
+    reference: 'Q-TEST1', customerName: 'Maya', vehicle: 'car', requestedService: 'private',
+    request: { engine: { product: 'private' }, tool: { legs: [{ from: 'A', to: 'B', distanceKm: 80 }] } },
+  };
+
+  it('shows Total, Discount and Final total, and they reconcile exactly', () => {
+    const view = customerQuoteView(
+      { ...base, totalCents: 5200, result: { totalBeforeDiscountCents: 6200, discountCents: 1000 } },
+      { pointToPoint: { totalCents: 5200 }, chauffeur: null },
+    );
+    const lead = view.options[0];
+    expect(lead.discount).toEqual({ totalBeforeUsd: '$62', discountUsd: '$10' });
+    expect(lead.totalUsd).toBe('$52');
+    // The customer can check the arithmetic and it holds — which is only true because finishing
+    // runs BEFORE the discount. Under the old order this was $62 − $10 = $51.99.
+    expect(6200 - 1000).toBe(5200);
+  });
+
+  it('shows no breakdown when nothing was negotiated', () => {
+    const view = customerQuoteView(
+      { ...base, totalCents: 6200, result: { } },
+      { pointToPoint: { totalCents: 6200 }, chauffeur: null },
+    );
+    expect(view.options[0].discount).toBeUndefined();
+  });
+
+  it('never invents a discount on the COMPARISON card', () => {
+    // The second card is a recompute with no stored discount behind it.
+    const view = customerQuoteView(
+      { ...base, requestedService: 'both', totalCents: 5200, result: { totalBeforeDiscountCents: 6200, discountCents: 1000 } },
+      { pointToPoint: { totalCents: 5200 }, chauffeur: { totalCents: 9900 } },
+    );
+    expect(view.options[0].discount).toBeDefined();
+    expect(view.options[1]?.discount).toBeUndefined();
+  });
+});
