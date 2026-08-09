@@ -3,6 +3,7 @@ import type { Db } from './client';
 import { quotes, quoteRevisions } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell, sameQuoteContent } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
+import { quoteTravelDate } from './quoteTravelDate';
 import type {
   QuoteRepo,
   QuoteRevision,
@@ -353,6 +354,7 @@ export class PostgresQuoteRepo implements QuoteRepo {
       createdAt: r.createdAt,
       routeText: quoteRouteText(requestLegs(r.request)),
       unpriced: isUnpricedShell({ request: r.request }),
+      travelDate: quoteTravelDate(requestLegs(r.request)),
     }));
   }
 

@@ -342,6 +342,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   /* The two action-first sections lead with a coloured accent so they read as "act now" */
   .qsec-review .qsection-title,.qsec-sentback .qsection-title{color:var(--wait)}
   .qsec-ready .qsection-title{color:var(--teal-deep)}
+  /* Trip already happened: the one section you close out rather than work. Recede the rows
+     so a queue full of them still reads as background, but keep them fully legible — this is
+     a pile to clear, not an error state. */
+  .qsec-tripover .qrow{background:transparent;border-style:dashed;box-shadow:none}
+  .qsec-tripover .qrow:hover{background:var(--paper)}
   /* Queue loading skeleton. The three lists each had their own idea of "waiting": Analytics
      shimmered, Bookings borrowed the EMPTY state (⏳ inside .qempty — which for a beat reads as
      "there are no bookings"), and Quotes printed a line of italic text. One idiom now, shaped
@@ -2460,6 +2465,40 @@ function quoteAgeChip(q){
   const title=q.createdAt?' title="Requested '+esc(new Date(q.createdAt).toLocaleString())+'"':'';
   return `<span class="qage tone-${quoteAgeTone(q.createdAt,q.status)}"${title}>${esc(label)}</span>`;
 }
+/* ── trip-over quotes (spec 2026-08-01) ──────────────────────────────────────
+   A sent quote whose trip has already happened is dead, but nothing in the queue notices:
+   `lost` has never once been used, so `sent` is terminal in practice and the working list
+   fills with quotes for trips that departed weeks ago.
+
+   TRAVEL DATE, NOT SEND AGE — and that distinction is the whole point. Send age is already
+   handled server-side by expireStaleQuotes (api/src/services/quoteExpiry.ts), and its TTL had
+   to be raised 30 → 180 days (PR #214) precisely because send age can't tell a live quote from
+   a dead one: the team parks quotes in 'sent' as a working state. Travel date can. A quote sent
+   8 days ago for a trip that departed 3 days ago reads as fresh on the send clock and is dead
+   in fact. This rule adds NO second send-age timer — that policy has one owner, and it is the
+   sweep.
+
+   DERIVED ONLY: reads travelDate off the list projection, never writes status. The database
+   still says 'sent' and the founder funnel is untouched. Making it durable is a later call.
+
+   Both helpers are self-contained — no DOM, no module state, `today` passed in — so
+   web-tests/unit can extract and eval them straight out of this file, the same way
+   quoteMatches() is tested. */
+const QTRIP_GRACE_DAYS=3;   /* days after the LAST travel day before a trip reads as over — a
+                               trip that ended yesterday may still be converting offline */
+function qDaysBetween(fromIso,toIso){
+  const a=Date.parse(String(fromIso).slice(0,10)+'T00:00:00Z');
+  const b=Date.parse(String(toIso).slice(0,10)+'T00:00:00Z');
+  if(isNaN(a)||isNaN(b))return NaN;
+  return Math.round((b-a)/86400000);
+}
+/* NaN comparisons are false throughout, so an unparseable date can never retire a quote —
+   the failure direction is "leave it in the working list", never "hide it". A quote with no
+   travel date at all (the tours-as-suggestions blank-date default) is left to the sweep. */
+function quoteTripOver(q,todayIso){
+  if(!q||q.status!=='sent'||!q.travelDate)return false;
+  return qDaysBetween(q.travelDate,todayIso)>QTRIP_GRACE_DAYS;
+}
 async function loadOpsQuotes(){
   try{
     const r=await fetch('/admin/quote/list',{credentials:'same-origin'});
@@ -2556,6 +2595,10 @@ function viewQuotes(){
   const byStatus={};opsQuotes.forEach(q=>{(byStatus[q.status]=byStatus[q.status]||[]).push(q);});
   const activeFilter=QUEUE_FILTERS.find(f=>f.id===queueFilter)||QUEUE_FILTERS[0];
   const allowed=activeFilter.statuses?new Set(activeFilter.statuses):null;
+  /* Sent quotes whose trip has already happened drop out of the status sections into their own
+     group at the bottom (spec 2026-08-01). Colombo's day, reusing anColomboToday() rather than
+     defining a second offset that could drift from the analytics one. */
+  const tripOver=new Set(opsQuotes.filter(q=>quoteTripOver(q,anColomboToday())).map(q=>q.id));
   // Search results come from opsQuotes DIRECTLY — never from mineRows/byStatus, which partition
   // the queue between them and would duplicate or drop rows once flattened into one list.
   const hits=query?opsQuotes.filter(q=>quoteMatches(query,q)):[];
@@ -2604,7 +2647,8 @@ function viewQuotes(){
   let rendered=0;
   sections.forEach(sec=>{
     const secStatuses=allowed?sec.statuses.filter(s=>allowed.has(s)):sec.statuses;
-    const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[]);
+    const rows=secStatuses.reduce((acc,s)=>acc.concat(byStatus[s]||[]),[])
+      .filter(q=>!tripOver.has(q.id)); /* rendered below in their own section instead */
     if(!rows.length)return;
     // Yours first within the section. A stable partition (not .sort, which would also reorder
     // the rest) so the server's ordering survives inside each half.
@@ -2620,6 +2664,19 @@ function viewQuotes(){
       <div class="qlist">${rows.map(q=>quoteRowHtml(q)).join('')}</div>
     </div>`;
   });
+  // Always last: these need closing out, not working. Kept visible (not hidden or collapsed) —
+  // a quote that silently disappeared would be worse than one sitting in a labelled pile.
+  const overRows=opsQuotes.filter(q=>tripOver.has(q.id)&&(!allowed||allowed.has(q.status)));
+  if(overRows.length){
+    rendered++;
+    html+=`<div class="qsection qsec-tripover">
+      <div class="qsection-head">
+        <h2 class="qsection-title">Trip date passed<span class="qsection-count">${overRows.length}</span></h2>
+        <span class="qsection-hint">Sent quotes for trips that have already happened — mark them booked or lost</span>
+      </div>
+      <div class="qlist">${overRows.map(q=>quoteRowHtml(q)).join('')}</div>
+    </div>`;
+  }
   if(!rendered)html+=`<div class="qempty"><div class="qempty-title">No quotes in this filter</div><div class="qempty-sub">Try a different toggle above.</div></div>`;
   paintQuotesView(html);
 }
