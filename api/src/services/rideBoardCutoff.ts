@@ -4,6 +4,7 @@ import type { EmailAdapter } from '../adapters/email';
 import { committedSeats, popularTime, type Slot, type RideMember } from '../domain/rideList';
 import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk } from './rideBoardEmails';
 import { logEvent } from '../observability/events';
+import type { SendBudget } from './sendBudget';
 
 // ============================================================================
 // Ride Board cutoff sweep — the pooled equivalent of sweepStaleSharedHolds.
@@ -21,6 +22,11 @@ export interface RideBoardCutoffDeps {
   paygw: TokenizedPaymentAdapter;
   email: EmailAdapter;
   currency?: string;
+  // Blast-radius cap (R1) — here it guards MONEY as well as mail, since this sweep charges
+  // cards. A list is all-or-nothing: rather than charge half a van and stop at the cap, the
+  // sweep declines to start a list it cannot finish. The list stays gathering, so it is
+  // still due next run and gets processed whole.
+  budget?: SendBudget;
 }
 
 export interface RideBoardCutoffResult {
@@ -39,8 +45,15 @@ export async function runRideBoardCutoff(now: Date, deps: RideBoardCutoffDeps): 
   const res: RideBoardCutoffResult = { processed: 0, confirmed: 0, expired: 0, charged: 0, chargeFailed: 0 };
 
   for (const { list, members } of due) {
-    res.processed++;
     const held = members.filter((m) => m.status === 'held' || m.status === 'charged');
+
+    // Every branch below emails each held traveller exactly once, so held.length is the
+    // true cost of this list. Claim it up front — all-or-nothing (see RideBoardCutoffDeps).
+    if (deps.budget && !deps.budget.tryClaim(held.length)) {
+      deps.budget.suppress('ride_board', list.code, held.length);
+      continue;
+    }
+    res.processed++;
 
     // Not enough names by the cutoff → call the ride off; nobody is charged, everyone emailed.
     if (liveSeats(held) < list.minSeats) {

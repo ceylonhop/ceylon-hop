@@ -410,7 +410,14 @@ body[data-page="home"] .nav:not(.scrolled) .brand{color:#fff}
 @media(max-width:560px){.wa-fab span{display:none}.wa-fab{padding:.95rem}}
 
 /* ---------- Breadcrumbs ---------- */
-.breadcrumbs{display:flex;align-items:center;flex-wrap:wrap;gap:.2rem;padding-top:18px;padding-bottom:2px;font-size:.86rem}
+/* position+z-index so the trail is never painted over. plan.html pulls its tinted band up with
+   `margin-top:-74px` and fills it with an absolutely-positioned ::after — which sat on top of the
+   static breadcrumb and sliced the bottom off "Home > Trip planner" (owner-spotted 2026-08-08,
+   obvious at browser zoom where the 6px bite is proportionally huge). Fixed by stacking rather
+   than by tuning the negative margin: the overlap in pixels varies with zoom and viewport, so a
+   magic number would be right at one size and wrong at the next. Breadcrumbs are content; a
+   decorative band must never win against them. */
+.breadcrumbs{position:relative;z-index:1;display:flex;align-items:center;flex-wrap:wrap;gap:.2rem;padding-top:18px;padding-bottom:2px;font-size:.86rem}
 .breadcrumbs a{color:var(--ink-soft);text-decoration:none;font-weight:600;transition:color .15s}
 .breadcrumbs a:hover{color:var(--accent-deep)}
 .breadcrumbs .bc-sep{width:15px;height:15px;color:var(--ink-soft);opacity:.5;flex:none}
