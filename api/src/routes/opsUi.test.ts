@@ -990,6 +990,17 @@ describe('founder manual discount control', () => {
     expect(body).toContain('state.discount = activeDiscount');
     // Rehydration is NOT the founder touching it — a later autosave must still mean "preserve".
     expect(body).toContain('_discountTouched = false;');
+
+    // PLACEMENT, which is what actually went wrong. The first version of this fix sat in the
+    // unpriced-SHELL branch of reopenQuote, which returns early and only runs for a quote with no
+    // itinerary — so it never executed for a real quote and the bug survived the fix entirely.
+    // It must appear EXACTLY once, and after the priced path's convertedBookingId assignment.
+    const calls = body.split('await apiActiveDiscount(q.id)').length - 1;
+    expect(calls, 'rehydration must exist exactly once').toBe(1);
+    const pricedMarker = body.indexOf('state.convertedBookingId = q.convertedBookingId');
+    const hydration = body.indexOf('await apiActiveDiscount(q.id)');
+    expect(pricedMarker).toBeGreaterThan(-1);
+    expect(hydration, 'rehydration must be on the PRICED path').toBeGreaterThan(pricedMarker);
   });
 
   it('uses the delegated dispatcher, so it survives a money-pane re-render', async () => {

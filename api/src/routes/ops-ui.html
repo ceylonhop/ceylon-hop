@@ -6021,16 +6021,6 @@ async function reopenQuote(id) {
     state.customerTotalCents = (q.customerTotalCents == null) ? null : Number(q.customerTotalCents);
     state.customerTotalVia = q.customerTotalVia || null;
     state.assignedTo = q.assignedTo || null;
-    /* Rehydrate the founder's stored discount. Without this state.discount is null after every
-       refresh, so the estimate reprices UNDISCOUNTED and the pane shows a price the customer will
-       never be charged while the stored quote is correct — observed on staging 2026-08-09: pane
-       $62.00, stored $51.99. _discountTouched stays FALSE so a later autosave still means
-       "preserve", not "re-apply". */
-    var activeDiscount = await apiActiveDiscount(q.id);
-    state.discount = activeDiscount
-      ? { method: activeDiscount.method, value: activeDiscount.value, reason: activeDiscount.reason }
-      : null;
-    _discountTouched = false;
     state.createdBy = q.createdBy || null;
     state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
@@ -6118,6 +6108,21 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+
+  /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
+     state.discount is client state and starts null on every page load; without this the pane
+     shows the undiscounted price while the stored quote is discounted — pane $62.00, stored
+     $51.99 (owner, staging, 2026-08-09).
+     THIS MUST LIVE ON THE PRICED PATH. The first version of this fix sat in the unpriced-SHELL
+     branch above, which returns early and only ever runs for a quote with no itinerary — so it
+     never executed for a real quote and the bug survived the fix.
+     _discountTouched stays FALSE: rehydrating is not the founder touching the control, so a
+     later autosave still means "preserve" rather than re-applying. */
+  var activeDiscount = await apiActiveDiscount(q.id);
+  state.discount = activeDiscount
+    ? { method: activeDiscount.method, value: activeDiscount.value, reason: activeDiscount.reason }
+    : null;
+  _discountTouched = false;
 
   lastEstimate = null;
   lastEstimateError = null;
