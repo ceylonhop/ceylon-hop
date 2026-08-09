@@ -42,6 +42,14 @@ const DISPLAY_SURFACES = [
   'api/src/routes/ops-ui.html',
   'tools/generate-route-pages.mjs',
   'tools/generate-static-pages.mjs',
+  /* The booking flow. Left off the original list, which is how .tr-leg-title sat at
+     Poppins 800 while plan.html rendered the identical route name in Bodoni one step
+     earlier — the drift nobody had a test pointed at. */
+  'booking.html',
+  'plan.html',
+  'quote.css',
+  'ticket.css',
+  'search.html',
 ];
 
 describe('the display face only ever asks for weights Bodoni 72 ships', () => {
@@ -67,6 +75,57 @@ describe('the display face only ever asks for weights Bodoni 72 ships', () => {
       }
     }
     expect(bad, `hero heading on a synthesised weight: ${bad.join(' | ')}`).toEqual([]);
+  });
+});
+
+/*
+  The nouns of the product — route names, place names and money — carry the display face,
+  so the same string wears the same face on every step of a trip. See the WHERE THE DISPLAY
+  FACE GOES block in site.css.
+
+  This is pinned by SELECTOR rather than by counting families, because the failure it guards
+  is not "a page has no Bodoni on it" — booking.html had plenty, in its headings and its
+  total. The failure is one specific element quietly rendering the same words in a different
+  face from the step before it, which no aggregate check can see.
+*/
+describe('route names, place names and money are on the display face', () => {
+  const NOUNS = [
+    ['plan.html', '.dr-route'],                       // dates step, "A → B"
+    ['booking.html', '.trip-route .tr-leg-title'],    // service step, the SAME "A → B"
+    ['booking.html', '.trip-route .tr-stop .tr-name'],
+    ['booking.html', '.shared-route .sr-line b'],     // board-at / drop-off places
+    ['booking.html', '.mstrip .ms-route'],
+    ['booking.html', '.s-total b'],
+    ['board.html', '.lcard-route'],
+    ['board.html', '.lprice b'],
+    ['board.html', '.rr-stop b'],
+    ['search.html', '.srch-locked .sl-route'],
+    ['ticket.css', '.tot .v'],
+    ['quote.css', '.opt-n'],
+  ];
+
+  for (const [file, selector] of NOUNS) {
+    it(`${file} — ${selector}`, () => {
+      const src = read(file);
+      const at = src.indexOf(selector + '{');
+      expect(at, `${selector} not found in ${file} — was it renamed?`).toBeGreaterThan(-1);
+      const block = src.slice(at, src.indexOf('}', at));
+      expect(block, `${selector} left the display face`).toMatch(/font-family:\s*var\(--display\)/);
+    });
+  }
+
+  /* The floor. Bodoni's hairlines thin to mush under 16px, so a rule may reach for the
+     display face OR go below 1rem, never both. This is what keeps "put the nouns in
+     Bodoni" from creeping down into chips, captions and micro-labels. */
+  it('nothing asks for the display face below the 1rem floor', () => {
+    const bad = [];
+    for (const file of DISPLAY_SURFACES.filter((f) => /\.(html|css)$/.test(f))) {
+      for (const m of read(file).matchAll(/([^{}@\/;]+)\{([^{}]*font-family:\s*var\(--display\)[^{}]*)\}/g)) {
+        const size = m[2].match(/font-size:\s*([\d.]+)rem/);
+        if (size && parseFloat(size[1]) < 1) bad.push(`${file}: ${m[1].trim()} at ${size[1]}rem`);
+      }
+    }
+    expect(bad, `display face under 16px: ${bad.join(' | ')}`).toEqual([]);
   });
 });
 
