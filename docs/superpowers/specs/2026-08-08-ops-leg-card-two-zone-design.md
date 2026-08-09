@@ -50,6 +50,23 @@ The exceptions are unchanged and load-bearing: a row holding an **applied fee** 
 **route chip** never carries `.is-actions-only`, so money and state stay expanded at rest
 (end-to-end pinned by `ops-fee-chips.spec.js`); touch devices keep everything visible.
 
+## Submitted quotes don't react (owner follow-up, same day)
+
+Once a quote leaves draft, `isEditableNow()` is false and `applyContentLock()` puts
+`.ch-locked` on the editor, disabling every input, chip and button in the itinerary. The
+hover reveal was still firing there — animating controls into view that cannot be pressed,
+which is motion promising an affordance the quote no longer has. A locked quote's cards now
+sit still: the actions-only toolbelt stays collapsed and the reorder / duplicate / remove
+controls stay hidden, on hover **and** on focus-within.
+
+The override sits last in the `@media (hover: hover)` block and at higher specificity
+(`.ch-app.ch-locked …`) than the reveal rules, so it wins however those are later edited.
+Applied fees and route chips are untouched: those rows never carry `.is-actions-only`, so a
+locked quote still shows the money and state on its legs — only the dead controls go.
+
+Note (unchanged, deliberate): touch devices have no hover, so the existing "everything
+visible" fallback still applies there, on locked quotes as on drafts.
+
 ## Verification
 
 `web-tests/e2e/ops-leg-card-layout.spec.js` (offline stub harness, no DB):

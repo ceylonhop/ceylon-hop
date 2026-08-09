@@ -1330,6 +1330,22 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .qv .ch-leg-quiet.is-revealed:not(.is-multistop) .ch-leg-tools.is-actions-only {
     padding-top: 8px; margin-top: 2px; border-top-width: 1px;
   }
+  /* Submitted quotes don't react at all (owner call 2026-08-08). Once a quote leaves
+     draft the editor is content-locked — every control in the itinerary is disabled
+     (applyContentLock) — so revealing them on hover animated a promise the quote can
+     no longer keep. A locked card sits still: nothing fades in, nothing expands.
+     Last in the cascade AND higher specificity than the reveal rules above, so it
+     wins however they are later edited. Applied fees and route chips are unaffected:
+     those rows never carry .is-actions-only, so they stay expanded and readable. */
+  .qv .ch-app.ch-locked .ch-leg-quiet .ch-leg-reorder,
+  .qv .ch-app.ch-locked .ch-leg-quiet .ch-leg-actions {
+    opacity: 0;
+  }
+  .qv .ch-app.ch-locked .ch-leg-quiet .ch-leg-tools.is-actions-only {
+    height: 0;
+    padding-top: 0; padding-bottom: 0; margin-top: 0; border-top-width: 0;
+    opacity: 0;
+  }
   /* Reduced motion: still reveal/expand, just without the travel. */
   @media (prefers-reduced-motion: reduce) {
     .qv .ch-leg-quiet .ch-leg-reorder,

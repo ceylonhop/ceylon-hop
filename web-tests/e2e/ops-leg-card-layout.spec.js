@@ -51,6 +51,26 @@ async function stubOps(page) {
     chauffeurDayRateCents: 3500, fxUsdToLkr: 330, bufferPct: 10,
   })));
   await page.route('**/admin/quote/distance', (r) => r.fulfill(json({ km: 152, durationMin: 190 })));
+  // A quote that has left draft: status pending_review drives isEditableNow() false,
+  // which is what puts .ch-locked on the editor. Pattern from ops-approve-first-press.
+  await page.route('**/admin/quote/q_locked', (r) => r.fulfill(json({
+    id: 'q_locked', reference: 'Q-LOCK', status: 'pending_review',
+    customerName: 'Maya Silva', customerContact: '+94770000000',
+    totalCents: 6000, currency: 'USD', requestedService: 'private',
+    assignedTo: 'founder@e2e.test', createdBy: 'founder@e2e.test',
+    request: {
+      tool: {
+        firstName: 'Maya', lastName: 'Silva', contact: '+94770000000',
+        vehicle: 'car', service: 'private', requestedService: 'private',
+        passengerCount: 2, luggageCount: 2,
+        legs: [{
+          category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120, date: '',
+          addSightseeingFee: false, addWaitingFee: false, addSafariWait: false,
+          stops: ['Colombo', 'Kandy'], segmentKms: [120],
+        }],
+      },
+    },
+  })));
 }
 
 function stopSelector(field) {
@@ -178,6 +198,36 @@ test('the actions-only toolbelt collapses at rest and expands on hover', async (
   await row.evaluate((el) => el.classList.add('is-actions-only'));
   await atRest();
   await expect.poll(rowHeight, { timeout: 3000 }).toBeLessThan(1);
+});
+
+test('a submitted quote is inert — no card reacts to hover at all', async ({ page }) => {
+  // Owner call 2026-08-08: once a quote leaves draft the editor is content-locked
+  // (isEditableNow → .ch-app.ch-locked, every input/button disabled). Reacting to
+  // hover there offered controls that cannot be pressed — motion promising an
+  // affordance the quote no longer has. A locked quote's cards now sit still.
+  await stubOps(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(OPS_FILE + '#quote');
+  await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
+  await page.evaluate(() => QuoteView.openQuote('q_locked'));
+  await expect(page.locator('#quoteRoot .ch-app.ch-locked')).toHaveCount(1, { timeout: 10000 });
+  await expect(page.locator('.ch-leg').first()).toBeVisible({ timeout: 10000 });
+
+  const card = page.locator('.ch-leg').first();
+  const heightOf = (loc) => loc.evaluate((el) => el.getBoundingClientRect().height);
+  const opacityOf = (loc) => loc.evaluate((el) => Number(getComputedStyle(el).opacity));
+
+  // Hovering must change nothing: the toolbelt stays collapsed and the reorder /
+  // duplicate / remove controls stay hidden.
+  await card.hover();
+  await page.waitForTimeout(400);
+  await expect.poll(() => heightOf(card.locator('.ch-leg-tools')), { timeout: 3000 }).toBeLessThan(1);
+  await expect.poll(() => opacityOf(card.locator('.ch-leg-actions')), { timeout: 3000 }).toBe(0);
+
+  // Focus-within is the other reveal trigger — a locked card must ignore it too.
+  await card.locator('.ch-leg-in').first().focus();
+  await page.waitForTimeout(400);
+  await expect.poll(() => heightOf(card.locator('.ch-leg-tools')), { timeout: 3000 }).toBeLessThan(1);
 });
 
 test('leg cards stay clean in the narrow single-pane layout', async ({ page }) => {
