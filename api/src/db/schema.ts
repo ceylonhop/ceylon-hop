@@ -124,6 +124,9 @@ export const payments = pgTable(
     gatewayPaymentId: text('gateway_payment_id'),
     settledAt: timestamp('settled_at', { withTimezone: true }),
     settlementSource: text('settlement_source'),
+    // Who recorded an out-of-band payment. Immutable by contract: the free-text ops note that
+    // used to carry this is editable by the `ops` role, which is denied payments:act (0043).
+    settledBy: text('settled_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

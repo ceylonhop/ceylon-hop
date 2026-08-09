@@ -456,7 +456,9 @@ export function adminRoutes(deps: {
         currency: booking.currency,
         idempotencyKey,
       });
-      await deps.payments.markSucceededManually(payment.id, { reference });
+      // The actor goes in a COLUMN, not just the ops note below: that note is editable via
+      // /flags by the `ops` role, which is denied payments:act (0043).
+      await deps.payments.markSucceededManually(payment.id, { reference, settledBy: c.get('identity').email });
     }
 
     let paid: Booking;

@@ -117,7 +117,7 @@ describe('runWatchdog', () => {
       bookingId: booking.id, provider: 'cash', orderId: `${booking.reference}-MANUAL`,
       amount: 5000, currency: 'USD', idempotencyKey: `manual-paid:${booking.id}`,
     });
-    await payments.markSucceededManually(p.id, { reference: 'slip-1' });
+    await payments.markSucceededManually(p.id, { reference: 'slip-1', settledBy: 'ops@x.com' });
     const alerts = new FakeAlertAdapter();
     const res = await runWatchdog(later(60), { bookings, log: new InMemoryNotificationLogRepo(), alerts, payments });
     expect(res.paidUnconfirmed).toBe(0);
