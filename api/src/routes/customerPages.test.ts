@@ -4,6 +4,16 @@ import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { signQuotePayToken, signQuoteViewToken } from '../lib/bookingToken';
 import { customerPagesRoutes } from './customerPages';
 
+// A link token is base64url, and every card head embeds the SAME one three times (og:image,
+// og:url, twitter:image) — ~150 characters of uniform entropy sitting inside the region the
+// "no price in the preview" tests scan. A bare digit-run assertion over the whole head therefore
+// fails whenever the token happens to contain that run: measured 1 in ~4,800 renders for "458"
+// across the pay + quote pair, which is the flake that failed CI run 31288764988 on bf6b3d8 and
+// passed on a re-run of the identical commit. Strip the token VALUES — never the surrounding
+// markup, and never a `t=` that isn't a query parameter — so the assertion reads only text we
+// wrote. A price can only ever leak as our own text, so nothing real hides behind this.
+const withoutLinkTokens = (head: string) => head.replace(/([?&]t=)[^"&]*/g, '$1');
+
 // The staging 404 (owner report, 2026-07-31): a payment link minted against APP_BASE_URL
 // pointed at the API host — ops.staging.ceylonhop.com/manage.html — and the API had no such
 // page. These run through the REAL createApp, because the bug that made this necessary and
@@ -161,9 +171,21 @@ describe('pay links unfurl as a Ceylon Hop card', () => {
     const q = await payableQuote(quotes);
     const t = signQuotePayToken(q!.id, q!.revision, SECRET);
     const html = await (await cardApp(quotes).request(`/pay.html?t=${encodeURIComponent(t)}`)).text();
-    const head = html.slice(0, html.indexOf('</head>'));
+    const head = withoutLinkTokens(html.slice(0, html.indexOf('</head>')));
     expect(head).not.toContain('458');
     expect(head).not.toContain('$');
+  });
+
+  // Pins the sanitiser against the real route, with a token KNOWN to contain "458" in its
+  // signature — the 1-in-~4,800 draw that used to fail the test above at random. Without the
+  // strip this is red every run; with it, green every run.
+  it('a token that happens to contain the amount does not read as a leak', async () => {
+    const withDigits = 'AwExyfnc2qxOR7GB44mDfoGhAAEAAA.kWfNTG9l6JvwZ6Qsx458qg';
+    expect(withDigits).toContain('458'); // the token itself — the entropy that tripped the flake
+    const html = await (await cardApp(new InMemoryQuoteRepo()).request(`/pay.html?t=${withDigits}`)).text();
+    const raw = html.slice(0, html.indexOf('</head>'));
+    expect(raw).toContain('458'); // ...and it does reach the head, three times over
+    expect(withoutLinkTokens(raw)).not.toContain('458');
   });
 
   it('every dead state falls back to the SAME generic card, so validity cannot be probed', async () => {
@@ -269,7 +291,7 @@ describe('quote links unfurl as a Ceylon Hop card', () => {
     const quotes = new InMemoryQuoteRepo();
     const q = await readyQuote(quotes);
     const t = signQuoteViewToken(q!.id, SECRET);
-    const head = headOf(await (await cardApp(quotes).request(`/q?t=${encodeURIComponent(t)}`)).text());
+    const head = withoutLinkTokens(headOf(await (await cardApp(quotes).request(`/q?t=${encodeURIComponent(t)}`)).text()));
     expect(head).not.toContain('458');
     expect(head).not.toContain('$');
   });
