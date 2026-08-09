@@ -134,5 +134,10 @@
 .hop-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none;margin-top:5px;box-shadow:0 0 0 3px rgba(var(--accent-rgb),.14)}
 .hop-dot.end{background:var(--ink);box-shadow:0 0 0 3px rgba(36,31,29,.1)}
 .hop-line{width:2px;flex:1;min-height:12px;background:var(--line)}
-.hop-t{font-weight:700;font-size:.88rem;line-height:1.25}
+/* A day row's title is a route name ("Gal Oya → Ratnapura") or a stay ("In Ella"), so it
+   takes the display face like every other route name — see site.css. It was .88rem, which
+   put it under the 1rem floor and therefore on Poppins, and that was the whole reason the
+   receipt disagreed with the booking flow that produced it. Raised to the floor rather
+   than exempted from it: this is the document the customer pays from and keeps. */
+.hop-t{font-family:var(--display);font-weight:700;font-size:1rem;line-height:1.25}
 .hop-d{font-family:var(--mono,ui-monospace,monospace);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}

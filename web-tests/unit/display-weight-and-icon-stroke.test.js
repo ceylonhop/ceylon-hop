@@ -101,6 +101,12 @@ describe('route names, place names and money are on the display face', () => {
     ['board.html', '.rr-stop b'],
     ['search.html', '.srch-locked .sl-route'],
     ['ticket.css', '.tot .v'],
+    /* The day rows on quote.html, pay.html and manage.html — the SAME route name again,
+       now on the document the customer pays from. It shipped at .88rem Poppins, which no
+       size-based check could flag: the rule was conformant, the size was just under the
+       floor, and the disagreement only shows when you put the receipt next to the
+       booking flow that produced it. */
+    ['ticket.css', '.hop-t'],
     ['quote.css', '.opt-n'],
   ];
 
@@ -111,6 +117,26 @@ describe('route names, place names and money are on the display face', () => {
       expect(at, `${selector} not found in ${file} — was it renamed?`).toBeGreaterThan(-1);
       const block = src.slice(at, src.indexOf('}', at));
       expect(block, `${selector} left the display face`).toMatch(/font-family:\s*var\(--display\)/);
+    });
+  }
+
+  /* A VARIANT of a noun — .hop.is-stay .hop-t, .tr-gap .tr-leg-title — restyles an element
+     that is already on the display face, so it never names the family and the weight guard
+     above cannot see it. That is the same blind spot the /trip/ heroes shipped 800 through.
+     Both of these asked for 600 before this pass, which Bodoni would have synthesised. */
+  const VARIANTS = [
+    ['quote.css', '.hop.is-stay .hop-t'],
+    ['booking.html', '.trip-route .tr-leg.tr-gap .tr-leg-title'],
+  ];
+
+  for (const [file, selector] of VARIANTS) {
+    it(`${file} — ${selector} stays on a weight Bodoni ships`, () => {
+      const src = read(file);
+      const at = src.indexOf(selector + '{');
+      expect(at, `${selector} not found in ${file} — was it renamed?`).toBeGreaterThan(-1);
+      const weight = src.slice(at, src.indexOf('}', at)).match(/font-weight:\s*(\d{3})/);
+      if (!weight) return; // inherits the base rule's weight, which the NOUNS check covers
+      expect(['400', '700'], `${selector} at ${weight[1]} would be synthesised`).toContain(weight[1]);
     });
   }
 
