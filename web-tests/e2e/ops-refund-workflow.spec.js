@@ -81,7 +81,7 @@ function makeRefund(store, amountCents, reason) {
   };
 }
 
-async function boot(page, { role = 'finance', store, mobile = false, travelDate } = {}) {
+async function boot(page, { role = 'finance', store, mobile = false, travelDate, paidBy } = {}) {
   if (mobile) await page.setViewportSize({ width: 390, height: 844 });
   // payments:act reads the ledger (founder + finance); payments:reverse starts/confirms a
   // refund and is FOUNDER ONLY since 2026-08-02.
@@ -109,8 +109,13 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate 
     route.fulfill(json({ email: store.email, role, caps })));
   const theRow = travelDate ? { ...row, travelDate } : row;
   await page.route('**/admin/ops/bookings', (route) => route.fulfill(json([theRow])));
+  // mark-paid records the METHOD as the provider ("a cash payment's provider is cash"), which is
+  // how the drawer can tell a gateway booking from one settled by hand.
+  const detail = paidBy
+    ? { ...bookingDetail, payments: [{ ...bookingDetail.payments[0], provider: paidBy }] }
+    : bookingDetail;
   await page.route('**/admin/ops/bookings/booking-1', (route) =>
-    route.fulfill(json(bookingDetail)));
+    route.fulfill(json(detail)));
   await page.route('**/admin/bookings/booking-1/refunds', async (route) => {
     if (route.request().method() === 'GET') {
       store.refundReads++;
@@ -351,4 +356,38 @@ test('ops is locked out once the trip is inside 24 hours', async ({ page }) => {
   // ops agent gets neither action, so neither input.
   await expect(page.locator('#refundreason')).toHaveCount(0);
   await expect(page.locator('#cancelreason')).toHaveCount(0);
+});
+
+
+/* A booking paid in cash has NO PayHere payment to reverse, yet the refund block offered
+   "Refund through PayHere now" and asked for a "PayHere refund reference" — so an operator
+   returning cash had to type a fiction into the field that IS the money trail, and confirm a
+   dialog claiming they had used a dashboard they never opened (docs/known-bugs.md, 2026-07-30). */
+async function pendingRefund(page, opts) {
+  const store = { refunds: [], executeOutcome: 'unavailable' };
+  page.on('dialog', (dialog) => dialog.accept());
+  await boot(page, { role: 'founder', store, ...opts });
+  await page.locator('#refundreason').fill('Customer cancelled');
+  await page.locator('[data-act="refundrequest"]').dispatchEvent('click');
+  await expect(page.locator('.refund-row')).toHaveCount(1);
+  return store;
+}
+
+test('a cash booking refunds in its own words, with no PayHere step', async ({ page }) => {
+  await pendingRefund(page, { paidBy: 'cash' });
+
+  // The gateway route is not offered — pressing it could only fail.
+  await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(0);
+  // …and the copy names how the money actually arrived, instead of a dashboard nobody opened.
+  const warn = page.locator('.refund-row .refund-warning').first();
+  await expect(warn).toContainText(/paid by cash/i);
+  await expect(warn).not.toContainText(/PayHere dashboard/i);
+  // The evidence field asks the honest question.
+  await expect(page.locator('.refund-row .refund-confirm label').last()).toContainText(/How it was returned/i);
+});
+
+test('a PayHere booking keeps the gateway route and its wording', async ({ page }) => {
+  await pendingRefund(page, {}); // provider stays 'payhere'
+  await expect(page.locator('[data-act="refundexecute"]')).toHaveCount(1);
+  await expect(page.locator('.refund-row .refund-confirm label').last()).toContainText(/PayHere refund reference/i);
 });
