@@ -515,9 +515,24 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   broader live-payment traffic, public promotions, or deposits. Full
   [design](./superpowers/specs/2026-07-27-money-checkout-security-hardening-design.md) and
   [build plan](./superpowers/plans/2026-07-27-money-checkout-security-hardening.md).
+- **M18–M22 RE-CUT 2026-08-09 (owner decision).** Discounts ship in two phases. **Phase 1 is
+  founder manual discounts on Ops quotes only** — no promotions, no promo codes, no website
+  change — with full apply/replace/remove audit history. It is the live plan; the M18–M22 steps
+  below describe the *complete* feature and are now partly superseded and partly already
+  delivered. Read these first:
+  [design](./superpowers/specs/2026-08-09-founder-manual-discounts-design.md) ·
+  [build plan](./superpowers/plans/2026-08-09-founder-manual-discounts.md).
+  Phase 2 (promotions, codes, website) stays as specced below, gated on the open owner decisions
+  in [`2026-07-15-discounts-design.md`](./superpowers/specs/2026-07-15-discounts-design.md) §18.
+  **Already delivered elsewhere, do not rebuild:** 21.2 in full (SH4), 21.4's base contract
+  (SH5), and 19.2's schema — `quotes.revision`, the unique `converted_booking_id`, and
+  `bookings.subtotal`/`discount_total`/`pricing_snapshot_json`.
 - **M18 — Discount engine contract.** Freeze current behavior, then add pure discount arithmetic and
   deterministic promotion selection with no persistence or UI. Full design:
   [`superpowers/specs/2026-07-15-discounts-design.md`](./superpowers/specs/2026-07-15-discounts-design.md).
+  **Phase map:** 18.1 → phase 1 (Task 1). 18.2 → phase 1, **manual arm only** (Task 2); the extras
+  cost basis is settled by the owner-approved sell-price assumption, so it is no longer blocked.
+  18.3 promotion matching → **phase 2**.
   - **18.1 — Decision contract + zero-discount characterization gate.** Commit independently reviewed
     golden fixtures for private, chauffeur, shared, extras, psychological finishing, Ops, website,
     booking, checkout, and confirmation. Record owner-confirmed cost cents (including explicit zero
@@ -543,6 +558,10 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     zero-cent outcomes. No database or route changes.
 - **M19 — Discount persistence and transaction boundaries.** Add the storage needed to preserve and
   audit engine decisions while all creation flags remain off.
+  **Phase map:** 19.1 `promotion_rules` → **phase 2**. 19.2 → split: its `quotes`/`bookings` columns
+  are **already delivered** (SH5 + quote version history), and `quote_discounts` is phase 1 (Task 3)
+  with added before/after totals and margins per the owner's tracking requirement. 19.3 → phase 1
+  (Task 4) **minus** the redemption-budget re-check, which has no promotions to count.
   - **19.1 — Promotion rule and event schema.** Forward-only migration for immutable/versioned
     `promotion_rules` (including `minimum_trip_km`, `minimum_leg_count`, and `max_redemptions` —
     budget counted per family, spec §7.6) and append-only `discount_events`; add scope/activation
@@ -564,6 +583,11 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     changes.
 - **M20 — Founder-controlled Ops discounts and promotions.** Expose founder workflows through the
   existing authenticated Ops application before any public promotion is enabled.
+  **Phase map:** 20.1 → phase 1 for `discount:apply_manual` and `OPS_MANUAL_DISCOUNTS_ENABLED` only;
+  `promotion:manage` and the promotion-rule API are **phase 2**. 20.2 → phase 1 (Task 5), tri-state
+  manual intent only, no automatic resolver. 20.3 promotion-management UI → **phase 2**. 20.4 →
+  phase 1 (Task 6), plus two additions the original step predates: refusing a partial-leg pay-link
+  mint on a discounted quote, and warning that a discount edit invalidates outstanding pay links.
   - **20.1 — Capabilities, flags, and promotion-rule API.** Add `promotion:manage` and
     `discount:apply_manual`, with `OPS_PROMOTIONS_ENABLED` and `OPS_MANUAL_DISCOUNTS_ENABLED` default
     off before routes are exposed. Mount list/create/version/deactivate/preview under existing admin
@@ -591,6 +615,12 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
     workflow/layout changes. No public website changes.
 - **M21 — Canonical web quote and conversion.** Introduce a secure v2 quote path that can preserve
   automatic/code promotion decisions without changing the legacy lock or shared booking path.
+  **Phase map: all of M21 is phase 2** — phase 1 makes no website change. 21.2 is **delivered in
+  full by SH4** (`POST /quote/v2/lock`, `PUT /quote/v2/:id`, signed token, seven-day expiry, behind
+  `QUOTE_V2_ENABLED`) and 21.4's base contract by SH5 — extend both, never rebuild. 21.1 is the one
+  step with no discount dependency and can start any time, but note it must be built on
+  `canonPlace()` canon keys: the "canonical route IDs" it references **do not exist** in the
+  codebase (see the parent design §5.1).
   - **21.1 — Canonical route and tour identity transport.** Preserve canonical route IDs separately
     from exact addresses and carry stable `tourId` + route fingerprint from tour page through planner,
     booking intent, and API validation. Altering the logical route clears/replaces identity. Add a
