@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ceylon Hop — Booking pane redesign (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..600&family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ════════════════════════════════════════════════════════════════════
+   TOKENS — Ceylon Hop brand, light + dark
+   ════════════════════════════════════════════════════════════════════ */
+:root{
+  --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
+  --ink:#241f1d;--ink-soft:#6b645f;--ink-faint:#a59d92;
+  --cream:#F1EEE4;--cream-deep:#e4dfd0;--paper:#fffdf8;--line:#e8e3d4;--line-soft:#f0ece1;
+  --espresso:#1b1714;
+  --display:'Newsreader',Georgia,serif;--body:'Hanken Grotesk',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
+  --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
+  --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);
+  --shadow:0 8px 26px -12px rgba(40,33,28,.20);
+  --shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
+  --pane-w:500px;
+  --ease-glide:cubic-bezier(.22,.9,.28,1);
+  --ease-spring:cubic-bezier(.34,1.4,.44,1);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");
+}
+html[data-theme="dark"]{
+  --ink:#efe8db;--ink-soft:#b3a996;--ink-faint:#7b7264;
+  --cream:#171310;--cream-deep:#26201b;--paper:#211c17;--line:#332c25;--line-soft:#2b251f;
+  --ok:#4cba79;--ok-bg:#15271d;--wait:#e0a33e;--wait-bg:#2c2212;--go:#19b3a8;--go-bg:#0e2724;
+  --alert:#e86a4e;--alert-bg:#33topicdummy;--alert-bg:#301b14;--alert-line:#4b2a1e;--idle:#8d857a;--idle-bg:#26211c;
+  --shadow-s:0 1px 2px rgba(0,0,0,.35);
+  --shadow:0 8px 26px -12px rgba(0,0,0,.5);
+  --shadow-lg:0 40px 90px -30px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--cream)}
+body{font-family:var(--body);color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;transition:background .4s var(--ease-glide),color .4s var(--ease-glide)}
+::selection{background:var(--saffron);color:#241f1d}
+button{font-family:inherit;cursor:pointer;color:inherit;border:0;background:none;padding:0}
+input{font-family:inherit}
+kbd{font-family:var(--mono);font-size:.62rem;font-weight:600;border:1px solid var(--line);border-bottom-width:2px;background:var(--paper);border-radius:5px;padding:1px 5px;color:var(--ink-soft)}
+
+/* ════════════════════════════════════════════════════════════════════
+   DEMO SHELL — collapsed rail + queue (context only)
+   ════════════════════════════════════════════════════════════════════ */
+.app{display:grid;grid-template-columns:64px 1fr;height:100vh;height:100dvh;overflow:hidden}
+.rail{background:linear-gradient(176deg,#221c18,#171310);border-right:1px solid #0e0b09;display:flex;flex-direction:column;align-items:center;padding:18px 0;gap:20px;position:relative}
+.rail::before{content:"";position:absolute;inset:0;background:radial-gradient(125% 55% at 0% 0%,rgba(10,185,182,.14),transparent 58%);pointer-events:none}
+.rail .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(140deg,var(--saffron),#f07f1f);display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.15rem;color:#241f1d}
+.rail nav{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.rail nav button{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;color:#8d8375;transition:.18s}
+.rail nav button svg{width:18px;height:18px;stroke-width:2}
+.rail nav button:hover{background:rgba(255,255,255,.06);color:#fff}
+.rail nav button.on{background:linear-gradient(100deg,var(--teal-deep),#0aa49d);color:#fff;box-shadow:0 10px 24px -12px rgba(10,185,182,.8)}
+.rail .foot{margin-top:auto;width:34px;height:34px;border-radius:11px;background:linear-gradient(140deg,var(--teal-deep),#0aa49d);color:#fff;display:grid;place-items:center;font-family:var(--mono);font-size:.68rem;font-weight:700}
+main{display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:14px;padding:16px 26px;border-bottom:1px solid var(--line)}
+.topbar h1{font-family:var(--display);font-weight:600;font-size:1.5rem;margin:0;letter-spacing:-.02em}
+.search{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:8px 12px;width:min(300px,34vw);transition:border-color .2s}
+.search:focus-within{border-color:var(--teal)}
+.search svg{width:15px;height:15px;color:var(--ink-faint);flex:none}
+.search input{border:0;background:none;outline:none;color:var(--ink);font-size:.88rem;width:100%}
+.queue{overflow-y:auto;padding:20px 26px 60px}
+.daylbl{font-size:.64rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:18px 2px 9px;display:flex;align-items:center;gap:10px}
+.daylbl::after{content:"";flex:1;height:1px;background:var(--line)}
+.tk{display:flex;align-items:center;gap:14px;background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--c,var(--line));border-radius:14px;padding:13px 16px;margin-bottom:9px;cursor:pointer;box-shadow:var(--shadow-s);transition:transform .18s var(--ease-glide),box-shadow .18s,border-color .18s;position:relative}
+.tk:hover{transform:translateX(3px);box-shadow:var(--shadow)}
+.tk.sel{border-color:var(--c,var(--teal));box-shadow:0 0 0 3px color-mix(in srgb,var(--c,var(--teal)) 16%,transparent),var(--shadow)}
+.tk .chn{width:30px;height:30px;border-radius:9px;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft));display:grid;place-items:center;flex:none}
+.tk .chn svg{width:15px;height:15px;stroke-width:2}
+.tk-main{min-width:0;flex:1}
+.tk-cust{font-weight:700;font-size:.94rem;display:flex;align-items:baseline;gap:8px;min-width:0}
+.tk-cust .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tk-cust .id{font-family:var(--mono);font-size:.68rem;color:var(--ink-faint);font-weight:600}
+.tk-route{font-size:.82rem;color:var(--ink-soft);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-side{display:flex;align-items:center;gap:16px;flex:none}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.7rem;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--cbg,var(--idle-bg));color:var(--c,var(--idle))}
+.pill .pd{width:6px;height:6px;border-radius:50%;background:currentColor}
+.tk-right{text-align:right}
+.tk-right .val{font-family:var(--mono);font-weight:700;font-size:.9rem;font-variant-numeric:tabular-nums}
+.tk-right .when{font-size:.72rem;color:var(--ink-faint);margin-top:1px}
+.hint{margin:26px 2px 0;font-size:.74rem;color:var(--ink-faint);display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.hint span{display:inline-flex;gap:5px;align-items:center}
+
+/* demo HUD */
+.hud{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:200;display:flex;align-items:center;gap:9px;background:color-mix(in srgb,var(--espresso) 92%,transparent);color:#d9d0bf;border:1px solid rgba(255,255,255,.09);padding:7px 8px 7px 14px;border-radius:999px;font-size:.72rem;font-weight:600;box-shadow:var(--shadow-lg);backdrop-filter:blur(10px)}
+.hud b{color:#fff;font-weight:700}
+.hud button{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);border-radius:999px;padding:5px 11px;font-size:.7rem;font-weight:700;color:#e9e1d3;transition:.16s}
+.hud button:hover{background:rgba(255,255,255,.12)}
+
+/* ════════════════════════════════════════════════════════════════════
+   THE PANE — boarding-pass detail
+   ════════════════════════════════════════════════════════════════════ */
+.scrim{position:fixed;inset:0;background:rgba(20,16,13,.38);backdrop-filter:blur(3px) saturate(.9);opacity:0;pointer-events:none;transition:opacity .32s var(--ease-glide);z-index:80}
+.scrim.show{opacity:1;pointer-events:auto}
+.pane{position:fixed;top:10px;right:10px;bottom:10px;width:var(--pane-w);max-width:calc(100vw - 20px);z-index:90;display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow-lg);transform:translateX(calc(100% + 30px));transition:transform .44s var(--ease-glide);overflow:hidden;outline:none}
+.pane.show{transform:none}
+@media (prefers-reduced-motion:no-preference){
+  .pane.show{animation:settle .55s var(--ease-spring)}
+  @keyframes settle{0%{transform:translateX(26px)}100%{transform:none}}
+}
+
+/* — ticket header, stage-tinted — */
+.pv-head{position:relative;padding:20px 22px 16px;background:
+  linear-gradient(165deg,color-mix(in srgb,var(--c) 13%,var(--paper)),var(--paper) 82%);flex:none}
+.pv-head::before{content:"";position:absolute;inset:0;background:var(--grain);pointer-events:none;mix-blend-mode:multiply}
+html[data-theme="dark"] .pv-head::before{mix-blend-mode:screen;opacity:.5}
+.pv-head::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 20%,transparent))}
+.pv-topline{display:flex;align-items:center;gap:9px}
+.pv-chan{display:inline-flex;align-items:center;gap:8px;font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c)}
+.pv-chan .cico{width:21px;height:21px;border-radius:6px;background:color-mix(in srgb,var(--c) 14%,var(--paper));display:grid;place-items:center}
+.pv-chan .cico svg{width:12px;height:12px;stroke-width:2.2}
+.pv-tools{margin-left:auto;display:flex;gap:6px}
+.tbtn{width:32px;height:32px;border-radius:10px;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;color:var(--ink-soft);transition:.16s;position:relative}
+.tbtn svg{width:14px;height:14px;stroke-width:2}
+.tbtn:hover{color:var(--ink);border-color:var(--ink-faint);transform:translateY(-1px)}
+.pv-name{font-family:var(--display);font-size:1.62rem;font-weight:600;letter-spacing:-.02em;line-height:1.08;margin:10px 0 0;overflow-wrap:anywhere}
+.pv-name.sm{font-size:1.26rem}   /* long Google-profile names: wrap, don't shout */
+.pv-idrow{display:flex;align-items:center;gap:9px;margin-top:8px}
+.refbtn{font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--ink-soft);display:inline-flex;align-items:center;gap:6px;padding:3px 8px;margin-left:-8px;border-radius:7px;transition:.15s}
+.refbtn svg{width:11px;height:11px;opacity:0;transition:.15s;stroke-width:2.4}
+.refbtn:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
+.refbtn:hover svg{opacity:.7}
+
+/* journey rail */
+.journey{display:flex;align-items:center;margin:16px 2px 2px}
+.jstop{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;width:30px}
+.jseg{flex:1;height:2px;background:var(--line);position:relative;overflow:hidden;border-radius:2px;margin-bottom:14px}
+.jseg i{position:absolute;inset:0;background:var(--c);transform:scaleX(0);transform-origin:left;transition:transform .5s var(--ease-glide)}
+.jseg.done i{transform:none}
+.jdot{width:11px;height:11px;border-radius:50%;background:var(--cream-deep);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--line);transition:.3s var(--ease-glide)}
+.jstop.done .jdot{background:var(--c);box-shadow:0 0 0 1px var(--c)}
+.jstop.cur .jdot{background:var(--c);box-shadow:0 0 0 1px var(--c),0 0 0 5px color-mix(in srgb,var(--c) 20%,transparent)}
+@media (prefers-reduced-motion:no-preference){
+  .jstop.cur .jdot{animation:jpulse 2.2s ease-in-out infinite}
+  @keyframes jpulse{0%,100%{box-shadow:0 0 0 1px var(--c),0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent)}50%{box-shadow:0 0 0 1px var(--c),0 0 0 7px color-mix(in srgb,var(--c) 8%,transparent)}}
+}
+.jlbl{font-size:.53rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);white-space:nowrap}
+.jstop.done .jlbl{color:var(--ink-soft)}
+.jstop.cur .jlbl{color:var(--c)}
+
+/* ticket stub — the vitals row */
+.pv-stub{display:grid;grid-template-columns:1.15fr .95fr .85fr .8fr;flex:none;background:color-mix(in srgb,var(--c) 5%,var(--paper));border-top:1px solid var(--line-soft)}
+.stub{padding:11px 12px;border-left:1px dashed var(--line);min-width:0}
+.stub:first-child{border-left:0;padding-left:22px}
+.stub .sl{font-size:.55rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+.stub .sv{font-family:var(--mono);font-weight:700;font-size:.85rem;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+.stub .sv .paid-chip{font-family:var(--body);font-size:.6rem;font-weight:800;color:var(--ok);background:var(--ok-bg);border-radius:999px;padding:2px 6px;letter-spacing:.02em;flex:none}
+.stub .sv .due-chip{font-family:var(--body);font-size:.6rem;font-weight:800;color:var(--wait);background:var(--wait-bg);border-radius:999px;padding:2px 6px;letter-spacing:.02em;flex:none}
+
+/* perforation */
+.perf{position:relative;height:22px;flex:none;background:var(--paper)}
+.perf::before{content:"";position:absolute;left:20px;right:20px;top:50%;border-top:2px dashed var(--line)}
+.perf i{position:absolute;top:50%;width:22px;height:22px;border-radius:50%;background:var(--cream);border:1px solid var(--line);transform:translateY(-50%)}
+.perf i:first-child{left:-12px}
+.perf i:last-child{right:-12px}
+html[data-theme="dark"] .perf i{background:var(--cream)}
+
+/* — body — */
+.pv-body{overflow-y:auto;flex:1;padding:2px 22px 26px;scrollbar-width:thin;overscroll-behavior:contain}
+.pv-body::-webkit-scrollbar{width:8px}
+.pv-body::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
+.pv-sec{padding:16px 0 18px;border-bottom:1px solid var(--line-soft);opacity:0;transform:translateY(9px)}
+.pane.show .pv-sec{opacity:1;transform:none;transition:opacity .4s var(--ease-glide),transform .4s var(--ease-glide)}
+.pane.show .pv-sec:nth-child(1){transition-delay:.06s}
+.pane.show .pv-sec:nth-child(2){transition-delay:.11s}
+.pane.show .pv-sec:nth-child(3){transition-delay:.16s}
+.pane.show .pv-sec:nth-child(4){transition-delay:.20s}
+.pane.show .pv-sec:nth-child(5){transition-delay:.24s}
+.pane.show .pv-sec:nth-child(6){transition-delay:.27s}
+.pv-sec:last-child{border-bottom:0}
+.sechead{display:flex;align-items:center;gap:8px;margin:0 0 12px}
+.sechead h4{font-size:.63rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0}
+.sechead .cnt{font-family:var(--mono);font-size:.6rem;font-weight:700;color:var(--c);background:color-mix(in srgb,var(--c) 10%,transparent);padding:1px 7px;border-radius:999px}
+.sechead .end{margin-left:auto;font-size:.72rem;font-weight:700;color:var(--teal-deep);border-radius:7px;padding:3px 8px;transition:.15s}
+.sechead .end:hover{background:var(--go-bg)}
+
+/* NEXT UP — the one action card */
+.nextcard{margin-top:16px;border:1px solid color-mix(in srgb,var(--c) 30%,var(--line));background:
+  linear-gradient(150deg,color-mix(in srgb,var(--c) 9%,var(--paper)),var(--paper) 70%);
+  border-radius:16px;padding:15px 16px;position:relative;overflow:hidden;box-shadow:0 14px 30px -22px color-mix(in srgb,var(--c) 60%,transparent)}
+.nextcard::before{content:"";position:absolute;top:-40%;right:-14%;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 14%,transparent),transparent 66%);pointer-events:none}
+.nextcard .nk{font-size:.6rem;font-weight:800;letter-spacing:.15em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:7px}
+.nextcard .nk::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+@media (prefers-reduced-motion:no-preference){.nextcard .nk::before{animation:jpulse2 2.2s infinite}@keyframes jpulse2{50%{box-shadow:0 0 0 4px color-mix(in srgb,var(--c) 16%,transparent)}}}
+.nextcard .nt{font-weight:700;font-size:1.02rem;margin:7px 0 2px}
+.nextcard .nd{font-size:.82rem;color:var(--ink-soft);line-height:1.5}
+.nextcard .nd b{color:var(--ink);font-weight:700}
+
+/* checklist */
+.check{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 4px;border-radius:11px;transition:background .15s;border-top:1px solid var(--line-soft)}
+.check:first-of-type{border-top:0}
+.check:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
+.check .box{width:22px;height:22px;border-radius:8px;border:2px solid var(--line);background:var(--paper);display:grid;place-items:center;flex:none;transition:.22s var(--ease-spring)}
+.check .box svg{width:12px;height:12px;stroke:#fff;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.check .box svg path{stroke-dasharray:16;stroke-dashoffset:16;transition:stroke-dashoffset .28s var(--ease-glide) .05s}
+.check.on .box{background:var(--ok);border-color:var(--ok);transform:scale(1.04)}
+.check.on .box svg path{stroke-dashoffset:0}
+.check .ct{flex:1;font-size:.9rem;font-weight:600;color:var(--ink-soft);transition:color .2s}
+.check.on .ct{color:var(--ink)}
+.check .cm{font-size:.68rem;color:var(--ink-faint);font-family:var(--mono);opacity:0;transition:.25s}
+.check.on .cm{opacity:1}
+
+/* key/value with dotted leaders */
+.kv{display:flex;align-items:baseline;gap:10px;padding:6px 0;font-size:.9rem}
+.kv .k{color:var(--ink-soft);flex:none}
+.kv .lead{flex:1;border-bottom:2px dotted var(--line);transform:translateY(-4px)}
+.kv .v{font-weight:650;text-align:right;min-width:0;overflow-wrap:anywhere}
+.kv .v.mono{font-family:var(--mono);font-size:.84rem;font-variant-numeric:tabular-nums}
+.kv .v a{color:var(--teal-deep);text-decoration:none}
+.kv .v a:hover{text-decoration:underline}
+
+/* trip legs — route rail */
+.legs{margin-top:4px;position:relative}
+.leg{display:grid;grid-template-columns:16px 1fr auto;gap:0 12px;padding:7px 0;position:relative}
+.leg .ldot{width:10px;height:10px;border-radius:50%;border:2.5px solid var(--c);background:var(--paper);margin-top:4px;z-index:1;justify-self:center}
+.leg:last-child .ldot{background:var(--c)}
+.leg::before{content:"";position:absolute;left:7px;top:22px;bottom:-12px;width:2px;background:color-mix(in srgb,var(--c) 30%,var(--line))}
+.leg:last-child::before{display:none}
+.leg .lr{font-weight:650;font-size:.9rem}
+.leg .lr small{display:block;font-weight:500;font-size:.74rem;color:var(--ink-faint);margin-top:1px}
+.leg .ld{font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--ink-soft);text-align:right;padding-top:2px;font-variant-numeric:tabular-nums}
+
+/* payment + refund console */
+.payrow{display:flex;align-items:center;gap:12px;padding:4px 0 2px}
+.payrow .amt{font-family:var(--mono);font-weight:700;font-size:1.35rem;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.payrow .pstat{font-size:.68rem;font-weight:800;padding:4px 10px;border-radius:999px;letter-spacing:.04em}
+.payrow .pstat.ok{color:var(--ok);background:var(--ok-bg)}
+.payrow .pstat.wait{color:var(--wait);background:var(--wait-bg)}
+.payrow .refund-open{margin-left:auto;font-size:.76rem;font-weight:700;color:var(--ink-soft);border:1px solid var(--line);border-radius:9px;padding:6px 11px;transition:.16s}
+.payrow .refund-open:hover{color:var(--ink);border-color:var(--ink-faint)}
+.rconsole{overflow:hidden;max-height:0;opacity:0;transition:max-height .4s var(--ease-glide),opacity .3s;margin-top:2px}
+.rconsole.open{max-height:560px;opacity:1}
+.rconsole-in{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:10px;background:color-mix(in srgb,var(--cream) 46%,var(--paper))}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-bottom:12px}
+.rgrid .kv{padding:3px 0;font-size:.82rem}
+.rform{display:grid;grid-template-columns:120px 1fr;gap:9px}
+.rform label{display:flex;flex-direction:column;gap:5px;font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+.rform input{border:1.5px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 11px;font-size:.88rem;color:var(--ink);outline:none;transition:border-color .18s,box-shadow .18s;min-width:0}
+.rform input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+.rform input.bad{border-color:var(--alert);box-shadow:0 0 0 3px color-mix(in srgb,var(--alert) 14%,transparent)}
+.rform .hint2{grid-column:1/-1;font-size:.72rem;color:var(--ink-faint);margin-top:-2px}
+.rform .hint2.bad{color:var(--alert);font-weight:600}
+.rform .go{grid-column:1/-1;justify-self:end;margin-top:2px}
+.refrow{border:1px solid var(--line);border-left:4px solid var(--wait);background:var(--wait-bg);border-radius:12px;padding:11px 13px;margin-top:10px}
+.refrow.confirmed{border-left-color:var(--ok);background:var(--ok-bg)}
+.refrow .rh{display:flex;justify-content:space-between;font-weight:700;font-size:.88rem}
+.refrow .rm{font-size:.75rem;color:var(--ink-soft);margin-top:3px;overflow-wrap:anywhere}
+.refrow .rwarn{font-size:.76rem;color:#80560f;font-weight:650;margin:9px 0 7px}
+html[data-theme="dark"] .refrow .rwarn{color:#e0b45e}
+.refrow .rconfirm{display:flex;gap:8px}
+.refrow .rconfirm input{flex:1;border:1.5px solid #e4c984;background:var(--paper);border-radius:9px;padding:8px 10px;font-size:.84rem;color:var(--ink);outline:none;min-width:0}
+html[data-theme="dark"] .refrow .rconfirm input{border-color:#5d4a22}
+
+/* activity timeline */
+.tl{position:relative;margin-top:2px}
+.tlrow{position:relative;padding:0 0 14px 24px}
+.tlrow::before{content:"";position:absolute;left:5px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 15%,transparent)}
+.tlrow::after{content:"";position:absolute;left:8.5px;top:16px;bottom:-2px;width:2px;background:var(--line)}
+.tlrow:last-child::after{display:none}
+.tlrow .tt{font-size:.7rem;color:var(--ink-faint);font-family:var(--mono)}
+.tlrow .tm{font-size:.87rem;margin-top:1px}
+.tlrow .tm b{font-weight:700}
+.tlmore{font-size:.76rem;font-weight:700;color:var(--teal-deep);padding:2px 0 8px 24px;display:block}
+.composer{display:flex;gap:8px;margin-top:8px}
+.composer input{flex:1;border:1.5px solid var(--line);background:var(--paper);border-radius:11px;padding:10px 13px;font-size:.87rem;color:var(--ink);outline:none;transition:border-color .18s;min-width:0}
+.composer input:focus{border-color:var(--teal)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:.85rem;padding:10px 16px;border-radius:12px;border:1px solid var(--line);background:var(--paper);box-shadow:var(--shadow-s);transition:.18s var(--ease-glide);white-space:nowrap}
+.btn svg{width:15px;height:15px;flex:none;stroke-width:2.2}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.98)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-hero{position:relative;overflow:hidden;background:linear-gradient(100deg,var(--teal-deep),#0aa49d);border-color:transparent;color:#fff;box-shadow:0 14px 30px -14px rgba(8,147,143,.75)}
+.btn-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,255,255,.35) 50%,transparent 75%);transform:translateX(-140%);transition:transform .7s ease}
+.btn-hero:hover::after{transform:translateX(140%)}
+.btn-hero:hover{filter:brightness(1.06)}
+.btn-danger{color:var(--alert);border-color:var(--alert-line);background:var(--paper)}
+.btn-danger:hover{background:var(--alert-bg)}
+.btn-quiet{border-color:transparent;box-shadow:none;color:var(--ink-soft)}
+.btn-quiet:hover{background:color-mix(in srgb,var(--ink) 5%,transparent);color:var(--ink)}
+
+/* sticky action footer */
+.pv-foot{flex:none;position:relative;padding:13px 18px calc(13px + env(safe-area-inset-bottom));display:flex;gap:9px;align-items:center;border-top:1px solid var(--line);background:color-mix(in srgb,var(--paper) 86%,transparent);backdrop-filter:blur(14px)}
+.pv-foot .primary{flex:1}
+.pv-foot .fnote{flex:1;font-size:.8rem;color:var(--ink-soft);display:flex;align-items:center;gap:8px}
+.pv-foot .fnote .fdone{width:22px;height:22px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;flex:none}
+.pv-foot .fnote .fdone svg{width:11px;height:11px;stroke-width:3}
+.morebtn{width:42px;height:42px;flex:none;border-radius:12px;border:1px solid var(--line);background:var(--paper);display:grid;place-items:center;color:var(--ink-soft);transition:.16s}
+.morebtn:hover{color:var(--ink);border-color:var(--ink-faint)}
+.morebtn svg{width:16px;height:16px;stroke-width:2.4}
+
+/* popover + inline destructive confirm */
+.pop{position:absolute;right:14px;bottom:calc(100% + 8px);width:min(300px,calc(100% - 28px));background:var(--paper);border:1px solid var(--line);border-radius:15px;box-shadow:var(--shadow-lg);padding:6px;opacity:0;transform:translateY(8px) scale(.98);pointer-events:none;transition:.22s var(--ease-glide);z-index:5}
+.pop.open{opacity:1;transform:none;pointer-events:auto}
+.pop .pi{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font-size:.87rem;font-weight:600;padding:10px 12px;border-radius:10px;transition:.14s}
+.pop .pi svg{width:15px;height:15px;stroke-width:2;color:var(--ink-faint)}
+.pop .pi:hover{background:color-mix(in srgb,var(--ink) 5%,transparent)}
+.pop .pi.danger{color:var(--alert)}
+.pop .pi.danger svg{color:var(--alert)}
+.pop .pi.danger:hover{background:var(--alert-bg)}
+.pop .confirm{padding:12px 12px 10px}
+.pop .confirm .ch{font-weight:800;font-size:.9rem;color:var(--alert);display:flex;gap:8px;align-items:center}
+.pop .confirm .ch svg{width:16px;height:16px;stroke-width:2.2}
+.pop .confirm p{font-size:.8rem;color:var(--ink-soft);margin:7px 0 11px;line-height:1.5}
+.pop .confirm p b{color:var(--ink)}
+.pop .confirm .row{display:flex;gap:8px;justify-content:flex-end}
+
+/* toast + undo */
+.toasts{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:300;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:11px;background:var(--espresso);color:#fff;padding:11px 16px;border-radius:13px;font-weight:600;font-size:.86rem;box-shadow:var(--shadow-lg);position:relative;overflow:hidden;animation:tin .34s var(--ease-spring)}
+html[data-theme="dark"] .toast{background:#efe8db;color:#241f1d}
+@keyframes tin{from{opacity:0;transform:translateY(14px) scale(.96)}}
+.toast.out{opacity:0;transform:translateY(10px);transition:.28s}
+.toast .tick{color:#5fe0a0;flex:none;display:grid;place-items:center}
+html[data-theme="dark"] .toast .tick{color:#1d7a48}
+.toast .tick svg{width:15px;height:15px;stroke-width:3}
+.toast button.undo{font-weight:800;font-size:.8rem;color:var(--saffron);padding:4px 8px;border-radius:8px;flex:none}
+.toast button.undo:hover{background:rgba(255,255,255,.1)}
+html[data-theme="dark"] .toast button.undo{color:#a15c00}
+.toast .tbar{position:absolute;left:0;bottom:0;height:2.5px;background:var(--saffron);width:100%;transform-origin:left}
+.toast .tbar.run{animation:tbar 6s linear forwards}
+@keyframes tbar{to{transform:scaleX(0)}}
+
+/* skeleton loading */
+.skel .pv-sec{border-bottom:1px solid var(--line-soft)}
+.sk{border-radius:8px;background:linear-gradient(90deg,var(--cream-deep) 25%,color-mix(in srgb,var(--cream-deep) 45%,var(--paper)) 42%,var(--cream-deep) 60%);background-size:220% 100%;height:13px}
+@media (prefers-reduced-motion:no-preference){.sk{animation:shimmer 1.4s linear infinite}@keyframes shimmer{to{background-position:-220% 0}}}
+.sk.w40{width:40%}.sk.w60{width:60%}.sk.w80{width:80%}.sk.big{height:22px}
+
+/* board (read-only) manifest */
+.mrow{display:flex;align-items:center;gap:11px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:.88rem}
+.mrow:first-of-type{border-top:0}
+.mrow .mn{width:24px;height:24px;border-radius:8px;background:var(--cream-deep);display:grid;place-items:center;font-family:var(--mono);font-size:.66rem;font-weight:700;color:var(--ink-soft);flex:none}
+.mrow .who{flex:1;font-weight:650}
+.mrow .who small{font-weight:500;color:var(--ink-faint);margin-left:6px}
+.mrow .mst{font-size:.66rem;font-weight:800;padding:3px 9px;border-radius:999px}
+.mrow .mst.held{color:var(--wait);background:var(--wait-bg)}
+.mrow .mst.paid{color:var(--ok);background:var(--ok-bg)}
+.mrow .mst.failed{color:var(--alert);background:var(--alert-bg)}
+.threshold{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:13px 15px;margin-top:14px;background:color-mix(in srgb,var(--cream) 45%,var(--paper))}
+.threshold .ring{--p:0;width:46px;height:46px;border-radius:50%;flex:none;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--cream-deep) 0);display:grid;place-items:center;position:relative}
+.threshold .ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--paper)}
+.threshold .ring b{position:relative;font-family:var(--mono);font-size:.68rem}
+.threshold .tt2{flex:1}
+.threshold .tt2 b{display:block;font-size:.92rem}
+.threshold .tt2 span{font-size:.76rem;color:var(--ink-soft)}
+
+/* ── all-states gallery ── */
+.gallery{position:fixed;inset:0;z-index:150;background:var(--cream);overflow-y:auto;padding:24px 32px 70px}
+.ghead{display:flex;align-items:baseline;gap:14px;position:sticky;top:-24px;background:linear-gradient(var(--cream) 82%,transparent);padding:24px 0 14px;z-index:5;margin-top:-24px}
+.ghead h2{font-family:var(--display);font-weight:600;font-size:1.7rem;letter-spacing:-.02em;margin:0}
+.ghead p{font-size:.82rem;color:var(--ink-soft);margin:0}
+.ghead .gx{margin-left:auto;border:1px solid var(--line);background:var(--paper);border-radius:11px;padding:8px 14px;font-weight:700;font-size:.82rem;box-shadow:var(--shadow-s)}
+.ghead .gx:hover{border-color:var(--ink-faint)}
+.gsec{margin-top:30px}
+.gsec>h3{font-family:var(--display);font-weight:600;font-size:1.24rem;letter-spacing:-.01em;margin:0;display:flex;align-items:baseline;gap:10px}
+.gsec>h3 small{font-family:var(--body);font-size:.78rem;font-weight:500;color:var(--ink-soft)}
+.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(390px,1fr));gap:24px;margin-top:14px}
+.gcell .glbl{font-size:.64rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0 2px 8px;display:flex;align-items:center;gap:7px}
+.gcell .glbl::before{content:"";width:7px;height:7px;border-radius:3px;background:var(--gc,var(--ink-faint))}
+.pane.static{position:relative;top:auto;right:auto;bottom:auto;width:100%;max-width:none;height:690px;transform:none;transition:none;animation:none;border-radius:20px;box-shadow:var(--shadow);pointer-events:none}
+.pane.static .pv-sec{opacity:1;transform:none;transition:none}
+.pane.static .pv-body{overflow:hidden}
+.pane.static .stub .sv{font-size:.76rem}
+.ggrid{grid-template-columns:repeat(auto-fill,minmax(420px,1fr))}
+/* HUD selects */
+.hud select{appearance:none;-webkit-appearance:none;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.05);color:#e9e1d3;border-radius:999px;padding:5px 11px;font-size:.7rem;font-weight:700;font-family:inherit;cursor:pointer;max-width:150px}
+.hud select:hover{background:rgba(255,255,255,.12)}
+.hud select option{color:#241f1d;background:#fffdf8}
+
+/* narrow — full-bleed sheet */
+@media (max-width:700px){
+  :root{--pane-w:100vw}
+  .app{grid-template-columns:0 1fr}
+  .rail{display:none}
+  .pane{top:0;right:0;bottom:0;max-width:100vw;border-radius:0;border:0}
+  .pv-stub{grid-template-columns:1.3fr 1fr}
+  .stub:nth-child(3),.stub:nth-child(4){display:none}
+  .rform{grid-template-columns:1fr}
+  .hint{display:none}
+  .hud{z-index:85}   /* demo chrome ducks under the full-screen pane */
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="rail" aria-hidden="true">
+    <div class="logo">C</div>
+    <nav>
+      <button title="Quotes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg></button>
+      <button class="on" title="Bookings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></button>
+      <button title="Analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18"/><path d="m7 15 4-5 3 3 5-7"/></svg></button>
+    </nav>
+    <div class="foot">RW</div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <h1>Bookings</h1>
+      <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" placeholder="Search name, ref, route…"></div>
+    </div>
+    <div class="queue" id="queue"></div>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<section class="pane" id="pane" role="dialog" aria-modal="true" aria-labelledby="pv-name" tabindex="-1"></section>
+<div class="toasts" id="toasts"></div>
+
+<div class="gallery" id="gallery" hidden>
+  <div class="ghead"><h2>Every state, every use case</h2><p>static render — open any from the pickers below</p><button class="gx" id="galClose">✕ Close</button></div>
+  <div id="galBody"></div>
+</div>
+
+<div class="hud">
+  <span><b>Booking pane</b>&nbsp;· prototype</span>
+  <select id="ucSel" title="Use case"></select>
+  <select id="stSel" title="State"></select>
+  <button id="galBtn" title="Static render of the full matrix">⊞ All states</button>
+  <button id="themeBtn">☾ Dark</button>
+</div>
+
+<script>
+/* ══════════════════════════ data ══════════════════════════ */
+const STAGES=[
+  {k:'new',    lbl:'New booking',      short:'New',     c:'#c7841f', cbg:'#fbf0d8', next:'Confirm vehicle'},
+  {k:'paid',   lbl:'Paid',             short:'Paid',    c:'#0a8f86', cbg:'#e0f3ef', next:'Confirm vehicle'},
+  {k:'vehicle',lbl:'Vehicle confirmed',short:'Vehicle', c:'#08938f', cbg:'#e0f3ef', next:'Assign driver'},
+  {k:'driver', lbl:'Driver assigned',  short:'Driver',  c:'#0a7f9e', cbg:'#e2f1f6', next:'Send ready pack'},
+  {k:'ready',  lbl:'Ready to travel',  short:'Ready',   c:'#2f9558', cbg:'#e6f4ec', next:'Mark completed'},
+  {k:'done',   lbl:'Completed',        short:'Done',    c:'#7c7a73', cbg:'#eeece4', next:null},
+];
+const DARKC={'#c7841f':'#e0a33e','#0a8f86':'#19b3a8','#08938f':'#19b3a8','#0a7f9e':'#3fa9c9','#2f9558':'#4cba79','#7c7a73':'#8d857a','#cf4a2f':'#e86a4e'};
+const DARKBG='#242019';
+/* ride-board lists have their own lifecycle — not the booking pipeline */
+const BST={
+  gathering:{l:'Gathering names',c:'#c7841f',bg:'#fbf0d8'},
+  met:{l:'Runs — threshold met',c:'#2f9558',bg:'#e6f4ec'},
+  locked:{l:'Locked · charged',c:'#0a8f86',bg:'#e0f3ef'},
+  off:{l:'Called off',c:'#cf4a2f',bg:'#fbe6df'},
+};
+const NEXT_DESC={
+  'Confirm vehicle':'Lock a vehicle for this trip, then confirm it here — the customer is notified automatically.',
+  'Assign driver':'Vehicle is locked. Pick the driver and share the manifest — pickup details go out on WhatsApp.',
+  'Send ready pack':'Driver is set. Send the ready pack: driver photo, plate and live pickup pin.',
+  'Mark completed':'Trip runs today. Close it out once the driver confirms drop-off.',
+};
+
+const bookings=[
+  {id:'b1',ref:'CH-8F42QA',cust:'Marieke van der Berg',chan:'website',mode:'Multi-stop trip',
+   route:'Colombo → Ella → Mirissa',date:'Tue 12 Aug',time:'08:30',guests:4,amount:48600,cur:'USD',paid:true,stage:2,
+   veh:'Van · Toyota KDH',vehShort:'Van',bags:6,
+   whatsapp:'+31 6 2145 8890',email:'m.vandenberg@example.nl',country:'Netherlands',
+   legs:[{d:'Tue 12 Aug',r:'Colombo Airport → Kandy',s:'Pickup 08:30 · CMB arrivals'},
+         {d:'Thu 14 Aug',r:'Kandy → Ella',s:'Scenic route via Nuwara Eliya'},
+         {d:'Sat 16 Aug',r:'Ella → Mirissa',s:'Drop-off at beach villa'}],
+   checks:[{k:'photo',t:'Vehicle photo received',on:true,at:'2 Aug 14:02'},{k:'contact',t:'Customer contacted · pickup confirmed',on:false,at:null}],
+   refunds:[],captured:48600,
+   acts:[{t:'2 Aug 2026, 14:02',m:'Ops updated · now “Vehicle confirmed”'},{t:'2 Aug 2026, 13:58',m:'Vehicle confirmed'},{t:'1 Aug 2026, 09:14',m:'Payment received · $486.00'},{t:'1 Aug 2026, 09:12',m:'Booking created · Website'}]},
+  {id:'b2',ref:'CH-3K81MZ',cust:'Liam O’Connor',chan:'whatsapp',mode:'Private transfer',
+   route:'Galle → Colombo Airport',date:'Wed 6 Aug',time:'04:15',guests:2,amount:15000,cur:'USD',paid:false,stage:0,awaiting:true,
+   veh:'Sedan · Toyota Axio',vehShort:'Sedan',bags:2,
+   whatsapp:'+353 87 220 4471',email:'liam.oc@example.ie',country:'Ireland',
+   legs:null,checks:[{k:'photo',t:'Vehicle photo received',on:false,at:null},{k:'contact',t:'Customer contacted · pickup confirmed',on:false,at:null}],
+   refunds:[],captured:0,
+   acts:[{t:'3 Aug 2026, 18:44',m:'Payment link sent · WhatsApp'},{t:'3 Aug 2026, 18:31',m:'Booking created · WhatsApp'}]},
+  {id:'b3',ref:'CH-9D07TX',cust:'Sofia Marchetti',chan:'website',mode:'Shared ride · 1 seat',
+   route:'Ella → Arugam Bay',date:'Sat 9 Aug',time:'10:00',guests:1,amount:3800,cur:'USD',paid:true,stage:1,
+   veh:'Shared van · Wed & Sat',vehShort:'Shared',bags:1,
+   whatsapp:'+39 340 118 2276',email:'sofia.mrc@example.it',country:'Italy',
+   legs:null,checks:[{k:'photo',t:'Vehicle photo received',on:false,at:null},{k:'contact',t:'Customer contacted · pickup confirmed',on:false,at:null}],
+   refunds:[],captured:3800,
+   acts:[{t:'2 Aug 2026, 21:07',m:'Payment received · $38.00'},{t:'2 Aug 2026, 21:05',m:'Booking created · Website'}]},
+  {id:'b4',ref:'CH-1A96PL',cust:'Aiko Tanaka',chan:'website',mode:'Private transfer',
+   route:'Colombo Airport → Sigiriya',date:'Mon 4 Aug',time:'13:40',guests:3,amount:9800,cur:'USD',paid:true,stage:5,
+   veh:'Sedan · Toyota Prius',vehShort:'Sedan',bags:3,
+   whatsapp:'+81 90 5521 8834',email:'aiko.t@example.jp',country:'Japan',
+   legs:null,checks:[{k:'photo',t:'Vehicle photo received',on:true,at:'3 Aug 09:10'},{k:'contact',t:'Customer contacted · pickup confirmed',on:true,at:'3 Aug 11:26'}],
+   refunds:[],captured:9800,
+   acts:[{t:'4 Aug 2026, 16:20',m:'Trip completed'},{t:'4 Aug 2026, 12:58',m:'Driver en route'},{t:'3 Aug 2026, 11:26',m:'Pickup confirmed with customer'},{t:'1 Aug 2026, 08:44',m:'Payment received · $98.00'},{t:'1 Aug 2026, 08:41',m:'Booking created · Website'}]},
+  {id:'v5',ref:'EM-0906',cust:'Ella → Mirissa van',chan:'board',mode:'Shared van · Wed',board:true,bstatus:'gathering',
+   route:'Ella → Mirissa',date:'Wed 6 Aug',time:'09:00',guests:5,amount:19000,cur:'USD',paid:false,stage:0,
+   veh:'Van · 9 seats',vehShort:'Van',bags:0,
+   min:6,cap:9,committed:5,cutoff:'Tue 5 Aug, 18:00',seat:3800,
+   members:[{n:'Jonas',c:'Germany',s:2,st:'held'},{n:'Priya',c:'India',s:1,st:'held'},{n:'Marc',c:'France',s:1,st:'failed'},{n:'Tess',c:'Australia',s:1,st:'held'}]},
+  {id:'b6',ref:'CH-7Q15VD',cust:'Hettiarachchige Dona Chandrika Gunawardena',chan:'website',mode:'Chauffeur · 5 days',chauffeur:true,
+   route:'Colombo → Hill Country → Colombo',date:'Mon 18 Aug',time:'09:00',guests:2,amount:124000,cur:'USD',paid:true,stage:1,
+   veh:'Sedan + chauffeur · same driver all 5 days',vehShort:'Sedan',bags:3,
+   whatsapp:'+61 402 118 553',email:'hettiarachchige.chandrika.gunawardena@example.au',country:'Australia',
+   legs:null,
+   days:[{d:'Day 1 · Mon 18',r:'Colombo → Kandy',s:'Pinnawala stop · Temple of the Tooth'},
+         {d:'Day 2 · Tue 19',r:'Kandy → Nuwara Eliya',s:'Tea country · Ramboda Falls'},
+         {d:'Day 3 · Wed 20',r:'Nuwara Eliya',s:'Vehicle & driver on hand all day'},
+         {d:'Day 4 · Thu 21',r:'Nuwara Eliya → Ella',s:'Nine Arches · Little Adam’s Peak'},
+         {d:'Day 5 · Fri 22',r:'Ella → Colombo',s:'Drop-off at airport hotel'}],
+   checks:[{k:'photo',t:'Vehicle photo received',on:false,at:null},{k:'contact',t:'Customer contacted · pickup confirmed',on:false,at:null}],
+   refunds:[],captured:124000,
+   acts:[{t:'3 Aug 2026, 07:31',m:'Payment received · $1,240.00'},{t:'3 Aug 2026, 07:28',m:'Booking created · Website'}]},
+];
+
+/* ══════════════════════════ helpers ══════════════════════════ */
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const money=c=>'$'+(c/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const isDark=()=>document.documentElement.dataset.theme==='dark';
+const stC=b=>{const s=STAGES[b.stage];return isDark()?(DARKC[s.c]||s.c):s.c};
+const stBG=b=>isDark()?DARKBG:STAGES[b.stage].cbg;
+const ICON={
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  link:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>',
+  copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  check:'<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></svg>',
+  tick:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 13 4 4L19 7"/></svg>',
+  dots:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  globe:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z"/></svg>',
+  wa:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 21l1.7-4A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 10c.5 2 2.5 4 4.5 4.5l1.5-1.5 2.5 1.5c-.5 1.5-2 2-3.5 1.5C10.5 15 8 12.5 7.5 9.5 7 8 7.5 6.5 9 6l1.5 2.5z" fill="currentColor" stroke="none" opacity=".9"/></svg>',
+  van:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 8a2 2 0 0 1 2-2h9v10H2z"/><path d="M13 9h5l4 4v3h-9z"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg>',
+  arrow:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
+};
+const chanIco=c=>c==='whatsapp'?ICON.wa:c==='board'?ICON.van:ICON.globe;
+const chanLbl=c=>c==='whatsapp'?'WhatsApp':c==='board'?'Ride board':'Website';
+
+/* ══════════════════════════ queue ══════════════════════════ */
+let selIdx=0,openId=null;
+function paintQueue(){
+  const q=($('#q').value||'').trim().toLowerCase();
+  const list=bookings.filter(b=>!q||`${b.cust} ${b.ref} ${b.route}`.toLowerCase().includes(q));
+  const groups=[['Today · Mon 4 Aug',list.filter(b=>b.date==='Mon 4 Aug')],
+                ['This week',list.filter(b=>b.date!=='Mon 4 Aug')]];
+  $('#queue').innerHTML=groups.filter(g=>g[1].length).map(([lbl,rows])=>
+    `<div class="daylbl">${lbl}</div>`+rows.map(b=>{
+      const stat=statusOf(b);
+      return `<div class="tk${bookings.indexOf(b)===selIdx?' sel':''}" data-open="${b.id}" role="button" tabindex="0"
+        style="--c:${paneColor(b)};--cbg:${paneBg(b)}"
+        aria-label="${esc(b.cust)}, ${esc(b.route)}, ${stat.l}">
+        <span class="chn">${chanIco(b.chan)}</span>
+        <div class="tk-main">
+          <div class="tk-cust"><span class="nm">${esc(b.cust)}</span> <span class="id">${b.ref}</span></div>
+          <div class="tk-route">${esc(b.route)} · ${esc(b.mode)}</div>
+        </div>
+        <div class="tk-side">
+          <span class="pill"><span class="pd"></span>${stat.l}</span>
+          <div class="tk-right"><div class="val">${money(b.amount)}</div><div class="when">${b.date} · ${b.time}</div></div>
+        </div>
+      </div>`;}).join('')).join('')
+    +`<div class="hint">
+       <span><kbd>J</kbd><kbd>K</kbd> move</span><span><kbd>↵</kbd> open</span>
+       <span><kbd>E</kbd> advance stage</span><span><kbd>Esc</kbd> close</span>
+     </div>`;
+}
+
+/* ══════════════════════════ pane ══════════════════════════ */
+const pane=$('#pane'),scrim=$('#scrim');
+const loaded=new Set();          // which bookings have "fetched" detail
+let lastFocus=null,popOpen=false;
+
+/* one status color per booking, resolved for theme — used by pane, pill, ring, gallery */
+function statusOf(b){
+  if(b.board)return BST[b.bstatus||'gathering'];
+  if(b.awaiting)return {l:'Awaiting payment',c:'#c7841f',bg:'#fbf0d8'};
+  const s=STAGES[b.stage];return {l:s.lbl,c:s.c,bg:s.cbg};
+}
+const paneColor=b=>{const c=statusOf(b).c;return isDark()?(DARKC[c]||c):c;};
+const paneBg=b=>isDark()?DARKBG:statusOf(b).bg;
+function paneVars(b){pane.style.setProperty('--c',paneColor(b));}
+
+function headHtml(b){
+  const st=statusOf(b);
+  const journey=b.board?'':`<div class="journey" id="journey">`+STAGES.map((s,i)=>
+      `<span class="jstop ${i<b.stage?'done':i===b.stage?'cur':''}"><span class="jdot"></span><span class="jlbl">${s.short}</span></span>`
+      +(i<STAGES.length-1?`<span class="jseg ${i<b.stage?'done':''}"><i></i></span>`:'')).join('')+`</div>`;
+  const party=b.board?`${b.committed} / ${b.cap}`:`${b.guests}${b.bags?' · '+b.bags+' bag'+(b.bags===1?'':'s'):''}`;
+  return `<header class="pv-head">
+    <div class="pv-topline">
+      <span class="pv-chan"><span class="cico">${chanIco(b.chan)}</span>${chanLbl(b.chan)} · ${esc(b.mode)}</span>
+      <div class="pv-tools">
+        <button class="tbtn" data-act="deeplink" title="Copy link to this booking" aria-label="Copy link to this booking">${ICON.link}</button>
+        <button class="tbtn" data-act="close" title="Close (Esc)" aria-label="Close">${ICON.close}</button>
+      </div>
+    </div>
+    <h2 class="pv-name${b.cust.length>26?' sm':''}" id="pv-name">${esc(b.cust)}</h2>
+    <div class="pv-idrow">
+      <button class="refbtn" data-act="copyref" title="Copy reference">${b.ref} ${ICON.copy}</button>
+      <span class="pill" id="stagePill" style="--c:${paneColor(b)};--cbg:${paneBg(b)}"><span class="pd"></span>${st.l}</span>
+    </div>
+    ${journey}
+  </header>
+  <div class="pv-stub">
+    <div class="stub"><div class="sl">Total</div><div class="sv" id="stubMoney">${money(b.amount)}
+      ${b.board?'':(b.paid?'<span class="paid-chip">PAID</span>':'<span class="due-chip">DUE</span>')}</div></div>
+    <div class="stub"><div class="sl">Travel</div><div class="sv">${b.date}</div></div>
+    <div class="stub"><div class="sl">${b.board?'Seats':'Party'}</div><div class="sv">${party}</div></div>
+    <div class="stub"><div class="sl">Vehicle</div><div class="sv">${esc(b.vehShort||'—')}</div></div>
+  </div>
+  <div class="perf"><i></i><i></i></div>`;
+}
+
+function skeletonHtml(){
+  return `<div class="pv-body skel" aria-busy="true" aria-label="Loading booking details">
+    <div class="pv-sec"><div class="sk w40" style="margin-bottom:14px"></div><div class="sk big" style="margin-bottom:10px"></div><div class="sk w80"></div></div>
+    <div class="pv-sec"><div class="sk w40" style="margin-bottom:14px"></div><div class="sk w60" style="margin-bottom:10px"></div><div class="sk w80" style="margin-bottom:10px"></div><div class="sk w60"></div></div>
+    <div class="pv-sec"><div class="sk w40" style="margin-bottom:14px"></div><div class="sk w80" style="margin-bottom:10px"></div><div class="sk w60"></div></div>
+  </div>
+  <footer class="pv-foot"><div class="sk" style="flex:1;height:42px;border-radius:12px"></div></footer>`;
+}
+
+function nextCardHtml(b){
+  if(b.awaiting)return `<section class="pv-sec" id="secNext">
+    <div class="nextcard">
+      <div class="nk">Next up</div>
+      <div class="nt">Payment link sent — follow up</div>
+      <div class="nd">Payment lands automatically via the webhook. If it's overdue, nudge <b>${esc(b.cust.split(' ')[0])}</b> on ${chanLbl(b.chan)} with the reminder below.</div>
+    </div></section>`;
+  const s=STAGES[b.stage];
+  if(!s.next)return `<section class="pv-sec" id="secNext">
+    <div class="nextcard">
+      <div class="nk">Journey complete</div>
+      <div class="nt">Nothing left to do 🎉</div>
+      <div class="nd">Completed on <b>${b.acts[0].t.split(',')[0]}</b>. The trip is closed and archived — refunds stay available below if anything comes up.</div>
+    </div></section>`;
+  return `<section class="pv-sec" id="secNext">
+    <div class="nextcard">
+      <div class="nk">Next up</div>
+      <div class="nt">${s.next}</div>
+      <div class="nd">${NEXT_DESC[s.next]||''}</div>
+    </div>
+    <div style="margin-top:8px" id="checks">${checksHtml(b)}</div>
+  </section>`;
+}
+function checksHtml(b){
+  return b.checks.map(c=>`<button class="check ${c.on?'on':''}" data-check="${c.k}" role="switch" aria-checked="${c.on}">
+    <span class="box">${ICON.check}</span><span class="ct">${c.t}</span><span class="cm">${c.at||''}</span>
+  </button>`).join('');
+}
+
+function tripHtml(b){
+  const rail=list=>`<div class="legs">${list.map(l=>
+    `<div class="leg"><span class="ldot"></span><div class="lr">${esc(l.r)}<small>${esc(l.s)}</small></div><div class="ld">${l.d}</div></div>`).join('')}</div>`;
+  let core,badge='';
+  if(b.legs){core=rail(b.legs);badge=`<span class="cnt">${b.legs.length} legs</span>`;}
+  else if(b.days){core=rail(b.days);badge=`<span class="cnt">${b.days.length} days</span>`;}
+  else core=`<div class="kv"><span class="k">Pickup</span><span class="lead"></span><span class="v">${b.date} · ${b.time}</span></div>
+       <div class="kv"><span class="k">Route</span><span class="lead"></span><span class="v">${esc(b.route)}</span></div>`;
+  /* vehicle & luggage — always stated, never implied */
+  const extras=`<div style="margin-top:${(b.legs||b.days)?'12px':'0'}">
+    <div class="kv"><span class="k">Vehicle</span><span class="lead"></span><span class="v">${esc(b.veh||'—')}</span></div>
+    <div class="kv"><span class="k">Luggage</span><span class="lead"></span><span class="v">${b.bags?b.bags+' bag'+(b.bags===1?'':'s')+(b.bags>4?' · needs the van':''):'None declared'}</span></div>
+    ${b.mode.indexOf('Shared')===0?`<div class="kv"><span class="k">Service</span><span class="lead"></span><span class="v">Shared van · runs Wed &amp; Sat only</span></div>`:''}
+    ${b.chauffeur?`<div class="kv"><span class="k">Chauffeur</span><span class="lead"></span><span class="v">Same driver &amp; vehicle, day 1 → day ${b.days.length}</span></div>`:''}
+  </div>`;
+  return `<section class="pv-sec"><div class="sechead"><h4>${b.chauffeur?'Itinerary':'Trip'}</h4>${badge}</div>${core}${extras}</section>`;
+}
+
+function custHtml(b){
+  return `<section class="pv-sec"><div class="sechead"><h4>Customer</h4></div>
+    <div class="kv"><span class="k">WhatsApp</span><span class="lead"></span><span class="v mono"><a href="#" onclick="return false">${b.whatsapp}</a></span></div>
+    <div class="kv"><span class="k">Email</span><span class="lead"></span><span class="v mono">${b.email}</span></div>
+    <div class="kv"><span class="k">Country</span><span class="lead"></span><span class="v">${b.country}</span></div>
+  </section>`;
+}
+
+function payHtml(b){
+  const remaining=b.captured-b.refunds.reduce((s,r)=>s+(r.st!=='cancelled'?r.amt:0),0);
+  return `<section class="pv-sec" id="secPay"><div class="sechead"><h4>Payment</h4></div>
+    <div class="payrow">
+      <span class="amt">${money(b.amount)}</span>
+      ${b.paid?'<span class="pstat ok">PAID</span>':'<span class="pstat wait">AWAITING</span>'}
+      ${b.paid&&remaining>0?`<button class="refund-open" data-act="togglerefund" aria-expanded="false">Refund…</button>`:''}
+    </div>
+    ${b.paid?'':`<p style="margin:8px 0 0;font-size:.82rem;color:var(--ink-soft)">Link sent ${b.acts[0].t.split(',')[0]} · lands automatically when paid.</p>`}
+    <div class="rconsole" id="rconsole">${b.paid?refundConsoleHtml(b):''}</div>
+    <div id="refrows">${refundRowsHtml(b)}</div>
+  </section>`;
+}
+function refundConsoleHtml(b){
+  const remaining=b.captured-b.refunds.reduce((s,r)=>s+(r.st!=='cancelled'?r.amt:0),0);
+  return `<div class="rconsole-in">
+    <div class="rgrid">
+      <div class="kv"><span class="k">Captured</span><span class="lead"></span><span class="v mono">${money(b.captured)}</span></div>
+      <div class="kv"><span class="k">Refundable</span><span class="lead"></span><span class="v mono" id="remainVal">${money(remaining)}</span></div>
+    </div>
+    <div class="rform">
+      <label>Amount (USD)<input id="ramt" inputmode="decimal" placeholder="0.00" autocomplete="off"></label>
+      <label>Reason<input id="rwhy" maxlength="500" placeholder="e.g. Itinerary shortened by one day" autocomplete="off"></label>
+      <div class="hint2" id="rhint">Up to ${money(remaining)} · reason is stored on the booking and shown to finance.</div>
+      <button class="btn go" id="rgo" data-act="refundrequest" disabled>Request refund</button>
+    </div>
+  </div>`;
+}
+function refundRowsHtml(b){
+  return b.refunds.map((r,i)=>{
+    if(r.st==='pending')return `<div class="refrow">
+      <div class="rh"><span>Refund pending</span><span>${money(r.amt)}</span></div>
+      <div class="rm">${esc(r.why)} · requested by you</div>
+      <div class="rwarn">Complete the refund in the PayHere dashboard first, then paste its reference — this is the evidence trail.</div>
+      <div class="rconfirm">
+        <input data-refundref="${i}" placeholder="PayHere reference (required)" autocomplete="off">
+        <button class="btn" data-act="refundconfirm" data-i="${i}">Confirm</button>
+        <button class="btn btn-quiet" data-act="refundcancel" data-i="${i}">Cancel</button>
+      </div>
+    </div>`;
+    if(r.st==='confirmed')return `<div class="refrow confirmed">
+      <div class="rh"><span>Refunded ✓</span><span>${money(r.amt)}</span></div>
+      <div class="rm">${esc(r.why)} · PayHere ref ${esc(r.ref)} · customer emailed</div>
+    </div>`;
+    return '';
+  }).join('');
+}
+
+function actHtml(b,expand){
+  const rows=expand?b.acts:b.acts.slice(0,2);
+  return `<section class="pv-sec" id="secAct">
+    <div class="sechead"><h4>Activity</h4><span class="cnt">${b.acts.length}</span></div>
+    <div class="tl" id="tl">${rows.map(a=>`<div class="tlrow"><div class="tt">${a.t}</div><div class="tm">${a.m}</div></div>`).join('')}</div>
+    ${!expand&&b.acts.length>2?`<button class="tlmore" data-act="tlmore">Show all ${b.acts.length} events ↓</button>`:''}
+    <div class="composer"><input id="note" placeholder="Add an internal note… (↵ to save)" autocomplete="off"><button class="btn" data-act="addnote">Add</button></div>
+  </section>`;
+}
+
+function footHtml(b){
+  if(b.board){
+    const bs=b.bstatus||'gathering';
+    const msg={
+      gathering:'Read-only — confirms or calls off automatically at the cutoff.',
+      met:'Read-only — locks &amp; charges automatically at the cutoff.',
+      locked:'Locked — everyone charged, manifest is final.',
+      off:'Called off at cutoff — all holds released, nobody charged.',
+    }[bs];
+    const tone=bs==='off'?'style="background:var(--alert-bg);color:var(--alert)"':'';
+    return `<footer class="pv-foot">
+      <div class="fnote"><span class="fdone" ${tone}>${bs==='off'?ICON.close:ICON.tick}</span>${msg}</div>
+    </footer>`;
+  }
+  const s=STAGES[b.stage];
+  let primary;
+  if(b.awaiting)primary=`<button class="btn btn-hero primary" data-act="reminder">${ICON.bell} Copy payment reminder</button>`;
+  else if(s.next)primary=`<button class="btn btn-hero primary" data-act="advance">${s.next} ${ICON.arrow}</button>`;
+  else primary=`<div class="fnote"><span class="fdone">${ICON.tick}</span>All done — completed ${b.acts[0].t.split(',')[0]}.</div>`;
+  return `<footer class="pv-foot">
+    ${primary}
+    <button class="morebtn" data-act="more" aria-haspopup="menu" aria-expanded="false" title="More actions">${ICON.dots}</button>
+    <div class="pop" id="pop" role="menu"></div>
+  </footer>`;
+}
+
+/* board (read-only) body */
+function boardBodyHtml(b){
+  const bs=b.bstatus||'gathering';
+  const pct=Math.min(100,Math.round(b.committed/b.min*100));
+  const head={
+    gathering:{t:'Still gathering names',s:`${Math.max(0,b.min-b.committed)} more needed · names close ${b.cutoff}`},
+    met:{t:'Threshold met — the van runs',s:`Departure locks &amp; cards charge at ${b.cutoff}`},
+    locked:{t:'Locked in — everyone charged',s:`Departed roster is final · left ${b.time}`},
+    off:{t:`Called off — ${b.min-b.committed} short of ${b.min}`,s:`Holds released at ${b.cutoff} · nobody charged`},
+  }[bs];
+  return `<div class="pv-body">
+    <section class="pv-sec">
+      <div class="threshold" style="--c:${paneColor(b)}">
+        <div class="ring" style="--p:${pct}"><b>${b.committed}/${b.min}</b></div>
+        <div class="tt2"><b>${head.t}</b><span>${head.s}</span></div>
+      </div>
+    </section>
+    <section class="pv-sec"><div class="sechead"><h4>Manifest</h4><span class="cnt">${b.members.length}</span></div>
+      ${b.members.map((m,i)=>`<div class="mrow"><span class="mn">${i+1}</span><span class="who">${m.n}<small>${m.c}</small></span>
+        <span style="font-family:var(--mono);font-size:.74rem;color:var(--ink-soft)">${m.s} seat${m.s>1?'s':''}</span>
+        <span class="mst ${m.st==='released'?'held':m.st}" ${m.st==='released'?'style="color:var(--idle);background:var(--idle-bg)"':''}>${m.st==='held'?'HELD':m.st==='paid'?'PAID':m.st==='released'?'RELEASED':'CARD FAILED'}</span></div>`).join('')}
+    </section>
+    <section class="pv-sec"><div class="sechead"><h4>Money</h4></div>
+      <div class="kv"><span class="k">Per seat</span><span class="lead"></span><span class="v mono">${money(b.seat)}</span></div>
+      <div class="kv"><span class="k">Total held</span><span class="lead"></span><span class="v mono">${money(b.amount)}</span></div>
+      <div class="kv"><span class="k">Charged at</span><span class="lead"></span><span class="v">${{gathering:'Cutoff, only if it runs',met:'Cutoff — tonight',locked:'Charged ✓',off:'Never — holds released'}[b.bstatus||'gathering']}</span></div>
+    </section>
+  </div>`;
+}
+
+function bodyHtml(b){
+  if(b.board)return boardBodyHtml(b);
+  return `<div class="pv-body" id="pvbody">
+    ${nextCardHtml(b)}
+    ${tripHtml(b)}
+    ${custHtml(b)}
+    ${payHtml(b)}
+    ${actHtml(b,false)}
+  </div>`;
+}
+
+let showcaseB=null;   // HUD-selected state, lives outside the queue
+const byId=id=>(showcaseB&&showcaseB.id===id)?showcaseB:bookings.find(x=>x.id===id);
+function openPane(id){
+  const b=byId(id);if(!b)return;
+  openId=id;lastFocus=document.activeElement;
+  paneVars(b);
+  pane.innerHTML=headHtml(b)+(loaded.has(id)?bodyHtml(b)+footHtml(b):skeletonHtml());
+  scrim.classList.add('show');pane.classList.add('show');
+  document.querySelector('.app').setAttribute('inert','');
+  pane.focus({preventScroll:true});
+  if(!loaded.has(id)){
+    if(b.neverload)return;         // HUD "Loading" state: keep the skeleton up for inspection
+    setTimeout(()=>{               // simulated fetch — header is instant, body arrives
+      if(openId!==id)return;
+      loaded.add(id);
+      pane.querySelector('.pv-body').outerHTML=bodyHtml(b);
+      const oldFoot=pane.querySelector('.pv-foot');if(oldFoot)oldFoot.outerHTML=footHtml(b);
+      wireRefundForm(b);
+    },560);
+  }else wireRefundForm(b);
+}
+function closePane(){
+  openId=null;popOpen=false;
+  scrim.classList.remove('show');pane.classList.remove('show');
+  document.querySelector('.app').removeAttribute('inert');
+  if(lastFocus&&lastFocus.isConnected)lastFocus.focus();
+}
+
+/* ── in-place updates: these NEVER re-render the whole pane ── */
+function patchStage(b){
+  paneVars(b);
+  const s=STAGES[b.stage];
+  const pill=$('#stagePill');if(pill){pill.style.setProperty('--c',paneColor(b));pill.style.setProperty('--cbg',paneBg(b));pill.innerHTML=`<span class="pd"></span>${s.lbl}`;}
+  $$('#journey .jstop').forEach((el,i)=>{el.classList.toggle('done',i<b.stage);el.classList.toggle('cur',i===b.stage);});
+  $$('#journey .jseg').forEach((el,i)=>el.classList.toggle('done',i<b.stage));
+  const secNext=$('#secNext');if(secNext)secNext.outerHTML=nextCardHtml(b);
+  const foot=pane.querySelector('.pv-foot');if(foot)foot.outerHTML=footHtml(b);
+  paintQueue();
+}
+function pushAct(b,msg){
+  b.acts.unshift({t:'Just now',m:msg});
+  const tl=$('#tl');
+  if(tl){const row=document.createElement('div');row.className='tlrow';row.innerHTML=`<div class="tt">Just now</div><div class="tm">${msg}</div>`;
+    row.style.opacity='0';row.style.transform='translateY(-6px)';tl.prepend(row);
+    requestAnimationFrame(()=>{row.style.transition='all .35s var(--ease-glide)';row.style.opacity='1';row.style.transform='none';});
+    const cnt=$('#secAct .cnt');if(cnt)cnt.textContent=b.acts.length;}
+}
+
+/* ── toasts ── */
+function toast(msg,undoFn){
+  const t=document.createElement('div');t.className='toast';
+  t.innerHTML=`<span class="tick">${ICON.tick}</span><span>${msg}</span>${undoFn?'<button class="undo">Undo</button><span class="tbar run"></span>':''}`;
+  $('#toasts').append(t);
+  let done=false;
+  const kill=()=>{if(done)return;done=true;t.classList.add('out');setTimeout(()=>t.remove(),300);};
+  if(undoFn){t.querySelector('.undo').onclick=()=>{undoFn();kill();};setTimeout(kill,6000);}
+  else setTimeout(kill,2400);
+}
+
+/* ── refund form wiring (validation live) ── */
+function wireRefundForm(b){
+  const amt=$('#ramt'),why=$('#rwhy'),go=$('#rgo'),hint=$('#rhint');
+  if(!amt)return;
+  const remaining=()=>b.captured-b.refunds.reduce((s,r)=>s+(r.st!=='cancelled'?r.amt:0),0);
+  const check=()=>{
+    const v=amt.value.trim();const ok=/^\d+(\.\d{1,2})?$/.test(v);
+    const cents=ok?Math.round(parseFloat(v)*100):0;
+    const over=cents>remaining();
+    amt.classList.toggle('bad',!!v&&(!ok||over||cents===0));
+    if(!v){hint.textContent=`Up to ${money(remaining())} · reason is stored on the booking and shown to finance.`;hint.className='hint2';}
+    else if(!ok){hint.textContent='Amount must be a number like 60 or 60.50.';hint.className='hint2 bad';}
+    else if(over){hint.textContent=`That's more than the ${money(remaining())} refundable.`;hint.className='hint2 bad';}
+    else{hint.textContent=`Will refund ${money(cents)} of ${money(remaining())}.`;hint.className='hint2';}
+    go.disabled=!(ok&&cents>0&&!over&&why.value.trim().length>2);
+  };
+  amt.addEventListener('input',check);why.addEventListener('input',check);
+}
+
+/* ══════════════════════════ actions ══════════════════════════ */
+document.addEventListener('click',e=>{
+  const opener=e.target.closest('[data-open]');
+  if(opener){selIdx=bookings.findIndex(b=>b.id===opener.dataset.open);paintQueue();openPane(opener.dataset.open);return;}
+  const el=e.target.closest('[data-act],[data-check]');
+  const b=byId(openId);
+  if(!el||!b){if(popOpen&&!e.target.closest('.pop')){popOpen=false;const p=$('#pop');if(p)p.classList.remove('open');}return;}
+
+  /* checklist toggle — in place, scroll untouched, undoable mistake-proof */
+  if(el.dataset.check){
+    const c=b.checks.find(x=>x.k===el.dataset.check);
+    c.on=!c.on;c.at=c.on?'just now':null;
+    el.classList.toggle('on',c.on);el.setAttribute('aria-checked',c.on);
+    el.querySelector('.cm').textContent=c.at||'';
+    pushAct(b,`${c.t} · ${c.on?'checked':'unchecked'}`);
+    toast(c.on?'Checked — saved':'Unchecked — saved');
+    return;
+  }
+  switch(el.dataset.act){
+    case 'close':closePane();break;
+    case 'deeplink':navigator.clipboard?.writeText(`https://ops.ceylonhop.com/#booking?b=${b.ref}`).catch(()=>{});toast('Link copied — opens straight to this booking');break;
+    case 'copyref':navigator.clipboard?.writeText(b.ref).catch(()=>{});toast(`${b.ref} copied`);break;
+    case 'reminder':navigator.clipboard?.writeText(`Hi ${b.cust.split(' ')[0]}! Friendly nudge from Ceylon Hop — your ${b.route} transfer on ${b.date} is being held. Complete payment here: pay.ceylonhop.com/${b.ref}`).catch(()=>{});toast('Payment reminder copied — paste into WhatsApp');break;
+    case 'advance':{
+      const from=b.stage;
+      b.stage=Math.min(b.stage+1,STAGES.length-1);
+      const s=STAGES[b.stage];
+      patchStage(b);pushAct(b,`Ops · moved to “${s.lbl}”`);
+      toast(`Moved to “${s.lbl}”`,()=>{b.stage=from;patchStage(b);pushAct(b,'Undo · stage restored');});
+      break;}
+    case 'more':{
+      popOpen=!popOpen;el.setAttribute('aria-expanded',popOpen);
+      const p=$('#pop');
+      if(popOpen){p.innerHTML=`
+        <button class="pi" data-act="deeplink">${ICON.link} Copy booking link</button>
+        <button class="pi" data-act="copyref">${ICON.copy} Copy reference</button>
+        ${!b.awaiting&&STAGES[b.stage].next?`<button class="pi danger" data-act="noshow1">${ICON.warn} Mark no-show…</button>`:''}`;
+        p.classList.add('open');}
+      else p.classList.remove('open');
+      break;}
+    case 'noshow1':{
+      const p=$('#pop');
+      p.innerHTML=`<div class="confirm">
+        <div class="ch">${ICON.warn} Mark ${b.ref} as a no-show?</div>
+        <p>This emails <b>${esc(b.cust)}</b> that the fare is forfeited. <b>It can't be undone here.</b></p>
+        <div class="row"><button class="btn btn-quiet" data-act="noshowkeep">Keep booking</button>
+        <button class="btn btn-danger" data-act="noshow2">Yes, mark no-show</button></div>
+      </div>`;
+      break;}
+    case 'noshowkeep':{popOpen=false;$('#pop').classList.remove('open');break;}
+    case 'noshow2':{
+      popOpen=false;$('#pop').classList.remove('open');
+      pushAct(b,'Marked no-show · forfeited-fare email sent');
+      toast('Marked no-show — customer emailed');
+      break;}
+    case 'togglerefund':{
+      const rc=$('#rconsole');const open=rc.classList.toggle('open');
+      el.setAttribute('aria-expanded',open);el.textContent=open?'Close':'Refund…';
+      if(open)setTimeout(()=>$('#ramt')?.focus(),240);
+      break;}
+    case 'refundrequest':{
+      const cents=Math.round(parseFloat($('#ramt').value)*100);
+      const why=$('#rwhy').value.trim();
+      b.refunds.push({amt:cents,why,st:'pending'});
+      $('#refrows').innerHTML=refundRowsHtml(b);
+      const rc=$('#rconsole');rc.classList.remove('open');
+      const ro=pane.querySelector('.refund-open');if(ro)ro.textContent='Refund…';
+      pushAct(b,`Refund requested · ${money(cents)} · ${why}`);
+      toast('Refund recorded — now complete it in PayHere');
+      break;}
+    case 'refundconfirm':{
+      const i=+el.dataset.i;const inp=pane.querySelector(`[data-refundref="${i}"]`);
+      const ref=inp?.value.trim();
+      if(!ref){inp.style.borderColor='var(--alert)';inp.placeholder='Reference required — paste it from PayHere';inp.focus();return;}
+      b.refunds[i].st='confirmed';b.refunds[i].ref=ref;
+      $('#refrows').innerHTML=refundRowsHtml(b);
+      const rcin=$('#rconsole');if(rcin)rcin.innerHTML=refundConsoleHtml(b);wireRefundForm(b);
+      const rv=$('#remainVal');
+      pushAct(b,`Refund confirmed · ${money(b.refunds[i].amt)} · PayHere ${ref}`);
+      toast('Refund confirmed — customer emailed');
+      break;}
+    case 'refundcancel':{
+      const i=+el.dataset.i;b.refunds.splice(i,1);
+      $('#refrows').innerHTML=refundRowsHtml(b);
+      const rcin2=$('#rconsole');if(rcin2)rcin2.innerHTML=refundConsoleHtml(b);wireRefundForm(b);
+      pushAct(b,'Refund request cancelled');
+      toast('Refund request cancelled — nothing sent to PayHere');
+      break;}
+    case 'tlmore':{$('#secAct').outerHTML=actHtml(b,true);break;}
+    case 'addnote':{
+      const n=$('#note');const v=n.value.trim();if(!v){n.focus();return;}
+      pushAct(b,`<b>Note</b> · ${esc(v)}`);n.value='';toast('Note added');
+      break;}
+  }
+});
+
+/* enter-to-save note */
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&e.target.id==='note'){e.preventDefault();pane.querySelector('[data-act="addnote"]')?.click();}
+});
+
+/* keyboard triage */
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input')&&!['Escape'].includes(e.key))return;
+  if(e.key==='Escape'){
+    if(!$('#gallery').hidden){$('#gallery').hidden=true;return;}
+    if(popOpen){popOpen=false;const p=$('#pop');if(p)p.classList.remove('open');const m=pane.querySelector('.morebtn');if(m)m.setAttribute('aria-expanded','false');return;}
+    if(openId)closePane();return;
+  }
+  if(e.key==='j'||e.key==='J'||e.key==='ArrowDown'){selIdx=Math.min(selIdx+1,bookings.length-1);paintQueue();if(openId)openPane(bookings[selIdx].id);e.preventDefault();}
+  if(e.key==='k'||e.key==='K'||e.key==='ArrowUp'){selIdx=Math.max(selIdx-1,0);paintQueue();if(openId)openPane(bookings[selIdx].id);e.preventDefault();}
+  if(e.key==='Enter'&&!openId){openPane(bookings[selIdx].id);}
+  if((e.key==='e'||e.key==='E')&&openId){const b=byId(openId);if(b&&!b.board&&!b.awaiting&&STAGES[b.stage].next)pane.querySelector('[data-act="advance"]')?.click();}
+});
+
+/* focus trap */
+pane.addEventListener('keydown',e=>{
+  if(e.key!=='Tab')return;
+  const f=$$('button,input,[tabindex="0"]',pane).filter(x=>x.offsetParent);
+  if(!f.length)return;
+  const first=f[0],last=f[f.length-1];
+  if(e.shiftKey&&document.activeElement===first){last.focus();e.preventDefault();}
+  else if(!e.shiftKey&&document.activeElement===last){first.focus();e.preventDefault();}
+});
+
+scrim.addEventListener('click',closePane);
+$('#q').addEventListener('input',paintQueue);
+
+/* theme */
+$('#themeBtn').addEventListener('click',()=>{
+  const dark=document.documentElement.dataset.theme==='dark';
+  document.documentElement.dataset.theme=dark?'':'dark';
+  $('#themeBtn').textContent=dark?'☾ Dark':'☀ Light';
+  paintQueue();
+  if(openId){const b=byId(openId);paneVars(b);}
+  if(!$('#gallery').hidden)buildGallery();  /* re-render with theme-resolved colors */
+});
+
+/* ══════════════════════════ state showcase + gallery ══════════════════════════ */
+const UC={
+  transfer:{lbl:'Private transfer',base:'b2'},
+  trip:{lbl:'Multi-stop trip',base:'b1'},
+  chauffeur:{lbl:'Chauffeur (multi-day)',base:'b6'},
+  shared:{lbl:'Shared ride seat',base:'b3'},
+  board:{lbl:'Ride-board van',base:'v5'},
+};
+const ST_BOOK=[['awaiting','Awaiting payment'],['paid','Paid'],['vehicle','Vehicle confirmed'],['driver','Driver assigned'],
+  ['ready','Ready to travel'],['done','Completed'],['refund_pending','Refund pending'],['refunded','Refunded'],['loading','Loading (skeleton)']];
+const ST_BOARD=[['gathering','Gathering names'],['met','Threshold met'],['locked','Locked · charged'],['off','Called off']];
+
+function applyState(tpl,st){
+  const b=structuredClone(tpl);b.id='show:'+tpl.id+':'+st;
+  if(b.board){
+    b.bstatus=st;
+    if(st==='met'){b.committed=b.min;b.amount=b.seat*b.min;b.members=[...b.members.map(m=>({...m,st:'held'})),{n:'Дмитрий',c:'Ukraine',s:1,st:'held'}];}
+    if(st==='locked'){b.committed=b.min;b.paid=true;b.amount=b.seat*b.min;b.members=[...b.members.map(m=>({...m,st:'paid'})),{n:'Дмитрий',c:'Ukraine',s:1,st:'paid'}];}
+    if(st==='off')b.members=b.members.map(m=>({...m,st:'released'}));
+    return b;
+  }
+  b.awaiting=false;
+  const stageOf={paid:1,vehicle:2,driver:3,ready:4,done:5,refund_pending:2,refunded:2};
+  if(st==='awaiting'){b.awaiting=true;b.paid=false;b.stage=0;b.captured=0;}
+  else if(st==='loading'){b.neverload=true;}
+  else{
+    b.paid=true;b.captured=b.amount;b.stage=stageOf[st];
+    const done=n=>{for(let i=0;i<n;i++){b.checks[i].on=true;b.checks[i].at='2 Aug 14:02';}};
+    if(b.stage>=3)done(2);else if(b.stage>=2)done(1);
+    if(st==='refund_pending')b.refunds=[{amt:Math.round(b.amount*.12/100)*100,why:'Itinerary shortened by one day',st:'pending'}];
+    if(st==='refunded')b.refunds=[{amt:Math.round(b.amount*.12/100)*100,why:'Itinerary shortened by one day',st:'confirmed',ref:'PH-RF-99231'}];
+  }
+  return b;
+}
+function showcase(){
+  const uc=$('#ucSel').value,st=$('#stSel').value;
+  showcaseB=applyState(bookings.find(x=>x.id===UC[uc].base),st);
+  if(st!=='loading')loaded.add(showcaseB.id);else loaded.delete(showcaseB.id);
+  openPane(showcaseB.id);
+}
+function fillStSel(){
+  const isBoard=$('#ucSel').value==='board';
+  $('#stSel').innerHTML=(isBoard?ST_BOARD:ST_BOOK).map(([k,l])=>`<option value="${k}">${l}</option>`).join('');
+}
+$('#ucSel').innerHTML=Object.entries(UC).map(([k,v])=>`<option value="${k}">${v.lbl}</option>`).join('');
+fillStSel();
+$('#ucSel').addEventListener('change',()=>{fillStSel();showcase();});
+$('#stSel').addEventListener('change',showcase);
+
+/* gallery — static full matrix, one cell per mode × state */
+const GAL=[
+  ['transfer','Private transfer','one pickup, one drop — the bread and butter',ST_BOOK],
+  ['trip','Multi-stop trip','several legs over several days, one vehicle per leg',ST_BOOK.filter(s=>s[0]!=='loading')],
+  ['chauffeur','Chauffeur (multi-day)','same driver & vehicle across the whole itinerary',ST_BOOK.filter(s=>!['loading','refund_pending','refunded'].includes(s[0]))],
+  ['shared','Shared ride seat','one seat on a Wed/Sat van',ST_BOOK.filter(s=>!['loading','refund_pending','refunded'].includes(s[0]))],
+  ['board','Ride-board van','community demand pool — read-only, automatic lifecycle',ST_BOARD],
+];
+function buildGallery(){
+  $('#galBody').innerHTML=GAL.map(([uc,lbl,sub,states])=>{
+    const cells=states.map(([k,l])=>{
+      const b=applyState(bookings.find(x=>x.id===UC[uc].base),k);
+      const inner=k==='loading'?headHtml(b)+skeletonHtml():headHtml(b)+bodyHtml(b)+footHtml(b);
+      return `<div class="gcell"><div class="glbl" style="--gc:${paneColor(b)}">${l}</div>
+        <section class="pane static show" style="--c:${paneColor(b)}">${inner}</section></div>`;
+    }).join('');
+    return `<div class="gsec"><h3>${lbl} <small>${sub}</small></h3><div class="ggrid">${cells}</div></div>`;
+  }).join('');
+}
+$('#galBtn').addEventListener('click',()=>{
+  const g=$('#gallery');
+  if(g.hidden){buildGallery();g.hidden=false;g.scrollTop=0;}
+  else g.hidden=true;
+});
+$('#galClose').addEventListener('click',()=>{$('#gallery').hidden=true;});
+
+paintQueue();
+</script>
+</body>
+</html>
