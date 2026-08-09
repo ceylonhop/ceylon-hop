@@ -59,6 +59,8 @@ interface StoredQuoteResult {
   amountDueNowCents: number;
   currency: string;
   lineItems: unknown[];
+  /** Absent on every quote saved without a founder discount, which is most of them. */
+  discountCents?: number;
 }
 
 function storedResult(quote: SavedQuote): StoredQuoteResult {
@@ -164,9 +166,15 @@ export function bookingFromLockedQuote(
       quoteRevision: quote.revision,
       intentFingerprint: fingerprint,
       subtotalCents: result.subtotalCents,
-      // SH5 has no promotion/discount input. Price finishing is already represented by the
-      // stored line items/result and must not be mislabeled as a discount.
-      discountTotalCents: 0,
+      // Read from the STORED result, never recomputed: the engine already decided this when the
+      // quote was priced, and re-deriving it here against a rate card that may since have moved
+      // would produce a number the customer was never shown.
+      //
+      // Still 0 for every quote without a discount, which is every quote on this path today —
+      // phase 1 is Ops-only and Ops converts through internalQuote's mark-booked, not here.
+      // Price finishing is represented by the stored line items and must never be mislabeled as
+      // a discount (the original SH5 note, still true).
+      discountTotalCents: result.discountCents ?? 0,
       totalCents: result.totalCents,
       amountDueNowCents: result.amountDueNowCents,
       currency: result.currency,
