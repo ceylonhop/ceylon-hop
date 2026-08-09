@@ -766,7 +766,7 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
       currency: b.currency,
       idempotencyKey: `manual-paid:${b.id}`,
     });
-    await payments.markSucceededManually(settled.id, { reference: 'BOC-77219' });
+    await payments.markSucceededManually(settled.id, { reference: 'BOC-77219', settledBy: 'ops@x.com' });
     expect((await bookings.get(b.id))!.status).toBe('payment_pending');
 
     const res = await markPaid(app, b.id, { method: 'cash', reference: 'BOC-77219' });
