@@ -42,11 +42,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      the route fails), so a blocked key degrades the page instead of breaking it. -->
 <script>window.CEYLON_MAPS_KEY='AIzaSyDY-pFmqV4eIax2hhsdj96YD1c8Em-srCI';</script>
   <style>
-    /* A negotiated price shows its two ends above the figure that is actually paid. Muted and
-       smaller so the final total stays the number the eye lands on. .tot supplies the row layout. */
-    .tot.tot-sub{font-size:.95rem;opacity:.72;padding-bottom:2px}
-    .tot.tot-sub .v{font-weight:600}
-    .tot.tot-disc .v{color:#0f8a80}
+    /* A negotiated price: two quiet rows, then the figure that is actually paid.
+       .tot .v is 2rem (ticket.css) — the size MUST be overridden on .v itself, not on the row,
+       which is why the first attempt left all three numbers equally huge. .tot.due .v is the
+       existing precedent for a secondary row. */
+    .opts .tot.tot-sub{margin-top:7px}
+    .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
+    .tot.tot-disc .v{color:var(--accent-deep,#0f8a80)}
+    /* The final figure keeps the full Bodoni treatment, set off by a hairline so the eye lands
+       there rather than on the arithmetic above it. */
+    .opts .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
   </style>
 </head>
 <body>
@@ -306,7 +311,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + (opt.discount
           ? '<div class="tot tot-sub"><span class="l">Total</span><span class="v">' + esc(opt.discount.totalBeforeUsd) + '</span></div>'
             + '<div class="tot tot-sub tot-disc"><span class="l">Discount</span><span class="v">&minus;' + esc(opt.discount.discountUsd) + '</span></div>'
-            + '<div class="tot"><span class="l">Final total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
+            + '<div class="tot tot-final"><span class="l">Final total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>'
           : '<div class="tot"><span class="l">Total</span><span class="v">' + esc(opt.totalUsd) + '</span></div>')
       // "Confirm on WhatsApp" on both cards (owner, 2026-08-06): "Book" over-promised — tapping
       // books nothing — and naming the channel makes the app-switch exactly what the label said.
