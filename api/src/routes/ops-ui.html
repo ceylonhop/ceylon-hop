@@ -4340,12 +4340,24 @@ function removeDiscount() {
   refreshEstimate();
 }
 
+/* The discount AS IT GOES ON THE WIRE. One builder, used by every request that prices: the money
+   pane's estimate (_runEstimate), the distance-check estimate (buildEstimatePayload) and save.
+   The first version of this feature put the discount only in buildEstimatePayload(), which the
+   money pane does NOT use — _runEstimate builds its own payload from buildToolRequest(). The pane
+   therefore priced undiscounted through three separate "fixes". If a new request prices a quote,
+   it calls this. */
+function discountWire(d) {
+  if (!d) return undefined;
+  return d.method === 'fixed'
+    ? { method: 'fixed', amountCents: d.value, reason: d.reason }
+    : { method: 'percentage', basisPoints: d.value, reason: d.reason };
+}
+
 function buildEstimatePayload(override) {
   return {
-    // Preview the discount so the money pane shows the price the customer will actually pay.
     // Omitted entirely when there is none — the server treats absent as "no discount", and on
     // SAVE absent means "preserve", which is a different thing (see savePayload).
-    discount: state.discount ? { method: state.discount.method, amountCents: state.discount.method === 'fixed' ? state.discount.value : undefined, basisPoints: state.discount.method === 'percentage' ? state.discount.value : undefined, reason: state.discount.reason } : undefined,
+    discount: discountWire(state.discount),
     service: state.service || 'private',
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
@@ -4435,6 +4447,10 @@ async function _runEstimate() {
   // Build the payload (Task 2 mapping; Task 7: shared wire builder — estimate + save send
   // the same leg shape, per-segment stops/segmentKms + the legacy from/to/distanceKm mirror)
   var payload = buildToolRequest(pricedLegs);
+  // Price WITH the founder's discount, or the pane shows a number the customer will not be
+  // charged. This is the request the money pane actually renders from.
+  var _dw = discountWire(state.discount);
+  if (_dw) payload.discount = _dw;
 
   var result = await apiEstimate(payload);
 
@@ -5351,11 +5367,7 @@ function savePayload() {
        JSON.stringify and read as "preserve" — the opposite. _discountTouched distinguishes "the
        founder changed this" from "this quote simply has none", so an ordinary autosave never
        sends a removal it did not mean. */
-    discount: _discountTouched
-      ? (state.discount
-          ? { method: state.discount.method, amountCents: state.discount.method === 'fixed' ? state.discount.value : undefined, basisPoints: state.discount.method === 'percentage' ? state.discount.value : undefined, reason: state.discount.reason }
-          : null)
-      : undefined,
+    discount: _discountTouched ? (discountWire(state.discount) || null) : undefined,
   }, buildToolRequest());
 }
 

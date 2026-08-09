@@ -1003,6 +1003,20 @@ describe('founder manual discount control', () => {
     expect(hydration, 'rehydration must be on the PRICED path').toBeGreaterThan(pricedMarker);
   });
 
+  it('sends the discount on the path the MONEY PANE actually uses', async () => {
+    const body = await shell();
+    // The bug that survived three fixes: the discount was added to buildEstimatePayload(), which
+    // only the distance-check calls. _runEstimate builds its own payload from buildToolRequest()
+    // and is what the pane renders from — so the pane priced undiscounted every time.
+    // One wire builder, and _runEstimate must use it.
+    expect(body).toContain('function discountWire(d)');
+    const runEstimate = body.indexOf('async function _runEstimate()');
+    const nextFn = body.indexOf('\nfunction ', runEstimate + 10);
+    const bodyOfRunEstimate = body.slice(runEstimate, nextFn > 0 ? nextFn : runEstimate + 6000);
+    expect(bodyOfRunEstimate, '_runEstimate must put the discount on its payload')
+      .toContain('discountWire(state.discount)');
+  });
+
   it('uses the delegated dispatcher, so it survives a money-pane re-render', async () => {
     const body = await shell();
     expect(body).toContain("data-action=\"applyDiscount\"");
