@@ -218,7 +218,15 @@ export function customerQuoteView(
   // The founder's negotiation, straight off the stored result — no recompute, no extra query.
   const storedResult = (quote.result ?? {}) as { totalBeforeDiscountCents?: number; discountCents?: number };
   const discountOff = storedResult.discountCents && storedResult.discountCents > 0 ? storedResult.discountCents : null;
-  const discountBefore = discountOff != null ? storedResult.totalBeforeDiscountCents ?? null : null;
+  /* The pre-discount total. DERIVED when the stored result predates the finishing reorder (#422),
+     which renamed discountedSubtotalCents → totalBeforeDiscountCents: a quote discounted before
+     that deploy carries the old field, and requiring the new one made the breakdown silently
+     vanish on a genuinely discounted quote (Q-ZKPZY, $259 → $229, observed on staging).
+     total + discount is exact under the current order — total IS totalBefore − discount — so the
+     derivation is not a fallback approximation, it is the same arithmetic read the other way. */
+  const discountBefore = discountOff == null
+    ? null
+    : storedResult.totalBeforeDiscountCents ?? pricedTotal + discountOff;
   const otherTotal = wantsBoth ? totalFor(other) : null;
 
   const waFor = (label: string | null) =>

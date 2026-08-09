@@ -265,6 +265,17 @@ describe('a negotiated price on the customer quote page', () => {
     expect(6200 - 1000).toBe(5200);
   });
 
+  it('DERIVES the pre-discount total for a quote discounted before the reorder', () => {
+    // #422 renamed discountedSubtotalCents → totalBeforeDiscountCents. A quote discounted before
+    // that deploy has only the old field, and requiring the new one hid the breakdown on a
+    // genuinely discounted quote.
+    const view = customerQuoteView(
+      { ...base, totalCents: 22900, result: { discountCents: 3000, discountedSubtotalCents: 22900 } },
+      { pointToPoint: { totalCents: 22900 }, chauffeur: null },
+    );
+    expect(view.options[0].discount).toEqual({ totalBeforeUsd: '$259', discountUsd: '$30' });
+  });
+
   it('shows no breakdown when nothing was negotiated', () => {
     const view = customerQuoteView(
       { ...base, totalCents: 6200, result: { } },
