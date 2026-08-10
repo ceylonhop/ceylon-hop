@@ -4,6 +4,7 @@ import { createApp as realCreateApp, type AppDeps } from '../app';
 import { internalQuoteRoutes } from './internalQuote';
 import { FakeMapsAdapter } from '../adapters/maps';
 import { InMemoryQuoteRepo, isUnpricedShell } from '../db/quoteRepo';
+import { InMemoryQuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { quote } from '../quote/engine';
@@ -2870,6 +2871,72 @@ describe('POST /admin/quote/:id/pay-link with a selection (spec 2026-08-04)', ()
     });
     const app = createApp({ quotes });
     expect((await authedGet(app, `/admin/quote/${id}/pay-lines`)).status).toBe(409);
+  });
+});
+
+// A discounted quote CAN take a full-total pay link (owner decision, 2026-08-10). The original
+// gate refused every mint on a discounted quote, which caught the full link too — but the full
+// link needs no allocation: the engine prices WITH the discount, so the stored totalCents a
+// bodyless mint charges is already the discounted number the founder approved. Only a genuine
+// SUBSET stays refused, because the per-leg lines sum to the subtotal while the discount sits
+// between subtotal and total, so any subset amount would be a split nobody authorised (§3.3).
+describe('pay links on a DISCOUNTED quote (2026-08-10)', () => {
+  const DISCOUNT_BODY = {
+    name: 'Maya', vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
+    legs: [
+      { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 120 },
+      { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140 },
+    ],
+  };
+
+  // Built through the REAL save path so the discount actually reprices the row. Inserting a
+  // discount row directly would leave totalCents undiscounted, and "charges the discounted
+  // total" would then assert nothing.
+  async function discountedReady() {
+    const discounts = new InMemoryQuoteDiscountRepo();
+    const quotes = new InMemoryQuoteRepo(discounts);
+    const app = createApp({ quotes, quoteDiscounts: discounts, opsManualDiscountsEnabled: true });
+    const full = (await (await post(app, '/admin/quote/save', DISCOUNT_BODY)).json()) as { id: string; totalCents: number };
+    const cut = (await (await post(app, '/admin/quote/save', {
+      ...DISCOUNT_BODY, id: full.id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' },
+    })).json()) as { totalCents: number };
+    for (const s of ['pending_review', 'ready']) await quotes.patch(full.id, { status: s as never });
+    return { app, quotes, id: full.id, listCents: full.totalCents, discountedCents: cut.totalCents };
+  }
+
+  it('mints a full-total link, charging the DISCOUNTED total', async () => {
+    const { app, id, listCents, discountedCents } = await discountedReady();
+    expect(discountedCents).toBeLessThan(listCents); // the discount is real, not a no-op fixture
+
+    const res = await mintSel(app, id); // bodyless — the classic full-total link
+    expect(res.status).toBe(200);
+    expect((await res.json()).amountCents).toBe(discountedCents);
+  });
+
+  // The boundary of the fix: ticking EVERY line is a full link (isFullSelection nulls the
+  // selection out), so it must not be caught by the subset refusal.
+  it('treats an all-legs selection as the full link and mints it', async () => {
+    const { app, id, discountedCents } = await discountedReady();
+    const res = await mintSel(app, id, { legIndexes: [0, 1], extraIndexes: [] });
+    expect(res.status).toBe(200);
+    expect((await res.json()).amountCents).toBe(discountedCents);
+  });
+
+  it('still refuses a PARTIAL link, and says why', async () => {
+    const { app, id } = await discountedReady();
+    const res = await mintSel(app, id, { legIndexes: [0], extraIndexes: [] });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: 'not_linkable', reason: 'discounted' });
+  });
+
+  it('leaves the quote untouched when it refuses a partial', async () => {
+    const { app, quotes, id } = await discountedReady();
+    const before = await quotes.get(id);
+    await mintSel(app, id, { legIndexes: [0], extraIndexes: [] });
+    const after = await quotes.get(id);
+    expect(after!.payLinkSelection).toBeNull();
+    expect(after!.soldCents).toBeNull();
+    expect(after!.payLinkSeq).toBe(before!.payLinkSeq);
   });
 });
 
