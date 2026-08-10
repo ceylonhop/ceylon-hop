@@ -5554,6 +5554,16 @@ function approveReady() {
 }
 function markSent()        { return transition('sent', { toast: 'Marked as sent to customer', goQueue: true }); }
 
+/* One place to turn a 409 refusal into a sentence. The server distinguishes its reasons — it
+   sends `reason: 'discounted'` — and collapsing every not_linkable into a single string is what
+   sent an operator hunting an approval problem that did not exist (owner-caught, 2026-08-10).
+   Each caller keeps its own fallback for the shape/status refusals it can actually provoke. */
+function payLinkRefusal(err, fallback) {
+  if (!err || err.error !== 'not_linkable') return 'Could not create the payment link';
+  if (err.reason === 'discounted') return 'A discounted quote can only take a full-total payment link — use "Payment link" instead';
+  return fallback;
+}
+
 /* Payment link (spec 2026-07-31). Minting is STATELESS server-side — no booking, no status
    change — so this button is safe to press any number of times: the URL is identical per
    revision. The row it reveals is what ops copies into the WhatsApp message next to the
@@ -5565,9 +5575,7 @@ async function mintPayLink() {
     var r = await api('/admin/quote/' + encodeURIComponent(state.savedId) + '/pay-link', { method: 'POST' });
     if (!r.ok) {
       var err = await jsonOrNull(r);
-      showToast(err && err.error === 'not_linkable'
-        ? 'Only an approved (ready or sent) quote can take a payment link'
-        : 'Could not create the payment link', 'error');
+      showToast(payLinkRefusal(err, 'Only an approved (ready or sent) quote can take a payment link'), 'error');
       return;
     }
     var body = await jsonOrNull(r);
@@ -5726,9 +5734,7 @@ async function confirmPayPart() {
     });
     if (!r.ok) {
       var err = await jsonOrNull(r);
-      showToast(err && err.error === 'not_linkable'
-        ? 'That selection can\u2019t be sold on its own'
-        : 'Could not create the payment link', 'error');
+      showToast(payLinkRefusal(err, 'That selection can\u2019t be sold on its own'), 'error');
       _payPicker.busy = false; render();
       return;
     }

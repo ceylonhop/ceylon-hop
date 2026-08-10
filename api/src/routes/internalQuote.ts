@@ -1159,13 +1159,6 @@ export function internalQuoteRoutes(deps: {
     ) {
       return c.json({ error: 'not_linkable', status: quote.status }, 409);
     }
-    // A discounted quote cannot mint a pay link at all (spec §3.3, parent §18.1). Allocating one
-    // discount across a ticked SUBSET of legs is undesigned: the per-leg lines sum to the
-    // subtotal while the discount sits between subtotal and total, so any subset amount would be
-    // a number nobody authorised. Fail closed until that is designed.
-    if (deps.discounts && (await deps.discounts.activeFor(quote.id))) {
-      return c.json({ error: 'not_linkable', reason: 'discounted' }, 409);
-    }
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
 
     // No body — or a body that says nothing about a selection (e.g. `{}`) — is the full-total
@@ -1195,6 +1188,15 @@ export function internalQuoteRoutes(deps: {
         selection = null;
       } else {
         if (!selection.legIndexes.length) return c.json({ error: 'not_linkable' }, 409);
+        // A discounted quote can mint the FULL link — the engine prices with the discount, so the
+        // stored total charged above is already the approved number — but not a SUBSET (spec §3.3,
+        // parent §18.1; narrowed from an all-mints refusal by owner decision 2026-08-10).
+        // Allocating one discount across ticked legs is undesigned: the per-leg lines sum to the
+        // subtotal while the discount sits between subtotal and total, so any subset amount would
+        // be a number nobody authorised. Fail closed until that is designed.
+        if (deps.discounts && (await deps.discounts.activeFor(quote.id))) {
+          return c.json({ error: 'not_linkable', reason: 'discounted' }, 409);
+        }
         if (!isQuoteBookable(quote, { legIndexes: selection.legIndexes })) {
           return c.json({ error: 'not_linkable' }, 409);
         }
