@@ -51,6 +51,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* the multi-leg rail now lives in ticket.css — shared with manage.html */
 
+  /* A negotiated price: two quiet rows, then the figure that is actually paid. Same treatment
+     quote.css gives the same three rows — a customer who saw the breakdown on their quote link
+     should meet the identical shape here. .tot .v carries font-size:2rem in ticket.css, so the
+     size MUST be overridden on .v itself and not on the row; .tot.due .v is the precedent.
+     Copied rather than shared because this page does not load quote.css. */
+  .tot.tot-sub{margin-top:7px}
+  .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
+  .tot.tot-disc .v{color:var(--accent-deep,#0f8a80)}
+  .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
+
   /* details step */
   .dt-h{font-family:var(--display);font-weight:700;font-size:1.15rem;margin:0 0 2px}
   .dt-sub{font-size:.8rem;color:var(--ink-soft);margin:0 0 12px}
@@ -500,7 +510,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '</div><div class="perf"></div><div class="t-stub">'
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
-      + '<div class="tot"><span class="l">' + esc(c.totalLabel) + '</span><span class="v">' + esc(tt.usd) + '</span></div>'
+      + totalsHtml(c, tt, data.discount)
       + '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
       + '<div class="paysub">Pay securely to confirm. ' + esc(tt.usd) + ' — no extra fees.</div>'
       + '<div class="badges"><span class="card-badge"><span class="visa">VISA</span></span>'
@@ -561,6 +571,29 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (!coverage) return '';
     return 'This covers ' + coverage.soldLegs + ' of the ' + coverage.totalLegs
       + ' legs in your itinerary.';
+  }
+
+  /* The total, and — when the founder negotiated one — what came off it (owner, 2026-08-10:
+     "keep reminding customers they are getting a discount"). Nothing here reaches PayHere: the
+     engine already priced with the discount applied, so `data.totals` is both the last row and
+     the exact figure the gateway is handed. These rows only explain it.
+
+     Labels are the quote page's Total / Discount / Final total, with ONE adaptation: the first
+     row keeps this page's own richer label ("Total · all 3 journeys"), because a plain "Total"
+     above it would print the word twice for no gain. The server sends `discount` on full links
+     only — a subset link's lines sum to the subtotal, so a discount over them would imply an
+     allocation nobody authorised. Extracted by web-tests/unit/pay-page-discount.test.js. */
+  function totalsHtml(copy, totals, discount) {
+    var big = '<div class="tot"><span class="l">';
+    if (!discount) {
+      return big + esc(copy.totalLabel) + '</span><span class="v">' + esc(totals.usd) + '</span></div>';
+    }
+    return '<div class="tot tot-sub"><span class="l">' + esc(copy.totalLabel)
+      +   '</span><span class="v">' + esc(discount.totalBeforeUsd) + '</span></div>'
+      + '<div class="tot tot-sub tot-disc"><span class="l">Discount</span>'
+      +   '<span class="v">&minus;' + esc(discount.discountUsd) + '</span></div>'
+      + '<div class="tot tot-final"><span class="l">Final total</span>'
+      +   '<span class="v">' + esc(totals.usd) + '</span></div>';
   }
 
   /* The collapsed disclosure the payable screen shows under the CTA. Same source of truth as
@@ -707,7 +740,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="perf"></div><div class="t-stub">'
       + linesHtml(data.lines)
       + (data.coverage ? '<p class="coverage">' + esc(coverageSentence(data.coverage)) + '</p>' : '')
-      + '<div class="tot"><span class="l">' + esc(data.copy.totalLabel) + '</span><span class="v">' + esc(data.totals.usd) + '</span></div>'
+      + totalsHtml(data.copy, data.totals, data.discount)
       + '<button class="btn btn-cta pp-cta' + (typed && typed.terms ? '' : ' is-off') + '" id="gobtn">Continue to payment</button>'
       + '<p class="pp-err" id="payerr" hidden></p>'
       + '<div class="pp-help" id="payhelp" hidden></div>'
