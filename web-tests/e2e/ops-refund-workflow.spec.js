@@ -209,7 +209,10 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   await expect(page.getByText('Refundable remaining').locator('..').locator('.v')).toHaveText('$0');
 
   await page.reload();
-  await page.locator('[data-act="open"][data-id="booking-1"]').click();
+  // An open sheet is part of the address since 2026-08-08 (`?booking=` — see routeStateFromUrl),
+  // so the reload reopens this booking by itself. Re-clicking the queue row is not just redundant
+  // now, it cannot work: the restored sheet's own scrim covers the row and swallows the click.
+  await expect(page.locator('#sheet')).toHaveClass(/show/);
   // The reason is the operator's own words now, and it survives a reload because it is stored
   // on the refund rather than being a label the button supplied.
   await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer cancelled — airline strike');
