@@ -1,7 +1,12 @@
 # Quote version history — design
 
 **Date:** 2026-08-05
-**Status:** design approved by owner; build not started
+**Status (corrected 2026-08-09): SHIPPED.** `quotes.revision`, the `quote_revisions` table
+(migration `0040`), the `GET /:id/revisions` endpoint and the quote-builder version-history panel
+are all merged (PRs #308, #311). The previous line read "build not started" and was stale.
+One caveat for anyone building on this: `revision` is a **counter, not an optimistic-concurrency
+token**. `internalQuote.ts` returns no `quote_conflict` — its 409s are `not_editable`,
+`quote_deleted`, `not_bookable` and `not_linkable`. A stale-edit gate is still unbuilt work.
 
 ## 1. Problem
 

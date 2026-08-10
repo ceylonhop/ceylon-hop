@@ -8,6 +8,7 @@ import { quoteSharedLegs } from './shared';
 import { quoteChauffeur } from './chauffeur';
 import { priceExtras, depositCents } from './extrasDeposit';
 import { finishPrice } from './priceFinish';
+import { resolveDiscount, type DiscountRequest, type ResolvedDiscount } from './discount';
 
 // GL-1d: van14/custom are custom-priced per quote (owner decision 2026-07-02) — the operator
 // supplies the per-km rate. Any other tier has an owner-confirmed rate that must not be
@@ -21,7 +22,11 @@ function validateCustomRate(customPerKmCents: number | undefined, pricedVehicle:
 
 // `rateCard` defaults to the current RATE_CARD; a quote priced against its LOCKED snapshot passes
 // that card in (rate-lock spec: docs/superpowers/specs/2026-07-11-quote-rate-lock-design.md).
-export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteResult {
+export function quote(
+  req: QuoteRequest,
+  rateCard: RateCard = RATE_CARD,
+  discountRequest?: DiscountRequest,
+): QuoteResult {
   const lineItems: LineItem[] = [];
   const warnings: string[] = [];
   let subtotalCents = 0;
@@ -129,7 +134,39 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
       meta: { kind: 'price_adjustment', strategy: finished.strategy },
     });
   }
-  const totalCents = finished.finalCents;
+
+  // Founder manual discount (spec 2026-08-09 §5.1). AFTER finishing, deliberately — owner
+  // decision 2026-08-09: a quote goes to the customer at its finished price and the customer then
+  // negotiates off THAT. So the discount comes off the number they were actually shown, and the
+  // three figures a customer sees reconcile exactly: $62.00 quoted − $10.00 off = $52.00 to pay.
+  //
+  // Discounting BEFORE finishing (the original design) re-finished the reduced subtotal, so a
+  // $10.00 discount off $62.00 landed at $51.99 — the founder's own figure no longer appeared
+  // anywhere, and no customer-facing breakdown could be made to add up without exposing the
+  // internal finishing row.
+  //
+  // It also means the undiscounted path is now byte-identical to pre-feature behaviour by
+  // construction: finishing sees exactly what it always saw.
+  let resolvedDiscount: ResolvedDiscount | undefined;
+  let discountCents = 0;
+  if (discountRequest) {
+    // Shared is per-seat corridor pricing: no vehicle, so no floor to protect it.
+    if (req.product === 'shared') throw new Error('DISCOUNT_NOT_SUPPORTED');
+    // Both limits now apply to the FINISHED total — the price that was quoted — rather than to a
+    // pre-finishing subtotal the customer never saw.
+    resolvedDiscount = resolveDiscount(discountRequest, finished.finalCents, protectedMinimumCents);
+    discountCents = resolvedDiscount.appliedCents;
+    // A zero-cent outcome is NOT a discounted quote — no row for a renderer to show.
+    if (discountCents > 0) {
+      lineItems.push({
+        label: 'Discount',
+        amountCents: -discountCents,
+        meta: { kind: 'discount' },
+      });
+    }
+  }
+
+  const totalCents = finished.finalCents - discountCents;
   const deposit = depositCents(totalCents, rateCard);
   // amountDueNow is the FULL total for EVERY product, deposit-eligible ones (chauffeur) included.
   // Deliberate owner decision "Charge full amount for all bookings" (2026-07-07, commit 4d58f5a)
@@ -153,6 +190,17 @@ export function quote(req: QuoteRequest, rateCard: RateCard = RATE_CARD): QuoteR
     depositCents: deposit,
     amountDueNowCents,
     marginEstimateCents,
+    // Spread so the keys are ABSENT, not undefined, when nothing was requested — an undiscounted
+    // result must serialize exactly as it did before this feature (see goldens.test.ts).
+    ...(resolvedDiscount
+      ? {
+          discountCents,
+          // What the customer was quoted BEFORE negotiating — the finished price. This is the
+          // "Total" line on the customer quote page, and totalBefore − discount === total exactly.
+          totalBeforeDiscountCents: finished.finalCents,
+          discount: resolvedDiscount,
+        }
+      : {}),
     rateCardVersion: rateCard.version,
     warnings,
   };

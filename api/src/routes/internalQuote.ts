@@ -14,6 +14,9 @@ import type { PlaceResolutionRepo } from '../db/placeResolutionRepo';
 import { QUOTE_STATUSES, canTransition, isUnpricedShell, type QuoteStatus, type QuotePatch } from '../db/quoteRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { InMemoryZonesRepo, hotZonesDisabled, type ZonesRepo } from '../db/zonesRepo';
+import type { QuoteDiscountRepo } from '../db/quoteDiscountRepo';
+import type { DiscountIntent } from '../db/quoteRepo';
+import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
@@ -203,12 +206,29 @@ function parseToolRequest(raw: unknown): ToolRequest {
 
 // Shared by /estimate and /save: validate legs, auto-resolve missing distances via the
 // maps adapter, then price with the engine. Mutates each driving leg's distanceKm in place.
+// Founder manual discount (spec 2026-08-09 §6). TRI-STATE on the wire:
+//   field absent  → preserve whatever is already applied
+//   field === null → founder-requested removal
+//   object         → founder-requested add/replace
+// The client submits INTENT only: never applied cents, never cost, never an override flag.
+const DiscountBodySchema = z.union([
+  z.object({ method: z.literal('fixed'), amountCents: z.number().int().min(0), reason: z.string().trim().min(1).max(500) }),
+  z.object({ method: z.literal('percentage'), basisPoints: z.number().int().min(0).max(10_000), reason: z.string().trim().min(1).max(500) }),
+]);
+
+function toDiscountRequest(d: z.infer<typeof DiscountBodySchema>): DiscountRequest {
+  return d.method === 'fixed'
+    ? { source: 'manual', method: 'fixed', amountCents: d.amountCents, reason: d.reason }
+    : { source: 'manual', method: 'percentage', basisPoints: d.basisPoints, reason: d.reason };
+}
+
 async function resolveAndPrice(
   body: ToolRequest,
   maps: MapsAdapter,
   serviceOverride?: 'private' | 'chauffeur',
   rateCard: RateCard = RATE_CARD,
   resolver?: PlaceResolver,
+  discount?: DiscountRequest,
 ): Promise<{ req: QuoteRequest; result: QuoteResult }> {
   const driving = body.legs.filter(drives);
   if (driving.length === 0) {
@@ -225,7 +245,7 @@ async function resolveAndPrice(
   }
   try {
     const req = toEngineRequest(body, serviceOverride);
-    return { req, result: quote(req, rateCard) };
+    return { req, result: quote(req, rateCard, discount) };
   } catch (e) {
     if (e instanceof PriceError) throw e;
     throw new PriceError(e instanceof Error ? e.message : 'could not price this trip', 422);
@@ -442,8 +462,25 @@ function shape(result: QuoteResult, canMargin: boolean) {
     // tooltips and anything that needs the address as stored.
     lineItems: result.lineItems.map((li) => ({ label: li.label, displayLabel: shortenRouteLabel(li.label), amountCents: li.amountCents, usd: usd(li.amountCents), lkr: lkr(li.amountCents), meta: canMargin ? li.meta : stripZoneMeta(li.meta) })),
   };
-  if (!canMargin) return base;
-  return { ...base, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
+  // The discount SUMMARY, so the pane can say "you asked for X, you may have Y" without the
+  // client re-deriving either. The negative line item itself already rides in lineItems above and
+  // renders like any other row. Absent entirely when no discount was requested.
+  const withDiscount = result.discount
+    ? {
+        ...base,
+        discount: {
+          method: result.discount.method,
+          value: result.discount.value,
+          applied: money(result.discount.appliedCents),
+          requested: money(result.discount.requestedCents),
+          // capReason is a margin-class diagnostic — it tells you WHY you were stopped, which is
+          // a statement about cost and policy. Founder-only, like the margin line.
+          ...(canMargin ? { capReason: result.discount.capReason } : {}),
+        },
+      }
+    : base;
+  if (!canMargin) return withDiscount;
+  return { ...withDiscount, margin: result.marginEstimateCents == null ? null : money(result.marginEstimateCents) };
 }
 
 // Strip persisted margin from a stored quote for non-margin:view roles (spec §3.1) —
@@ -596,6 +633,10 @@ export function internalQuoteRoutes(deps: {
   // Optional: with no repo injected the router uses an empty in-memory one ⇒ zero active zones ⇒
   // pricing identical to pre-hot-zones. Prod injects the Postgres repo (server.ts → app.ts).
   zones?: ZonesRepo;
+  /** Founder manual discounts. Absent = the feature is simply not wired in this composition. */
+  discounts?: QuoteDiscountRepo;
+  /** Gates CREATION only; an existing discount keeps pricing regardless. */
+  discountsEnabled?: boolean;
   bookings: BookingRepo;
   auth: OpsAuthConfig;
   allowedOrigins?: string[];
@@ -626,6 +667,7 @@ export function internalQuoteRoutes(deps: {
   // a zone edit is reflected on the next quote; frozen into the snapshot at approval (C2). Zero
   // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const discountsEnabled = deps.discountsEnabled ?? false;
   const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
@@ -742,12 +784,28 @@ export function internalQuoteRoutes(deps: {
     try {
       const body = parseToolRequest(raw);
       const canMargin = can(c.get('identity').role, 'margin:view');
+
+      // Founder manual discount, PREVIEWED (spec §6: estimate stays side-effect free — it writes
+      // nothing, it only prices). Without this the money pane would price the undiscounted trip
+      // while the saved quote is discounted, and the operator would be reading a number the
+      // customer will never be charged.
+      const rawEstimate = raw as Record<string, unknown> | null;
+      let previewDiscount: DiscountRequest | undefined;
+      if (rawEstimate && rawEstimate.discount != null) {
+        const parsedPreview = DiscountBodySchema.safeParse(rawEstimate.discount);
+        if (!parsedPreview.success) return c.json({ error: 'bad_request' }, 400);
+        // Same two gates as the save path — a preview that ignored them would show a founder a
+        // price nobody is allowed to give.
+        if (!discountsEnabled) return c.json({ error: 'discounts_disabled' }, 403);
+        if (!can(c.get('identity').role, 'discount:apply_manual')) return c.json({ error: 'forbidden' }, 403);
+        previewDiscount = toDiscountRequest(parsedPreview.data);
+      }
       // Compose the live rate card with the active hot zones once, and price every pass against it
       // so the total, per-leg breakdown, and the service chooser all agree (a zone boost reaches
       // ops quotes here; the website is a separate release — see the hot-zones spec §8).
       const card = await liveCard();
       // Price the SELECTED service (explicit body.service, else derived) for the detailed response.
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver, previewDiscount);
       const selected: 'private' | 'chauffeur' = req.product === 'chauffeur' ? 'chauffeur' : 'private';
 
       // Reflow: `services` chooser replaces the old car/van comparison. Two pricing passes max —
@@ -814,9 +872,41 @@ export function internalQuoteRoutes(deps: {
     }
     try {
       const body = parseToolRequest(raw);
+
+      // Founder manual discount (spec §6). Absent = preserve; null = remove; object = add/replace.
+      // The price the quote carried BEFORE this save — stored verbatim on the audit row, because
+      // finishing makes it underivable from the discount alone.
+      const beforeTotalCents = existing?.totalCents ?? null;
+      const rawObj = raw as Record<string, unknown>;
+      const wantsDiscount = 'discount' in rawObj;
+      const removesDiscount = wantsDiscount && rawObj.discount === null;
+      let discountRequest: DiscountRequest | undefined;
+      if (wantsDiscount && !removesDiscount) {
+        const parsedDiscount = DiscountBodySchema.safeParse(rawObj.discount);
+        if (!parsedDiscount.success) return c.json({ error: 'bad_request' }, 400);
+        discountRequest = toDiscountRequest(parsedDiscount.data);
+      }
+      // Authorization and the rollout flag both gate WRITING a discount, never reading one: an
+      // already-applied discount keeps pricing the quote whatever this returns.
+      if (wantsDiscount) {
+        if (!discountsEnabled) return c.json({ error: 'discounts_disabled' }, 403);
+        if (!can(c.get('identity').role, 'discount:apply_manual')) return c.json({ error: 'forbidden' }, 403);
+      }
+      // Preserve: an ordinary content save must keep repricing WITH the discount already on the
+      // quote, or an autosave would silently restore the undiscounted total.
+      let effectiveDiscount = discountRequest;
+      if (!wantsDiscount && existingId && deps.discounts) {
+        const active = await deps.discounts.activeFor(existingId);
+        if (active) {
+          effectiveDiscount = active.method === 'fixed'
+            ? { source: 'manual', method: 'fixed', amountCents: active.value, reason: active.reason }
+            : { source: 'manual', method: 'percentage', basisPoints: active.value, reason: active.reason };
+        }
+      }
+
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver);
+      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, await liveCard(), resolver, effectiveDiscount);
       const content = {
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
@@ -860,7 +950,32 @@ export function internalQuoteRoutes(deps: {
            the person who built it. contentChanged compares the stored row, not a client flag. */
         const actor = c.get('identity').email;
         const takeOver = contentChanged(existing, content) && existing?.assignedTo !== actor;
-        const updated = await deps.quotes.update(existingId, takeOver ? { ...content, assignedTo: actor } : content);
+        // The intent rides into the repo's transaction (Task 4), so content and audit row land
+        // together or not at all.
+        const intent: DiscountIntent = removesDiscount
+          ? { kind: 'remove', by: actor }
+          : discountRequest && result.discount
+            ? {
+                kind: 'apply', by: actor,
+                row: {
+                  source: 'manual',
+                  method: result.discount.method,
+                  value: result.discount.value,
+                  reason: result.discount.reason,
+                  subtotalBeforeCents: result.subtotalCents,
+                  totalBeforeCents: beforeTotalCents ?? result.subtotalCents,
+                  requestedCents: result.discount.requestedCents,
+                  appliedCents: result.discount.appliedCents,
+                  totalAfterCents: result.totalCents,
+                  capReason: result.discount.capReason,
+                  estimatedCostCents: result.marginEstimateCents == null ? null : result.totalCents - result.marginEstimateCents,
+                  marginBeforeCents: null,
+                  marginAfterCents: result.marginEstimateCents ?? null,
+                  appliedBy: actor,
+                },
+              }
+            : { kind: 'preserve' };
+        const updated = await deps.quotes.update(existingId, takeOver ? { ...content, assignedTo: actor } : content, intent);
         if (updated) {
           return c.json({
             id: updated.id, reference: updated.reference, status: updated.status,
@@ -1044,6 +1159,13 @@ export function internalQuoteRoutes(deps: {
     ) {
       return c.json({ error: 'not_linkable', status: quote.status }, 409);
     }
+    // A discounted quote cannot mint a pay link at all (spec §3.3, parent §18.1). Allocating one
+    // discount across a ticked SUBSET of legs is undesigned: the per-leg lines sum to the
+    // subtotal while the discount sits between subtotal and total, so any subset amount would be
+    // a number nobody authorised. Fail closed until that is designed.
+    if (deps.discounts && (await deps.discounts.activeFor(quote.id))) {
+      return c.json({ error: 'not_linkable', reason: 'discounted' }, 409);
+    }
     if (!deps.linkSecret || !deps.payBaseUrl) return c.json({ error: 'pay_links_unavailable' }, 503);
 
     // No body — or a body that says nothing about a selection (e.g. `{}`) — is the full-total
@@ -1154,6 +1276,41 @@ export function internalQuoteRoutes(deps: {
   // The version timeline (spec 2026-08-05 §6). Gated on `quote:manage` — the same capability as
   // editing the quote, deliberately NOT founder-only: this response carries no margin, and ops
   // are the people making the edits, so ops are the people who need to see what an edit did.
+  // Discount history (spec §7). Mirrors /:id/revisions. Cost and margin are FOUNDER-ONLY and
+  // stripped server-side — a hidden control is not authorization.
+  r.get('/:id/discounts', async (c) => {
+    if (!deps.discounts) return c.json({ discounts: [] }, 200);
+    const rows = await deps.discounts.historyFor(c.req.param('id'));
+    const seesMargin = can(c.get('identity').role, 'margin:view');
+    return c.json({
+      discounts: rows.map((d) => ({
+        id: d.id,
+        quoteRevision: d.quoteRevision,
+        method: d.method,
+        value: d.value,
+        reason: d.reason,
+        subtotalBeforeCents: d.subtotalBeforeCents,
+        totalBeforeCents: d.totalBeforeCents,
+        requestedCents: d.requestedCents,
+        appliedCents: d.appliedCents,
+        totalAfterCents: d.totalAfterCents,
+        appliedBy: d.appliedBy,
+        appliedAt: d.appliedAt,
+        status: d.status,
+        supersededBy: d.supersededBy,
+        supersededAt: d.supersededAt,
+        ...(seesMargin
+          ? {
+              capReason: d.capReason,
+              estimatedCostCents: d.estimatedCostCents,
+              marginBeforeCents: d.marginBeforeCents,
+              marginAfterCents: d.marginAfterCents,
+            }
+          : {}),
+      })),
+    }, 200);
+  });
+
   r.get('/:id/revisions', async (c) => {
     const id = c.req.param('id');
     const quote = await deps.quotes.get(id);

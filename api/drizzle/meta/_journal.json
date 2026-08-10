@@ -309,6 +309,13 @@
       "when": 1786604000000,
       "tag": "0043_payment_settled_by",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786690400000,
+      "tag": "0044_quote_discounts",
+      "breakpoints": true
     }
   ]
 }

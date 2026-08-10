@@ -793,6 +793,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-btn-outline.is-pending::before, .qv .ch-btn-ghost.is-pending::before,
 .qv .ch-btn-dashed.is-pending::before, .qv .ch-btn-ghostdanger.is-pending::before { border-color: var(--black); border-top-color: transparent; }
 .qv [data-action][data-inflight] { pointer-events: none; }
+/* Founder manual discount — sits directly under the total it changes. */
+.ch-discount { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--rule, #e6e1d8); }
+.ch-discount-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+.ch-discount-cap { margin-top: 4px; font-size: 12px; color: var(--muted-2); line-height: 1.4; }
+.ch-discount-locked { margin-top: 4px; font-size: 12px; color: var(--muted-2); }
+.ch-discount-form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ch-discount-form select, .ch-discount-form input { font: inherit; font-size: 13px; padding: 5px 7px; border: 1px solid var(--rule, #e6e1d8); border-radius: 7px; background: #fff; }
+.ch-discount-form select { flex: 0 0 auto; }
+.ch-discount-form [data-discount-value] { flex: 0 1 92px; }
+.ch-discount-form [data-discount-reason] { flex: 1 1 140px; min-width: 0; }
+.ch-discount-form button { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 7px; border: 1px solid var(--rule, #e6e1d8); background: var(--teal, #0f8a80); color: #fff; cursor: pointer; }
+.ch-discount-form .ch-discount-remove { background: #fff; color: var(--muted-2); }
+@media (max-width: 640px) { .ch-discount-form [data-discount-reason] { flex-basis: 100%; } }
 @keyframes ch-btn-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   /* No spin, but the state must still READ as busy. NOT currentColor here: .is-pending sets
@@ -4232,8 +4245,119 @@ var DRIVING_CATS = {
 // Route variants exist only on 2-stop legs, so the override targets a single-segment leg — we
 // reuse the ride-model wire builder (toolLegPayload) and just stamp the variant's km onto the
 // legacy mirror + that segment. (pickupLocation/dropoffLocation are retired — legFrom/legTo now.)
+/* ── Founder manual discount ──────────────────────────────────────────────────────────────────
+   The founder types an AMOUNT or a PERCENT. Everything else — the two limits, what is actually
+   allowed, which limit bit — is decided by the server and rendered here. The client deliberately
+   computes no money at all.
+   Editable only while the quote is (draft / changes_requested); elsewhere it is a read-only row,
+   matching the save route, which refuses a discount on any other status. */
+/* The SAME rule the rest of the editor uses. An earlier version of this read state.savedStatus,
+   which does not exist — so it fell through to 'draft' and rendered an editable control on a
+   quote in review, which the save route would then refuse. One rule, one place. */
+function discountEditable() { return isEditableNow(); }
+
+function discountControlHtml(est) {
+  if (!viewerCan('discount:apply_manual')) {
+    // Other roles see THAT it was discounted (the negative line is already in lineItems above)
+    // but get no control and no cap diagnostics.
+    return '';
+  }
+  var d = est && est.discount;
+  var out = [];
+  out.push('<div class="ch-discount" data-testid="discount-control">');
+
+  if (d) {
+    var applied = d.applied ? d.applied.usd || fmtUsd(d.applied.cents) : '';
+    out.push('  <div class="ch-discount-row"><span>Discount applied</span><strong data-testid="discount-applied">' + esc(applied) + '</strong></div>');
+    // Asked-for vs allowed, and WHY — the founder should never wonder where the rest went.
+    if (d.capReason && d.requested && d.applied && d.requested.cents > d.applied.cents) {
+      out.push('  <div class="ch-discount-cap" data-testid="discount-cap">You asked for ' + esc(d.requested.usd || fmtUsd(d.requested.cents))
+        + ' — ' + (d.capReason === 'percentage_cap'
+            ? 'the 30% ceiling'
+            : 'the vehicle minimum fare')
+        + ' allows ' + esc(applied) + '.</div>');
+    }
+  }
+
+  if (!discountEditable()) {
+    out.push('  <div class="ch-discount-locked">Reopen to edit to change the discount.</div>');
+    out.push('</div>');
+    return out.join('');
+  }
+
+  var cur = state.discount || { method: 'fixed', value: '', reason: '' };
+  out.push('  <div class="ch-discount-form">');
+  out.push('    <select data-discount-method aria-label="Discount type">');
+  out.push('      <option value="fixed"' + (cur.method === 'fixed' ? ' selected' : '') + '>$ off</option>');
+  out.push('      <option value="percentage"' + (cur.method === 'percentage' ? ' selected' : '') + '>% off</option>');
+  out.push('    </select>');
+  out.push('    <input data-discount-value type="number" min="0" step="0.01" placeholder="' + (cur.method === 'fixed' ? 'Amount' : 'Percent') + '" value="' + esc(discountInputValue(cur)) + '" aria-label="Discount amount">');
+  out.push('    <input data-discount-reason type="text" maxlength="500" placeholder="Reason (required)" value="' + esc(cur.reason || '') + '" aria-label="Discount reason">');
+  out.push('    <button type="button" data-action="applyDiscount">Apply</button>');
+  if (state.discount) out.push('    <button type="button" data-action="removeDiscount" class="ch-discount-remove">Remove</button>');
+  out.push('  </div>');
+  out.push('</div>');
+  return out.join('');
+}
+
+/* Cents and basis points are the WIRE units; the founder types dollars and percents. One place
+   converts each way so a $10.00 discount can never be sent as 10 cents. */
+function discountInputValue(d) {
+  if (d.value === '' || d.value == null) return '';
+  return d.method === 'fixed' ? (Number(d.value) / 100).toFixed(2) : String(Number(d.value) / 100);
+}
+function discountWireValue(method, typed) {
+  var n = Number(typed);
+  if (!isFinite(n) || n < 0) return null;
+  return method === 'fixed' ? Math.round(n * 100) : Math.round(n * 100);
+}
+
+/* Called by the delegated [data-action] dispatcher, so the control survives every re-render of
+   the money pane without a rebind — the pane is rebuilt as an HTML string on each estimate. */
+function applyDiscountFromForm() {
+  var root = document.querySelector('[data-testid="discount-control"]');
+  if (!root) return;
+  var methodEl = root.querySelector('[data-discount-method]');
+  var valueEl = root.querySelector('[data-discount-value]');
+  var reasonEl = root.querySelector('[data-discount-reason]');
+  var method = methodEl ? methodEl.value : 'fixed';
+  var wire = discountWireValue(method, valueEl ? valueEl.value : '');
+  var reason = (reasonEl ? reasonEl.value : '').trim();
+  // The server rejects both of these too; catching them here saves a round trip and lets the
+  // message name the box rather than the field.
+  if (wire == null || wire <= 0) { toast('Enter a discount amount'); return; }
+  if (!reason) { toast('A reason is required'); return; }
+  state.discount = { method: method, value: wire, reason: reason };
+  _discountTouched = true;
+  markDirty();
+  refreshEstimate();
+}
+
+function removeDiscount() {
+  state.discount = null;
+  _discountTouched = true;
+  markDirty();
+  refreshEstimate();
+}
+
+/* The discount AS IT GOES ON THE WIRE. One builder, used by every request that prices: the money
+   pane's estimate (_runEstimate), the distance-check estimate (buildEstimatePayload) and save.
+   The first version of this feature put the discount only in buildEstimatePayload(), which the
+   money pane does NOT use — _runEstimate builds its own payload from buildToolRequest(). The pane
+   therefore priced undiscounted through three separate "fixes". If a new request prices a quote,
+   it calls this. */
+function discountWire(d) {
+  if (!d) return undefined;
+  return d.method === 'fixed'
+    ? { method: 'fixed', amountCents: d.value, reason: d.reason }
+    : { method: 'percentage', basisPoints: d.value, reason: d.reason };
+}
+
 function buildEstimatePayload(override) {
   return {
+    // Omitted entirely when there is none — the server treats absent as "no discount", and on
+    // SAVE absent means "preserve", which is a different thing (see savePayload).
+    discount: discountWire(state.discount),
     service: state.service || 'private',
     vehicle: state.vehicleType,
     passengerCount: state.passengerCount,
@@ -4323,6 +4447,10 @@ async function _runEstimate() {
   // Build the payload (Task 2 mapping; Task 7: shared wire builder — estimate + save send
   // the same leg shape, per-segment stops/segmentKms + the legacy from/to/distanceKm mirror)
   var payload = buildToolRequest(pricedLegs);
+  // Price WITH the founder's discount, or the pane shows a number the customer will not be
+  // charged. This is the request the money pane actually renders from.
+  var _dw = discountWire(state.discount);
+  if (_dw) payload.discount = _dw;
 
   var result = await apiEstimate(payload);
 
@@ -4535,6 +4663,10 @@ let state = {
   luggageCount: 2,
   vehicleType: null,
   service: 'private',
+  /* Founder manual discount (spec 2026-08-09). Null = none. The AMOUNT here is what the founder
+     ASKED for; what they are actually allowed comes back from the server, which owns both limits.
+     The client never computes an applied amount — it renders one. */
+  discount: null, // { method: 'fixed'|'percentage', value: number, reason: string }
   /* Quote intent (spec 2026-07-17): what the CUSTOMER asked for. Starts unselected and is
      NEVER derived from `service` above (I4) — a pre-filled value gets accepted unread, which
      is the failure this field exists to prevent. */
@@ -4995,6 +5127,20 @@ async function apiEstimate(payload) {
   } catch (e) { window.opsReportError && window.opsReportError('apiEstimate', e); return { error: 'Network error' }; }
 }
 
+/* The founder's stored discount, so a reopened quote reprices WITH it. Silent on failure: an
+   unreadable history must not block opening a quote — the pane then shows the stored total from
+   the server, which is still the right number. */
+async function apiActiveDiscount(id) {
+  try {
+    var r = await api('/admin/quote/' + encodeURIComponent(id) + '/discounts');
+    if (!r.ok) return null;
+    var body = await jsonOrNull(r);
+    var rows = (body && body.discounts) || [];
+    for (var i = 0; i < rows.length; i++) if (rows[i].status === 'active') return rows[i];
+    return null;
+  } catch (e) { window.opsReportError && window.opsReportError('apiActiveDiscount', e); return null; }
+}
+
 async function apiRateCard() {
   try {
     var r = await api('/admin/quote/rate-card');
@@ -5216,8 +5362,18 @@ function savePayload() {
     notes: state.notes || '', // round-trip the send-back note so a content save doesn't wipe it
     internalNotes: state.internalNotes || '', // ops-only scratchpad (punch list); `service` now comes from buildToolRequest()
     requestedService: state.requestedService,
+    /* TRI-STATE (spec §6). state.discount === null means the founder REMOVED it, and null on the
+       wire is what tells the server to supersede the stored row. `undefined` would be dropped by
+       JSON.stringify and read as "preserve" — the opposite. _discountTouched distinguishes "the
+       founder changed this" from "this quote simply has none", so an ordinary autosave never
+       sends a removal it did not mean. */
+    discount: _discountTouched ? (discountWire(state.discount) || null) : undefined,
   }, buildToolRequest());
 }
+
+/* Set only by the founder acting on the control. Reset once a save has carried the intent, so a
+   later autosave falls back to "preserve" rather than re-sending it. */
+let _discountTouched = false;
 
 /* A leg's identity ON THE WIRE — everything that decides which distances belong to it, and
    deliberately NOT the distances themselves (those are what we're adopting). */
@@ -5964,6 +6120,21 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+
+  /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
+     state.discount is client state and starts null on every page load; without this the pane
+     shows the undiscounted price while the stored quote is discounted — pane $62.00, stored
+     $51.99 (owner, staging, 2026-08-09).
+     THIS MUST LIVE ON THE PRICED PATH. The first version of this fix sat in the unpriced-SHELL
+     branch above, which returns early and only ever runs for a quote with no itinerary — so it
+     never executed for a real quote and the bug survived the fix.
+     _discountTouched stays FALSE: rehydrating is not the founder touching the control, so a
+     later autosave still means "preserve" rather than re-applying. */
+  var activeDiscount = await apiActiveDiscount(q.id);
+  state.discount = activeDiscount
+    ? { method: activeDiscount.method, value: activeDiscount.value, reason: activeDiscount.reason }
+    : null;
+  _discountTouched = false;
 
   lastEstimate = null;
   lastEstimateError = null;
@@ -7046,6 +7217,11 @@ function renderSummaryCardBody() {
     + (est.total.lkr ? '<span class="ch-total-lkr ch-val-sub">' + esc(est.total.lkr) + '</span>' : '')
     + '</span>');
   lines.push('</div>');
+
+  // Founder manual discount, directly under the total it changes. FOUNDER-ONLY: the server
+  // enforces discount:apply_manual on both estimate and save, so this is presentation — a hidden
+  // control has never been authorization.
+  lines.push(discountControlHtml(est));
 
   // What the customer was last quoted, when that differs from the number above it.
   lines.push(priceDriftHtml(state.customerTotalCents, state.customerTotalVia, est.total.cents));
@@ -9003,7 +9179,11 @@ function attachEventListeners() {
     var action = el.getAttribute('data-action');
     var legId = el.getAttribute('data-leg');
 
-    if (action === 'addLeg') {
+    if (action === 'applyDiscount') {
+      applyDiscountFromForm();
+    } else if (action === 'removeDiscount') {
+      removeDiscount();
+    } else if (action === 'addLeg') {
       var cat = el.getAttribute('data-cat') || 'transfer';
       addLeg(cat);
     } else if (action === 'removeLeg') {
