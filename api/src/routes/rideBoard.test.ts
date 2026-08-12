@@ -47,6 +47,22 @@ describe('GET /board', () => {
     expect(body.lists).toHaveLength(1);
     expect(body.lists[0].from).toBe('Kandy');
   });
+
+  it('filters by to-city', async () => {
+    const { app } = await seededApp();
+    const body = await (await app.request('/board?to=Ella')).json();
+    expect(body.lists).toHaveLength(1);
+    expect(body.lists[0].to).toBe('Ella');
+  });
+
+  it('applies from and to together', async () => {
+    const { app } = await seededApp();
+    const both = await (await app.request('/board?from=Kandy&to=Ella')).json();
+    expect(both.lists).toHaveLength(1);
+    // the pair has to agree — Kandy leaves for Ella, never for Mirissa
+    const none = await (await app.request('/board?from=Kandy&to=Mirissa')).json();
+    expect(none.lists).toHaveLength(0);
+  });
 });
 
 describe('GET /board/:code', () => {
