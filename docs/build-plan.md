@@ -490,6 +490,16 @@ decisions still open (e.g. the real pricing model, driver model). Expand each in
   function signatures; parity test asserts site = booking = charge.
 - **M12 — Ops dashboard (custom UI).** Graduate from NocoDB/Retool to a bespoke staff
   dashboard; Supabase Auth + RBAC roles.
+  - **M12.1 — Ops self-approval for simple transfers (owner decision 2026-08-11).** A new
+    `quote:approve_simple` capability lets `ops` take a single-leg, standard-priced private
+    transfer all the way to **paid** without a founder — approve, send, mint the pay link, convert
+    to a booking (approval is what gates the mint, so this is a money permission, not just a
+    status one). Never sufficient alone: it
+    admits `→ ready` only when a pure predicate says the stored quote qualifies (private · one
+    engine leg · not the `custom` vehicle · no custom $/km · no active discount). `quote:approve`
+    keeps meaning founder, so hot zones, locked-quote deletion, send-back and reopening a sent
+    quote are untouched. No migration, schema, config or rate-card change. Full
+    [build plan](./superpowers/plans/2026-08-11-ops-self-approve-simple-transfers.md).
 - **M13 — WhatsApp Business API (fast follow).** Add a `WhatsAppAdapter`; auto-send
   confirmations/reminders; team inbox.
 - **M14 — Reminders, review requests, SLA timers.** Scheduled jobs + concierge SLA on
