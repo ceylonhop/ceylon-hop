@@ -731,8 +731,15 @@ body::after{
 .ch-consent-btns{display:flex;gap:8px;margin-left:auto}
 
 /* ── Beta notice ───────────────────────────────────────────────────────────────
-   The first thing a visitor sees coming over from the old site, so it is a greeting
-   rather than a warning: paper card, brand hairline, no alarm colours.
+   A postcard from the new site. The visitor has just travelled here from the old
+   WordPress site, so the greeting is literally the brand's own object: a landscape
+   postcard on warm paper with a sunrise wash, a saffron-sky BETA postage stamp
+   cancelled by the site's dashed postmark, a dotted route line arriving at a "you
+   are here" pin, and a Caveat aside that answers the hero's "wish you were here?
+   you can be…" with "— you are." The message half sits below the postcard's dashed
+   travel rule: Bodoni heading (italic Book on "new"), Poppins body, one calm
+   primary button. Same paper-grain film as the rest of the site, so the card feels
+   printed, not painted. Under 480px it folds into the bottom sheet, stamp and all.
 
    z-index sits ABOVE the consent banner's 9999 on purpose. Both fire on a first
    visit, and a cookie bar peeking out from under a scrim reads as a rendering bug —
@@ -740,25 +747,86 @@ body::after{
    thing on the page. */
 .ch-beta{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;
   padding:20px;background:rgba(58,55,57,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
-.ch-beta-panel{position:relative;width:100%;max-width:440px;background:var(--paper,#fffdf8);
-  border:1px solid var(--line,#e7e3d6);border-top:3px solid var(--accent,#63BFD6);border-radius:18px;
-  box-shadow:0 18px 60px rgba(0,0,0,.28);padding:26px 26px 22px;text-align:left}
-.ch-beta-eyebrow{margin:0 0 10px;font-size:.7rem;font-weight:700;letter-spacing:.16em;text-transform:uppercase;
-  color:var(--accent-deep,#24758A)}
-.ch-beta-title{margin:0 0 10px;font-size:1.32rem;line-height:1.25}
-.ch-beta-body{margin:0 0 10px;color:var(--ink,#3A3739);line-height:1.6}
-.ch-beta-fine{margin:0 0 18px;font-size:.85rem;color:var(--ink-soft,#6c6a6b);line-height:1.55}
-.ch-beta-ok{width:100%}
+.ch-beta-panel{position:relative;width:100%;max-width:600px;max-height:100%;overflow:auto;
+  /* sunrise over the coast: saffron glow behind the stamp, sky drifting in from the left */
+  background:
+    radial-gradient(95% 72% at 88% -12%, var(--pc-saffron,#fbf0d8), transparent 58%),
+    radial-gradient(110% 60% at -12% -6%, var(--pc-sky,#e4f2f7), transparent 52%),
+    var(--paper,#fffdf8);
+  border:1px solid var(--line,#e7e3d6);border-radius:var(--r-lg,24px);
+  box-shadow:0 34px 90px -28px rgba(20,40,48,.5), 0 8px 28px rgba(0,0,0,.16);text-align:left}
+/* the site-wide paper-grain film stops under the modal (it sits at z-index 1),
+   so the postcard carries its own — same recipe, so the card reads as printed stock */
+.ch-beta-panel::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.035;
+  mix-blend-mode:multiply;border-radius:inherit;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:150px 150px}
+
+/* — the postcard's top half: route, wish-you-were-here, stamp, postmark — */
+.ch-beta-post{position:relative;height:128px}
+.ch-beta-route{position:absolute;inset:0;width:100%;height:100%;display:block;
+  color:var(--accent-deep,#24758A);opacity:.5}
+.ch-beta-wish{position:absolute;left:28px;bottom:10px;transform:rotate(-2.5deg);
+  font-family:var(--hand,cursive);font-weight:700;font-size:1.3rem;line-height:1;
+  color:var(--accent-deep,#24758A);white-space:nowrap}
+.ch-beta-stamp{position:absolute;top:16px;right:26px;transform:rotate(3deg);
+  display:grid;justify-items:center;gap:2px;padding:8px 9px 6px;
+  background:var(--paper,#fffdf8);border:1px dashed var(--ink-soft,#6c6a6b);border-radius:2px;
+  box-shadow:0 8px 20px -8px rgba(44,42,43,.45);
+  font-family:var(--body);font-weight:700;font-size:.66rem;letter-spacing:.18em;
+  text-transform:uppercase;line-height:1;color:var(--ink,#3A3739)}
+.ch-beta-stamp svg{width:64px;height:46px;display:block;border-radius:1px}
+.ch-beta-stamp i{font-style:normal;font-weight:600;font-size:.5rem;letter-spacing:.1em;
+  color:var(--ink-soft,#6c6a6b)}
+.ch-beta-postmark{position:absolute;top:34px;right:44px;width:132px;height:70px;
+  color:var(--ink,#3A3739);opacity:.3;transform:rotate(-8deg)}
+
+/* — the message half, below the dashed travel rule — */
+.ch-beta-msg{position:relative;padding:18px 30px 26px}
+.ch-beta-msg::before{content:"";position:absolute;left:24px;right:24px;top:0;height:2px;
+  background:repeating-linear-gradient(90deg,var(--pc-line,#dde8ed) 0 9px,transparent 9px 18px)}
+.ch-beta-eyebrow{margin:0 0 .6rem;font-family:var(--body);font-weight:600;font-size:.72rem;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--accent-deep,#24758A);
+  display:inline-flex;align-items:center;gap:.5rem}
+.ch-beta-eyebrow::before{content:"";width:22px;height:2px;background:var(--accent,#63BFD6);border-radius:2px}
+.ch-beta-title{margin:0 0 .6rem;font-size:clamp(1.6rem,4.6vw,2.05rem);line-height:1.16;
+  font-variation-settings:"opsz" 72}
+.ch-beta-title em{font-style:italic;font-weight:400} /* Bodoni Book Italic */
+.ch-beta-body{margin:0 0 .85rem;max-width:52ch;color:var(--ink,#3A3739);line-height:1.65;font-size:.97rem}
+.ch-beta-fine{margin:0 0 20px;max-width:52ch;font-size:.85rem;color:var(--ink-soft,#6c6a6b);line-height:1.55}
+.ch-beta-ok{width:auto;min-width:230px}
+.ch-beta-ok:focus-visible{outline:3px solid rgba(var(--accent-rgb,99,191,214),.6);outline-offset:2px}
+
 @media (max-width:480px){
   .ch-beta{align-items:flex-end;padding:0}
-  .ch-beta-panel{max-width:none;border-radius:20px 20px 0 0;border-bottom:0;padding:22px 20px calc(20px + env(safe-area-inset-bottom,0px))}
+  .ch-beta-panel{max-width:none;border-radius:20px 20px 0 0;border-bottom:0}
+  .ch-beta-post{height:104px}
+  .ch-beta-stamp{top:12px;right:16px;padding:7px 8px 5px;font-size:.6rem}
+  .ch-beta-stamp svg{width:54px;height:38px}
+  .ch-beta-postmark{top:26px;right:34px;width:112px;height:59px}
+  .ch-beta-wish{left:20px;bottom:8px;font-size:1.15rem}
+  /* the band's SVG scales non-uniformly on a narrow screen, which squishes the
+     "you are here" pin into a sliver — let the dotted route run to the postmark */
+  .ch-beta-pin{display:none}
+  .ch-beta-msg{padding:16px 20px calc(20px + env(safe-area-inset-bottom,0px))}
+  .ch-beta-ok{width:100%;min-width:0}
 }
+/* arrival sequence: card rises, stamp presses on, the postmark cancels it, then the
+   route and the handwriting settle in. All of it lives behind this gate, so
+   reduced-motion users get the finished postcard instantly. */
 @media (prefers-reduced-motion:no-preference){
   .ch-beta{animation:chBetaFade .28s ease both}
-  .ch-beta-panel{animation:chBetaRise .34s cubic-bezier(.2,.7,.2,1) both}
+  .ch-beta-panel{animation:chBetaRise .42s cubic-bezier(.2,.7,.2,1) both}
+  .ch-beta-stamp{animation:chBetaStamp .45s cubic-bezier(.2,.8,.3,1) .2s both}
+  .ch-beta-postmark{animation:chBetaCancel .35s ease-out .55s both}
+  .ch-beta-route{animation:chBetaRoute .6s ease .5s both}
+  .ch-beta-wish{animation:chBetaFade .6s ease .6s both}
 }
 @keyframes chBetaFade{from{opacity:0}to{opacity:1}}
-@keyframes chBetaRise{from{opacity:0;transform:translateY(12px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes chBetaRise{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes chBetaStamp{from{opacity:0;transform:rotate(-4deg) scale(1.22)}to{opacity:1;transform:rotate(3deg)}}
+@keyframes chBetaCancel{from{opacity:0}to{opacity:.3}}
+@keyframes chBetaRoute{from{opacity:0}to{opacity:.5}}
 
 /* ══════════════════════════════════════════════════════════════════════════════
    PRESS FEEDBACK
