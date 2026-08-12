@@ -34,24 +34,27 @@ test('search prices on real distance and carries that price into booking', async
 test('search choices stay locked until Edit, then Update applies (Kayak/Expedia pattern)', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
 
-  // Locked by default: the edit form is collapsed, a read-only summary is shown.
+  // Collapsed by default: the edit form is hidden behind the button, and the route hero
+  // states the search once.
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
-  await expect(page.locator('#sl-route')).not.toBeEmpty();
-  await expect(page.locator('#sl-meta')).toContainText('2 travellers');
+  await expect(page.locator('#sl-edit')).toBeVisible();
+  await expect(page.locator('#route-title')).not.toBeEmpty();
+  await expect(page.locator('#route-meta')).toContainText('2 travellers');
 
-  // Click Edit → the form reveals, pre-filled with the current search.
+  // Click Edit → the form reveals, pre-filled with the current search. The hero STAYS —
+  // it is the page header now, not a summary the form replaces.
   await page.locator('#sl-edit').click();
   await expect(page.locator('#srch-bar')).toBeVisible();
-  await expect(page.locator('#srch-locked')).toBeHidden();
+  await expect(page.locator('#sl-edit')).toBeHidden();
+  await expect(page.locator('#route-title')).toBeVisible();
   await expect(page.locator('#e-from')).toHaveValue('Colombo Airport (CMB)');
   await expect(page.locator('#e-to')).toHaveValue('Ella');
   await expect(page.locator('#e-pax')).toHaveValue('2');
 
-  // Cancel collapses back to the locked summary without changing anything.
+  // Cancel collapses the form again without changing anything.
   await page.locator('#sl-cancel').click();
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
 
   // Edit again, change the drop-off, and Update → a deliberate new search navigation.
   await page.locator('#sl-edit').click();
@@ -60,9 +63,28 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await page.locator('.place-option', { hasText: 'Kandy' }).first().click();
   await page.locator('#srch-bar button[type="submit"]').click();
   await page.waitForURL('**/search.html?**to=kandy**');
-  // The new search loads locked again.
+  // The new search loads collapsed again.
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
+});
+
+test('search states the route once — no locked summary bar, no route breadcrumb', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya&pax=2' });
+
+  // The h1 is the only place "A → B" is spelled out. It used to appear three times: in the
+  // breadcrumb trail, in a read-only .srch-locked bar, and here.
+  await expect(page.locator('#srch-locked')).toHaveCount(0);
+  await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
+  await expect(page.locator('.breadcrumbs')).not.toContainText('Sigiriya');
+
+  // Edit search opens the form in place, directly under the button that opened it. The old
+  // layout put the button below a form that lived up in .srch-top, a screen away.
+  const btnBox = await page.locator('#sl-edit').boundingBox();
+  await page.locator('#sl-edit').click();
+  const formBox = await page.locator('#srch-bar').boundingBox();
+  expect(formBox.y).toBeGreaterThan(btnBox.y - 8);
+  expect(formBox.y - btnBox.y).toBeLessThan(120);
 });
 
 test('search edit bar shows Google suggestions for non-local places without covering Cancel', async ({ page }) => {
@@ -77,7 +99,7 @@ test('search edit bar shows Google suggestions for non-local places without cove
 
   await page.locator('#sl-cancel').click();
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
 });
 
 test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quote', async ({ page }) => {
@@ -96,23 +118,24 @@ test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quot
   expect(text).toContain('Travellers: 6+');
 });
 
-test('mobile search result avoids repeating the route hero above prices', async ({ page }) => {
+test('mobile search states the route once and still puts prices above the fold', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya&pax=1' });
 
-  await expect(page.locator('#srch-locked')).toBeVisible();
-  await expect(page.locator('#sl-route')).toContainText('Colombo Airport (CMB)');
-  await expect(page.locator('#sl-route')).toContainText('Sigiriya / Dambulla');
-  await expect(page.locator('#sl-meta')).toContainText('~152 km');
-  await expect(page.locator('#sl-meta')).toContainText('approx');
-  await expect(page.locator('#route-title')).toBeHidden();
-  await expect(page.locator('#route-meta')).toBeHidden();
+  // Mobile used to hide this h1 and show a .srch-locked bar instead — the same "don't say it
+  // twice" rule, solved in the opposite direction from desktop. Both keep the h1 now, which
+  // means the hero has to stay small enough for the prices to clear the fold.
+  await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
+  await expect(page.locator('#route-meta')).toContainText('~152 km');
+  await expect(page.locator('#route-meta')).toContainText('approx');
   await expect(page.locator('#add-stops')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
   await expect(page.locator('.opt-private')).toBeVisible();
 
-  const summaryBox = await page.locator('#srch-locked').boundingBox();
+  const heroBox = await page.locator('#route-title').boundingBox();
   const privateBox = await page.locator('.opt-private').boundingBox();
-  expect(summaryBox).not.toBeNull();
+  expect(heroBox).not.toBeNull();
   expect(privateBox).not.toBeNull();
   expect(privateBox.y).toBeLessThan(620);
 });

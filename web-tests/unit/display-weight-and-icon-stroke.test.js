@@ -99,7 +99,10 @@ describe('route names, place names and money are on the display face', () => {
     ['board.html', '.lcard-route'],
     ['board.html', '.lprice b'],
     ['board.html', '.rr-stop b'],
-    ['search.html', '.srch-locked .sl-route'],
+    /* search.html's route name was pinned here as `.srch-locked .sl-route` — a read-only
+       copy of the route that sat above the h1 saying the same words. The bar is gone; the
+       route on that page is now only the page <h1>, which site.css already holds on the
+       display face, so there is no page-local rule left to drift. */
     ['ticket.css', '.tot .v'],
     /* The day rows on quote.html, pay.html and manage.html — the SAME route name again,
        now on the document the customer pays from. It shipped at .88rem Poppins, which no
