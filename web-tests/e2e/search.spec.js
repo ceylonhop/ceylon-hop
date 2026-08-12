@@ -117,12 +117,60 @@ test('mobile search result avoids repeating the route hero above prices', async 
   expect(privateBox.y).toBeLessThan(620);
 });
 
+/*
+  The autocomplete option row is a two-column grid whose badge column is `auto` + nowrap, so
+  the BADGE decided how much room the place name got — and it won. "Popular Route" measured
+  102px; add the menu/option padding and the gap and 156px of a row was spoken for before the
+  name saw any of it. On the homepage hero, the widest field on the site, that left 179px for
+  a name needing 187 and shipped "Colombo Airport (C…" — the busiest origin we sell, clipped
+  in the primary search box. In the search page's 4-up edit grid the field is 225px and 13 of
+  19 place names clipped.
+
+  Pinned by MEASUREMENT, not by the rendered string: `textContent` is the full name whether or
+  not the pixels fit, so no text assertion can see this. scrollWidth > clientWidth can.
+*/
+const clippedOptions = (page) => page.evaluate(() => {
+  const menu = document.querySelector('.place-menu');
+  if (!menu) return null;
+  return [...menu.querySelectorAll('.place-option:not(.loading)')]
+    .map((opt) => {
+      const label = opt.querySelector('span');
+      const badge = opt.querySelector('small');
+      return {
+        text: label.textContent,
+        badge: badge ? badge.textContent : '',
+        room: Math.ceil(label.getBoundingClientRect().width),
+        needs: label.scrollWidth,
+      };
+    })
+    .filter((o) => o.needs > o.room);
+});
+
+for (const spot of [
+  { name: 'homepage hero', path: '/index.html', field: '#q-from', open: null },
+  { name: 'search page edit form', path: '/search.html?from=cmb-airport&to=ella', field: '#e-from', open: '#sl-edit' },
+]) {
+  test(`local place names are not clipped by their own badge — ${spot.name}`, async ({ page }) => {
+    await gotoBooking(page, { path: spot.path.split('?')[0], query: spot.path.split('?')[1] || '' });
+    if (spot.open) await page.locator(spot.open).click();
+
+    // "Colombo Airport (CMB)" is the longest place name we ship and the most-booked origin.
+    await page.locator(spot.field).fill('Colombo Air');
+    await expect(page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first()).toBeVisible();
+
+    const clipped = await clippedOptions(page);
+    // Google results are free-text addresses and are expected to ellipsize; local places are not.
+    const clippedLocal = clipped.filter((o) => o.badge !== 'Google');
+    expect(clippedLocal, `clipped local place names: ${JSON.stringify(clippedLocal)}`).toEqual([]);
+  });
+}
+
 test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 
   await page.locator('#q-from').fill('CMB');
   await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
-  await expect(page.locator('.place-option').first()).toContainText('Popular Route');
+  await expect(page.locator('.place-option').first()).toContainText('Popular');
   await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
 
   await page.locator('#q-to').fill('Ella');

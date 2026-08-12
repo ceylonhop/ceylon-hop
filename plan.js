@@ -194,9 +194,12 @@ function closePlaceMenus(except, invalidate=true){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
   if(!except && invalidate) placeMenuSeq++;
 }
+/* Follows site.js's badge wording. plan.html overrides .place-option to a flex row, so it
+   never had the truncation that shortened this — but the badge is the same badge, and two
+   words for one concept on one site is its own bug. */
 function placeSourceLabel(source){
   if(source==='google') return 'Google';
-  return source==='known' ? 'Popular Route' : 'Popular place';
+  return 'Popular';
 }
 function googlePlaceSuggestions(q, localItems){
   const text=q.trim();
