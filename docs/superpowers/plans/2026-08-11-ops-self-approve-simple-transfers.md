@@ -52,9 +52,21 @@ Recorded so a reviewer does not re-litigate them:
 3. **No dollar ceiling.** With one leg and no custom pricing, the total is already bounded by the
    longest corridor at the highest standard rate. A ceiling would be a second number to maintain
    for no additional protection. It becomes worth revisiting at two legs.
-4. **No notification.** The founder is not told when ops self-approves. `quote_revisions` already
+4. **No notification** — and this takes work, it is not the default. `quote_revisions` already
    retains one row per superseded state carrying `status` and `updatedBy` (`schema.ts:620`), and
    the live row keeps `updatedBy` — so "what did ops approve, and who" is a query, not a feature.
+
+   **The catch (found 2026-08-11, after the first draft):** `draft → ready` does not exist. It was
+   removed 2026-07-19 (`quoteRepo.ts:14-21`) and `ready` is reachable **only** from
+   `pending_review`. So ops cannot self-approve in one hop — they submit, then approve. And
+   submitting emails every `quote:approve` holder except the actor (`internalQuote.ts:1611`),
+   i.e. the founder. Left alone, this decision inverts itself: the founder gets an "approve this"
+   mail for **every** simple transfer, resolved by ops seconds later — a request for action that
+   was already actioned. Task 2 therefore suppresses that mail when the submitter could
+   self-approve the quote. Not optional; without it Task 2 ships a violation of this decision.
+
+   Silver lining: the forced `pending_review` hop means content freezes *before* approval, so ops
+   approves exactly what ops submitted, and the submitted state gets its own revision row.
 5. **Ops owns the whole chain for this class — including taking the money.** State this plainly,
    because "approve" undersells it. Approval is the unlock for two further gates ops *already*
    holds the capability for:
@@ -63,9 +75,9 @@ Recorded so a reviewer does not re-litigate them:
      `status ∈ {ready, sent}`;
    - **booking conversion** (`:1008`) needs `bookings:operate`, which ops has, at `sent | won`.
 
-   So the reach is `draft → ready → sent → pay link → customer pays → booking`, entirely within
-   ops. Not merely a status change: **ops can collect payment against a price no second person
-   saw.** That is the intended purchase for a single standard-priced transfer with no discount and
+   So the reach is `draft → pending_review → ready → sent → pay link → customer pays → booking`,
+   entirely within ops. Not merely a status change: **ops can collect payment against a price no
+   second person saw.** That is the intended purchase for a single standard-priced transfer with no discount and
    no custom rate — owner confirmed 2026-08-11 with the payment reach explicitly on the table —
    but it is the sentence to re-read before widening the rule. Maker-checker is deliberately
    collapsed for this class. Ops still cannot discount (`discount:apply_manual` is founder-only)
@@ -153,11 +165,24 @@ At the existing gate (`internalQuote.ts:1532`), allow the move when the actor ho
 changes: `changes_requested`, reopening a `sent` quote, hot zones (`:1401–1417`) and locked-quote
 deletion (`:1653`) keep requiring `quote:approve`.
 
+The two branches are **provably disjoint**, which is why no extra guarding is needed: `reopeningSent`
+requires the target to be in `EDITABLE` (`draft` | `pending_review` | `changes_requested`), and
+`ready` is not in that set — so the new path cannot admit a reopen of a sent quote.
+
+**The awaiting-approval email is NOT touched here — it moves to Task 4.** Suppressing it (decision
+4) while the UI still offers ops no Approve button would leave qualifying quotes sitting in
+`pending_review` with nobody told: ops cannot approve them, and the founder was never mailed.
+Silently worse than today, which is the worst kind of worse. Until Task 4 the mail fires for
+everything — noisy, never silent. Sequencing found 2026-08-11 while deciding what could ship
+to production early; the split is the whole reason this task is safe to merge on its own.
+
 **Tests:** ops approves a qualifying quote. Ops is refused (`approve_forbidden`) on each
 disqualifying shape. Ops still cannot send a quote back, reopen a sent quote, edit a hot zone,
-delete a locked quote, or apply a discount. Founder behaviour is unchanged throughout. Plus one
-regression test that `/save` still 409s `not_editable` on a `ready` quote (`:867`) — the gate's
-safety rests on content being frozen after approval, and nothing currently records that dependency.
+delete a locked quote, or apply a discount. Founder behaviour is unchanged throughout. The
+awaiting-approval mail still fires for every submission, qualifying or not — asserted, so Task 4
+has to change a test on purpose rather than drift into silence. Plus one regression test that
+`/save` still 409s `not_editable` on a `ready` quote (`:867`) — the gate's safety rests on content
+being frozen after approval, and nothing currently records that dependency.
 
 ---
 
@@ -204,11 +229,20 @@ Note `copyUnlocked()` (`4080`) is status-based, not cap-based, so self-approval 
 customer-facing message with no change here. That is intended; it is listed so a reviewer does not
 read it as a leak.
 
+**Also, in this task and not before: suppress the awaiting-approval email** (`internalQuote.ts:1611`)
+when the submitter could self-approve the quote — decision 4. Same predicate, evaluated on the row
+being moved to `pending_review`. It belongs here because the mail is only noise once the Approve
+button exists; suppressed any earlier it strands qualifying quotes unseen (see Task 2). Task 2
+leaves a test asserting the mail still fires, so this is a deliberate edit, never a drift.
+
 Land this task **on its own** — `ops-ui.html` is the codebase's busiest merge surface.
 
 **Tests:** Playwright — ops sees approve on a qualifying quote and not on a chauffeur or two-leg
 quote; ops sees no send-back, reopen-sent, zone or delete-locked controls; **ops's queue layout
-and headline copy are byte-identical to today**; founder's view is unchanged throughout.
+and headline copy are byte-identical to today**; founder's view is unchanged throughout. Vitest —
+no awaiting-approval mail when ops submits a quote it can approve; the mail still sends for a
+non-qualifying quote, and still sends when finance submits a qualifying one (finance holds no
+`quote:approve_simple`, so nothing about their flow changes).
 
 ### Task 5: Update the quote-lifecycle user stories
 
@@ -236,7 +270,10 @@ What this change alone makes wrong:
 
 New stories to add under ✅ *Possible & allowed*, as a sibling to #2 "Founder solo":
 
-1. **Ops solo, simple transfer.** Build → record the customer request → self-approve → mark sent.
+1. **Ops solo, simple transfer.** Build → record the customer request → **submit** → approve their
+   own submission → mark sent. Note the submit hop: `draft → ready` has not existed since
+   2026-07-19, so ✅#2 "Founder solo … self-approve (`draft -> ready`)" in the doc being edited is
+   **itself stale** — a concrete instance of why this task re-reads rather than patches.
 2. **Ops mints the pay link** on their own self-approved quote; the customer pays.
 3. **Ops converts it** to a linked booking (Mark booked).
 4. **Simplification unlocks self-approval.** A chauffeur or multi-leg quote sent back and edited
