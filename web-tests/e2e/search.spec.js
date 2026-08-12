@@ -256,3 +256,46 @@ test('a party size the customer DID choose is still honoured end to end', async 
   await expect(page.locator('.shared-save')).toHaveText(/Save ~29%/);
   await expect(page.locator('a[href*="booking.html"][href*="pax=2"]').first()).toBeVisible();
 });
+
+/* Labels and placeholders have to agree about which field ends the journey. Adding a stop
+   renames the drop-off field to "Stop 2", but its placeholder stayed "Where to?" — which
+   reads as the last field — while the row that had actually become the drop-off invited
+   "Where to next?". Filling the form top-to-bottom on the hint text alone put the
+   destination in the middle. Whichever row is last says "Where to?" (the site's phrasing
+   for a final stop, as used in single-transfer mode). */
+test('multi-stop placeholders follow the labels: the LAST field is the one that ends the trip', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  const qTo = page.locator('#q-to');
+  const rows = page.locator('#mid-stops .mid-stop');
+  const lastRow = rows.last();
+
+  // single transfer: the drop-off is the last field and asks the terminal question
+  await expect(page.locator('#q-to-label')).toHaveText('Drop-off');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to?');
+
+  // multi-stop seeds a row: q-to becomes an intermediate stop and must stop sounding final
+  await page.locator('#tab-multi').click();
+  await expect(page.locator('#q-to-label')).toHaveText('Stop 2');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to next?');
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // the terminal question travels to whichever row is last as stops are added...
+  await page.locator('#add-stop').click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator('input')).toHaveAttribute('placeholder', 'Add a place along the way…');
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // ...and back again when one is removed
+  await rows.first().locator('.rm').click();
+  await expect(rows).toHaveCount(1);
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // returning to a single transfer restores the terminal question to the drop-off
+  await page.locator('#tab-single').click();
+  await expect(page.locator('#q-to-label')).toHaveText('Drop-off');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to?');
+});
