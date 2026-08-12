@@ -215,3 +215,44 @@ test('a route with no shared service shows the "no shared seats" panel in the gr
   // and the grid keeps its normal two-column layout (no single-column 'solo' fallback)
   await expect(page.locator('.opt-grid.solo')).toHaveCount(0);
 });
+
+/* The results page compares a PER-SEAT price against a PER-VEHICLE one, so the party size is
+   the only thing that decides which is actually cheaper. The homepage never asks for it
+   (the hero is deliberately one question: from + to), and nothing links here with `pax` —
+   so the page used to default it to 1 and then state a saving computed from that guess.
+   For Kandy -> Ella that printed "Save ~64%", true for a solo traveller and nobody else:
+   two people save ~29%, and three are $4 better off in the private car. It also announced
+   "Seats for 1 traveller" as though the customer had said so.
+   Unset now means unset — mirroring the planner's own traveller gate (plan.js). */
+test('an unasked party size is not invented: no count, no savings claim, no pax handed on', async ({ page }) => {
+  // exactly what the homepage produces — from + to, nothing else
+  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella' });
+
+  // the shared card is present (Kandy -> Ella runs a corridor), but claims nothing about savings
+  await expect(page.locator('.opt-shared')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveCount(0);
+  await expect(page.getByText(/Save ~\d+%/)).toHaveCount(0);
+
+  // no fabricated traveller count anywhere on the page
+  await expect(page.getByText(/\b1 traveller\b/)).toHaveCount(0);
+
+  // ...and the guess is not passed downstream to booking
+  const hrefs = await page.locator('a[href*="booking.html"]').evaluateAll(
+    (as) => as.map((a) => a.getAttribute('href')),
+  );
+  expect(hrefs.length).toBeGreaterThan(0);
+  for (const h of hrefs) expect(h).not.toMatch(/[?&]pax=/);
+
+  // the raw comparison the customer can make for themselves is untouched
+  await expect(page.getByText('$21').first()).toBeVisible();       // per seat
+  await expect(page.getByText('total, fixed').first()).toBeVisible(); // per vehicle
+});
+
+test('a party size the customer DID choose is still honoured end to end', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
+
+  await expect(page.getByText('2 travellers').first()).toBeVisible();
+  await expect(page.locator('.shared-save')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~29%/);
+  await expect(page.locator('a[href*="booking.html"][href*="pax=2"]').first()).toBeVisible();
+});
