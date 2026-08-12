@@ -16,13 +16,13 @@
       '.ch-map-wrap .ch-map-gmap{position:absolute;inset:0}' +
       '.ch-map-load{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;' +
       'justify-content:center;gap:11px;background:linear-gradient(170deg,#eaf4f1,#dfeee9);' +
-      'color:#0a7d6f;font-family:var(--body,system-ui,sans-serif);font-weight:600;font-size:.82rem;transition:opacity .4s ease}' +
+      'color:#24758A;font-family:var(--body,system-ui,sans-serif);font-weight:600;font-size:.82rem;transition:opacity .4s ease}' +
       '.ch-map-wrap.ready .ch-map-load{opacity:0;pointer-events:none}' +
-      '.ch-map-spin{width:26px;height:26px;border-radius:50%;border:3px solid #bfe0d6;' +
-      'border-top-color:#0a7d6f;animation:chSpin .8s linear infinite}' +
+      '.ch-map-spin{width:26px;height:26px;border-radius:50%;border:3px solid #c3dde8;' +
+      'border-top-color:#24758A;animation:chSpin .8s linear infinite}' +
       '@keyframes chSpin{to{transform:rotate(360deg)}}' +
       '.ch-map-expand{position:absolute;top:10px;right:10px;z-index:3;display:inline-flex;align-items:center;' +
-      'gap:6px;padding:7px 11px;border:0;border-radius:999px;background:rgba(255,255,255,.96);color:#0a7d6f;' +
+      'gap:6px;padding:7px 11px;border:0;border-radius:999px;background:rgba(255,255,255,.96);color:#24758A;' +
       'font-family:var(--body,system-ui,sans-serif);font-weight:700;font-size:.76rem;cursor:pointer;' +
       'box-shadow:0 2px 8px rgba(0,0,0,.18)}' +
       '.ch-map-expand:hover{background:#fff}' +
@@ -210,7 +210,7 @@
       return 'Stop ' + (i + 1);
     };
     const legend = stops.map((s, i) => {
-      const fill = i === 0 ? '#0a7d6f' : i === stops.length - 1 ? '#e8623a' : '#0AB9B6';
+      const fill = i === 0 ? '#24758A' : i === stops.length - 1 ? '#EC3A24' : '#0AB9B6';
       return '<li><span class="ch-lg-n" style="background:' + fill + '">' + (i + 1) + '</span>' +
              '<span>' + esc(labelFor(s, i)) + '</span></li>';
     }).join('');
@@ -386,7 +386,7 @@
           mapPins(stopLocs, z).forEach((p) => {
             drawn.push(new libs.Marker({
               map, position: { lat: p.lat, lng: p.lng }, zIndex: 5,
-              icon: pin(p.isFirst ? '#0a7d6f' : p.isLast ? '#e8623a' : '#0AB9B6'),
+              icon: pin(p.isFirst ? '#24758A' : p.isLast ? '#EC3A24' : '#0AB9B6'),
               // The number ties each pin to the stops legend — without it the pins are
               // anonymous and "is stop 3 the right place?" can't be answered. Hidden at country
               // zoom, where a long itinerary is an unreadable wall of digits and the legend
