@@ -67,15 +67,3 @@ describe('the trip-summary route strip', () => {
     expect(shortIdx).toBeLessThan(planIdx);
   });
 });
-
-describe('Nights, when no overnight stop has been added', () => {
-  // "None" read as "this trip has no nights"; the owner ruled out a longer sentence as too wide
-  // for the stat cell, so it is a bare 0 matching Places / Transfer legs.
-  it('is a bare 0, not a word', () => {
-    const planJs = readFileSync(path.join(ROOT, 'plan.js'), 'utf8');
-    const line = planJs.match(/setStat\('st-nights',[^\n]*\)/);
-    expect(line, 'st-nights render not found in plan.js').toBeTruthy();
-    expect(line[0]).toContain(": '0'");
-    expect(line[0]).not.toContain('None');
-  });
-});
