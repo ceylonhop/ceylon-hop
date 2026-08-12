@@ -759,20 +759,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       const rows=[...mids.querySelectorAll('.mid-stop')];
       const n=rows.length;
       odGroup.classList.toggle('has-stops', n>0);
-      // last field is always the final destination; everything before it is a numbered stop
+      // last field is always the final destination; everything before it is a numbered stop.
+      // The PLACEHOLDERS have to move with the labels, not stay where they were written.
+      // Adding a stop turns the drop-off field into "Stop 2" — but it kept asking "Where to?",
+      // which reads as the end of the journey, while the row that had genuinely become the
+      // drop-off invited "Where to next?". Someone filling the form top-to-bottom on the hint
+      // text alone put their destination in the middle and then met a field asking for a place
+      // after it. "Where to?" is this site's phrasing for a final stop (it's what the field says
+      // in single-transfer mode), so it belongs on whichever row is currently last.
       if(toLabel) toLabel.textContent = n>0 ? 'Stop 2' : 'Drop-off';
+      if(to) to.placeholder = n>0 ? 'Where to next?' : 'Where to?';
       rows.forEach((row,i)=>{
         const last=i===n-1;
         row.querySelector('label').textContent = last ? 'Drop-off' : ('Stop '+(i+3));
         const input=row.querySelector('input');
-        if(input) input.placeholder = last ? 'Where to next?' : 'Add a place along the way…';
+        if(input) input.placeholder = last ? 'Where to?' : 'Add a place along the way…';
       });
     }
     function addMid(val='', opts={}){
       if(midCount()>=8) return;
       const row=document.createElement('div');
       row.className='field mid-stop place-field';
-      row.innerHTML=`<label>Stop</label><input class="mid-select" required aria-label="Stop" placeholder="Where to next?">`+
+      row.innerHTML=`<label>Stop</label><input class="mid-select" required aria-label="Stop" placeholder="Where to?">`+
         `<button type="button" class="rm" aria-label="Remove this stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
       const sel=row.querySelector('input');
       if(val) sel.value=val;

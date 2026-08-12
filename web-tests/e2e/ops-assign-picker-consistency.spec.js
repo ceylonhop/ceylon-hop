@@ -35,6 +35,29 @@ async function stubOps(page, opts = {}) {
   await page.route('**/admin/quote/rate-card', (r) => (opts.rateCardFails
     ? r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
     : r.fulfill(json({ vehicle: { car: { maxPax: 3, maxBags: 3 } }, perKmCents: { car: 50 }, floorCents: { car: 0 } }))));
+  // Pricing is irrelevant to this spec, but the estimate MUST still be well-formed. It is
+  // debounced, so a fast run reaches the assertions before it ever fires and the catch-all above
+  // never gets asked for it. On a machine under load it does fire, the catch-all answers `{}`,
+  // and that has no `.error` — so the builder banks it as a real estimate and render() throws on
+  // the missing total. The header never repaints after that and the picker stays disabled
+  // forever, which is the intermittent failure this file showed under parallel workers.
+  await page.route('**/admin/quote/estimate', (r) => {
+    const b = r.request().postDataJSON() || {};
+    const km = (b.legs || []).reduce((s, l) => s + (l.distanceKm || 0), 0);
+    const cents = km * 50;
+    return r.fulfill(json({
+      total: { cents: cents, lkr: 'Rs 0' },
+      amountDueNow: { cents: cents, lkr: 'Rs 0' },
+      lineItems: [{ label: 'leg', amountCents: cents, lkr: 'Rs 0' }],
+      breakdown: { km: { distanceKm: km, bufferKm: 0, billableKm: km }, legs: (b.legs || []).map((l) => ({ priceCents: (l.distanceKm || 0) * 50 })) },
+      fxUsdToLkr: 320,
+      warnings: [],
+      services: {
+        pointToPoint: { total: { cents: cents, lkr: 'Rs 0' } },
+        chauffeur: { error: 'single-day trip — point-to-point only' },
+      },
+    }));
+  });
   await page.route('**/admin/quote/save', (r) => r.fulfill(json({ id: 'q1', reference: 'Q-ASN01', status: 'draft', assignedTo: ME })));
   // Spec 2026-07-29: "+ New quote" claims a real row up front, auto-assigned to its creator.
   // `draftFails` is the fallback path — the builder must degrade to the old manual-save behaviour.

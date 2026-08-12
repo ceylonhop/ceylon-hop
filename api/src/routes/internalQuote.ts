@@ -18,6 +18,7 @@ import type { QuoteDiscountRepo } from '../db/quoteDiscountRepo';
 import type { DiscountIntent } from '../db/quoteRepo';
 import type { DiscountRequest } from '../quote/discount';
 import { can, resolveAssignee, approverOpsUsers } from '../lib/opsAuth';
+import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import type { EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
@@ -1447,12 +1448,20 @@ export function internalQuoteRoutes(deps: {
   r.get('/:id', async (c) => {
     const q = await deps.quotes.get(c.req.param('id'));
     if (!q) return c.json({ error: 'not_found' }, 404);
-    const canMargin = can(c.get('identity').role, 'margin:view');
+    const role = c.get('identity').role;
+    const canMargin = can(role, 'margin:view');
     // Ship the quote priced against its locked card so the tool renders the frozen (approved)
     // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
     const estimate = lockedEstimate(q, canMargin, new Date());
     const view = canMargin ? q : stripQuoteMargin(q);
-    return c.json({ ...view, estimate });
+    // May THIS viewer approve THIS quote (plan 2026-08-11)? The page knows the viewer's role but
+    // not whether a given quote qualifies, so the answer has to travel with the quote — a UI
+    // gating on `caps.includes('quote:approve_simple')` alone would offer Approve on every quote
+    // and 403 on most. Read from `q`, never the margin-stripped `view`: the predicate inspects the
+    // priced result for a discount, and stripping is about exposure, not about what is true.
+    const mayApprove = can(role, 'quote:approve')
+      || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q));
+    return c.json({ ...view, estimate, mayApprove });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
@@ -1529,7 +1538,17 @@ export function internalQuoteRoutes(deps: {
       // undoing the system's action, not overriding a person's. It also re-prices at the live
       // card (rateLock above), so a revived quote can never carry a stale price to a customer.
       const reopeningSent = current.status === 'sent' && EDITABLE.includes(to);
-      if ((to === 'ready' || to === 'changes_requested' || reopeningSent) && !can(c.get('identity').role, 'quote:approve')) {
+      // Ops self-approval (plan 2026-08-11). An ops agent may approve its OWN simple work: a
+      // single-leg, standard-priced, undiscounted private transfer. Deliberately keyed on
+      // `to === 'ready'` alone, so send-back and reopening a sent quote stay founder-only — and
+      // those two can never leak through here, because reopeningSent requires `to` to be in
+      // EDITABLE and 'ready' is not in EDITABLE. Evaluated on the STORED row: content freezes at
+      // submission, so what the predicate reads is what the approver saw.
+      const selfApproving = to === 'ready'
+        && can(c.get('identity').role, 'quote:approve_simple')
+        && canOpsSelfApprove(current);
+      if ((to === 'ready' || to === 'changes_requested' || reopeningSent)
+        && !can(c.get('identity').role, 'quote:approve') && !selfApproving) {
         return c.json({ error: 'approve_forbidden' }, 403);
       }
       if (to === 'ready') {
@@ -1609,6 +1628,10 @@ export function internalQuoteRoutes(deps: {
       }
     }
     // Awaiting-approval → all quote:approve holders except the actor (spec 2026-07-18).
+    // NOTE (plan 2026-08-11): this mail is deliberately NOT yet suppressed for a quote its
+    // submitter could self-approve. Suppressing it before the ops UI offers the Approve button
+    // would strand qualifying quotes in pending_review with nobody told — silently. It ships with
+    // Task 4, the UI, and not a step earlier.
     if (body.status === 'pending_review' && deps.email) {
       for (const u of approverOpsUsers(deps.auth.opsUsers)) {
         if (u.email === actor.toLowerCase()) continue;
