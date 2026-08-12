@@ -1,0 +1,98 @@
+// web-tests/unit/beta-notice.test.js
+// The first-visit beta notice. It is the first thing a visitor arriving from the old site sees,
+// so the bar is: it must appear once, go away for good when dismissed, and never be able to trap
+// someone on the page — including when localStorage throws, which is Safari private mode.
+import { describe, it, expect, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const src = readFileSync(path.resolve(__dirname, '../../beta-notice.js'), 'utf8');
+
+const KEY = 'ceylonhop_beta_notice';
+/** Execute the browser IIFE against this jsdom window, the way a <script> tag would. */
+function run() {
+  // eslint-disable-next-line no-new-func
+  new Function('window', 'document', 'localStorage', src)(window, document, window.localStorage);
+}
+const notice = () => document.querySelector('.ch-beta');
+const button = () => document.querySelector('.ch-beta button');
+
+beforeEach(() => {
+  document.body.innerHTML = '';
+  window.localStorage.clear();
+});
+
+describe('beta notice', () => {
+  it('shows on a first visit', () => {
+    run();
+    expect(notice()).not.toBeNull();
+  });
+
+  it('does not show again once dismissed', () => {
+    window.localStorage.setItem(KEY, 'dismissed');
+    run();
+    expect(notice()).toBeNull();
+  });
+
+  it('remembers the dismissal across visits', () => {
+    run();
+    button().click();
+    expect(notice()).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBe('dismissed');
+
+    document.body.innerHTML = '';
+    run(); // the next page load
+    expect(notice()).toBeNull();
+  });
+
+  it('announces itself as a dialog with a name', () => {
+    run();
+    const el = notice();
+    expect(el.getAttribute('role')).toBe('dialog');
+    expect(el.getAttribute('aria-modal')).toBe('true');
+    // Named by its own heading rather than a hardcoded aria-label, so the name can never drift
+    // from what is on screen.
+    const labelledBy = el.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(document.getElementById(labelledBy)?.textContent?.trim()).toBeTruthy();
+  });
+
+  it('moves focus to the dismiss button so a keyboard user is not stranded behind it', () => {
+    run();
+    expect(document.activeElement).toBe(button());
+  });
+
+  it('closes on Escape', () => {
+    run();
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(notice()).toBeNull();
+    expect(window.localStorage.getItem(KEY)).toBe('dismissed');
+  });
+
+  // Safari private mode throws on setItem, and older WebKit threw on getItem too. A notice that
+  // cannot be dismissed is worse than no notice at all: it would cover the site for good.
+  it('still shows and still dismisses when localStorage throws', () => {
+    const boom = () => { throw new Error('SecurityError'); };
+    const store = window.localStorage;
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: { getItem: boom, setItem: boom, removeItem: boom, clear: boom },
+    });
+    try {
+      expect(() => run()).not.toThrow();
+      expect(notice()).not.toBeNull();
+      expect(() => button().click()).not.toThrow();
+      expect(notice()).toBeNull();
+    } finally {
+      Object.defineProperty(window, 'localStorage', { configurable: true, value: store });
+    }
+  });
+
+  it('leaves the page scrollable again after it closes', () => {
+    run();
+    button().click();
+    expect(document.body.style.overflow).not.toBe('hidden');
+  });
+});
