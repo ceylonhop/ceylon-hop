@@ -215,3 +215,87 @@ test('a route with no shared service shows the "no shared seats" panel in the gr
   // and the grid keeps its normal two-column layout (no single-column 'solo' fallback)
   await expect(page.locator('.opt-grid.solo')).toHaveCount(0);
 });
+
+/* The results page compares a PER-SEAT price against a PER-VEHICLE one, so the party size is
+   the only thing that decides which is actually cheaper. The homepage never asks for it
+   (the hero is deliberately one question: from + to), and nothing links here with `pax` —
+   so the page used to default it to 1 and then state a saving computed from that guess.
+   For Kandy -> Ella that printed "Save ~64%", true for a solo traveller and nobody else:
+   two people save ~29%, and three are $4 better off in the private car. It also announced
+   "Seats for 1 traveller" as though the customer had said so.
+   Unset now means unset — mirroring the planner's own traveller gate (plan.js). */
+test('an unasked party size is not invented: no count, no savings claim, no pax handed on', async ({ page }) => {
+  // exactly what the homepage produces — from + to, nothing else
+  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella' });
+
+  // the shared card is present (Kandy -> Ella runs a corridor), but claims nothing about savings
+  await expect(page.locator('.opt-shared')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveCount(0);
+  await expect(page.getByText(/Save ~\d+%/)).toHaveCount(0);
+
+  // no fabricated traveller count anywhere on the page
+  await expect(page.getByText(/\b1 traveller\b/)).toHaveCount(0);
+
+  // ...and the guess is not passed downstream to booking
+  const hrefs = await page.locator('a[href*="booking.html"]').evaluateAll(
+    (as) => as.map((a) => a.getAttribute('href')),
+  );
+  expect(hrefs.length).toBeGreaterThan(0);
+  for (const h of hrefs) expect(h).not.toMatch(/[?&]pax=/);
+
+  // the raw comparison the customer can make for themselves is untouched
+  await expect(page.getByText('$21').first()).toBeVisible();       // per seat
+  await expect(page.getByText('total, fixed').first()).toBeVisible(); // per vehicle
+});
+
+test('a party size the customer DID choose is still honoured end to end', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=kandy&to=ella&pax=2' });
+
+  await expect(page.getByText('2 travellers').first()).toBeVisible();
+  await expect(page.locator('.shared-save')).toBeVisible();
+  await expect(page.locator('.shared-save')).toHaveText(/Save ~29%/);
+  await expect(page.locator('a[href*="booking.html"][href*="pax=2"]').first()).toBeVisible();
+});
+
+/* Labels and placeholders have to agree about which field ends the journey. Adding a stop
+   renames the drop-off field to "Stop 2", but its placeholder stayed "Where to?" — which
+   reads as the last field — while the row that had actually become the drop-off invited
+   "Where to next?". Filling the form top-to-bottom on the hint text alone put the
+   destination in the middle. Whichever row is last says "Where to?" (the site's phrasing
+   for a final stop, as used in single-transfer mode). */
+test('multi-stop placeholders follow the labels: the LAST field is the one that ends the trip', async ({ page }) => {
+  await gotoBooking(page, { path: '/index.html', query: '' });
+
+  const qTo = page.locator('#q-to');
+  const rows = page.locator('#mid-stops .mid-stop');
+  const lastRow = rows.last();
+
+  // single transfer: the drop-off is the last field and asks the terminal question
+  await expect(page.locator('#q-to-label')).toHaveText('Drop-off');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to?');
+
+  // multi-stop seeds a row: q-to becomes an intermediate stop and must stop sounding final
+  await page.locator('#tab-multi').click();
+  await expect(page.locator('#q-to-label')).toHaveText('Stop 2');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to next?');
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // the terminal question travels to whichever row is last as stops are added...
+  await page.locator('#add-stop').click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator('input')).toHaveAttribute('placeholder', 'Add a place along the way…');
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // ...and back again when one is removed
+  await rows.first().locator('.rm').click();
+  await expect(rows).toHaveCount(1);
+  await expect(lastRow.locator('label')).toHaveText('Drop-off');
+  await expect(lastRow.locator('input')).toHaveAttribute('placeholder', 'Where to?');
+
+  // returning to a single transfer restores the terminal question to the drop-off
+  await page.locator('#tab-single').click();
+  await expect(page.locator('#q-to-label')).toHaveText('Drop-off');
+  await expect(qTo).toHaveAttribute('placeholder', 'Where to?');
+});
