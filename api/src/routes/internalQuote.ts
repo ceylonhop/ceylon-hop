@@ -1448,12 +1448,20 @@ export function internalQuoteRoutes(deps: {
   r.get('/:id', async (c) => {
     const q = await deps.quotes.get(c.req.param('id'));
     if (!q) return c.json({ error: 'not_found' }, 404);
-    const canMargin = can(c.get('identity').role, 'margin:view');
+    const role = c.get('identity').role;
+    const canMargin = can(role, 'margin:view');
     // Ship the quote priced against its locked card so the tool renders the frozen (approved)
     // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
     const estimate = lockedEstimate(q, canMargin, new Date());
     const view = canMargin ? q : stripQuoteMargin(q);
-    return c.json({ ...view, estimate });
+    // May THIS viewer approve THIS quote (plan 2026-08-11)? The page knows the viewer's role but
+    // not whether a given quote qualifies, so the answer has to travel with the quote — a UI
+    // gating on `caps.includes('quote:approve_simple')` alone would offer Approve on every quote
+    // and 403 on most. Read from `q`, never the margin-stripped `view`: the predicate inspects the
+    // priced result for a discount, and stripping is about exposure, not about what is true.
+    const mayApprove = can(role, 'quote:approve')
+      || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q));
+    return c.json({ ...view, estimate, mayApprove });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.
