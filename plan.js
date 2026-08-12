@@ -842,7 +842,7 @@ function renderMap(){
   }
   const pins=pts.map((p,idx)=>{
     const first=idx===0, last=idx===pts.length-1;
-    const fill=first?'#0a7d6f':(last?'#e8623a':'#0AB9B6');
+    const fill=first?'#24758A':(last?'#EC3A24':'#0AB9B6');
     const labelLeft = p.x>W*0.6;
     const lx = labelLeft ? p.x-9 : p.x+9;
     const anchor = labelLeft ? 'end' : 'start';

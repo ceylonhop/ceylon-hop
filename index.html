@@ -269,7 +269,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
   .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
   .trust-row .item{display:flex;align-items:center;gap:.55rem}
-  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:var(--teal);background:rgba(var(--accent-rgb),.13);border-radius:50%}
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
      Set this lower and you get the worst case: a wrapped row still justified apart, so
      the orphan hangs at the left edge — which is exactly how this bug looked. */

@@ -479,7 +479,7 @@ function renderRouteMap(){
         <text class="rm-pin-label" x="${lx.toFixed(1)}" y="${(p.y+2.5).toFixed(1)}" text-anchor="${anchor}">${short(name)}</text>
       </g>`;
     };
-    svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#0a7d6f','A',a.name)}${pin(pb,'#e8623a','B',b.name)}</svg>`;
+    svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Map from ${a.name} to ${b.name}">${island}${line}${pin(pa,'#24758A','A',a.name)}${pin(pb,'#EC3A24','B',b.name)}</svg>`;
   }
 
   // distance/time bar — shows the REAL Google route once it resolves, falling
