@@ -192,12 +192,22 @@ being frozen after approval, and nothing currently records that dependency.
 
 **Files:** `api/src/routes/internalQuote.ts` (+ tests)
 
-Add a per-quote `mayApprove` boolean to the quote **detail** payload **and the queue list payload**.
-Both: if the queue renders any approve affordance per row, a detail-only flag leaves the list
-guessing. Value is `can(role, 'quote:approve') || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q))`.
+Add a per-quote `mayApprove` boolean to the quote **detail** payload (`GET /:id`). Value is
+`can(role, 'quote:approve') || (can(role, 'quote:approve_simple') && canOpsSelfApprove(q))`.
 
-**Tests:** founder sees `true` on every quote; ops sees `true` only on qualifying quotes; both
-endpoints agree on the same quote.
+**Detail only — the queue list is deliberately NOT touched** (revised 2026-08-11, after checking
+the UI rather than hedging). Approve is rendered only in the builder's action bar
+(`ops-ui.html:8042`, keyed on `state.status`); the queue has no per-row approve affordance, so a
+list flag would surface nothing. It would also cost more than it looks: `QuoteSummary` is a
+narrow projection that carries `request_json` but **not** `result_json`
+(`postgresQuoteRepo.ts:339`), and the discount clause needs the result — so a list flag would mean
+either bloating every queue row with the full priced breakdown or splitting the predicate across
+two code paths. Neither buys a button that exists. `GET /:id` hands back a full `SavedQuote`, so
+the predicate runs there whole, discount clause included.
+
+**Tests:** founder sees `true` on every quote including a chauffeur one; ops sees `true` on a
+qualifying quote and `false` on each disqualifying shape — **including the discounted one**, which
+is the case only the detail path can answer; finance sees `false` throughout.
 
 ---
 
@@ -216,6 +226,12 @@ endpoints agree on the same quote.
 
 Same name, different data source. Editing `2416` alone is a faithful-looking change that does
 nothing to the button. Start at `4078`.
+
+**The action bar is one big `if (approver) { … } else { … }`** (`ops-ui.html:8037`), and the
+approver branch's `pending_review` case emits Approve **plus** Send back **plus** Reopen to edit.
+So the change is not "make `approver` true for ops": that would hand ops the other two. The
+non-approver branch has no `pending_review` case at all today — ops sees no buttons there — and
+that is where a `mayApprove`-gated Approve button goes.
 
 **Do not promote ops to approver globally.** `isApprover()` has eight call sites and most of them
 are not the approve button: queue section layout (`2606`), queue headline copy (`2624`), the lock

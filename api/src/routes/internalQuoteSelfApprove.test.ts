@@ -202,3 +202,55 @@ describe('ops self-approval of simple transfers', () => {
     expect(approvalMails(w).map((m) => m.to)).toEqual(['f@x.com']);
   });
 });
+
+// ── Task 3: mayApprove on the quote detail payload ───────────────────────────
+// The page knows the viewer's ROLE but not whether a given quote qualifies, so the answer has to
+// travel with the quote. Detail only: approve is rendered in the builder's action bar, and the
+// queue has no per-row approve affordance to gate.
+describe('GET /admin/quote/:id → mayApprove', () => {
+  const detail = async (w: Wired, id: string, cookie: string) =>
+    (await (await send(w, 'GET', `/admin/quote/${id}`, undefined, cookie)).json()).mayApprove;
+
+  it('is true for the founder, whatever the quote', async () => {
+    const w = wired();
+    const simple = await (await post(w, '/admin/quote/save', SIMPLE, FOUNDER)).json();
+    const chauffeur = await (await post(w, '/admin/quote/save', CHAUFFEUR, FOUNDER)).json();
+    expect(await detail(w, simple.id, FOUNDER)).toBe(true);
+    expect(await detail(w, chauffeur.id, FOUNDER)).toBe(true);
+  });
+
+  it('is true for ops on a single-leg standard transfer', async () => {
+    const w = wired();
+    const { id } = await (await post(w, '/admin/quote/save', SIMPLE)).json();
+    expect(await detail(w, id, OPS)).toBe(true);
+  });
+
+  it.each([
+    ['a two-leg itinerary', TWO_LEG],
+    ['a chauffeur trip', CHAUFFEUR],
+    ['the custom vehicle tier', { ...SIMPLE, vehicle: 'custom' }],
+    ['a hand-set $/km', { ...SIMPLE, vehicle: 'van_14', customRatePerKmCents: 250 }],
+  ])('is false for ops on %s', async (_label, body) => {
+    const w = wired();
+    const { id } = await (await post(w, '/admin/quote/save', body)).json();
+    expect(await detail(w, id, OPS)).toBe(false);
+  });
+
+  // Only the detail path can answer this one: the discount lives on the priced RESULT, which the
+  // queue's narrow projection does not carry.
+  it('is false for ops once a discount is on the quote', async () => {
+    const w = wired();
+    const { id } = await (await post(w, '/admin/quote/save', SIMPLE, FOUNDER)).json();
+    expect(await detail(w, id, OPS)).toBe(true);
+
+    await post(w, '/admin/quote/save', { ...SIMPLE, id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } }, FOUNDER);
+    expect(await detail(w, id, OPS)).toBe(false);
+  });
+
+  it('is false for finance on a quote ops could approve', async () => {
+    const w = wired();
+    const { id } = await (await post(w, '/admin/quote/save', SIMPLE)).json();
+    expect(await detail(w, id, OPS)).toBe(true);
+    expect(await detail(w, id, FINANCE)).toBe(false);
+  });
+});
