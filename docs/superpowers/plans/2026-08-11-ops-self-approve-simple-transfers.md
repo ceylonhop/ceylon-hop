@@ -169,18 +169,18 @@ The two branches are **provably disjoint**, which is why no extra guarding is ne
 requires the target to be in `EDITABLE` (`draft` | `pending_review` | `changes_requested`), and
 `ready` is not in that set — so the new path cannot admit a reopen of a sent quote.
 
-**Also suppress the awaiting-approval email** (`:1611`) when the submitter could self-approve the
-quote they are submitting — see decision 4. Same predicate, evaluated on the row being moved to
-`pending_review`. Without this, every ops self-approval mails the founder a request that is
-resolved seconds later. The mail must still fire for every quote ops **cannot** self-approve, which
-is the case that matters.
+**The awaiting-approval email is NOT touched here — it moves to Task 4.** Suppressing it (decision
+4) while the UI still offers ops no Approve button would leave qualifying quotes sitting in
+`pending_review` with nobody told: ops cannot approve them, and the founder was never mailed.
+Silently worse than today, which is the worst kind of worse. Until Task 4 the mail fires for
+everything — noisy, never silent. Sequencing found 2026-08-11 while deciding what could ship
+to production early; the split is the whole reason this task is safe to merge on its own.
 
 **Tests:** ops approves a qualifying quote. Ops is refused (`approve_forbidden`) on each
 disqualifying shape. Ops still cannot send a quote back, reopen a sent quote, edit a hot zone,
-delete a locked quote, or apply a discount. Founder behaviour is unchanged throughout. **No
-awaiting-approval mail on submitting a qualifying quote; the mail still sends on a
-non-qualifying one, and still sends when finance submits** (finance has no
-`quote:approve_simple`, so nothing about their flow changes). Plus one regression test that
+delete a locked quote, or apply a discount. Founder behaviour is unchanged throughout. The
+awaiting-approval mail still fires for every submission, qualifying or not — asserted, so Task 4
+has to change a test on purpose rather than drift into silence. Plus one regression test that
 `/save` still 409s `not_editable` on a `ready` quote (`:867`) — the gate's safety rests on content
 being frozen after approval, and nothing currently records that dependency.
 
@@ -229,11 +229,20 @@ Note `copyUnlocked()` (`4080`) is status-based, not cap-based, so self-approval 
 customer-facing message with no change here. That is intended; it is listed so a reviewer does not
 read it as a leak.
 
+**Also, in this task and not before: suppress the awaiting-approval email** (`internalQuote.ts:1611`)
+when the submitter could self-approve the quote — decision 4. Same predicate, evaluated on the row
+being moved to `pending_review`. It belongs here because the mail is only noise once the Approve
+button exists; suppressed any earlier it strands qualifying quotes unseen (see Task 2). Task 2
+leaves a test asserting the mail still fires, so this is a deliberate edit, never a drift.
+
 Land this task **on its own** — `ops-ui.html` is the codebase's busiest merge surface.
 
 **Tests:** Playwright — ops sees approve on a qualifying quote and not on a chauffeur or two-leg
 quote; ops sees no send-back, reopen-sent, zone or delete-locked controls; **ops's queue layout
-and headline copy are byte-identical to today**; founder's view is unchanged throughout.
+and headline copy are byte-identical to today**; founder's view is unchanged throughout. Vitest —
+no awaiting-approval mail when ops submits a quote it can approve; the mail still sends for a
+non-qualifying quote, and still sends when finance submits a qualifying one (finance holds no
+`quote:approve_simple`, so nothing about their flow changes).
 
 ### Task 5: Update the quote-lifecycle user stories
 
