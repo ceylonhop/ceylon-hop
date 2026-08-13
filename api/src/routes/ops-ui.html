@@ -5341,6 +5341,13 @@ async function claimDraftRow() {
   var res = await apiCreateDraft();
   if (seq !== _openSeq) return;
   if (!res || !res.id) return;
+  // A save raced this claim and won: the session already has a REAL row (the id-less first save
+  // inserted one). Binding the late shell here rebound the whole session — every later save
+  // wrote the on-screen quote into the empty shell (a near-identical duplicate) and the assign
+  // picker PATCHed the wrong row (reproduced 2026-08-13). Keep the row we have; the shell is
+  // redundant, so delete it rather than strand a $0 row in the queue. Fire-and-forget: a failed
+  // delete only leaves queue clutter for the 24h sweep, never a mis-bound editor.
+  if (state.savedId) { apiDelete(res.id); return; }
   state.savedId = res.id;
   state.reference = res.reference || res.id;
   state.unpriced = true;
