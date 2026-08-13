@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CachedMapsAdapter } from './cachedMaps';
-import { isCatalogTown, type MapsAdapter, type DistanceResult } from './maps';
+import { isCatalogTown, type MapsAdapter, type DistanceResult, type GeocodedPoint } from './maps';
 import { InMemoryDistanceCacheRepo } from '../db/distanceCacheRepo';
 
 function fakeInner(result: DistanceResult | null): MapsAdapter & { calls: number } {
@@ -84,5 +84,27 @@ describe('CachedMapsAdapter', () => {
     const maps = new CachedMapsAdapter(inner, cache);
     expect((await maps.distance('Ella', 'Yala'))!.km).toBe(126);
     expect(inner.calls).toBe(1);
+  });
+
+  it('delegates geocode/placeCandidates when the inner adapter has them', async () => {
+    const point: GeocodedPoint = { lat: 6.87, lng: 81.05, displayName: 'Ella', area: null };
+    const inner = Object.assign(fakeInner(null), {
+      geocode: vi.fn(async (): Promise<GeocodedPoint | null> => point),
+      placeCandidates: vi.fn(async (): Promise<GeocodedPoint[]> => [point]),
+    });
+    const cache = new InMemoryDistanceCacheRepo();
+    const maps = new CachedMapsAdapter(inner, cache);
+    expect(await maps.geocode?.('Ella')).toEqual(point);
+    expect(await maps.placeCandidates?.('Ella')).toEqual([point]);
+    expect(inner.geocode).toHaveBeenCalledWith('Ella');
+    expect(inner.placeCandidates).toHaveBeenCalledWith('Ella');
+  });
+
+  it('reports geocode/placeCandidates absent, same as the inner adapter, when it lacks them', () => {
+    const inner = fakeInner(null); // no geocode/placeCandidates, like a bare test stub
+    const cache = new InMemoryDistanceCacheRepo();
+    const maps = new CachedMapsAdapter(inner, cache);
+    expect(maps.geocode).toBeUndefined();
+    expect(maps.placeCandidates).toBeUndefined();
   });
 });
