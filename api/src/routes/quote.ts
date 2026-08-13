@@ -7,6 +7,8 @@ import { rateLockUntil } from '../quote/rateLock';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { MapsAdapter } from '../adapters/maps';
 import type { RateCard } from '../quote/rateCard';
+import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { liveRateCard } from '../quote/liveCard';
 import {
   WebQuoteIntentSchema,
   digestAccessToken,
@@ -105,14 +107,19 @@ export function quoteRoutes(deps: {
   maps?: MapsAdapter;
   v2Enabled?: boolean;
   now?: () => Date;
+  zones?: ZonesRepo;
 } = {}) {
+  // No repo injected => an empty in-memory one => zero active zones => pricing identical to today.
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
+
   const r = new Hono();
   r.post('/', async (c) => {
     const body = await c.req.json().catch(() => null);
     const parsed = QuoteSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     try {
-      const result = quote(parsed.data as QuoteRequest);
+      const result = quote(parsed.data as QuoteRequest, await liveCard());
       const isInternal = !!deps.internalKey && c.req.header('x-internal-key') === deps.internalKey;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
@@ -135,18 +142,19 @@ export function quoteRoutes(deps: {
     if (!parsed.success) return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     try {
       const req = parsed.data as QuoteRequest;
-      const result = quote(req);
+      const card = await liveCard();
+      const result = quote(req, card);
       const saved = await deps.quotes.save({
         channel: 'web',
         product: req.product,
         vehicle: 'vehicle' in req ? req.vehicle : null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
-        rateCardVersion: RATE_CARD.version,
+        rateCardVersion: card.version,
         marginCents: result.marginEstimateCents ?? null,
         request: { engine: req },
         result,
-        rateCardJson: RATE_CARD,
+        rateCardJson: card,
         rateLockedUntil: rateLockUntil(new Date()),
       });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -168,7 +176,8 @@ export function quoteRoutes(deps: {
     const engineRequest = await engineRequestFor(parsed.data, deps.maps);
     if (!engineRequest) return c.json({ error: 'quote_unpriced' }, 422);
     try {
-      const result = quote(engineRequest);
+      const card = await liveCard();
+      const result = quote(engineRequest, card);
       const now = deps.now?.() ?? new Date();
       const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       const accessToken = randomBytes(32).toString('base64url');
@@ -178,11 +187,11 @@ export function quoteRoutes(deps: {
         vehicle: 'vehicle' in engineRequest ? engineRequest.vehicle : null,
         totalCents: result.totalCents,
         currency: RATE_CARD.currency,
-        rateCardVersion: RATE_CARD.version,
+        rateCardVersion: card.version,
         marginCents: result.marginEstimateCents ?? null,
         request: { v: 2, intent: parsed.data, engine: engineRequest },
         result,
-        rateCardJson: RATE_CARD,
+        rateCardJson: card,
         rateLockedUntil: expiresAt,
         intent: parsed.data,
         intentFingerprint: fingerprintIntent(parsed.data),

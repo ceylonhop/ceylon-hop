@@ -4,7 +4,14 @@ import { createApp } from '../app';
 import { quoteRoutes } from './quote';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { FakeMapsAdapter } from '../adapters/maps';
+import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
+import type { RateCard } from '../quote/rateCard';
 
+async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
+  const repo = new InMemoryZonesRepo();
+  for (const z of seed) await repo.create(z);
+  return repo;
+}
 
 function post(app: ReturnType<typeof createApp>, body: unknown, headers: Record<string, string> = {}) {
   return app.request('/quote', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -356,5 +363,46 @@ describe('POST /quote — validation & security gaps', () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid_request');
+  });
+});
+
+describe('public quotes apply active hot zones', () => {
+  const ZONE_LEG = {
+    product: 'private', vehicle: 'car', pax: 2, bags: 2,
+    legs: [{ from: 'Ella', to: 'Yala', distanceKm: 126 }],
+  };
+
+  it('prices an Ella leg higher when an Ella zone is active', async () => {
+    const plain = createApp({ quotes: new InMemoryQuoteRepo() });
+    const boosted = createApp({
+      quotes: new InMemoryQuoteRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const a = await (await post(plain, ZONE_LEG)).json();
+    const b = await (await post(boosted, ZONE_LEG)).json();
+    expect(b.totalCents).toBeGreaterThan(a.totalCents);
+  });
+
+  it('leaves a non-zone leg untouched', async () => {
+    const plain = createApp({ quotes: new InMemoryQuoteRepo() });
+    const boosted = createApp({
+      quotes: new InMemoryQuoteRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const a = await (await post(plain, PRIVATE_LEG)).json();
+    const b = await (await post(boosted, PRIVATE_LEG)).json();
+    expect(b.totalCents).toBe(a.totalCents);
+  });
+
+  it('freezes the zone into a locked quote snapshot', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({
+      quotes,
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const res = await postLock(app, ZONE_LEG);
+    expect(res.status).toBe(201);
+    const saved = await quotes.get((await res.json()).quoteId);
+    expect((saved!.rateCardJson as RateCard).hotZones).toEqual([{ placeName: 'Ella', boostPct: 15, active: true }]);
   });
 });

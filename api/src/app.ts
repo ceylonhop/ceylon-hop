@@ -379,6 +379,7 @@ export function createApp(deps: AppDeps = {}) {
     quotes,
     maps,
     v2Enabled: quoteV2Enabled,
+    zones,
   }));
   app.route(
     '/webhooks',
