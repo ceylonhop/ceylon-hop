@@ -73,7 +73,6 @@
 
 /* call to action */
 .pp-cta{width:100%;margin-top:13px}
-.pp-cta[disabled]{opacity:.6;cursor:default}
 .paysub{text-align:center;font-size:.73rem;color:var(--ink-soft);margin-top:10px}
 .badges{display:flex;justify-content:center;gap:6px;margin-top:10px}
 .badges .card-badge{width:auto;padding:0 8px;font-size:.6rem;font-weight:800;color:var(--ink-soft)}

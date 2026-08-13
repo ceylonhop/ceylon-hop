@@ -11,6 +11,7 @@
     "start": "tsx src/server.ts",
     "demo": "tsx scripts/demo.ts",
     "dump:pricing": "tsx scripts/dump-pricing.ts",
+    "report:distances": "tsx scripts/distance-report.ts",
     "test": "vitest run",
     "smoke": "vitest run smoke",
     "typecheck": "tsc --noEmit",

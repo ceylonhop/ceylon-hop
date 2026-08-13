@@ -183,7 +183,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   .loc-row{display:grid;grid-template-columns:16px 1fr;gap:11px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:9px 13px;background:var(--white);transition:border .15s,box-shadow .15s}
   .loc-row + .loc-row{margin-top:8px}
-  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
   .loc-row .pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .loc-row .pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
   .loc-row label{display:block;font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
@@ -192,7 +192,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   /* connected route block: pins + dotted rail link pick-up (top) → drop-off (bottom) */
   .route-block{display:grid;grid-template-columns:16px 1fr;gap:13px;border:1.5px solid var(--line);border-radius:13px;padding:6px 16px;background:var(--white);transition:border .15s,box-shadow .15s}
-  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,185,182,.13)}
+  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
   .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
   .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
