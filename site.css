@@ -261,7 +261,7 @@ p{margin:0 0 1rem}
   padding:.4rem .8rem;border-radius:999px;background:var(--cream-deep);color:var(--ink);white-space:nowrap;
 }
 .pill-teal{background:rgba(var(--accent-2-rgb),.14);color:var(--teal-deep)}
-.pill-blue{background:rgba(99,191,214,.18);color:#2d7e93}
+.pill-blue{background:rgba(var(--accent-rgb),.18);color:var(--accent-deep)}
 .pill-saffron{background:rgba(249,164,41,.18);color:#a96b04}
 .pill-tomato{background:rgba(236,58,36,.12);color:#bb2c1a}
 .pill-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.9}
