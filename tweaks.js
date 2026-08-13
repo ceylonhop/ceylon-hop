@@ -7,13 +7,17 @@
   // on every page) so CSS can gate scroll-reveal — content stays visible if
   // scripts ever fail to run.
   try{document.documentElement.classList.add('js');}catch(e){}
-  const KEY='ceylonhop_tweaks';
+  // The key carries a version so shipping a palette change invalidates every
+  // browser's persisted experiment — an unversioned key kept repainting retired
+  // colours over fixes that had already landed. Bump the suffix when the token
+  // set changes meaning; stale keys are removed below so old overrides die.
+  const KEY='ceylonhop_tweaks_v2';
+  try{localStorage.removeItem('ceylonhop_tweaks');}catch(e){}
   const ACCENTS={
-    teal:['#0AB9B6','#08938f'],
     blue:['#63BFD6','#24758A'],
     saffron:['#F9A429','#a96b04']
   };
-  const CTAS={tomato:'#EC3A24',saffron:'#F9A429',teal:'#0AB9B6',ink:'#3A3739'};
+  const CTAS={tomato:'#EC3A24',saffron:'#F9A429',ink:'#3A3739'};
   const FONTS={
     'Bodoni Moda':"'Bodoni Moda', Didot, Georgia, serif",
     'Bricolage Grotesque':"'Bricolage Grotesque', system-ui, sans-serif",
