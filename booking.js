@@ -1510,7 +1510,25 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
 // (working / failed / cancelled) is surfaced INSIDE the PayHere overlay so the
 // customer always sees what happened where they expect it — never a stray note on
 // the form. The overlay opens immediately so clicking Pay always shows feedback.
+//
+// One checkout per press. The overlay is not enough on its own: a double-tap on
+// mobile lands two clicks before the first repaint paints the scrim, and the retry
+// button re-enters this function with no scrim in the way at all. Two runs mean two
+// draft bookings and two PayHere hand-offs for one trip (pay.html has carried the
+// same latch since #357). Released only at a terminal state: phShowEnd (every
+// failure/cancel path) or finalizeBooking (success).
+let paySubmitting = false;
+function payRelease(){
+  paySubmitting = false;
+  const b = document.getElementById('pay-btn');
+  if(b) b.disabled = false;
+}
 async function runPayment(){
+  if(paySubmitting) return;
+  paySubmitting = true;
+  // Also disable the source button — the mobile bar mirrors it via its MutationObserver.
+  const _payBtn = document.getElementById('pay-btn');
+  if(_payBtn) _payBtn.disabled = true;
   if(typeof window.chTrack==='function') window.chTrack('payment_initiated',{payment_type:state.payPlan,currency:'USD',value:calcTotal()});
   phShowLoading('Setting up your secure payment…');
   const API = window.CEYLON_HOP_API;
@@ -1616,6 +1634,10 @@ function phShowLoading(msg){
 //              gateway; a booking that never reached a card gets no bank advice.
 // opts.retry — false when trying again cannot possibly work (an already-paid booking).
 function phShowEnd(kind, msg, opts){
+  // Terminal state: re-arm the latch here, where the retry button appears. Without this a
+  // refused card would leave Pay locked with no way to try again — strictly worse than the
+  // double-click the latch guards against.
+  payRelease();
   document.getElementById('ph-spin').style.display='none';
   const amt=document.getElementById('ph-amt'); if(amt) amt.style.display='none';
   const sub=document.getElementById('ph-sub'); if(sub) sub.style.display='none';
@@ -1898,6 +1920,7 @@ function renderPassRoute(stops, trip){
 // Render the confirmation / boarding pass. Takes the created booking (or null in demo
 // mode). Booking creation + payment happen in the pay-btn handler before this runs.
 function finalizeBooking(apiBooking){
+  payRelease(); // terminal state — the flow moves past payment, so the latch re-arms
   const ref = apiBooking ? apiBooking.reference
     : ('CH-'+Math.random().toString(36).slice(2,7).toUpperCase()+'-'+ (new Date().getFullYear()));
   const first=document.getElementById('f-first').value||'Guest';
