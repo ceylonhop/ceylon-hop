@@ -90,7 +90,7 @@ export default defineConfig({
       cookies: [],
       origins: [{
         origin: `http://localhost:${STATIC_PORT}`,
-        localStorage: [{ name: 'ceylonhop_beta_notice', value: 'dismissed' }],
+        localStorage: [{ name: 'ceylonhop_beta_notice_v2', value: 'dismissed' }],
       }],
     },
     trace: 'on-first-retry',

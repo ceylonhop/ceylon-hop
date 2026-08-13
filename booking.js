@@ -980,9 +980,7 @@ window.dismissReprice=function(){
     '.reprice-note .rn-change{background:none;border:0;color:#8a5a12;text-decoration:underline;cursor:pointer;font:inherit;padding:0}'+
     '.reprice-note.reprice-block{border-color:#e0a091;background:#fcece7;color:#7a3320}'+
     '.reprice-note.reprice-block b{color:#b23214}'+
-    '.reprice-note.reprice-block .rn-change{color:#b23214}'+
-    // a blocked Continue must LOOK blocked, not just be inert
-    '#n1:disabled,#mbar-cta:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}';
+    '.reprice-note.reprice-block .rn-change{color:#b23214}';
   document.head.appendChild(s);
 })();
 function checkWhere(){
@@ -1000,8 +998,6 @@ function checkWhen(){
     // else the backend (which requires `time`) 400s at the moment of payment.
     const ok = !!(state.date && !state.flexDate && state.dep);
     n2.disabled = !ok;
-    n2.style.opacity = ok ? '' : '.45';
-    n2.style.cursor = ok ? '' : 'not-allowed';
     // Never leave a greyed-out button with no reason next to it.
     var why=document.getElementById('when-blocked');
     if(!why){
@@ -1012,8 +1008,6 @@ function checkWhen(){
     why.style.display = ok ? 'none' : '';
   } else {
     n2.disabled = false;
-    n2.style.opacity = '';
-    n2.style.cursor = '';
   }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
@@ -1332,9 +1326,8 @@ function render(){
   // block progressing past Travellers while over the vehicle's seat OR luggage limit —
   // we can't accommodate it, so the traveller must upgrade or message us first
   const overCap = perVehicle && (paxOver || bagsOver);
-  // over-capacity blocks Continue — dim it so the disabled state is visible (mirrors n2)
   const n4=document.getElementById('n4');
-  if(n4){ n4.disabled = overCap; n4.style.opacity = overCap ? '.45' : ''; n4.style.cursor = overCap ? 'not-allowed' : ''; }
+  if(n4){ n4.disabled = overCap; }
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
   const extras=document.getElementById('extras-block');
   if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';

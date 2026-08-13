@@ -178,6 +178,13 @@ function knownCoords(name: string): [number, number] | null {
   return parseLatLng(name) ?? COORDS[canonPlace(name)] ?? null;
 }
 
+// A name the coordinate catalogue recognises — the ONLY endpoints allowed to mint distance-cache
+// rows. Excludes raw "lat,lng" strings deliberately: coordinates have unbounded cardinality and a
+// cache keyed on them would grow per-customer, not per-town.
+export function isCatalogTown(name: string): boolean {
+  return COORDS[canonPlace(name)] !== undefined;
+}
+
 // A literal "lat,lng" is already a positively-identified point — that is how the place resolver
 // hands a confirmed place to this adapter. Recognising it here is what makes the pin AND the
 // implausibly-short floor guard apply to every resolved stop, not just to catalog towns: without

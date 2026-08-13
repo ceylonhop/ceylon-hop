@@ -31,10 +31,12 @@ function token(name) {
   return m[1];
 }
 
-/** Pull the `background:#rrggbb` out of a rule like `.btn-wa:hover{...}`. */
+/** Pull the `background:#rrggbb` out of a rule like `.btn-wa:hover{...}`.
+    Hover rules carry a `:not(:disabled)` guard (a disabled button must not
+    light up), so the selector may continue past the name we look up. */
 function ruleBackground(selector) {
   const m = CSS.match(
-    new RegExp(`${selector.replace(/[.:]/g, '\\$&')}\\s*\\{[^}]*background:\\s*(#[0-9a-fA-F]{6})`),
+    new RegExp(`${selector.replace(/[.:]/g, '\\$&')}(?::not\\(:disabled\\))?\\s*\\{[^}]*background:\\s*(#[0-9a-fA-F]{6})`),
   );
   if (!m) throw new Error(`background for ${selector} not found in site.css`);
   return m[1];

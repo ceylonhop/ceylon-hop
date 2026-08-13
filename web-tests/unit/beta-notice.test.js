@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(path.resolve(__dirname, '../../beta-notice.js'), 'utf8');
 
-const KEY = 'ceylonhop_beta_notice';
+const KEY = 'ceylonhop_beta_notice_v2';
 /** Execute the browser IIFE against this jsdom window, the way a <script> tag would. */
 function run() {
   // eslint-disable-next-line no-new-func
@@ -45,6 +45,16 @@ describe('beta notice', () => {
     document.body.innerHTML = '';
     run(); // the next page load
     expect(notice()).toBeNull();
+  });
+
+  // The key is versioned so a redesigned notice can reach people who dismissed an earlier
+  // generation — the unversioned key made the first dismissal permanent (#440 never rendered
+  // for anyone who clicked through the original notice).
+  it('shows again for a browser that only dismissed the old unversioned notice, and clears that key', () => {
+    window.localStorage.setItem('ceylonhop_beta_notice', 'dismissed');
+    run();
+    expect(notice()).not.toBeNull();
+    expect(window.localStorage.getItem('ceylonhop_beta_notice')).toBeNull();
   });
 
   it('announces itself as a dialog with a name', () => {
