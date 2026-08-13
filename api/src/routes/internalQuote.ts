@@ -5,6 +5,7 @@ import { quote } from '../quote/engine';
 import { quoteBreakdown } from '../quote/breakdown';
 import { RATE_CARD } from '../quote/rateCard';
 import { rateCardFor } from '../quote/rateLock';
+import { liveRateCard } from '../quote/liveCard';
 import type { QuoteRequest, QuoteResult, PrivateLeg, Ride, ExtraInput } from '../quote/types';
 import type { Vehicle, RateCard } from '../quote/rateCard';
 import type { SavedQuote } from '../db/quoteRepo';
@@ -669,7 +670,7 @@ export function internalQuoteRoutes(deps: {
   // active zones (or HOT_ZONES_DISABLED) ⇒ hotZones is [] ⇒ pricing identical to pre-hot-zones.
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const discountsEnabled = deps.discountsEnabled ?? false;
-  const liveCard = async (): Promise<RateCard> => ({ ...RATE_CARD, hotZones: await zonesRepo.activeZones() });
+  const liveCard = (): Promise<RateCard> => liveRateCard(zonesRepo);
 
   // Ops⇄quote merge T2: the standalone quote shell is retired — the tool lives inside /ops
   // now. Kept as a redirect (not a 404) so old bookmarks/muscle memory land on the new home.
