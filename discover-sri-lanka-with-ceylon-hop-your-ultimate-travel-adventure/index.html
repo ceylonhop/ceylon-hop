@@ -30,15 +30,15 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <style>
-  .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#0d8f8c 0%,#0AB9B6 55%,#2aa9bf 100%);overflow:hidden}
-  .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(8,120,118,.6),transparent 70%)}
+  .post-hero{position:relative;color:#fff;padding:104px 0 48px;margin-top:-74px;background:linear-gradient(160deg,#1E6273 0%,#24758A 55%,#277F97 100%);overflow:hidden}
+  .post-hero::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 60% at 82% 8%,rgba(99,191,214,.5),transparent 70%),radial-gradient(52% 52% at 8% 92%,rgba(30,98,115,.6),transparent 70%)}
   .post-hero .wrap{position:relative;z-index:2;max-width:900px}
   /* With a photo the decorative radial gradients are replaced by a real scrim,
      so white hero text keeps its contrast over an arbitrary image. */
   .post-hero-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
-  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(12,58,56,.60),rgba(12,58,56,.82));z-index:1}
+  .post-hero.has-photo::before{background:linear-gradient(180deg,rgba(13,51,64,.60),rgba(13,51,64,.82));z-index:1}
   .post-embed{margin:2rem 0;max-width:360px}
-  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0c3a38}
+  .post-embed .frame{position:relative;width:100%;aspect-ratio:9/16;border-radius:var(--r,16px);overflow:hidden;background:#0d3340}
   .post-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
   .post-embed figcaption{margin-top:.6rem;font-size:.86rem;color:var(--ink-soft,#4a5a57)}
   .post-hero .breadcrumbs{padding-top:0;margin-bottom:18px}

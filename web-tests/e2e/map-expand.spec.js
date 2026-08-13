@@ -113,8 +113,8 @@ test('the modal lists the stops, numbered and colour-matched to the pins', async
   await expect(items.nth(2).locator('.ch-lg-n')).toHaveText('3');
 
   // Pick-up green, final drop-off orange — matching the pin colours.
-  await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(10, 125, 111)');
-  await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(232, 98, 58)');
+  await expect(items.nth(0).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(36, 117, 138)');
+  await expect(items.nth(2).locator('.ch-lg-n')).toHaveCSS('background-color', 'rgb(236, 58, 36)');
 });
 
 test('the booking transfer map is expandable too', async ({ page }) => {

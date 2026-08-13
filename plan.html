@@ -25,6 +25,7 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>
 <script src="analytics.js"></script>
 <script src="consent.js" defer></script>
+<script src="beta-notice.js" defer></script>
 <script>
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com');
 function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'unknown').slice(0,500),stack:String(s||'').slice(0,1500),url:location.href.slice(0,300),ua:navigator.userAgent.slice(0,300)});(navigator.sendBeacon&&navigator.sendBeacon(A+'/errors/client',new Blob([b],{type:'application/json'})))||fetch(A+'/errors/client',{method:'POST',headers:{'content-type':'application/json'},body:b,keepalive:true}).catch(function(){})}catch(e){}}
@@ -384,6 +385,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sum-stats .sum-stat{padding:8px 0;flex-wrap:wrap}
   .sum-stats .sum-stat span{min-width:auto}
   .sum-stats .sum-stat b{margin-left:auto}
+  /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
+     stopping mid-panel. Let it span the pair instead. */
+  .sum-stats .sum-stat:last-child{grid-column:1/-1}
   .summary{--map-h:clamp(104px,17vh,180px)}
   /* short laptop windows: shave the map and the pin offset so the whole card — CTA included —
      still clears the fold rather than hanging 20-odd px under it */
@@ -522,7 +526,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
         <div class="sum-stats">
           <div class="sum-stat"><span>Places</span><b id="st-stops">—</b></div>
-          <div class="sum-stat"><span>Nights</span><b id="st-nights">—</b></div>
           <div class="sum-stat"><span>Transfer legs</span><b id="st-legs">—</b></div>
           <div class="sum-stat"><span>Driving</span><b id="st-drive">—</b></div>
         </div>

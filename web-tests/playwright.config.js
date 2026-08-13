@@ -76,6 +76,23 @@ export default defineConfig({
   workers: E2E_API ? 4 : undefined,
   use: {
     baseURL: `http://localhost:${STATIC_PORT}`,
+    // Every spec runs as a RETURNING visitor, i.e. one who has already dismissed the beta
+    // notice. That notice is a full-screen dialog on the nine browse pages, so a fresh profile
+    // puts a scrim over the whole page and every click lands on it. Playwright's click-retry
+    // absorbed this the first time the suite ran — it went green — but green-by-retry on a
+    // modal race is a flake with a fuse in it, not a passing suite.
+    //
+    // Seeded HERE rather than in _stubs.js (which does the same for the consent banner) because
+    // only 17 of the 89 spec files use those stubs, and a full-screen dialog reaches all of them.
+    // The notice's own behaviour is covered by web-tests/unit/beta-notice.test.js and by
+    // beta-notice.spec.js, which opts back out of this state.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: `http://localhost:${STATIC_PORT}`,
+        localStorage: [{ name: 'ceylonhop_beta_notice', value: 'dismissed' }],
+      }],
+    },
     trace: 'on-first-retry',
   },
   projects: [

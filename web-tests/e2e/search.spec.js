@@ -34,24 +34,27 @@ test('search prices on real distance and carries that price into booking', async
 test('search choices stay locked until Edit, then Update applies (Kayak/Expedia pattern)', async ({ page }) => {
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=ella&pax=2' });
 
-  // Locked by default: the edit form is collapsed, a read-only summary is shown.
+  // Collapsed by default: the edit form is hidden behind the button, and the route hero
+  // states the search once.
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
-  await expect(page.locator('#sl-route')).not.toBeEmpty();
-  await expect(page.locator('#sl-meta')).toContainText('2 travellers');
+  await expect(page.locator('#sl-edit')).toBeVisible();
+  await expect(page.locator('#route-title')).not.toBeEmpty();
+  await expect(page.locator('#route-meta')).toContainText('2 travellers');
 
-  // Click Edit → the form reveals, pre-filled with the current search.
+  // Click Edit → the form reveals, pre-filled with the current search. The hero STAYS —
+  // it is the page header now, not a summary the form replaces.
   await page.locator('#sl-edit').click();
   await expect(page.locator('#srch-bar')).toBeVisible();
-  await expect(page.locator('#srch-locked')).toBeHidden();
+  await expect(page.locator('#sl-edit')).toBeHidden();
+  await expect(page.locator('#route-title')).toBeVisible();
   await expect(page.locator('#e-from')).toHaveValue('Colombo Airport (CMB)');
   await expect(page.locator('#e-to')).toHaveValue('Ella');
   await expect(page.locator('#e-pax')).toHaveValue('2');
 
-  // Cancel collapses back to the locked summary without changing anything.
+  // Cancel collapses the form again without changing anything.
   await page.locator('#sl-cancel').click();
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
 
   // Edit again, change the drop-off, and Update → a deliberate new search navigation.
   await page.locator('#sl-edit').click();
@@ -60,9 +63,28 @@ test('search choices stay locked until Edit, then Update applies (Kayak/Expedia 
   await page.locator('.place-option', { hasText: 'Kandy' }).first().click();
   await page.locator('#srch-bar button[type="submit"]').click();
   await page.waitForURL('**/search.html?**to=kandy**');
-  // The new search loads locked again.
+  // The new search loads collapsed again.
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
+});
+
+test('search states the route once — no locked summary bar, no route breadcrumb', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya&pax=2' });
+
+  // The h1 is the only place "A → B" is spelled out. It used to appear three times: in the
+  // breadcrumb trail, in a read-only .srch-locked bar, and here.
+  await expect(page.locator('#srch-locked')).toHaveCount(0);
+  await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
+  await expect(page.locator('.breadcrumbs')).not.toContainText('Sigiriya');
+
+  // Edit search opens the form in place, directly under the button that opened it. The old
+  // layout put the button below a form that lived up in .srch-top, a screen away.
+  const btnBox = await page.locator('#sl-edit').boundingBox();
+  await page.locator('#sl-edit').click();
+  const formBox = await page.locator('#srch-bar').boundingBox();
+  expect(formBox.y).toBeGreaterThan(btnBox.y - 8);
+  expect(formBox.y - btnBox.y).toBeLessThan(120);
 });
 
 test('search edit bar shows Google suggestions for non-local places without covering Cancel', async ({ page }) => {
@@ -77,7 +99,7 @@ test('search edit bar shows Google suggestions for non-local places without cove
 
   await page.locator('#sl-cancel').click();
   await expect(page.locator('#srch-bar')).toBeHidden();
-  await expect(page.locator('#srch-locked')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
 });
 
 test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quote', async ({ page }) => {
@@ -96,33 +118,82 @@ test('search edit bar sends 6-plus traveler groups to WhatsApp for a custom quot
   expect(text).toContain('Travellers: 6+');
 });
 
-test('mobile search result avoids repeating the route hero above prices', async ({ page }) => {
+test('mobile search states the route once and still puts prices above the fold', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await gotoBooking(page, { path: '/search.html', query: 'from=cmb-airport&to=sigiriya&pax=1' });
 
-  await expect(page.locator('#srch-locked')).toBeVisible();
-  await expect(page.locator('#sl-route')).toContainText('Colombo Airport (CMB)');
-  await expect(page.locator('#sl-route')).toContainText('Sigiriya / Dambulla');
-  await expect(page.locator('#sl-meta')).toContainText('~152 km');
-  await expect(page.locator('#sl-meta')).toContainText('approx');
-  await expect(page.locator('#route-title')).toBeHidden();
-  await expect(page.locator('#route-meta')).toBeHidden();
+  // Mobile used to hide this h1 and show a .srch-locked bar instead — the same "don't say it
+  // twice" rule, solved in the opposite direction from desktop. Both keep the h1 now, which
+  // means the hero has to stay small enough for the prices to clear the fold.
+  await expect(page.locator('#route-title')).toContainText('Colombo Airport (CMB)');
+  await expect(page.locator('#route-title')).toContainText('Sigiriya / Dambulla');
+  await expect(page.locator('#route-meta')).toContainText('~152 km');
+  await expect(page.locator('#route-meta')).toContainText('approx');
   await expect(page.locator('#add-stops')).toBeVisible();
+  await expect(page.locator('#sl-edit')).toBeVisible();
   await expect(page.locator('.opt-private')).toBeVisible();
 
-  const summaryBox = await page.locator('#srch-locked').boundingBox();
+  const heroBox = await page.locator('#route-title').boundingBox();
   const privateBox = await page.locator('.opt-private').boundingBox();
-  expect(summaryBox).not.toBeNull();
+  expect(heroBox).not.toBeNull();
   expect(privateBox).not.toBeNull();
   expect(privateBox.y).toBeLessThan(620);
 });
+
+/*
+  The autocomplete option row is a two-column grid whose badge column is `auto` + nowrap, so
+  the BADGE decided how much room the place name got — and it won. "Popular Route" measured
+  102px; add the menu/option padding and the gap and 156px of a row was spoken for before the
+  name saw any of it. On the homepage hero, the widest field on the site, that left 179px for
+  a name needing 187 and shipped "Colombo Airport (C…" — the busiest origin we sell, clipped
+  in the primary search box. In the search page's 4-up edit grid the field is 225px and 13 of
+  19 place names clipped.
+
+  Pinned by MEASUREMENT, not by the rendered string: `textContent` is the full name whether or
+  not the pixels fit, so no text assertion can see this. scrollWidth > clientWidth can.
+*/
+const clippedOptions = (page) => page.evaluate(() => {
+  const menu = document.querySelector('.place-menu');
+  if (!menu) return null;
+  return [...menu.querySelectorAll('.place-option:not(.loading)')]
+    .map((opt) => {
+      const label = opt.querySelector('span');
+      const badge = opt.querySelector('small');
+      return {
+        text: label.textContent,
+        badge: badge ? badge.textContent : '',
+        room: Math.ceil(label.getBoundingClientRect().width),
+        needs: label.scrollWidth,
+      };
+    })
+    .filter((o) => o.needs > o.room);
+});
+
+for (const spot of [
+  { name: 'homepage hero', path: '/index.html', field: '#q-from', open: null },
+  { name: 'search page edit form', path: '/search.html?from=cmb-airport&to=ella', field: '#e-from', open: '#sl-edit' },
+]) {
+  test(`local place names are not clipped by their own badge — ${spot.name}`, async ({ page }) => {
+    await gotoBooking(page, { path: spot.path.split('?')[0], query: spot.path.split('?')[1] || '' });
+    if (spot.open) await page.locator(spot.open).click();
+
+    // "Colombo Airport (CMB)" is the longest place name we ship and the most-booked origin.
+    await page.locator(spot.field).fill('Colombo Air');
+    await expect(page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first()).toBeVisible();
+
+    const clipped = await clippedOptions(page);
+    // Google results are free-text addresses and are expected to ellipsize; local places are not.
+    const clippedLocal = clipped.filter((o) => o.badge !== 'Google');
+    expect(clippedLocal, `clipped local place names: ${JSON.stringify(clippedLocal)}`).toEqual([]);
+  });
+}
 
 test('home search uses popular route autocomplete and sends unknown places to planner', async ({ page }) => {
   await gotoBooking(page, { path: '/index.html', query: '' });
 
   await page.locator('#q-from').fill('CMB');
   await expect(page.locator('.place-option').first()).toContainText('Colombo Airport (CMB)');
-  await expect(page.locator('.place-option').first()).toContainText('Popular Route');
+  await expect(page.locator('.place-option').first()).toContainText('Popular');
   await page.locator('.place-option', { hasText: 'Colombo Airport (CMB)' }).first().click();
 
   await page.locator('#q-to').fill('Ella');
