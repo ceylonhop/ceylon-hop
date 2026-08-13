@@ -98,6 +98,15 @@ export function installStubs() {
 
 const json = (obj) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) });
 
+// index/why/tours/tour/search/plan.html each fire a fire-and-forget GET to
+// CEYLON_HOP_API + '/health' on load, to warm a cold Render instance before showing a price
+// (see 0e0f077). gotoBooking() below already stubs '**/health' for the booking journey; specs
+// that navigate to those six pages directly must call this first, or the "offline by default"
+// suite (playwright.config.js) fires a real request at the production API on every local run.
+export async function blockLiveApi(page) {
+  await page.route('**/health', (r) => r.fulfill(json({ status: 'ok' })));
+}
+
 /**
  * Set up stubs + API mocks, then navigate to a page.
  * opts:

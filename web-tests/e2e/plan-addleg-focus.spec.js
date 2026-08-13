@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// plan.html pings the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // Adding a leg on the trip planner focuses the new leg's location field so the traveller
 // can type the destination immediately. It must NOT auto-open the place-suggestion menu —
