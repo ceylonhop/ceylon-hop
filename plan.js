@@ -194,9 +194,12 @@ function closePlaceMenus(except, invalidate=true){
   document.querySelectorAll('.place-menu').forEach(m=>{ if(m!==except) m.remove(); });
   if(!except && invalidate) placeMenuSeq++;
 }
+/* Follows site.js's badge wording. plan.html overrides .place-option to a flex row, so it
+   never had the truncation that shortened this — but the badge is the same badge, and two
+   words for one concept on one site is its own bug. */
 function placeSourceLabel(source){
   if(source==='google') return 'Google';
-  return source==='known' ? 'Popular Route' : 'Popular place';
+  return 'Popular';
 }
 function googlePlaceSuggestions(q, localItems){
   const text=q.trim();
@@ -764,9 +767,9 @@ function shortPlaceLabel(place){
 
 function updateSummary(opts={}){
   const refreshMap = opts.refreshMap !== false;
-  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0, stayNights=0;
+  let totalKm=0, totalPrice=0, resolvedLegs=0, transferLegs=0;
   state.legs.forEach(l=>{
-    if(l.type==='stay'){ stayNights+=(l.nights||0); return; }
+    if(l.type==='stay'){ return; }
     transferLegs++;
     const km=legKm(l.from,l.to);
     if(km!=null){ totalKm+=km; totalPrice+=legPrice(km,state.vehicle); resolvedLegs++; }
@@ -785,9 +788,9 @@ function updateSummary(opts={}){
   // ("On request" → "165 km · 3h 56m") or when nothing actually moved.
   const seq=routeSeq();
   setStat('st-stops', String(seq.length));
-  // "None" read as "this trip has no nights", when it only means no overnight stop has been ADDED
-  // yet. A bare 0 matches its sibling stats (Places 9, Transfer legs 8) and fits the narrow cell.
-  setStat('st-nights', stayNights ? `${stayNights} night${stayNights!==1?'s':''}` : '0');
+  // No Nights stat: it counted only nights on explicit stay-put cards, so a pure transfer plan
+  // showed a permanent 0 beside "Hotels are your own" and read as "this trip has no nights".
+  // Nights still live on the stay cards and as the `3n` badges in the route strip.
   setStat('st-legs', String(transferLegs));
   setStat('st-drive', totalKm?`${totalKm} km · ${durationText(totalKm)}`:'On request');
   const routeEl=document.getElementById('sum-route');
@@ -842,7 +845,7 @@ function renderMap(){
   }
   const pins=pts.map((p,idx)=>{
     const first=idx===0, last=idx===pts.length-1;
-    const fill=first?'#0a7d6f':(last?'#e8623a':'#0AB9B6');
+    const fill=first?'#24758A':(last?'#EC3A24':'#0AB9B6');
     const labelLeft = p.x>W*0.6;
     const lx = labelLeft ? p.x-9 : p.x+9;
     const anchor = labelLeft ? 'end' : 'start';

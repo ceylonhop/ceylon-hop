@@ -181,13 +181,14 @@ describe('ops self-approval of simple transfers', () => {
   });
 
   // ── the awaiting-approval mail ─────────────────────────────────────────────
-  // Suppression for self-approvable quotes belongs to Task 4, with the UI: silencing the mail
-  // while ops still has no Approve button would strand those quotes unseen. Until then the mail
-  // fires for everything, including the quotes ops can approve — noisy, never silent.
-  it('still mails the founder when ops submits a quote it could approve itself (until Task 4)', async () => {
+  // Now that the UI offers ops an Approve button (Task 4), the mail for a quote its submitter can
+  // approve itself is pure noise: a request to action something resolved seconds later. Held back
+  // until this point deliberately — silencing it while ops had no button would have stranded
+  // those quotes in pending_review with nobody told.
+  it('does not mail the founder when ops submits a quote ops can approve itself', async () => {
     const w = wired();
     await submitted(w, SIMPLE);
-    expect(approvalMails(w).map((m) => m.to)).toEqual(['f@x.com']);
+    expect(approvalMails(w)).toHaveLength(0);
   });
 
   it('still mails the founder when ops submits a quote ops cannot approve', async () => {

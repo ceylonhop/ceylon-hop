@@ -269,7 +269,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      instead of hanging left. Measured by web-tests/e2e/trust-row.spec.js. */
   .trust-row{display:flex;align-items:center;justify-content:center;gap:16px;padding-block:19px;flex-wrap:wrap;font-size:.82rem;font-weight:600;letter-spacing:.01em}
   .trust-row .item{display:flex;align-items:center;gap:.55rem}
-  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:#39d6d0;background:rgba(var(--accent-rgb),.13);border-radius:50%}
+  .trust-row svg{width:26px;height:26px;padding:6px;flex:none;color:var(--teal);background:rgba(var(--accent-rgb),.13);border-radius:50%}
   /* space-between only where the row is MEASURED to fit on one line (needs ~1151px).
      Set this lower and you get the worst case: a wrapped row still justified apart, so
      the orphan hangs at the left edge — which is exactly how this bug looked. */
@@ -420,6 +420,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rev .who{display:flex;align-items:center;gap:.7rem;padding-top:12px;border-top:1px solid var(--line)}
   .rev .av{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1.05rem;flex:none}
   .rev .who b{font-size:.9rem}.rev .who span{font-size:.78rem;color:var(--ink-soft)}
+  /* the attribution has to read as a real link back to the listing, not as body text —
+     it is what lets a reader check the quote, so it must not disappear into the muted line */
+  .rev .who span a{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,0,0,.25)}
+  .rev .who span a:hover{color:var(--accent-deep);text-decoration-color:currentColor}
   .rev .post-stamp{position:absolute;top:16px;right:16px}
 
   /* refined glass trust badge over the photo */
@@ -450,9 +454,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="hero-scrim"></div>
   <div class="wrap hero-inner">
     <div class="hero-copy">
-    <!-- Review count appears here AND in the reviews section below (and in board.js TA_REVIEWS).
-         Keep all three in step; the figure must match the live Tripadvisor listing. -->
-    <a class="hero-badge" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 30 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· 30 reviews</span></a>
+    <!-- Review count comes from ta-data.js — change it there, not here. These stay as
+         static text so crawlers still read the figure; ta-data.js only refreshes them. -->
+    <a class="hero-badge" data-ta-count-label href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" aria-label="Rated 5.0, Excellent, on Tripadvisor — 31 reviews"><span class="hb-star" aria-hidden="true">★</span> <b>5.0</b> · Excellent on Tripadvisor <span class="hb-count">· <span data-ta-count>31</span> reviews</span></a>
     <h1 class="display hero-title" data-tweak-h1><span class="hl-swash">Anywhere</span> in&nbsp;Sri&nbsp;Lanka,<br>door to&nbsp;door.</h1>
     <p class="lead hero-sub" data-tweak-lead>Book a <b>private</b> AC car or van between any two points — your schedule, a fixed price. <b>Share a seat</b> on popular routes.</p>
       <p class="hero-note">Fixed prices · Free cancellation up to 24h before · No change fees</p>
@@ -593,7 +597,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   <div class="wrap">
     <div class="flex between items-center wrap-w" style="gap:16px;margin-bottom:34px">
       <div><span class="eyebrow">Loved by travellers</span><h2>5.0 on Tripadvisor</h2></div>
-      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ 30 reviews on Tripadvisor ↗</a>
+      <a class="pill pill-saffron" href="https://www.tripadvisor.com/Attraction_Review-g3736162-d33018957-Reviews-Ceylon_Hop-Seeduwa_Western_Province.html" target="_blank" rel="noopener" style="font-size:.9rem">★★★★★ <span data-ta-count>31</span> reviews on Tripadvisor ↗</a>
     </div>
     <div class="grid cols-3" id="reviews"></div>
   </div>
@@ -613,6 +617,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <div data-footer></div>
 
 <script src="site.js"></script>
+<script src="ta-data.js"></script>
 <script src="tours-data.js"></script>
 <script src="transfers-data.js"></script>
 <script src="ch-map.js"></script>
@@ -682,17 +687,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // reviews
   const STAR='<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
   const AVC=['var(--teal)','var(--saffron)','var(--tomato)'];
-  const reviews=[
-    ['Maya','Germany','9-stop island trip','Honestly the easiest way to see Sri Lanka solo. Met three of my now-best travel friends in the van and the driver felt like a local big brother.'],
-    ['Tom & Elise','Australia','Private Galle transfer','We changed our plans twice and the team just sorted it on WhatsApp. AC van was spotless — and so much cheaper than the private quotes we got.'],
-    ['Priya','Canada','Ella → Arugam Bay','Booked the night before, confirmed in minutes. On time, comfy ride through the hills. We’re using Ceylon Hop for the whole trip now.']
-  ];
-  document.getElementById('reviews').innerHTML = reviews.map(([name,country,trip,txt],i)=>`
+  // Real reviews, verbatim from ta-data.js — quoted in quotation marks and stamped with the
+  // reviewer's name and the review's own date, linking back so any of it can be checked.
+  document.getElementById('reviews').innerHTML = TA.quotes.map((r,i)=>`
     <div class="card rev reveal">
       <div class="qmark">&ldquo;</div>
-      <p>${txt}</p>
+      <p>&ldquo;${r.text}&rdquo;</p>
       <div class="stars">${STAR.repeat(5)}</div>
-      <div class="who"><div class="av" style="background:${AVC[i%3]}">${name[0]}</div><div><b>${name} · ${country}</b><br><span>${trip}</span></div></div>
+      <div class="who"><div class="av" style="background:${AVC[i%3]}">${r.name[0].toUpperCase()}</div><div><b>${r.name}${r.where?` · ${r.where}`:''}</b><br><span><a href="${TA.url}" target="_blank" rel="noopener">Review on Tripadvisor</a> · ${r.written}</span></div></div>
     </div>`).join('');
 
   // blog

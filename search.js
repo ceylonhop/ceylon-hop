@@ -120,15 +120,13 @@ document.getElementById('route-meta').innerHTML =
   `<span>${ICONS.cal} ${dateText}</span>` +
   (paxText ? `<span>${ICONS.seat} ${paxText}</span>` : '');
 
-// ---- locked search summary (Kayak/Expedia pattern) ----
-// The chosen search shows read-only; the edit fields stay collapsed until the
-// customer clicks "Edit search". Changing a param is a deliberate act (then Update).
-document.getElementById('sl-route').innerHTML =
-  `${fromP.name} <span class="arr">${ICONS.route}</span> ${toP.name}`;
-document.getElementById('sl-meta').textContent =
-  `~${quote.km} km · approx ${quote.duration} drive · ${dateText}${paxText ? ' · ' + paxText : ''}`;
+// ---- collapsed search editor (Kayak/Expedia pattern) ----
+// The chosen search stays put; the edit fields stay collapsed behind "Edit search", so
+// changing a param is a deliberate act (then Update). The route summary the button used to
+// sit beside is gone — the h1 + meta above ARE the summary, and stating them twice on one
+// screen was the whole complaint. Only the button toggles now; the hero never moves.
 window.editSearch = function () {
-  document.getElementById('srch-locked').hidden = true;
+  document.getElementById('sl-edit').hidden = true;
   document.getElementById('srch-bar').hidden = false;
   document.getElementById('sl-cancel').hidden = false;
   const f = document.getElementById('e-from');
@@ -139,17 +137,17 @@ window.cancelEdit = function () {
   document.getElementById('sl-cancel').hidden = true;
   const err = document.getElementById('srch-err');
   if (err) err.hidden = true;
-  document.getElementById('srch-locked').hidden = false;
+  document.getElementById('sl-edit').hidden = false;
 };
 
 // An unrecognised destination (stale bookmark, mistyped link) used to hard-redirect to 404.
 // Open the picker with an explanation instead, so warm traffic can recover in place.
 if (unknownDestination) {
-  const locked = document.getElementById('srch-locked');
+  const editBtn = document.getElementById('sl-edit');
   const bar = document.getElementById('srch-bar');
   const err = document.getElementById('srch-err');
-  if (locked && bar) {
-    locked.hidden = true;
+  if (editBtn && bar) {
+    editBtn.hidden = true;
     bar.hidden = false;
     const cancel = document.getElementById('sl-cancel');
     if (cancel) cancel.hidden = true; // nothing valid to cancel back to
@@ -290,8 +288,9 @@ document.getElementById('results').innerHTML =
   }, true); // capture: fires before navigation starts
 })();
 
-// breadcrumbs
-mountBreadcrumbs([['Home','index.html'],['Search'],[`${fromP.name} → ${toP.name}`]]);
+// breadcrumbs — no route crumb. It restated "A → B" in full a few hundred pixels above an
+// h1 that says exactly that, which is a lot of trail for one hop off the homepage.
+mountBreadcrumbs([['Home','index.html'],['Search']]);
 
 // WhatsApp help card under results
 const help=document.getElementById('srch-help');

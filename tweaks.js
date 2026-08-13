@@ -10,10 +10,10 @@
   const KEY='ceylonhop_tweaks';
   const ACCENTS={
     teal:['#0AB9B6','#08938f'],
-    blue:['#3a9fc0','#2d7e93'],
-    saffron:['#e7920f','#a96b04']
+    blue:['#63BFD6','#24758A'],
+    saffron:['#F9A429','#a96b04']
   };
-  const CTAS={tomato:'#EC3A24',saffron:'#e7920f',teal:'#0AB9B6',ink:'#2C2A2B'};
+  const CTAS={tomato:'#EC3A24',saffron:'#F9A429',teal:'#0AB9B6',ink:'#3A3739'};
   const FONTS={
     'Bodoni Moda':"'Bodoni Moda', Didot, Georgia, serif",
     'Bricolage Grotesque':"'Bricolage Grotesque', system-ui, sans-serif",

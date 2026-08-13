@@ -1512,11 +1512,19 @@ describe('quote review notifications (awaiting-approval + sent-back)', () => {
   const postAs = (email: string, app: App, path: string, body: unknown) =>
     app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', cookie: cookie(email) }, body: JSON.stringify(body) });
 
+  // TWO legs on purpose. Since 2026-08-11 ops holds quote:approve_simple, and submitting a quote
+  // it can approve itself deliberately sends NO awaiting-approval mail — so a one-leg fixture here
+  // would be asserting the suppressed case and this suite would be testing the opposite of what it
+  // says. The suppression itself is covered in internalQuoteSelfApprove.test.ts; this seed is for
+  // quotes that genuinely need the founder.
   async function seedReviewableQuote(mail: FakeEmailAdapter) {
     const app = createApp({ quotes: new InMemoryQuoteRepo(), email: mail, opsBaseUrl: OPS_BASE });
     const save = await postAs('op@x.com', app, '/admin/quote/save', {
       vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
-      legs: [leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 })],
+      legs: [
+        leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 }),
+        leg({ from: 'Kandy', to: 'Ella', distanceKm: 140 }),
+      ],
     });
     const id = (await save.json()).id as string;
     return { app, id };

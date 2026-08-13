@@ -49,6 +49,7 @@ export interface RideListWithMembers {
 
 export interface ListFilter {
   from?: string; // place name (case-insensitive)
+  to?: string; // place name (case-insensitive); combines with `from` to narrow to one corridor
   when?: 'week' | 'fortnight' | 'all';
 }
 
@@ -131,6 +132,7 @@ export class InMemoryRideListRepo implements RideListRepo {
 
   async listOpen(filter: ListFilter = {}, now: Date = new Date()): Promise<RideListWithMembers[]> {
     const from = filter.from ? norm(filter.from) : null;
+    const to = filter.to ? norm(filter.to) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
     return [...this.lists.values()]
       // A confirmed van stays on the board: it is proof the mechanism works, it may still have
@@ -138,6 +140,7 @@ export class InMemoryRideListRepo implements RideListRepo {
       // Only cancelled/expired lists drop off — there is nothing left to join or copy.
       .filter((l) => l.status === 'gathering' || l.status === 'confirmed')
       .filter((l) => (from ? norm(l.fromPlace) === from : true))
+      .filter((l) => (to ? norm(l.toPlace) === to : true))
       .filter((l) => {
         if (!horizon) return true;
         const days = (new Date(`${l.date}T00:00:00Z`).getTime() - now.getTime()) / DAY_MS;

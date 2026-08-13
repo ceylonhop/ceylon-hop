@@ -114,10 +114,12 @@ export class PostgresRideListRepo implements RideListRepo {
     const rows = await this.sql<ListRow[]>`
       select * from ride_list where status in ('gathering','confirmed') order by created_at desc`;
     const from = filter.from ? norm(filter.from) : null;
+    const to = filter.to ? norm(filter.to) : null;
     const horizon = filter.when === 'week' ? 7 : filter.when === 'fortnight' ? 14 : null;
     const lists = rows
       .map(toList)
       .filter((l) => (from ? norm(l.fromPlace) === from : true))
+      .filter((l) => (to ? norm(l.toPlace) === to : true))
       .filter((l) => {
         if (!horizon) return true;
         const days = (new Date(`${l.date}T00:00:00Z`).getTime() - now.getTime()) / DAY_MS;
