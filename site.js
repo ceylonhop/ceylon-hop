@@ -98,7 +98,7 @@
         <p style="color:rgba(255,255,255,.85);max-width:46ch;margin:0 auto 1.6rem">Drop in your stops, set your nights, and see one fixed price for every transfer &mdash; or message us and we&rsquo;ll plan it together.</p>
         <div class="flex gap" style="justify-content:center;flex-wrap:wrap">
           <a href="plan.html" class="btn btn-light btn-lg">Open the trip planner</a>
-          <a href="${WA}" class="btn btn-wa btn-lg">${ICON.wa} Chat on WhatsApp</a>
+          <a href="${WA}" class="btn btn-wa btn-lg" target="_blank" rel="noopener">${ICON.wa} Chat on WhatsApp</a>
         </div>
       </div>
     </section>` : '';
