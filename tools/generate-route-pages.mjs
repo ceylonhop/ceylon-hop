@@ -173,6 +173,11 @@ ${headAssets}
   .faq-q h3{margin:0 0 .3rem;font-size:1.05rem}
   .faq-q p{margin:0;color:var(--ink-soft,#5a6b68)}
   .route-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+  .rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-top:18px}
+  .rt-card{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border:1px solid var(--line,#e7e2d8);border-radius:14px;background:#fff;text-decoration:none;color:inherit;transition:.15s}
+  .rt-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(20,40,38,.08)}
+  .rt-name{font-weight:700}
+  .rt-meta{font-size:.85rem;color:var(--ink-soft,#5a6b68)}
   .route-crumbs{padding:16px 0 0;font-size:.85rem}
   .route-crumbs a{color:inherit}
 </style>
