@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking } from './_stubs.js';
+import { blockLiveApi, gotoBooking } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // Resolve a design token to the rgb() string the browser reports, so these assertions
 // track site.css instead of a frozen hex. They pinned rgb(44,42,43) — the pre-brand-book

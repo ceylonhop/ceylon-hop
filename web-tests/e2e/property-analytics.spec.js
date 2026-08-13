@@ -1,4 +1,8 @@
 import { test, expect } from '@playwright/test';
+import { blockLiveApi } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────
 //  Analytics on the properties that shipped after Phase 0 — pay, quote, manage (2026-08-07).

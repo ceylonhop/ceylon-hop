@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { gotoBooking, pickPlace } from './_stubs.js';
+import { blockLiveApi, gotoBooking, pickPlace } from './_stubs.js';
+
+// index.html/tours.html/pay.html ping the live API on load (0e0f077) — keep the suite offline.
+test.beforeEach(async ({ page }) => { await blockLiveApi(page); });
 
 // gotoBooking installs the Google/PayHere stubs and mocks the API; `path` retargets it at
 // any page. With the stubs present, ch-map's loadJs() short-circuits and the REAL Google
