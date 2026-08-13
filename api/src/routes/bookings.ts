@@ -21,7 +21,7 @@ import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
-import type { RateCard } from '../quote/rateCard';
+import { RATE_CARD, type RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { liveRateCard } from '../quote/liveCard';
 import {
@@ -217,9 +217,16 @@ export function bookingRoutes(deps: {
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
   // an unknown/expired id, or no quotes repo wired → the live card (base rate card composed with
   // currently-active hot zones, hot-zones spec D5). Never throws (a bad id must not fail the
-  // booking — it just falls back to the current card).
+  // booking — it just falls back to the current card). A pricing_zones lookup failure is part of
+  // that contract too: it prices unboosted off the plain compiled RATE_CARD rather than failing
+  // the booking — any resulting drift from the zone-boosted price is caught by the mismatch flag.
   async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
-    const current = await liveRateCard(zonesRepo);
+    let current: RateCard;
+    try {
+      current = await liveRateCard(zonesRepo);
+    } catch {
+      current = RATE_CARD;
+    }
     // Short-circuit before the try: an unwired `quotes` repo or a missing quoteId both mean
     // "just use the live card" — no need to let `.get()` throw to get there.
     if (!quoteId || !quotes) return current;
@@ -314,7 +321,8 @@ function billingFrom(body: unknown): BillingParse {
       if (existing) return c.json(withCheckoutToken(existing), 200);
     }
 
-    // The engine is the pricing truth; the client's quotedTotal is only a fallback.
+    // The engine is the pricing truth; a client quotedTotal is never adopted — an unpriced
+    // booking takes the server placeholder and is flagged for ops.
     const legMaps = memoizeDistance(maps);
     const rateCard = await bookingRateCard(parsed.data.quoteId);
     let outcome;

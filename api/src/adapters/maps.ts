@@ -118,6 +118,7 @@ const COORDS: Record<string, [number, number]> = {
   nilaveli: [8.7, 81.19],
   ahangama: [5.97, 80.36],
   hiriketiya: [5.96, 80.69],
+  'horton plains': [6.8, 80.8],
 };
 
 // Display names for the known places (each normalizes to a COORDS key above). The internal quoting
@@ -131,7 +132,7 @@ export const KNOWN_PLACES: string[] = [
   // Front-end catalogue parity (2026-08-12): every town transfers-data.js resolves.
   'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
   'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
-  'Nilaveli', 'Ahangama', 'Hiriketiya',
+  'Nilaveli', 'Ahangama', 'Hiriketiya', 'Horton Plains',
 ];
 
 const norm = (s: string): string => s.trim().toLowerCase();

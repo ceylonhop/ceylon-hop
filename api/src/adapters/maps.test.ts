@@ -566,7 +566,7 @@ describe('server place vocabulary covers the front-end catalogue', () => {
   const FRONT_END_TOWNS = [
     'Dambulla', 'Udawalawe', 'Tissamaharama', 'Tangalle', 'Unawatuna', 'Pasikudah',
     'Hatton', "Adam's Peak", 'Wilpattu', 'Kalpitiya', 'Jaffna', 'Haputale', 'Kitulgala',
-    'Nilaveli', 'Ahangama', 'Hiriketiya',
+    'Nilaveli', 'Ahangama', 'Hiriketiya', 'Horton Plains',
   ];
 
   for (const town of FRONT_END_TOWNS) {
