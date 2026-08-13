@@ -1,4 +1,10 @@
-# Rate-card hot zones — design (Phases 1+2 SHIPPED · Phase 3 outstanding)
+# Rate-card hot zones — design (Phases 1+2 SHIPPED · Phase 3 SUPERSEDED)
+
+> **Phase 3 (§8.3) is superseded — do not build the front-end mirror.** Owner decided on
+> 2026-08-12 to move the website to API-driven pricing, which removes the mirror entirely. That
+> reverses **C1** (§4) and the **Option A** cadence (§6). Of Phase 3, only "`bookings.ts` composes
+> zones" survives; nothing needs to be dumped to, or mirrored in, the front end.
+> See [`2026-08-12-engine-driven-prices-design.md`](2026-08-12-engine-driven-prices-design.md).
 
 **Status (corrected 2026-08-09):** spec fully resolved on 2026-07-22 (revision 4 below). **Phases 1, 2 and 4's polish have SHIPPED** — PRs #116 (dormant plumbing + founder admin) and #126 (applied-zone premium chip + leg-chip parity). Live in code: `api/src/quote/hotZones.ts`, the `pricing_zones` table, `postgresZonesRepo`, the founder admin panel, and the zone-aware cost basis (`perRideBoost` in `engine.ts:63`, `boostedBillableKm` at `:96`, per D6). **Phase 3 (§8.3) is NOT shipped:** `generate-pricing.mjs` dumps no zones, the front-end mirror has no zone code, and `bookings.ts` does not compose zones — so with any zone active, an ops quote and a website quote for the same trip price differently, exactly as §8.2 predicted and accepted.
 > ⚠️ **The previous version of this line read "No code written."** That was stale from 2026-07-22 and caused at least one wrong sequencing recommendation. Verify build status against the code, not this header.
