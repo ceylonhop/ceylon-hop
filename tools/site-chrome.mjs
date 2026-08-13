@@ -57,14 +57,30 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
 <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','GTM-NL6K22CM');</script>`;
 
 // Shared <head> essentials (after the page's own title/description/canonical/OG).
+// Content-hash stamp for cache-busting (mirrors tools/stamp-asset-versions.mjs, which
+// covers the hand-maintained root pages — same algorithm, so the two agree byte-for-byte).
+// Emitted by the generators directly so the codegen parity tests hold without a post-pass.
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+const CHROME_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const assetHashes = new Map();
+export function assetV(file) {
+  if (!assetHashes.has(file)) {
+    assetHashes.set(file, createHash('sha1').update(readFileSync(join(CHROME_ROOT, file))).digest('hex').slice(0, 10));
+  }
+  return `${file}?v=${assetHashes.get(file)}`;
+}
+
 export function headAssets(p) {
   return `<meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="${p}favicon.svg">
 <link rel="apple-touch-icon" href="${p}img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="${p}site.css">
+<link rel="stylesheet" href="${p}${assetV('site.css')}">
 ${analyticsSnippet}
-<script src="${p}analytics.js"></script>
-<script src="${p}consent.js" defer></script>
+<script src="${p}${assetV('analytics.js')}"></script>
+<script src="${p}${assetV('consent.js')}" defer></script>
 ${errorBeaconSnippet}`;
 }
 
