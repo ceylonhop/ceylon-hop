@@ -5,9 +5,17 @@ import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import { InMemoryZonesRepo, type NewZone } from '../db/zonesRepo';
 import { RATE_CARD } from '../quote/rateCard';
 import { isoToday } from '../domain/dateRules';
+import { futureIsoDate } from '../testSupport/dates';
 import { signBookingToken } from '../lib/bookingToken';
+
+async function zonesWith(...seed: NewZone[]): Promise<InMemoryZonesRepo> {
+  const repo = new InMemoryZonesRepo();
+  for (const z of seed) await repo.create(z);
+  return repo;
+}
 
 const valid = {
   from: 'Colombo Airport',
@@ -463,5 +471,22 @@ describe('a Maps outage must not silently reprice', () => {
       headers: { authorization: `Bearer ${b.checkoutToken}` },
     });
     expect(checkout.status).toBe(200);
+  });
+});
+
+// The booking re-price is a second entry point onto the live rate card (the first is
+// POST /quote) — it must compose the same active hot zones, or a customer who quotes then
+// books straight through the wizard (no quoteId) gets the pre-boost price.
+describe('booking re-price applies active hot zones', () => {
+  it('charges the boosted price for a zone-touching trip', async () => {
+    const plain = createApp({ bookings: new InMemoryBookingRepo() });
+    const boosted = createApp({
+      bookings: new InMemoryBookingRepo(),
+      zones: await zonesWith({ placeName: 'Ella', boostPct: 15 }),
+    });
+    const body = { ...valid, from: 'Ella', to: 'Yala', date: futureIsoDate(14) };
+    const a = await (await post(plain, body)).json();
+    const b = await (await post(boosted, body)).json();
+    expect(b.total).toBeGreaterThan(a.total);
   });
 });

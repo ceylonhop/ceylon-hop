@@ -333,6 +333,7 @@ export function createApp(deps: AppDeps = {}) {
       maps,
       conciergeTasks,
       quotes,
+      zones,
       linkSecret: bookingLinkSecret,
       payBaseUrl,
       checkoutNow: deps.checkoutNow,

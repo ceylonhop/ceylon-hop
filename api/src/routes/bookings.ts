@@ -21,7 +21,9 @@ import type { MapsAdapter, DistanceResult } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
-import { RATE_CARD, type RateCard } from '../quote/rateCard';
+import type { RateCard } from '../quote/rateCard';
+import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
+import { liveRateCard } from '../quote/liveCard';
 import {
   signCheckoutToken,
   signPayReturnToken,
@@ -181,6 +183,7 @@ export function bookingRoutes(deps: {
   maps: MapsAdapter;
   conciergeTasks: ConciergeTaskRepo;
   quotes?: QuoteRepo; // optional: enables rate-lock (pricing a booking against a web quote's card)
+  zones?: ZonesRepo;
   linkSecret: string;
   checkoutNow?: () => number;
   allowLegacyCheckoutWithoutToken?: boolean;
@@ -191,6 +194,7 @@ export function bookingRoutes(deps: {
   payBaseUrl?: string;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
+  const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
 
@@ -209,19 +213,24 @@ export function bookingRoutes(deps: {
 
   // Rate-lock (spec 2026-07-11 §4): the card a booking should be priced against. A quoteId from a
   // customer web quote (POST /quote/lock) still inside its 7-day window → that quote's frozen card;
-  // an unknown/expired id, or no quotes repo wired → the live RATE_CARD. Never throws (a bad id
-  // must not fail the booking — it just falls back to the current card).
+  // an unknown/expired id, or no quotes repo wired → the live card (base rate card composed with
+  // currently-active hot zones, hot-zones spec D5). Never throws (a bad id must not fail the
+  // booking — it just falls back to the current card).
   async function bookingRateCard(quoteId: string | undefined): Promise<RateCard> {
-    if (!quoteId || !quotes) return RATE_CARD;
+    const current = await liveRateCard(zonesRepo);
+    // Short-circuit before the try: an unwired `quotes` repo or a missing quoteId both mean
+    // "just use the live card" — no need to let `.get()` throw to get there.
+    if (!quoteId || !quotes) return current;
     try {
       const q = await quotes.get(quoteId);
-      if (!q || q.channel !== 'web') return RATE_CARD;
+      if (!q || q.channel !== 'web') return current;
       return rateCardFor(
         { rateCardJson: (q.rateCardJson ?? null) as RateCard | null, rateLockedUntil: q.rateLockedUntil },
         new Date(),
+        current,
       ).rateCard;
     } catch {
-      return RATE_CARD;
+      return current;
     }
   }
 
