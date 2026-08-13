@@ -9,6 +9,7 @@ import type { MapsAdapter } from '../adapters/maps';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
 import { liveRateCard } from '../quote/liveCard';
+import { stripZoneMeta } from '../quote/stripZoneMeta';
 import {
   WebQuoteIntentSchema,
   digestAccessToken,
@@ -88,6 +89,14 @@ async function engineRequestFor(intent: WebQuoteIntent, maps: MapsAdapter): Prom
   };
 }
 
+// D9: the founder-only "Ella premium +15%" zone annotation (meta.hotZone) is a margin-class
+// disclosure, same as marginEstimateCents above — strip it from every line item before a result
+// reaches an unauthenticated customer. internalQuote.ts strips the same field for non-margin:view
+// ops roles via the same stripZoneMeta().
+function publicLineItems(lineItems: ReturnType<typeof quote>['lineItems']) {
+  return lineItems.map((li) => ({ ...li, meta: stripZoneMeta(li.meta) }));
+}
+
 function publicV2(saved: Awaited<ReturnType<QuoteRepo['get']>>, result: ReturnType<typeof quote>) {
   if (!saved) throw new Error('quote_not_saved');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -98,6 +107,7 @@ function publicV2(saved: Awaited<ReturnType<QuoteRepo['get']>>, result: ReturnTy
     revision: saved.revision,
     expiresAt: saved.rateLockedUntil,
     ...pub,
+    lineItems: publicLineItems(pub.lineItems),
   };
 }
 
@@ -123,7 +133,7 @@ export function quoteRoutes(deps: {
       const isInternal = !!deps.internalKey && c.req.header('x-internal-key') === deps.internalKey;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
-      return c.json(isInternal ? result : pub, 200);
+      return c.json(isInternal ? result : { ...pub, lineItems: publicLineItems(pub.lineItems) }, 200);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
@@ -159,7 +169,7 @@ export function quoteRoutes(deps: {
       });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
-      return c.json({ quoteId: saved.id, reference: saved.reference, rateLockedUntil: saved.rateLockedUntil, ...pub }, 201);
+      return c.json({ quoteId: saved.id, reference: saved.reference, rateLockedUntil: saved.rateLockedUntil, ...pub, lineItems: publicLineItems(pub.lineItems) }, 201);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
       return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
