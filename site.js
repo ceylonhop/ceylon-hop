@@ -160,9 +160,12 @@
     return [...set];
   };
   function nPlace(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+  /* "Popular Route" / "Popular place" measured 102px in the option row's badge column, which
+     is `auto` and nowrap — so the badge, not the place name, decided how much room the name
+     got. One word is ~57px and buys the name back 45 of them. See .place-option in site.css. */
   window.placeSourceLabel = function(source){
     if(source==='google') return 'Google';
-    return source==='known' ? 'Popular Route' : 'Popular place';
+    return 'Popular';
   };
   window.resolvePlaceInput = function(value){
     const T=window.TRANSFERS;
@@ -222,7 +225,13 @@
       menu.innerHTML=items.map((p,i)=>`<button type="button" class="place-option${i===active?' hi':''}" role="option"><span>${esc(p.label)}</span><small>${esc(window.placeSourceLabel(p.source))}</small></button>`).join('')+
         (opts.loading ? `<button type="button" class="place-option loading" disabled aria-disabled="true"><span>Searching Google…</span><small>Google</small></button>` : '');
       const r=input.getBoundingClientRect();
-      const menuW=Math.min(r.width, window.innerWidth-24);
+      /* The menu may be WIDER than the field it hangs off. Matching the field exactly starved
+         the label whenever the field was narrow — the search edit form's 4-up grid gives a
+         225px field, which left 67px for a place name after the badge and padding took their
+         cut. MENU_MIN is set from the widest place name we ship ("Colombo Airport (CMB)",
+         187px) plus that chrome, so no local place ellipsizes at any field width. */
+      const MENU_MIN=340;
+      const menuW=Math.min(Math.max(r.width, MENU_MIN), window.innerWidth-24);
       const left=Math.min(Math.max(12,r.left), window.innerWidth-menuW-12);
       const below=r.bottom+6;
       const maxBelow=window.innerHeight-below-12;
