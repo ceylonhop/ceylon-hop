@@ -61,8 +61,9 @@ describe('the trip-summary route strip', () => {
 
   it('loads the generated script before plan.js, or CH.shortPlace would be undefined at render', () => {
     const html = readFileSync(path.join(ROOT, 'plan.html'), 'utf8');
-    const shortIdx = html.indexOf('src="ch-shortplace.js"');
-    const planIdx = html.indexOf('src="plan.js"');
+    // Asset refs carry a ?v= cache-busting stamp (tools/stamp-asset-versions.mjs).
+    const shortIdx = html.search(/src="ch-shortplace\.js(\?v=\w+)?"/);
+    const planIdx = html.search(/src="plan\.js(\?v=\w+)?"/);
     expect(shortIdx, 'ch-shortplace.js not included in plan.html').toBeGreaterThan(-1);
     expect(shortIdx).toBeLessThan(planIdx);
   });

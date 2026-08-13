@@ -20,7 +20,7 @@ describe('site plumbing', () => {
     expect(h).toContain('href="trip/"');       // relative — resolved by the injected <base>
     expect(h).toContain('href="index.html"');
     expect(h).not.toContain('href="/site.css"'); // NOT root-absolute (base doesn't affect those)
-    expect(h).toContain("href=\"site.css\"");    // relative stylesheet
+    expect(h).toMatch(/href="site\.css(\?v=\w+)?"/); // relative stylesheet (cache-bust stamped)
     expect(h).toContain('document.write');       // <base> injected (apex "/" or github.io "/<repo>/")
     expect(h).toContain("endsWith('github.io')");
   });

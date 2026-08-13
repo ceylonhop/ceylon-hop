@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css">
-<link rel="stylesheet" href="ticket.css">
+<link rel="stylesheet" href="site.css?v=b3b9aecc47">
+<link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user_data:'denied',ad_personalization:'denied',wait_for_update:500});
@@ -19,14 +19,14 @@ gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied',ad_user
      the error beacon, and it is what lets one GTM container tell the pay page apart from a
      blog post. See docs/analytics/property-tracking.md. -->
 <script>window.CH_PROPERTY='pay';</script>
-<script src="analytics.js"></script>
+<script src="analytics.js?v=a1d10c14f3"></script>
 <!-- Still no consent.js (owner, 2026-08-01): a customer mid-payment is not the audience for a
      floating cookie card, and it overlaid the CTA. But "no banner" had become "no consent" —
      nothing here ever granted, so Clarity never recorded a single payment and GA4 saw only
      cookieless pings. consent-transactional.js keeps the owner's rule (it reserves its own
      height instead of covering anything) and asks for analytics ONLY; ads stay denied here
      permanently. -->
-<script src="consent-transactional.js" defer></script>
+<script src="consent-transactional.js?v=9e74d1f96a" defer></script>
 <script>
 window.CEYLON_HOP_API = window.CEYLON_HOP_API || 'https://ceylon-hop-api.onrender.com';
 (function(){var n=0,A=(window.CEYLON_HOP_API||'https://ceylon-hop-api.onrender.com'),P=window.CH_PROPERTY||'site';
@@ -38,8 +38,8 @@ window.chReportError=r;
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<script src="phone-countries.js"></script>
-<script src="decline-help.js"></script>
+<script src="phone-countries.js?v=0b8dd7a9f6"></script>
+<script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-08-05, docs/checkout-redirect-spec.md).
      It rendered the card form and the 3-D Secure challenge inside a cross-origin iframe, where a
      failure reaches none of its callbacks — our page could not even tell it had happened, which is

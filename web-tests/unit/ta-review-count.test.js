@@ -67,7 +67,7 @@ describe('Tripadvisor review count has one source', () => {
 
   it('every page that shows the count loads ta-data.js', () => {
     for (const page of [...PAGES, 'board.html']) {
-      expect(read(page), page).toMatch(/<script src="ta-data\.js"/);
+      expect(read(page), page).toMatch(/<script src="ta-data\.js(\?v=\w+)?"/);
     }
   });
 
