@@ -246,7 +246,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
           </div>
           <div class="est-row"><span class="muted">Or chauffeur-guide, whole trip</span><b id="bk-est"></b></div>
           <button class="btn btn-primary btn-block btn-lg" id="bk-edit">Customise this route</button>
-          <a href="https://wa.me/94779669662" class="btn btn-wa btn-block" style="margin-top:10px" id="bk-wa"></a>
+          <a href="https://wa.me/94779669662" class="btn btn-wa btn-block" style="margin-top:10px" id="bk-wa" target="_blank" rel="noopener"></a>
           <div class="est-note">Choose <b>private transfer</b> or upgrade to a <b>chauffeur-guide</b> in the next step. You book your own hotels.</div>
           <div class="incl-mini">
             <div class="ttl">Every trip includes</div>
@@ -288,7 +288,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   document.getElementById('t-best').textContent=t.best;
   document.getElementById('t-blurb').textContent=t.blurb;
   // headline (point-to-point) + chauffeur secondary are both set by updateEst() below
-  document.getElementById('bk-wa').innerHTML = ICON.wa + ' Ask a question';
+  document.getElementById('bk-wa').innerHTML = ICON.wa + ' Chat on WhatsApp';
 
   // Gallery photography, per tour: [lead, ...4 scenes]. Photos live in img/ and are
   // referenced by src; a tour with no entry here keeps its empty placeholder slots.

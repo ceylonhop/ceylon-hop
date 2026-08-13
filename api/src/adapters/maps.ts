@@ -173,8 +173,10 @@ export function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-// A place name → its exact SL coordinates, when it's one of our known places.
-function knownCoords(name: string): [number, number] | null {
+// A place name → its exact SL coordinates, when it's one of our known places. Exported for
+// scripts/distance-report.ts, which needs coordinate identity to avoid billing the same
+// physical pair twice when two display names pin one point.
+export function knownCoords(name: string): [number, number] | null {
   return parseLatLng(name) ?? COORDS[canonPlace(name)] ?? null;
 }
 
