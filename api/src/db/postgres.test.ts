@@ -17,8 +17,10 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows } from './schema';
+import { bookings as bookingRows, distanceCache } from './schema';
 import { eq } from 'drizzle-orm';
+import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
+import { distanceCacheRepoContract } from './distanceCacheRepo.test';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -931,6 +933,13 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
     const listed = await quotes.list({});
     expect(listed.find((r) => r.id === saved.id)?.routeText).toBe('Colombo · Kandy · Ella');
+  });
+
+  describe('PostgresDistanceCacheRepo', () => {
+    distanceCacheRepoContract(async () => {
+      await db.delete(distanceCache);
+      return new PostgresDistanceCacheRepo(db);
+    });
   });
 });
 
