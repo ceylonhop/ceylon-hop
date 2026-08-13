@@ -200,6 +200,30 @@ export function quoteRoutes(deps: {
     }
   });
 
+  // Price an intent WITHOUT persisting anything — the customer-side twin of the ops tool's
+  // /estimate (vs /save). Rendering a price must never write a quotes row. Unlike /v2/lock this
+  // will return a price built on an estimated distance, flagged so the page can label it and
+  // checkout can refuse it.
+  r.post('/v2/estimate', async (c) => {
+    if (!deps.v2Enabled) return c.notFound();
+    if (!deps.maps) return c.json({ error: 'not_available' }, 501);
+    const parsed = WebQuoteIntentSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
+    }
+    const resolved = await engineRequestFor(parsed.data, deps.maps);
+    if (!resolved) return c.json({ error: 'quote_unpriced' }, 422);
+    try {
+      const result = quote(resolved.request, await liveCard());
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { marginEstimateCents, ...pub } = result;
+      return c.json({ ...pub, lineItems: publicLineItems(pub.lineItems), estimated: resolved.estimated, legs: resolved.legs }, 200);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'BAD_REQUEST';
+      return c.json({ error: ENGINE_ERRORS.has(msg) ? msg : 'BAD_REQUEST' }, 422);
+    }
+  });
+
   r.post('/v2/lock', async (c) => {
     if (!deps.v2Enabled) return c.notFound();
     if (!deps.quotes || !deps.maps) return c.json({ error: 'not_available' }, 501);
