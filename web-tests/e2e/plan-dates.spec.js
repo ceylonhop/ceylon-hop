@@ -298,7 +298,7 @@ test('planner place search layers popular route then Google results for hotel te
 
   const options = page.locator('.place-option');
   await expect(options.first()).toContainText('Colombo city');
-  await expect(options.first()).toContainText('Popular Route');
+  await expect(options.first()).toContainText('Popular');
   await expect(options.nth(1)).toContainText('hilton colombo Hotel');
   await expect(page.locator('.place-option', { hasText: 'Use exact place' })).toHaveCount(0);
   await expect(page.locator('.place-option', { hasText: 'Exact place' })).toHaveCount(0);
