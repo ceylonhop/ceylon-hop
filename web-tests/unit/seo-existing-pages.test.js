@@ -61,8 +61,10 @@ describe('existing-page head metadata (M16 PR3)', () => {
     expect(h).toMatch(/"sameAs":\s*\[/);
     expect(h).toContain('tripadvisor.com/Attraction_Review-g3736162-d33018957');
   });
-  it('the corrected rating (5.0 / 30) shows in visible copy', () => {
-    expect(read('index.html')).toContain('30 reviews');
-    expect(read('booking.html')).toContain('from 30 travellers on Tripadvisor');
+  it('the corrected rating shows in visible copy', () => {
+    // The count itself lives in ta-data.js and is parity-checked by
+    // ta-review-count.test.js; here we only guard that the claim is still on the page.
+    expect(read('index.html')).toMatch(/data-ta-count>\d+<\/span> reviews/);
+    expect(read('booking.html')).toMatch(/from <span data-ta-count>\d+<\/span> travellers on Tripadvisor/);
   });
 });
