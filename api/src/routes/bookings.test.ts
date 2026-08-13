@@ -190,7 +190,7 @@ describe('POST /bookings/single', () => {
     expect(ok.status).toBe(201);
   });
 
-  it('floors an unpriceable route at the server placeholder — a tampered low quotedTotal is ignored', async () => {
+  it('always charges the server placeholder on an unpriceable route — quotedTotal is never adopted', async () => {
     const app = createApp();
     // `valid` is an unresolvable route, so the engine can't price it → placeholder path.
     const baseline = await (await post(app, valid)).json();
@@ -199,9 +199,10 @@ describe('POST /bookings/single', () => {
     const tampered = await (await post(app, { ...valid, quotedTotal: 200 })).json();
     expect(tampered.total).toBe(5000);
     expect(tampered.amountDueNow).toBe(5000);
-    // a legitimately higher quotedTotal is still honored on the unpriced path
+    // nor does a HIGHER quotedTotal get adopted — the client's figure is a display value, not
+    // an authority; the placeholder stands and ops sets the real price before it can be paid.
     const higher = await (await post(app, { ...valid, quotedTotal: 9000 })).json();
-    expect(higher.total).toBe(9000);
+    expect(higher.total).toBe(5000);
   });
 
   it('is idempotent on Idempotency-Key — one booking, second call returns it', async () => {
@@ -488,5 +489,17 @@ describe('booking re-price applies active hot zones', () => {
     const a = await (await post(plain, body)).json();
     const b = await (await post(boosted, body)).json();
     expect(b.total).toBeGreaterThan(a.total);
+  });
+});
+
+describe('an unpriced booking never charges the client-supplied figure', () => {
+  it('ignores an inflated quotedTotal when the engine cannot price', async () => {
+    // Maps resolves nothing, so the engine cannot price and the booking is "unpriced".
+    const app = createApp({
+      maps: { provider: 'none', places: async () => [], distanceVariants: async () => null, distance: async () => null } as MapsAdapter,
+    });
+    const res = await post(app, { ...valid, date: futureIsoDate(14), quotedTotal: 99_999_00 });
+    const body = await res.json();
+    expect(body.total).toBeLessThan(99_999_00);
   });
 });

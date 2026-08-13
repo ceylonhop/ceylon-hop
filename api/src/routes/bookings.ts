@@ -59,8 +59,9 @@ function memoizeDistance(maps: MapsAdapter): MapsAdapter {
 }
 
 // What the booking stores, resolved engine-first (GL-3): the engine price wins whenever it
-// can price; otherwise the customer's quotedTotal, and as a last resort the placeholder
-// quote (API-only callers). Customer bookings currently collect the full amount now.
+// can price; otherwise the server's own placeholder quote — the customer's quotedTotal is
+// never adopted as the charge when the engine can't price it (see resolveTotals below).
+// Customer bookings currently collect the full amount now.
 function resolveTotals(
   outcome: PriceOutcome,
   quotedTotal: number | undefined,
@@ -71,10 +72,11 @@ function resolveTotals(
       quotedTotal !== undefined && Math.abs(quotedTotal - outcome.totalCents) > MISMATCH_TOLERANCE_CENTS;
     return { total: outcome.totalCents, amountDueNow: outcome.amountDueNowCents, mismatch, unpriced: false };
   }
-  // Engine couldn't price (e.g. custom places the maps adapter can't resolve). Fall back to the
-  // customer's quotedTotal, but FLOOR it at the server's placeholder quote so a tampered/undercut
-  // quotedTotal can never be charged below what the server itself would estimate.
-  const total = Math.max(quotedTotal ?? 0, placeholderTotal);
+  // The client's figure is a display value, not an authority. When the engine cannot price, the
+  // server's own placeholder stands and the booking is flagged unpriced — ops sets the real price
+  // before it can be paid. Adopting quotedTotal here would let a tampered or merely stale page
+  // dictate the charge.
+  const total = placeholderTotal;
   return { total, amountDueNow: total, mismatch: false, unpriced: true, reason: outcome.reason };
 }
 
